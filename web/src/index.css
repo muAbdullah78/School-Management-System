@@ -31,7 +31,9 @@ body {
   #certificate,
   #certificate *,
   #report,
-  #report * {
+  #report *,
+  #tabulation,
+  #tabulation * {
     visibility: visible;
   }
   #receipt,
@@ -39,7 +41,8 @@ body {
   #admit-slip,
   #result-card,
   #certificate,
-  #report {
+  #report,
+  #tabulation {
     position: absolute;
     left: 0;
     top: 0;

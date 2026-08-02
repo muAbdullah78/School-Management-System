@@ -6,6 +6,7 @@ import {
 } from '@/lib/db'
 import { useAuth } from '@/auth/AuthProvider'
 import { ResultCardPrint } from './ResultCardPrint'
+import { TabulationSheet } from './TabulationSheet'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 
@@ -22,6 +23,7 @@ export function ResultsTab() {
   const [termId, setTermId] = useState('')
   const [classId, setClassId] = useState('')
   const [card, setCard] = useState<ResultCardRow | null>(null)
+  const [showTabulation, setShowTabulation] = useState(false)
 
   const cards = useQuery({
     queryKey: ['resultCards', termId, classId], queryFn: () => listResultCards(termId, classId), enabled: !!termId && !!classId,
@@ -63,6 +65,12 @@ export function ResultsTab() {
                 {generate.isPending ? 'Generating…' : (cards.data?.length ? 'Re-generate result cards' : 'Generate result cards')}
               </button>
             )}
+            {(cards.data?.length ?? 0) > 0 && (
+              <button onClick={() => setShowTabulation(true)}
+                className="rounded border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                Print tabulation sheet
+              </button>
+            )}
             {generate.isSuccess && <span className="text-sm text-emerald-700">{generate.data} card{generate.data === 1 ? '' : 's'} generated.</span>}
             {generate.isError && <span className="text-sm text-red-600">{(generate.error as Error).message}</span>}
           </div>
@@ -100,6 +108,9 @@ export function ResultsTab() {
 
       {card && (
         <ResultCardPrint card={card} termName={termName} className={className} sectionName={null} onClose={() => setCard(null)} />
+      )}
+      {showTabulation && (
+        <TabulationSheet cards={cards.data ?? []} termName={termName} className={className} onClose={() => setShowTabulation(false)} />
       )}
     </div>
   )
