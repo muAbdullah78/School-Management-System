@@ -353,6 +353,44 @@ export async function importOpeningBalances(
   return data as ImportResult
 }
 
+// ---- Academic-year rollover ----
+export interface RolloverRuleInput {
+  from_class_id: string; action: 'promote' | 'retain' | 'graduate'; to_class_id: string | null
+}
+export interface RolloverRowResult {
+  student_id: string; name: string; gr_no: string | null
+  from_class: string | null; to_class: string | null; action: string
+  roll_no: string | null; balance: number; message: string | null
+}
+export interface RolloverResult {
+  commit: boolean; from_session: string; to_session: string
+  promoted: number; retained: number; graduated: number; unmapped: number; skipped: number; total: number
+  rows: RolloverRowResult[]
+}
+export interface RolloverUndoResult { undone: number; note: string; graduated_total: number }
+
+/** Preview (commit=false, no writes) or apply (commit=true) a year-end rollover
+ *  from one session to another using per-class rules. */
+export async function runRollover(
+  fromSession: string, toSession: string, rules: RolloverRuleInput[], commit: boolean,
+): Promise<RolloverResult> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_rollover', {
+    p_from: fromSession, p_to: toSession, p_rules: rules, p_commit: commit,
+  })
+  if (error) throw new Error(error.message)
+  return data as RolloverResult
+}
+
+/** Reverse the promotions/retentions of a rollover into a session (only allowed
+ *  while that session has no attendance/fees/exams yet). */
+export async function undoRollover(toSession: string): Promise<RolloverUndoResult> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_rollover_undo', { p_to: toSession })
+  if (error) throw new Error(error.message)
+  return data as RolloverUndoResult
+}
+
 export async function listStudents(term: string): Promise<StudentRow[]> {
   const sb = requireSupabase()
   const t = term.trim()

@@ -141,4 +141,41 @@ jobs:
             end if;
             raise notice 'opening balance import ok';
           end $CI$;
+          -- year-end rollover: promote the imported student into a new session and
+          -- assert the new enrolment exists, arrears carry, and undo reverses it.
+          do $CI$
+          declare sid uuid; r jsonb; cnt int;
+          begin
+            select id into sid from public.students where full_name = 'Import Test';
+            insert into public.academic_sessions(id, name) values
+              ('44444444-4444-4444-4444-444444444444', '2026-2027');
+            insert into public.classes(id, name, level_order) values
+              ('55555555-5555-5555-5555-555555555555', 'Class 2', 2);
+            -- preview writes nothing
+            perform public.fn_rollover('22222222-2222-2222-2222-222222222222',
+              '44444444-4444-4444-4444-444444444444', '[]'::jsonb, false);
+            if exists (select 1 from public.enrollments where session_id = '44444444-4444-4444-4444-444444444444') then
+              raise exception 'ROLLOVER FAIL: preview wrote enrolments';
+            end if;
+            -- commit: Class 1 -> Class 2 (next by level_order)
+            r := public.fn_rollover('22222222-2222-2222-2222-222222222222',
+              '44444444-4444-4444-4444-444444444444', '[]'::jsonb, true);
+            if (r->>'promoted') <> '1' then raise exception 'ROLLOVER FAIL: %', r; end if;
+            select count(*) into cnt from public.enrollments e
+              join public.classes c on c.id = e.class_id
+              where e.session_id = '44444444-4444-4444-4444-444444444444'
+                and e.student_id = sid and c.name = 'Class 2' and e.promoted_from is not null;
+            if cnt <> 1 then raise exception 'ROLLOVER FAIL: new enrolment missing'; end if;
+            -- arrears (1500 opening balance) carry into the new session's defaulters
+            if not exists (select 1 from public.fn_defaulters('44444444-4444-4444-4444-444444444444')
+                           where student_id = sid) then
+              raise exception 'ROLLOVER FAIL: arrears did not carry';
+            end if;
+            -- undo removes the new enrolment
+            perform public.fn_rollover_undo('44444444-4444-4444-4444-444444444444');
+            if exists (select 1 from public.enrollments where session_id = '44444444-4444-4444-4444-444444444444') then
+              raise exception 'ROLLOVER FAIL: undo left enrolments';
+            end if;
+            raise notice 'rollover ok';
+          end $CI$;
           SQL
