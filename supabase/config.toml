@@ -1,0 +1,9 @@
+# Supabase CLI config. Each school links this to its OWN Supabase project:
+#   supabase link --project-ref <the-school-project-ref>
+#   supabase db push        # applies supabase/migrations
+# See docs/SETUP-PER-SCHOOL.md.
+
+project_id = "school-manager"
+
+[db]
+major_version = 16

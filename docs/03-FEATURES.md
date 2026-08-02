@@ -1,5 +1,7 @@
 # 03 — Feature Map (and everything the brief missed)
 
+> **Note:** [`09-DECISIONS-LOCKED.md`](09-DECISIONS-LOCKED.md) supersedes parts of this doc — the **Communication Engine** module is dropped (WhatsApp is now a manual click-to-chat link, not an automated system) and there is **no Urdu** (English-only UI and output). Everything else stands. Scope is **full v1.0**, not a lean MVP.
+
 **⚠️ MISSED** marks a feature the owner's brief did **not** ask for but that is essential. These are the "loopholes" we were hired to catch — a system without them breaks within a term or gets an owner defrauded.
 
 A skeptical review flagged that the first-draft "MVP" was secretly a full v1.0. We have **split it**: a genuinely lean **Pilot MVP** that a school can run on quickly, and a **Fast-follow (v1.0)** that completes the exam/certificate story. See [`05-ROADMAP.md`](05-ROADMAP.md) for effort and sequencing.
