@@ -458,3 +458,91 @@ export async function listResultCards(termId: string, classId: string): Promise<
   }
   return out.sort((a, b) => (a.position ?? 1e9) - (b.position ?? 1e9))
 }
+
+// ---- Settings / school setup ----
+export interface SchoolSettings {
+  name: string; name_short: string | null; address: string | null; phone: string | null
+  email: string | null; principal_name: string | null; grade_scale: string; pass_percent: number
+  gr_prefix: string | null; receipt_prefix: string | null; current_session_id: string | null
+}
+export interface SessionFull {
+  id: string; name: string; starts_on: string | null; ends_on: string | null
+  is_current: boolean; is_closed: boolean
+}
+export interface ClassFull { id: string; name: string; level_order: number; active: boolean }
+export interface ProfileRow { id: string; full_name: string | null; role: string; active: boolean }
+
+export async function getSchoolSettings(): Promise<SchoolSettings | null> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.from('school_settings')
+    .select('name, name_short, address, phone, email, principal_name, grade_scale, pass_percent, gr_prefix, receipt_prefix, current_session_id')
+    .eq('id', 1).maybeSingle()
+  if (error) throw new Error(error.message)
+  return data
+}
+
+export async function updateSchoolSettings(patch: Partial<SchoolSettings>): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.from('school_settings').upsert({ id: 1, ...patch }, { onConflict: 'id' })
+  if (error) throw new Error(error.message)
+}
+
+export async function listSessions(): Promise<SessionFull[]> {
+  const sb = requireSupabase()
+  return unwrap(
+    await sb.from('academic_sessions').select('id, name, starts_on, ends_on, is_current, is_closed')
+      .order('starts_on', { ascending: false, nullsFirst: false }),
+  )
+}
+
+export async function createSession(name: string, startsOn?: string, endsOn?: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.from('academic_sessions').insert({ name, starts_on: startsOn || null, ends_on: endsOn || null })
+  if (error) throw new Error(error.message)
+}
+
+export async function setCurrentSession(sessionId: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_set_current_session', { p_session_id: sessionId })
+  if (error) throw new Error(error.message)
+}
+
+export async function listClassesAll(): Promise<ClassFull[]> {
+  const sb = requireSupabase()
+  return unwrap(await sb.from('classes').select('id, name, level_order, active').order('level_order'))
+}
+
+export async function createClass(name: string, levelOrder: number): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.from('classes').insert({ name, level_order: levelOrder })
+  if (error) throw new Error(error.message)
+}
+
+export async function setClassActive(id: string, active: boolean): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.from('classes').update({ active }).eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
+export async function createSection(classId: string, name: string, sortOrder = 0): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.from('sections').insert({ class_id: classId, name, sort_order: sortOrder })
+  if (error) throw new Error(error.message)
+}
+
+export async function listProfiles(): Promise<ProfileRow[]> {
+  const sb = requireSupabase()
+  return unwrap(await sb.from('profiles').select('id, full_name, role, active').order('full_name'))
+}
+
+export async function updateProfileRole(id: string, role: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.from('profiles').update({ role }).eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
+export async function setProfileActive(id: string, active: boolean): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.from('profiles').update({ active }).eq('id', id)
+  if (error) throw new Error(error.message)
+}
