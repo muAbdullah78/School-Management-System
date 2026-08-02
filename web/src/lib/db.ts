@@ -461,6 +461,11 @@ export interface ExamTerm {
 export interface SubjectRow { id: string; name: string; class_id: string | null; sort_order: number }
 export interface ExamSubjectRow {
   id: string; subject_id: string; subject_name: string; max_marks: number; pass_marks: number
+  exam_date: string | null; paper_time: string | null
+}
+export interface ClassRosterRow {
+  enrollment_id: string; student_id: string; full_name: string; father_name: string | null
+  gr_no: string | null; roll_no: string | null; section_name: string | null
 }
 export interface MarksheetRow {
   enrollment_id: string; student_id: string; full_name: string; roll_no: string | null
@@ -514,13 +519,14 @@ export async function listExamSubjects(termId: string, classId: string): Promise
   const sb = requireSupabase()
   const rows = unwrap<Record<string, any>[]>(
     await sb.from('exam_subjects')
-      .select('id, subject_id, max_marks, pass_marks, subjects(name, sort_order)')
+      .select('id, subject_id, max_marks, pass_marks, exam_date, paper_time, subjects(name, sort_order)')
       .eq('exam_term_id', termId).eq('class_id', classId),
   )
   return rows
     .map((r) => ({
       id: r.id, subject_id: r.subject_id, subject_name: r.subjects?.name ?? '—',
       max_marks: Number(r.max_marks), pass_marks: Number(r.pass_marks),
+      exam_date: r.exam_date ?? null, paper_time: r.paper_time ?? null,
       _sort: r.subjects?.sort_order ?? 0,
     }))
     .sort((a, b) => a._sort - b._sort || a.subject_name.localeCompare(b.subject_name))
@@ -529,13 +535,42 @@ export async function listExamSubjects(termId: string, classId: string): Promise
 
 export async function upsertExamSubject(
   termId: string, classId: string, subjectId: string, maxMarks: number, passMarks: number,
+  examDate?: string | null, paperTime?: string | null,
 ): Promise<void> {
   const sb = requireSupabase()
   const { error } = await sb.from('exam_subjects').upsert(
-    { exam_term_id: termId, class_id: classId, subject_id: subjectId, max_marks: maxMarks, pass_marks: passMarks },
+    {
+      exam_term_id: termId, class_id: classId, subject_id: subjectId,
+      max_marks: maxMarks, pass_marks: passMarks,
+      exam_date: examDate || null, paper_time: paperTime || null,
+    },
     { onConflict: 'exam_term_id,class_id,subject_id' },
   )
   if (error) throw new Error(error.message)
+}
+
+/** Active roster for a class in a session (for admit cards / roll-number slips),
+ *  ordered by section then numeric roll. */
+export async function listClassRoster(sessionId: string, classId: string): Promise<ClassRosterRow[]> {
+  const sb = requireSupabase()
+  const rows = unwrap<Record<string, any>[]>(
+    await sb.from('enrollments')
+      .select('id, student_id, roll_no, students!inner(full_name, father_name, gr_no), sections(name, sort_order)')
+      .eq('session_id', sessionId).eq('class_id', classId).eq('status', 'active'),
+  )
+  const rollNum = (r: string | null) => {
+    const n = parseInt((r ?? '').replace(/[^0-9]/g, ''), 10)
+    return Number.isNaN(n) ? Number.MAX_SAFE_INTEGER : n
+  }
+  return rows
+    .map((r) => ({
+      enrollment_id: r.id, student_id: r.student_id,
+      full_name: r.students?.full_name ?? '—', father_name: r.students?.father_name ?? null,
+      gr_no: r.students?.gr_no ?? null, roll_no: r.roll_no ?? null,
+      section_name: r.sections?.name ?? null, _sort: r.sections?.sort_order ?? 0,
+    }))
+    .sort((a, b) => a._sort - b._sort || rollNum(a.roll_no) - rollNum(b.roll_no) || a.full_name.localeCompare(b.full_name))
+    .map(({ _sort, ...rest }) => rest)
 }
 
 export async function removeExamSubject(id: string): Promise<void> {

@@ -33,7 +33,11 @@ body {
   #report,
   #report *,
   #tabulation,
-  #tabulation * {
+  #tabulation *,
+  #date-sheet,
+  #date-sheet *,
+  #admit-cards,
+  #admit-cards * {
     visibility: visible;
   }
   #receipt,
@@ -42,7 +46,9 @@ body {
   #result-card,
   #certificate,
   #report,
-  #tabulation {
+  #tabulation,
+  #date-sheet,
+  #admit-cards {
     position: absolute;
     left: 0;
     top: 0;

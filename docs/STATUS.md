@@ -5,13 +5,13 @@ steps are **yours** (manual, outside the code) vs **mine** (Claude, in the code)
 It supersedes the tech-stack details in [`05-ROADMAP.md`](05-ROADMAP.md); the
 authoritative product decisions are in [`09-DECISIONS-LOCKED.md`](09-DECISIONS-LOCKED.md).
 
-_Last updated after: exam tabulation/consolidation sheet._
+_Last updated after: exam printables (date sheet + admit cards)._
 
 ---
 
 ## ✅ Done (on `main` / in the open PR)
 
-**Database — `supabase/migrations/` (14 migrations, all validated on Postgres 16)**
+**Database — `supabase/migrations/` (15 migrations, all validated on Postgres 16)**
 - Core 30-table schema, identity/state split, append-only money/marks/attendance, soft-delete, **61 RLS policies**, audit triggers, gapless counters (GR / receipt / certificate serials).
 - Fees engine, attendance, admissions, exams, settings, certificates, dashboard rollup, assessments, staff, auth auto-provisioning, **bulk student import**, **opening fee-balance import**, **year-end rollover**.
 
@@ -32,19 +32,18 @@ Ordered by how badly a real school feels the gap. Each is a self-contained works
 
 | # | Workstream | Why it matters | Size |
 |---|-----------|----------------|------|
-| 1 | **Exam printables** | Tabulation/consolidation sheet ✅ done. Still to do: **date sheet** (needs per-paper dates — a small schema add) and **admit cards / roll-number slips**. | S |
-| 2 | **Certificate depth** | Leaving/character/bonafide + serials exist; **student/staff ID cards with QR** from the spec are not done. | S–M |
-| 3 | **Desktop wrapper (Windows)** | The setup guide references a CI-built `.msi` admin app. It doesn't exist yet — the web app runs in a browser meanwhile. Needs a Tauri (or similar) shell **plus your code-signing** (see manual steps). | M |
+| 1 | **Certificate depth** | Leaving/character/bonafide + serials exist; **student/staff ID cards with QR** from the spec are not done. | S–M |
+| 2 | **Desktop wrapper (Windows)** | The setup guide references a CI-built `.msi` admin app. It doesn't exist yet — the web app runs in a browser meanwhile. Needs a Tauri (or similar) shell **plus your code-signing** (see manual steps). | M |
 | — | *Nice-to-haves* | More report types (per-student fee ledger, monthly attendance register), staff bulk import; **offline roster cold-start** (cache the last roster so a teacher can open the app with no connection and still see the class — today the marks-queue covers a connection that drops while the page is open). | S each |
 
-**So: ~3 substantive workstreams remain** before the app matches the full written spec, after which we do the joint inch-by-inch testing pass.
+**So: ~2 substantive workstreams remain** before the app matches the full written spec, after which we do the joint inch-by-inch testing pass.
 
 ### ✅ Recently completed
 - **Bulk student import** (CSV) — Settings → Import → Students.
 - **Opening fee-balance / arrears import** — Settings → Import → Opening fee balances. A mid-year school loads real outstanding balances, so Fees/defaulters start from reality.
 - **Academic-year rollover** — Settings → Year Rollover. Promote/retain/graduate the whole roster into a new session with new roll numbers; arrears carry automatically; **preview → commit → undo** (undo is blocked once the new session has activity). Closes the "breaks within 12 months" gap.
 - **Installable PWA + offline attendance** — the teacher app installs to a phone and works offline; marks queue locally and sync on reconnect. Verified in headless Chromium. *(Needs a real-device browser test on your side — see manual steps.)*
-- **Exam tabulation/consolidation sheet** — Exams → Result Cards → Print tabulation sheet. Every student in a class/term on one printable grid (subjects × students, totals, %, grade, position, pass/fail), from the same frozen snapshots the result cards use.
+- **Exam printables** — the tabulation/consolidation sheet (Exams → Result Cards), plus **date sheet** and **admit cards / roll-number slips** (Exams → Setup, once a term's papers and their dates/times are set). Completes the exam module's paper output.
 
 ---
 
