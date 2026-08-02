@@ -439,6 +439,17 @@ export async function undoRollover(toSession: string): Promise<RolloverUndoResul
   return data as RolloverUndoResult
 }
 
+/** Validate (dry run) or import a batch of staff records. Rows use canonical
+ *  keys (see lib/importStaff). */
+export async function importStaff(
+  rows: Record<string, string>[], dryRun: boolean,
+): Promise<ImportResult> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_import_staff', { p_rows: rows, p_dry_run: dryRun })
+  if (error) throw new Error(error.message)
+  return data as ImportResult
+}
+
 export async function listStudents(term: string): Promise<StudentRow[]> {
   const sb = requireSupabase()
   const t = term.trim()

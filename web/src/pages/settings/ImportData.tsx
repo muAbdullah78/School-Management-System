@@ -1,16 +1,18 @@
 import { useState } from 'react'
 import { ImportStudents } from './ImportStudents'
 import { ImportBalances } from './ImportBalances'
+import { ImportStaff } from './ImportStaff'
 
 const TABS = [
   { key: 'students', label: 'Students' },
   { key: 'balances', label: 'Opening fee balances' },
+  { key: 'staff', label: 'Staff' },
 ] as const
 
 type TabKey = (typeof TABS)[number]['key']
 
-/** Onboarding imports, in the order you run them: first the student roster, then
- *  each student's opening arrears. */
+/** Onboarding imports, in the order you run them: the student roster, each
+ *  student's opening arrears, and the staff list. */
 export function ImportData() {
   const [tab, setTab] = useState<TabKey>('students')
   return (
@@ -25,7 +27,9 @@ export function ImportData() {
           </button>
         ))}
       </div>
-      {tab === 'students' ? <ImportStudents /> : <ImportBalances />}
+      {tab === 'students' && <ImportStudents />}
+      {tab === 'balances' && <ImportBalances />}
+      {tab === 'staff' && <ImportStaff />}
     </div>
   )
 }

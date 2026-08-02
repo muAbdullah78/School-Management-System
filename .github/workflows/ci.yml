@@ -178,4 +178,19 @@ jobs:
             end if;
             raise notice 'rollover ok';
           end $CI$;
+          -- staff import: one good row created, a nameless row rejected.
+          do $CI$
+          declare j jsonb;
+          begin
+            j := public.fn_import_staff(
+              '[{"full_name":"Test Teacher","designation":"Teacher","employee_no":"E1"},
+                {"full_name":""}]'::jsonb, false);
+            if not (j->>'total' = '2' and j->>'created' = '1' and j->>'errors' = '1') then
+              raise exception 'STAFF IMPORT FAIL: %', j;
+            end if;
+            if (select count(*) from public.staff where full_name = 'Test Teacher') <> 1 then
+              raise exception 'STAFF IMPORT FAIL: not inserted';
+            end if;
+            raise notice 'staff import ok';
+          end $CI$;
           SQL
