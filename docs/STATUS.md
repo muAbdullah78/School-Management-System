@@ -5,7 +5,7 @@ steps are **yours** (manual, outside the code) vs **mine** (Claude, in the code)
 It supersedes the tech-stack details in [`05-ROADMAP.md`](05-ROADMAP.md); the
 authoritative product decisions are in [`09-DECISIONS-LOCKED.md`](09-DECISIONS-LOCKED.md).
 
-_Last updated after: academic-year rollover._
+_Last updated after: offline attendance + installable PWA._
 
 ---
 
@@ -19,9 +19,10 @@ _Last updated after: academic-year rollover._
 - Every navigation module is a real, working screen (no placeholders): **Dashboard, Admissions, Students, Attendance, Tests, Exams & Results, Fees, Staff, Certificates, Reports, Settings**.
 - First signup becomes **owner**; user/role management in Settings.
 - **Export all data** (JSON backup), a two-part **Import** (students + opening fee balances), and **Year Rollover** (promote/retain/graduate, preview → commit → undo) in Settings.
+- **Installable PWA + offline attendance**: the app installs to a phone home screen and opens offline; attendance saved while offline is queued locally and **syncs automatically on reconnect** (with an app-wide connectivity/sync banner).
 
 **Quality gates**
-- **55 unit tests**; **CI** runs the web build/typecheck + tests, applies all migrations on a real Postgres 16, and exercises the import and rollover RPCs end-to-end (student created + rejected rows; opening balance flows into `student_balance`/defaulters and is idempotent; rollover promotes + carries arrears + undoes cleanly).
+- **63 unit tests**; **CI** runs the web build/typecheck + tests, applies all migrations on a real Postgres 16, and exercises the import and rollover RPCs end-to-end. The offline shell was verified in headless Chromium (service worker controls the page; a full offline reload still boots the app).
 
 ---
 
@@ -31,18 +32,18 @@ Ordered by how badly a real school feels the gap. Each is a self-contained works
 
 | # | Workstream | Why it matters | Size |
 |---|-----------|----------------|------|
-| 1 | **Offline-tolerant attendance + installable PWA** | The locked decision explicitly promises attendance that *"queues marks locally and syncs on reconnect"* and a teacher-phone install. Today attendance is online-only and the app isn't a PWA. This is a **differentiator**, not polish. | M |
-| 2 | **Exam printables** | Marks entry + result cards exist; **date sheet**, **admit cards / roll-number slips**, and the **tabulation/consolidation sheet** don't yet. | M |
-| 3 | **Certificate depth** | Leaving/character/bonafide + serials exist; **student/staff ID cards with QR** from the spec are not done. | S–M |
-| 4 | **Desktop wrapper (Windows)** | The setup guide references a CI-built `.msi` admin app. It doesn't exist yet — the web app runs in a browser meanwhile. Needs a Tauri (or similar) shell **plus your code-signing** (see manual steps). | M |
-| — | *Nice-to-haves* | More report types (per-student fee ledger, monthly attendance register), staff bulk import. | S each |
+| 1 | **Exam printables** | Marks entry + result cards exist; **date sheet**, **admit cards / roll-number slips**, and the **tabulation/consolidation sheet** don't yet. | M |
+| 2 | **Certificate depth** | Leaving/character/bonafide + serials exist; **student/staff ID cards with QR** from the spec are not done. | S–M |
+| 3 | **Desktop wrapper (Windows)** | The setup guide references a CI-built `.msi` admin app. It doesn't exist yet — the web app runs in a browser meanwhile. Needs a Tauri (or similar) shell **plus your code-signing** (see manual steps). | M |
+| — | *Nice-to-haves* | More report types (per-student fee ledger, monthly attendance register), staff bulk import; **offline roster cold-start** (cache the last roster so a teacher can open the app with no connection and still see the class — today the marks-queue covers a connection that drops while the page is open). | S each |
 
-**So: ~4 substantive workstreams remain** before the app matches the full written spec, after which we do the joint inch-by-inch testing pass.
+**So: ~3 substantive workstreams remain** before the app matches the full written spec, after which we do the joint inch-by-inch testing pass.
 
 ### ✅ Recently completed
 - **Bulk student import** (CSV) — Settings → Import → Students.
 - **Opening fee-balance / arrears import** — Settings → Import → Opening fee balances. A mid-year school loads real outstanding balances, so Fees/defaulters start from reality.
 - **Academic-year rollover** — Settings → Year Rollover. Promote/retain/graduate the whole roster into a new session with new roll numbers; arrears carry automatically; **preview → commit → undo** (undo is blocked once the new session has activity). Closes the "breaks within 12 months" gap.
+- **Installable PWA + offline attendance** — the teacher app installs to a phone and works offline; marks queue locally and sync on reconnect. Verified in headless Chromium. *(Needs a real-device browser test on your side — see manual steps.)*
 
 ---
 
@@ -73,6 +74,6 @@ None of the six code workstreams need anything from you first — I can keep bui
 
 ## How we'll test at the end (both sides)
 1. **Me:** unit tests + CI (build, migrations, RPC behaviour) — already running on every push; I extend it as each workstream lands.
-2. **You:** inch-by-inch on a real Supabase project with real data — admit/import students, run a monthly challan + collect fees, mark a full day's attendance, run a term to printed result cards, issue a certificate, do a year-end rollover, and take a backup/export.
+2. **You:** inch-by-inch on a real Supabase project with real data — admit/import students, run a monthly challan + collect fees, mark a full day's attendance, run a term to printed result cards, issue a certificate, do a year-end rollover, and take a backup/export. For the PWA: open the hosted URL on an Android phone, **Add to Home Screen**, then turn on airplane mode and confirm the app still opens and you can mark a class — turn connectivity back on and watch the banner sync it.
 
 I'll keep this file updated as each workstream is completed.

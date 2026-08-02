@@ -8,3 +8,13 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <App />
   </React.StrictMode>,
 )
+
+// Register the service worker for offline support + installability. Production
+// only, so it never interferes with the Vite dev server / HMR.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {
+      /* offline support is a progressive enhancement; ignore failures */
+    })
+  })
+}

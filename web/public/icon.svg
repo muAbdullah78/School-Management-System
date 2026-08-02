@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="School Manager">
+  <rect width="512" height="512" rx="96" fill="#1d4ed8"/>
+  <g fill="#ffffff">
+    <!-- mortarboard cap -->
+    <path d="M256 128 448 200 256 272 64 200 256 128Z"/>
+    <path d="M144 236 144 320 C144 320 188 356 256 356 C324 356 368 320 368 320 L368 236 256 280 144 236Z"/>
+    <rect x="440" y="196" width="12" height="92" rx="6"/>
+    <circle cx="446" cy="300" r="18"/>
+  </g>
+</svg>
