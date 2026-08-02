@@ -5,7 +5,7 @@ steps are **yours** (manual, outside the code) vs **mine** (Claude, in the code)
 It supersedes the tech-stack details in [`05-ROADMAP.md`](05-ROADMAP.md); the
 authoritative product decisions are in [`09-DECISIONS-LOCKED.md`](09-DECISIONS-LOCKED.md).
 
-_Last updated after: student ID cards with QR._
+_Last updated after: Windows desktop wrapper (Tauri)._
 
 ---
 
@@ -28,14 +28,14 @@ _Last updated after: student ID cards with QR._
 
 ## ⬜ Left to reach the full v1.0 spec
 
-Ordered by how badly a real school feels the gap. Each is a self-contained workstream I can build.
+**Every substantive workstream from the spec is now built.** What remains is one manual step that's yours, plus optional nice-to-haves.
 
-| # | Workstream | Why it matters | Size |
-|---|-----------|----------------|------|
-| 1 | **Desktop wrapper (Windows)** | The setup guide references a CI-built `.msi` admin app. It doesn't exist yet — the web app runs in a browser meanwhile. Needs a Tauri (or similar) shell **plus your code-signing** (see manual steps). | M |
-| — | *Nice-to-haves* | More report types (per-student fee ledger, monthly attendance register), staff bulk import; **offline roster cold-start** (cache the last roster so a teacher can open the app with no connection and still see the class — today the marks-queue covers a connection that drops while the page is open); **staff ID cards** (student ID cards with QR are done; staff cards would reuse the same layout). | S each |
+| Item | Status |
+|------|--------|
+| **Windows desktop `.msi`** | Scaffolded (`desktop/`, Tauri v2) + a **dispatch/tag-triggered** GitHub workflow that builds the installer on a Windows runner. The `.msi` build runs on GitHub's Windows runner (or your Windows PC) — **not** verifiable in this Linux environment — and shipping a **signed** installer needs your **code-signing certificate** (the one part only you can do). |
+| *Nice-to-haves* | More report types (per-student fee ledger, monthly attendance register), staff bulk import; **offline roster cold-start** (cache the last roster so a teacher can open the app with no connection and still see the class — today the marks-queue covers a connection that drops while the page is open); **staff ID cards** (student ID cards with QR are done; staff cards would reuse the same layout). |
 
-**So: ~1 substantive workstream remains** (the Windows desktop wrapper, which also needs your code-signing) before the app matches the full written spec, after which we do the joint inch-by-inch testing pass.
+**So: the full written spec is built.** Next is the **joint inch-by-inch testing pass** on a real Supabase project (see below), plus the desktop signing when you're ready.
 
 ### ✅ Recently completed
 - **Bulk student import** (CSV) — Settings → Import → Students.
@@ -44,6 +44,7 @@ Ordered by how badly a real school feels the gap. Each is a self-contained works
 - **Installable PWA + offline attendance** — the teacher app installs to a phone and works offline; marks queue locally and sync on reconnect. Verified in headless Chromium. *(Needs a real-device browser test on your side — see manual steps.)*
 - **Exam printables** — the tabulation/consolidation sheet (Exams → Result Cards), plus **date sheet** and **admit cards / roll-number slips** (Exams → Setup, once a term's papers and their dates/times are set). Completes the exam module's paper output.
 - **Student ID cards with QR** — Certificates → issue an *ID Card*: a printable card with the student's details and an on-device QR of the GR number (generated client-side, so it works offline). Uses the same gapless serial register as the other certificates.
+- **Windows desktop wrapper** — `desktop/` is a Tauri v2 shell that opens the school's hosted web app in a native window (asks for the URL once). A dispatch/tag-triggered workflow builds the `.msi` on a Windows runner. Same app, same database — just a real window for the admin PC. *(The installer builds on GitHub's Windows runner; a signed build needs your code-signing certificate — see `desktop/README.md`.)*
 
 ---
 

@@ -53,9 +53,10 @@ Then load the starting data: open the Supabase dashboard → **SQL Editor** → 
    > ```
 
 ## Step 5 — Install the desktop app on the headmaster's PC 🧑‍💻
-1. Download the latest **Windows installer** (`.msi`) from the project's Releases (built by CI — see the desktop packaging notes).
-2. Run it on the Windows 10/11 PC. On first launch it asks for the **school's app URL** (the Cloudflare Pages URL) — paste it once.
-3. The desktop app is now the admin's everyday program; teachers just use the URL on their phones.
+1. Get the **Windows installer** (`.msi`): in the GitHub repo open **Actions → Desktop (Windows installer) → Run workflow** (or push a `v*` tag), then download the `school-manager-windows-msi` artifact. Build details are in [`desktop/README.md`](../desktop/README.md).
+   - The artifact is **unsigned**, so Windows SmartScreen warns on first run (choose "Run anyway"). To ship a signed installer, add your **code-signing certificate** — see the code-signing note in `desktop/README.md`. That certificate is the one thing only you can provide.
+2. Run it on the Windows 10/11 PC. On first launch it asks for the **school's app URL** (the Cloudflare Pages URL) — paste it once ("Change address" on the connect screen switches it later).
+3. The desktop app is now the admin's everyday program; teachers just use the URL on their phones. It's the **same** app and database — the wrapper just gives the admin PC a real window instead of a browser tab.
 
 ## Step 6 — Configure the school in-app (non-technical)
 Log in as the owner and, in **Settings**:

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>School Manager</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { font-family: system-ui, -apple-system, Segoe UI, sans-serif; margin: 0; min-height: 100vh;
+             display: flex; align-items: center; justify-content: center; background: #0f172a; color: #e2e8f0; }
+      .card { background: #1e293b; padding: 28px; border-radius: 12px; width: 380px; max-width: 90vw; }
+      h1 { font-size: 18px; margin: 0 0 4px; }
+      p { font-size: 13px; color: #94a3b8; margin: 0 0 16px; line-height: 1.5; }
+      input { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #334155; background: #0f172a;
+              color: #e2e8f0; font-size: 14px; }
+      button { margin-top: 12px; width: 100%; padding: 10px; border: 0; border-radius: 8px; background: #1d4ed8;
+               color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; }
+      button:hover { background: #1e40af; }
+      .err { color: #f87171; font-size: 12px; margin-top: 8px; min-height: 16px; }
+      .link { color: #93c5fd; cursor: pointer; text-decoration: underline; font-size: 12px; }
+      .center { text-align: center; margin-top: 14px; }
+    </style>
+  </head>
+  <body>
+    <div class="card" id="setup" style="display: none">
+      <h1>School Manager</h1>
+      <p>Enter this school's app address — the web link teachers open on their phones. You only do this once.</p>
+      <input id="url" type="url" placeholder="https://your-school.pages.dev" autocomplete="off" spellcheck="false" />
+      <div class="err" id="err"></div>
+      <button id="go">Open</button>
+    </div>
+
+    <div class="card" id="splash" style="display: none">
+      <h1>Connecting…</h1>
+      <p id="splashUrl"></p>
+      <div class="center"><span class="link" id="change">Change address</span></div>
+    </div>
+
+    <script>
+      var KEY = 'school_manager_app_url'
+      function normalize(u) {
+        u = (u || '').trim()
+        if (!u) return ''
+        if (!/^https?:\/\//i.test(u)) u = 'https://' + u
+        return u
+      }
+      function showSetup(prefill) {
+        document.getElementById('splash').style.display = 'none'
+        var card = document.getElementById('setup')
+        card.style.display = 'block'
+        if (prefill) document.getElementById('url').value = prefill
+        document.getElementById('url').focus()
+      }
+      function submit() {
+        var u = normalize(document.getElementById('url').value)
+        try { new URL(u) } catch (e) { document.getElementById('err').textContent = 'Please enter a valid web address.'; return }
+        localStorage.setItem(KEY, u)
+        location.replace(u)
+      }
+      document.getElementById('go').addEventListener('click', submit)
+      document.getElementById('url').addEventListener('keydown', function (e) { if (e.key === 'Enter') submit() })
+
+      var saved = localStorage.getItem(KEY)
+      if (saved && location.hash !== '#reset') {
+        // Brief splash so there's always a way back to the setup screen.
+        document.getElementById('splash').style.display = 'block'
+        document.getElementById('splashUrl').textContent = saved
+        var timer = setTimeout(function () { location.replace(saved) }, 900)
+        document.getElementById('change').addEventListener('click', function () {
+          clearTimeout(timer); localStorage.removeItem(KEY); showSetup(saved)
+        })
+      } else {
+        if (location.hash === '#reset') localStorage.removeItem(KEY)
+        showSetup(saved || '')
+      }
+    </script>
+  </body>
+</html>
