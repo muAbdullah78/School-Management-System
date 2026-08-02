@@ -12,6 +12,7 @@ import { AdmissionsPage } from '@/pages/admissions/AdmissionsPage'
 import { StudentsPage } from '@/pages/students/StudentsPage'
 import { ExamsPage } from '@/pages/exams/ExamsPage'
 import { TestsPage } from '@/pages/assessments/TestsPage'
+import { StaffPage } from '@/pages/staff/StaffPage'
 import { CertificatesPage } from '@/pages/certificates/CertificatesPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { ModulePlaceholder } from '@/pages/ModulePlaceholder'
@@ -27,6 +28,7 @@ const IMPLEMENTED: Record<string, JSX.Element> = {
   '/students': <StudentsPage />,
   '/exams': <ExamsPage />,
   '/assessments': <TestsPage />,
+  '/staff': <StaffPage />,
   '/certificates': <CertificatesPage />,
   '/settings': <SettingsPage />,
 }

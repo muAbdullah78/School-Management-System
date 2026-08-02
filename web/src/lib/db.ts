@@ -526,7 +526,7 @@ export interface SessionFull {
   is_current: boolean; is_closed: boolean
 }
 export interface ClassFull { id: string; name: string; level_order: number; active: boolean }
-export interface ProfileRow { id: string; full_name: string | null; role: string; active: boolean }
+export interface ProfileRow { id: string; full_name: string | null; role: string; active: boolean; staff_id: string | null }
 
 export async function getSchoolSettings(): Promise<SchoolSettings | null> {
   const sb = requireSupabase()
@@ -588,7 +588,7 @@ export async function createSection(classId: string, name: string, sortOrder = 0
 
 export async function listProfiles(): Promise<ProfileRow[]> {
   const sb = requireSupabase()
-  return unwrap(await sb.from('profiles').select('id, full_name, role, active').order('full_name'))
+  return unwrap(await sb.from('profiles').select('id, full_name, role, active, staff_id').order('full_name'))
 }
 
 export async function updateProfileRole(id: string, role: string): Promise<void> {
@@ -600,6 +600,69 @@ export async function updateProfileRole(id: string, role: string): Promise<void>
 export async function setProfileActive(id: string, active: boolean): Promise<void> {
   const sb = requireSupabase()
   const { error } = await sb.from('profiles').update({ active }).eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
+// ---- Staff ----
+export interface StaffRow {
+  id: string; full_name: string; designation: string | null; employee_no: string | null
+  mobile: string | null; whatsapp: string | null; cnic: string | null
+  joined_on: string | null; status: string; profile_id: string | null
+}
+export interface StaffInput {
+  full_name: string; designation?: string | null; employee_no?: string | null
+  mobile?: string | null; whatsapp?: string | null; cnic?: string | null; joined_on?: string | null
+}
+export interface SectionTeacherRow { id: string; name: string; class_teacher_id: string | null }
+
+export async function listStaff(): Promise<StaffRow[]> {
+  const sb = requireSupabase()
+  return unwrap(
+    await sb.from('staff')
+      .select('id, full_name, designation, employee_no, mobile, whatsapp, cnic, joined_on, status, profile_id')
+      .is('deleted_at', null).order('full_name'),
+  )
+}
+
+export async function createStaff(input: StaffInput): Promise<string> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.from('staff').insert({
+    full_name: input.full_name, designation: input.designation || null, employee_no: input.employee_no || null,
+    mobile: input.mobile || null, whatsapp: input.whatsapp || null, cnic: input.cnic || null,
+    joined_on: input.joined_on || null,
+  }).select('id').single()
+  if (error) throw new Error(error.message)
+  return (data as { id: string }).id
+}
+
+export async function updateStaff(id: string, patch: Partial<StaffInput>): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.from('staff').update(patch).eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
+export async function setStaffStatus(id: string, status: 'active' | 'inactive'): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.from('staff').update({ status }).eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
+export async function linkStaffProfile(staffId: string, profileId: string | null): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_link_staff_profile', { p_staff_id: staffId, p_profile_id: profileId })
+  if (error) throw new Error(error.message)
+}
+
+export async function listSectionTeachers(classId: string): Promise<SectionTeacherRow[]> {
+  const sb = requireSupabase()
+  return unwrap(
+    await sb.from('sections').select('id, name, class_teacher_id').eq('class_id', classId).order('sort_order'),
+  )
+}
+
+export async function assignClassTeacher(sectionId: string, staffId: string | null): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.from('sections').update({ class_teacher_id: staffId }).eq('id', sectionId)
   if (error) throw new Error(error.message)
 }
 
