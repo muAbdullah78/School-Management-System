@@ -66,9 +66,12 @@ Log in as the owner and, in **Settings**:
 5. Add **subjects** per class.
 
 ## Step 7 — Import the students (phased)
-1. Give the school the pre-formatted Excel template (identity + class/section first).
-2. Import current students to go live on **attendance** immediately.
-3. Then import **fee slabs + opening arrears** to switch on **fees**.
+Use the built-in importer — **Settings → Import Students** (owner/principal):
+1. First create the school's **Classes & Sections** (Settings → Classes & Sections) — the importer matches them by name.
+2. Click **Download CSV template**, or map the school's existing Excel to those column headings (common variants like "Father Name", "DOB", "Grade", "Roll #" are recognised automatically). Save as **CSV**.
+3. Upload it and click **Validate (dry run)** — this checks every row and writes nothing. Fix any flagged rows (unknown class/section, bad date, etc.).
+4. Click **Import** — students are admitted into the current session with gapless GR numbers, land on the class roster (Attendance), and become billable (Fees). Leave the GR column blank to auto-number, or supply the school's existing GR numbers to preserve them.
+5. Then import **fee slabs + opening arrears** to switch on **fees** *(opening-balance import is the next module on the roadmap — see [`STATUS.md`](STATUS.md))*.
 
 ## Step 8 — Go-live checks
 - Every class has a fee slab; every student has a section; every teacher has a login.

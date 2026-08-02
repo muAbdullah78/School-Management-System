@@ -315,6 +315,29 @@ export async function admitStudent(input: AdmitInput): Promise<AdmitResult> {
   return data as AdmitResult
 }
 
+// ---- Bulk import (onboarding a paper register) ----
+export type ImportRowStatus = 'created' | 'ok' | 'skipped' | 'error'
+export interface ImportRowResult {
+  row: number; status: ImportRowStatus; message: string | null; name: string; gr_no: string | null
+}
+export interface ImportResult {
+  dry_run: boolean; total: number; created: number; skipped: number; errors: number
+  rows: ImportRowResult[]
+}
+
+/** Validate (dry run) or import a batch of students into a session. Rows use
+ *  canonical keys (see lib/importStudents); class/section are matched by name. */
+export async function importStudents(
+  sessionId: string, rows: Record<string, string>[], dryRun: boolean,
+): Promise<ImportResult> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_import_students', {
+    p_session: sessionId, p_rows: rows, p_dry_run: dryRun,
+  })
+  if (error) throw new Error(error.message)
+  return data as ImportResult
+}
+
 export async function listStudents(term: string): Promise<StudentRow[]> {
   const sb = requireSupabase()
   const t = term.trim()

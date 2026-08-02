@@ -1,5 +1,14 @@
 # 05 — Roadmap, Effort & Break-Even
 
+> **⚠️ Historical planning doc.** This roadmap predates the locked deployment
+> decision and still describes the original **Tauri + encrypted-SQLite + LAN**
+> architecture and the seller-hosted fleet (licensing, SMS engine, Urdu). Those
+> were **superseded** by [`09-DECISIONS-LOCKED.md`](09-DECISIONS-LOCKED.md) —
+> the product is now a **per-school Supabase** app, English-only, no messaging
+> engine, no licensing fleet. Read this for the *sequencing and effort logic*,
+> not the tech stack. For the **current build status and the concrete list of
+> what's left**, see [`STATUS.md`](STATUS.md).
+
 Sequenced so **value ships early and risk is retired early**. Every phase has a concrete **Definition of Done (DoD)** — a testable statement, not a vibe.
 
 > **On the estimates.** These are planning figures with wide error bars, expressed in **focused full-stack dev-weeks**. "Solo" means one strong full-stack developer (or the owner building with heavy AI assistance). Two developers roughly halve calendar time minus coordination overhead. Treat them as ranges, and re-baseline after Phase 0, when the real velocity is known.

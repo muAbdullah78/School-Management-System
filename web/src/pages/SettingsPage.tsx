@@ -5,12 +5,14 @@ import { ClassesSections } from './settings/ClassesSections'
 import { FeeStructure } from './settings/FeeStructure'
 import { Users } from './settings/Users'
 import { Backup } from './settings/Backup'
+import { ImportStudents } from './settings/ImportStudents'
 
 const SECTIONS = [
   { key: 'school', label: 'School Profile' },
   { key: 'sessions', label: 'Sessions' },
   { key: 'classes', label: 'Classes & Sections' },
   { key: 'fees', label: 'Fee Structure' },
+  { key: 'import', label: 'Import Students' },
   { key: 'users', label: 'Users & Roles' },
   { key: 'backup', label: 'Backup' },
 ] as const
@@ -37,6 +39,7 @@ export function SettingsPage() {
         {section === 'sessions' && <Sessions />}
         {section === 'classes' && <ClassesSections />}
         {section === 'fees' && <FeeStructure />}
+        {section === 'import' && <ImportStudents />}
         {section === 'users' && <Users />}
         {section === 'backup' && <Backup />}
       </div>
