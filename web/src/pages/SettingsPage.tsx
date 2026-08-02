@@ -4,6 +4,7 @@ import { Sessions } from './settings/Sessions'
 import { ClassesSections } from './settings/ClassesSections'
 import { FeeStructure } from './settings/FeeStructure'
 import { Users } from './settings/Users'
+import { Backup } from './settings/Backup'
 
 const SECTIONS = [
   { key: 'school', label: 'School Profile' },
@@ -11,6 +12,7 @@ const SECTIONS = [
   { key: 'classes', label: 'Classes & Sections' },
   { key: 'fees', label: 'Fee Structure' },
   { key: 'users', label: 'Users & Roles' },
+  { key: 'backup', label: 'Backup' },
 ] as const
 
 type SectionKey = (typeof SECTIONS)[number]['key']
@@ -36,6 +38,7 @@ export function SettingsPage() {
         {section === 'classes' && <ClassesSections />}
         {section === 'fees' && <FeeStructure />}
         {section === 'users' && <Users />}
+        {section === 'backup' && <Backup />}
       </div>
     </div>
   )

@@ -743,6 +743,60 @@ export async function issueCertificate(
   return res as IssueCertResult
 }
 
+// ---- Full data export (backup) ----
+/** Every domain table, in dependency-ish order, for a complete backup. */
+export const EXPORT_TABLES = [
+  'school_settings', 'academic_sessions', 'campuses', 'shifts', 'classes', 'sections', 'subjects',
+  'profiles', 'staff', 'students', 'guardians', 'enrollments',
+  'fee_heads', 'fee_structures', 'student_fee_items', 'discounts',
+  'invoices', 'invoice_lines', 'payments', 'payment_allocations', 'adjustments',
+  'attendance_daily', 'assessments', 'exam_terms', 'exam_subjects', 'mark_entries',
+  'result_cards', 'certificates', 'counters', 'audit_log',
+] as const
+
+export interface ExportResult {
+  exported_at: string
+  tables: Record<string, any[]>
+  errors: Record<string, string>
+  counts: Record<string, number>
+}
+
+async function fetchAllRows(table: string): Promise<any[]> {
+  const sb = requireSupabase()
+  const page = 1000
+  const out: any[] = []
+  for (let from = 0; ; from += page) {
+    const { data, error } = await sb.from(table).select('*').range(from, from + page - 1)
+    if (error) throw new Error(error.message)
+    out.push(...(data ?? []))
+    if (!data || data.length < page) break
+  }
+  return out
+}
+
+/** Read every table the current user is allowed to (RLS applies) into one object.
+ *  Tables that error (e.g. finance tables for a non-finance user) are recorded in
+ *  `errors` rather than aborting the whole export. */
+export async function exportAllData(
+  exportedAt: string, onProgress?: (table: string, i: number, n: number) => void,
+): Promise<ExportResult> {
+  const tables: Record<string, any[]> = {}
+  const errors: Record<string, string> = {}
+  const counts: Record<string, number> = {}
+  for (let i = 0; i < EXPORT_TABLES.length; i++) {
+    const t = EXPORT_TABLES[i]
+    onProgress?.(t, i, EXPORT_TABLES.length)
+    try {
+      const rows = await fetchAllRows(t)
+      tables[t] = rows
+      counts[t] = rows.length
+    } catch (e) {
+      errors[t] = (e as Error).message
+    }
+  }
+  return { exported_at: exportedAt, tables, errors, counts }
+}
+
 // ---- Dashboard ----
 export interface DashboardSummary {
   active_students: number
