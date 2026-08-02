@@ -18,7 +18,7 @@ export const NAV: NavItem[] = [
   { path: '/', label: 'Dashboard', roles: [], blurb: "Today's attendance, fees collected vs due, defaulters, cash position." },
   { path: '/admissions', label: 'Admissions', roles: ['owner', 'principal', 'admin_clerk'], blurb: 'Enquiries, admission forms, GR numbers, class/section assignment, sibling linking.' },
   { path: '/students', label: 'Students', roles: ['owner', 'principal', 'admin_clerk', 'accountant', 'readonly'], blurb: 'The lifelong student profile: bio-data, history, attendance, marks, fee ledger.' },
-  { path: '/attendance', label: 'Attendance', roles: ['owner', 'principal', 'class_teacher', 'subject_teacher'], blurb: 'Daily attendance marking (offline-tolerant), rollups, finalize & lock.' },
+  { path: '/attendance', label: 'Attendance', roles: ['owner', 'principal', 'admin_clerk', 'class_teacher', 'subject_teacher'], blurb: 'Daily attendance marking (fast keyboard/tap entry), printable sheet, finalize & lock.' },
   { path: '/assessments', label: 'Tests', roles: ['owner', 'principal', 'class_teacher', 'subject_teacher'], blurb: 'Daily/weekly/monthly test marks entry.' },
   { path: '/exams', label: 'Exams & Results', roles: ['owner', 'principal', 'admin_clerk'], blurb: 'Terms, date sheets, admit cards, marks, grading, tabulation, result cards.' },
   { path: '/fees', label: 'Fees', roles: ['owner', 'principal', 'admin_clerk', 'accountant'], blurb: 'Fee heads, monthly challans, arrears, partial payments, fines, discounts, receipts, defaulters.' },

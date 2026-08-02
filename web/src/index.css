@@ -13,16 +13,21 @@ body {
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
-/* Print only the receipt (and later, other printable documents). */
+/* Print only the current printable document (a fee receipt or an attendance
+   sheet). Each printable overlay carries one of these ids; everything else on
+   the page is hidden for the print. */
 @media print {
   body * {
     visibility: hidden;
   }
   #receipt,
-  #receipt * {
+  #receipt *,
+  #att-sheet,
+  #att-sheet * {
     visibility: visible;
   }
-  #receipt {
+  #receipt,
+  #att-sheet {
     position: absolute;
     left: 0;
     top: 0;

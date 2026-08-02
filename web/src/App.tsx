@@ -7,6 +7,7 @@ import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { Login } from '@/pages/Login'
 import { Dashboard } from '@/pages/Dashboard'
 import { FeesPage } from '@/pages/fees/FeesPage'
+import { AttendancePage } from '@/pages/attendance/AttendancePage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { ModulePlaceholder } from '@/pages/ModulePlaceholder'
 import { NotConfigured } from '@/pages/NotConfigured'
@@ -16,6 +17,7 @@ import { isConfigured } from '@/lib/config'
 // Modules with real screens; the rest render a placeholder for now.
 const IMPLEMENTED: Record<string, JSX.Element> = {
   '/fees': <FeesPage />,
+  '/attendance': <AttendancePage />,
   '/settings': <SettingsPage />,
 }
 

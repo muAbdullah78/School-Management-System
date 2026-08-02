@@ -24,6 +24,17 @@ export interface Defaulter {
 export interface RecordPaymentResult {
   payment_id: string; receipt_no: number; allocated: number; unallocated: number
 }
+export type AttendanceStatus = 'present' | 'absent' | 'leave' | 'late' | 'half_day'
+export interface SectionRow { id: string; name: string; class_id: string }
+export interface RosterRow {
+  enrollment_id: string; student_id: string; full_name: string; father_name: string | null
+  roll_no: string | null; status: AttendanceStatus | null; is_locked: boolean
+}
+export interface MarkResult { marked: number; skipped: number; total: number }
+export interface AttendanceSummary {
+  present: number; absent: number; leave: number; late: number; half_day: number
+  marked_days: number; present_pct: number | null
+}
 
 function unwrap<T>(res: { data: T | null; error: { message: string } | null }): T {
   if (res.error) throw new Error(res.error.message)
@@ -158,4 +169,56 @@ export async function getDefaulters(sessionId: string): Promise<Defaulter[]> {
   const { data, error } = await sb.rpc('fn_defaulters', { p_session_id: sessionId })
   if (error) throw new Error(error.message)
   return (data as Defaulter[]) ?? []
+}
+
+// ---- Attendance ----
+export async function listSections(classId: string): Promise<SectionRow[]> {
+  const sb = requireSupabase()
+  if (!classId) return []
+  return unwrap(
+    await sb.from('sections').select('id, name, class_id').eq('class_id', classId).order('sort_order').order('name'),
+  )
+}
+
+/** Roster for one section on one date. `sectionId = null` → the class's ungrouped students. */
+export async function getRoster(
+  sessionId: string, classId: string, sectionId: string | null, date: string,
+): Promise<RosterRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_section_roster', {
+    p_session_id: sessionId, p_class_id: classId, p_section_id: sectionId, p_date: date,
+  })
+  if (error) throw new Error(error.message)
+  return (data as RosterRow[]) ?? []
+}
+
+export async function markAttendance(
+  date: string, marks: { enrollment_id: string; status: AttendanceStatus }[],
+): Promise<MarkResult> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_mark_attendance', { p_date: date, p_marks: marks })
+  if (error) throw new Error(error.message)
+  return data as MarkResult
+}
+
+export async function finalizeAttendance(
+  sessionId: string, classId: string, sectionId: string | null, date: string,
+): Promise<number> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_finalize_attendance', {
+    p_session_id: sessionId, p_class_id: classId, p_section_id: sectionId, p_date: date,
+  })
+  if (error) throw new Error(error.message)
+  return Number(data)
+}
+
+export async function attendanceSummary(
+  enrollmentId: string, from: string, to: string,
+): Promise<AttendanceSummary> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_attendance_summary', {
+    p_enrollment_id: enrollmentId, p_from: from, p_to: to,
+  })
+  if (error) throw new Error(error.message)
+  return data as AttendanceSummary
 }

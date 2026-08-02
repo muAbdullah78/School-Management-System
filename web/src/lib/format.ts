@@ -14,3 +14,11 @@ export function fmtDate(s?: string | null): string {
 export function monthToDate(ym: string): string {
   return /^\d{4}-\d{2}$/.test(ym) ? `${ym}-01` : ym
 }
+
+/** Today as YYYY-MM-DD in local time (the value shape a <input type="date"> wants). */
+export function todayISO(): string {
+  const d = new Date()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${m}-${day}`
+}
