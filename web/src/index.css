@@ -25,12 +25,15 @@ body {
   #att-sheet,
   #att-sheet *,
   #admit-slip,
-  #admit-slip * {
+  #admit-slip *,
+  #result-card,
+  #result-card * {
     visibility: visible;
   }
   #receipt,
   #att-sheet,
-  #admit-slip {
+  #admit-slip,
+  #result-card {
     position: absolute;
     left: 0;
     top: 0;

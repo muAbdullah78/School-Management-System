@@ -10,6 +10,7 @@ import { FeesPage } from '@/pages/fees/FeesPage'
 import { AttendancePage } from '@/pages/attendance/AttendancePage'
 import { AdmissionsPage } from '@/pages/admissions/AdmissionsPage'
 import { StudentsPage } from '@/pages/students/StudentsPage'
+import { ExamsPage } from '@/pages/exams/ExamsPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { ModulePlaceholder } from '@/pages/ModulePlaceholder'
 import { NotConfigured } from '@/pages/NotConfigured'
@@ -22,6 +23,7 @@ const IMPLEMENTED: Record<string, JSX.Element> = {
   '/attendance': <AttendancePage />,
   '/admissions': <AdmissionsPage />,
   '/students': <StudentsPage />,
+  '/exams': <ExamsPage />,
   '/settings': <SettingsPage />,
 }
 

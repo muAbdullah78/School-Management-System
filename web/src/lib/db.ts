@@ -317,3 +317,144 @@ export async function getGuardians(studentId: string): Promise<GuardianRow[]> {
       .order('is_primary', { ascending: false }),
   )
 }
+
+// ---- Exams ----
+export interface ExamTerm {
+  id: string; name: string; term_type: string; starts_on: string | null; ends_on: string | null
+  result_withheld_for_defaulters: boolean
+}
+export interface SubjectRow { id: string; name: string; class_id: string | null; sort_order: number }
+export interface ExamSubjectRow {
+  id: string; subject_id: string; subject_name: string; max_marks: number; pass_marks: number
+}
+export interface MarksheetRow {
+  enrollment_id: string; student_id: string; full_name: string; roll_no: string | null
+  section_name: string | null; marks: number | null; is_absent: boolean; is_locked: boolean; max_marks: number
+}
+export interface ResultCardRow {
+  id: string; enrollment_id: string; student_id: string; full_name: string; gr_no: string | null
+  roll_no: string | null; total_marks: number | null; total_max: number | null
+  percentage: number | null; grade: string | null; position: number | null
+  attendance_pct: number | null; version: number; frozen: ResultCardFrozen
+}
+export interface ResultCardFrozen {
+  subjects: { subject: string; max: number; pass: number; marks: number | null; is_absent: boolean; grade: string | null }[]
+  total_marks: number; total_max: number; percentage: number | null; grade: string | null
+  position: number | null; attendance_pct: number | null; withheld: boolean; balance: number
+}
+
+export async function listExamTerms(sessionId: string): Promise<ExamTerm[]> {
+  const sb = requireSupabase()
+  return unwrap(
+    await sb.from('exam_terms')
+      .select('id, name, term_type, starts_on, ends_on, result_withheld_for_defaulters')
+      .eq('session_id', sessionId).order('starts_on', { ascending: true, nullsFirst: true }),
+  )
+}
+
+export async function createExamTerm(
+  sessionId: string, name: string, termType: string, startsOn?: string, endsOn?: string,
+): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.from('exam_terms').insert({
+    session_id: sessionId, name, term_type: termType, starts_on: startsOn || null, ends_on: endsOn || null,
+  })
+  if (error) throw new Error(error.message)
+}
+
+export async function listSubjects(classId: string): Promise<SubjectRow[]> {
+  const sb = requireSupabase()
+  return unwrap(
+    await sb.from('subjects').select('id, name, class_id, sort_order').eq('class_id', classId).order('sort_order').order('name'),
+  )
+}
+
+export async function createSubject(name: string, classId: string, sortOrder = 0): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.from('subjects').insert({ name, class_id: classId, sort_order: sortOrder })
+  if (error) throw new Error(error.message)
+}
+
+export async function listExamSubjects(termId: string, classId: string): Promise<ExamSubjectRow[]> {
+  const sb = requireSupabase()
+  const rows = unwrap<Record<string, any>[]>(
+    await sb.from('exam_subjects')
+      .select('id, subject_id, max_marks, pass_marks, subjects(name, sort_order)')
+      .eq('exam_term_id', termId).eq('class_id', classId),
+  )
+  return rows
+    .map((r) => ({
+      id: r.id, subject_id: r.subject_id, subject_name: r.subjects?.name ?? '—',
+      max_marks: Number(r.max_marks), pass_marks: Number(r.pass_marks),
+      _sort: r.subjects?.sort_order ?? 0,
+    }))
+    .sort((a, b) => a._sort - b._sort || a.subject_name.localeCompare(b.subject_name))
+    .map(({ _sort, ...rest }) => rest)
+}
+
+export async function upsertExamSubject(
+  termId: string, classId: string, subjectId: string, maxMarks: number, passMarks: number,
+): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.from('exam_subjects').upsert(
+    { exam_term_id: termId, class_id: classId, subject_id: subjectId, max_marks: maxMarks, pass_marks: passMarks },
+    { onConflict: 'exam_term_id,class_id,subject_id' },
+  )
+  if (error) throw new Error(error.message)
+}
+
+export async function removeExamSubject(id: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.from('exam_subjects').delete().eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
+export async function getMarksheet(examSubjectId: string): Promise<MarksheetRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_exam_marksheet', { p_exam_subject_id: examSubjectId })
+  if (error) throw new Error(error.message)
+  return (data as MarksheetRow[]) ?? []
+}
+
+export async function enterMarks(
+  examSubjectId: string, marks: { enrollment_id: string; marks: number | null; is_absent: boolean }[],
+): Promise<MarkResult> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_enter_marks', { p_exam_subject_id: examSubjectId, p_marks: marks })
+  if (error) throw new Error(error.message)
+  return data as MarkResult
+}
+
+export async function generateResultCards(termId: string, classId: string): Promise<number> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_generate_result_cards', { p_exam_term_id: termId, p_class_id: classId })
+  if (error) throw new Error(error.message)
+  return Number(data)
+}
+
+/** Latest-version result card per enrollment for a class in a term. */
+export async function listResultCards(termId: string, classId: string): Promise<ResultCardRow[]> {
+  const sb = requireSupabase()
+  const rows = unwrap<Record<string, any>[]>(
+    await sb.from('result_cards')
+      .select('id, enrollment_id, student_id, total_marks, total_max, percentage, grade, position, attendance_pct, version, frozen, students(full_name, gr_no), enrollments!inner(class_id, roll_no)')
+      .eq('exam_term_id', termId)
+      .eq('enrollments.class_id', classId)
+      .order('version', { ascending: false }),
+  )
+  const seen = new Set<string>()
+  const out: ResultCardRow[] = []
+  for (const r of rows) {
+    if (seen.has(r.enrollment_id)) continue // rows ordered version desc → first is latest
+    seen.add(r.enrollment_id)
+    out.push({
+      id: r.id, enrollment_id: r.enrollment_id, student_id: r.student_id,
+      full_name: r.students?.full_name ?? '—', gr_no: r.students?.gr_no ?? null,
+      roll_no: r.enrollments?.roll_no ?? null,
+      total_marks: r.total_marks, total_max: r.total_max, percentage: r.percentage,
+      grade: r.grade, position: r.position, attendance_pct: r.attendance_pct,
+      version: r.version, frozen: r.frozen as ResultCardFrozen,
+    })
+  }
+  return out.sort((a, b) => (a.position ?? 1e9) - (b.position ?? 1e9))
+}

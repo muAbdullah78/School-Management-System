@@ -54,6 +54,16 @@ export const STUDENT_STATUS_LABELS: Record<string, string> = {
   withdrawn: 'Withdrawn',
   graduated: 'Graduated',
 }
+
+/** Exam term types — values must match the `term_type` enum in the DB. */
+export const TERM_TYPES: { value: string; label: string }[] = [
+  { value: 'first', label: 'First Term' },
+  { value: 'mid', label: 'Mid Term' },
+  { value: 'second', label: 'Second Term' },
+  { value: 'final', label: 'Final Term' },
+  { value: 'pre_board', label: 'Pre-Board' },
+  { value: 'other', label: 'Other' },
+]
 export const ATTENDANCE_SHORT: Record<string, string> = Object.fromEntries(
   ATTENDANCE_STATUSES.map((s) => [s.value, s.short]),
 )
