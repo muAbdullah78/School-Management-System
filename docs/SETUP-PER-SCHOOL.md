@@ -41,16 +41,16 @@ Then load the starting data: open the Supabase dashboard → **SQL Editor** → 
 4. You now have the **teacher URL**. Make a QR code for it (any free QR generator) so teachers scan-and-bookmark.
 
 ## Step 4 — Create the login accounts 🧑‍💻
-1. Supabase dashboard → **Authentication → Users → Add user** → create the **owner's** email + password.
-2. In **SQL Editor**, make that user the owner (replace the email):
-   ```sql
-   update public.profiles
-   set role = 'owner', full_name = 'Owner Name'
-   where id = (select id from auth.users where email = 'owner@example.com');
-   ```
-   > A `profiles` row is created automatically for each new auth user by a small trigger; if you prefer, insert it manually. (This trigger is added in the Auth phase; until then, insert the profile row by hand.)
-3. Repeat for the clerk, accountant, and each teacher, setting the correct `role`
-   (`admin_clerk`, `accountant`, `class_teacher`, `subject_teacher`, `principal`, `readonly`).
+1. Supabase dashboard → **Authentication → Users → Add user** → create the **owner's** email + password. **Create this account first** — the very first user to exist is made the **owner** automatically.
+   > A `profiles` row is created automatically for each new auth user by the `handle_new_user` trigger (migration `0011_auth.sql`). The first user becomes `owner`; every user after that starts as `readonly`.
+2. Create the clerk, accountant, principal, and each teacher the same way (**Add user**). They all appear as `readonly` at first.
+3. Log in as the owner and open **Settings → Users & Roles** to assign each person the correct role
+   (`admin_clerk`, `accountant`, `class_teacher`, `subject_teacher`, `principal`, `readonly`) — no SQL needed.
+   > Prefer SQL? You can still set a role directly:
+   > ```sql
+   > update public.profiles set role = 'owner', full_name = 'Owner Name'
+   > where id = (select id from auth.users where email = 'owner@example.com');
+   > ```
 
 ## Step 5 — Install the desktop app on the headmaster's PC 🧑‍💻
 1. Download the latest **Windows installer** (`.msi`) from the project's Releases (built by CI — see the desktop packaging notes).
