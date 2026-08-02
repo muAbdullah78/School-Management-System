@@ -1,0 +1,13 @@
+# Dependencies & build output
+node_modules/
+dist/
+dist-ssr/
+
+# Local env files (never commit secrets)
+.env
+.env.*
+!.env.example
+
+# Editor / OS
+.DS_Store
+*.log

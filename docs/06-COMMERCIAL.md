@@ -1,5 +1,7 @@
 # 06 — Commercial Model
 
+> **Note:** [`09-DECISIONS-LOCKED.md`](09-DECISIONS-LOCKED.md) changes the cost structure: each school hosts its **own** Supabase/hosting, so the seller carries **no per-school running cost** and there is **no messaging-wallet economics**. Pricing can be a simpler **one-time license per school + a setup fee** (plus optional paid support), since there is no ongoing infrastructure for the seller to fund. The go-to-market advice below (pilot first, go deep in one city, referral engine) still holds.
+
 All figures are 2026 PKR and illustrative — validate against your own costs and 3–4 real schools before locking a price sheet.
 
 ## Pricing: annual license + prepaid messaging wallet + optional onboarding

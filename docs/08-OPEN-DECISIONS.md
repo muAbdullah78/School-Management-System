@@ -1,5 +1,7 @@
 # 08 — Open Decisions (only the owner can make these)
 
+> **✅ Resolved.** These decisions have been made — see [`09-DECISIONS-LOCKED.md`](09-DECISIONS-LOCKED.md) for the final answers. This doc is kept for the reasoning/history.
+
 The plan is opinionated and has a default/recommendation for everything. But a handful of choices are genuinely **yours** — they change what we build or how we sell. Here they are, each with our recommendation so you can just confirm or override.
 
 | # | Decision | Options | Our recommendation |

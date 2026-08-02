@@ -1,5 +1,7 @@
 # 04 — Risks, Loopholes & Safeguards
 
+> **Note:** [`09-DECISIONS-LOCKED.md`](09-DECISIONS-LOCKED.md) supersedes the **piracy/licensing** and **messaging** items here (each school self-hosts its own Supabase, so there is no shared fleet to license and no messaging system to secure). The data-loss story is now handled by **Supabase managed backups + in-app export** rather than Litestream/key-escrow. The fraud, privacy, roles, audit, and append-only safeguards all still apply and are implemented in the schema.
+
 The owner asked us to *criticise everything* and catch the loopholes before they cost time. This document is the adversarial red-team's findings, each turned into a concrete design **guarantee**. It also lists, honestly, the places where the first draft **over-promised** — because a plan that hides its weak points is the most expensive kind.
 
 Severity: 🔴 critical · 🟠 high · 🟡 medium
