@@ -115,4 +115,30 @@ jobs:
             end if;
             raise notice 'import ok';
           end $CI$;
+          -- opening fee-balance import: give the imported student arrears and assert
+          -- it flows into student_balance() and fn_defaulters().
+          do $CI$
+          declare sid uuid; g text; bal numeric;
+          begin
+            select id, gr_no into sid, g from public.students where full_name = 'Import Test';
+            perform public.fn_import_opening_balances(
+              '22222222-2222-2222-2222-222222222222',
+              jsonb_build_array(jsonb_build_object('gr_no', g, 'amount', 'Rs 1,500')),
+              false);
+            bal := public.student_balance(sid);
+            if bal <> 1500 then raise exception 'BALANCE FAIL: student_balance=%', bal; end if;
+            if not exists (select 1 from public.fn_defaulters('22222222-2222-2222-2222-222222222222')
+                           where student_id = sid) then
+              raise exception 'BALANCE FAIL: student not a defaulter';
+            end if;
+            -- re-running is idempotent (skipped, not doubled)
+            perform public.fn_import_opening_balances(
+              '22222222-2222-2222-2222-222222222222',
+              jsonb_build_array(jsonb_build_object('gr_no', g, 'amount', '1500')),
+              false);
+            if public.student_balance(sid) <> 1500 then
+              raise exception 'BALANCE FAIL: re-import double-counted (%).', public.student_balance(sid);
+            end if;
+            raise notice 'opening balance import ok';
+          end $CI$;
           SQL

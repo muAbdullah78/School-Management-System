@@ -5,23 +5,23 @@ steps are **yours** (manual, outside the code) vs **mine** (Claude, in the code)
 It supersedes the tech-stack details in [`05-ROADMAP.md`](05-ROADMAP.md); the
 authoritative product decisions are in [`09-DECISIONS-LOCKED.md`](09-DECISIONS-LOCKED.md).
 
-_Last updated after: bulk student import._
+_Last updated after: opening fee-balance import._
 
 ---
 
-## ✅ Done (on `main`)
+## ✅ Done (on `main` / in the open PR)
 
-**Database — `supabase/migrations/` (12 migrations, all validated on Postgres 16)**
+**Database — `supabase/migrations/` (13 migrations, all validated on Postgres 16)**
 - Core 30-table schema, identity/state split, append-only money/marks/attendance, soft-delete, **61 RLS policies**, audit triggers, gapless counters (GR / receipt / certificate serials).
-- Fees engine, attendance, admissions, exams, settings, certificates, dashboard rollup, assessments, staff, auth auto-provisioning, **bulk student import**.
+- Fees engine, attendance, admissions, exams, settings, certificates, dashboard rollup, assessments, staff, auth auto-provisioning, **bulk student import**, **opening fee-balance import**.
 
 **Application — `web/` (React + Vite + TS + Tailwind, one codebase, both surfaces)**
 - Every navigation module is a real, working screen (no placeholders): **Dashboard, Admissions, Students, Attendance, Tests, Exams & Results, Fees, Staff, Certificates, Reports, Settings**.
 - First signup becomes **owner**; user/role management in Settings.
-- **Export all data** (JSON backup) and **Import Students** (CSV) in Settings.
+- **Export all data** (JSON backup) and a two-part **Import** (students + opening fee balances) in Settings — the full onboarding path for a school arriving on paper.
 
 **Quality gates**
-- **42 unit tests**; **CI** runs the web build/typecheck + tests, applies all migrations on a real Postgres 16, and exercises the import RPC end-to-end.
+- **51 unit tests**; **CI** runs the web build/typecheck + tests, applies all migrations on a real Postgres 16, and exercises both import RPCs end-to-end (student created + rejected rows; opening balance flows into `student_balance`/defaulters and is idempotent).
 
 ---
 
@@ -31,15 +31,18 @@ Ordered by how badly a real school feels the gap. Each is a self-contained works
 
 | # | Workstream | Why it matters | Size |
 |---|-----------|----------------|------|
-| 1 | **Fee opening-balance / arrears import** | A school going live mid-year needs each student's **current outstanding** loaded, not just their identity. Without it, Fees starts everyone at zero. Completes the onboarding story that student-import began. | S–M |
-| 2 | **Academic-year rollover / promotion** | The spec calls this out as *"breaks the product within 12 months if missing."* Preview → commit → **undo**, new sections/roll numbers, **carry arrears across the year**, mark Class 10/12 as alumni. Schema already has `enrollments.promoted_from`. | M–L |
-| 3 | **Offline-tolerant attendance + installable PWA** | The locked decision explicitly promises attendance that *"queues marks locally and syncs on reconnect"* and a teacher-phone install. Today attendance is online-only and the app isn't a PWA. This is a **differentiator**, not polish. | M |
-| 4 | **Exam printables** | Marks entry + result cards exist; **date sheet**, **admit cards / roll-number slips**, and the **tabulation/consolidation sheet** don't yet. | M |
-| 5 | **Certificate depth** | Leaving/character/bonafide + serials exist; **student/staff ID cards with QR** from the spec are not done. | S–M |
-| 6 | **Desktop wrapper (Windows)** | The setup guide references a CI-built `.msi` admin app. It doesn't exist yet — the web app runs in a browser meanwhile. Needs a Tauri (or similar) shell **plus your code-signing** (see manual steps). | M |
+| 1 | **Academic-year rollover / promotion** | The spec calls this out as *"breaks the product within 12 months if missing."* Preview → commit → **undo**, new sections/roll numbers, **carry arrears across the year**, mark Class 10/12 as alumni. Schema already has `enrollments.promoted_from`. | M–L |
+| 2 | **Offline-tolerant attendance + installable PWA** | The locked decision explicitly promises attendance that *"queues marks locally and syncs on reconnect"* and a teacher-phone install. Today attendance is online-only and the app isn't a PWA. This is a **differentiator**, not polish. | M |
+| 3 | **Exam printables** | Marks entry + result cards exist; **date sheet**, **admit cards / roll-number slips**, and the **tabulation/consolidation sheet** don't yet. | M |
+| 4 | **Certificate depth** | Leaving/character/bonafide + serials exist; **student/staff ID cards with QR** from the spec are not done. | S–M |
+| 5 | **Desktop wrapper (Windows)** | The setup guide references a CI-built `.msi` admin app. It doesn't exist yet — the web app runs in a browser meanwhile. Needs a Tauri (or similar) shell **plus your code-signing** (see manual steps). | M |
 | — | *Nice-to-haves* | More report types (per-student fee ledger, monthly attendance register), staff bulk import. | S each |
 
-**So: ~6 substantive workstreams remain** before the app matches the full written spec, after which we do the joint inch-by-inch testing pass.
+**So: ~5 substantive workstreams remain** before the app matches the full written spec, after which we do the joint inch-by-inch testing pass.
+
+### ✅ Recently completed
+- **Bulk student import** (CSV) — Settings → Import → Students.
+- **Opening fee-balance / arrears import** — Settings → Import → Opening fee balances. Completes the onboarding story: a mid-year school loads real outstanding balances, and Fees/defaulters start from reality.
 
 ---
 

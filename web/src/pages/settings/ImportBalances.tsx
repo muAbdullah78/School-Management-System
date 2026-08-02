@@ -1,38 +1,32 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { getCurrentSession, importStudents, type ImportResult } from '@/lib/db'
+import { getCurrentSession, importOpeningBalances, type ImportResult } from '@/lib/db'
 import { parseCSVToObjects, toCSV, downloadCSV } from '@/lib/csv'
 import {
-  STUDENT_IMPORT_COLUMNS, mapImportRows, canonicalColumn, missingRequiredColumns,
-} from '@/lib/importStudents'
+  BALANCE_IMPORT_COLUMNS, mapBalanceRows, canonicalBalanceColumn, missingBalanceColumns,
+} from '@/lib/importBalances'
 import { ImportResultPanel } from './ImportResultPanel'
 
 interface Loaded {
   fileName: string
-  headers: string[]
   recognised: string[]
   unknown: string[]
   missing: string[]
   rows: Record<string, string>[]
 }
 
-export function ImportStudents() {
+export function ImportBalances() {
   const session = useQuery({ queryKey: ['currentSession'], queryFn: getCurrentSession })
   const [loaded, setLoaded] = useState<Loaded | null>(null)
   const [parseError, setParseError] = useState<string | null>(null)
   const [result, setResult] = useState<{ dry: boolean; data: ImportResult } | null>(null)
-  const fileInput = useRef<HTMLInputElement>(null)
 
   function downloadTemplate() {
+    const headers = [...BALANCE_IMPORT_COLUMNS]
     const example: Record<string, string> = {
-      full_name: 'Ali Raza', father_name: 'Raza Khan', mother_name: '', gender: 'male',
-      dob: '2015-04-12', b_form: '', phone: '03001234567', whatsapp: '03001234567', address: 'Model Town',
-      class: 'Class 1', section: 'A', roll_no: '', gr_no: '', admission_no: '', admission_date: '2025-04-01',
-      guardian_name: 'Raza Khan', guardian_relation: 'Father', guardian_phone: '03001234567', guardian_whatsapp: '',
+      gr_no: 'GR0001', admission_no: '', full_name: '', father_name: '', amount: '12000', due_date: '',
     }
-    const headers = [...STUDENT_IMPORT_COLUMNS]
-    const csv = toCSV(headers, [headers.map((h) => example[h] ?? '')])
-    downloadCSV('student-import-template.csv', csv)
+    downloadCSV('fee-balance-template.csv', toCSV(headers, [headers.map((h) => example[h] ?? '')]))
   }
 
   async function onFile(file: File) {
@@ -43,11 +37,10 @@ export function ImportStudents() {
       if (headers.length === 0) { setParseError('That file looks empty.'); return }
       const recognised: string[] = []
       const unknown: string[] = []
-      for (const h of headers) (canonicalColumn(h) ? recognised : unknown).push(h)
-      const rows = mapImportRows(rawRows)
+      for (const h of headers) (canonicalBalanceColumn(h) ? recognised : unknown).push(h)
       setLoaded({
-        fileName: file.name, headers, recognised, unknown,
-        missing: missingRequiredColumns(headers), rows,
+        fileName: file.name, recognised, unknown,
+        missing: missingBalanceColumns(headers), rows: mapBalanceRows(rawRows),
       })
     } catch (e) {
       setParseError((e as Error).message)
@@ -56,7 +49,7 @@ export function ImportStudents() {
 
   const run = useMutation({
     mutationFn: (dryRun: boolean) =>
-      importStudents(session.data!.id, loaded!.rows, dryRun).then((data) => ({ dry: dryRun, data })),
+      importOpeningBalances(session.data!.id, loaded!.rows, dryRun).then((data) => ({ dry: dryRun, data })),
     onSuccess: (r) => setResult(r),
   })
 
@@ -65,18 +58,18 @@ export function ImportStudents() {
   return (
     <div className="max-w-3xl space-y-4">
       <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <div className="text-sm font-medium text-slate-800">Import students from a spreadsheet</div>
+        <div className="text-sm font-medium text-slate-800">Import opening fee balances</div>
         <p className="mt-1 text-sm text-slate-600">
-          Load an existing student list (a paper register typed into Excel, or an export from another system)
-          in one go. Save your spreadsheet as <span className="font-medium">CSV</span> and upload it here.
-          Students are admitted into the <span className="font-medium">current session</span>, appear on the
-          class roster, and become billable in Fees — exactly as if each were admitted by hand.
+          Load each student’s <span className="font-medium">arrears (money already owed)</span> from before they
+          moved onto the system — so Fees, receipts and the defaulter list start from reality instead of zero.
+          Do this <span className="font-medium">once</span>, right after importing students and before the first
+          monthly challan run.
         </p>
         <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-600">
-          <li>Only <span className="font-medium">Full name</span> and <span className="font-medium">Class</span> are required. Everything else is optional.</li>
-          <li>The <span className="font-medium">Class</span> and <span className="font-medium">Section</span> must already exist (create them under <span className="font-medium">Classes &amp; Sections</span> first). They’re matched by name.</li>
-          <li>Leave <span className="font-medium">GR No</span> blank to auto-assign gapless GR numbers; supply your own to keep existing ones.</li>
-          <li>Always <span className="font-medium">Validate</span> first — it checks every row and changes nothing.</li>
+          <li>Each row needs an <span className="font-medium">amount</span> and a way to find the student — <span className="font-medium">GR No</span> is best (Admission No or Name also work).</li>
+          <li>Students must already be imported and enrolled in the <span className="font-medium">current session</span>.</li>
+          <li>The balance becomes an “opening balance” charge that’s settled first when the parent next pays.</li>
+          <li>Amounts like <code>12,000</code> or <code>Rs 12000</code> are fine. Always <span className="font-medium">Validate</span> first.</li>
         </ul>
         <button onClick={downloadTemplate}
           className="mt-3 rounded border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
@@ -93,7 +86,6 @@ export function ImportStudents() {
       <div className="rounded-lg border border-slate-200 bg-white p-4">
         <div className="text-sm font-medium text-slate-800">Choose your CSV file</div>
         <input
-          ref={fileInput}
           type="file"
           accept=".csv,text/csv"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f) }}
@@ -127,8 +119,7 @@ export function ImportStudents() {
             )}
             {loaded.missing.length > 0 && (
               <p className="rounded bg-red-50 p-2 text-sm text-red-700">
-                Missing required column{loaded.missing.length === 1 ? '' : 's'}: <span className="font-medium">{loaded.missing.join(', ')}</span>.
-                Add {loaded.missing.length === 1 ? 'it' : 'them'} and re-upload.
+                Missing: <span className="font-medium">{loaded.missing.join(', ')}</span>. Add and re-upload.
               </p>
             )}
 
@@ -140,10 +131,10 @@ export function ImportStudents() {
                 {run.isPending && run.variables === true ? 'Validating…' : 'Validate (dry run)'}
               </button>
               <button
-                onClick={() => { if (confirm(`Import ${loaded.rows.length} student(s) into ${session.data?.name}?`)) run.mutate(false) }}
+                onClick={() => { if (confirm(`Import opening balances for ${loaded.rows.length} row(s) into ${session.data?.name}?`)) run.mutate(false) }}
                 disabled={!canImport || run.isPending}
                 className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
-                {run.isPending && run.variables === false ? 'Importing…' : `Import ${loaded.rows.length} student${loaded.rows.length === 1 ? '' : 's'}`}
+                {run.isPending && run.variables === false ? 'Importing…' : `Import ${loaded.rows.length} balance${loaded.rows.length === 1 ? '' : 's'}`}
               </button>
             </div>
             {run.isError && <p className="text-sm text-red-600">{(run.error as Error).message}</p>}
@@ -155,8 +146,8 @@ export function ImportStudents() {
         <ImportResultPanel
           result={result}
           successDry="Every row is valid and ready to import. Click “Import” to save them."
-          successReal="All rows imported cleanly. The students are now on the roster and billable in Fees."
-          footer="Tip: re-uploading the same file is safe for rows that carry a GR No or Admission No — those are skipped as duplicates. Rows without either identifier can’t be de-duplicated, so import a file once."
+          successReal="Opening balances imported. They now show in each student’s fee ledger and on the defaulter list."
+          footer="Tip: re-running this file is safe — a student who already has an opening balance for the session is skipped, so balances are never double-counted."
         />
       )}
     </div>

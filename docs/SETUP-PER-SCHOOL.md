@@ -71,7 +71,7 @@ Use the built-in importer — **Settings → Import Students** (owner/principal)
 2. Click **Download CSV template**, or map the school's existing Excel to those column headings (common variants like "Father Name", "DOB", "Grade", "Roll #" are recognised automatically). Save as **CSV**.
 3. Upload it and click **Validate (dry run)** — this checks every row and writes nothing. Fix any flagged rows (unknown class/section, bad date, etc.).
 4. Click **Import** — students are admitted into the current session with gapless GR numbers, land on the class roster (Attendance), and become billable (Fees). Leave the GR column blank to auto-number, or supply the school's existing GR numbers to preserve them.
-5. Then import **fee slabs + opening arrears** to switch on **fees** *(opening-balance import is the next module on the roadmap — see [`STATUS.md`](STATUS.md))*.
+5. Set each class's **fee amounts** (Settings → Fee Structure), then load each student's **opening arrears** via **Settings → Import → Opening fee balances** (match by GR No; amount per student). This switches on **fees** with real balances so the defaulter list is correct from day one.
 
 ## Step 8 — Go-live checks
 - Every class has a fee slab; every student has a section; every teacher has a login.

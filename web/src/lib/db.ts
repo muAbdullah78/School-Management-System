@@ -318,7 +318,8 @@ export async function admitStudent(input: AdmitInput): Promise<AdmitResult> {
 // ---- Bulk import (onboarding a paper register) ----
 export type ImportRowStatus = 'created' | 'ok' | 'skipped' | 'error'
 export interface ImportRowResult {
-  row: number; status: ImportRowStatus; message: string | null; name: string; gr_no: string | null
+  row: number; status: ImportRowStatus; message: string | null; name: string
+  gr_no?: string | null; amount?: number | null
 }
 export interface ImportResult {
   dry_run: boolean; total: number; created: number; skipped: number; errors: number
@@ -332,6 +333,20 @@ export async function importStudents(
 ): Promise<ImportResult> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_import_students', {
+    p_session: sessionId, p_rows: rows, p_dry_run: dryRun,
+  })
+  if (error) throw new Error(error.message)
+  return data as ImportResult
+}
+
+/** Validate (dry run) or import each student's opening fee balance into a
+ *  session. Rows use canonical keys (see lib/importBalances); the student is
+ *  matched by GR No / Admission No / Name. */
+export async function importOpeningBalances(
+  sessionId: string, rows: Record<string, string>[], dryRun: boolean,
+): Promise<ImportResult> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_import_opening_balances', {
     p_session: sessionId, p_rows: rows, p_dry_run: dryRun,
   })
   if (error) throw new Error(error.message)
