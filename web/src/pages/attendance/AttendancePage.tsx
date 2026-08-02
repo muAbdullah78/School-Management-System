@@ -8,14 +8,17 @@ import {
 import { ATTENDANCE_STATUSES } from '@/lib/constants'
 import { todayISO } from '@/lib/format'
 import { enqueueAttendance, isNetworkError, attendanceKey } from '@/lib/offlineQueue'
+import { offlineFirst } from '@/lib/offlineCache'
 import { AttendanceSheet, type AttendanceSheetData } from './AttendanceSheet'
 
 type Marks = Record<string, AttendanceStatus>
 
 export function AttendancePage() {
   const qc = useQueryClient()
-  const session = useQuery({ queryKey: ['currentSession'], queryFn: getCurrentSession })
-  const classes = useQuery({ queryKey: ['classes'], queryFn: listClasses })
+  // These reads are wrapped in offlineFirst so the pickers + roster still work on
+  // a cold start with no connection (served from the last cached copy).
+  const session = useQuery({ queryKey: ['currentSession'], queryFn: () => offlineFirst('currentSession', getCurrentSession) })
+  const classes = useQuery({ queryKey: ['classes'], queryFn: () => offlineFirst('classes', listClasses) })
 
   const [classId, setClassId] = useState('')
   const [sectionChoice, setSectionChoice] = useState('')
@@ -23,7 +26,7 @@ export function AttendancePage() {
 
   const sections = useQuery({
     queryKey: ['sections', classId],
-    queryFn: () => listSections(classId),
+    queryFn: () => offlineFirst(`sections.${classId}`, () => listSections(classId)),
     enabled: !!classId,
   })
   const hasSections = (sections.data?.length ?? 0) > 0
@@ -35,7 +38,10 @@ export function AttendancePage() {
 
   const roster = useQuery({
     queryKey: ['roster', sessionId, classId, sectionId ?? 'none', date],
-    queryFn: () => getRoster(sessionId!, classId, sectionId, date),
+    queryFn: () => offlineFirst(
+      `roster.${sessionId}.${classId}.${sectionId ?? 'none'}.${date}`,
+      () => getRoster(sessionId!, classId, sectionId, date),
+    ),
     enabled: ready,
   })
 
@@ -178,6 +184,15 @@ export function AttendancePage() {
     finalize.mutate()
   }
 
+  const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine)
+  useEffect(() => {
+    const on = () => setOnline(true)
+    const off = () => setOnline(false)
+    window.addEventListener('online', on)
+    window.addEventListener('offline', off)
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
+  }, [])
+
   const selectCls =
     'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none'
 
@@ -240,6 +255,11 @@ export function AttendancePage() {
 
       {/* Roster */}
       <div className="mt-5">
+        {!online && rows.length > 0 && (
+          <p className="mb-3 rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            You’re offline — showing your saved copy of this class. Marks you save will sync when you reconnect.
+          </p>
+        )}
         {!ready && (
           <p className="text-sm text-slate-500">Pick a class{hasSections ? ', section' : ''} and date to load the roster.</p>
         )}
