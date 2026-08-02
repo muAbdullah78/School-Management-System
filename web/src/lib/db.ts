@@ -201,6 +201,54 @@ export async function listCollections(fromDate: string, toDate: string): Promise
   }))
 }
 
+// ---- Monthly attendance register ----
+export interface RegisterStudent {
+  enrollment_id: string; full_name: string; roll_no: string | null
+  marks: Record<string, string> // 'YYYY-MM-DD' → attendance status
+}
+export interface AttendanceRegister { dates: string[]; students: RegisterStudent[] }
+
+/** Day-by-day attendance grid for a class (optionally one section) over a month.
+ *  `month` is 'YYYY-MM'. Columns are every calendar day of that month. */
+export async function getAttendanceRegister(
+  sessionId: string, classId: string, sectionId: string | null, month: string,
+): Promise<AttendanceRegister> {
+  const sb = requireSupabase()
+  const [y, m] = month.split('-').map(Number)
+  const lastDay = new Date(y, m, 0).getDate()
+  const first = `${month}-01`
+  const last = `${month}-${String(lastDay).padStart(2, '0')}`
+  const dates = Array.from({ length: lastDay }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`)
+
+  let rq = sb.from('enrollments')
+    .select('id, roll_no, students!inner(full_name)')
+    .eq('session_id', sessionId).eq('class_id', classId).eq('status', 'active')
+  if (sectionId) rq = rq.eq('section_id', sectionId)
+  const enr = unwrap<Record<string, any>[]>(await rq)
+  const rollNum = (r: string | null) => {
+    const n = parseInt((r ?? '').replace(/[^0-9]/g, ''), 10)
+    return Number.isNaN(n) ? Number.MAX_SAFE_INTEGER : n
+  }
+  const students: RegisterStudent[] = enr
+    .map((e) => ({ enrollment_id: e.id, full_name: e.students?.full_name ?? '—', roll_no: e.roll_no ?? null, marks: {} as Record<string, string> }))
+    .sort((a, b) => rollNum(a.roll_no) - rollNum(b.roll_no) || a.full_name.localeCompare(b.full_name))
+
+  if (students.length > 0) {
+    const byId = new Map(students.map((s) => [s.enrollment_id, s]))
+    const marks = unwrap<Record<string, any>[]>(
+      await sb.from('attendance_daily')
+        .select('enrollment_id, attendance_date, status')
+        .in('enrollment_id', students.map((s) => s.enrollment_id))
+        .gte('attendance_date', first).lte('attendance_date', last),
+    )
+    for (const mk of marks) {
+      const s = byId.get(mk.enrollment_id)
+      if (s) s.marks[mk.attendance_date] = mk.status
+    }
+  }
+  return { dates, students }
+}
+
 /** Active-enrolment head-count per class/section with a gender split. */
 export async function getClassStrength(sessionId: string): Promise<ClassStrengthRow[]> {
   const sb = requireSupabase()
