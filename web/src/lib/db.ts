@@ -425,6 +425,62 @@ export async function enterMarks(
   return data as MarkResult
 }
 
+// ---- Assessments (class tests) ----
+export interface AssessmentRow {
+  id: string; title: string; assessment_date: string | null; max_marks: number
+  section_id: string | null; section_name: string | null
+  subject_id: string | null; subject_name: string | null; is_locked: boolean
+}
+
+export async function listAssessments(sessionId: string, classId: string): Promise<AssessmentRow[]> {
+  const sb = requireSupabase()
+  const rows = unwrap<Record<string, any>[]>(
+    await sb.from('assessments')
+      .select('id, title, assessment_date, max_marks, is_locked, section_id, subject_id, sections(name), subjects(name)')
+      .eq('session_id', sessionId).eq('class_id', classId)
+      .order('assessment_date', { ascending: false, nullsFirst: false }).order('created_at', { ascending: false }),
+  )
+  return rows.map((r) => ({
+    id: r.id, title: r.title, assessment_date: r.assessment_date, max_marks: Number(r.max_marks),
+    section_id: r.section_id, section_name: r.sections?.name ?? null,
+    subject_id: r.subject_id, subject_name: r.subjects?.name ?? null, is_locked: r.is_locked,
+  }))
+}
+
+export async function createAssessment(input: {
+  sessionId: string; classId: string; sectionId?: string | null; subjectId?: string | null
+  title: string; assessmentDate?: string | null; maxMarks: number
+}): Promise<string> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.from('assessments').insert({
+    session_id: input.sessionId, class_id: input.classId,
+    section_id: input.sectionId || null, subject_id: input.subjectId || null,
+    title: input.title, assessment_date: input.assessmentDate || null, max_marks: input.maxMarks,
+  }).select('id').single()
+  if (error) throw new Error(error.message)
+  return (data as { id: string }).id
+}
+
+export async function getAssessmentMarksheet(assessmentId: string): Promise<MarksheetRow[]> {
+  const sb = requireSupabase()
+  return unwrap(await sb.rpc('fn_assessment_marksheet', { p_assessment_id: assessmentId }))
+}
+
+export async function enterAssessmentMarks(
+  assessmentId: string, marks: { enrollment_id: string; marks: number | null; is_absent: boolean }[],
+): Promise<MarkResult> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_enter_assessment_marks', { p_assessment_id: assessmentId, p_marks: marks })
+  if (error) throw new Error(error.message)
+  return data as MarkResult
+}
+
+export async function lockAssessment(assessmentId: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_lock_assessment', { p_assessment_id: assessmentId })
+  if (error) throw new Error(error.message)
+}
+
 export async function generateResultCards(termId: string, classId: string): Promise<number> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_generate_result_cards', { p_exam_term_id: termId, p_class_id: classId })
