@@ -8,6 +8,8 @@ import { Login } from '@/pages/Login'
 import { Dashboard } from '@/pages/Dashboard'
 import { FeesPage } from '@/pages/fees/FeesPage'
 import { AttendancePage } from '@/pages/attendance/AttendancePage'
+import { AdmissionsPage } from '@/pages/admissions/AdmissionsPage'
+import { StudentsPage } from '@/pages/students/StudentsPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { ModulePlaceholder } from '@/pages/ModulePlaceholder'
 import { NotConfigured } from '@/pages/NotConfigured'
@@ -18,6 +20,8 @@ import { isConfigured } from '@/lib/config'
 const IMPLEMENTED: Record<string, JSX.Element> = {
   '/fees': <FeesPage />,
   '/attendance': <AttendancePage />,
+  '/admissions': <AdmissionsPage />,
+  '/students': <StudentsPage />,
   '/settings': <SettingsPage />,
 }
 

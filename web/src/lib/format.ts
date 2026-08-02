@@ -22,3 +22,20 @@ export function todayISO(): string {
   const day = String(d.getDate()).padStart(2, '0')
   return `${d.getFullYear()}-${m}-${day}`
 }
+
+/**
+ * Build a WhatsApp click-to-chat URL (wa.me) from a Pakistani phone number.
+ * MANUAL link only — the app never sends anything automatically (locked
+ * decision). Local 03xx… numbers are normalised to the 92 country code.
+ * Returns null when there aren't enough digits to be a real number.
+ */
+export function waLink(raw: string | null | undefined): string | null {
+  if (!raw) return null
+  let digits = raw.replace(/\D/g, '')
+  if (!digits) return null
+  if (digits.startsWith('0')) digits = '92' + digits.slice(1)
+  else if (digits.startsWith('92')) { /* already international */ }
+  else if (digits.length === 10 && digits.startsWith('3')) digits = '92' + digits
+  if (digits.length < 11) return null
+  return `https://wa.me/${digits}`
+}

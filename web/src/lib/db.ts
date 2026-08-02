@@ -222,3 +222,98 @@ export async function attendanceSummary(
   if (error) throw new Error(error.message)
   return data as AttendanceSummary
 }
+
+// ---- Admissions & student profile ----
+export interface AdmitInput {
+  full_name: string
+  father_name?: string; mother_name?: string; b_form?: string; dob?: string; gender?: string
+  address?: string; phone?: string; whatsapp?: string
+  admission_no?: string; admission_date?: string; notes?: string
+  session_id: string; class_id: string; section_id?: string | null; roll_no?: string; gr_no?: string
+  guardian?: { name: string; relation?: string; phone?: string; whatsapp?: string }
+}
+export interface AdmitResult { student_id: string; enrollment_id: string; gr_no: string; roll_no: string }
+
+export interface StudentProfile {
+  id: string; gr_no: string | null; admission_no: string | null; full_name: string
+  father_name: string | null; mother_name: string | null; b_form: string | null
+  dob: string | null; gender: string | null; address: string | null; phone: string | null
+  whatsapp: string | null; status: string; admission_date: string | null; notes: string | null
+}
+export interface EnrollmentInfo {
+  enrollment_id: string; session_id: string; session_name: string
+  session_starts: string | null; session_ends: string | null
+  class_name: string; section_name: string | null; roll_no: string | null; status: string
+}
+export interface GuardianRow {
+  id: string; name: string; relation: string | null; phone: string | null; whatsapp: string | null; is_primary: boolean
+}
+
+export async function admitStudent(input: AdmitInput): Promise<AdmitResult> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_admit_student', { p: input })
+  if (error) throw new Error(error.message)
+  return data as AdmitResult
+}
+
+export async function listStudents(term: string): Promise<StudentRow[]> {
+  const sb = requireSupabase()
+  const t = term.trim()
+  let q = sb.from('students').select('id, gr_no, full_name, father_name').is('deleted_at', null)
+  if (t) q = q.or(`full_name.ilike.%${t}%,gr_no.ilike.%${t}%`)
+  return unwrap(await q.order('full_name').limit(50))
+}
+
+export async function getStudent(studentId: string): Promise<StudentProfile> {
+  const sb = requireSupabase()
+  return unwrap(
+    await sb.from('students')
+      .select('id, gr_no, admission_no, full_name, father_name, mother_name, b_form, dob, gender, address, phone, whatsapp, status, admission_date, notes')
+      .eq('id', studentId).single(),
+  )
+}
+
+export async function updateStudent(studentId: string, patch: Partial<StudentProfile>): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.from('students').update(patch).eq('id', studentId)
+  if (error) throw new Error(error.message)
+}
+
+export async function setStudentStatus(studentId: string, status: string, reason?: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_set_student_status', {
+    p_student_id: studentId, p_status: status, p_reason: reason ?? null,
+  })
+  if (error) throw new Error(error.message)
+}
+
+export async function getStudentEnrollments(studentId: string): Promise<EnrollmentInfo[]> {
+  const sb = requireSupabase()
+  const rows = unwrap<Record<string, any>[]>(
+    await sb.from('enrollments')
+      .select('id, session_id, roll_no, status, academic_sessions(name, starts_on, ends_on), classes(name), sections(name)')
+      .eq('student_id', studentId)
+      .order('created_at', { ascending: false }),
+  )
+  return rows.map((r) => ({
+    enrollment_id: r.id,
+    session_id: r.session_id,
+    session_name: r.academic_sessions?.name ?? '—',
+    session_starts: r.academic_sessions?.starts_on ?? null,
+    session_ends: r.academic_sessions?.ends_on ?? null,
+    class_name: r.classes?.name ?? '—',
+    section_name: r.sections?.name ?? null,
+    roll_no: r.roll_no,
+    status: r.status,
+  }))
+}
+
+export async function getGuardians(studentId: string): Promise<GuardianRow[]> {
+  const sb = requireSupabase()
+  return unwrap(
+    await sb.from('guardians')
+      .select('id, name, relation, phone, whatsapp, is_primary')
+      .eq('student_id', studentId)
+      .order('is_primary', { ascending: false }),
+  )
+}

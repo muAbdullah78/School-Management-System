@@ -39,6 +39,21 @@ export const ATTENDANCE_STATUSES: AttendanceStatusMeta[] = [
 export const ATTENDANCE_LABELS: Record<string, string> = Object.fromEntries(
   ATTENDANCE_STATUSES.map((s) => [s.value, s.label]),
 )
+
+/** Gender options — values must match the `gender` enum in the DB. */
+export const GENDERS: { value: string; label: string }[] = [
+  { value: 'male', label: 'Male' },
+  { value: 'female', label: 'Female' },
+  { value: 'other', label: 'Other' },
+]
+
+/** Student status — values must match the `student_status` enum in the DB. */
+export const STUDENT_STATUS_LABELS: Record<string, string> = {
+  active: 'Active',
+  struck_off: 'Struck off',
+  withdrawn: 'Withdrawn',
+  graduated: 'Graduated',
+}
 export const ATTENDANCE_SHORT: Record<string, string> = Object.fromEntries(
   ATTENDANCE_STATUSES.map((s) => [s.value, s.short]),
 )
