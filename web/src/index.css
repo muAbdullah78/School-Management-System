@@ -29,14 +29,17 @@ body {
   #result-card,
   #result-card *,
   #certificate,
-  #certificate * {
+  #certificate *,
+  #report,
+  #report * {
     visibility: visible;
   }
   #receipt,
   #att-sheet,
   #admit-slip,
   #result-card,
-  #certificate {
+  #certificate,
+  #report {
     position: absolute;
     left: 0;
     top: 0;

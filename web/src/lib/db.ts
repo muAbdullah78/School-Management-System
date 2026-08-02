@@ -171,6 +171,65 @@ export async function getDefaulters(sessionId: string): Promise<Defaulter[]> {
   return (data as Defaulter[]) ?? []
 }
 
+// ---- Reports ----
+export interface CollectionRow {
+  id: string; created_at: string; amount: number; method: string; receipt_no: number | null
+  student_name: string | null; gr_no: string | null; note: string | null; is_reversal: boolean
+}
+export interface ClassStrengthRow {
+  class_name: string; level_order: number; section_name: string | null
+  boys: number; girls: number; other: number; total: number
+}
+
+/** Verified payments in [fromDate, toDate] (inclusive dates), for the day-book /
+ *  collection report. Reversals appear as negative rows. */
+export async function listCollections(fromDate: string, toDate: string): Promise<CollectionRow[]> {
+  const sb = requireSupabase()
+  const rows = unwrap<Record<string, any>[]>(
+    await sb.from('payments')
+      .select('id, created_at, amount, method, receipt_no, note, reversal_of, students(full_name, gr_no)')
+      .eq('status', 'verified')
+      .gte('created_at', fromDate)
+      .lte('created_at', `${toDate}T23:59:59.999`)
+      .order('created_at', { ascending: true }),
+  )
+  return rows.map((r) => ({
+    id: r.id, created_at: r.created_at, amount: Number(r.amount), method: r.method,
+    receipt_no: r.receipt_no == null ? null : Number(r.receipt_no),
+    student_name: r.students?.full_name ?? null, gr_no: r.students?.gr_no ?? null,
+    note: r.note, is_reversal: r.reversal_of != null,
+  }))
+}
+
+/** Active-enrolment head-count per class/section with a gender split. */
+export async function getClassStrength(sessionId: string): Promise<ClassStrengthRow[]> {
+  const sb = requireSupabase()
+  const rows = unwrap<Record<string, any>[]>(
+    await sb.from('enrollments')
+      .select('class_id, section_id, classes(name, level_order), sections(name, sort_order), students(gender)')
+      .eq('session_id', sessionId).eq('status', 'active'),
+  )
+  const map = new Map<string, ClassStrengthRow>()
+  for (const r of rows) {
+    const key = `${r.class_id}|${r.section_id ?? ''}`
+    let row = map.get(key)
+    if (!row) {
+      row = {
+        class_name: r.classes?.name ?? '—', level_order: r.classes?.level_order ?? 1e9,
+        section_name: r.sections?.name ?? null, boys: 0, girls: 0, other: 0, total: 0,
+      }
+      map.set(key, row)
+    }
+    const g = r.students?.gender
+    if (g === 'male') row.boys++
+    else if (g === 'female') row.girls++
+    else row.other++
+    row.total++
+  }
+  return [...map.values()].sort((a, b) =>
+    a.level_order - b.level_order || (a.section_name ?? '').localeCompare(b.section_name ?? ''))
+}
+
 // ---- Attendance ----
 export async function listSections(classId: string): Promise<SectionRow[]> {
   const sb = requireSupabase()
