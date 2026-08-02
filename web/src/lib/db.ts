@@ -565,6 +565,25 @@ export async function issueCertificate(
   return res as IssueCertResult
 }
 
+// ---- Dashboard ----
+export interface DashboardSummary {
+  active_students: number
+  new_admissions_month: number
+  attendance: { marked: number; present: number; absent: number; leave: number; late: number; half_day: number }
+  finance_visible: boolean
+  collected_today: number | null
+  collected_month: number | null
+  outstanding: number | null
+  defaulters: number | null
+}
+
+export async function getDashboardSummary(): Promise<DashboardSummary> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_dashboard_summary')
+  if (error) throw new Error(error.message)
+  return data as DashboardSummary
+}
+
 export async function listCertificates(limit = 50): Promise<CertificateRow[]> {
   const sb = requireSupabase()
   const rows = unwrap<Record<string, any>[]>(
