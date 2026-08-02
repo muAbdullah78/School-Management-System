@@ -64,6 +64,16 @@ export const TERM_TYPES: { value: string; label: string }[] = [
   { value: 'pre_board', label: 'Pre-Board' },
   { value: 'other', label: 'Other' },
 ]
+
+/** Certificate types — values must match the `certificate_type` enum in the DB. */
+export const CERT_TYPES: { value: string; label: string }[] = [
+  { value: 'leaving', label: 'Leaving Certificate' },
+  { value: 'character', label: 'Character Certificate' },
+  { value: 'bonafide', label: 'Bonafide Certificate' },
+  { value: 'id_card', label: 'ID Card' },
+  { value: 'other', label: 'Other' },
+]
+export const CERT_LABELS: Record<string, string> = Object.fromEntries(CERT_TYPES.map((t) => [t.value, t.label]))
 export const ATTENDANCE_SHORT: Record<string, string> = Object.fromEntries(
   ATTENDANCE_STATUSES.map((s) => [s.value, s.short]),
 )

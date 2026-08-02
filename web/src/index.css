@@ -27,13 +27,16 @@ body {
   #admit-slip,
   #admit-slip *,
   #result-card,
-  #result-card * {
+  #result-card *,
+  #certificate,
+  #certificate * {
     visibility: visible;
   }
   #receipt,
   #att-sheet,
   #admit-slip,
-  #result-card {
+  #result-card,
+  #certificate {
     position: absolute;
     left: 0;
     top: 0;

@@ -546,3 +546,36 @@ export async function setProfileActive(id: string, active: boolean): Promise<voi
   const { error } = await sb.from('profiles').update({ active }).eq('id', id)
   if (error) throw new Error(error.message)
 }
+
+// ---- Certificates ----
+export interface IssueCertResult { id: string; serial_no: number; cert_type: string; issued_on: string }
+export interface CertificateRow {
+  id: string; cert_type: string; serial_no: number; issued_on: string
+  student_name: string | null; gr_no: string | null; data: Record<string, any>
+}
+
+export async function issueCertificate(
+  certType: string, studentId: string, data: Record<string, any>,
+): Promise<IssueCertResult> {
+  const sb = requireSupabase()
+  const { data: res, error } = await sb.rpc('fn_issue_certificate', {
+    p_cert_type: certType, p_student_id: studentId, p_data: data,
+  })
+  if (error) throw new Error(error.message)
+  return res as IssueCertResult
+}
+
+export async function listCertificates(limit = 50): Promise<CertificateRow[]> {
+  const sb = requireSupabase()
+  const rows = unwrap<Record<string, any>[]>(
+    await sb.from('certificates')
+      .select('id, cert_type, serial_no, issued_on, data, students(full_name, gr_no)')
+      .order('created_at', { ascending: false }).limit(limit),
+  )
+  return rows.map((r) => ({
+    id: r.id, cert_type: r.cert_type, serial_no: Number(r.serial_no), issued_on: r.issued_on,
+    student_name: r.students?.full_name ?? r.data?.student_name ?? null,
+    gr_no: r.students?.gr_no ?? r.data?.gr_no ?? null,
+    data: r.data ?? {},
+  }))
+}
