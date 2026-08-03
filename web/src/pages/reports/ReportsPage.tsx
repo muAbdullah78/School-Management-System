@@ -4,6 +4,7 @@ import {
   getCurrentSession, getDefaulters, listCollections, getClassStrength,
   listClasses, listSections, getAttendanceRegister,
   listStudents, getStudentInvoices, getStudentPayments, getStudentBalance,
+  getFeeReconciliation,
   type StudentRow,
 } from '@/lib/db'
 import { useSchoolName } from '@/hooks/useSchoolName'
@@ -14,6 +15,7 @@ import { toCSV, downloadCSV } from '@/lib/csv'
 const FIELD = 'rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 const TABS = [
   { key: 'collection', label: 'Fee Collection' },
+  { key: 'reconciliation', label: 'Reconciliation' },
   { key: 'defaulters', label: 'Defaulters' },
   { key: 'strength', label: 'Class Strength' },
   { key: 'register', label: 'Attendance Register' },
@@ -39,6 +41,7 @@ export function ReportsPage() {
       </div>
       <div className="mt-5">
         {tab === 'collection' && <CollectionReport />}
+        {tab === 'reconciliation' && <ReconciliationReport />}
         {tab === 'defaulters' && <DefaultersReport />}
         {tab === 'strength' && <StrengthReport />}
         {tab === 'register' && <AttendanceRegisterReport />}
@@ -168,6 +171,103 @@ function DefaultersReport() {
         </>
       )}
     </ReportShell>
+  )
+}
+
+function ReconciliationReport() {
+  const session = useQuery({ queryKey: ['currentSession'], queryFn: getCurrentSession })
+  const sessionId = session.data?.id
+  const q = useQuery({ queryKey: ['rptRecon', sessionId], queryFn: () => getFeeReconciliation(sessionId!), enabled: !!sessionId })
+  const r = q.data
+
+  const csv = () => {
+    if (!r) return
+    downloadCSV('fee-reconciliation.csv', toCSV(
+      ['Class', 'Expected', 'Collected', 'Outstanding'],
+      r.by_class.map((c) => [c.class_name, c.expected, c.collected, c.outstanding]),
+    ))
+  }
+
+  return (
+    <ReportShell title="Fee Reconciliation — expected vs collected" subtitle={session.data?.name} onCSV={csv}>
+      {q.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {q.isError && <p className="text-sm text-red-600">{(q.error as Error).message}</p>}
+      {r && (
+        <>
+          <div className="mb-4 grid grid-cols-3 gap-3">
+            <Stat label="Expected (billed)" value={fmtPKR(r.expected)} tone="slate" />
+            <Stat label="Collected" value={fmtPKR(r.collected)} tone="emerald" />
+            <Stat label="Outstanding" value={fmtPKR(r.outstanding)} tone={r.outstanding > 0 ? 'red' : 'emerald'} />
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <tr><th className={TH}>Class</th><th className={`${TH} text-right`}>Expected</th><th className={`${TH} text-right`}>Collected</th><th className={`${TH} text-right`}>Outstanding</th></tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {r.by_class.length === 0 && <tr><td colSpan={4} className={`${TD} text-slate-500`}>No invoices yet this session.</td></tr>}
+                {r.by_class.map((c, i) => (
+                  <tr key={i}>
+                    <td className={TD}>{c.class_name}</td>
+                    <td className={`${TD} text-right tabular-nums`}>{fmtPKR(c.expected)}</td>
+                    <td className={`${TD} text-right tabular-nums`}>{fmtPKR(c.collected)}</td>
+                    <td className={`${TD} text-right tabular-nums ${c.outstanding > 0 ? 'text-red-600' : ''}`}>{fmtPKR(c.outstanding)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <FlagList
+            title={`Active students never billed this session (${r.uninvoiced.length})`}
+            hint="A billing gap — every active student should have a challan. Investigate any names here."
+            rows={r.uninvoiced} tone="amber"
+          />
+          <FlagList
+            title={`Possible ghost students (${r.ghost_suspects.length})`}
+            hint="Active, never billed, AND never marked present — a name on the roll that may not be a real, attending child."
+            rows={r.ghost_suspects} tone="red"
+          />
+        </>
+      )}
+    </ReportShell>
+  )
+}
+
+function FlagList({ title, hint, rows, tone }: {
+  title: string; hint: string; rows: { gr_no: string | null; full_name: string; class_name: string }[]; tone: 'amber' | 'red'
+}) {
+  if (rows.length === 0) return (
+    <p className="mt-4 rounded bg-emerald-50 px-3 py-2 text-sm text-emerald-800">✓ {title.replace(/\(\d+\)/, '')}— none found.</p>
+  )
+  const c = tone === 'red' ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'
+  return (
+    <div className={`mt-4 rounded-lg border p-3 ${c}`}>
+      <div className="text-sm font-medium text-slate-800">{title}</div>
+      <div className="text-xs text-slate-500">{hint}</div>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {rows.slice(0, 200).map((s, i) => (
+          <span key={i} className="rounded bg-white/70 px-2 py-0.5 text-xs text-slate-700">
+            {s.full_name}{s.gr_no ? ` · ${s.gr_no}` : ''} <span className="text-slate-400">· {s.class_name}</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function Stat({ label, value, tone }: { label: string; value: string; tone: 'slate' | 'emerald' | 'red' }) {
+  const tones: Record<string, string> = {
+    slate: 'border-slate-200 bg-slate-50 text-slate-800',
+    emerald: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+    red: 'border-red-200 bg-red-50 text-red-800',
+  }
+  return (
+    <div className={`rounded border p-3 ${tones[tone]}`}>
+      <div className="text-xl font-semibold tabular-nums">{value}</div>
+      <div className="text-xs">{label}</div>
+    </div>
   )
 }
 

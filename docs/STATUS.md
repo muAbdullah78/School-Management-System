@@ -11,7 +11,7 @@ _Last updated after: fee engine depth (discounts, fines, adjustments, reversal/r
 
 ## ✅ Done (on `main` / in the open PR)
 
-**Database — `supabase/migrations/` (17 migrations, all validated on Postgres 16)**
+**Database — `supabase/migrations/` (18 migrations, all validated on Postgres 16)**
 - Core 30-table schema, identity/state split, append-only money/marks/attendance, soft-delete, **61 RLS policies**, audit triggers, gapless counters (GR / receipt / certificate serials).
 - Fees engine, attendance, admissions, exams, settings, certificates, dashboard rollup, assessments, staff, auth auto-provisioning, **bulk student import**, **opening fee-balance import**, **year-end rollover**.
 
@@ -36,7 +36,7 @@ Every **module** works end-to-end (that's what a walk-through shows). But a re-r
 | **Fines / late fees** — apply, and waive with a reason | ✅ done (Fees → Collect, per invoice) |
 | **Adjustments / refunds** — signed balance change with reason (now counted in the balance) | ✅ done (Fees → Collect → Adjust) |
 | **Payment reversal + duplicate receipt reprint** | ✅ done (Fees → Collect → payment history) |
-| **Expected-vs-collected + ghost-student check** — the plan's headline anti-fraud control | ⬜ next |
+| **Expected-vs-collected + ghost-student check** — the plan's headline anti-fraud control | ✅ done (Reports → Reconciliation) |
 | **Daily cash-book reconciliation** (+ pending-vs-verified bank/wallet) | ⬜ next |
 | **Sibling detection & linking** at intake / on the profile | ⬜ next |
 | **Owner audit-log report** (the audit trail exists; it needs a viewer) | ⬜ next |

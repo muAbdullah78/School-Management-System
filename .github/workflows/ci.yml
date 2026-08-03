@@ -226,4 +226,13 @@ jobs:
             if public.student_balance(sid) <> 1600 then raise exception 'FEE sep %', public.student_balance(sid); end if;
             raise notice 'fee ops ok';
           end $CI$;
+          -- fee reconciliation runs and totals are coherent (expected >= collected > = 0).
+          do $CI$
+          declare j jsonb;
+          begin
+            j := public.fn_fee_reconciliation('22222222-2222-2222-2222-222222222222');
+            if (j->>'expected')::numeric <= 0 then raise exception 'RECON expected %', j; end if;
+            if (j->>'expected')::numeric < (j->>'collected')::numeric then raise exception 'RECON collected>expected %', j; end if;
+            raise notice 'reconciliation ok';
+          end $CI$;
           SQL

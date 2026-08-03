@@ -233,6 +233,28 @@ export async function addAdjustment(studentId: string, amount: number, reason: s
   if (error) throw new Error(error.message)
 }
 
+// ---- Fee reconciliation (expected vs collected + ghost check) ----
+export interface ReconClassRow { class_name: string; expected: number; collected: number; outstanding: number }
+export interface ReconStudent { gr_no: string | null; full_name: string; class_name: string }
+export interface FeeReconciliation {
+  expected: number; collected: number; outstanding: number
+  by_class: ReconClassRow[]; uninvoiced: ReconStudent[]; ghost_suspects: ReconStudent[]
+}
+export async function getFeeReconciliation(sessionId: string): Promise<FeeReconciliation> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_fee_reconciliation', { p_session_id: sessionId })
+  if (error) throw new Error(error.message)
+  const d = data as any
+  return {
+    expected: Number(d.expected), collected: Number(d.collected), outstanding: Number(d.outstanding),
+    by_class: (d.by_class ?? []).map((r: any) => ({
+      class_name: r.class_name, expected: Number(r.expected), collected: Number(r.collected), outstanding: Number(r.outstanding),
+    })),
+    uninvoiced: d.uninvoiced ?? [],
+    ghost_suspects: d.ghost_suspects ?? [],
+  }
+}
+
 export async function getDefaulters(sessionId: string): Promise<Defaulter[]> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_defaulters', { p_session_id: sessionId })
