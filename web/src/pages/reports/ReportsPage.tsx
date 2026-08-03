@@ -1,9 +1,13 @@
-import { useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   getCurrentSession, getDefaulters, listCollections, getClassStrength,
+  listClasses, listSections, getAttendanceRegister,
+  listStudents, getStudentInvoices, getStudentPayments, getStudentBalance,
+  type StudentRow,
 } from '@/lib/db'
 import { useSchoolName } from '@/hooks/useSchoolName'
+import { ATTENDANCE_SHORT } from '@/lib/constants'
 import { fmtPKR, fmtDate, todayISO } from '@/lib/format'
 import { toCSV, downloadCSV } from '@/lib/csv'
 
@@ -12,10 +16,13 @@ const TABS = [
   { key: 'collection', label: 'Fee Collection' },
   { key: 'defaulters', label: 'Defaulters' },
   { key: 'strength', label: 'Class Strength' },
+  { key: 'register', label: 'Attendance Register' },
+  { key: 'ledger', label: 'Student Ledger' },
 ] as const
 type TabKey = (typeof TABS)[number]['key']
 
 function monthStart() { return `${todayISO().slice(0, 7)}-01` }
+function thisMonth() { return todayISO().slice(0, 7) }
 
 export function ReportsPage() {
   const [tab, setTab] = useState<TabKey>('collection')
@@ -34,6 +41,8 @@ export function ReportsPage() {
         {tab === 'collection' && <CollectionReport />}
         {tab === 'defaulters' && <DefaultersReport />}
         {tab === 'strength' && <StrengthReport />}
+        {tab === 'register' && <AttendanceRegisterReport />}
+        {tab === 'ledger' && <StudentLedgerReport />}
       </div>
     </div>
   )
@@ -159,6 +168,213 @@ function DefaultersReport() {
         </>
       )}
     </ReportShell>
+  )
+}
+
+function AttendanceRegisterReport() {
+  const session = useQuery({ queryKey: ['currentSession'], queryFn: getCurrentSession })
+  const sessionId = session.data?.id
+  const classes = useQuery({ queryKey: ['classes'], queryFn: listClasses })
+  const [classId, setClassId] = useState('')
+  const [sectionChoice, setSectionChoice] = useState('')
+  const [month, setMonth] = useState(thisMonth())
+  const sections = useQuery({ queryKey: ['sections', classId], queryFn: () => listSections(classId), enabled: !!classId })
+  const hasSections = (sections.data?.length ?? 0) > 0
+  const sectionId: string | null = hasSections ? (sectionChoice || null) : null
+
+  const ready = !!sessionId && !!classId && !!month && (!hasSections || !!sectionChoice)
+  const q = useQuery({
+    queryKey: ['rptRegister', sessionId, classId, sectionId ?? 'all', month],
+    queryFn: () => getAttendanceRegister(sessionId!, classId, sectionId, month),
+    enabled: ready,
+  })
+  const reg = q.data
+  const dayNums = (reg?.dates ?? []).map((d) => Number(d.slice(-2)))
+
+  function summary(marks: Record<string, string>) {
+    const vals = Object.values(marks)
+    const present = vals.filter((v) => v === 'present').length
+    const absent = vals.filter((v) => v === 'absent').length
+    const marked = vals.length
+    const pct = marked ? Math.round((present / marked) * 100) : null
+    return { present, absent, marked, pct }
+  }
+
+  const csv = () => {
+    if (!reg) return
+    const header = ['Roll', 'Student', ...dayNums.map(String), 'P', 'A', '%']
+    const rows = reg.students.map((s) => {
+      const sm = summary(s.marks)
+      return [s.roll_no ?? '', s.full_name,
+        ...reg.dates.map((d) => ATTENDANCE_SHORT[s.marks[d]] ?? ''),
+        sm.present, sm.absent, sm.pct == null ? '' : sm.pct]
+    })
+    downloadCSV(`attendance-register_${month}.csv`, toCSV(header, rows))
+  }
+
+  const clsName = classes.data?.find((c) => c.id === classId)?.name ?? ''
+  const secName = sections.data?.find((s) => s.id === sectionId)?.name
+
+  return (
+    <div>
+      <div className="mb-3 flex flex-wrap items-end gap-2 print:hidden">
+        <label className="block"><span className="text-sm text-slate-600">Class</span><br />
+          <select value={classId} onChange={(e) => { setClassId(e.target.value); setSectionChoice('') }} className={`mt-1 ${FIELD}`}>
+            <option value="">Select class…</option>
+            {classes.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </label>
+        <label className="block"><span className="text-sm text-slate-600">Section</span><br />
+          <select value={sectionChoice} onChange={(e) => setSectionChoice(e.target.value)} disabled={!classId || !hasSections} className={`mt-1 ${FIELD}`}>
+            {!classId ? <option value="">Pick a class</option> : !hasSections ? <option value="">(no sections)</option>
+              : <><option value="">All sections</option>{sections.data?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</>}
+          </select>
+        </label>
+        <label className="block"><span className="text-sm text-slate-600">Month</span><br />
+          <input type="month" value={month} max={thisMonth()} onChange={(e) => setMonth(e.target.value)} className={`mt-1 ${FIELD}`} />
+        </label>
+      </div>
+      {!ready && <p className="text-sm text-slate-500">Pick a class{hasSections ? ', section' : ''} and month.</p>}
+      {ready && (
+        <ReportShell title="Attendance Register" subtitle={`${clsName}${secName ? ` · ${secName}` : ''} · ${month}`} onCSV={csv}>
+          {q.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+          {q.isError && <p className="text-sm text-red-600">{(q.error as Error).message}</p>}
+          {reg && (
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-[11px]">
+                <thead>
+                  <tr className="bg-slate-50 text-slate-500">
+                    <th className="border border-slate-200 px-1 py-1 text-right">Roll</th>
+                    <th className="border border-slate-200 px-1 py-1 text-left">Student</th>
+                    {dayNums.map((d) => <th key={d} className="border border-slate-200 px-1 py-1 w-5 text-center">{d}</th>)}
+                    <th className="border border-slate-200 px-1 py-1 text-right">P</th>
+                    <th className="border border-slate-200 px-1 py-1 text-right">A</th>
+                    <th className="border border-slate-200 px-1 py-1 text-right">%</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reg.students.length === 0 && <tr><td colSpan={dayNums.length + 5} className="px-2 py-3 text-center text-slate-500">No active students.</td></tr>}
+                  {reg.students.map((s) => {
+                    const sm = summary(s.marks)
+                    return (
+                      <tr key={s.enrollment_id}>
+                        <td className="border border-slate-200 px-1 py-0.5 text-right text-slate-500">{s.roll_no ?? '—'}</td>
+                        <td className="border border-slate-200 px-1 py-0.5 whitespace-nowrap text-slate-800">{s.full_name}</td>
+                        {reg.dates.map((d) => {
+                          const v = s.marks[d]
+                          return <td key={d} className={`border border-slate-200 px-1 py-0.5 text-center ${v === 'absent' ? 'text-red-600' : v ? 'text-slate-700' : 'text-slate-300'}`}>{ATTENDANCE_SHORT[v] ?? '·'}</td>
+                        })}
+                        <td className="border border-slate-200 px-1 py-0.5 text-right text-slate-700">{sm.present}</td>
+                        <td className="border border-slate-200 px-1 py-0.5 text-right text-slate-700">{sm.absent}</td>
+                        <td className="border border-slate-200 px-1 py-0.5 text-right font-medium">{sm.pct == null ? '—' : `${sm.pct}`}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+              <p className="mt-2 text-[11px] text-slate-400">P present · A absent · L leave · Lt late · ½ half-day · · not marked. Prints best in landscape.</p>
+            </div>
+          )}
+        </ReportShell>
+      )}
+    </div>
+  )
+}
+
+function StudentLedgerReport() {
+  const [term, setTerm] = useState('')
+  const [student, setStudent] = useState<StudentRow | null>(null)
+  const results = useQuery({ queryKey: ['ledgerSearch', term], queryFn: () => listStudents(term), enabled: term.trim().length >= 2 && !student })
+  const invoices = useQuery({ queryKey: ['ledgerInv', student?.id], queryFn: () => getStudentInvoices(student!.id), enabled: !!student })
+  const payments = useQuery({ queryKey: ['ledgerPay', student?.id], queryFn: () => getStudentPayments(student!.id), enabled: !!student })
+  const balance = useQuery({ queryKey: ['ledgerBal', student?.id], queryFn: () => getStudentBalance(student!.id), enabled: !!student })
+
+  const rows = useMemo(() => {
+    const items: { date: string; ref: string; debit: number; credit: number }[] = []
+    for (const inv of invoices.data ?? []) {
+      items.push({
+        date: inv.period_month ?? inv.due_date ?? '',
+        ref: `Invoice${inv.period_month ? ' ' + inv.period_month.slice(0, 7) : ''}`,
+        debit: Number(inv.charge), credit: 0,
+      })
+    }
+    for (const p of payments.data ?? []) {
+      items.push({
+        date: p.created_at,
+        ref: p.reversal_of ? 'Payment reversed' : `Payment${p.receipt_no ? ' · receipt #' + p.receipt_no : ''}`,
+        debit: 0, credit: Number(p.amount),
+      })
+    }
+    items.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+    let bal = 0
+    return items.map((it) => { bal += it.debit - it.credit; return { ...it, balance: bal } })
+  }, [invoices.data, payments.data])
+
+  const csv = () => {
+    if (!student) return
+    downloadCSV(`ledger_${(student.gr_no || student.full_name).replace(/[^a-z0-9]+/gi, '-')}.csv`,
+      toCSV(['Date', 'Particulars', 'Debit', 'Credit', 'Balance'],
+        rows.map((r) => [r.date ? fmtDate(r.date) : '', r.ref, r.debit || '', r.credit || '', r.balance])))
+  }
+
+  return (
+    <div>
+      {!student ? (
+        <div className="max-w-md print:hidden">
+          <label className="block"><span className="text-sm text-slate-600">Search student by name or GR number</span>
+            <input autoFocus value={term} onChange={(e) => setTerm(e.target.value)} className={`mt-1 w-full ${FIELD}`} placeholder="e.g. Ahmed or GR-0001" />
+          </label>
+          <div className="mt-2 divide-y divide-slate-100 rounded border border-slate-200">
+            {results.data?.length === 0 && term.trim().length >= 2 && <div className="p-2 text-sm text-slate-500">No students found.</div>}
+            {results.data?.map((s) => (
+              <button key={s.id} onClick={() => setStudent(s)} className="block w-full px-3 py-2 text-left text-sm hover:bg-slate-50">
+                <span className="font-medium text-slate-800">{s.full_name}</span>
+                {s.father_name && <span className="text-slate-500"> · {s.father_name}</span>}
+                {s.gr_no && <span className="text-slate-400"> · {s.gr_no}</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div>
+          <div className="mb-3 flex items-center justify-between print:hidden">
+            <div className="text-sm text-slate-700"><span className="font-medium">{student.full_name}</span>{student.gr_no ? ` · ${student.gr_no}` : ''}</div>
+            <button onClick={() => { setStudent(null); setTerm('') }} className="text-sm text-brand-700 hover:underline">Change student</button>
+          </div>
+          <ReportShell title="Student Fee Ledger" subtitle={`${student.full_name}${student.gr_no ? ` · ${student.gr_no}` : ''}`} onCSV={csv}>
+            {(invoices.isLoading || payments.isLoading) && <p className="text-sm text-slate-500">Loading…</p>}
+            {!invoices.isLoading && !payments.isLoading && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                    <tr><th className={TH}>Date</th><th className={TH}>Particulars</th><th className={`${TH} text-right`}>Debit</th><th className={`${TH} text-right`}>Credit</th><th className={`${TH} text-right`}>Balance</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {rows.length === 0 && <tr><td colSpan={5} className={`${TD} text-slate-500`}>No fee activity yet.</td></tr>}
+                    {rows.map((r, i) => (
+                      <tr key={i}>
+                        <td className={TD}>{r.date ? fmtDate(r.date) : '—'}</td>
+                        <td className={TD}>{r.ref}</td>
+                        <td className={`${TD} text-right tabular-nums`}>{r.debit ? fmtPKR(r.debit) : ''}</td>
+                        <td className={`${TD} text-right tabular-nums`}>{r.credit ? fmtPKR(r.credit) : ''}</td>
+                        <td className={`${TD} text-right font-medium tabular-nums`}>{fmtPKR(r.balance)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  {rows.length > 0 && (
+                    <tfoot className="border-t-2 border-slate-300 font-semibold text-slate-800">
+                      <tr><td className={TD} colSpan={4}>Closing balance {balance.data != null && Number(balance.data) !== rows[rows.length - 1].balance ? '(current)' : ''}</td>
+                        <td className={`${TD} text-right tabular-nums`}>{fmtPKR(balance.data ?? rows[rows.length - 1].balance)}</td></tr>
+                    </tfoot>
+                  )}
+                </table>
+                <p className="mt-2 text-xs text-slate-400">Debit = charges billed · Credit = payments received · Balance = amount outstanding.</p>
+              </div>
+            )}
+          </ReportShell>
+        </div>
+      )}
+    </div>
   )
 }
 

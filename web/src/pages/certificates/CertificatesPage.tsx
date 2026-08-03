@@ -46,7 +46,7 @@ export function CertificatesPage() {
   function reset() { setStudent(null); setTerm('') }
 
   const needsConduct = certType === 'leaving' || certType === 'character'
-  const needsPurpose = certType === 'bonafide' || certType === 'id_card' || certType === 'other'
+  const needsPurpose = certType === 'bonafide' || certType === 'other'
 
   return (
     <div className="max-w-3xl">

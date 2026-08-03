@@ -53,9 +53,10 @@ Then load the starting data: open the Supabase dashboard → **SQL Editor** → 
    > ```
 
 ## Step 5 — Install the desktop app on the headmaster's PC 🧑‍💻
-1. Download the latest **Windows installer** (`.msi`) from the project's Releases (built by CI — see the desktop packaging notes).
-2. Run it on the Windows 10/11 PC. On first launch it asks for the **school's app URL** (the Cloudflare Pages URL) — paste it once.
-3. The desktop app is now the admin's everyday program; teachers just use the URL on their phones.
+1. Get the **Windows installer** (`.msi`): in the GitHub repo open **Actions → Desktop (Windows installer) → Run workflow** (or push a `v*` tag), then download the `school-manager-windows-msi` artifact. Build details are in [`desktop/README.md`](../desktop/README.md).
+   - The artifact is **unsigned**, so Windows SmartScreen warns on first run (choose "Run anyway"). To ship a signed installer, add your **code-signing certificate** — see the code-signing note in `desktop/README.md`. That certificate is the one thing only you can provide.
+2. Run it on the Windows 10/11 PC. On first launch it asks for the **school's app URL** (the Cloudflare Pages URL) — paste it once ("Change address" on the connect screen switches it later).
+3. The desktop app is now the admin's everyday program; teachers just use the URL on their phones. It's the **same** app and database — the wrapper just gives the admin PC a real window instead of a browser tab.
 
 ## Step 6 — Configure the school in-app (non-technical)
 Log in as the owner and, in **Settings**:
@@ -66,9 +67,12 @@ Log in as the owner and, in **Settings**:
 5. Add **subjects** per class.
 
 ## Step 7 — Import the students (phased)
-1. Give the school the pre-formatted Excel template (identity + class/section first).
-2. Import current students to go live on **attendance** immediately.
-3. Then import **fee slabs + opening arrears** to switch on **fees**.
+Use the built-in importer — **Settings → Import Students** (owner/principal):
+1. First create the school's **Classes & Sections** (Settings → Classes & Sections) — the importer matches them by name.
+2. Click **Download CSV template**, or map the school's existing Excel to those column headings (common variants like "Father Name", "DOB", "Grade", "Roll #" are recognised automatically). Save as **CSV**.
+3. Upload it and click **Validate (dry run)** — this checks every row and writes nothing. Fix any flagged rows (unknown class/section, bad date, etc.).
+4. Click **Import** — students are admitted into the current session with gapless GR numbers, land on the class roster (Attendance), and become billable (Fees). Leave the GR column blank to auto-number, or supply the school's existing GR numbers to preserve them.
+5. Set each class's **fee amounts** (Settings → Fee Structure), then load each student's **opening arrears** via **Settings → Import → Opening fee balances** (match by GR No; amount per student). This switches on **fees** with real balances so the defaulter list is correct from day one.
 
 ## Step 8 — Go-live checks
 - Every class has a fee slab; every student has a section; every teacher has a login.

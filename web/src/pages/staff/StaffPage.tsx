@@ -6,6 +6,7 @@ import {
 } from '@/lib/db'
 import { ROLE_LABELS, type Role } from '@/auth/roles'
 import { useAuth } from '@/auth/AuthProvider'
+import { StaffIdCard } from './StaffIdCard'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 const TABS = [{ key: 'staff', label: 'Staff' }, { key: 'teachers', label: 'Class Teachers' }] as const
@@ -38,6 +39,7 @@ function StaffTab() {
   const profiles = useQuery({ queryKey: ['profiles'], queryFn: listProfiles })
   const [editing, setEditing] = useState<string | null>(null) // staff id, or 'new'
   const [form, setForm] = useState<StaffInput>(BLANK)
+  const [idCard, setIdCard] = useState<StaffRow | null>(null)
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['staff'] })
   const save = useMutation({
@@ -125,6 +127,7 @@ function StaffTab() {
                   </td>
                   <td className="px-3 py-2 text-right">
                     <button onClick={() => startEdit(s)} className="mr-2 text-sm text-brand-700 hover:underline">Edit</button>
+                    <button onClick={() => setIdCard(s)} className="mr-2 text-sm text-brand-700 hover:underline">ID card</button>
                     <button onClick={() => status.mutate({ id: s.id, status: s.status === 'active' ? 'inactive' : 'active' })}
                       className="rounded border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50">
                       {s.status === 'active' ? 'Deactivate' : 'Activate'}
@@ -137,6 +140,7 @@ function StaffTab() {
         </table>
       </div>
       {link.isError && <p className="text-sm text-red-600">{(link.error as Error).message}</p>}
+      {idCard && <StaffIdCard staff={idCard} onClose={() => setIdCard(null)} />}
     </div>
   )
 }

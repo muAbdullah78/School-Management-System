@@ -3,10 +3,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getCurrentSession, listClasses, listExamTerms, createExamTerm,
   listSubjects, createSubject, listExamSubjects, upsertExamSubject, removeExamSubject,
+  listClassRoster,
   type ExamSubjectRow, type SubjectRow,
 } from '@/lib/db'
 import { TERM_TYPES } from '@/lib/constants'
 import { fmtDate, todayISO } from '@/lib/format'
+import { DateSheet } from './DateSheet'
+import { AdmitCards } from './AdmitCards'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 
@@ -98,17 +101,29 @@ export function ExamSetup() {
           </label>
         </div>
 
-        {termId && classId && <PaperSetup termId={termId} classId={classId} />}
+        {termId && classId && (
+          <PaperSetup
+            termId={termId} classId={classId} sessionId={sessionId}
+            termName={terms.data?.find((t) => t.id === termId)?.name ?? '—'}
+            className={classes.data?.find((c) => c.id === classId)?.name ?? '—'}
+          />
+        )}
       </section>
     </div>
   )
 }
 
-function PaperSetup({ termId, classId }: { termId: string; classId: string }) {
+function PaperSetup({
+  termId, classId, sessionId, termName, className,
+}: { termId: string; classId: string; sessionId?: string; termName: string; className: string }) {
   const qc = useQueryClient()
   const subjects = useQuery({ queryKey: ['subjects', classId], queryFn: () => listSubjects(classId) })
   const examSubjects = useQuery({ queryKey: ['examSubjects', termId, classId], queryFn: () => listExamSubjects(termId, classId) })
+  const roster = useQuery({
+    queryKey: ['classRoster', sessionId, classId], queryFn: () => listClassRoster(sessionId!, classId), enabled: !!sessionId,
+  })
   const [newSubj, setNewSubj] = useState('')
+  const [show, setShow] = useState<'date' | 'admit' | null>(null)
 
   const addSubj = useMutation({
     mutationFn: () => createSubject(newSubj.trim(), classId, subjects.data?.length ?? 0),
@@ -117,31 +132,52 @@ function PaperSetup({ termId, classId }: { termId: string; classId: string }) {
 
   if (subjects.isLoading) return <p className="mt-3 text-sm text-slate-500">Loading subjects…</p>
   const byId = new Map((examSubjects.data ?? []).map((es) => [es.subject_id, es]))
+  const papers = examSubjects.data ?? []
 
   return (
     <div className="mt-4">
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-            <tr><th className="px-3 py-2">Subject</th><th className="px-3 py-2 w-28">Max marks</th><th className="px-3 py-2 w-28">Pass marks</th><th className="px-3 py-2 w-40">In this term</th></tr>
+            <tr><th className="px-3 py-2">Subject</th><th className="px-3 py-2 w-24">Max</th><th className="px-3 py-2 w-24">Pass</th><th className="px-3 py-2 w-36">Date</th><th className="px-3 py-2 w-28">Time</th><th className="px-3 py-2 w-40">In this term</th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {subjects.data?.length === 0 && <tr><td colSpan={4} className="px-3 py-3 text-slate-500">No subjects for this class yet — add one below.</td></tr>}
+            {subjects.data?.length === 0 && <tr><td colSpan={6} className="px-3 py-3 text-slate-500">No subjects for this class yet — add one below.</td></tr>}
             {subjects.data?.map((s) => (
               <PaperRow key={s.id} subject={s} termId={termId} classId={classId} existing={byId.get(s.id)} />
             ))}
           </tbody>
         </table>
       </div>
-      <form className="mt-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); if (newSubj.trim()) addSubj.mutate() }}>
-        <input value={newSubj} onChange={(e) => setNewSubj(e.target.value)} placeholder="Add subject (e.g. Mathematics)"
-          className="w-64 rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none" />
-        <button type="submit" disabled={!newSubj.trim() || addSubj.isPending}
-          className="rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60">
-          {addSubj.isPending ? 'Adding…' : 'Add subject'}
-        </button>
-        {addSubj.isError && <span className="self-center text-sm text-red-600">{(addSubj.error as Error).message}</span>}
-      </form>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (newSubj.trim()) addSubj.mutate() }}>
+          <input value={newSubj} onChange={(e) => setNewSubj(e.target.value)} placeholder="Add subject (e.g. Mathematics)"
+            className="w-56 rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none" />
+          <button type="submit" disabled={!newSubj.trim() || addSubj.isPending}
+            className="rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60">
+            {addSubj.isPending ? 'Adding…' : 'Add subject'}
+          </button>
+        </form>
+        <div className="ml-auto flex gap-2">
+          <button onClick={() => setShow('date')} disabled={papers.length === 0}
+            className="rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+            Print date sheet
+          </button>
+          <button onClick={() => setShow('admit')} disabled={papers.length === 0 || (roster.data?.length ?? 0) === 0}
+            className="rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+            Print admit cards
+          </button>
+        </div>
+        {addSubj.isError && <span className="w-full text-sm text-red-600">{(addSubj.error as Error).message}</span>}
+      </div>
+
+      {show === 'date' && (
+        <DateSheet papers={papers} termName={termName} className={className} onClose={() => setShow(null)} />
+      )}
+      {show === 'admit' && (
+        <AdmitCards roster={roster.data ?? []} papers={papers} termName={termName} className={className} onClose={() => setShow(null)} />
+      )}
     </div>
   )
 }
@@ -150,10 +186,12 @@ function PaperRow({ subject, termId, classId, existing }: { subject: SubjectRow;
   const qc = useQueryClient()
   const [max, setMax] = useState(String(existing?.max_marks ?? 100))
   const [pass, setPass] = useState(String(existing?.pass_marks ?? 33))
+  const [pdate, setPdate] = useState(existing?.exam_date ?? '')
+  const [ptime, setPtime] = useState(existing?.paper_time ?? '')
   const included = !!existing
 
   const save = useMutation({
-    mutationFn: () => upsertExamSubject(termId, classId, subject.id, Number(max), Number(pass)),
+    mutationFn: () => upsertExamSubject(termId, classId, subject.id, Number(max), Number(pass), pdate || null, ptime || null),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['examSubjects', termId, classId] }),
   })
   const remove = useMutation({
@@ -164,8 +202,10 @@ function PaperRow({ subject, termId, classId, existing }: { subject: SubjectRow;
   return (
     <tr>
       <td className="px-3 py-2 font-medium text-slate-800">{subject.name}</td>
-      <td className="px-3 py-2"><input type="number" min="1" value={max} onChange={(e) => setMax(e.target.value)} className="w-20 rounded border border-slate-300 px-2 py-1 text-sm" /></td>
-      <td className="px-3 py-2"><input type="number" min="0" value={pass} onChange={(e) => setPass(e.target.value)} className="w-20 rounded border border-slate-300 px-2 py-1 text-sm" /></td>
+      <td className="px-3 py-2"><input type="number" min="1" value={max} onChange={(e) => setMax(e.target.value)} className="w-16 rounded border border-slate-300 px-2 py-1 text-sm" /></td>
+      <td className="px-3 py-2"><input type="number" min="0" value={pass} onChange={(e) => setPass(e.target.value)} className="w-16 rounded border border-slate-300 px-2 py-1 text-sm" /></td>
+      <td className="px-3 py-2"><input type="date" value={pdate} onChange={(e) => setPdate(e.target.value)} className="rounded border border-slate-300 px-2 py-1 text-sm" /></td>
+      <td className="px-3 py-2"><input value={ptime} onChange={(e) => setPtime(e.target.value)} placeholder="09:00 AM" className="w-24 rounded border border-slate-300 px-2 py-1 text-sm" /></td>
       <td className="px-3 py-2">
         <div className="flex gap-2">
           <button onClick={() => save.mutate()} disabled={save.isPending}

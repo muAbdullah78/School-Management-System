@@ -201,6 +201,54 @@ export async function listCollections(fromDate: string, toDate: string): Promise
   }))
 }
 
+// ---- Monthly attendance register ----
+export interface RegisterStudent {
+  enrollment_id: string; full_name: string; roll_no: string | null
+  marks: Record<string, string> // 'YYYY-MM-DD' → attendance status
+}
+export interface AttendanceRegister { dates: string[]; students: RegisterStudent[] }
+
+/** Day-by-day attendance grid for a class (optionally one section) over a month.
+ *  `month` is 'YYYY-MM'. Columns are every calendar day of that month. */
+export async function getAttendanceRegister(
+  sessionId: string, classId: string, sectionId: string | null, month: string,
+): Promise<AttendanceRegister> {
+  const sb = requireSupabase()
+  const [y, m] = month.split('-').map(Number)
+  const lastDay = new Date(y, m, 0).getDate()
+  const first = `${month}-01`
+  const last = `${month}-${String(lastDay).padStart(2, '0')}`
+  const dates = Array.from({ length: lastDay }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`)
+
+  let rq = sb.from('enrollments')
+    .select('id, roll_no, students!inner(full_name)')
+    .eq('session_id', sessionId).eq('class_id', classId).eq('status', 'active')
+  if (sectionId) rq = rq.eq('section_id', sectionId)
+  const enr = unwrap<Record<string, any>[]>(await rq)
+  const rollNum = (r: string | null) => {
+    const n = parseInt((r ?? '').replace(/[^0-9]/g, ''), 10)
+    return Number.isNaN(n) ? Number.MAX_SAFE_INTEGER : n
+  }
+  const students: RegisterStudent[] = enr
+    .map((e) => ({ enrollment_id: e.id, full_name: e.students?.full_name ?? '—', roll_no: e.roll_no ?? null, marks: {} as Record<string, string> }))
+    .sort((a, b) => rollNum(a.roll_no) - rollNum(b.roll_no) || a.full_name.localeCompare(b.full_name))
+
+  if (students.length > 0) {
+    const byId = new Map(students.map((s) => [s.enrollment_id, s]))
+    const marks = unwrap<Record<string, any>[]>(
+      await sb.from('attendance_daily')
+        .select('enrollment_id, attendance_date, status')
+        .in('enrollment_id', students.map((s) => s.enrollment_id))
+        .gte('attendance_date', first).lte('attendance_date', last),
+    )
+    for (const mk of marks) {
+      const s = byId.get(mk.enrollment_id)
+      if (s) s.marks[mk.attendance_date] = mk.status
+    }
+  }
+  return { dates, students }
+}
+
 /** Active-enrolment head-count per class/section with a gender split. */
 export async function getClassStrength(sessionId: string): Promise<ClassStrengthRow[]> {
   const sb = requireSupabase()
@@ -315,6 +363,93 @@ export async function admitStudent(input: AdmitInput): Promise<AdmitResult> {
   return data as AdmitResult
 }
 
+// ---- Bulk import (onboarding a paper register) ----
+export type ImportRowStatus = 'created' | 'ok' | 'skipped' | 'error'
+export interface ImportRowResult {
+  row: number; status: ImportRowStatus; message: string | null; name: string
+  gr_no?: string | null; amount?: number | null
+}
+export interface ImportResult {
+  dry_run: boolean; total: number; created: number; skipped: number; errors: number
+  rows: ImportRowResult[]
+}
+
+/** Validate (dry run) or import a batch of students into a session. Rows use
+ *  canonical keys (see lib/importStudents); class/section are matched by name. */
+export async function importStudents(
+  sessionId: string, rows: Record<string, string>[], dryRun: boolean,
+): Promise<ImportResult> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_import_students', {
+    p_session: sessionId, p_rows: rows, p_dry_run: dryRun,
+  })
+  if (error) throw new Error(error.message)
+  return data as ImportResult
+}
+
+/** Validate (dry run) or import each student's opening fee balance into a
+ *  session. Rows use canonical keys (see lib/importBalances); the student is
+ *  matched by GR No / Admission No / Name. */
+export async function importOpeningBalances(
+  sessionId: string, rows: Record<string, string>[], dryRun: boolean,
+): Promise<ImportResult> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_import_opening_balances', {
+    p_session: sessionId, p_rows: rows, p_dry_run: dryRun,
+  })
+  if (error) throw new Error(error.message)
+  return data as ImportResult
+}
+
+// ---- Academic-year rollover ----
+export interface RolloverRuleInput {
+  from_class_id: string; action: 'promote' | 'retain' | 'graduate'; to_class_id: string | null
+}
+export interface RolloverRowResult {
+  student_id: string; name: string; gr_no: string | null
+  from_class: string | null; to_class: string | null; action: string
+  roll_no: string | null; balance: number; message: string | null
+}
+export interface RolloverResult {
+  commit: boolean; from_session: string; to_session: string
+  promoted: number; retained: number; graduated: number; unmapped: number; skipped: number; total: number
+  rows: RolloverRowResult[]
+}
+export interface RolloverUndoResult { undone: number; note: string; graduated_total: number }
+
+/** Preview (commit=false, no writes) or apply (commit=true) a year-end rollover
+ *  from one session to another using per-class rules. */
+export async function runRollover(
+  fromSession: string, toSession: string, rules: RolloverRuleInput[], commit: boolean,
+): Promise<RolloverResult> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_rollover', {
+    p_from: fromSession, p_to: toSession, p_rules: rules, p_commit: commit,
+  })
+  if (error) throw new Error(error.message)
+  return data as RolloverResult
+}
+
+/** Reverse the promotions/retentions of a rollover into a session (only allowed
+ *  while that session has no attendance/fees/exams yet). */
+export async function undoRollover(toSession: string): Promise<RolloverUndoResult> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_rollover_undo', { p_to: toSession })
+  if (error) throw new Error(error.message)
+  return data as RolloverUndoResult
+}
+
+/** Validate (dry run) or import a batch of staff records. Rows use canonical
+ *  keys (see lib/importStaff). */
+export async function importStaff(
+  rows: Record<string, string>[], dryRun: boolean,
+): Promise<ImportResult> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_import_staff', { p_rows: rows, p_dry_run: dryRun })
+  if (error) throw new Error(error.message)
+  return data as ImportResult
+}
+
 export async function listStudents(term: string): Promise<StudentRow[]> {
   const sb = requireSupabase()
   const t = term.trim()
@@ -385,6 +520,11 @@ export interface ExamTerm {
 export interface SubjectRow { id: string; name: string; class_id: string | null; sort_order: number }
 export interface ExamSubjectRow {
   id: string; subject_id: string; subject_name: string; max_marks: number; pass_marks: number
+  exam_date: string | null; paper_time: string | null
+}
+export interface ClassRosterRow {
+  enrollment_id: string; student_id: string; full_name: string; father_name: string | null
+  gr_no: string | null; roll_no: string | null; section_name: string | null
 }
 export interface MarksheetRow {
   enrollment_id: string; student_id: string; full_name: string; roll_no: string | null
@@ -438,13 +578,14 @@ export async function listExamSubjects(termId: string, classId: string): Promise
   const sb = requireSupabase()
   const rows = unwrap<Record<string, any>[]>(
     await sb.from('exam_subjects')
-      .select('id, subject_id, max_marks, pass_marks, subjects(name, sort_order)')
+      .select('id, subject_id, max_marks, pass_marks, exam_date, paper_time, subjects(name, sort_order)')
       .eq('exam_term_id', termId).eq('class_id', classId),
   )
   return rows
     .map((r) => ({
       id: r.id, subject_id: r.subject_id, subject_name: r.subjects?.name ?? '—',
       max_marks: Number(r.max_marks), pass_marks: Number(r.pass_marks),
+      exam_date: r.exam_date ?? null, paper_time: r.paper_time ?? null,
       _sort: r.subjects?.sort_order ?? 0,
     }))
     .sort((a, b) => a._sort - b._sort || a.subject_name.localeCompare(b.subject_name))
@@ -453,13 +594,42 @@ export async function listExamSubjects(termId: string, classId: string): Promise
 
 export async function upsertExamSubject(
   termId: string, classId: string, subjectId: string, maxMarks: number, passMarks: number,
+  examDate?: string | null, paperTime?: string | null,
 ): Promise<void> {
   const sb = requireSupabase()
   const { error } = await sb.from('exam_subjects').upsert(
-    { exam_term_id: termId, class_id: classId, subject_id: subjectId, max_marks: maxMarks, pass_marks: passMarks },
+    {
+      exam_term_id: termId, class_id: classId, subject_id: subjectId,
+      max_marks: maxMarks, pass_marks: passMarks,
+      exam_date: examDate || null, paper_time: paperTime || null,
+    },
     { onConflict: 'exam_term_id,class_id,subject_id' },
   )
   if (error) throw new Error(error.message)
+}
+
+/** Active roster for a class in a session (for admit cards / roll-number slips),
+ *  ordered by section then numeric roll. */
+export async function listClassRoster(sessionId: string, classId: string): Promise<ClassRosterRow[]> {
+  const sb = requireSupabase()
+  const rows = unwrap<Record<string, any>[]>(
+    await sb.from('enrollments')
+      .select('id, student_id, roll_no, students!inner(full_name, father_name, gr_no), sections(name, sort_order)')
+      .eq('session_id', sessionId).eq('class_id', classId).eq('status', 'active'),
+  )
+  const rollNum = (r: string | null) => {
+    const n = parseInt((r ?? '').replace(/[^0-9]/g, ''), 10)
+    return Number.isNaN(n) ? Number.MAX_SAFE_INTEGER : n
+  }
+  return rows
+    .map((r) => ({
+      enrollment_id: r.id, student_id: r.student_id,
+      full_name: r.students?.full_name ?? '—', father_name: r.students?.father_name ?? null,
+      gr_no: r.students?.gr_no ?? null, roll_no: r.roll_no ?? null,
+      section_name: r.sections?.name ?? null, _sort: r.sections?.sort_order ?? 0,
+    }))
+    .sort((a, b) => a._sort - b._sort || rollNum(a.roll_no) - rollNum(b.roll_no) || a.full_name.localeCompare(b.full_name))
+    .map(({ _sort, ...rest }) => rest)
 }
 
 export async function removeExamSubject(id: string): Promise<void> {
