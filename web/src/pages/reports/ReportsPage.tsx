@@ -15,6 +15,7 @@ import { toCSV, downloadCSV } from '@/lib/csv'
 const FIELD = 'rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 const TABS = [
   { key: 'collection', label: 'Fee Collection' },
+  { key: 'daybook', label: 'Day Book / Cash' },
   { key: 'reconciliation', label: 'Reconciliation' },
   { key: 'defaulters', label: 'Defaulters' },
   { key: 'strength', label: 'Class Strength' },
@@ -41,6 +42,7 @@ export function ReportsPage() {
       </div>
       <div className="mt-5">
         {tab === 'collection' && <CollectionReport />}
+        {tab === 'daybook' && <DayBookReport />}
         {tab === 'reconciliation' && <ReconciliationReport />}
         {tab === 'defaulters' && <DefaultersReport />}
         {tab === 'strength' && <StrengthReport />}
@@ -171,6 +173,77 @@ function DefaultersReport() {
         </>
       )}
     </ReportShell>
+  )
+}
+
+function DayBookReport() {
+  const [date, setDate] = useState(todayISO())
+  const [counted, setCounted] = useState('')
+  const q = useQuery({ queryKey: ['rptDaybook', date], queryFn: () => listCollections(date, date) })
+  const rows = q.data ?? []
+  const byMethod = rows.reduce<Record<string, number>>((m, r) => { m[r.method] = (m[r.method] ?? 0) + r.amount; return m }, {})
+  const total = rows.reduce((s, r) => s + r.amount, 0)
+  const systemCash = byMethod['cash'] ?? 0
+  const countedNum = counted === '' ? null : Number(counted)
+  const diff = countedNum == null ? null : countedNum - systemCash
+
+  const csv = () => downloadCSV(`day-book_${date}.csv`,
+    toCSV(['Receipt', 'Time', 'Student', 'GR', 'Method', 'Amount'],
+      rows.map((r) => [r.receipt_no ?? '', fmtDate(r.created_at), r.student_name ?? '', r.gr_no ?? '', r.method, r.amount])))
+
+  return (
+    <div>
+      <div className="mb-3 flex flex-wrap items-end gap-2 print:hidden">
+        <label className="block"><span className="text-sm text-slate-600">Date</span><br />
+          <input type="date" value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} className={`mt-1 ${FIELD}`} /></label>
+      </div>
+      <ReportShell title="Day Book / Cash Reconciliation" subtitle={fmtDate(date)} onCSV={csv}>
+        {q.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+        {!q.isLoading && (
+          <>
+            <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <Stat label="Total collected" value={fmtPKR(total)} tone="slate" />
+              <Stat label="Cash (system)" value={fmtPKR(systemCash)} tone="emerald" />
+              {Object.entries(byMethod).filter(([m]) => m !== 'cash').map(([m, v]) => (
+                <Stat key={m} label={m} value={fmtPKR(v)} tone="slate" />
+              ))}
+            </div>
+
+            <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3 print:hidden">
+              <div className="text-sm font-medium text-slate-700">Reconcile the cash drawer</div>
+              <div className="mt-2 flex flex-wrap items-end gap-3">
+                <label className="block"><span className="text-xs text-slate-500">Cash counted in drawer</span><br />
+                  <input type="number" min="0" value={counted} onChange={(e) => setCounted(e.target.value)} className={`mt-1 ${FIELD}`} placeholder="e.g. 25000" /></label>
+                {diff != null && (
+                  <div className={`rounded px-3 py-2 text-sm font-medium ${diff === 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
+                    {diff === 0 ? 'Balances exactly ✓' : `${diff > 0 ? 'Over' : 'Short'} by ${fmtPKR(Math.abs(diff))}`}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                  <tr><th className={TH}>Receipt</th><th className={TH}>Student</th><th className={TH}>Method</th><th className={`${TH} text-right`}>Amount</th></tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {rows.length === 0 && <tr><td colSpan={4} className={`${TD} text-slate-500`}>No payments on this day.</td></tr>}
+                  {rows.map((r) => (
+                    <tr key={r.id} className={r.is_reversal ? 'text-red-600' : ''}>
+                      <td className={TD}>#{r.receipt_no ?? '—'}</td>
+                      <td className={TD}>{r.student_name ?? '—'}{r.gr_no ? <span className="text-slate-400"> · {r.gr_no}</span> : ''}{r.is_reversal ? ' (reversal)' : ''}</td>
+                      <td className={TD}>{r.method}</td>
+                      <td className={`${TD} text-right tabular-nums`}>{fmtPKR(r.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </ReportShell>
+    </div>
   )
 }
 

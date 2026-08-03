@@ -37,15 +37,15 @@ Every **module** works end-to-end (that's what a walk-through shows). But a re-r
 | **Adjustments / refunds** — signed balance change with reason (now counted in the balance) | ✅ done (Fees → Collect → Adjust) |
 | **Payment reversal + duplicate receipt reprint** | ✅ done (Fees → Collect → payment history) |
 | **Expected-vs-collected + ghost-student check** — the plan's headline anti-fraud control | ✅ done (Reports → Reconciliation) |
-| **Daily cash-book reconciliation** (+ pending-vs-verified bank/wallet) | ⬜ next |
-| **Sibling detection & linking** at intake / on the profile | ⬜ next |
-| **Owner audit-log report** (the audit trail exists; it needs a viewer) | ⬜ next |
+| **Daily cash-book reconciliation** | ✅ done (Reports → Day Book / Cash). *(Pending-vs-verified bank/wallet clearing is a small follow-up — payments currently post as verified.)* |
+| **Sibling detection & linking** on the profile | ✅ done (Students → profile → Siblings / family) |
+| **Owner audit-log report** | ✅ done (Settings → Audit Log, owner/principal only) |
 
 | Also outstanding | Status |
 |------|--------|
 | **Windows desktop `.msi`** | Scaffolded (`desktop/`, Tauri v2) + a **dispatch/tag-triggered** workflow that builds the installer on a Windows runner. Builds on GitHub's Windows runner (or your Windows PC) — not verifiable in this Linux environment — and a **signed** installer needs your **code-signing certificate**. |
 
-**So: modules complete; a depth pass is underway** (fee controls done, anti-fraud reporting + sibling linking + audit viewer next), then the **joint inch-by-inch testing pass** on real Supabase.
+**So: modules complete, and the depth pass is essentially done** (fee controls, expected-vs-collected + ghost check, day-book cash reconciliation, sibling view, audit-log viewer). The only deferred bit is **pending-vs-verified** payment clearing. Next: the **joint inch-by-inch testing pass** on real Supabase.
 
 ### ✅ Recently completed
 - **Bulk student import** (CSV) — Settings → Import → Students.
@@ -70,7 +70,7 @@ The app is only a front-end to **the school's own Supabase**. I can't create you
 
 1. **Create a Supabase project** at supabase.com (sign in with Google → New project). Region **Singapore**. Save the DB password.
 2. From **Settings → API**, copy the **Project URL** and the **anon public key**.
-3. **Load the schema:** either install the Supabase CLI and run `supabase link` + `supabase db push`, or open **SQL Editor** and paste each file in `supabase/migrations/` in order (0001 → 0012), then paste `supabase/seed.sql` and Run.
+3. **Load the schema:** either install the Supabase CLI and run `supabase link` + `supabase db push`, or open **SQL Editor** and paste each file in `supabase/migrations/` **in order, 0001 → the highest number** (currently 0018), then paste `supabase/seed.sql` and Run. *(Already loaded up to 0016 earlier? Just run the newer ones — 0017, 0018, … — to get the latest features.)*
 4. **Run the app** — two options:
    - *Local (fastest to test):* in `web/`, copy `.env.example` to `.env`, set `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_SCHOOL_NAME`, then `npm install && npm run dev` and open the printed URL.
    - *Hosted:* connect the repo to Cloudflare Pages/Vercel with those three env vars (build `npm run build`, output `web/dist`).

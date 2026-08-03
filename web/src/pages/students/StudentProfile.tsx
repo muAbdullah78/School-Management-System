@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getStudent, getStudentEnrollments, getGuardians, updateStudent, setStudentStatus,
-  getStudentBalance, getStudentInvoices, getStudentPayments, attendanceSummary,
+  getStudentBalance, getStudentInvoices, getStudentPayments, attendanceSummary, getSiblings,
   type StudentProfile as Student,
 } from '@/lib/db'
 import {
@@ -16,7 +16,7 @@ const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm foc
 const TABS = ['Overview', 'Fees', 'Attendance'] as const
 type Tab = (typeof TABS)[number]
 
-export function StudentProfile({ studentId, onBack }: { studentId: string; onBack: () => void }) {
+export function StudentProfile({ studentId, onBack, onOpen }: { studentId: string; onBack: () => void; onOpen?: (id: string) => void }) {
   const { profile } = useAuth()
   const role = profile?.role
   const canEdit = !!role && ADMIN_ROLES.includes(role) && role !== 'readonly' && role !== 'accountant'
@@ -71,7 +71,7 @@ export function StudentProfile({ studentId, onBack }: { studentId: string; onBac
 
       <div className="mt-5">
         {tab === 'Overview' && (
-          <Overview student={s} guardians={guardians.data ?? []} enrollments={enroll.data ?? []} canEdit={canEdit} />
+          <Overview student={s} guardians={guardians.data ?? []} enrollments={enroll.data ?? []} canEdit={canEdit} onOpen={onOpen} />
         )}
         {tab === 'Fees' && <FeesTab studentId={studentId} />}
         {tab === 'Attendance' && (
@@ -128,13 +128,15 @@ function StatusAction({ student }: { student: Student }) {
 }
 
 function Overview({
-  student, guardians, enrollments, canEdit,
+  student, guardians, enrollments, canEdit, onOpen,
 }: {
   student: Student
   guardians: { id: string; name: string; relation: string | null; phone: string | null; whatsapp: string | null; is_primary: boolean }[]
   enrollments: { session_name: string; class_name: string; section_name: string | null; roll_no: string | null; status: string }[]
   canEdit: boolean
+  onOpen?: (id: string) => void
 }) {
+  const siblings = useQuery({ queryKey: ['siblings', student.id], queryFn: () => getSiblings(student.id) })
   const qc = useQueryClient()
   const [editing, setEditing] = useState(false)
   const [f, setF] = useState(student)
@@ -230,6 +232,26 @@ function Overview({
                 <li key={i} className="flex justify-between">
                   <span className="text-slate-700">{e.session_name} · {e.class_name}{e.section_name ? ` (${e.section_name})` : ''}</span>
                   <span className="text-slate-500">{e.roll_no ? `Roll ${e.roll_no}` : ''}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
+          <div className="text-xs uppercase tracking-wide text-slate-500">Siblings / family</div>
+          {siblings.isLoading ? (
+            <p className="mt-2 text-sm text-slate-400">…</p>
+          ) : (siblings.data?.length ?? 0) === 0 ? (
+            <p className="mt-2 text-sm text-slate-400">No siblings detected (matched on father’s name).</p>
+          ) : (
+            <ul className="mt-2 space-y-1.5 text-sm">
+              {siblings.data?.map((sib) => (
+                <li key={sib.id}>
+                  <button onClick={() => onOpen?.(sib.id)} disabled={!onOpen}
+                    className="text-left text-slate-700 hover:text-brand-700 hover:underline disabled:cursor-default disabled:no-underline">
+                    {sib.full_name}{sib.gr_no ? ` · ${sib.gr_no}` : ''}
+                  </button>
                 </li>
               ))}
             </ul>

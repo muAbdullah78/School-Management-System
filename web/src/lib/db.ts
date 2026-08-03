@@ -549,6 +549,23 @@ export async function listStudents(term: string): Promise<StudentRow[]> {
   return unwrap(await q.order('full_name').limit(50))
 }
 
+/** Detect likely siblings: other (non-deleted) students with the same father's
+ *  name. A pragmatic family view without a schema-level family link. */
+export async function getSiblings(studentId: string): Promise<StudentRow[]> {
+  const sb = requireSupabase()
+  const me = unwrap<{ father_name: string | null }>(
+    await sb.from('students').select('father_name').eq('id', studentId).single(),
+  )
+  const father = (me.father_name ?? '').trim()
+  if (!father) return []
+  return unwrap(
+    await sb.from('students')
+      .select('id, gr_no, full_name, father_name')
+      .neq('id', studentId).ilike('father_name', father).is('deleted_at', null)
+      .order('full_name').limit(20),
+  )
+}
+
 export async function getStudent(studentId: string): Promise<StudentProfile> {
   const sb = requireSupabase()
   return unwrap(
@@ -1002,6 +1019,20 @@ export async function issueCertificate(
   })
   if (error) throw new Error(error.message)
   return res as IssueCertResult
+}
+
+// ---- Audit log (owner/principal read-only via RLS) ----
+export interface AuditRow {
+  id: number; actor: string | null; actor_role: string | null; action: string
+  entity: string; entity_id: string | null; reason: string | null; created_at: string
+}
+export async function listAuditLog(limit = 200): Promise<AuditRow[]> {
+  const sb = requireSupabase()
+  return unwrap(
+    await sb.from('audit_log')
+      .select('id, actor, actor_role, action, entity, entity_id, reason, created_at')
+      .order('created_at', { ascending: false }).limit(limit),
+  )
 }
 
 // ---- Full data export (backup) ----
