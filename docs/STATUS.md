@@ -5,13 +5,13 @@ steps are **yours** (manual, outside the code) vs **mine** (Claude, in the code)
 It supersedes the tech-stack details in [`05-ROADMAP.md`](05-ROADMAP.md); the
 authoritative product decisions are in [`09-DECISIONS-LOCKED.md`](09-DECISIONS-LOCKED.md).
 
-_Last updated after: Windows desktop wrapper (Tauri)._
+_Last updated after: fee engine depth (discounts, fines, adjustments, reversal/reprint)._
 
 ---
 
 ## ✅ Done (on `main` / in the open PR)
 
-**Database — `supabase/migrations/` (15 migrations, all validated on Postgres 16)**
+**Database — `supabase/migrations/` (18 migrations, all validated on Postgres 16)**
 - Core 30-table schema, identity/state split, append-only money/marks/attendance, soft-delete, **61 RLS policies**, audit triggers, gapless counters (GR / receipt / certificate serials).
 - Fees engine, attendance, admissions, exams, settings, certificates, dashboard rollup, assessments, staff, auth auto-provisioning, **bulk student import**, **opening fee-balance import**, **year-end rollover**.
 
@@ -22,20 +22,30 @@ _Last updated after: Windows desktop wrapper (Tauri)._
 - **Installable PWA + offline attendance**: the app installs to a phone home screen and opens offline; attendance saved while offline is queued locally and **syncs automatically on reconnect** (with an app-wide connectivity/sync banner).
 
 **Quality gates**
-- **63 unit tests**; **CI** runs the web build/typecheck + tests, applies all migrations on a real Postgres 16, and exercises the import and rollover RPCs end-to-end. The offline shell was verified in headless Chromium (service worker controls the page; a full offline reload still boots the app).
+- **68 unit tests**; **CI** runs the web build/typecheck + tests, applies all migrations on a real Postgres 16, and exercises the import / rollover / staff / **fee-ops** RPCs end-to-end (fine → adjustment → waive → approved-discount all move the balance correctly). The offline shell was verified in headless Chromium.
 
 ---
 
-## ⬜ Left to reach the full v1.0 spec
+## ⬜ Depth pass — completing the spec's detail (in progress)
 
-**Every substantive workstream from the spec is now built.** What remains is one manual step that's yours, plus optional nice-to-haves.
+Every **module** works end-to-end (that's what a walk-through shows). But a re-read of [`03-FEATURES.md`](03-FEATURES.md) found real **depth** that had database tables but no operations/screens — especially the fee/anti-fraud controls the plan calls essential. Closing those now:
 
-| Item | Status |
+| Depth feature | Status |
+|---------------|--------|
+| **Discounts** — approvable, reasoned, audited, with a register (separation of duties) | ✅ done (Fees → Discounts) |
+| **Fines / late fees** — apply, and waive with a reason | ✅ done (Fees → Collect, per invoice) |
+| **Adjustments / refunds** — signed balance change with reason (now counted in the balance) | ✅ done (Fees → Collect → Adjust) |
+| **Payment reversal + duplicate receipt reprint** | ✅ done (Fees → Collect → payment history) |
+| **Expected-vs-collected + ghost-student check** — the plan's headline anti-fraud control | ✅ done (Reports → Reconciliation) |
+| **Daily cash-book reconciliation** | ✅ done (Reports → Day Book / Cash). *(Pending-vs-verified bank/wallet clearing is a small follow-up — payments currently post as verified.)* |
+| **Sibling detection & linking** on the profile | ✅ done (Students → profile → Siblings / family) |
+| **Owner audit-log report** | ✅ done (Settings → Audit Log, owner/principal only) |
+
+| Also outstanding | Status |
 |------|--------|
-| **Windows desktop `.msi`** | Scaffolded (`desktop/`, Tauri v2) + a **dispatch/tag-triggered** GitHub workflow that builds the installer on a Windows runner. The `.msi` build runs on GitHub's Windows runner (or your Windows PC) — **not** verifiable in this Linux environment — and shipping a **signed** installer needs your **code-signing certificate** (the one part only you can do). |
-| *Nice-to-haves* | ~~more report types~~ ✅ · ~~staff bulk import~~ ✅ · ~~offline roster cold-start~~ ✅ · ~~staff ID cards~~ ✅. **All cleared.** |
+| **Windows desktop `.msi`** | Scaffolded (`desktop/`, Tauri v2) + a **dispatch/tag-triggered** workflow that builds the installer on a Windows runner. Builds on GitHub's Windows runner (or your Windows PC) — not verifiable in this Linux environment — and a **signed** installer needs your **code-signing certificate**. |
 
-**So: the full written spec is built.** Next is the **joint inch-by-inch testing pass** on a real Supabase project (see below), plus the desktop signing when you're ready.
+**So: modules complete, and the depth pass is essentially done** (fee controls, expected-vs-collected + ghost check, day-book cash reconciliation, sibling view, audit-log viewer). The only deferred bit is **pending-vs-verified** payment clearing. Next: the **joint inch-by-inch testing pass** on real Supabase.
 
 ### ✅ Recently completed
 - **Bulk student import** (CSV) — Settings → Import → Students.
@@ -48,7 +58,8 @@ _Last updated after: Windows desktop wrapper (Tauri)._
 - **More reports** — Reports now also has a **monthly attendance register** (class/section × days grid, print/CSV) and a **per-student fee ledger** (debit/credit running balance, print/CSV).
 - **Staff bulk import** — Settings → Import → Staff: load the staff list from CSV (validated, de-duped on Employee No / CNIC), same as the student importer.
 - **Offline roster cold-start** — the attendance pickers + roster are cached read-through, so a teacher can open the app with no connection and still see the class list and roster (an offline banner explains it). Combined with the marks-queue, attendance now works fully offline end-to-end.
-- **Staff ID cards** — Staff → ID card: a printable staff card with a QR (same layout as the student ID card). Every listed nice-to-have is now done.
+- **Staff ID cards** — Staff → ID card: a printable staff card with a QR (same layout as the student ID card).
+- **Fee engine depth** — Fees now has a **Discounts** tab (propose → owner/principal approve → applied on the next challan, with a register), and Collect Payment gained **fines** (apply / waive-with-reason), **balance adjustments** (owner/principal, counted in the balance), and **payment reversal + duplicate receipt reprint**. `student_balance` now includes adjustments. Closes the biggest depth gap in the money module.
 
 ---
 
@@ -59,7 +70,7 @@ The app is only a front-end to **the school's own Supabase**. I can't create you
 
 1. **Create a Supabase project** at supabase.com (sign in with Google → New project). Region **Singapore**. Save the DB password.
 2. From **Settings → API**, copy the **Project URL** and the **anon public key**.
-3. **Load the schema:** either install the Supabase CLI and run `supabase link` + `supabase db push`, or open **SQL Editor** and paste each file in `supabase/migrations/` in order (0001 → 0012), then paste `supabase/seed.sql` and Run.
+3. **Load the schema:** either install the Supabase CLI and run `supabase link` + `supabase db push`, or open **SQL Editor** and paste each file in `supabase/migrations/` **in order, 0001 → the highest number** (currently 0018), then paste `supabase/seed.sql` and Run. *(Already loaded up to 0016 earlier? Just run the newer ones — 0017, 0018, … — to get the latest features.)*
 4. **Run the app** — two options:
    - *Local (fastest to test):* in `web/`, copy `.env.example` to `.env`, set `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_SCHOOL_NAME`, then `npm install && npm run dev` and open the printed URL.
    - *Hosted:* connect the repo to Cloudflare Pages/Vercel with those three env vars (build `npm run build`, output `web/dist`).

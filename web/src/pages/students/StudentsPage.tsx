@@ -13,7 +13,7 @@ export function StudentsPage() {
   })
 
   if (selectedId) {
-    return <StudentProfile studentId={selectedId} onBack={() => setSelectedId(null)} />
+    return <StudentProfile studentId={selectedId} onBack={() => setSelectedId(null)} onOpen={setSelectedId} />
   }
 
   return (

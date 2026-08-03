@@ -164,6 +164,97 @@ export async function reversePayment(paymentId: string, reason: string): Promise
   return data as string
 }
 
+// ---- Discounts / fines / adjustments (fee engine depth) ----
+export interface DiscountRow {
+  id: string; enrollment_id: string; type: string; amount: number; is_percent: boolean
+  reason: string | null; status: string; created_at: string
+  student_name: string | null; gr_no: string | null; class_name: string | null
+}
+export interface CurrentEnrollment { enrollment_id: string; class_name: string; section_name: string | null }
+
+export async function getCurrentEnrollment(studentId: string): Promise<CurrentEnrollment | null> {
+  const sb = requireSupabase()
+  const rows = unwrap<Record<string, any>[]>(
+    await sb.from('enrollments')
+      .select('id, classes(name), sections(name), academic_sessions!inner(is_current)')
+      .eq('student_id', studentId).eq('academic_sessions.is_current', true).limit(1),
+  )
+  if (!rows.length) return null
+  return { enrollment_id: rows[0].id, class_name: rows[0].classes?.name ?? '—', section_name: rows[0].sections?.name ?? null }
+}
+
+export async function listDiscounts(): Promise<DiscountRow[]> {
+  const sb = requireSupabase()
+  const rows = unwrap<Record<string, any>[]>(
+    await sb.from('discounts')
+      .select('id, enrollment_id, type, amount, is_percent, reason, status, created_at, enrollments!inner(students(full_name, gr_no), classes(name))')
+      .order('created_at', { ascending: false }),
+  )
+  return rows.map((r) => ({
+    id: r.id, enrollment_id: r.enrollment_id, type: r.type, amount: Number(r.amount),
+    is_percent: r.is_percent, reason: r.reason, status: r.status, created_at: r.created_at,
+    student_name: r.enrollments?.students?.full_name ?? null,
+    gr_no: r.enrollments?.students?.gr_no ?? null,
+    class_name: r.enrollments?.classes?.name ?? null,
+  }))
+}
+
+export async function addDiscount(
+  enrollmentId: string, type: string, amount: number, isPercent: boolean, reason: string,
+): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_add_discount', {
+    p_enrollment_id: enrollmentId, p_type: type, p_amount: amount, p_is_percent: isPercent, p_reason: reason,
+  })
+  if (error) throw new Error(error.message)
+}
+
+export async function setDiscountStatus(discountId: string, status: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_set_discount_status', { p_discount_id: discountId, p_status: status })
+  if (error) throw new Error(error.message)
+}
+
+export async function applyFine(invoiceId: string, amount: number, reason: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_apply_fine', { p_invoice_id: invoiceId, p_amount: amount, p_reason: reason })
+  if (error) throw new Error(error.message)
+}
+
+export async function waiveFine(invoiceId: string, reason: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_waive_fine', { p_invoice_id: invoiceId, p_reason: reason })
+  if (error) throw new Error(error.message)
+}
+
+export async function addAdjustment(studentId: string, amount: number, reason: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_add_adjustment', { p_student_id: studentId, p_amount: amount, p_reason: reason })
+  if (error) throw new Error(error.message)
+}
+
+// ---- Fee reconciliation (expected vs collected + ghost check) ----
+export interface ReconClassRow { class_name: string; expected: number; collected: number; outstanding: number }
+export interface ReconStudent { gr_no: string | null; full_name: string; class_name: string }
+export interface FeeReconciliation {
+  expected: number; collected: number; outstanding: number
+  by_class: ReconClassRow[]; uninvoiced: ReconStudent[]; ghost_suspects: ReconStudent[]
+}
+export async function getFeeReconciliation(sessionId: string): Promise<FeeReconciliation> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_fee_reconciliation', { p_session_id: sessionId })
+  if (error) throw new Error(error.message)
+  const d = data as any
+  return {
+    expected: Number(d.expected), collected: Number(d.collected), outstanding: Number(d.outstanding),
+    by_class: (d.by_class ?? []).map((r: any) => ({
+      class_name: r.class_name, expected: Number(r.expected), collected: Number(r.collected), outstanding: Number(r.outstanding),
+    })),
+    uninvoiced: d.uninvoiced ?? [],
+    ghost_suspects: d.ghost_suspects ?? [],
+  }
+}
+
 export async function getDefaulters(sessionId: string): Promise<Defaulter[]> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_defaulters', { p_session_id: sessionId })
@@ -456,6 +547,23 @@ export async function listStudents(term: string): Promise<StudentRow[]> {
   let q = sb.from('students').select('id, gr_no, full_name, father_name').is('deleted_at', null)
   if (t) q = q.or(`full_name.ilike.%${t}%,gr_no.ilike.%${t}%`)
   return unwrap(await q.order('full_name').limit(50))
+}
+
+/** Detect likely siblings: other (non-deleted) students with the same father's
+ *  name. A pragmatic family view without a schema-level family link. */
+export async function getSiblings(studentId: string): Promise<StudentRow[]> {
+  const sb = requireSupabase()
+  const me = unwrap<{ father_name: string | null }>(
+    await sb.from('students').select('father_name').eq('id', studentId).single(),
+  )
+  const father = (me.father_name ?? '').trim()
+  if (!father) return []
+  return unwrap(
+    await sb.from('students')
+      .select('id, gr_no, full_name, father_name')
+      .neq('id', studentId).ilike('father_name', father).is('deleted_at', null)
+      .order('full_name').limit(20),
+  )
 }
 
 export async function getStudent(studentId: string): Promise<StudentProfile> {
@@ -911,6 +1019,20 @@ export async function issueCertificate(
   })
   if (error) throw new Error(error.message)
   return res as IssueCertResult
+}
+
+// ---- Audit log (owner/principal read-only via RLS) ----
+export interface AuditRow {
+  id: number; actor: string | null; actor_role: string | null; action: string
+  entity: string; entity_id: string | null; reason: string | null; created_at: string
+}
+export async function listAuditLog(limit = 200): Promise<AuditRow[]> {
+  const sb = requireSupabase()
+  return unwrap(
+    await sb.from('audit_log')
+      .select('id, actor, actor_role, action, entity, entity_id, reason, created_at')
+      .order('created_at', { ascending: false }).limit(limit),
+  )
 }
 
 // ---- Full data export (backup) ----
