@@ -2,10 +2,12 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   searchStudents, getStudentBalance, getStudentInvoices, getStudentPayments,
-  recordPayment, type StudentRow,
+  recordPayment, applyFine, waiveFine, addAdjustment, reversePayment, type StudentRow,
 } from '@/lib/db'
-import { PAYMENT_METHODS, INVOICE_STATUS_LABELS } from '@/lib/constants'
+import { PAYMENT_METHODS } from '@/lib/constants'
 import { fmtPKR, fmtDate } from '@/lib/format'
+import { useAuth } from '@/auth/AuthProvider'
+import { APPROVER_ROLES, type Role } from '@/auth/roles'
 import { Receipt, type ReceiptData } from '@/components/Receipt'
 
 export function CollectPayment() {
@@ -28,6 +30,15 @@ export function CollectPayment() {
   const invoices = useQuery({ queryKey: ['invoices', sid], queryFn: () => getStudentInvoices(sid!), enabled: !!sid })
   const payments = useQuery({ queryKey: ['payments', sid], queryFn: () => getStudentPayments(sid!), enabled: !!sid })
 
+  const { profile } = useAuth()
+  const canApprove = !!profile && APPROVER_ROLES.includes(profile.role as Role)
+
+  function refresh() {
+    qc.invalidateQueries({ queryKey: ['balance', sid] })
+    qc.invalidateQueries({ queryKey: ['invoices', sid] })
+    qc.invalidateQueries({ queryKey: ['payments', sid] })
+  }
+
   const pay = useMutation({
     mutationFn: () => recordPayment(sid!, Number(amount), method, note || undefined),
     onSuccess: async (res) => {
@@ -42,11 +53,49 @@ export function CollectPayment() {
         note: note || null,
       })
       setAmount(''); setNote('')
-      qc.invalidateQueries({ queryKey: ['balance', sid] })
-      qc.invalidateQueries({ queryKey: ['invoices', sid] })
-      qc.invalidateQueries({ queryKey: ['payments', sid] })
+      refresh()
     },
   })
+
+  const fineM = useMutation({ mutationFn: (v: { invoiceId: string; amount: number; reason: string }) => applyFine(v.invoiceId, v.amount, v.reason), onSuccess: refresh })
+  const waiveM = useMutation({ mutationFn: (v: { invoiceId: string; reason: string }) => waiveFine(v.invoiceId, v.reason), onSuccess: refresh })
+  const adjustM = useMutation({ mutationFn: (v: { amount: number; reason: string }) => addAdjustment(sid!, v.amount, v.reason), onSuccess: refresh })
+  const reverseM = useMutation({ mutationFn: (v: { id: string; reason: string }) => reversePayment(v.id, v.reason), onSuccess: refresh })
+  const actionErr = (fineM.error ?? waiveM.error ?? adjustM.error ?? reverseM.error) as Error | null
+
+  function onFine(invoiceId: string) {
+    const a = window.prompt('Late fee / fine amount (Rs):')
+    if (a == null) return
+    const amt = Number(a)
+    if (!(amt > 0)) { window.alert('Enter a positive amount.'); return }
+    fineM.mutate({ invoiceId, amount: amt, reason: window.prompt('Reason (optional):') ?? '' })
+  }
+  function onWaive(invoiceId: string) {
+    const r = window.prompt('Reason for waiving this fine:')
+    if (r == null) return
+    waiveM.mutate({ invoiceId, reason: r })
+  }
+  function onAdjust() {
+    const a = window.prompt('Adjustment amount — negative for a credit/waiver, positive to add a charge (Rs):')
+    if (a == null) return
+    const amt = Number(a)
+    if (!amt) { window.alert('Enter a non-zero number.'); return }
+    const r = window.prompt('Reason (required):')
+    if (!r || !r.trim()) { window.alert('A reason is required.'); return }
+    adjustM.mutate({ amount: amt, reason: r.trim() })
+  }
+  function onReverse(id: string) {
+    const r = window.prompt('Reason for reversing this payment:')
+    if (r == null) return
+    reverseM.mutate({ id, reason: r })
+  }
+  function onReprint(p: { receipt_no: number | null; amount: number; method: string; note: string | null }) {
+    setReceipt({
+      receiptNo: p.receipt_no ?? 0, studentName: selected!.full_name, grNo: selected!.gr_no,
+      amount: p.amount, method: PAYMENT_METHODS.find((m) => m.value === p.method)?.label ?? p.method,
+      balanceAfter: balance.data ?? 0, note: p.note,
+    })
+  }
 
   function reset() {
     setSelected(null); setTerm(''); setAmount(''); setNote('')
@@ -126,6 +175,13 @@ export function CollectPayment() {
               {pay.isPending ? 'Recording…' : 'Record payment & print receipt'}
             </button>
           </form>
+          {canApprove && (
+            <button onClick={onAdjust} disabled={adjustM.isPending}
+              className="mt-2 w-full rounded border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60">
+              Adjust balance (credit / correction)
+            </button>
+          )}
+          {actionErr && <p className="mt-2 text-sm text-red-600">{actionErr.message}</p>}
         </div>
 
         {/* Open invoices */}
@@ -134,16 +190,23 @@ export function CollectPayment() {
           <div className="mt-2 max-h-72 overflow-y-auto">
             <table className="w-full text-sm">
               <thead className="text-left text-xs text-slate-400">
-                <tr><th className="py-1">Month</th><th>Charge</th><th>Paid</th><th>Due</th><th>Status</th></tr>
+                <tr><th className="py-1">Month</th><th>Charge</th><th>Fine</th><th>Due</th><th></th></tr>
               </thead>
               <tbody>
                 {invoices.data?.map((i) => (
                   <tr key={i.invoice_id} className="border-t border-slate-100">
                     <td className="py-1.5">{fmtDate(i.period_month)}</td>
                     <td>{fmtPKR(i.charge)}</td>
-                    <td>{fmtPKR(i.allocated)}</td>
+                    <td className={i.fine > 0 ? 'text-amber-700' : 'text-slate-400'}>{i.fine > 0 ? fmtPKR(i.fine) : '—'}</td>
                     <td className={i.charge - i.allocated > 0 ? 'text-red-600' : ''}>{fmtPKR(i.charge - i.allocated)}</td>
-                    <td>{INVOICE_STATUS_LABELS[i.status] ?? i.status}</td>
+                    <td className="text-right whitespace-nowrap">
+                      {i.status !== 'void' && (
+                        <button onClick={() => onFine(i.invoice_id)} className="text-xs text-brand-700 hover:underline">Fine</button>
+                      )}
+                      {canApprove && i.fine > 0 && (
+                        <button onClick={() => onWaive(i.invoice_id)} className="ml-2 text-xs text-slate-500 hover:underline">Waive</button>
+                      )}
+                    </td>
                   </tr>
                 ))}
                 {invoices.data?.length === 0 && (
@@ -160,7 +223,7 @@ export function CollectPayment() {
         <div className="text-xs uppercase tracking-wide text-slate-500">Payment history</div>
         <table className="mt-2 w-full text-sm">
           <thead className="text-left text-xs text-slate-400">
-            <tr><th className="py-1">Receipt</th><th>Date</th><th>Amount</th><th>Method</th><th>Note</th></tr>
+            <tr><th className="py-1">Receipt</th><th>Date</th><th>Amount</th><th>Method</th><th>Note</th><th></th></tr>
           </thead>
           <tbody>
             {payments.data?.map((p) => (
@@ -170,9 +233,19 @@ export function CollectPayment() {
                 <td className={p.amount < 0 ? 'text-red-600' : ''}>{fmtPKR(p.amount)}</td>
                 <td>{PAYMENT_METHODS.find((m) => m.value === p.method)?.label ?? p.method}</td>
                 <td className="text-slate-500">{p.reversal_of ? 'Reversal' : p.note}</td>
+                <td className="text-right whitespace-nowrap">
+                  {p.amount >= 0 && !p.reversal_of && (
+                    <>
+                      <button onClick={() => onReprint(p)} className="text-xs text-brand-700 hover:underline">Reprint</button>
+                      {canApprove && (
+                        <button onClick={() => onReverse(p.id)} className="ml-2 text-xs text-red-600 hover:underline">Reverse</button>
+                      )}
+                    </>
+                  )}
+                </td>
               </tr>
             ))}
-            {payments.data?.length === 0 && <tr><td colSpan={5} className="py-3 text-slate-400">No payments yet.</td></tr>}
+            {payments.data?.length === 0 && <tr><td colSpan={6} className="py-3 text-slate-400">No payments yet.</td></tr>}
           </tbody>
         </table>
       </div>

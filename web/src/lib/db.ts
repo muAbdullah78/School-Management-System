@@ -164,6 +164,75 @@ export async function reversePayment(paymentId: string, reason: string): Promise
   return data as string
 }
 
+// ---- Discounts / fines / adjustments (fee engine depth) ----
+export interface DiscountRow {
+  id: string; enrollment_id: string; type: string; amount: number; is_percent: boolean
+  reason: string | null; status: string; created_at: string
+  student_name: string | null; gr_no: string | null; class_name: string | null
+}
+export interface CurrentEnrollment { enrollment_id: string; class_name: string; section_name: string | null }
+
+export async function getCurrentEnrollment(studentId: string): Promise<CurrentEnrollment | null> {
+  const sb = requireSupabase()
+  const rows = unwrap<Record<string, any>[]>(
+    await sb.from('enrollments')
+      .select('id, classes(name), sections(name), academic_sessions!inner(is_current)')
+      .eq('student_id', studentId).eq('academic_sessions.is_current', true).limit(1),
+  )
+  if (!rows.length) return null
+  return { enrollment_id: rows[0].id, class_name: rows[0].classes?.name ?? '—', section_name: rows[0].sections?.name ?? null }
+}
+
+export async function listDiscounts(): Promise<DiscountRow[]> {
+  const sb = requireSupabase()
+  const rows = unwrap<Record<string, any>[]>(
+    await sb.from('discounts')
+      .select('id, enrollment_id, type, amount, is_percent, reason, status, created_at, enrollments!inner(students(full_name, gr_no), classes(name))')
+      .order('created_at', { ascending: false }),
+  )
+  return rows.map((r) => ({
+    id: r.id, enrollment_id: r.enrollment_id, type: r.type, amount: Number(r.amount),
+    is_percent: r.is_percent, reason: r.reason, status: r.status, created_at: r.created_at,
+    student_name: r.enrollments?.students?.full_name ?? null,
+    gr_no: r.enrollments?.students?.gr_no ?? null,
+    class_name: r.enrollments?.classes?.name ?? null,
+  }))
+}
+
+export async function addDiscount(
+  enrollmentId: string, type: string, amount: number, isPercent: boolean, reason: string,
+): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_add_discount', {
+    p_enrollment_id: enrollmentId, p_type: type, p_amount: amount, p_is_percent: isPercent, p_reason: reason,
+  })
+  if (error) throw new Error(error.message)
+}
+
+export async function setDiscountStatus(discountId: string, status: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_set_discount_status', { p_discount_id: discountId, p_status: status })
+  if (error) throw new Error(error.message)
+}
+
+export async function applyFine(invoiceId: string, amount: number, reason: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_apply_fine', { p_invoice_id: invoiceId, p_amount: amount, p_reason: reason })
+  if (error) throw new Error(error.message)
+}
+
+export async function waiveFine(invoiceId: string, reason: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_waive_fine', { p_invoice_id: invoiceId, p_reason: reason })
+  if (error) throw new Error(error.message)
+}
+
+export async function addAdjustment(studentId: string, amount: number, reason: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_add_adjustment', { p_student_id: studentId, p_amount: amount, p_reason: reason })
+  if (error) throw new Error(error.message)
+}
+
 export async function getDefaulters(sessionId: string): Promise<Defaulter[]> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_defaulters', { p_session_id: sessionId })

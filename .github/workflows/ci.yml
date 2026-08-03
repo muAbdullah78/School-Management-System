@@ -193,4 +193,37 @@ jobs:
             end if;
             raise notice 'staff import ok';
           end $CI$;
+          -- fee ops: fine / adjustment / waive / approved-discount all move the
+          -- balance correctly (isolated in its own class so nothing else is touched).
+          insert into public.classes(id, name, level_order)
+            values ('77777777-7777-7777-7777-777777777777', 'Fee Class', 5);
+          insert into public.fee_heads(id, name, type, is_recurring)
+            values ('66666666-6666-6666-6666-666666666666', 'Tuition', 'monthly', true);
+          insert into public.fee_structures(session_id, class_id, fee_head_id, amount)
+            values ('22222222-2222-2222-2222-222222222222', '77777777-7777-7777-7777-777777777777',
+                    '66666666-6666-6666-6666-666666666666', 1000);
+          do $CI$
+          declare sid uuid; enr uuid; inv uuid; did uuid;
+          begin
+            perform public.fn_import_students('22222222-2222-2222-2222-222222222222',
+              '[{"full_name":"Fee Test","class":"Fee Class","gr_no":"FEE1"}]'::jsonb, false);
+            select id into sid from public.students where gr_no = 'FEE1';
+            select id into enr from public.enrollments where student_id = sid;
+            perform public.fn_generate_class_invoices('22222222-2222-2222-2222-222222222222',
+              '77777777-7777-7777-7777-777777777777', '2025-08-01', '2025-08-10');
+            select id into inv from public.invoices where student_id = sid limit 1;
+            if public.student_balance(sid) <> 1000 then raise exception 'FEE base %', public.student_balance(sid); end if;
+            perform public.fn_apply_fine(inv, 200, 'late');
+            if public.student_balance(sid) <> 1200 then raise exception 'FEE fine %', public.student_balance(sid); end if;
+            perform public.fn_add_adjustment(sid, -300, 'hardship');
+            if public.student_balance(sid) <> 900 then raise exception 'FEE adj %', public.student_balance(sid); end if;
+            perform public.fn_waive_fine(inv, 'goodwill');
+            if public.student_balance(sid) <> 700 then raise exception 'FEE waive %', public.student_balance(sid); end if;
+            did := public.fn_add_discount(enr, 'sibling', 10, true, 'sib');
+            perform public.fn_set_discount_status(did, 'approved');
+            perform public.fn_generate_class_invoices('22222222-2222-2222-2222-222222222222',
+              '77777777-7777-7777-7777-777777777777', '2025-09-01', '2025-09-10');
+            if public.student_balance(sid) <> 1600 then raise exception 'FEE sep %', public.student_balance(sid); end if;
+            raise notice 'fee ops ok';
+          end $CI$;
           SQL

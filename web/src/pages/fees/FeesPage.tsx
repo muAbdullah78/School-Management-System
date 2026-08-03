@@ -2,10 +2,12 @@ import { useState } from 'react'
 import { CollectPayment } from './CollectPayment'
 import { GenerateChallans } from './GenerateChallans'
 import { Defaulters } from './Defaulters'
+import { Discounts } from './Discounts'
 
 const TABS = [
   { key: 'collect', label: 'Collect Payment' },
   { key: 'generate', label: 'Generate Challans' },
+  { key: 'discounts', label: 'Discounts' },
   { key: 'defaulters', label: 'Defaulters' },
 ] as const
 
@@ -32,6 +34,7 @@ export function FeesPage() {
       <div className="mt-5">
         {tab === 'collect' && <CollectPayment />}
         {tab === 'generate' && <GenerateChallans />}
+        {tab === 'discounts' && <Discounts />}
         {tab === 'defaulters' && <Defaulters />}
       </div>
     </div>

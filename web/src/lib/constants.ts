@@ -47,6 +47,19 @@ export const GENDERS: { value: string; label: string }[] = [
   { value: 'other', label: 'Other' },
 ]
 
+/** Discount types — values must match the `discount_type` enum in the DB. */
+export const DISCOUNT_TYPES: { value: string; label: string }[] = [
+  { value: 'sibling', label: 'Sibling' },
+  { value: 'merit', label: 'Merit' },
+  { value: 'staff_child', label: 'Staff child' },
+  { value: 'hardship', label: 'Hardship' },
+  { value: 'scholarship', label: 'Scholarship' },
+  { value: 'other', label: 'Other' },
+]
+export const DISCOUNT_STATUS_LABELS: Record<string, string> = {
+  pending: 'Pending', approved: 'Approved', rejected: 'Rejected', revoked: 'Revoked',
+}
+
 /** Student status — values must match the `student_status` enum in the DB. */
 export const STUDENT_STATUS_LABELS: Record<string, string> = {
   active: 'Active',
