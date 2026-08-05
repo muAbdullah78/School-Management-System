@@ -4,7 +4,7 @@ import {
   searchStudents, getStudentBalance, getStudentInvoices, getStudentPayments,
   recordPayment, applyFine, waiveFine, addAdjustment, reversePayment, type StudentRow,
 } from '@/lib/db'
-import { PAYMENT_METHODS } from '@/lib/constants'
+import { PAYMENT_METHODS, PAYMENT_STATUS_LABELS } from '@/lib/constants'
 import { fmtPKR, fmtDate } from '@/lib/format'
 import { useAuth } from '@/auth/AuthProvider'
 import { APPROVER_ROLES, type Role } from '@/auth/roles'
@@ -236,18 +236,19 @@ export function CollectPayment() {
         <div className="text-xs uppercase tracking-wide text-slate-500">Payment history</div>
         <table className="mt-2 w-full text-sm">
           <thead className="text-left text-xs text-slate-400">
-            <tr><th className="py-1">Receipt</th><th>Date</th><th>Amount</th><th>Method</th><th>Note</th><th></th></tr>
+            <tr><th className="py-1">Receipt</th><th>Date</th><th>Amount</th><th>Method</th><th>Status</th><th>Note</th><th></th></tr>
           </thead>
           <tbody>
             {payments.data?.map((p) => (
               <tr key={p.id} className="border-t border-slate-100">
-                <td className="py-1.5">#{p.receipt_no}</td>
+                <td className="py-1.5">{p.receipt_no != null ? `#${p.receipt_no}` : '—'}</td>
                 <td>{fmtDate(p.created_at)}</td>
                 <td className={p.amount < 0 ? 'text-red-600' : ''}>{fmtPKR(p.amount)}</td>
                 <td>{PAYMENT_METHODS.find((m) => m.value === p.method)?.label ?? p.method}</td>
+                <td><StatusPill status={p.status} /></td>
                 <td className="text-slate-500">{p.reversal_of ? 'Reversal' : p.note}</td>
                 <td className="text-right whitespace-nowrap">
-                  {p.amount >= 0 && !p.reversal_of && (
+                  {p.status === 'verified' && p.amount >= 0 && !p.reversal_of && (
                     <>
                       <button onClick={() => onReprint(p)} className="text-xs text-brand-700 hover:underline">Reprint</button>
                       {canApprove && (
@@ -258,7 +259,7 @@ export function CollectPayment() {
                 </td>
               </tr>
             ))}
-            {payments.data?.length === 0 && <tr><td colSpan={6} className="py-3 text-slate-400">No payments yet.</td></tr>}
+            {payments.data?.length === 0 && <tr><td colSpan={7} className="py-3 text-slate-400">No payments yet.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -266,4 +267,11 @@ export function CollectPayment() {
       {receipt && <Receipt data={receipt} onClose={() => setReceipt(null)} />}
     </div>
   )
+}
+
+function StatusPill({ status }: { status: string }) {
+  const tone: Record<string, string> = {
+    verified: 'bg-emerald-100 text-emerald-700', pending: 'bg-amber-100 text-amber-700', cancelled: 'bg-slate-200 text-slate-500',
+  }
+  return <span className={`rounded px-2 py-0.5 text-xs font-medium ${tone[status] ?? 'bg-slate-100 text-slate-600'}`}>{PAYMENT_STATUS_LABELS[status] ?? status}</span>
 }

@@ -96,11 +96,12 @@ export async function searchStudents(q: string): Promise<StudentRow[]> {
   const sb = requireSupabase()
   const term = q.trim()
   if (!term) return []
+  const like = `%${term.replace(/[%,()]/g, ' ')}%`
   return unwrap(
     await sb
       .from('students')
       .select('id, gr_no, full_name, father_name')
-      .or(`full_name.ilike.%${term}%,gr_no.ilike.%${term}%`)
+      .or(`full_name.ilike.${like},gr_no.ilike.${like}`)
       .is('deleted_at', null)
       .limit(20),
   )
@@ -671,7 +672,7 @@ export async function listStudents(term: string): Promise<StudentRow[]> {
   const sb = requireSupabase()
   const t = term.trim()
   let q = sb.from('students').select('id, gr_no, full_name, father_name').is('deleted_at', null)
-  if (t) q = q.or(`full_name.ilike.%${t}%,gr_no.ilike.%${t}%`)
+  if (t) { const like = `%${t.replace(/[%,()]/g, ' ')}%`; q = q.or(`full_name.ilike.${like},gr_no.ilike.${like}`) }
   return unwrap(await q.order('full_name').limit(50))
 }
 

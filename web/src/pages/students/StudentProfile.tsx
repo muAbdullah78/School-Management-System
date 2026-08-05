@@ -383,7 +383,7 @@ function FeesTab({
         let state: MonthState
         if (inv.charge === 0) state = 'free'
         else if (due <= 0) state = 'paid'
-        else if (inv.deferred_until) state = 'deferred'
+        else if (inv.deferred_until || inv.defer_reason) state = 'deferred'
         else if (inv.allocated > 0) state = 'partial'
         else state = 'unpaid'
         return { key: mkey, label: monthLabel(mkey), state, charge: inv.charge, due, invoice: inv }
@@ -715,6 +715,9 @@ function DiscountModal({
     onSuccess: onDone,
   })
 
+  const flatTooBig = !isPercent && gross > 0 && Number(amount) > gross
+  const pctTooBig = isPercent && Number(amount) > 100
+
   return (
     <Modal title="Discount on fee" onClose={onClose}>
       <p className="text-sm text-slate-600">
@@ -740,9 +743,11 @@ function DiscountModal({
           <input value={reason} onChange={(e) => setReason(e.target.value)} className={FIELD} placeholder="e.g. two siblings" />
         </label>
       </div>
+      {flatTooBig && <p className="mt-2 text-sm text-amber-600">A flat discount can’t exceed the monthly fee ({fmtPKR(gross)}). Use “Make free” for a full waiver.</p>}
+      {pctTooBig && <p className="mt-2 text-sm text-amber-600">A percentage discount can’t exceed 100%.</p>}
       {m.isError && <p className="mt-2 text-sm text-red-600">{(m.error as Error).message}</p>}
       <div className="mt-4 flex flex-wrap gap-2">
-        <button onClick={() => m.mutate(false)} disabled={!(Number(amount) > 0) || m.isPending}
+        <button onClick={() => m.mutate(false)} disabled={!(Number(amount) > 0) || flatTooBig || pctTooBig || m.isPending}
           className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
           {m.isPending ? 'Saving…' : canApprove ? 'Apply discount' : 'Propose discount'}
         </button>
