@@ -16,6 +16,8 @@ export function CollectPayment() {
   const [amount, setAmount] = useState('')
   const [method, setMethod] = useState('cash')
   const [note, setNote] = useState('')
+  const [pending, setPending] = useState(false)
+  const [pendingMsg, setPendingMsg] = useState<string | null>(null)
   const [receipt, setReceipt] = useState<ReceiptData | null>(null)
   const qc = useQueryClient()
 
@@ -40,8 +42,14 @@ export function CollectPayment() {
   }
 
   const pay = useMutation({
-    mutationFn: () => recordPayment(sid!, Number(amount), method, note || undefined),
+    mutationFn: () => recordPayment(sid!, Number(amount), method, note || undefined, pending),
     onSuccess: async (res) => {
+      if (pending) {
+        setPendingMsg(`Recorded as pending (receipt #${res.receipt_no}). It won’t count until verified in the Pending tab.`)
+        setAmount(''); setNote('')
+        refresh()
+        return
+      }
       const newBalance = await getStudentBalance(sid!)
       setReceipt({
         receiptNo: res.receipt_no,
@@ -98,7 +106,7 @@ export function CollectPayment() {
   }
 
   function reset() {
-    setSelected(null); setTerm(''); setAmount(''); setNote('')
+    setSelected(null); setTerm(''); setAmount(''); setNote(''); setPending(false); setPendingMsg(null)
   }
 
   if (!selected) {
@@ -169,10 +177,15 @@ export function CollectPayment() {
               <input value={note} onChange={(e) => setNote(e.target.value)}
                 className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500" />
             </label>
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" className="h-4 w-4" checked={pending} onChange={(e) => setPending(e.target.checked)} />
+              Not cleared yet (pending — e.g. bank challan)
+            </label>
             {pay.isError && <p className="text-sm text-red-600">{(pay.error as Error).message}</p>}
+            {pendingMsg && <p className="rounded bg-amber-50 p-2 text-sm text-amber-700">{pendingMsg}</p>}
             <button type="submit" disabled={pay.isPending || !(Number(amount) > 0)}
               className="w-full rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
-              {pay.isPending ? 'Recording…' : 'Record payment & print receipt'}
+              {pay.isPending ? 'Recording…' : pending ? 'Record as pending' : 'Record payment & print receipt'}
             </button>
           </form>
           {canApprove && (

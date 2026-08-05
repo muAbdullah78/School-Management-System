@@ -12,10 +12,11 @@ export interface StudentRow {
 export interface InvoiceBalance {
   invoice_id: string; period_month: string | null; status: string; due_date: string | null
   arrears_brought_forward: number; fine: number; charge: number; allocated: number
+  deferred_until: string | null; defer_reason: string | null
 }
 export interface PaymentRow {
   id: string; amount: number; method: string; receipt_no: number | null
-  created_at: string; note: string | null; reversal_of: string | null
+  created_at: string; note: string | null; reversal_of: string | null; status: string
 }
 export interface Defaulter {
   student_id: string; gr_no: string | null; full_name: string
@@ -129,7 +130,7 @@ export async function getStudentInvoices(studentId: string): Promise<InvoiceBala
   return unwrap(
     await sb
       .from('invoice_balances')
-      .select('invoice_id, period_month, status, due_date, arrears_brought_forward, fine, charge, allocated')
+      .select('invoice_id, period_month, status, due_date, arrears_brought_forward, fine, charge, allocated, deferred_until, defer_reason')
       .eq('student_id', studentId)
       .order('period_month', { ascending: false }),
   )
@@ -140,21 +141,124 @@ export async function getStudentPayments(studentId: string): Promise<PaymentRow[
   return unwrap(
     await sb
       .from('payments')
-      .select('id, amount, method, receipt_no, created_at, note, reversal_of')
+      .select('id, amount, method, receipt_no, created_at, note, reversal_of, status')
       .eq('student_id', studentId)
       .order('created_at', { ascending: false }),
   )
 }
 
 export async function recordPayment(
-  studentId: string, amount: number, method: string, note?: string,
+  studentId: string, amount: number, method: string, note?: string, pending = false,
 ): Promise<RecordPaymentResult> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_record_payment', {
-    p_student_id: studentId, p_amount: amount, p_method: method, p_note: note ?? null,
+    p_student_id: studentId, p_amount: amount, p_method: method, p_note: note ?? null, p_pending: pending,
   })
   if (error) throw new Error(error.message)
   return data as RecordPaymentResult
+}
+
+export async function verifyPayment(paymentId: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_verify_payment', { p_payment_id: paymentId })
+  if (error) throw new Error(error.message)
+}
+
+export async function cancelPendingPayment(paymentId: string, reason: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_cancel_pending_payment', { p_payment_id: paymentId, p_reason: reason })
+  if (error) throw new Error(error.message)
+}
+
+/** School-wide pending (un-cleared) payments, newest first — the "Pending
+ *  clearances" queue for bank challans / wallet transfers awaiting verification. */
+export interface PendingPaymentRow {
+  id: string; amount: number; method: string; receipt_no: number | null; created_at: string
+  note: string | null; student_id: string; student_name: string | null; gr_no: string | null
+}
+export async function listPendingPayments(): Promise<PendingPaymentRow[]> {
+  const sb = requireSupabase()
+  const rows = unwrap<Record<string, any>[]>(
+    await sb.from('payments')
+      .select('id, amount, method, receipt_no, created_at, note, student_id, students(full_name, gr_no)')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false }),
+  )
+  return rows.map((r) => ({
+    id: r.id, amount: Number(r.amount), method: r.method,
+    receipt_no: r.receipt_no == null ? null : Number(r.receipt_no),
+    created_at: r.created_at, note: r.note, student_id: r.student_id,
+    student_name: r.students?.full_name ?? null, gr_no: r.students?.gr_no ?? null,
+  }))
+}
+
+/** Bill ONE student for ONE month on demand (single-student challan). Returns
+ *  the invoice id; re-billing the same month returns the existing invoice. */
+export async function billStudentMonth(
+  enrollmentId: string, periodMonth: string, dueDate: string,
+): Promise<string> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_bill_student_month', {
+    p_enrollment_id: enrollmentId, p_period_month: periodMonth, p_due_date: dueDate,
+  })
+  if (error) throw new Error(error.message)
+  return data as string
+}
+
+export async function deferInvoice(invoiceId: string, until: string | null, reason: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_defer_invoice', { p_invoice_id: invoiceId, p_until: until, p_reason: reason })
+  if (error) throw new Error(error.message)
+}
+
+export async function undoDefer(invoiceId: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_undo_defer', { p_invoice_id: invoiceId })
+  if (error) throw new Error(error.message)
+}
+
+export interface MonthlyFee { gross: number; discount: number; net: number }
+export async function getStudentMonthlyFee(enrollmentId: string): Promise<MonthlyFee> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_student_monthly_fee', { p_enrollment_id: enrollmentId })
+  if (error) throw new Error(error.message)
+  const d = data as any
+  return { gross: Number(d.gross), discount: Number(d.discount), net: Number(d.net) }
+}
+
+export interface MonthTestRow {
+  assessment_id: string; title: string; subject_name: string | null; assessment_date: string | null
+  max_marks: number; marks: number | null; is_absent: boolean
+  class_avg: number | null; class_count: number; pass_mark: number; passed: boolean
+}
+export async function getStudentMonthTests(enrollmentId: string, monthFirst: string): Promise<MonthTestRow[]> {
+  const sb = requireSupabase()
+  const rows = unwrap<Record<string, any>[]>(
+    await sb.rpc('fn_student_month_tests', { p_enrollment_id: enrollmentId, p_month: monthFirst }),
+  )
+  return (rows ?? []).map((r) => ({
+    assessment_id: r.assessment_id, title: r.title, subject_name: r.subject_name,
+    assessment_date: r.assessment_date, max_marks: Number(r.max_marks),
+    marks: r.marks == null ? null : Number(r.marks), is_absent: !!r.is_absent,
+    class_avg: r.class_avg == null ? null : Number(r.class_avg), class_count: Number(r.class_count ?? 0),
+    pass_mark: Number(r.pass_mark), passed: !!r.passed,
+  }))
+}
+
+/** One student's day-by-day attendance for a month ('YYYY-MM'). */
+export async function getStudentMonthAttendance(
+  enrollmentId: string, month: string,
+): Promise<{ attendance_date: string; status: string }[]> {
+  const sb = requireSupabase()
+  const [y, m] = month.split('-').map(Number)
+  const last = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
+  return unwrap(
+    await sb.from('attendance_daily')
+      .select('attendance_date, status')
+      .eq('enrollment_id', enrollmentId)
+      .gte('attendance_date', `${month}-01`).lte('attendance_date', last)
+      .order('attendance_date'),
+  )
 }
 
 export async function reversePayment(paymentId: string, reason: string): Promise<string> {
@@ -201,12 +305,29 @@ export async function listDiscounts(): Promise<DiscountRow[]> {
 
 export async function addDiscount(
   enrollmentId: string, type: string, amount: number, isPercent: boolean, reason: string,
-): Promise<void> {
+): Promise<string> {
   const sb = requireSupabase()
-  const { error } = await sb.rpc('fn_add_discount', {
+  const { data, error } = await sb.rpc('fn_add_discount', {
     p_enrollment_id: enrollmentId, p_type: type, p_amount: amount, p_is_percent: isPercent, p_reason: reason,
   })
   if (error) throw new Error(error.message)
+  return data as string
+}
+
+/** Approved/pending discounts for one enrolment (drives the profile Fees strip). */
+export async function getEnrollmentDiscounts(enrollmentId: string): Promise<DiscountRow[]> {
+  const sb = requireSupabase()
+  const rows = unwrap<Record<string, any>[]>(
+    await sb.from('discounts')
+      .select('id, enrollment_id, type, amount, is_percent, reason, status, created_at')
+      .eq('enrollment_id', enrollmentId)
+      .order('created_at', { ascending: false }),
+  )
+  return rows.map((r) => ({
+    id: r.id, enrollment_id: r.enrollment_id, type: r.type, amount: Number(r.amount),
+    is_percent: r.is_percent, reason: r.reason, status: r.status, created_at: r.created_at,
+    student_name: null, gr_no: null, class_name: null,
+  }))
 }
 
 export async function setDiscountStatus(discountId: string, status: string): Promise<void> {
@@ -429,8 +550,13 @@ export interface AdmitInput {
   admission_no?: string; admission_date?: string; notes?: string
   session_id: string; class_id: string; section_id?: string | null; roll_no?: string; gr_no?: string
   guardian?: { name: string; relation?: string; phone?: string; whatsapp?: string }
+  links?: { related_student_id: string; relation?: string }[]
+  admission_fee?: { charged: boolean; amount?: number | null }
 }
-export interface AdmitResult { student_id: string; enrollment_id: string; gr_no: string; roll_no: string }
+export interface AdmitResult {
+  student_id: string; enrollment_id: string; gr_no: string; roll_no: string
+  admission_fee_amount: number | null; admission_receipt_no: number | null
+}
 
 export interface StudentProfile {
   id: string; gr_no: string | null; admission_no: string | null; full_name: string
@@ -564,6 +690,115 @@ export async function getSiblings(studentId: string): Promise<StudentRow[]> {
       .neq('id', studentId).ilike('father_name', father).is('deleted_at', null)
       .order('full_name').limit(20),
   )
+}
+
+// ---- Explicit family links (sibling / relative) ----
+export interface LinkedStudent {
+  link_id: string; student_id: string; full_name: string; gr_no: string | null
+  relation: string | null; class_name: string | null
+}
+
+/** Explicit family links for a student, queried in both directions (one row per
+ *  pair). class_name is the linked student's current-session class, if any. */
+export async function getStudentLinks(studentId: string): Promise<LinkedStudent[]> {
+  const sb = requireSupabase()
+  const rows = unwrap<Record<string, any>[]>(
+    await sb.from('student_links')
+      .select('id, relation, student_id, related_student_id, a:students!student_links_student_id_fkey(full_name, gr_no), b:students!student_links_related_student_id_fkey(full_name, gr_no)')
+      .or(`student_id.eq.${studentId},related_student_id.eq.${studentId}`),
+  )
+  const out: LinkedStudent[] = rows.map((r) => {
+    const isA = r.student_id === studentId
+    const otherId = isA ? r.related_student_id : r.student_id
+    const other = isA ? r.b : r.a
+    return {
+      link_id: r.id, student_id: otherId, full_name: other?.full_name ?? '—',
+      gr_no: other?.gr_no ?? null, relation: r.relation ?? null, class_name: null,
+    }
+  })
+  // attach current class (best-effort)
+  if (out.length) {
+    const enr = unwrap<Record<string, any>[]>(
+      await sb.from('enrollments')
+        .select('student_id, classes(name), academic_sessions!inner(is_current)')
+        .in('student_id', out.map((o) => o.student_id))
+        .eq('academic_sessions.is_current', true),
+    )
+    const byStudent = new Map(enr.map((e) => [e.student_id, e.classes?.name ?? null]))
+    for (const o of out) o.class_name = byStudent.get(o.student_id) ?? null
+  }
+  return out
+}
+
+export async function linkStudents(a: string, b: string, relation: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_link_students', { p_a: a, p_b: b, p_relation: relation })
+  if (error) throw new Error(error.message)
+}
+
+export async function removeStudentLink(linkId: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.from('student_links').delete().eq('id', linkId)
+  if (error) throw new Error(error.message)
+}
+
+/** Search students for the admission family-link picker: match name / GR / roll,
+ *  and return the current-session class + roll so the operator can disambiguate. */
+export interface LinkSearchRow {
+  id: string; full_name: string; gr_no: string | null; father_name: string | null
+  class_name: string | null; section_name: string | null; roll_no: string | null
+}
+export async function searchStudentsForLink(q: string): Promise<LinkSearchRow[]> {
+  const sb = requireSupabase()
+  const term = q.trim()
+  if (term.length < 1) return []
+  const like = `%${term.replace(/[%,()]/g, ' ')}%`
+  const map = new Map<string, LinkSearchRow>()
+
+  // Name / GR on the students base table (reliable base-column filters).
+  const byName = unwrap<Record<string, any>[]>(
+    await sb.from('students')
+      .select('id, full_name, gr_no, father_name')
+      .or(`full_name.ilike.${like},gr_no.ilike.${like}`)
+      .is('deleted_at', null).limit(15),
+  )
+  for (const s of byName) {
+    map.set(s.id, {
+      id: s.id, full_name: s.full_name, gr_no: s.gr_no ?? null, father_name: s.father_name ?? null,
+      class_name: null, section_name: null, roll_no: null,
+    })
+  }
+
+  // Roll number on the current-session enrolment.
+  const byRoll = unwrap<Record<string, any>[]>(
+    await sb.from('enrollments')
+      .select('roll_no, students!inner(id, full_name, gr_no, father_name, deleted_at), classes(name), sections(name), academic_sessions!inner(is_current)')
+      .eq('academic_sessions.is_current', true).ilike('roll_no', like).limit(15),
+  )
+  for (const r of byRoll) {
+    if (!r.students || r.students.deleted_at) continue
+    map.set(r.students.id, {
+      id: r.students.id, full_name: r.students.full_name, gr_no: r.students.gr_no ?? null,
+      father_name: r.students.father_name ?? null, class_name: r.classes?.name ?? null,
+      section_name: r.sections?.name ?? null, roll_no: r.roll_no ?? null,
+    })
+  }
+
+  // Enrich the name/GR hits with their current class + roll.
+  const need = [...map.values()].filter((v) => v.class_name === null).map((v) => v.id)
+  if (need.length) {
+    const enr = unwrap<Record<string, any>[]>(
+      await sb.from('enrollments')
+        .select('roll_no, student_id, classes(name), sections(name), academic_sessions!inner(is_current)')
+        .in('student_id', need).eq('academic_sessions.is_current', true),
+    )
+    const byStudent = new Map(enr.map((e) => [e.student_id, e]))
+    for (const v of map.values()) {
+      const e = byStudent.get(v.id)
+      if (e) { v.class_name = e.classes?.name ?? null; v.section_name = e.sections?.name ?? null; v.roll_no = v.roll_no ?? e.roll_no ?? null }
+    }
+  }
+  return [...map.values()].slice(0, 15)
 }
 
 export async function getStudent(studentId: string): Promise<StudentProfile> {
