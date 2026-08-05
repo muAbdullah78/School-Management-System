@@ -4,7 +4,7 @@ import {
   searchStudents, getStudentBalance, getStudentInvoices, getStudentPayments,
   recordPayment, applyFine, waiveFine, addAdjustment, reversePayment, type StudentRow,
 } from '@/lib/db'
-import { PAYMENT_METHODS } from '@/lib/constants'
+import { PAYMENT_METHODS, PAYMENT_STATUS_LABELS } from '@/lib/constants'
 import { fmtPKR, fmtDate } from '@/lib/format'
 import { useAuth } from '@/auth/AuthProvider'
 import { APPROVER_ROLES, type Role } from '@/auth/roles'
@@ -16,6 +16,8 @@ export function CollectPayment() {
   const [amount, setAmount] = useState('')
   const [method, setMethod] = useState('cash')
   const [note, setNote] = useState('')
+  const [pending, setPending] = useState(false)
+  const [pendingMsg, setPendingMsg] = useState<string | null>(null)
   const [receipt, setReceipt] = useState<ReceiptData | null>(null)
   const qc = useQueryClient()
 
@@ -40,8 +42,14 @@ export function CollectPayment() {
   }
 
   const pay = useMutation({
-    mutationFn: () => recordPayment(sid!, Number(amount), method, note || undefined),
+    mutationFn: () => recordPayment(sid!, Number(amount), method, note || undefined, pending),
     onSuccess: async (res) => {
+      if (pending) {
+        setPendingMsg(`Recorded as pending (receipt #${res.receipt_no}). It won’t count until verified in the Pending tab.`)
+        setAmount(''); setNote('')
+        refresh()
+        return
+      }
       const newBalance = await getStudentBalance(sid!)
       setReceipt({
         receiptNo: res.receipt_no,
@@ -98,7 +106,7 @@ export function CollectPayment() {
   }
 
   function reset() {
-    setSelected(null); setTerm(''); setAmount(''); setNote('')
+    setSelected(null); setTerm(''); setAmount(''); setNote(''); setPending(false); setPendingMsg(null)
   }
 
   if (!selected) {
@@ -169,10 +177,15 @@ export function CollectPayment() {
               <input value={note} onChange={(e) => setNote(e.target.value)}
                 className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500" />
             </label>
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" className="h-4 w-4" checked={pending} onChange={(e) => setPending(e.target.checked)} />
+              Not cleared yet (pending — e.g. bank challan)
+            </label>
             {pay.isError && <p className="text-sm text-red-600">{(pay.error as Error).message}</p>}
+            {pendingMsg && <p className="rounded bg-amber-50 p-2 text-sm text-amber-700">{pendingMsg}</p>}
             <button type="submit" disabled={pay.isPending || !(Number(amount) > 0)}
               className="w-full rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
-              {pay.isPending ? 'Recording…' : 'Record payment & print receipt'}
+              {pay.isPending ? 'Recording…' : pending ? 'Record as pending' : 'Record payment & print receipt'}
             </button>
           </form>
           {canApprove && (
@@ -223,18 +236,19 @@ export function CollectPayment() {
         <div className="text-xs uppercase tracking-wide text-slate-500">Payment history</div>
         <table className="mt-2 w-full text-sm">
           <thead className="text-left text-xs text-slate-400">
-            <tr><th className="py-1">Receipt</th><th>Date</th><th>Amount</th><th>Method</th><th>Note</th><th></th></tr>
+            <tr><th className="py-1">Receipt</th><th>Date</th><th>Amount</th><th>Method</th><th>Status</th><th>Note</th><th></th></tr>
           </thead>
           <tbody>
             {payments.data?.map((p) => (
               <tr key={p.id} className="border-t border-slate-100">
-                <td className="py-1.5">#{p.receipt_no}</td>
+                <td className="py-1.5">{p.receipt_no != null ? `#${p.receipt_no}` : '—'}</td>
                 <td>{fmtDate(p.created_at)}</td>
                 <td className={p.amount < 0 ? 'text-red-600' : ''}>{fmtPKR(p.amount)}</td>
                 <td>{PAYMENT_METHODS.find((m) => m.value === p.method)?.label ?? p.method}</td>
+                <td><StatusPill status={p.status} /></td>
                 <td className="text-slate-500">{p.reversal_of ? 'Reversal' : p.note}</td>
                 <td className="text-right whitespace-nowrap">
-                  {p.amount >= 0 && !p.reversal_of && (
+                  {p.status === 'verified' && p.amount >= 0 && !p.reversal_of && (
                     <>
                       <button onClick={() => onReprint(p)} className="text-xs text-brand-700 hover:underline">Reprint</button>
                       {canApprove && (
@@ -245,7 +259,7 @@ export function CollectPayment() {
                 </td>
               </tr>
             ))}
-            {payments.data?.length === 0 && <tr><td colSpan={6} className="py-3 text-slate-400">No payments yet.</td></tr>}
+            {payments.data?.length === 0 && <tr><td colSpan={7} className="py-3 text-slate-400">No payments yet.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -253,4 +267,11 @@ export function CollectPayment() {
       {receipt && <Receipt data={receipt} onClose={() => setReceipt(null)} />}
     </div>
   )
+}
+
+function StatusPill({ status }: { status: string }) {
+  const tone: Record<string, string> = {
+    verified: 'bg-emerald-100 text-emerald-700', pending: 'bg-amber-100 text-amber-700', cancelled: 'bg-slate-200 text-slate-500',
+  }
+  return <span className={`rounded px-2 py-0.5 text-xs font-medium ${tone[status] ?? 'bg-slate-100 text-slate-600'}`}>{PAYMENT_STATUS_LABELS[status] ?? status}</span>
 }

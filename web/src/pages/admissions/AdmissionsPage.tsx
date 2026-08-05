@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  getCurrentSession, listClasses, listSections, admitStudent,
-  type AdmitInput, type AdmitResult,
+  getCurrentSession, listClasses, listSections, admitStudent, searchStudentsForLink,
+  type AdmitInput, type AdmitResult, type LinkSearchRow,
 } from '@/lib/db'
-import { GENDERS } from '@/lib/constants'
-import { todayISO } from '@/lib/format'
+import { GENDERS, RELATIONS } from '@/lib/constants'
+import { todayISO, fmtPKR } from '@/lib/format'
 import { AdmissionSlip, type AdmissionSlipData } from './AdmissionSlip'
+import { Receipt, type ReceiptData } from '@/components/Receipt'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 const LABEL = 'text-sm text-slate-600'
@@ -15,8 +16,9 @@ const BLANK = {
   full_name: '', father_name: '', mother_name: '', gender: '', dob: '', b_form: '',
   phone: '', whatsapp: '', address: '',
   class_id: '', section_id: '', roll_no: '', gr_no: '', admission_date: todayISO(), notes: '',
-  g_name: '', g_relation: '', g_phone: '', g_whatsapp: '',
 }
+
+interface LinkedRel { id: string; label: string; relation: string }
 
 export function AdmissionsPage() {
   const qc = useQueryClient()
@@ -24,6 +26,21 @@ export function AdmissionsPage() {
   const classes = useQuery({ queryKey: ['classes'], queryFn: listClasses })
   const [form, setForm] = useState({ ...BLANK })
   const [slip, setSlip] = useState<AdmissionSlipData | null>(null)
+  const [receipt, setReceipt] = useState<ReceiptData | null>(null)
+
+  // Family links
+  const [hasRelative, setHasRelative] = useState(false)
+  const [linkTerm, setLinkTerm] = useState('')
+  const [links, setLinks] = useState<LinkedRel[]>([])
+  const linkResults = useQuery({
+    queryKey: ['linkSearch', linkTerm],
+    queryFn: () => searchStudentsForLink(linkTerm),
+    enabled: hasRelative && linkTerm.trim().length >= 1,
+  })
+
+  // Admission fee
+  const [admissionFeeOn, setAdmissionFeeOn] = useState(false)
+  const [admissionFeeAmount, setAdmissionFeeAmount] = useState('')
 
   const sections = useQuery({
     queryKey: ['sections', form.class_id],
@@ -34,6 +51,20 @@ export function AdmissionsPage() {
 
   function set<K extends keyof typeof form>(k: K, v: string) {
     setForm((f) => ({ ...f, [k]: v }))
+  }
+
+  function addLink(s: LinkSearchRow) {
+    if (links.some((l) => l.id === s.id)) return
+    const where = [s.class_name, s.section_name].filter(Boolean).join(' ')
+    const label = `${s.full_name}${s.gr_no ? ` · ${s.gr_no}` : ''}${where ? ` · ${where}` : ''}${s.roll_no ? ` · Roll ${s.roll_no}` : ''}`
+    setLinks((prev) => [...prev, { id: s.id, label, relation: '' }])
+    setLinkTerm('')
+  }
+  function setRelation(id: string, relation: string) {
+    setLinks((prev) => prev.map((l) => (l.id === id ? { ...l, relation } : l)))
+  }
+  function removeLink(id: string) {
+    setLinks((prev) => prev.filter((l) => l.id !== id))
   }
 
   const admit = useMutation({
@@ -55,9 +86,12 @@ export function AdmissionsPage() {
         session_id: session.data!.id,
         class_id: form.class_id,
         section_id: form.section_id || null,
-        guardian: form.g_name.trim()
-          ? { name: form.g_name.trim(), relation: form.g_relation || undefined, phone: form.g_phone || undefined, whatsapp: form.g_whatsapp || undefined }
+        links: hasRelative
+          ? links.map((l) => ({ related_student_id: l.id, relation: l.relation.trim() || undefined }))
           : undefined,
+        admission_fee: admissionFeeOn
+          ? { charged: true, amount: admissionFeeAmount.trim() === '' ? null : Number(admissionFeeAmount) }
+          : { charged: false },
       }
       return admitStudent(input)
     },
@@ -77,9 +111,23 @@ export function AdmissionsPage() {
     },
   })
 
+  function printAdmissionReceipt() {
+    if (!admit.data?.admission_receipt_no || admit.data.admission_fee_amount == null) return
+    setReceipt({
+      receiptNo: admit.data.admission_receipt_no,
+      studentName: form.full_name.trim(),
+      grNo: admit.data.gr_no,
+      amount: admit.data.admission_fee_amount,
+      method: 'Cash',
+      balanceAfter: 0,
+      note: 'Admission fee',
+    })
+  }
+
   function admitAnother() {
-    // keep class/section/date for faster batch admissions; clear the person
     setForm((f) => ({ ...BLANK, class_id: f.class_id, section_id: f.section_id, admission_date: f.admission_date }))
+    setHasRelative(false); setLinks([]); setLinkTerm('')
+    setAdmissionFeeOn(false); setAdmissionFeeAmount('')
     admit.reset()
   }
 
@@ -101,11 +149,22 @@ export function AdmissionsPage() {
           <div className="mt-1 text-lg font-semibold text-emerald-900">
             GR&nbsp;{admit.data.gr_no} · Roll&nbsp;{admit.data.roll_no}
           </div>
-          <div className="mt-4 flex gap-2">
+          {admit.data.admission_fee_amount != null && admit.data.admission_fee_amount > 0 && (
+            <div className="mt-1 text-sm text-emerald-800">
+              Admission fee {fmtPKR(admit.data.admission_fee_amount)} received · receipt #{admit.data.admission_receipt_no}
+            </div>
+          )}
+          <div className="mt-4 flex flex-wrap gap-2">
             {slip && (
               <button onClick={() => setSlip({ ...slip })}
                 className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
                 Print admission slip
+              </button>
+            )}
+            {admit.data.admission_receipt_no != null && admit.data.admission_fee_amount != null && admit.data.admission_fee_amount > 0 && (
+              <button onClick={printAdmissionReceipt}
+                className="rounded border border-emerald-300 bg-white px-4 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-50">
+                Print fee receipt
               </button>
             )}
             <button onClick={admitAnother}
@@ -151,7 +210,7 @@ export function AdmissionsPage() {
           </Section>
 
           {/* Contact */}
-          <Section title="Contact">
+          <Section title="Parent / guardian contact">
             <label className="block">
               <span className={LABEL}>Phone</span>
               <input value={form.phone} onChange={(e) => set('phone', e.target.value)} className={FIELD} placeholder="03xx-xxxxxxx" />
@@ -164,6 +223,9 @@ export function AdmissionsPage() {
               <span className={LABEL}>Address</span>
               <input value={form.address} onChange={(e) => set('address', e.target.value)} className={FIELD} />
             </label>
+            <p className="sm:col-span-2 text-xs text-slate-400">
+              This number is the family contact used for the WhatsApp button on the student profile.
+            </p>
           </Section>
 
           {/* Enrolment */}
@@ -198,25 +260,78 @@ export function AdmissionsPage() {
             </label>
           </Section>
 
-          {/* Guardian (optional) */}
-          <Section title="Primary guardian (optional)">
-            <label className="block">
-              <span className={LABEL}>Name</span>
-              <input value={form.g_name} onChange={(e) => set('g_name', e.target.value)} className={FIELD} />
+          {/* Family link */}
+          <fieldset className="rounded-lg border border-slate-200 bg-white p-4">
+            <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Family</legend>
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" className="h-4 w-4" checked={hasRelative} onChange={(e) => setHasRelative(e.target.checked)} />
+              Has a sibling or relative already in the school
             </label>
-            <label className="block">
-              <span className={LABEL}>Relation</span>
-              <input value={form.g_relation} onChange={(e) => set('g_relation', e.target.value)} className={FIELD} placeholder="Father / Mother / Guardian" />
+
+            {hasRelative && (
+              <div className="mt-3">
+                <input value={linkTerm} onChange={(e) => setLinkTerm(e.target.value)}
+                  placeholder="Search by name, GR or roll number…" className={FIELD} />
+                {linkTerm.trim().length >= 1 && (
+                  <div className="mt-2 max-h-56 divide-y divide-slate-100 overflow-y-auto rounded border border-slate-200">
+                    {linkResults.isLoading && <div className="p-2 text-sm text-slate-500">Searching…</div>}
+                    {linkResults.data?.length === 0 && <div className="p-2 text-sm text-slate-500">No students found.</div>}
+                    {linkResults.data?.map((s) => (
+                      <button type="button" key={s.id} onClick={() => addLink(s)}
+                        disabled={links.some((l) => l.id === s.id)}
+                        className="block w-full px-3 py-2 text-left text-sm hover:bg-slate-50 disabled:opacity-40">
+                        <span className="font-medium text-slate-800">{s.full_name}</span>
+                        <span className="text-slate-500">
+                          {s.gr_no ? ` · ${s.gr_no}` : ''}{s.class_name ? ` · ${s.class_name}` : ''}
+                          {s.section_name ? ` ${s.section_name}` : ''}{s.roll_no ? ` · Roll ${s.roll_no}` : ''}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {links.length > 0 && (
+                  <ul className="mt-3 space-y-2">
+                    {links.map((l) => (
+                      <li key={l.id} className="flex flex-wrap items-center gap-2 rounded border border-slate-200 bg-slate-50 px-3 py-2">
+                        <span className="min-w-0 flex-1 truncate text-sm text-slate-700">{l.label}</span>
+                        <input list="relations" value={l.relation} onChange={(e) => setRelation(l.id, e.target.value)}
+                          placeholder="Relation (e.g. Brother)"
+                          className="w-44 rounded border border-slate-300 px-2 py-1 text-sm focus:border-brand-500 focus:outline-none" />
+                        <button type="button" onClick={() => removeLink(l.id)} className="text-xs text-red-600 hover:underline">Remove</button>
+                      </li>
+                    ))}
+                    <datalist id="relations">{RELATIONS.map((r) => <option key={r} value={r} />)}</datalist>
+                  </ul>
+                )}
+                <p className="mt-2 text-xs text-slate-400">
+                  Links this admission to existing students — powers the family view and the sibling discount.
+                </p>
+              </div>
+            )}
+          </fieldset>
+
+          {/* Admission fee */}
+          <fieldset className="rounded-lg border border-slate-200 bg-white p-4">
+            <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Admission fee</legend>
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" className="h-4 w-4" checked={admissionFeeOn} onChange={(e) => setAdmissionFeeOn(e.target.checked)} />
+              Charge an admission fee
             </label>
-            <label className="block">
-              <span className={LABEL}>Phone</span>
-              <input value={form.g_phone} onChange={(e) => set('g_phone', e.target.value)} className={FIELD} />
-            </label>
-            <label className="block">
-              <span className={LABEL}>WhatsApp</span>
-              <input value={form.g_whatsapp} onChange={(e) => set('g_whatsapp', e.target.value)} className={FIELD} />
-            </label>
-          </Section>
+            {admissionFeeOn && (
+              <div className="mt-3 max-w-xs">
+                <label className="block">
+                  <span className={LABEL}>Amount received <span className="text-slate-400">(optional)</span></span>
+                  <input type="number" min="0" step="1" value={admissionFeeAmount}
+                    onChange={(e) => setAdmissionFeeAmount(e.target.value)} className={FIELD} placeholder="e.g. 5000" />
+                </label>
+                <p className="mt-2 text-xs text-slate-400">
+                  With an amount, a real receipt is issued and the cash shows in the day-book. Leave blank to just
+                  record that an admission fee applies.
+                </p>
+              </div>
+            )}
+          </fieldset>
 
           {admit.isError && <p className="text-sm text-red-600">{(admit.error as Error).message}</p>}
           <button type="submit" disabled={!ready || admit.isPending}
@@ -227,6 +342,7 @@ export function AdmissionsPage() {
       )}
 
       {slip && <AdmissionSlip data={slip} onClose={() => setSlip(null)} />}
+      {receipt && <Receipt data={receipt} onClose={() => setReceipt(null)} />}
     </div>
   )
 }

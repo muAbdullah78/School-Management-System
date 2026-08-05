@@ -3,11 +3,13 @@ import { CollectPayment } from './CollectPayment'
 import { GenerateChallans } from './GenerateChallans'
 import { Defaulters } from './Defaulters'
 import { Discounts } from './Discounts'
+import { PendingClearances } from './PendingClearances'
 
 const TABS = [
   { key: 'collect', label: 'Collect Payment' },
   { key: 'generate', label: 'Generate Challans' },
   { key: 'discounts', label: 'Discounts' },
+  { key: 'pending', label: 'Pending' },
   { key: 'defaulters', label: 'Defaulters' },
 ] as const
 
@@ -35,6 +37,7 @@ export function FeesPage() {
         {tab === 'collect' && <CollectPayment />}
         {tab === 'generate' && <GenerateChallans />}
         {tab === 'discounts' && <Discounts />}
+        {tab === 'pending' && <PendingClearances />}
         {tab === 'defaulters' && <Defaulters />}
       </div>
     </div>

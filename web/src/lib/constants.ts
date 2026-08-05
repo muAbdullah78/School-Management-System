@@ -16,6 +16,19 @@ export const INVOICE_STATUS_LABELS: Record<string, string> = {
   void: 'Void',
 }
 
+/** Payment clearance state — `status` on the payments row. */
+export const PAYMENT_STATUS_LABELS: Record<string, string> = {
+  verified: 'Cleared',
+  pending: 'Pending clearance',
+  cancelled: 'Cancelled',
+}
+
+/** Suggested family-relationship labels for the admission sibling/relative link
+ *  (free text is still allowed via the datalist). */
+export const RELATIONS: string[] = [
+  'Brother', 'Sister', 'Cousin', 'Step-brother', 'Step-sister', 'Relative',
+]
+
 /**
  * Attendance statuses — `value` must match the `attendance_status` enum in the DB.
  * `on`/`off` are the Tailwind classes for a selected vs. unselected toggle chip;
