@@ -1,7 +1,8 @@
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/auth/AuthProvider'
-import { ROLE_LABELS } from '@/auth/roles'
+import { ROLE_LABELS, isTeacher } from '@/auth/roles'
+import { MyClass } from './MyClass'
 import { getDashboardSummary } from '@/lib/db'
 import { isConfigured } from '@/lib/config'
 import { fmtPKR } from '@/lib/format'
@@ -23,7 +24,11 @@ function Tile({ label, value, hint, tone = 'default', to }: {
 export function Dashboard() {
   const { profile } = useAuth()
   const configured = isConfigured
-  const summary = useQuery({ queryKey: ['dashboardSummary'], queryFn: getDashboardSummary, enabled: configured })
+  const isTeach = isTeacher(profile?.role)
+  const summary = useQuery({ queryKey: ['dashboardSummary'], queryFn: getDashboardSummary, enabled: configured && !isTeach })
+
+  // Teachers get a class-focused home instead of the admin dashboard.
+  if (isTeach) return <MyClass />
 
   const d = summary.data
   const att = d?.attendance

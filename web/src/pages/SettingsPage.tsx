@@ -8,12 +8,14 @@ import { Backup } from './settings/Backup'
 import { ImportData } from './settings/ImportData'
 import { Rollover } from './settings/Rollover'
 import { AuditLog } from './settings/AuditLog'
+import { StaffCheckin } from './settings/StaffCheckin'
 
 const SECTIONS = [
   { key: 'school', label: 'School Profile' },
   { key: 'sessions', label: 'Sessions' },
   { key: 'classes', label: 'Classes & Sections' },
   { key: 'fees', label: 'Fee Structure' },
+  { key: 'checkin', label: 'Staff Check-in' },
   { key: 'import', label: 'Import' },
   { key: 'rollover', label: 'Year Rollover' },
   { key: 'users', label: 'Users & Roles' },
@@ -43,6 +45,7 @@ export function SettingsPage() {
         {section === 'sessions' && <Sessions />}
         {section === 'classes' && <ClassesSections />}
         {section === 'fees' && <FeeStructure />}
+        {section === 'checkin' && <StaffCheckin />}
         {section === 'import' && <ImportData />}
         {section === 'rollover' && <Rollover />}
         {section === 'audit' && <AuditLog />}

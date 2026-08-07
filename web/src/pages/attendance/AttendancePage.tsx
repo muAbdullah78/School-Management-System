@@ -2,11 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getCurrentSession, listClasses, listSections, getRoster,
-  markAttendance, finalizeAttendance,
+  markAttendance, finalizeAttendance, getMyAssignments,
   type AttendanceStatus, type RosterRow,
 } from '@/lib/db'
 import { ATTENDANCE_STATUSES } from '@/lib/constants'
 import { todayISO } from '@/lib/format'
+import { useAuth } from '@/auth/AuthProvider'
+import { isTeacher } from '@/auth/roles'
 import { enqueueAttendance, isNetworkError, attendanceKey } from '@/lib/offlineQueue'
 import { offlineFirst } from '@/lib/offlineCache'
 import { AttendanceSheet, type AttendanceSheetData } from './AttendanceSheet'
@@ -17,20 +19,42 @@ export function AttendancePage() {
   const qc = useQueryClient()
   // These reads are wrapped in offlineFirst so the pickers + roster still work on
   // a cold start with no connection (served from the last cached copy).
+  const { profile } = useAuth()
+  const isTeach = isTeacher(profile?.role)
   const session = useQuery({ queryKey: ['currentSession'], queryFn: () => offlineFirst('currentSession', getCurrentSession) })
   const classes = useQuery({ queryKey: ['classes'], queryFn: () => offlineFirst('classes', listClasses) })
+  const myAssign = useQuery({ queryKey: ['myAssignments'], queryFn: getMyAssignments, enabled: isTeach })
 
   const [classId, setClassId] = useState('')
   const [sectionChoice, setSectionChoice] = useState('')
   const [date, setDate] = useState(todayISO())
+
+  // A teacher only sees classes/sections they are assigned to (mirrors the RLS).
+  const allowedClassIds = isTeach ? new Set((myAssign.data ?? []).map((a) => a.class_id)) : null
+  const classOptions = (classes.data ?? []).filter((c) => !allowedClassIds || allowedClassIds.has(c.id))
 
   const sections = useQuery({
     queryKey: ['sections', classId],
     queryFn: () => offlineFirst(`sections.${classId}`, () => listSections(classId)),
     enabled: !!classId,
   })
-  const hasSections = (sections.data?.length ?? 0) > 0
+  const myClassAssign = isTeach ? (myAssign.data ?? []).filter((a) => a.class_id === classId) : []
+  const teacherWholeClass = myClassAssign.some((a) => a.section_id === null)
+  const allowedSectionIds = isTeach && !teacherWholeClass
+    ? new Set(myClassAssign.map((a) => a.section_id).filter(Boolean) as string[])
+    : null
+  const sectionOptions = (sections.data ?? []).filter((s) => !allowedSectionIds || allowedSectionIds.has(s.id))
+  const hasSections = sectionOptions.length > 0
   const sectionId: string | null = hasSections ? (sectionChoice || null) : null
+
+  // Auto-select the teacher's class/section when they have exactly one assignment.
+  useEffect(() => {
+    if (!isTeach || classId || !myAssign.data || myAssign.data.length !== 1) return
+    const a = myAssign.data[0]
+    setClassId(a.class_id)
+    if (a.section_id) setSectionChoice(a.section_id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTeach, myAssign.data])
 
   const sessionId = session.data?.id
   const ready =
@@ -226,7 +250,7 @@ export function AttendancePage() {
           <select value={classId} className={selectCls}
             onChange={(e) => { setClassId(e.target.value); setSectionChoice('') }}>
             <option value="">Select class…</option>
-            {classes.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            {classOptions.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </label>
         <label className="block">
@@ -241,7 +265,7 @@ export function AttendancePage() {
             ) : (
               <>
                 <option value="">Select section…</option>
-                {sections.data?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                {sectionOptions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </>
             )}
           </select>

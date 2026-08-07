@@ -1093,6 +1093,7 @@ export interface SchoolSettings {
   name: string; name_short: string | null; address: string | null; phone: string | null
   email: string | null; principal_name: string | null; grade_scale: string; pass_percent: number
   gr_prefix: string | null; receipt_prefix: string | null; current_session_id: string | null
+  geofence_enabled: boolean; geo_lat: number | null; geo_lng: number | null; geo_radius_m: number
 }
 export interface SessionFull {
   id: string; name: string; starts_on: string | null; ends_on: string | null
@@ -1104,7 +1105,7 @@ export interface ProfileRow { id: string; full_name: string | null; role: string
 export async function getSchoolSettings(): Promise<SchoolSettings | null> {
   const sb = requireSupabase()
   const { data, error } = await sb.from('school_settings')
-    .select('name, name_short, address, phone, email, principal_name, grade_scale, pass_percent, gr_prefix, receipt_prefix, current_session_id')
+    .select('name, name_short, address, phone, email, principal_name, grade_scale, pass_percent, gr_prefix, receipt_prefix, current_session_id, geofence_enabled, geo_lat, geo_lng, geo_radius_m')
     .eq('id', 1).maybeSingle()
   if (error) throw new Error(error.message)
   return data
@@ -1237,6 +1238,166 @@ export async function assignClassTeacher(sectionId: string, staffId: string | nu
   const sb = requireSupabase()
   const { error } = await sb.from('sections').update({ class_teacher_id: staffId }).eq('id', sectionId)
   if (error) throw new Error(error.message)
+}
+
+// ---- Teacher portal: assignments, self-attendance, check-in ----
+export interface MyAssignment {
+  class_id: string; class_name: string; level_order: number
+  section_id: string | null; section_name: string | null
+}
+export async function getMyAssignments(): Promise<MyAssignment[]> {
+  const sb = requireSupabase()
+  const rows = unwrap<Record<string, any>[]>(await sb.rpc('fn_my_assignments'))
+  return (rows ?? []).map((r) => ({
+    class_id: r.class_id, class_name: r.class_name, level_order: Number(r.level_order ?? 0),
+    section_id: r.section_id ?? null, section_name: r.section_name ?? null,
+  }))
+}
+
+export interface TeacherAssignmentRow {
+  id: string; staff_id: string; staff_name: string
+  class_id: string; class_name: string; section_id: string | null; section_name: string | null
+}
+export async function listTeacherAssignments(sessionId: string): Promise<TeacherAssignmentRow[]> {
+  const sb = requireSupabase()
+  const rows = unwrap<Record<string, any>[]>(
+    await sb.from('teacher_assignments')
+      .select('id, staff_id, class_id, section_id, staff(full_name), classes(name, level_order), sections(name)')
+      .eq('session_id', sessionId),
+  )
+  return rows.map((r) => ({
+    id: r.id, staff_id: r.staff_id, staff_name: r.staff?.full_name ?? '—',
+    class_id: r.class_id, class_name: r.classes?.name ?? '—',
+    section_id: r.section_id ?? null, section_name: r.sections?.name ?? null,
+  })).sort((a, b) => a.staff_name.localeCompare(b.staff_name))
+}
+
+export async function assignTeacher(
+  staffId: string, sessionId: string, classId: string, sectionId: string | null,
+): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.from('teacher_assignments')
+    .insert({ staff_id: staffId, session_id: sessionId, class_id: classId, section_id: sectionId })
+  if (error && !/duplicate key/i.test(error.message)) throw new Error(error.message)
+}
+export async function removeTeacherAssignment(id: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.from('teacher_assignments').delete().eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
+/** Assign (or clear, staffId=null) a class teacher for a (class, section-or-null)
+ *  atomically: assignment row for portal scoping + class_teacher_id for result cards. */
+export async function setClassTeacher(
+  staffId: string | null, sessionId: string, classId: string, sectionId: string | null,
+): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_set_class_teacher', {
+    p_staff_id: staffId, p_session_id: sessionId, p_class_id: classId, p_section_id: sectionId,
+  })
+  if (error) throw new Error(error.message)
+}
+
+export interface CheckinCode { id: string; code: string; label: string | null; valid_from: string | null; valid_to: string | null; active: boolean }
+export async function generateCheckinCode(
+  label: string, validFrom: string | null, validTo: string | null, deactivateOthers = true,
+): Promise<{ id: string; code: string }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_generate_checkin_code', {
+    p_label: label, p_valid_from: validFrom, p_valid_to: validTo, p_deactivate_others: deactivateOthers,
+  })
+  if (error) throw new Error(error.message)
+  return data as { id: string; code: string }
+}
+export async function listCheckinCodes(): Promise<CheckinCode[]> {
+  const sb = requireSupabase()
+  return unwrap(
+    await sb.from('staff_checkin_codes').select('id, code, label, valid_from, valid_to, active')
+      .order('created_at', { ascending: false }),
+  )
+}
+
+export interface CheckInResult { status: 'ok' | 'already'; checked_at: string; attendance_status?: string }
+export async function staffCheckIn(
+  code: string, lat: number | null, lng: number | null, device: string | null,
+): Promise<CheckInResult> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_staff_check_in', {
+    p_code: code, p_lat: lat, p_lng: lng, p_device: device,
+  })
+  if (error) throw new Error(error.message)
+  return data as CheckInResult
+}
+
+export async function setStaffAttendance(
+  staffId: string, date: string, status: AttendanceStatus, reason: string,
+): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_set_staff_attendance', {
+    p_staff_id: staffId, p_date: date, p_status: status, p_reason: reason,
+  })
+  if (error) throw new Error(error.message)
+}
+
+export async function getStaffAttendanceSummary(
+  staffId: string, from: string, to: string,
+): Promise<AttendanceSummary> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_staff_attendance_summary', { p_staff_id: staffId, p_from: from, p_to: to })
+  if (error) throw new Error(error.message)
+  return data as AttendanceSummary
+}
+
+export async function getStaffMonthAttendance(
+  staffId: string, month: string,
+): Promise<{ attendance_date: string; status: string; source: string; checked_at: string | null }[]> {
+  const sb = requireSupabase()
+  const [y, m] = month.split('-').map(Number)
+  const last = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
+  return unwrap(
+    await sb.from('staff_attendance')
+      .select('attendance_date, status, source, checked_at')
+      .eq('staff_id', staffId)
+      .gte('attendance_date', `${month}-01`).lte('attendance_date', last)
+      .order('attendance_date'),
+  )
+}
+
+/** Today's check-in row for the current teacher (null if not linked / not checked in). */
+export async function getMyTodayCheckin(): Promise<{ attendance_date: string; status: string; checked_at: string | null } | null> {
+  const sb = requireSupabase()
+  const staffId = (await sb.from('profiles').select('staff_id').eq('id', (await sb.auth.getUser()).data.user?.id ?? '').maybeSingle()).data?.staff_id
+  if (!staffId) return null
+  const { data } = await sb.from('staff_attendance')
+    .select('attendance_date, status, checked_at')
+    .eq('staff_id', staffId).eq('attendance_date', pkToday()).maybeSingle()
+  return data ?? null
+}
+/** "Today" in Pakistan time (matches the server's `now() at time zone 'Asia/Karachi'`
+ *  used by fn_staff_check_in), so the check-in card doesn't disagree overnight. */
+function pkToday(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Karachi' })
+}
+
+/** Create a teacher/staff login via the create-teacher Edge Function (owner/
+ *  principal only; enforced server-side). Throws a helpful message if the
+ *  function isn't deployed. */
+export interface CreateTeacherInput { email: string; password: string; full_name: string; role?: string }
+export async function createTeacherLogin(input: CreateTeacherInput): Promise<{ id: string; email: string; role: string }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.functions.invoke('create-teacher', {
+    body: { email: input.email, password: input.password, full_name: input.full_name, role: input.role ?? 'class_teacher' },
+  })
+  if (error) {
+    // Prefer the function's own structured error (e.g. 403 "only owner/principal");
+    // only suggest "not deployed" when there is no structured body to read.
+    let msg = error.message || 'Could not create the login.'
+    let structured = false
+    try { const ctx = await (error as any).context?.json?.(); if (ctx?.error) { msg = ctx.error; structured = true } } catch { /* ignore */ }
+    if (!structured) msg += ' — if this keeps failing, the create-teacher function may not be deployed; add the user in the Supabase dashboard instead.'
+    throw new Error(msg)
+  }
+  return data as { id: string; email: string; role: string }
 }
 
 // ---- Certificates ----

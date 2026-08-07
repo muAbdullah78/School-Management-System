@@ -7,6 +7,7 @@ const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm foc
 const EMPTY: SchoolSettings = {
   name: '', name_short: '', address: '', phone: '', email: '', principal_name: '',
   grade_scale: 'letter', pass_percent: 33, gr_prefix: '', receipt_prefix: '', current_session_id: null,
+  geofence_enabled: false, geo_lat: null, geo_lng: null, geo_radius_m: 200,
 }
 
 export function SchoolProfile() {
