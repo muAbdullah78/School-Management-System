@@ -86,7 +86,7 @@ export function CheckIn() {
               {busy ? 'Signing in…' : 'Sign in & check in'}
             </button>
           </form>
-        ) : state === 'working' ? (
+        ) : state === 'working' || state === 'idle' ? (
           <p className="mt-6 text-center text-sm text-slate-500">Recording your check-in…</p>
         ) : state === 'done' && result ? (
           <div className="mt-6 text-center">

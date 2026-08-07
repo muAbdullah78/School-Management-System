@@ -60,11 +60,16 @@ Deno.serve(async (req) => {
     })
     if (createErr || !created.user) return json({ error: createErr?.message ?? 'Could not create user' }, 400)
 
-    // 4) Ensure a profile row exists (trigger should have made one) and set role + name.
-    await admin.from('profiles').upsert(
+    // 4) Set role + name as the VERIFIED CALLER (owner/principal). The
+    //    handle_new_user trigger already inserted the profile as 'readonly' in
+    //    the same txn as createUser; using the service-role client here would
+    //    hit guard_profile_role (auth.uid() is null → not owner/principal) and
+    //    silently leave the teacher at 'readonly'. The caller passes the guard.
+    const { error: upErr } = await caller.from('profiles').upsert(
       { id: created.user.id, full_name: fullName || email.split('@')[0], role },
       { onConflict: 'id' },
     )
+    if (upErr) return json({ error: `Login created but its role could not be set: ${upErr.message}` }, 500)
 
     return json({ id: created.user.id, email, role })
   } catch (e) {

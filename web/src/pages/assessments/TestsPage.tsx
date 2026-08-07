@@ -77,7 +77,7 @@ export function TestsPage() {
               ))}
             </div>
           </div>
-          <NewTest sessionId={sessionId!} classId={classId} forcedSectionIds={forcedSectionIds} />
+          <NewTest key={classId} sessionId={sessionId!} classId={classId} forcedSectionIds={forcedSectionIds} />
         </div>
       )}
 

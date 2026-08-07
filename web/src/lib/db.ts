@@ -1286,6 +1286,18 @@ export async function removeTeacherAssignment(id: string): Promise<void> {
   if (error) throw new Error(error.message)
 }
 
+/** Assign (or clear, staffId=null) a class teacher for a (class, section-or-null)
+ *  atomically: assignment row for portal scoping + class_teacher_id for result cards. */
+export async function setClassTeacher(
+  staffId: string | null, sessionId: string, classId: string, sectionId: string | null,
+): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_set_class_teacher', {
+    p_staff_id: staffId, p_session_id: sessionId, p_class_id: classId, p_section_id: sectionId,
+  })
+  if (error) throw new Error(error.message)
+}
+
 export interface CheckinCode { id: string; code: string; label: string | null; valid_from: string | null; valid_to: string | null; active: boolean }
 export async function generateCheckinCode(
   label: string, validFrom: string | null, validTo: string | null, deactivateOthers = true,
@@ -1358,12 +1370,13 @@ export async function getMyTodayCheckin(): Promise<{ attendance_date: string; st
   if (!staffId) return null
   const { data } = await sb.from('staff_attendance')
     .select('attendance_date, status, checked_at')
-    .eq('staff_id', staffId).eq('attendance_date', todayLocalISO()).maybeSingle()
+    .eq('staff_id', staffId).eq('attendance_date', pkToday()).maybeSingle()
   return data ?? null
 }
-function todayLocalISO(): string {
-  const d = new Date(); const m = String(d.getMonth() + 1).padStart(2, '0'); const day = String(d.getDate()).padStart(2, '0')
-  return `${d.getFullYear()}-${m}-${day}`
+/** "Today" in Pakistan time (matches the server's `now() at time zone 'Asia/Karachi'`
+ *  used by fn_staff_check_in), so the check-in card doesn't disagree overnight. */
+function pkToday(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Karachi' })
 }
 
 /** Create a teacher/staff login via the create-teacher Edge Function (owner/
@@ -1376,11 +1389,14 @@ export async function createTeacherLogin(input: CreateTeacherInput): Promise<{ i
     body: { email: input.email, password: input.password, full_name: input.full_name, role: input.role ?? 'class_teacher' },
   })
   if (error) {
+    // Prefer the function's own structured error (e.g. 403 "only owner/principal");
+    // only suggest "not deployed" when there is no structured body to read.
     let msg = error.message || 'Could not create the login.'
-    try { const ctx = await (error as any).context?.json?.(); if (ctx?.error) msg = ctx.error } catch { /* ignore */ }
-    throw new Error(`${msg} (If logins can’t be created in-app, the create-teacher function may not be deployed — add the user in the Supabase dashboard instead.)`)
+    let structured = false
+    try { const ctx = await (error as any).context?.json?.(); if (ctx?.error) { msg = ctx.error; structured = true } } catch { /* ignore */ }
+    if (!structured) msg += ' — if this keeps failing, the create-teacher function may not be deployed; add the user in the Supabase dashboard instead.'
+    throw new Error(msg)
   }
-  if ((data as any)?.error) throw new Error((data as any).error)
   return data as { id: string; email: string; role: string }
 }
 

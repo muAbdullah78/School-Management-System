@@ -2,8 +2,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   listStaff, createStaff, updateStaff, setStaffStatus, linkStaffProfile, listProfiles,
-  listClasses, listSectionTeachers, assignClassTeacher,
-  getCurrentSession, listTeacherAssignments, assignTeacher, removeTeacherAssignment,
+  listClasses, listSectionTeachers, getCurrentSession, listTeacherAssignments, setClassTeacher,
   getStaffAttendanceSummary, getStaffMonthAttendance, createTeacherLogin,
   type StaffRow, type StaffInput,
 } from '@/lib/db'
@@ -289,14 +288,8 @@ function ClassTeachersTab() {
   // Set the teacher for a (class, section-or-null): update the scoping assignment
   // AND mirror the section's class_teacher_id (used by result cards).
   const setTeacher = useMutation({
-    mutationFn: async (v: { sectionId: string | null; staffId: string | null }) => {
-      const existing = (assignments.data ?? []).filter(
-        (a) => a.class_id === classId && (a.section_id ?? null) === (v.sectionId ?? null),
-      )
-      for (const ex of existing) await removeTeacherAssignment(ex.id)
-      if (v.sectionId) await assignClassTeacher(v.sectionId, v.staffId)
-      if (v.staffId) await assignTeacher(v.staffId, sessionId!, classId, v.sectionId)
-    },
+    mutationFn: (v: { sectionId: string | null; staffId: string | null }) =>
+      setClassTeacher(v.staffId, sessionId!, classId, v.sectionId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['sectionTeachers', classId] })
       qc.invalidateQueries({ queryKey: ['teacherAssignments', sessionId] })
