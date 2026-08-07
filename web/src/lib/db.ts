@@ -1,4 +1,6 @@
+import { createClient } from '@supabase/supabase-js'
 import { requireSupabase } from './supabase'
+import { config } from './config'
 
 // ---- Types (hand-written; kept in sync with supabase/migrations) ----
 export interface SessionRow { id: string; name: string; is_current: boolean }
@@ -1385,19 +1387,50 @@ function pkToday(): string {
 export interface CreateTeacherInput { email: string; password: string; full_name: string; role?: string }
 export async function createTeacherLogin(input: CreateTeacherInput): Promise<{ id: string; email: string; role: string }> {
   const sb = requireSupabase()
+  const role = input.role ?? 'class_teacher'
+  const email = input.email.trim().toLowerCase()
+  const fullName = input.full_name.trim()
+
+  // Preferred path: the create-teacher Edge Function. It uses the service key so
+  // the login is created already-confirmed (works regardless of project settings).
   const { data, error } = await sb.functions.invoke('create-teacher', {
-    body: { email: input.email, password: input.password, full_name: input.full_name, role: input.role ?? 'class_teacher' },
+    body: { email, password: input.password, full_name: fullName, role },
   })
-  if (error) {
-    // Prefer the function's own structured error (e.g. 403 "only owner/principal");
-    // only suggest "not deployed" when there is no structured body to read.
-    let msg = error.message || 'Could not create the login.'
-    let structured = false
-    try { const ctx = await (error as any).context?.json?.(); if (ctx?.error) { msg = ctx.error; structured = true } } catch { /* ignore */ }
-    if (!structured) msg += ' — if this keeps failing, the create-teacher function may not be deployed; add the user in the Supabase dashboard instead.'
+  if (!error) return data as { id: string; email: string; role: string }
+
+  // The function is deployed but rejected the request → surface its real reason.
+  if ((error as any).name === 'FunctionsHttpError') {
+    let msg = error.message
+    try { const ctx = await (error as any).context?.json?.(); if (ctx?.error) msg = ctx.error } catch { /* ignore */ }
     throw new Error(msg)
   }
-  return data as { id: string; email: string; role: string }
+
+  // Function not deployed / unreachable → create the login directly with a
+  // throwaway client (a separate storageKey + no session persistence means the
+  // principal stays logged in). The handle_new_user trigger makes the profile;
+  // we then set the role as the principal (who passes the role guard).
+  const tmp = createClient(config.supabaseUrl!, config.supabaseAnonKey!, {
+    auth: { persistSession: false, autoRefreshToken: false, storageKey: 'provision-teacher' },
+  })
+  const { data: su, error: suErr } = await tmp.auth.signUp({
+    email, password: input.password, options: { data: { full_name: fullName || email.split('@')[0] } },
+  })
+  if (suErr) throw new Error(suErr.message)
+  const newId = su.user?.id
+  if (!newId) throw new Error('Could not create the login.')
+
+  await updateProfileRole(newId, role)
+
+  // If the project still requires email confirmation, the teacher can't sign in
+  // with just the password — tell the principal exactly what to switch off.
+  if (!su.session && !su.user?.email_confirmed_at) {
+    throw new Error(
+      'Login created, but this Supabase project requires email confirmation, so the teacher can’t sign in yet. ' +
+      'In Supabase → Authentication → Providers → Email, turn OFF “Confirm email” (one-time), then this login will work. ' +
+      '(Or deploy the create-teacher function once and it’s handled automatically.)',
+    )
+  }
+  return { id: newId, email, role }
 }
 
 // ---- Certificates ----
