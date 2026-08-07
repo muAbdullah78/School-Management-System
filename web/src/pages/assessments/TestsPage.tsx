@@ -3,19 +3,39 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getCurrentSession, listClasses, listSections, listSubjects,
   listAssessments, createAssessment, getAssessmentMarksheet, enterAssessmentMarks, lockAssessment,
+  getMyAssignments,
   type AssessmentRow,
 } from '@/lib/db'
 import { fmtDate, todayISO } from '@/lib/format'
+import { useAuth } from '@/auth/AuthProvider'
+import { isTeacher } from '@/auth/roles'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 type Entry = { marks: string; is_absent: boolean }
 
 export function TestsPage() {
+  const { profile } = useAuth()
+  const isTeach = isTeacher(profile?.role)
   const session = useQuery({ queryKey: ['currentSession'], queryFn: getCurrentSession })
   const sessionId = session.data?.id
   const classes = useQuery({ queryKey: ['classes'], queryFn: listClasses })
+  const myAssign = useQuery({ queryKey: ['myAssignments'], queryFn: getMyAssignments, enabled: isTeach })
   const [classId, setClassId] = useState('')
   const [selected, setSelected] = useState<AssessmentRow | null>(null)
+
+  const allowedClassIds = isTeach ? new Set((myAssign.data ?? []).map((a) => a.class_id)) : null
+  const classOptions = (classes.data ?? []).filter((c) => !allowedClassIds || allowedClassIds.has(c.id))
+  const myClassAssign = isTeach ? (myAssign.data ?? []).filter((a) => a.class_id === classId) : []
+  const teacherWholeClass = myClassAssign.some((a) => a.section_id === null)
+  const forcedSectionIds = isTeach && !teacherWholeClass
+    ? (myClassAssign.map((a) => a.section_id).filter(Boolean) as string[])
+    : null
+
+  useEffect(() => {
+    if (!isTeach || classId || !myAssign.data || myAssign.data.length !== 1) return
+    setClassId(myAssign.data[0].class_id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTeach, myAssign.data])
 
   const tests = useQuery({
     queryKey: ['assessments', sessionId, classId],
@@ -31,7 +51,7 @@ export function TestsPage() {
         <span className="text-sm text-slate-600">Class</span>
         <select value={classId} onChange={(e) => { setClassId(e.target.value); setSelected(null) }} className={FIELD}>
           <option value="">Select class…</option>
-          {classes.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          {classOptions.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       </label>
 
@@ -57,7 +77,7 @@ export function TestsPage() {
               ))}
             </div>
           </div>
-          <NewTest sessionId={sessionId!} classId={classId} />
+          <NewTest sessionId={sessionId!} classId={classId} forcedSectionIds={forcedSectionIds} />
         </div>
       )}
 
@@ -68,7 +88,7 @@ export function TestsPage() {
   )
 }
 
-function NewTest({ sessionId, classId }: { sessionId: string; classId: string }) {
+function NewTest({ sessionId, classId, forcedSectionIds }: { sessionId: string; classId: string; forcedSectionIds: string[] | null }) {
   const qc = useQueryClient()
   const subjects = useQuery({ queryKey: ['subjects', classId], queryFn: () => listSubjects(classId) })
   const sections = useQuery({ queryKey: ['sections', classId], queryFn: () => listSections(classId) })
@@ -77,6 +97,15 @@ function NewTest({ sessionId, classId }: { sessionId: string; classId: string })
   const [sectionId, setSectionId] = useState('')
   const [date, setDate] = useState(todayISO())
   const [maxMarks, setMaxMarks] = useState('20')
+
+  // A section-scoped teacher must pick one of their sections (never "All").
+  const sectionChoices = forcedSectionIds
+    ? (sections.data ?? []).filter((s) => forcedSectionIds.includes(s.id))
+    : (sections.data ?? [])
+  useEffect(() => {
+    if (forcedSectionIds && forcedSectionIds.length && !sectionId) setSectionId(forcedSectionIds[0])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [forcedSectionIds, sections.data])
 
   const create = useMutation({
     mutationFn: () => createAssessment({
@@ -107,8 +136,8 @@ function NewTest({ sessionId, classId }: { sessionId: string; classId: string })
         <label className="block">
           <span className="text-sm text-slate-600">Section</span>
           <select value={sectionId} onChange={(e) => setSectionId(e.target.value)} className={FIELD}>
-            <option value="">All</option>
-            {sections.data?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {!forcedSectionIds && <option value="">All</option>}
+            {sectionChoices.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </label>
         <label className="block">

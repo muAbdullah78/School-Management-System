@@ -5,6 +5,7 @@ import { AuthProvider } from '@/auth/AuthProvider'
 import { AppShell } from '@/components/AppShell'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { Login } from '@/pages/Login'
+import { CheckIn } from '@/pages/CheckIn'
 import { Dashboard } from '@/pages/Dashboard'
 import { FeesPage } from '@/pages/fees/FeesPage'
 import { AttendancePage } from '@/pages/attendance/AttendancePage'
@@ -46,6 +47,7 @@ export default function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/checkin" element={<CheckIn />} />
             <Route
               element={
                 <ProtectedRoute>
