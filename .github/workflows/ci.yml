@@ -256,3 +256,7 @@ jobs:
         # reads, direct writes, and passing the other school's ids into every
         # SECURITY DEFINER function. Any success fails the build.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/tenant_isolation.sql
+      - name: Subscription & student-limit rules
+        # Trial -> grace -> locked -> reactivated, and the rule that going over
+        # the student limit flags the school without ever blocking an admission.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/subscription_rules.sql
