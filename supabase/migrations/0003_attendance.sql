@@ -131,6 +131,7 @@ begin
   if auth.uid() is null then
     raise exception 'Not authenticated';
   end if;
+  perform public.assert_own('enrollments', p_enrollment_id);
   select jsonb_build_object(
     'present',     count(*) filter (where status = 'present'),
     'absent',      count(*) filter (where status = 'absent'),

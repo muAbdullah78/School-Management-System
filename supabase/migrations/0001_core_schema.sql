@@ -1,9 +1,14 @@
 -- =============================================================================
 -- School Manager — core schema (Phase 0 foundation)
 --
--- One database == one school. There is NO multi-tenant `school_id`, because
--- every school runs its own Supabase project. Row Level Security here enforces
--- ROLE-based access (separation of duties), not tenant isolation.
+-- SUPERSEDED BY 0025_multi_tenancy.sql — read that first.
+--
+-- This file was written when every school ran its own Supabase project, so it
+-- has no `school_id` and its Row Level Security enforces ROLE-based access only
+-- (separation of duties), not tenant isolation. All schools now share one
+-- database: 0025 adds school_id to every table here and replaces every policy
+-- below with one that checks the tenant as well as the role. Do not copy the
+-- `using (true)` policy style from this file into anything new.
 --
 -- Design rules (see docs/02-DATA-MODEL.md):
 --   * Identity (Student) is separate from year-state (Enrollment).

@@ -3,8 +3,9 @@ import { supabase } from '@/lib/supabase'
 import { config } from '@/lib/config'
 
 /**
- * Reads the school's display name from the singleton `school_settings` row,
- * falling back to the build-time VITE_SCHOOL_NAME until it is filled in-app.
+ * Reads the signed-in school's display name from its `school_settings` row —
+ * RLS narrows the table to that one row — falling back to the build-time
+ * VITE_SCHOOL_NAME until it is filled in-app.
  */
 export function useSchoolName(): string {
   const [name, setName] = useState<string>(config.schoolNameFallback)

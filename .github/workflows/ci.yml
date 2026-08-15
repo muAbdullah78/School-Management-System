@@ -75,16 +75,31 @@ jobs:
       - name: Sanity checks
         run: |
           psql -v ON_ERROR_STOP=1 <<'SQL'
+          -- A school must exist before anything else: every tenant row hangs off
+          -- one, and next_counter() resolves its series from the caller's school.
+          insert into public.schools(id, name)
+            values ('99999999-9999-9999-9999-999999999999', 'CI School');
+          insert into public.subscriptions(school_id, plan_code, status, trial_ends_on)
+            values ('99999999-9999-9999-9999-999999999999', 'starter', 'active', current_date + 14);
+          -- new auth user is auto-provisioned as owner (first user IN THIS SCHOOL)
+          insert into auth.users(id, email, raw_user_meta_data)
+            values ('11111111-1111-1111-1111-111111111111', 'owner@ci.test',
+                    '{"full_name":"CI Owner","school_id":"99999999-9999-9999-9999-999999999999"}');
+          select case when (select role::text from public.profiles
+                            where id='11111111-1111-1111-1111-111111111111') = 'owner'
+                  then 'provisioning ok' else 'PROVISIONING FAIL' end;
+          select case when (select school_id from public.profiles
+                            where id='11111111-1111-1111-1111-111111111111')
+                            = '99999999-9999-9999-9999-999999999999'
+                  then 'tenant binding ok' else 'TENANT BINDING FAIL' end;
+          -- Act as that owner from here on, so school_id is auto-stamped on every
+          -- insert below and next_counter() has a school to count within.
+          create or replace function auth.uid() returns uuid language sql stable as
+            $$ select '11111111-1111-1111-1111-111111111111'::uuid $$;
           -- gapless counter helper works
           select case when public.next_counter('ci_test') = 1
                        and public.next_counter('ci_test') = 2
                   then 'counter ok' else 'COUNTER FAIL' end;
-          -- new auth user is auto-provisioned as owner (first user)
-          insert into auth.users(id, email, raw_user_meta_data)
-            values ('11111111-1111-1111-1111-111111111111', 'owner@ci.test', '{"full_name":"CI Owner"}');
-          select case when (select role::text from public.profiles
-                            where id='11111111-1111-1111-1111-111111111111') = 'owner'
-                  then 'provisioning ok' else 'PROVISIONING FAIL' end;
           -- bulk import: act as the owner, seed minimal reference data, then import
           -- a batch by class/section NAME and assert the tally. Raises (fails CI)
           -- on any mismatch — a good row created, a nameless row + unknown-class
@@ -236,3 +251,8 @@ jobs:
             raise notice 'reconciliation ok';
           end $CI$;
           SQL
+      - name: Cross-tenant isolation
+        # Stands up two schools and tries to reach one from the other — direct
+        # reads, direct writes, and passing the other school's ids into every
+        # SECURITY DEFINER function. Any success fails the build.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/tenant_isolation.sql

@@ -94,6 +94,9 @@ alter table public.school_settings add column if not exists geo_radius_m integer
 -- May the caller manage (roster/mark) this class/section? Admin roles always;
 -- teachers only where they hold an assignment (a whole-class assignment, i.e.
 -- section_id null, covers every section of that class).
+-- NOTE: superseded in 0025_multi_tenancy.sql, which adds the tenant check.
+-- It cannot be added here: this is a SQL-language function, so its body is
+-- validated at creation time and school_id does not exist yet at 0022.
 create or replace function public.fn_may_manage_class(p_session uuid, p_class uuid, p_section uuid)
 returns boolean language sql stable security definer set search_path = public as $$
   select public.has_role('owner','principal','admin_clerk')
@@ -164,6 +167,20 @@ begin
   end if;
   if p_marks is null or jsonb_typeof(p_marks) <> 'array' then
     raise exception 'p_marks must be a JSON array';
+  end if;
+
+  -- tenant scope: every enrolment must be in THIS school. Checked for all roles,
+  -- because the teacher-scope check below is skipped for admins — leaving them
+  -- able to mark attendance against another school's enrolment ids.
+  if exists (
+    select 1 from jsonb_array_elements(p_marks) e
+    where not exists (
+      select 1 from public.enrollments en
+      where en.id = (e->>'enrollment_id')::uuid
+        and en.school_id = public.current_school_id()
+    )
+  ) then
+    raise exception 'Unknown enrolment in this school' using errcode = '42501';
   end if;
 
   -- teacher scope: every enrolment must be in a class the caller is assigned to
@@ -240,7 +257,10 @@ begin
     raise exception 'Not permitted to generate a check-in code';
   end if;
   if p_deactivate_others then
-    update public.staff_checkin_codes set active = false where active;
+    -- Without `where school_id`, rotating one school's QR would deactivate the
+    -- check-in code of every school in the database at once.
+    update public.staff_checkin_codes set active = false
+     where active and school_id = public.current_school_id();
   end if;
   v_code := replace(gen_random_uuid()::text, '-', '');
   insert into public.staff_checkin_codes(code, label, valid_from, valid_to, active, created_by)
@@ -273,7 +293,7 @@ begin
   if v_code.valid_to  is not null and v_today > v_code.valid_to  then raise exception 'This check-in code has expired'; end if;
 
   select geofence_enabled, geo_lat, geo_lng, geo_radius_m
-    into v_geo_on, v_lat, v_lng, v_radius from public.school_settings where id = 1;
+    into v_geo_on, v_lat, v_lng, v_radius from public.school_settings where school_id = public.current_school_id();
   if coalesce(v_geo_on, false) then
     if p_lat is null or p_lng is null then raise exception 'Location is required to check in — enable location and try again.'; end if;
     if v_lat is null or v_lng is null then raise exception 'School location is not set — ask the principal to set it in Settings.'; end if;
@@ -304,6 +324,7 @@ begin
   if not public.has_role('owner','principal','admin_clerk') then
     raise exception 'Not permitted to set staff attendance';
   end if;
+  perform public.assert_own('staff', p_staff_id);
   insert into public.staff_attendance(staff_id, attendance_date, status, source, reason, marked_by, checked_at)
   values (p_staff_id, p_date, p_status, 'manual', nullif(btrim(p_reason),''), auth.uid(), now())
   on conflict (staff_id, attendance_date) do update
@@ -321,6 +342,7 @@ begin
   if not (public.has_role('owner','principal','admin_clerk') or p_staff_id = public.my_staff_id()) then
     raise exception 'Not permitted';
   end if;
+  perform public.assert_own('staff', p_staff_id);
   select jsonb_build_object(
     'present',     count(*) filter (where status = 'present'),
     'absent',      count(*) filter (where status = 'absent'),

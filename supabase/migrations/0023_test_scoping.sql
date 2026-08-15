@@ -28,6 +28,7 @@ begin
   if not public.has_role('owner','principal','admin_clerk','class_teacher','subject_teacher') then
     raise exception 'Not permitted to view the marksheet';
   end if;
+  perform public.assert_own('assessments', p_assessment_id);
   select a.session_id, a.class_id, a.section_id, a.max_marks
     into v_session, v_class, v_section, v_max
   from public.assessments a where a.id = p_assessment_id;
@@ -120,6 +121,7 @@ begin
   if not public.has_role('owner','principal','admin_clerk','class_teacher','subject_teacher') then
     raise exception 'Not permitted to lock this test';
   end if;
+  perform public.assert_own('assessments', p_assessment_id);
   select session_id, class_id, section_id into v_session, v_class, v_section
   from public.assessments where id = p_assessment_id;
   if v_session is null then raise exception 'Assessment not found'; end if;

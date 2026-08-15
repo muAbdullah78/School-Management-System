@@ -47,6 +47,10 @@ begin
   end if;
   if p_a is null or p_b is null then raise exception 'Both students are required'; end if;
   if p_a = p_b then raise exception 'Cannot link a student to themselves'; end if;
+  -- Both sides, or a sibling discount could be justified by a student who
+  -- belongs to a different school entirely.
+  perform public.assert_own('students', p_a);
+  perform public.assert_own('students', p_b);
   insert into public.student_links(student_id, related_student_id, relation, created_by)
   values (p_a, p_b, nullif(btrim(p_relation),''), auth.uid())
   on conflict (student_id, related_student_id) do update set relation = excluded.relation
@@ -89,10 +93,16 @@ begin
   if v_session is null then raise exception 'Academic session is required'; end if;
   if v_class   is null then raise exception 'Class is required'; end if;
 
+  -- The ids arrive inside the jsonb payload, so they need checking just like a
+  -- named uuid parameter would.
+  perform public.assert_own('academic_sessions', v_session);
+  perform public.assert_own('classes', v_class);
+  perform public.assert_own('sections', v_section);
+
   if v_gr_in is not null then
     v_gr := v_gr_in;
   else
-    select gr_prefix into v_prefix from public.school_settings where id = 1;
+    select gr_prefix into v_prefix from public.school_settings where school_id = public.current_school_id();
     v_counter := public.next_counter('gr');
     v_gr := coalesce(v_prefix, '') || lpad(v_counter::text, 4, '0');
   end if;

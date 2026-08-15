@@ -61,6 +61,7 @@ begin
   if not public.has_role('owner','principal','admin_clerk','accountant') then
     raise exception 'Not permitted to propose discounts';
   end if;
+  perform public.assert_own('enrollments', p_enrollment_id);
   if p_amount is null or p_amount <= 0 then raise exception 'Discount amount must be positive'; end if;
   if p_is_percent and p_amount > 100 then raise exception 'A percentage discount cannot exceed 100%%'; end if;
   if not exists (select 1 from public.enrollments where id = p_enrollment_id) then
@@ -81,6 +82,7 @@ begin
   if not public.has_role('owner','principal') then
     raise exception 'Only the owner or principal may approve or reject discounts';
   end if;
+  perform public.assert_own('discounts', p_discount_id);
   update public.discounts
      set status = p_status,
          approved_by = case when p_status = 'approved' then auth.uid() else approved_by end,
@@ -100,6 +102,7 @@ begin
   if not public.has_role('owner','principal','admin_clerk','accountant') then
     raise exception 'Not permitted to apply fines';
   end if;
+  perform public.assert_own('invoices', p_invoice_id);
   if p_amount is null or p_amount <= 0 then raise exception 'Fine amount must be positive'; end if;
   update public.invoices
      set fine = fine + p_amount,
@@ -118,6 +121,7 @@ begin
   if not public.has_role('owner','principal') then
     raise exception 'Only the owner or principal may waive a fine';
   end if;
+  perform public.assert_own('invoices', p_invoice_id);
   update public.invoices
      set fine = 0,
          notes = coalesce(notes || E'\n', '') || 'Fine waived'
@@ -139,6 +143,7 @@ begin
   if not public.has_role('owner','principal') then
     raise exception 'Only the owner or principal may adjust a balance';
   end if;
+  perform public.assert_own('students', p_student_id);
   if p_amount is null or p_amount = 0 then raise exception 'Adjustment amount cannot be zero'; end if;
   if nullif(btrim(p_reason),'') is null then raise exception 'A reason is required'; end if;
   if not exists (select 1 from public.students where id = p_student_id) then

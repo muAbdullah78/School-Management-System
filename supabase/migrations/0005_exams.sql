@@ -25,7 +25,7 @@ returns text language plpgsql stable security definer set search_path = public a
 declare v_pass numeric;
 begin
   if p_percent is null then return null; end if;
-  select coalesce(pass_percent, 33) into v_pass from public.school_settings where id = 1;
+  select coalesce(pass_percent, 33) into v_pass from public.school_settings where school_id = public.current_school_id();
   v_pass := coalesce(v_pass, 33);
   if p_percent < v_pass then return 'F'; end if;
   return case
@@ -50,6 +50,7 @@ begin
   if not public.has_role('owner','principal','admin_clerk','class_teacher','subject_teacher') then
     raise exception 'Not permitted to view the marksheet';
   end if;
+  perform public.assert_own('exam_subjects', p_exam_subject_id);
   select t.session_id, es.class_id, es.max_marks into v_session, v_class, v_max
   from public.exam_subjects es join public.exam_terms t on t.id = es.exam_term_id
   where es.id = p_exam_subject_id;
@@ -82,6 +83,7 @@ begin
   if not public.has_role('owner','principal','admin_clerk','class_teacher','subject_teacher') then
     raise exception 'Not permitted to enter marks';
   end if;
+  perform public.assert_own('exam_subjects', p_exam_subject_id);
   if p_marks is null or jsonb_typeof(p_marks) <> 'array' then
     raise exception 'p_marks must be a JSON array';
   end if;
@@ -141,6 +143,8 @@ begin
   if not public.has_role('owner','principal','admin_clerk') then
     raise exception 'Not permitted to generate result cards';
   end if;
+  perform public.assert_own('exam_terms', p_exam_term_id);
+  perform public.assert_own('classes', p_class_id);
   select session_id, starts_on, ends_on, result_withheld_for_defaulters
     into v_session, v_from, v_to, v_withhold
   from public.exam_terms where id = p_exam_term_id;

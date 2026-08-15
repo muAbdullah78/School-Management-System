@@ -26,6 +26,7 @@ begin
   if not public.has_role('owner', 'principal') then
     raise exception 'Only owner/principal may reverse a payment';
   end if;
+  perform public.assert_own('payments', p_payment_id);
   select * into v_orig from public.payments where id = p_payment_id;
   if not found then raise exception 'Payment not found'; end if;
   if v_orig.status <> 'verified' then
@@ -102,6 +103,7 @@ begin
   if not public.has_role('owner','principal','admin_clerk','accountant') then
     raise exception 'Not permitted to generate invoices';
   end if;
+  perform public.assert_own('enrollments', p_enrollment_id);
   select e.id, e.student_id, e.session_id, e.class_id into v_enr
   from public.enrollments e where e.id = p_enrollment_id;
   if not found then raise exception 'Enrolment not found'; end if;
@@ -156,6 +158,8 @@ begin
   if not public.has_role('owner', 'principal', 'admin_clerk', 'accountant') then
     raise exception 'Not permitted to generate invoices';
   end if;
+  perform public.assert_own('academic_sessions', p_session_id);
+  perform public.assert_own('classes', p_class_id);
 
   for v_enr in
     select e.id as enrollment_id, e.student_id
@@ -212,6 +216,7 @@ begin
   if not public.has_role('owner','principal','admin_clerk','accountant') then
     raise exception 'Not permitted to verify payments';
   end if;
+  perform public.assert_own('payments', p_payment_id);
   select * into v_pay from public.payments where id = p_payment_id for update;
   if not found then raise exception 'Payment not found'; end if;
   if v_pay.status <> 'pending' then raise exception 'Only a pending payment can be verified'; end if;
@@ -254,7 +259,7 @@ declare
   v_last  date := (date_trunc('month', p_month) + interval '1 month - 1 day')::date;
   v_pass  numeric;
 begin
-  select pass_percent into v_pass from public.school_settings where id = 1;
+  select pass_percent into v_pass from public.school_settings where school_id = public.current_school_id();
   v_pass := coalesce(v_pass, 33);
 
   return query

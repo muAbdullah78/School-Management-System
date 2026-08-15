@@ -48,6 +48,7 @@ begin
   if not public.has_role('owner','principal','admin_clerk','class_teacher','subject_teacher') then
     raise exception 'Not permitted to enter marks';
   end if;
+  perform public.assert_own('assessments', p_assessment_id);
   if p_marks is null or jsonb_typeof(p_marks) <> 'array' then
     raise exception 'p_marks must be a JSON array';
   end if;
@@ -117,13 +118,18 @@ begin
     raise exception 'Your login is not linked to a staff record — ask the principal to link it in Staff.';
   end if;
 
-  select * into v_code from public.staff_checkin_codes where code = p_code and active limit 1;
+  -- Scope the lookup to the caller's school. Codes are only unique per school
+  -- now, so without this a teacher could check in against another school's code
+  -- — and `limit 1` would pick between duplicates arbitrarily.
+  select * into v_code from public.staff_checkin_codes
+   where code = p_code and active and school_id = public.current_school_id()
+   limit 1;
   if not found then raise exception 'Invalid or inactive check-in code'; end if;
   if v_code.valid_from is not null and v_today < v_code.valid_from then raise exception 'This check-in code is not active yet'; end if;
   if v_code.valid_to  is not null and v_today > v_code.valid_to  then raise exception 'This check-in code has expired'; end if;
 
   select geofence_enabled, geo_lat, geo_lng, geo_radius_m
-    into v_geo_on, v_lat, v_lng, v_radius from public.school_settings where id = 1;
+    into v_geo_on, v_lat, v_lng, v_radius from public.school_settings where school_id = public.current_school_id();
   if coalesce(v_geo_on, false) then
     if p_lat is null or p_lng is null then raise exception 'Location is required to check in — enable location and try again.'; end if;
     if v_lat is null or v_lng is null then raise exception 'School location is not set — ask the principal to set it in Settings.'; end if;
@@ -156,6 +162,13 @@ begin
   if not public.has_role('owner','principal','admin_clerk') then
     raise exception 'Not permitted to assign class teachers';
   end if;
+  -- Guard every id: the DELETE below is scoped only by session/class, so
+  -- another school's ids would wipe their teacher assignments.
+  perform public.assert_own('staff', p_staff_id);
+  perform public.assert_own('academic_sessions', p_session_id);
+  perform public.assert_own('classes', p_class_id);
+  perform public.assert_own('sections', p_section_id);
+
   delete from public.teacher_assignments
    where session_id = p_session_id and class_id = p_class_id
      and section_id is not distinct from p_section_id;

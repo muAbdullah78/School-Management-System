@@ -40,6 +40,8 @@ begin
     raise exception 'Only the owner or principal may run a year-end rollover';
   end if;
   if p_from is null or p_to is null then raise exception 'Both sessions are required'; end if;
+  perform public.assert_own('academic_sessions', p_from);
+  perform public.assert_own('academic_sessions', p_to);
   if p_from = p_to then raise exception 'The target session must differ from the source'; end if;
   if not exists (select 1 from public.academic_sessions where id = p_from) then
     raise exception 'Source session does not exist'; end if;
@@ -193,6 +195,7 @@ begin
     raise exception 'Only the owner or principal may undo a rollover';
   end if;
   if p_to is null then raise exception 'Target session is required'; end if;
+  perform public.assert_own('academic_sessions', p_to);
 
   -- Guard: refuse if any real work already exists in the target session.
   if exists (select 1 from public.invoices where session_id = p_to)
