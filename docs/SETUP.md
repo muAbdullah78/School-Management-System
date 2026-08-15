@@ -145,7 +145,39 @@ You only ever do this once.
 
 ---
 
-## Step 6 — Check it works
+## Step 6 — Turn on the nightly student count — **YOU DO THIS**
+
+The operator console shows each school's student count. Without this step that
+number only updates when you press **Refresh counts** by hand, which means a
+school could quietly grow past its plan for weeks before you notice.
+
+1. In Supabase, go to **Database** → **Extensions**.
+2. Search for **pg_cron** and enable it.
+3. Go to **SQL Editor** and run:
+
+```sql
+select cron.schedule(
+  'refresh-student-counts',
+  '30 20 * * *',                                  -- 01:30 Pakistan time
+  $$ select public.fn_refresh_all_student_counts(); $$
+);
+```
+
+The time is in UTC — `30 20` is 1:30am in Pakistan, when no school is using the
+system.
+
+To check it later:
+
+```sql
+select jobname, schedule, active from cron.job;
+```
+
+If you skip this step nothing breaks; you just have to press **Refresh counts**
+in the console yourself.
+
+---
+
+## Step 7 — Check it works
 
 1. Open the app at `/signup` in a private/incognito window.
 2. Sign up a fake school — "Test School", any email, any password.
