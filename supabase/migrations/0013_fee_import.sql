@@ -56,6 +56,7 @@ begin
   if p_session is null then
     raise exception 'A target academic session is required';
   end if;
+  perform public.assert_own('academic_sessions', p_session);
   if p_rows is null or jsonb_typeof(p_rows) <> 'array' then
     raise exception 'rows must be a JSON array';
   end if;

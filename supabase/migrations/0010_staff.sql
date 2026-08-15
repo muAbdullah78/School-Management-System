@@ -12,6 +12,10 @@ begin
   if not public.has_role('owner','principal') then
     raise exception 'Only owner/principal may link staff to a login';
   end if;
+  -- Both sides must be ours: linking our staff row to another school's login
+  -- would hand that login this school's data.
+  perform public.assert_own('staff', p_staff_id);
+  perform public.assert_own('profiles', p_profile_id);
   if not exists (select 1 from public.staff where id = p_staff_id) then
     raise exception 'Staff not found';
   end if;

@@ -17,6 +17,7 @@ begin
   if not public.has_role('owner','principal','admin_clerk') then
     raise exception 'Not permitted to issue certificates';
   end if;
+  perform public.assert_own('students', p_student_id);
 
   -- one gapless serial sequence PER certificate type (unique (cert_type, serial_no))
   v_serial := public.next_counter('certificate_' || p_cert_type::text);
@@ -31,7 +32,7 @@ begin
   from public.students s
   left join public.enrollments e
     on e.student_id = s.id
-   and e.session_id = (select current_session_id from public.school_settings where id = 1)
+   and e.session_id = (select current_session_id from public.school_settings where school_id = public.current_school_id())
   left join public.classes c on c.id = e.class_id
   left join public.sections sec on sec.id = e.section_id
   where s.id = p_student_id;

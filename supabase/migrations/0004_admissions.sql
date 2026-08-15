@@ -52,7 +52,7 @@ begin
   if v_gr_in is not null then
     v_gr := v_gr_in;
   else
-    select gr_prefix into v_prefix from public.school_settings where id = 1;
+    select gr_prefix into v_prefix from public.school_settings where school_id = public.current_school_id();
     v_counter := public.next_counter('gr');
     v_gr := coalesce(v_prefix, '') || lpad(v_counter::text, 4, '0');
   end if;
@@ -112,6 +112,7 @@ begin
   if not public.has_role('owner','principal') then
     raise exception 'Only owner/principal may change a student''s status';
   end if;
+  perform public.assert_own('students', p_student_id);
 
   update public.students
     set status = p_status,

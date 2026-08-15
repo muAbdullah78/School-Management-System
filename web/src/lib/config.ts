@@ -1,9 +1,10 @@
 /**
- * Per-deployment configuration, read from Vite env vars.
+ * Deployment configuration, read from Vite env vars.
  *
- * Each school runs its own copy of this app against its own Supabase project,
- * so these values differ per school and are set at build/deploy time (see
- * `.env.example`).
+ * There is ONE Supabase project for every school, so these values are the same
+ * in every build — a school is identified by who logs in, not by which build it
+ * runs. `schoolNameFallback` is only a placeholder shown before the signed-in
+ * school's own settings row loads.
  */
 
 export const config = {

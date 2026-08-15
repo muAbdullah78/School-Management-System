@@ -8,7 +8,7 @@
 create or replace function public.fn_dashboard_summary()
 returns jsonb language plpgsql stable security definer set search_path = public as $$
 declare
-  v_session uuid := (select current_session_id from public.school_settings where id = 1);
+  v_session uuid := (select current_session_id from public.school_settings where school_id = public.current_school_id());
   v_finance boolean := public.has_role('owner','principal','admin_clerk','accountant','readonly');
   v_active  int;
   v_present int; v_absent int; v_leave int; v_late int; v_half int; v_marked int;

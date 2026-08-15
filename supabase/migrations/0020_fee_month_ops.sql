@@ -121,6 +121,7 @@ begin
     raise exception 'Not permitted to record payments';
   end if;
   if p_amount is null or p_amount <= 0 then raise exception 'Amount must be positive'; end if;
+  perform public.assert_own('students', p_student_id);
 
   v_receipt := public.next_counter('receipt');
   insert into public.payments(student_id, amount, method, receipt_no, status, received_by, note)
@@ -210,6 +211,7 @@ begin
   if not public.has_role('owner','principal','admin_clerk','accountant') then
     raise exception 'Not permitted';
   end if;
+  perform public.assert_own('payments', p_payment_id);
   update public.payments
      set status = 'cancelled',
          note = coalesce(note || ' · ', '') || 'Cancelled: '
@@ -226,6 +228,7 @@ begin
   if not public.has_role('owner','principal','admin_clerk','accountant') then
     raise exception 'Not permitted';
   end if;
+  perform public.assert_own('invoices', p_invoice_id);
   update public.invoices
      set deferred_until = p_until,
          defer_reason = nullif(btrim(p_reason),''),
@@ -243,6 +246,7 @@ begin
   if not public.has_role('owner','principal','admin_clerk','accountant') then
     raise exception 'Not permitted';
   end if;
+  perform public.assert_own('invoices', p_invoice_id);
   update public.invoices set deferred_until = null, defer_reason = null where id = p_invoice_id;
   if not found then raise exception 'Invoice not found'; end if;
 end;
@@ -260,6 +264,7 @@ begin
   if not public.has_role('owner','principal','admin_clerk','accountant') then
     raise exception 'Not permitted';
   end if;
+  perform public.assert_own('enrollments', p_enrollment_id);
   select e.id, e.session_id, e.class_id into v_enr from public.enrollments e where e.id = p_enrollment_id;
   if not found then return jsonb_build_object('gross',0,'discount',0,'net',0); end if;
 
@@ -294,7 +299,7 @@ declare
   v_last  date := (date_trunc('month', p_month) + interval '1 month - 1 day')::date;
   v_pass  numeric;
 begin
-  select pass_percent into v_pass from public.school_settings where id = 1;
+  select pass_percent into v_pass from public.school_settings where school_id = public.current_school_id();
   v_pass := coalesce(v_pass, 33);
 
   return query

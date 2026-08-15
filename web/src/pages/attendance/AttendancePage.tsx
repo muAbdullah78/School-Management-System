@@ -9,7 +9,7 @@ import { ATTENDANCE_STATUSES } from '@/lib/constants'
 import { todayISO } from '@/lib/format'
 import { useAuth } from '@/auth/AuthProvider'
 import { isTeacher } from '@/auth/roles'
-import { enqueueAttendance, isNetworkError, attendanceKey } from '@/lib/offlineQueue'
+import { enqueueAttendance, isNetworkError, attendanceKey, cachedSchoolId } from '@/lib/offlineQueue'
 import { offlineFirst } from '@/lib/offlineCache'
 import { AttendanceSheet, type AttendanceSheetData } from './AttendanceSheet'
 
@@ -152,6 +152,7 @@ export function AttendancePage() {
       label: `${cls}${sec ? ' · ' + sec : ''} · ${date}`,
       marks: payload,
       queued_at: new Date().toISOString(),
+      school_id: cachedSchoolId() ?? undefined,
     })
   }
 

@@ -225,6 +225,7 @@ begin
   if not public.has_role('owner', 'principal', 'admin_clerk', 'accountant') then
     raise exception 'Not permitted';
   end if;
+  perform public.assert_own('academic_sessions', p_session_id);
   return query
     select s.id, s.gr_no, s.full_name, c.name, sec.name, e.roll_no, public.student_balance(s.id)
     from public.enrollments e

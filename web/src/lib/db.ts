@@ -1104,18 +1104,32 @@ export interface SessionFull {
 export interface ClassFull { id: string; name: string; level_order: number; active: boolean }
 export interface ProfileRow { id: string; full_name: string | null; role: string; active: boolean; staff_id: string | null }
 
+/** The school this login belongs to. RLS keys off it; so do writes below. */
+export async function mySchoolId(): Promise<string> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('current_school_id')
+  if (error) throw new Error(error.message)
+  if (!data) throw new Error('This login is not attached to a school.')
+  return data as string
+}
+
 export async function getSchoolSettings(): Promise<SchoolSettings | null> {
   const sb = requireSupabase()
+  // No id filter: `school_settings` used to be a single row keyed id = 1, and is
+  // now one row per school. RLS already narrows this to the caller's school.
   const { data, error } = await sb.from('school_settings')
     .select('name, name_short, address, phone, email, principal_name, grade_scale, pass_percent, gr_prefix, receipt_prefix, current_session_id, geofence_enabled, geo_lat, geo_lng, geo_radius_m')
-    .eq('id', 1).maybeSingle()
+    .limit(1).maybeSingle()
   if (error) throw new Error(error.message)
   return data
 }
 
 export async function updateSchoolSettings(patch: Partial<SchoolSettings>): Promise<void> {
   const sb = requireSupabase()
-  const { error } = await sb.from('school_settings').upsert({ id: 1, ...patch }, { onConflict: 'id' })
+  // An UPDATE, not an upsert: the settings row is created with the school, so
+  // there is nothing to insert — and an upsert here could only ever write a row
+  // RLS would reject anyway.
+  const { error } = await sb.from('school_settings').update(patch).eq('school_id', await mySchoolId())
   if (error) throw new Error(error.message)
 }
 
@@ -1474,6 +1488,9 @@ export const EXPORT_TABLES = [
   'invoices', 'invoice_lines', 'payments', 'payment_allocations', 'adjustments',
   'attendance_daily', 'assessments', 'exam_terms', 'exam_subjects', 'mark_entries',
   'result_cards', 'certificates', 'counters', 'audit_log',
+  // Added by 0019/0022 and previously missing here, which made a "complete
+  // backup" silently omit family links, teacher assignments and staff attendance.
+  'student_links', 'teacher_assignments', 'staff_attendance', 'staff_checkin_codes',
 ] as const
 
 export interface ExportResult {

@@ -1,13 +1,15 @@
 import { describe, it, expect } from 'vitest'
 import {
   upsertPending, removePending, countMarks, attendanceKey, isNetworkError,
+  ownedBy, notOwnedBy,
   type PendingAttendance,
 } from './offlineQueue'
 
-const mk = (key: string, n: number): PendingAttendance => ({
+const mk = (key: string, n: number, school?: string): PendingAttendance => ({
   key, date: '2026-08-02', label: key,
   marks: Array.from({ length: n }, (_, i) => ({ enrollment_id: `${key}-${i}`, status: 'present' })),
   queued_at: '2026-08-02T00:00:00Z',
+  school_id: school,
 })
 
 describe('upsertPending', () => {
@@ -37,6 +39,23 @@ describe('attendanceKey', () => {
   it('is stable per date/class/section and handles a null section', () => {
     expect(attendanceKey('2026-08-02', 'c1', 's1')).toBe('2026-08-02|c1|s1')
     expect(attendanceKey('2026-08-02', 'c1', null)).toBe('2026-08-02|c1|none')
+  })
+})
+
+describe('queue ownership', () => {
+  // The office PC is shared and the queue outlives a logout. A batch queued by
+  // one school carries enrolment ids the next school cannot use — the server
+  // rejects them — so it must be discarded, not retried forever.
+  it('keeps only the signed-in school’s batches', () => {
+    const list = [mk('a', 1, 'school-1'), mk('b', 1, 'school-2'), mk('c', 1, 'school-1')]
+    expect(ownedBy(list, 'school-1').map((e) => e.key)).toEqual(['a', 'c'])
+    expect(notOwnedBy(list, 'school-1').map((e) => e.key)).toEqual(['b'])
+  })
+
+  it('treats an unstamped batch as foreign rather than guessing', () => {
+    const list = [mk('legacy', 1, undefined), mk('mine', 1, 'school-1')]
+    expect(ownedBy(list, 'school-1').map((e) => e.key)).toEqual(['mine'])
+    expect(notOwnedBy(list, 'school-1').map((e) => e.key)).toEqual(['legacy'])
   })
 })
 

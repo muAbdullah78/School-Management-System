@@ -28,6 +28,7 @@ begin
   if not public.has_role('owner','principal','admin_clerk','accountant') then
     raise exception 'Not permitted to view fee reconciliation';
   end if;
+  perform public.assert_own('academic_sessions', p_session_id);
 
   select coalesce(sum(charge), 0), coalesce(sum(allocated), 0)
     into v_expected, v_collected
