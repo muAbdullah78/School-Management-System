@@ -342,7 +342,7 @@ begin
   select coalesce(string_agg('  ' || c.relname, chr(10)), '') into bad
   from pg_class c join pg_namespace n on n.oid = c.relnamespace
   where n.nspname = 'public' and c.relkind = 'r'
-    and c.relname not in ('schools','plans','subscriptions','student_count_snapshots','_test_ids')
+    and c.relname not in ('schools','plans','subscriptions','student_count_snapshots','platform_admins','_test_ids')
     and not exists (select 1 from pg_attribute a
                     where a.attrelid = c.oid and a.attname = 'school_id' and not a.attisdropped);
   if bad <> '' then
@@ -353,7 +353,7 @@ begin
   select coalesce(string_agg('  ' || tablename || '.' || policyname, chr(10)), '') into bad
   from pg_policies
   where schemaname = 'public'
-    and tablename not in ('schools','plans','subscriptions','student_count_snapshots')
+    and tablename not in ('schools','plans','subscriptions','student_count_snapshots','platform_admins')
     and coalesce(qual, '') not like '%current_school_id%'
     and coalesce(with_check, '') not like '%current_school_id%';
   if bad <> '' then
@@ -373,6 +373,69 @@ begin
 
   raise notice 'ok: structural guards hold';
 end $guards$;
+
+-- =============================================================================
+-- TEST 5 — A PLATFORM ADMIN MUST NOT REACH TENANT DATA.
+--
+-- The product owner manages schools, subscriptions and payments. That job never
+-- requires reading a child's records, so the platform role deliberately has no
+-- path to them. Without this test, "just let platform admins see everything"
+-- is a one-line change nobody would notice — and it would turn one compromised
+-- platform login into a breach of every school at once.
+-- =============================================================================
+do $platform$
+declare
+  v_ops uuid := '00000000-0000-0000-0000-0000000000fe';
+  t        text;
+  visible  bigint;
+  failures text := '';
+  n        bigint;
+begin
+  insert into auth.users (id, email) values (v_ops, 'ops@isolation.test')
+    on conflict (id) do nothing;
+  insert into public.platform_admins (user_id, email) values (v_ops, 'ops@isolation.test')
+    on conflict (user_id) do nothing;
+
+  perform set_config('test.uid', v_ops::text, false);
+  set local role authenticated;
+
+  -- Tenant tables: nothing at all, for any school. `subscriptions` and
+  -- `student_count_snapshots` also carry school_id but are platform tables, not
+  -- school records — excluded here and checked as visible below instead.
+  for t in
+    select c.relname
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    join pg_attribute a on a.attrelid = c.oid and a.attname = 'school_id' and not a.attisdropped
+    where n.nspname = 'public' and c.relkind = 'r'
+      and c.relname not in ('_test_ids', 'subscriptions', 'student_count_snapshots')
+    order by c.relname
+  loop
+    execute format('select count(*) from public.%I', t) into visible;
+    if visible > 0 then
+      failures := failures || format('  %s: %s rows visible to a platform admin%s', t, visible, chr(10));
+    end if;
+  end loop;
+
+  -- But the platform tables they actually need ARE readable, or the admin panel
+  -- could not work. A test that only checked the denials could pass with the
+  -- whole panel broken.
+  select count(*) into n from public.schools;
+  if n < 2 then
+    failures := failures || '  platform admin cannot see the schools list' || chr(10);
+  end if;
+  select count(*) into n from public.subscriptions;
+  if n < 2 then
+    failures := failures || '  platform admin cannot see subscriptions' || chr(10);
+  end if;
+
+  reset role;
+
+  if failures <> '' then
+    raise exception E'PLATFORM ROLE REACHES TOO FAR (or not far enough):\n%', failures;
+  end if;
+  raise notice 'ok: platform admin sees schools and subscriptions, no tenant data';
+end $platform$;
 
 drop table if exists public._test_ids;
 select 'TENANT ISOLATION: ALL TESTS PASSED' as result;

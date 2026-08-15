@@ -37,11 +37,30 @@ begin
   insert into public.classes (name, level_order, school_id)
     values ('Class 1', 1, v_school) returning id into v_class;
 
+  -- The platform operator. Activation and renewal are things WE do after a bank
+  -- transfer clears, not something a school can do for itself — so the tests
+  -- below switch to this identity for those calls, exactly as production will.
+  insert into auth.users (id, email)
+    values ('00000000-0000-0000-0000-0000000000fa'::uuid, 'ops@platform.test')
+    on conflict (id) do nothing;
+  insert into public.platform_admins (user_id, email)
+    values ('00000000-0000-0000-0000-0000000000fa'::uuid, 'ops@platform.test')
+    on conflict (user_id) do nothing;
+
   create table if not exists public._sub_ids (k text primary key, v uuid);
   delete from public._sub_ids;
   insert into public._sub_ids values
-    ('school', v_school), ('owner', v_owner), ('sess', v_sess), ('class', v_class);
+    ('school', v_school), ('owner', v_owner), ('sess', v_sess), ('class', v_class),
+    ('ops', '00000000-0000-0000-0000-0000000000fa'::uuid);
 end $seed$;
+
+-- Switch the acting user. Keeps the identity juggling below to one readable line.
+create or replace function public._act_as(p_key text) returns void
+language plpgsql as $$
+begin
+  perform set_config('test.uid', (select v::text from public._sub_ids where k = p_key), false);
+end;
+$$;
 
 -- --- Plan maths --------------------------------------------------------------
 do $$
@@ -204,8 +223,11 @@ begin
     raise exception 'FAIL: expired trial is not locked';
   end if;
 
-  -- Paid for a year -> active.
+  -- Paid for a year -> active. Activation is a PLATFORM action, done by us once
+  -- the bank transfer clears — never something the school can do for itself.
+  perform public._act_as('ops');
   perform public.fn_activate_subscription(v_school, 'growth', 12);
+  perform public._act_as('owner');
   if public.fn_effective_status(v_school) <> 'active' then
     raise exception 'FAIL: activated school is not active';
   end if;
@@ -248,8 +270,12 @@ begin
     raise exception 'FAIL: locked school reports it can operate';
   end if;
 
-  -- Paying reopens it.
+  -- Paying reopens it. Note this works while the school is LOCKED: the platform
+  -- path must stay open in every state, or a locked school could never be
+  -- switched back on.
+  perform public._act_as('ops');
   perform public.fn_activate_subscription(v_school, 'growth', 12);
+  perform public._act_as('owner');
   if public.fn_effective_status(v_school) <> 'active' then
     raise exception 'FAIL: paying did not reactivate the school';
   end if;
@@ -266,6 +292,7 @@ declare
   v_end_before date; v_end_after date;
 begin
   select period_end into v_end_before from public.subscriptions where school_id = v_school;
+  perform public._act_as('ops');
   perform public.fn_activate_subscription(v_school, 'growth', 12);
   select period_end into v_end_after from public.subscriptions where school_id = v_school;
   if v_end_after <= v_end_before then

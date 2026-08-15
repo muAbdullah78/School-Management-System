@@ -5,6 +5,7 @@ import { canAccess, visibleNav } from '@/navigation'
 import { appTitle } from '@/lib/config'
 import { useSchoolName } from '@/hooks/useSchoolName'
 import { OfflineIndicator } from '@/components/OfflineIndicator'
+import { LicenceBanner } from '@/components/LicenceBanner'
 
 export function AppShell() {
   const { profile, signOut } = useAuth()
@@ -49,6 +50,7 @@ export function AppShell() {
       </aside>
 
       <main className="flex-1 overflow-y-auto">
+        <LicenceBanner />
         <OfflineIndicator />
         <div className="mx-auto max-w-6xl p-6">
           {permitted ? (

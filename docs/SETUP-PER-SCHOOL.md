@@ -1,87 +1,26 @@
-# Per-School Setup Guide
+# Per-School Setup Guide — OBSOLETE
 
-This is the checklist **you** (the seller) follow each time a school buys, to stand up their own isolated copy on **their** Google account. Every school has its own Supabase database, its own hosting, and its own login accounts — nothing is shared between schools.
+**This guide described the old model and no longer applies. Do not follow it.**
 
-> Target time once you've done it a few times: **~30–45 minutes** of setup, plus data import. Steps marked 🧑‍💻 are technical (done once per school); the app itself is then non-technical to use.
+It told you to create a separate Supabase project, deployment and set of logins
+for every school that bought the product. That is no longer how the system
+works, and doing it would leave you with schools that cannot be managed from the
+operator console.
 
----
+**All schools now share one Supabase project.** A school is identified by who
+logs in, not by which copy of the app they run. Setup happens **once**, not once
+per school, and after that schools sign themselves up.
 
-## What each school ends up with
-- A **Supabase project** (their cloud database + login system + file storage) on their Google account.
-- The **web app** deployed to a free host (Cloudflare Pages or Vercel) at a URL teachers open on their phones — e.g. `https://cityschool-manager.pages.dev`.
-- The **desktop app** installed on the headmaster's Windows 10/11 PC (a wrapper around the same app).
-- **Login accounts** for the owner, clerk, accountant, and teachers, each with the right role.
+Why it changed: a project per school cost roughly $10/month each plus $100/month
+each for point-in-time recovery, which at 100 schools is $1,000/month before
+earning anything — with the recovery safety net priced out of reach. One shared
+project costs ~$25–50/month in total regardless of how many schools there are,
+with one backup and one upgrade path for everyone.
 
----
+## What to read instead
 
-## Step 1 — Create the school's Supabase project 🧑‍💻
-1. Ask the school for a **Google account** (or create one for them, e.g. `cityschool.manager@gmail.com`).
-2. Go to **supabase.com** → sign in with that Google account → **New project**.
-3. Name it (e.g. `city-school`), pick a **strong database password** (save it), choose the region **Singapore** (closest low-latency region to Pakistan).
-4. Wait ~2 minutes for it to provision.
-5. From **Project Settings → API**, copy two values (you'll need them in Step 3):
-   - **Project URL** (looks like `https://abcdxyz.supabase.co`)
-   - **anon public key**
+**[SETUP.md](SETUP.md)** — the one-time setup, step by step, and what you do
+day to day when a school signs up or pays.
 
-## Step 2 — Load the database schema 🧑‍💻
-Using the Supabase CLI on your own laptop (install once from supabase.com/docs):
-```bash
-supabase link --project-ref <the-project-ref-from-the-URL>
-supabase db push          # applies everything in supabase/migrations
-```
-Then load the starting data: open the Supabase dashboard → **SQL Editor** → paste the contents of `supabase/seed.sql` → **Run**. (This creates the current session, an editable class ladder, and common fee heads.)
-
-## Step 3 — Deploy the web app 🧑‍💻
-1. In this repo's `web/` folder, copy `.env.example` to `.env` and fill in:
-   - `VITE_SUPABASE_URL` = the Project URL from Step 1
-   - `VITE_SUPABASE_ANON_KEY` = the anon key from Step 1
-   - `VITE_SCHOOL_NAME` = the school's name (e.g. `City Public School`)
-2. Push this project to a **GitHub repo on the school's account** (or your account — your call).
-3. Connect that repo to **Cloudflare Pages** (free): build command `npm run build`, output directory `web/dist`, and add the three `VITE_*` values as environment variables. Deploy.
-4. You now have the **teacher URL**. Make a QR code for it (any free QR generator) so teachers scan-and-bookmark.
-
-## Step 4 — Create the login accounts 🧑‍💻
-1. Supabase dashboard → **Authentication → Users → Add user** → create the **owner's** email + password. **Create this account first** — the very first user to exist is made the **owner** automatically.
-   > A `profiles` row is created automatically for each new auth user by the `handle_new_user` trigger (migration `0011_auth.sql`). The first user becomes `owner`; every user after that starts as `readonly`.
-2. Create the clerk, accountant, principal, and each teacher the same way (**Add user**). They all appear as `readonly` at first.
-3. Log in as the owner and open **Settings → Users & Roles** to assign each person the correct role
-   (`admin_clerk`, `accountant`, `class_teacher`, `subject_teacher`, `principal`, `readonly`) — no SQL needed.
-   > Prefer SQL? You can still set a role directly:
-   > ```sql
-   > update public.profiles set role = 'owner', full_name = 'Owner Name'
-   > where id = (select id from auth.users where email = 'owner@example.com');
-   > ```
-
-## Step 5 — Install the desktop app on the headmaster's PC 🧑‍💻
-1. Get the **Windows installer** (`.msi`): in the GitHub repo open **Actions → Desktop (Windows installer) → Run workflow** (or push a `v*` tag), then download the `school-manager-windows-msi` artifact. Build details are in [`desktop/README.md`](../desktop/README.md).
-   - The artifact is **unsigned**, so Windows SmartScreen warns on first run (choose "Run anyway"). To ship a signed installer, add your **code-signing certificate** — see the code-signing note in `desktop/README.md`. That certificate is the one thing only you can provide.
-2. Run it on the Windows 10/11 PC. On first launch it asks for the **school's app URL** (the Cloudflare Pages URL) — paste it once ("Change address" on the connect screen switches it later).
-3. The desktop app is now the admin's everyday program; teachers just use the URL on their phones. It's the **same** app and database — the wrapper just gives the admin PC a real window instead of a browser tab.
-
-## Step 6 — Configure the school in-app (non-technical)
-Log in as the owner and, in **Settings**:
-1. Set the school **name, logo, address, principal name** (the title becomes "{name} Manager").
-2. Confirm/adjust the **class ladder** and add **sections** (A/B…).
-3. Set the **fee amounts** for each class and each fee head; add discounts policy.
-4. Set the **grade scale** and **passing mark**.
-5. Add **subjects** per class.
-
-## Step 7 — Import the students (phased)
-Use the built-in importer — **Settings → Import Students** (owner/principal):
-1. First create the school's **Classes & Sections** (Settings → Classes & Sections) — the importer matches them by name.
-2. Click **Download CSV template**, or map the school's existing Excel to those column headings (common variants like "Father Name", "DOB", "Grade", "Roll #" are recognised automatically). Save as **CSV**.
-3. Upload it and click **Validate (dry run)** — this checks every row and writes nothing. Fix any flagged rows (unknown class/section, bad date, etc.).
-4. Click **Import** — students are admitted into the current session with gapless GR numbers, land on the class roster (Attendance), and become billable (Fees). Leave the GR column blank to auto-number, or supply the school's existing GR numbers to preserve them.
-5. Set each class's **fee amounts** (Settings → Fee Structure), then load each student's **opening arrears** via **Settings → Import → Opening fee balances** (match by GR No; amount per student). This switches on **fees** with real balances so the defaulter list is correct from day one.
-
-## Step 8 — Go-live checks
-- Every class has a fee slab; every student has a section; every teacher has a login.
-- The owner can see the dashboard; a teacher can mark a class from their phone.
-- Show the owner the **Export all data** button (their data is always theirs).
-
----
-
-## Handover notes for the school
-- **Their data lives in their Supabase project** — they own it. Supabase keeps automatic backups; the app also has **Export all data**.
-- The free Supabase tier is enough to start; a busy school may later upgrade to the **Pro plan (~$25/mo)** for more storage and daily backups — that's their cost, not yours.
-- Keep the Supabase database password and the Google account recovery info safe.
+This file is kept only so that a link or a bookmark to it does not lead
+somewhere silently wrong.
