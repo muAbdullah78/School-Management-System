@@ -63,7 +63,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .from('profiles')
       .select('id, full_name, role, staff_id, school_id')
       .eq('id', userId)
-      .single()
+      // maybeSingle, not single: a PLATFORM admin has no profile at all (they
+      // belong to no school), and .single() treats that as an error — which
+      // would leave them stuck on a loading screen they can never get past.
+      .maybeSingle()
       .then(({ data }) => {
         const p = (data as Profile) ?? null
         setProfile(p)

@@ -1153,6 +1153,54 @@ export async function setCurrentSession(sessionId: string): Promise<void> {
   if (error) throw new Error(error.message)
 }
 
+/**
+ * First-run setup for a brand-new school: the academic session, the class
+ * ladder, and one section per class — the minimum needed before a student can
+ * be admitted.
+ *
+ * Done as one call so a half-finished wizard cannot leave a school with a
+ * session but no classes, which looks identical to "the app is broken".
+ */
+export async function setupSchool(input: {
+  schoolName: string
+  sessionName: string
+  startsOn?: string
+  endsOn?: string
+  classNames: string[]
+  sectionsPerClass: string[]
+}): Promise<void> {
+  const sb = requireSupabase()
+
+  await updateSchoolSettings({ name: input.schoolName.trim() })
+
+  const { data: session, error: sErr } = await sb.from('academic_sessions')
+    .insert({
+      name: input.sessionName.trim(),
+      starts_on: input.startsOn || null,
+      ends_on: input.endsOn || null,
+    })
+    .select('id').single()
+  if (sErr) throw new Error(sErr.message)
+
+  await setCurrentSession(session.id as string)
+
+  const classes = input.classNames.map((n) => n.trim()).filter(Boolean)
+  if (classes.length) {
+    const { data: made, error: cErr } = await sb.from('classes')
+      .insert(classes.map((name, i) => ({ name, level_order: i + 1 })))
+      .select('id, name')
+    if (cErr) throw new Error(cErr.message)
+
+    const sections = (input.sectionsPerClass ?? []).map((s) => s.trim()).filter(Boolean)
+    if (sections.length && made?.length) {
+      const rows = made.flatMap((c: { id: string }) =>
+        sections.map((name, i) => ({ class_id: c.id, name, sort_order: i })))
+      const { error: secErr } = await sb.from('sections').insert(rows)
+      if (secErr) throw new Error(secErr.message)
+    }
+  }
+}
+
 export async function listClassesAll(): Promise<ClassFull[]> {
   const sb = requireSupabase()
   return unwrap(await sb.from('classes').select('id, name, level_order, active').order('level_order'))

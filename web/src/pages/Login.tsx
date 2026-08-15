@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/auth/AuthProvider'
 import { appTitle } from '@/lib/config'
 import { useSchoolName } from '@/hooks/useSchoolName'
@@ -63,6 +63,12 @@ export function Login() {
             {busy ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
+        <p className="mt-4 text-center text-sm text-slate-500">
+          New school?{' '}
+          <Link to="/signup" className="font-medium text-brand-700 hover:underline">
+            Start a free 14-day trial
+          </Link>
+        </p>
       </div>
     </div>
   )

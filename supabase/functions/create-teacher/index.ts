@@ -36,9 +36,15 @@ Deno.serve(async (req) => {
     const caller = createClient(url, anon, { global: { headers: { Authorization: authHeader } } })
     const { data: userData, error: userErr } = await caller.auth.getUser()
     if (userErr || !userData.user) return json({ error: 'Not authenticated' }, 401)
-    const { data: prof } = await caller.from('profiles').select('role').eq('id', userData.user.id).single()
+    const { data: prof } = await caller.from('profiles')
+      .select('role, school_id').eq('id', userData.user.id).single()
     if (!prof || !['owner', 'principal'].includes(prof.role)) {
       return json({ error: 'Only the owner or principal may create logins' }, 403)
+    }
+    // The new login joins the CALLER's school — taken from their profile, never
+    // from the request body, so this cannot be pointed at another school.
+    if (!prof.school_id) {
+      return json({ error: 'Your login is not attached to a school.' }, 403)
     }
 
     // 2) Validate input.
@@ -56,7 +62,10 @@ Deno.serve(async (req) => {
     const admin = createClient(url, service, { auth: { autoRefreshToken: false, persistSession: false } })
     const { data: created, error: createErr } = await admin.auth.admin.createUser({
       email, password, email_confirm: true,
-      user_metadata: { full_name: fullName || email.split('@')[0] },
+      // school_id is what handle_new_user reads to attach the profile. Without
+      // it the trigger creates no profile at all and the new login would be
+      // able to sign in but see nothing.
+      user_metadata: { full_name: fullName || email.split('@')[0], school_id: prof.school_id },
     })
     if (createErr || !created.user) return json({ error: createErr?.message ?? 'Could not create user' }, 400)
 

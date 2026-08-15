@@ -4,7 +4,11 @@ import { queryClient } from '@/lib/queryClient'
 import { AuthProvider } from '@/auth/AuthProvider'
 import { AppShell } from '@/components/AppShell'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
+import { LicenceGate } from '@/components/LicenceGate'
+import { SetupGate } from '@/components/SetupGate'
 import { Login } from '@/pages/Login'
+import { Signup } from '@/pages/Signup'
+import { PlatformPage } from '@/pages/platform/PlatformPage'
 import { CheckIn } from '@/pages/CheckIn'
 import { Dashboard } from '@/pages/Dashboard'
 import { FeesPage } from '@/pages/fees/FeesPage'
@@ -47,11 +51,27 @@ export default function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<Signup />} />
             <Route path="/checkin" element={<CheckIn />} />
+            {/* The operator console sits OUTSIDE the school app: a platform
+                admin belongs to no school, so the shell and licence gate below
+                have nothing to render for them. The page guards itself. */}
+            <Route
+              path="/platform"
+              element={
+                <ProtectedRoute>
+                  <PlatformPage />
+                </ProtectedRoute>
+              }
+            />
             <Route
               element={
                 <ProtectedRoute>
-                  <AppShell />
+                  <LicenceGate>
+                    <SetupGate>
+                      <AppShell />
+                    </SetupGate>
+                  </LicenceGate>
                 </ProtectedRoute>
               }
             >
