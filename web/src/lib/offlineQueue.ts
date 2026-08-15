@@ -9,7 +9,7 @@
  *  The pure list operations are exported and unit-tested; persistence uses
  *  localStorage and a tiny subscribe() so the UI can reflect the queue. */
 
-import { markAttendance, type AttendanceStatus } from './db'
+import { markAttendance, mySchoolId, type AttendanceStatus } from './db'
 
 export interface PendingMark { enrollment_id: string; status: AttendanceStatus }
 export interface PendingAttendance {
@@ -18,6 +18,22 @@ export interface PendingAttendance {
   label: string
   marks: PendingMark[]
   queued_at: string
+  /** Which school queued this. Absent on batches queued before schools shared
+   *  a database; treated as "not mine" and discarded rather than guessed at. */
+  school_id?: string
+}
+
+/** Drop batches that belong to a different school than the one signed in now.
+ *
+ *  The queue lives in localStorage on a shared office computer, so a batch can
+ *  outlive the login that made it. Its enrolment ids would be meaningless — and
+ *  rejected by the server — under the next login, leaving a queue that can
+ *  never drain and an error the user cannot act on. */
+export function ownedBy(list: PendingAttendance[], schoolId: string): PendingAttendance[] {
+  return list.filter((e) => e.school_id === schoolId)
+}
+export function notOwnedBy(list: PendingAttendance[], schoolId: string): PendingAttendance[] {
+  return list.filter((e) => e.school_id !== schoolId)
 }
 
 // ---- pure operations (unit-tested) ----
@@ -45,6 +61,19 @@ export function isNetworkError(e: unknown): boolean {
 
 // ---- persistence + subscription ----
 const STORAGE_KEY = 'sm.offline.attendance'
+const SCHOOL_KEY = 'sm.school_id'
+
+/** Remember which school is signed in, so a batch queued while offline can be
+ *  stamped without a round trip. Written by AuthProvider on profile load. */
+export function cacheSchoolId(id: string | null): void {
+  try {
+    if (id) localStorage.setItem(SCHOOL_KEY, id)
+    else localStorage.removeItem(SCHOOL_KEY)
+  } catch { /* quota / private mode */ }
+}
+export function cachedSchoolId(): string | null {
+  try { return localStorage.getItem(SCHOOL_KEY) } catch { return null }
+}
 type Listener = () => void
 const listeners = new Set<Listener>()
 
@@ -61,15 +90,24 @@ export function enqueueAttendance(entry: PendingAttendance): void { write(upsert
 export function dequeueAttendance(key: string): void { write(removePending(read(), key)) }
 export function subscribe(l: Listener): () => void { listeners.add(l); return () => { listeners.delete(l) } }
 
-/** Try to send every queued batch. Successful ones are removed; failures stay
- *  for the next attempt. `send` is injectable for testing. */
+/** Try to send every queued batch belonging to the signed-in school. Successful
+ *  ones are removed; failures stay for the next attempt. Batches belonging to a
+ *  different school are discarded — see ownedBy(). `send` and `schoolId` are
+ *  injectable for testing. */
 export async function flushQueue(
   send: (date: string, marks: PendingMark[]) => Promise<unknown> = markAttendance,
-): Promise<{ synced: number; failed: number }> {
+  getSchoolId: () => Promise<string> = mySchoolId,
+): Promise<{ synced: number; failed: number; discarded: number }> {
   let synced = 0, failed = 0
-  for (const entry of read()) {
+  const schoolId = await getSchoolId()
+
+  const all = read()
+  const foreign = notOwnedBy(all, schoolId)
+  if (foreign.length) write(ownedBy(all, schoolId))
+
+  for (const entry of ownedBy(all, schoolId)) {
     try { await send(entry.date, entry.marks); dequeueAttendance(entry.key); synced++ }
     catch { failed++ }
   }
-  return { synced, failed }
+  return { synced, failed, discarded: foreign.length }
 }

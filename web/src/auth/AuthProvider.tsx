@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
+import { cacheSchoolId } from '@/lib/offlineQueue'
 import type { Role } from './roles'
 
 export interface Profile {
@@ -8,6 +9,7 @@ export interface Profile {
   full_name: string | null
   role: Role
   staff_id: string | null
+  school_id: string
 }
 
 interface AuthState {
@@ -59,11 +61,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(true)
     supabase
       .from('profiles')
-      .select('id, full_name, role, staff_id')
+      .select('id, full_name, role, staff_id, school_id')
       .eq('id', userId)
       .single()
       .then(({ data }) => {
-        setProfile((data as Profile) ?? null)
+        const p = (data as Profile) ?? null
+        setProfile(p)
+        // Cached so work queued while OFFLINE can still be stamped with the
+        // school it belongs to — there is no server to ask at that moment.
+        cacheSchoolId(p?.school_id ?? null)
         setLoading(false)
       })
   }, [session])
