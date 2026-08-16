@@ -24,12 +24,27 @@ You do **not** need to understand any of the code.
 
 Supabase is where all the data lives. One project holds every school.
 
-> **Already have a project from earlier testing?** You do not need a new one.
-> That project becomes your company's central database — it is no longer "one
-> school's database". Open it, go to **Settings → General → Reset database**
-> (this wipes the old test data), then skip to Step 2 and load the migrations
-> from `0001`. Your Project URL and keys do not change, so nothing you have
-> already configured needs re-pasting.
+> ### Already have a project from earlier testing?
+>
+> You do **not** need a new one. That project becomes your company's central
+> database — it is no longer "one school's database". Your Project URL and keys
+> do not change, so nothing you have already configured needs re-pasting.
+>
+> **There is no "Reset database" button.** Project Settings only offers
+> *Restart* and *Pause*, and neither one deletes data. To empty the project:
+>
+> 1. Open **SQL Editor → New query**, paste the whole of
+>    [`supabase/reset.sql`](../supabase/reset.sql) and press **Run**.
+>    ⚠️ This deletes every record in the project and cannot be undone.
+> 2. Go to **Authentication → Users**, select every user, and **Delete** them.
+>    **Do not skip this.** Logins live outside the part the script wipes, so an
+>    old account would survive with no profile behind it — it can still sign in,
+>    lands belonging to no school, and you cannot re-register that email either.
+> 3. Come back here and continue from **Step 2** below, loading the migrations
+>    from `0001`.
+>
+> If you would rather keep the old project untouched as a reference, just create
+> a new one instead and follow Step 1 normally.
 
 1. Go to **https://supabase.com** and click **Start your project**.
 2. Sign up (the free plan is fine to begin with).
