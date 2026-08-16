@@ -1617,3 +1617,98 @@ export async function listCertificates(limit = 50): Promise<CertificateRow[]> {
     data: r.data ?? {},
   }))
 }
+
+// ---- Families: the payer at the counter -----------------------------------
+// A father with three children hands over one bundle of cash. These back the
+// one-payment-one-receipt flow; see docs/10-MONEY-ENGINE-V2.md.
+
+export interface FamilyHit {
+  family_id: string
+  head_name: string
+  head_cnic: string | null
+  phone: string | null
+  children: number
+  outstanding: number
+  credit: number
+}
+
+export interface FamilyInvoice {
+  invoice_id: string
+  period_month: string | null
+  due_date: string | null
+  charge: number
+  allocated: number
+  outstanding: number
+  status: string
+}
+
+export interface FamilyChild {
+  student_id: string
+  full_name: string
+  gr_no: string | null
+  status: string
+  balance: number
+  invoices: FamilyInvoice[]
+}
+
+export interface FamilySheet {
+  family: {
+    id: string
+    head_name: string
+    head_cnic: string | null
+    phone: string | null
+    whatsapp: string | null
+    address: string | null
+  }
+  credit: number
+  outstanding: number
+  children: FamilyChild[]
+}
+
+export interface FamilyPaymentResult {
+  payment_id: string
+  receipt_no: number
+  allocated: number
+  credit: number
+  family_outstanding?: number
+  pending: boolean
+}
+
+/** One search box: CNIC, phone, parent name, student name or GR number. */
+export async function findFamily(q: string): Promise<FamilyHit[]> {
+  const sb = requireSupabase()
+  const term = q.trim()
+  if (!term) return []
+  const { data, error } = await sb.rpc('fn_find_family', { p_query: term })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as FamilyHit[]
+}
+
+export async function getFamilySheet(familyId: string): Promise<FamilySheet> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_family_sheet', { p_family_id: familyId })
+  if (error) throw new Error(error.message)
+  return data as FamilySheet
+}
+
+/** One payment across every child. Allocation is oldest month first. */
+export async function recordFamilyPayment(
+  familyId: string, amount: number, method: string, note?: string, pending = false,
+): Promise<FamilyPaymentResult> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_record_family_payment', {
+    p_family_id: familyId, p_amount: amount, p_method: method,
+    p_note: note ?? null, p_pending: pending,
+  })
+  if (error) throw new Error(error.message)
+  return data as FamilyPaymentResult
+}
+
+/** The family a student belongs to — used to jump from a profile to the till. */
+export async function getStudentFamilyId(studentId: string): Promise<string | null> {
+  const sb = requireSupabase()
+  const { data, error } = await sb
+    .from('students').select('family_id').eq('id', studentId).single()
+  if (error) throw new Error(error.message)
+  return (data?.family_id as string | null) ?? null
+}

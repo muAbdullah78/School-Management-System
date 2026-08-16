@@ -122,8 +122,8 @@ declare
 begin
   perform set_config('test.uid', (select v::text from public._sub_ids where k='owner'), false);
 
-  -- Push well past the 200 limit AND past the 220 margin. Every one of these
-  -- inserts must succeed: this is the admissions desk, and it never closes.
+  -- Push well past the plan limit AND past its margin ceiling. Every one of
+  -- these inserts must succeed: this is the admissions desk, and it never closes.
   for i in 100..340 loop
     insert into public.students (gr_no, full_name, school_id)
       values ('B' || i, 'Bulk ' || i, v_school) returning id into v_stu;
@@ -137,7 +137,9 @@ begin
   lic := public.fn_my_licence();
   reset role;
 
-  if (lic->>'student_count')::int <= 220 then
+  if (lic->>'student_count')::int <= public.plan_margin_limit(
+       (select p.student_limit from public.subscriptions s
+        join public.plans p on p.code = s.plan_code where s.school_id = v_school)) then
     raise exception 'FAIL: fixture did not exceed the margin (count=%)', lic->>'student_count';
   end if;
   if lic->>'limit_state' <> 'over' then
@@ -172,13 +174,23 @@ end $limits$;
 do $$
 declare
   v_school uuid := (select v from public._sub_ids where k='school');
+  v_limit  integer;
+  v_target integer;
   lic jsonb;
 begin
-  -- Trim back to 210 active: over 200, inside the 220 margin.
+  -- Derived from the plan, never hardcoded: repricing the tiers must not
+  -- silently turn this assertion into a test of nothing. Land halfway between
+  -- the limit and the margin ceiling — over the limit, inside the margin.
+  select p.student_limit into v_limit
+  from public.subscriptions s join public.plans p on p.code = s.plan_code
+  where s.school_id = v_school;
+
+  v_target := v_limit + greatest(1, (public.plan_margin_limit(v_limit) - v_limit) / 2);
+
   update public.students set deleted_at = now()
    where school_id = v_school and deleted_at is null
      and id in (select id from public.students where school_id = v_school and deleted_at is null
-                offset 210);
+                offset v_target);
   perform public.fn_refresh_student_count(v_school);
 
   perform set_config('test.uid', (select v::text from public._sub_ids where k='owner'), false);
@@ -309,8 +321,20 @@ begin
   select * into r from public.fn_platform_schools()
    where school_name = 'Limit Test School';
   if r.suggested_plan is null then raise exception 'FAIL: no suggested plan'; end if;
-  if r.student_count > 200 and r.suggested_plan = 'starter' then
-    raise exception 'FAIL: suggested starter for % students', r.student_count;
+
+  -- The suggestion has to actually FIT the roster. Derived from the plans
+  -- table so repricing the tiers cannot quietly make this assertion vacuous:
+  -- either the suggested plan has room, or it is the unlimited/custom tier.
+  if exists (
+    select 1 from public.plans p
+    where p.code = r.suggested_plan
+      and p.student_limit is not null
+      and p.student_limit < r.student_count
+  ) then
+    raise exception 'FAIL: suggested % (limit %) for % students',
+      r.suggested_plan,
+      (select student_limit from public.plans where code = r.suggested_plan),
+      r.student_count;
   end if;
   raise notice 'ok: platform worklist suggests % for % students', r.suggested_plan, r.student_count;
 end $$;
