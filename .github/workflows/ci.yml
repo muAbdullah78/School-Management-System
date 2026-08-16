@@ -260,6 +260,19 @@ jobs:
         # Trial -> grace -> locked -> reactivated, and the rule that going over
         # the student limit flags the school without ever blocking an admission.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/subscription_rules.sql
+      - name: Finance — expenses, profit, till control
+        # Fee income cannot be hand-entered, reversals net to zero, a drawer
+        # that does not balance cannot be closed without a reason, and a closed
+        # till's variance is frozen against later activity.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/finance.sql
+      - name: Portal isolation — parents see only their own children
+        # The highest-stakes suite in the project. Asserts a parent account has
+        # ZERO direct table access, cannot reach another family through any
+        # portal function, cannot tell "no such student" from "not yours", and
+        # that each protected table has exactly ONE SELECT policy which checks
+        # is_staff() — RLS policies OR together, so a leftover policy under an
+        # old name silently re-opens a table.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/portal.sql
       - name: Family billing — allocation, credit, conservation
         # One father, three children, one payment. Asserts allocation is oldest
         # month first ACROSS siblings, that an overpayment becomes family credit
