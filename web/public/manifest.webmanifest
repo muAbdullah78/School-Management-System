@@ -1,15 +1,25 @@
 {
   "name": "School Manager",
   "short_name": "School",
-  "description": "School management — admissions, attendance, fees, exams and reports.",
+  "description": "School management \u2014 admissions, attendance, fees, exams and reports.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
   "background_color": "#ffffff",
-  "theme_color": "#1d4ed8",
+  "theme_color": "#4338ca",
   "icons": [
-    { "src": "/icon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any" },
-    { "src": "/icon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "maskable" }
+    {
+      "src": "/icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "maskable"
+    }
   ]
 }
