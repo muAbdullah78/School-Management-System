@@ -83,6 +83,38 @@ jobs:
             echo "── applying $f (single transaction, as the SQL Editor does)"
             psql -v ON_ERROR_STOP=1 -q --single-transaction -f "$f"
           done
+      - name: Bundles match the migrations
+        # supabase/bundles/ is what a school actually pastes into the SQL
+        # Editor. If it drifts from supabase/migrations/, schools install
+        # something we never tested. Regenerate and diff.
+        run: |
+          ./supabase/build-bundles.sh
+          if ! git diff --exit-code --stat supabase/bundles/; then
+            echo "::error::supabase/bundles/ is stale — run ./supabase/build-bundles.sh and commit"
+            exit 1
+          fi
+          echo "bundles are in sync with the migrations"
+      - name: Bundles apply as single transactions
+        # The real install path, on a separate database: three pastes, each one
+        # transaction, exactly as the SQL Editor runs them.
+        run: |
+          psql -v ON_ERROR_STOP=1 -c "create database bundlecheck;"
+          PGDATABASE=bundlecheck psql -v ON_ERROR_STOP=1 -q <<'SQL'
+          create schema if not exists auth;
+          create table if not exists auth.users (
+            id uuid primary key, email text, raw_user_meta_data jsonb default '{}'::jsonb);
+          create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
+          do $$ begin
+            if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
+            if not exists (select 1 from pg_roles where rolname='authenticated') then create role authenticated nologin; end if;
+            if not exists (select 1 from pg_roles where rolname='service_role') then create role service_role nologin; end if;
+          end $$;
+          SQL
+          for b in supabase/bundles/*.sql; do
+            echo "── $b"
+            PGDATABASE=bundlecheck psql -v ON_ERROR_STOP=1 -q --single-transaction -f "$b"
+          done
+          echo "all bundles applied cleanly"
       - name: Sanity checks
         run: |
           psql -v ON_ERROR_STOP=1 <<'SQL'

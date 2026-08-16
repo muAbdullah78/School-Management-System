@@ -78,10 +78,41 @@ This creates all the tables, rules and safety checks.
 
 1. In Supabase, click **SQL Editor** in the left sidebar.
 2. Open the folder `supabase/migrations/` from this project.
+### The easy way — three pastes
+
+Use the ready-made bundles in **`supabase/bundles/`**. They contain exactly the
+same SQL as the 35 numbered files, just joined up, and CI checks they never
+drift apart.
+
+Run them **in this order, one at a time**, waiting for each to say Success:
+
+| Order | File | What it is |
+|---|---|---|
+| 1 | `1_core.sql` | Everything up to and including the cash drawer |
+| 2 | `2_parent_role.sql` | One line. It has to be on its own — see below |
+| 3 | `3_portal.sql` | Parent portal, WhatsApp outbox, fee operations |
+
+> **Why three and not one?** The SQL Editor runs each paste as a single
+> transaction, and Postgres refuses to let a new value be *used* in the same
+> transaction that added it. Bundle 2 adds the `parent` role and bundle 3 uses
+> it, so the split has to fall exactly there. Do not merge them.
+
+**If a bundle reports an error, nothing from it was applied** — the whole paste
+rolls back together. Fix the cause and run that same bundle again.
+
+**Do not re-run a bundle that succeeded.** Migrations are once-only. Running one
+twice gives errors like `policy "…" already exists`, which means "this already
+ran", not that anything is broken. If you lose track of where you are, the safe
+move is to run `supabase/reset.sql` and start again from bundle 1.
+
+### The manual way — 35 files
+
+If you would rather see each step, load the numbered files instead.
+
 3. Open the files **in number order** — `0001_...` first, then `0002_...`, and
    so on to the last one (currently `0035_fee_ops.sql`). Run them **one file at
-   a time** — the SQL Editor treats each run as one transaction, and the files
-   are written to suit that. For each file:
+   a time**, and follow the same rules as above: a failed file applied nothing,
+   and a succeeded file must never be run again. For each file:
    - Copy everything in it
    - Paste into the SQL Editor
    - Click **Run**
