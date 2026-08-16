@@ -92,6 +92,10 @@ Run them **in this order, one at a time**, waiting for each to say Success:
 | 2 | `2_parent_role.sql` | One line. It has to be on its own — see below |
 | 3 | `3_portal.sql` | Parent portal, WhatsApp outbox, fee operations |
 
+**When all three say Success, check the install:** open a new query, paste
+[`supabase/verify.sql`](../supabase/verify.sql) and Run. Every row should say
+**PASS**. If one does not, it names the bundle to re-run.
+
 > **Why three and not one?** The SQL Editor runs each paste as a single
 > transaction, and Postgres refuses to let a new value be *used* in the same
 > transaction that added it. Bundle 2 adds the `parent` role and bundle 3 uses
@@ -152,8 +156,35 @@ Two things must happen on the server rather than in the browser, because they
 need the powerful key you were told never to expose: creating a school at signup,
 and creating a teacher login.
 
-1. Install the Supabase command-line tool: **https://supabase.com/docs/guides/cli**
-2. In a terminal, from this project folder:
+### The easy way — paste them into the dashboard
+
+No command line needed. Each function is under 90 lines and needs no
+configuration: the three values they use (`SUPABASE_URL`, `SUPABASE_ANON_KEY`,
+`SUPABASE_SERVICE_ROLE_KEY`) are supplied to Edge Functions automatically.
+
+For **each** of the two functions:
+
+1. Supabase dashboard → **Edge Functions** → **Deploy a new function** →
+   **Via Editor**.
+2. Name it **exactly** `signup-school`, then repeat for `create-teacher`. The
+   app calls them by these names — a typo here shows up later as a signup that
+   silently fails.
+3. Delete the sample code, paste the whole contents of
+   `supabase/functions/<name>/index.ts` from this project, and **Deploy**.
+
+Then one setting, on `signup-school` only:
+
+4. Open `signup-school` → **Details** → turn **Verify JWT** *off*.
+
+> **Why that one is different.** A school signing up does not have a login yet,
+> so this function must be reachable without one. It is the only unauthenticated
+> entry point in the system, and all it can do is create a school and its owner.
+> Leave **Verify JWT on** for `create-teacher` — that one is called by a signed-in
+> principal and must stay locked.
+
+### The command-line way
+
+If you already have a terminal set up:
 
 ```bash
 supabase login
@@ -163,10 +194,6 @@ supabase functions deploy create-teacher
 ```
 
 Your **project ref** is the `abcdefgh` part of your Project URL.
-
-`--no-verify-jwt` on the first one is deliberate and necessary: a school
-signing up does not have a login yet, so that function has to be reachable
-without one. It creates nothing but a school and its owner.
 
 ---
 
