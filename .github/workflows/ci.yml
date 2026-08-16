@@ -273,6 +273,17 @@ jobs:
         # is_staff() — RLS policies OR together, so a leftover policy under an
         # old name silently re-opens a table.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/portal.sql
+      - name: Message outbox — receipts queued with the POST-payment balance
+        # The receipt trigger is DEFERRED on purpose: a plain AFTER INSERT fires
+        # before allocation and would quote every parent the balance they had
+        # BEFORE paying. Also asserts reversals and pending challans queue
+        # nothing, and that a family with no phone never blocks a payment.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/outbox.sql
+      - name: Fee operations — effective dating, the annual raise, vouchers
+        # A raise dated 1 April must not change March. Preview writes nothing
+        # and commits exactly what it showed. Every challan carries a unique
+        # scannable code that resolves to the family.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/fee_ops.sql
       - name: Family billing — allocation, credit, conservation
         # One father, three children, one payment. Asserts allocation is oldest
         # month first ACROSS siblings, that an overpayment becomes family credit

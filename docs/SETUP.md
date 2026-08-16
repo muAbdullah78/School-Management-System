@@ -24,6 +24,13 @@ You do **not** need to understand any of the code.
 
 Supabase is where all the data lives. One project holds every school.
 
+> **Already have a project from earlier testing?** You do not need a new one.
+> That project becomes your company's central database — it is no longer "one
+> school's database". Open it, go to **Settings → General → Reset database**
+> (this wipes the old test data), then skip to Step 2 and load the migrations
+> from `0001`. Your Project URL and keys do not change, so nothing you have
+> already configured needs re-pasting.
+
 1. Go to **https://supabase.com** and click **Start your project**.
 2. Sign up (the free plan is fine to begin with).
 3. Click **New project**.
@@ -57,7 +64,7 @@ This creates all the tables, rules and safety checks.
 1. In Supabase, click **SQL Editor** in the left sidebar.
 2. Open the folder `supabase/migrations/` from this project.
 3. Open the files **in number order** — `0001_...` first, then `0002_...`, and
-   so on to the last one. For each file:
+   so on to the last one (currently `0034_fee_ops.sql`). For each file:
    - Copy everything in it
    - Paste into the SQL Editor
    - Click **Run**

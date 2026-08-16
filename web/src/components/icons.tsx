@@ -196,4 +196,7 @@ export const NAV_ICONS: Record<string, (p: IconProps) => JSX.Element> = {
   '/settings': IconSettings,
   '/my-class': IconMyClass,
   '/platform': IconPlatform,
+  '/accounts': IconWallet,
+  '/till': IconWallet,
+  '/messages': IconWhatsApp,
 }

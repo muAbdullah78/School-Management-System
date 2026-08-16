@@ -21,6 +21,9 @@ import { StaffPage } from '@/pages/staff/StaffPage'
 import { CertificatesPage } from '@/pages/certificates/CertificatesPage'
 import { ReportsPage } from '@/pages/reports/ReportsPage'
 import { SettingsPage } from '@/pages/SettingsPage'
+import { AccountsPage } from '@/pages/accounts/AccountsPage'
+import { TillPage } from '@/pages/till/TillPage'
+import { MessagesPage } from '@/pages/messages/MessagesPage'
 import { ModulePlaceholder } from '@/pages/ModulePlaceholder'
 import { NotConfigured } from '@/pages/NotConfigured'
 import { PortalPage } from '@/pages/portal/PortalPage'
@@ -40,6 +43,9 @@ const IMPLEMENTED: Record<string, JSX.Element> = {
   '/certificates': <CertificatesPage />,
   '/reports': <ReportsPage />,
   '/settings': <SettingsPage />,
+  '/accounts': <AccountsPage />,
+  '/till': <TillPage />,
+  '/messages': <MessagesPage />,
 }
 
 export default function App() {
