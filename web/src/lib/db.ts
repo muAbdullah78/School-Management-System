@@ -1712,3 +1712,132 @@ export async function getStudentFamilyId(studentId: string): Promise<string | nu
   if (error) throw new Error(error.message)
   return (data?.family_id as string | null) ?? null
 }
+
+// ---- Portal: one login, role decides everything ---------------------------
+
+export interface PortalChild {
+  student_id: string
+  full_name: string
+  gr_no: string | null
+  class_name: string | null
+  section_name: string | null
+  status: string
+}
+
+export interface PortalClass {
+  class_id: string
+  class_name: string
+  level_order: number
+  section_id: string | null
+  section_name: string | null
+}
+
+export interface PortalMe {
+  profile_id: string
+  full_name: string
+  role: string
+  school_name: string | null
+  children: PortalChild[]
+  classes: PortalClass[]
+}
+
+export interface PortalInvoice {
+  period_month: string | null
+  due_date: string | null
+  charge: number
+  paid: number
+  outstanding: number
+  status: string
+}
+
+export interface PortalReceipt {
+  receipt_no: number
+  amount: number
+  method: string
+  paid_on: string
+  received_by: string | null
+}
+
+export interface PortalFees {
+  student_id: string
+  balance: number
+  family_outstanding: number
+  family_credit: number
+  invoices: PortalInvoice[]
+  receipts: PortalReceipt[]
+}
+
+export interface PortalAttendance {
+  from: string
+  to: string
+  present: number
+  marked: number
+  percent: number | null
+  days: { date: string; status: string }[]
+}
+
+export interface PortalResult {
+  result_card_id: string
+  term: string
+  withheld: boolean
+  message?: string
+  obtained_marks?: number
+  total_marks?: number
+  percentage?: number
+  grade?: string | null
+  position?: number | null
+  attendance_pct?: number | null
+  subjects?: { subject: string; max: number; marks: number | null; is_absent: boolean; grade: string | null }[]
+  issued_at: string | null
+}
+
+export async function getPortalMe(): Promise<PortalMe> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_portal_me')
+  if (error) throw new Error(error.message)
+  return data as PortalMe
+}
+
+export async function getPortalChildFees(studentId: string): Promise<PortalFees> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_portal_child_fees', { p_student_id: studentId })
+  if (error) throw new Error(error.message)
+  return data as PortalFees
+}
+
+export async function getPortalChildAttendance(
+  studentId: string, from: string, to: string,
+): Promise<PortalAttendance> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_portal_child_attendance', {
+    p_student_id: studentId, p_from: from, p_to: to,
+  })
+  if (error) throw new Error(error.message)
+  return data as PortalAttendance
+}
+
+export async function getPortalChildResults(studentId: string): Promise<PortalResult[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_portal_child_results', { p_student_id: studentId })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as PortalResult[]
+}
+
+/** Release / withdraw a term's results to parents (owner & principal only). */
+export async function publishResults(examTermId: string, classId: string): Promise<number> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_publish_results', {
+    p_exam_term_id: examTermId, p_class_id: classId,
+  })
+  if (error) throw new Error(error.message)
+  return Number(data ?? 0)
+}
+
+export async function unpublishResults(examTermId: string, classId: string): Promise<number> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_unpublish_results', {
+    p_exam_term_id: examTermId, p_class_id: classId,
+  })
+  if (error) throw new Error(error.message)
+  return Number(data ?? 0)
+}
