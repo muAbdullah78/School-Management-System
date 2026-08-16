@@ -1,95 +1,97 @@
-# Build Status — where the application stands
+# Build status — where the application stands
 
-This is the **living, honest picture** of what is built, what is left, and which
-steps are **yours** (manual, outside the code) vs **mine** (Claude, in the code).
-It supersedes the tech-stack details in [`05-ROADMAP.md`](05-ROADMAP.md); the
-authoritative product decisions are in [`09-DECISIONS-LOCKED.md`](09-DECISIONS-LOCKED.md).
+The honest picture of what is built, what is left, and which steps are **yours**
+(manual, outside the code) versus **mine** (in the code).
 
-_Last updated after: fee engine depth (discounts, fines, adjustments, reversal/reprint)._
-
----
-
-## ✅ Done (on `main` / in the open PR)
-
-**Database — `supabase/migrations/` (18 migrations, all validated on Postgres 16)**
-- Core 30-table schema, identity/state split, append-only money/marks/attendance, soft-delete, **61 RLS policies**, audit triggers, gapless counters (GR / receipt / certificate serials).
-- Fees engine, attendance, admissions, exams, settings, certificates, dashboard rollup, assessments, staff, auth auto-provisioning, **bulk student import**, **opening fee-balance import**, **year-end rollover**.
-
-**Application — `web/` (React + Vite + TS + Tailwind, one codebase, both surfaces)**
-- Every navigation module is a real, working screen (no placeholders): **Dashboard, Admissions, Students, Attendance, Tests, Exams & Results, Fees, Staff, Certificates, Reports, Settings**.
-- First signup becomes **owner**; user/role management in Settings.
-- **Export all data** (JSON backup), a two-part **Import** (students + opening fee balances), and **Year Rollover** (promote/retain/graduate, preview → commit → undo) in Settings.
-- **Installable PWA + offline attendance**: the app installs to a phone home screen and opens offline; attendance saved while offline is queued locally and **syncs automatically on reconnect** (with an app-wide connectivity/sync banner).
-
-**Quality gates**
-- **68 unit tests**; **CI** runs the web build/typecheck + tests, applies all migrations on a real Postgres 16, and exercises the import / rollover / staff / **fee-ops** RPCs end-to-end (fine → adjustment → waive → approved-discount all move the balance correctly). The offline shell was verified in headless Chromium.
+Authoritative product decisions live in [`09-DECISIONS-LOCKED.md`](09-DECISIONS-LOCKED.md).
+The money engine's design and reasoning are in [`10-MONEY-ENGINE-V2.md`](10-MONEY-ENGINE-V2.md).
 
 ---
 
-## ⬜ Depth pass — completing the spec's detail (in progress)
+## ✅ Built and tested
 
-Every **module** works end-to-end (that's what a walk-through shows). But a re-read of [`03-FEATURES.md`](03-FEATURES.md) found real **depth** that had database tables but no operations/screens — especially the fee/anti-fraud controls the plan calls essential. Closing those now:
+**Database — `supabase/migrations/` (34 migrations, applied clean from empty on Postgres 16)**
 
-| Depth feature | Status |
-|---------------|--------|
-| **Discounts** — approvable, reasoned, audited, with a register (separation of duties) | ✅ done (Fees → Discounts) |
-| **Fines / late fees** — apply, and waive with a reason | ✅ done (Fees → Collect, per invoice) |
-| **Adjustments / refunds** — signed balance change with reason (now counted in the balance) | ✅ done (Fees → Collect → Adjust) |
-| **Payment reversal + duplicate receipt reprint** | ✅ done (Fees → Collect → payment history) |
-| **Expected-vs-collected + ghost-student check** — the plan's headline anti-fraud control | ✅ done (Reports → Reconciliation) |
-| **Daily cash-book reconciliation** | ✅ done (Reports → Day Book / Cash). *(Pending-vs-verified bank/wallet clearing is a small follow-up — payments currently post as verified.)* |
-| **Sibling detection & linking** on the profile | ✅ done (Students → profile → Siblings / family) |
-| **Owner audit-log report** | ✅ done (Settings → Audit Log, owner/principal only) |
+| Area | What it does |
+|---|---|
+| Core | 30+ tables, append-only money/marks/attendance, soft delete, audit triggers, gapless counters |
+| Multi-tenancy | One Supabase project serves every school. Every tenant row carries `school_id`; every policy is (tenant) AND (role) |
+| Subscriptions | Trial → active → grace → locked → reactivated. Over the student limit **flags** a school, never blocks an admission |
+| Platform | Operator console identity. The platform role **cannot read tenant data** — managing schools never requires reading a child's records |
+| **Family billing** | Payments belong to a family and allocate oldest-month-first across siblings. Unallocated money becomes explicit family credit, consumed by the next challan |
+| Fees | Heads, per-class structures with **effective dating**, challans, arrears, partial payments, fines, approved discounts, reversal, deferral, pending-vs-verified |
+| **Annual raise** | `fn_fee_increment` — preview → commit, writes a new dated amount, never edits the old one |
+| **Vouchers** | Every challan carries a unique scannable code that resolves to the family |
+| **Accounts** | Append-only expenses and non-fee income with gapless vouchers; profit today/month/year. Fee income is derived from receipts and **cannot be hand-entered** |
+| **Cash drawer** | Per-collector till, auto-opened on first cash payment, closed against counted cash with a frozen variance and owner sign-off |
+| **Portal** | Parent and teacher. A parent account has **zero direct table access**; everything comes through scoped functions |
+| **Results release** | `published_at` + publish/withdraw, so parents see only what the school has released, newest version only |
+| **Messages** | Outbox recording every intended message; free WhatsApp click-to-chat; payments-vs-receipts-sent report |
+| Attendance | Daily register, finalise and lock, summaries, staff check-in codes |
+| Exams | Terms, papers, marks, grading, positions, result cards, tabulation, date sheets, admit cards |
+| Imports | Students, opening fee balances, staff |
+| Rollover | Promote/retain/graduate with preview → commit → **undo** |
 
-| Also outstanding | Status |
-|------|--------|
-| **Windows desktop `.msi`** | Scaffolded (`desktop/`, Tauri v2) + a **dispatch/tag-triggered** workflow that builds the installer on a Windows runner. Builds on GitHub's Windows runner (or your Windows PC) — not verifiable in this Linux environment — and a **signed** installer needs your **code-signing certificate**. |
+**Application — `web/`** — Dashboard, Admissions, Students, Attendance, Tests, Exams,
+Fees (family collection), **Accounts**, **Cash drawer**, **WhatsApp**, Staff,
+Certificates, Reports, Settings, **Parent portal**, operator console. Installable
+PWA with offline attendance. Design system with semantic colour.
 
-**So: modules complete, and the depth pass is essentially done** (fee controls, expected-vs-collected + ghost check, day-book cash reconciliation, sibling view, audit-log viewer). The only deferred bit is **pending-vs-verified** payment clearing. Next: the **joint inch-by-inch testing pass** on real Supabase.
+**Marketing site — `site/`** — static, 35KB, no build step, SEO metadata and
+schema.org. See [`site/README.md`](../site/README.md) for what to replace before launch.
 
-### ✅ Recently completed
-- **Bulk student import** (CSV) — Settings → Import → Students.
-- **Opening fee-balance / arrears import** — Settings → Import → Opening fee balances. A mid-year school loads real outstanding balances, so Fees/defaulters start from reality.
-- **Academic-year rollover** — Settings → Year Rollover. Promote/retain/graduate the whole roster into a new session with new roll numbers; arrears carry automatically; **preview → commit → undo** (undo is blocked once the new session has activity). Closes the "breaks within 12 months" gap.
-- **Installable PWA + offline attendance** — the teacher app installs to a phone and works offline; marks queue locally and sync on reconnect. Verified in headless Chromium. *(Needs a real-device browser test on your side — see manual steps.)*
-- **Exam printables** — the tabulation/consolidation sheet (Exams → Result Cards), plus **date sheet** and **admit cards / roll-number slips** (Exams → Setup, once a term's papers and their dates/times are set). Completes the exam module's paper output.
-- **Student ID cards with QR** — Certificates → issue an *ID Card*: a printable card with the student's details and an on-device QR of the GR number (generated client-side, so it works offline). Uses the same gapless serial register as the other certificates.
-- **Windows desktop wrapper** — `desktop/` is a Tauri v2 shell that opens the school's hosted web app in a native window (asks for the URL once). A dispatch/tag-triggered workflow builds the `.msi` on a Windows runner. Same app, same database — just a real window for the admin PC. *(The installer builds on GitHub's Windows runner; a signed build needs your code-signing certificate — see `desktop/README.md`.)*
-- **More reports** — Reports now also has a **monthly attendance register** (class/section × days grid, print/CSV) and a **per-student fee ledger** (debit/credit running balance, print/CSV).
-- **Staff bulk import** — Settings → Import → Staff: load the staff list from CSV (validated, de-duped on Employee No / CNIC), same as the student importer.
-- **Offline roster cold-start** — the attendance pickers + roster are cached read-through, so a teacher can open the app with no connection and still see the class list and roster (an offline banner explains it). Combined with the marks-queue, attendance now works fully offline end-to-end.
-- **Staff ID cards** — Staff → ID card: a printable staff card with a QR (same layout as the student ID card).
-- **Fee engine depth** — Fees now has a **Discounts** tab (propose → owner/principal approve → applied on the next challan, with a register), and Collect Payment gained **fines** (apply / waive-with-reason), **balance adjustments** (owner/principal, counted in the balance), and **payment reversal + duplicate receipt reprint**. `student_balance` now includes adjustments. Closes the biggest depth gap in the money module.
-
----
-
-## 🧑‍💻 Your manual steps (things only you can do)
-
-### A. Stand up ONE Supabase project so we can actually run & test the app
-The app is only a front-end to **the school's own Supabase**. I can't create your Google/Supabase account, so to see any of this running you need one project (the free tier is plenty for testing). Full detail is in [`SETUP-PER-SCHOOL.md`](SETUP-PER-SCHOOL.md); the short version:
-
-1. **Create a Supabase project** at supabase.com (sign in with Google → New project). Region **Singapore**. Save the DB password.
-2. From **Settings → API**, copy the **Project URL** and the **anon public key**.
-3. **Load the schema:** either install the Supabase CLI and run `supabase link` + `supabase db push`, or open **SQL Editor** and paste each file in `supabase/migrations/` **in order, 0001 → the highest number** (currently 0018), then paste `supabase/seed.sql` and Run. *(Already loaded up to 0016 earlier? Just run the newer ones — 0017, 0018, … — to get the latest features.)*
-4. **Run the app** — two options:
-   - *Local (fastest to test):* in `web/`, copy `.env.example` to `.env`, set `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_SCHOOL_NAME`, then `npm install && npm run dev` and open the printed URL.
-   - *Hosted:* connect the repo to Cloudflare Pages/Vercel with those three env vars (build `npm run build`, output `web/dist`).
-5. **Create the owner login:** Supabase → Authentication → Users → Add user (email + password). The **first** user becomes `owner` automatically.
-6. **Log in and configure:** Settings → School Profile, then **Classes & Sections**, then **Fee Structure**. Now try **Settings → Import Students** with the template — this is the newest piece and worth a real test.
-
-> Tell me your Project URL only if you want me to sanity-check config — **never paste the DB password or service-role key** into chat.
-
-### B. Decisions/assets that are yours
-- **Pilot school** (Decision #10) — line up one real school; their fee sheet + a class register is the best test data.
-- **Desktop `.msi`** — when we build workstream #6, packaging a signed Windows installer needs a **Windows machine and a code-signing certificate** (or we accept an unsigned build for the pilot). That signing step is yours; I'll build the wrapper and the CI that produces the installer.
-
-### C. Nothing else is blocking me
-None of the six code workstreams need anything from you first — I can keep building while you stand up the Supabase project in parallel. The only thing I *can't* substitute for is a live Supabase project to run against.
+**Quality gates — all green**
+- **98 web unit tests**, typecheck + build
+- **7 SQL suites**: `tenant_isolation`, `subscription_rules`, `family_money`,
+  `finance`, `portal`, `outbox`, `fee_ops`
+- CI applies all 34 migrations to a real Postgres 16 and runs every suite plus an
+  end-to-end sanity pass (import → rollover → fee ops → reconciliation)
 
 ---
 
-## How we'll test at the end (both sides)
-1. **Me:** unit tests + CI (build, migrations, RPC behaviour) — already running on every push; I extend it as each workstream lands.
-2. **You:** inch-by-inch on a real Supabase project with real data — admit/import students, run a monthly challan + collect fees, mark a full day's attendance, run a term to printed result cards, issue a certificate, do a year-end rollover, and take a backup/export. For the PWA: open the hosted URL on an Android phone, **Add to Home Screen**, then turn on airplane mode and confirm the app still opens and you can mark a class — turn connectivity back on and watch the banner sync it.
+## 🧑‍💻 Your manual steps
 
-I'll keep this file updated as each workstream is completed.
+Everything below needs a human. Nothing in the code is waiting on them.
+
+1. **Supabase project** — reset the existing one (its data is disposable) and load
+   `0001` → `0034`. Full walkthrough in [`SETUP.md`](SETUP.md).
+2. **Deploy the two Edge Functions** — `SETUP.md` step 4.
+3. **Make yourself the operator** — one SQL snippet, `SETUP.md` step 5.
+4. **Marketing site** — register the domain, then replace the placeholders listed
+   in [`site/README.md`](../site/README.md): domain, contact details, trial links.
+5. **Windows installer** — the Tauri shell in `desktop/` builds a `.msi` on a
+   Windows runner. A *signed* build needs your code-signing certificate.
+
+---
+
+## ⬜ Deliberately not built
+
+Excluded by decision, not oversight: SMS alerts, native mobile apps (the portal is
+the answer), parent complaints, online classes, holiday calendar, salary & loan
+management, stock & inventory, student behaviour tracking, daily diary, LMS, email
+alerts, noticeboard, transport, biometric devices.
+
+**Known gaps, stated plainly:**
+- **Urdu interface.** The UI is English. Data you type in accepts and prints Urdu.
+- **Online fee payment** (JazzCash/EasyPaisa gateways) — cash, bank and wallet
+  payments are recorded, but the parent cannot pay *through* the app.
+- **Fee installments** — a schedule that drives due dates was designed
+  (`10-MONEY-ENGINE-V2.md`) but is not built.
+- **Per-period attendance** — the register is once-daily. Fine for primary, a
+  ceiling for classes 9–12.
+- **The desktop app is a native window on cloud data**, not an offline system.
+  Attendance works offline; fee collection does not. Say this to schools.
+
+---
+
+## What only you can test
+
+Nobody has run this against a live Supabase yet. The build is clean and the SQL is
+proven against real Postgres, but no human has clicked these screens. Worth doing
+first, in this order:
+
+1. Family fee collection with **two children on one father's CNIC**
+2. A month's challans, then the reconciliation report
+3. Close a cash drawer with a deliberate Rs 50 shortfall and check it demands a reason
+4. Sign in as a parent and confirm you can see **only** that family
+5. Record an expense and check the profit figure moves

@@ -21,8 +21,13 @@ import { StaffPage } from '@/pages/staff/StaffPage'
 import { CertificatesPage } from '@/pages/certificates/CertificatesPage'
 import { ReportsPage } from '@/pages/reports/ReportsPage'
 import { SettingsPage } from '@/pages/SettingsPage'
+import { AccountsPage } from '@/pages/accounts/AccountsPage'
+import { TillPage } from '@/pages/till/TillPage'
+import { MessagesPage } from '@/pages/messages/MessagesPage'
 import { ModulePlaceholder } from '@/pages/ModulePlaceholder'
 import { NotConfigured } from '@/pages/NotConfigured'
+import { PortalPage } from '@/pages/portal/PortalPage'
+import { PortalRoute } from '@/components/PortalRoute'
 import { NAV } from '@/navigation'
 import { isConfigured } from '@/lib/config'
 
@@ -38,6 +43,9 @@ const IMPLEMENTED: Record<string, JSX.Element> = {
   '/certificates': <CertificatesPage />,
   '/reports': <ReportsPage />,
   '/settings': <SettingsPage />,
+  '/accounts': <AccountsPage />,
+  '/till': <TillPage />,
+  '/messages': <MessagesPage />,
 }
 
 export default function App() {
@@ -64,14 +72,20 @@ export default function App() {
                 </ProtectedRoute>
               }
             />
+            {/* A parent account never reaches the staff shell. The database
+                closes every table to it, so a parent who landed on an admin
+                screen would see an empty broken page rather than data — this
+                just routes them somewhere that works. Enforcement is in RLS. */}
             <Route
               element={
                 <ProtectedRoute>
-                  <LicenceGate>
-                    <SetupGate>
-                      <AppShell />
-                    </SetupGate>
-                  </LicenceGate>
+                  <PortalRoute>
+                    <LicenceGate>
+                      <SetupGate>
+                        <AppShell />
+                      </SetupGate>
+                    </LicenceGate>
+                  </PortalRoute>
                 </ProtectedRoute>
               }
             >
@@ -80,6 +94,14 @@ export default function App() {
                 <Route key={n.path} path={n.path} element={IMPLEMENTED[n.path] ?? <ModulePlaceholder />} />
               ))}
             </Route>
+            <Route
+              path="/portal"
+              element={
+                <ProtectedRoute>
+                  <PortalPage />
+                </ProtectedRoute>
+              }
+            />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>

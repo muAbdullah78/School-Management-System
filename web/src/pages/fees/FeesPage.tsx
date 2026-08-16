@@ -1,12 +1,18 @@
 import { useState } from 'react'
+import { FamilyCollect } from './FamilyCollect'
 import { CollectPayment } from './CollectPayment'
 import { GenerateChallans } from './GenerateChallans'
 import { Defaulters } from './Defaulters'
 import { Discounts } from './Discounts'
 import { PendingClearances } from './PendingClearances'
 
+// "Collect" is the family counter and is the default, because it is the screen
+// that runs two hundred times a day. The per-student screen stays as "Single
+// student" for the cases that genuinely are one child — a one-off charge, a
+// correction — but it is no longer the way a fee is normally taken.
 const TABS = [
-  { key: 'collect', label: 'Collect Payment' },
+  { key: 'collect', label: 'Collect' },
+  { key: 'single', label: 'Single student' },
   { key: 'generate', label: 'Generate Challans' },
   { key: 'discounts', label: 'Discounts' },
   { key: 'pending', label: 'Pending' },
@@ -19,22 +25,24 @@ export function FeesPage() {
   const [tab, setTab] = useState<TabKey>('collect')
   return (
     <div>
-      <h1 className="text-xl font-semibold text-slate-800">Fees</h1>
-      <div className="mt-4 flex gap-1 border-b border-slate-200">
+      <div className="mb-5 flex gap-1 overflow-x-auto border-b border-slate-200">
         {TABS.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`-mb-px border-b-2 px-4 py-2 text-sm ${
-              tab === t.key ? 'border-brand-600 font-medium text-brand-700' : 'border-transparent text-slate-500 hover:text-slate-700'
+            className={`-mb-px whitespace-nowrap border-b-2 px-4 py-2.5 text-sm transition ${
+              tab === t.key
+                ? 'border-brand-600 font-semibold text-brand-700'
+                : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'
             }`}
           >
             {t.label}
           </button>
         ))}
       </div>
-      <div className="mt-5">
-        {tab === 'collect' && <CollectPayment />}
+      <div>
+        {tab === 'collect' && <FamilyCollect />}
+        {tab === 'single' && <CollectPayment />}
         {tab === 'generate' && <GenerateChallans />}
         {tab === 'discounts' && <Discounts />}
         {tab === 'pending' && <PendingClearances />}

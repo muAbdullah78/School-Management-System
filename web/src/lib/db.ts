@@ -1617,3 +1617,441 @@ export async function listCertificates(limit = 50): Promise<CertificateRow[]> {
     data: r.data ?? {},
   }))
 }
+
+// ---- Families: the payer at the counter -----------------------------------
+// A father with three children hands over one bundle of cash. These back the
+// one-payment-one-receipt flow; see docs/10-MONEY-ENGINE-V2.md.
+
+export interface FamilyHit {
+  family_id: string
+  head_name: string
+  head_cnic: string | null
+  phone: string | null
+  children: number
+  outstanding: number
+  credit: number
+}
+
+export interface FamilyInvoice {
+  invoice_id: string
+  period_month: string | null
+  due_date: string | null
+  charge: number
+  allocated: number
+  outstanding: number
+  status: string
+}
+
+export interface FamilyChild {
+  student_id: string
+  full_name: string
+  gr_no: string | null
+  status: string
+  balance: number
+  invoices: FamilyInvoice[]
+}
+
+export interface FamilySheet {
+  family: {
+    id: string
+    head_name: string
+    head_cnic: string | null
+    phone: string | null
+    whatsapp: string | null
+    address: string | null
+  }
+  credit: number
+  outstanding: number
+  children: FamilyChild[]
+}
+
+export interface FamilyPaymentResult {
+  payment_id: string
+  receipt_no: number
+  allocated: number
+  credit: number
+  family_outstanding?: number
+  pending: boolean
+}
+
+/** One search box: CNIC, phone, parent name, student name or GR number. */
+export async function findFamily(q: string): Promise<FamilyHit[]> {
+  const sb = requireSupabase()
+  const term = q.trim()
+  if (!term) return []
+  const { data, error } = await sb.rpc('fn_find_family', { p_query: term })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as FamilyHit[]
+}
+
+export async function getFamilySheet(familyId: string): Promise<FamilySheet> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_family_sheet', { p_family_id: familyId })
+  if (error) throw new Error(error.message)
+  return data as FamilySheet
+}
+
+/** One payment across every child. Allocation is oldest month first. */
+export async function recordFamilyPayment(
+  familyId: string, amount: number, method: string, note?: string, pending = false,
+): Promise<FamilyPaymentResult> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_record_family_payment', {
+    p_family_id: familyId, p_amount: amount, p_method: method,
+    p_note: note ?? null, p_pending: pending,
+  })
+  if (error) throw new Error(error.message)
+  return data as FamilyPaymentResult
+}
+
+/** The family a student belongs to — used to jump from a profile to the till. */
+export async function getStudentFamilyId(studentId: string): Promise<string | null> {
+  const sb = requireSupabase()
+  const { data, error } = await sb
+    .from('students').select('family_id').eq('id', studentId).single()
+  if (error) throw new Error(error.message)
+  return (data?.family_id as string | null) ?? null
+}
+
+// ---- Portal: one login, role decides everything ---------------------------
+
+export interface PortalChild {
+  student_id: string
+  full_name: string
+  gr_no: string | null
+  class_name: string | null
+  section_name: string | null
+  status: string
+}
+
+export interface PortalClass {
+  class_id: string
+  class_name: string
+  level_order: number
+  section_id: string | null
+  section_name: string | null
+}
+
+export interface PortalMe {
+  profile_id: string
+  full_name: string
+  role: string
+  school_name: string | null
+  children: PortalChild[]
+  classes: PortalClass[]
+}
+
+export interface PortalInvoice {
+  period_month: string | null
+  due_date: string | null
+  charge: number
+  paid: number
+  outstanding: number
+  status: string
+}
+
+export interface PortalReceipt {
+  receipt_no: number
+  amount: number
+  method: string
+  paid_on: string
+  received_by: string | null
+}
+
+export interface PortalFees {
+  student_id: string
+  balance: number
+  family_outstanding: number
+  family_credit: number
+  invoices: PortalInvoice[]
+  receipts: PortalReceipt[]
+}
+
+export interface PortalAttendance {
+  from: string
+  to: string
+  present: number
+  marked: number
+  percent: number | null
+  days: { date: string; status: string }[]
+}
+
+export interface PortalResult {
+  result_card_id: string
+  term: string
+  withheld: boolean
+  message?: string
+  obtained_marks?: number
+  total_marks?: number
+  percentage?: number
+  grade?: string | null
+  position?: number | null
+  attendance_pct?: number | null
+  subjects?: { subject: string; max: number; marks: number | null; is_absent: boolean; grade: string | null }[]
+  issued_at: string | null
+}
+
+export async function getPortalMe(): Promise<PortalMe> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_portal_me')
+  if (error) throw new Error(error.message)
+  return data as PortalMe
+}
+
+export async function getPortalChildFees(studentId: string): Promise<PortalFees> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_portal_child_fees', { p_student_id: studentId })
+  if (error) throw new Error(error.message)
+  return data as PortalFees
+}
+
+export async function getPortalChildAttendance(
+  studentId: string, from: string, to: string,
+): Promise<PortalAttendance> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_portal_child_attendance', {
+    p_student_id: studentId, p_from: from, p_to: to,
+  })
+  if (error) throw new Error(error.message)
+  return data as PortalAttendance
+}
+
+export async function getPortalChildResults(studentId: string): Promise<PortalResult[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_portal_child_results', { p_student_id: studentId })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as PortalResult[]
+}
+
+/** Release / withdraw a term's results to parents (owner & principal only). */
+export async function publishResults(examTermId: string, classId: string): Promise<number> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_publish_results', {
+    p_exam_term_id: examTermId, p_class_id: classId,
+  })
+  if (error) throw new Error(error.message)
+  return Number(data ?? 0)
+}
+
+export async function unpublishResults(examTermId: string, classId: string): Promise<number> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_unpublish_results', {
+    p_exam_term_id: examTermId, p_class_id: classId,
+  })
+  if (error) throw new Error(error.message)
+  return Number(data ?? 0)
+}
+
+// ---- Accounts: expenses, other income, profit -----------------------------
+
+export interface ExpenseCategory { id: string; name: string; sort_order: number; active: boolean }
+export interface FinanceSummary {
+  from: string; to: string
+  fee_income: number; other_income: number; total_income: number
+  expenses: number; profit: number
+  by_category: { category: string; total: number }[]
+}
+export interface ProfitSnapshot { today: FinanceSummary; month: FinanceSummary; year: FinanceSummary }
+
+export async function listExpenseCategories(): Promise<ExpenseCategory[]> {
+  const sb = requireSupabase()
+  return unwrap(
+    await sb.from('expense_categories').select('id, name, sort_order, active')
+      .eq('active', true).order('sort_order'),
+  )
+}
+
+export async function recordExpense(
+  amount: number, categoryId: string | null, spentOn: string,
+  payee?: string, method = 'cash', note?: string,
+): Promise<{ expense_id: string; voucher_no: number }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_record_expense', {
+    p_amount: amount, p_category_id: categoryId, p_spent_on: spentOn,
+    p_payee: payee ?? null, p_method: method, p_note: note ?? null,
+  })
+  if (error) throw new Error(error.message)
+  return data as { expense_id: string; voucher_no: number }
+}
+
+export async function reverseExpense(expenseId: string, reason: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_reverse_expense', { p_expense_id: expenseId, p_reason: reason })
+  if (error) throw new Error(error.message)
+}
+
+export async function recordOtherIncome(
+  amount: number, source: string, receivedOn: string, method = 'cash', note?: string,
+): Promise<{ income_id: string; voucher_no: number }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_record_other_income', {
+    p_amount: amount, p_source: source, p_received_on: receivedOn,
+    p_method: method, p_note: note ?? null,
+  })
+  if (error) throw new Error(error.message)
+  return data as { income_id: string; voucher_no: number }
+}
+
+export async function getFinanceSummary(from: string, to: string): Promise<FinanceSummary> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_finance_summary', { p_from: from, p_to: to })
+  if (error) throw new Error(error.message)
+  return data as FinanceSummary
+}
+
+export async function getProfitSnapshot(): Promise<ProfitSnapshot> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_profit_snapshot')
+  if (error) throw new Error(error.message)
+  return data as ProfitSnapshot
+}
+
+export interface ExpenseRow {
+  id: string; spent_on: string; amount: number; payee: string | null
+  method: string; note: string | null; voucher_no: number | null
+  category_id: string | null; reversal_of: string | null
+}
+
+export async function listExpenses(from: string, to: string): Promise<ExpenseRow[]> {
+  const sb = requireSupabase()
+  return unwrap(
+    await sb.from('expenses')
+      .select('id, spent_on, amount, payee, method, note, voucher_no, category_id, reversal_of')
+      .gte('spent_on', from).lte('spent_on', to)
+      .order('spent_on', { ascending: false }).order('voucher_no', { ascending: false }),
+  )
+}
+
+// ---- Till: the cash drawer ------------------------------------------------
+
+export interface CurrentTill {
+  till_id: string; opened_at: string; opening_float: number
+  cash_taken: number; all_taken: number; receipts: number; expected_cash: number
+}
+export interface TillReportRow {
+  till_id: string; collector: string; opened_at: string; closed_at: string | null
+  opening_float: number; cash_taken: number; all_taken: number
+  expected_cash: number | null; counted_cash: number | null
+  variance: number | null; variance_reason: string | null; status: string
+}
+
+export async function getCurrentTill(): Promise<CurrentTill | null> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_current_till')
+  if (error) throw new Error(error.message)
+  return (data ?? null) as CurrentTill | null
+}
+
+export async function openTill(openingFloat: number): Promise<string> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_open_till', { p_opening_float: openingFloat })
+  if (error) throw new Error(error.message)
+  return data as string
+}
+
+export async function closeTill(countedCash: number, reason?: string) {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_close_till', {
+    p_counted_cash: countedCash, p_reason: reason ?? null,
+  })
+  if (error) throw new Error(error.message)
+  return data as { till_id: string; expected_cash: number; counted_cash: number; variance: number }
+}
+
+export async function approveTill(tillId: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_approve_till', { p_till_id: tillId })
+  if (error) throw new Error(error.message)
+}
+
+export async function getTillReport(from: string, to: string): Promise<TillReportRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_till_report', { p_from: from, p_to: to })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as TillReportRow[]
+}
+
+// ---- Outbox: WhatsApp click-to-chat ---------------------------------------
+
+export interface OutboxRow {
+  id: string; template_key: string; to_name: string | null; to_phone: string | null
+  rendered_text: string; status: string; created_at: string; sent_at: string | null
+}
+
+export async function listOutbox(status = 'queued', limit = 100): Promise<OutboxRow[]> {
+  const sb = requireSupabase()
+  return unwrap(
+    await sb.from('message_outbox')
+      .select('id, template_key, to_name, to_phone, rendered_text, status, created_at, sent_at')
+      .eq('status', status).order('created_at', { ascending: false }).limit(limit),
+  )
+}
+
+export async function markMessageSent(id: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_mark_message_sent', { p_id: id, p_channel: 'whatsapp' })
+  if (error) throw new Error(error.message)
+}
+
+export async function skipMessage(id: string, reason: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_skip_message', { p_id: id, p_reason: reason })
+  if (error) throw new Error(error.message)
+}
+
+export async function getUnsentReceipts(from: string, to: string) {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_unsent_receipts', { p_from: from, p_to: to })
+  if (error) throw new Error(error.message)
+  return data as { from: string; to: string; payments: number; receipts_sent: number; receipts_unsent: number }
+}
+
+/**
+ * A wa.me link with the message pre-filled. Free, no API, no credits — the
+ * clerk presses send in WhatsApp. Pakistani numbers are normalised to
+ * international form because wa.me rejects a leading 0.
+ */
+export function whatsappLink(phone: string | null, text: string): string | null {
+  if (!phone) return null
+  let n = phone.replace(/[^\d]/g, '')
+  if (n.startsWith('0')) n = `92${n.slice(1)}`
+  else if (!n.startsWith('92') && n.length === 10) n = `92${n}`
+  if (n.length < 11) return null
+  return `https://wa.me/${n}?text=${encodeURIComponent(text)}`
+}
+
+// ---- Fee operations -------------------------------------------------------
+
+export interface FeeIncrementRow { class: string; fee_head: string; from: number; to: number }
+export interface FeeIncrementResult {
+  committed: boolean; effective_from: string; changes: number; rows: FeeIncrementRow[]
+}
+
+export async function feeIncrement(
+  sessionId: string, classIds: string[] | null, headIds: string[] | null,
+  percent: number | null, amount: number | null, effectiveFrom: string, commit: boolean,
+): Promise<FeeIncrementResult> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_fee_increment', {
+    p_session_id: sessionId, p_class_ids: classIds, p_fee_head_ids: headIds,
+    p_percent: percent, p_amount: amount, p_effective_from: effectiveFrom, p_commit: commit,
+  })
+  if (error) throw new Error(error.message)
+  return data as FeeIncrementResult
+}
+
+export async function findByVoucher(code: string) {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_find_by_voucher', { p_code: code })
+  if (error) throw new Error(error.message)
+  return data as { invoice_id: string; student_id: string; student_name: string
+                   family_id: string; period_month: string | null } | null
+}
+
+export async function getHeadWiseDues(sessionId: string) {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_head_wise_dues', { p_session_id: sessionId })
+  if (error) throw new Error(error.message)
+  return data as { session_id: string; basis: string
+                   heads: { fee_head: string; charged: number; collected: number }[] }
+}

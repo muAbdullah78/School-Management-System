@@ -14,6 +14,7 @@ export const ROLES = [
   'class_teacher',
   'subject_teacher',
   'readonly',
+  'parent',
 ] as const
 
 export type Role = (typeof ROLES)[number]
@@ -26,6 +27,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   class_teacher: 'Class Teacher',
   subject_teacher: 'Subject Teacher',
   readonly: 'Read only',
+  parent: 'Parent',
 }
 
 /** Roles that operate the admin "desktop" surface. */
@@ -43,4 +45,15 @@ export function isTeacher(role: Role | null | undefined): boolean {
 
 export function isAdmin(role: Role | null | undefined): boolean {
   return !!role && ADMIN_ROLES.includes(role)
+}
+
+/**
+ * A parent account. This is NOT a staff role and must never be added to
+ * ADMIN_ROLES or TEACHER_ROLES — the database closes every table to it and
+ * serves the portal through scoped functions, so a parent who reached a staff
+ * screen would see an empty, broken page rather than data. The check exists so
+ * routing can send them to the portal instead.
+ */
+export function isParent(role: Role | null | undefined): boolean {
+  return role === 'parent'
 }

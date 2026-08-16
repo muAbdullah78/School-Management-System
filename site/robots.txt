@@ -1,0 +1,5 @@
+# Replace schoolmanager.pk with the real domain once it is registered.
+User-agent: *
+Allow: /
+
+Sitemap: https://schoolmanager.pk/sitemap.xml
