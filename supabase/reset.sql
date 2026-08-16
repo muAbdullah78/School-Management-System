@@ -20,9 +20,9 @@
 --   2. Paste this whole file, press Run
 --   3. Go to Authentication → Users and delete every user (see the note at the
 --      bottom — this step is NOT optional)
---   4. Load supabase/migrations/0001 … 0034 in order, as in docs/SETUP.md
+--   4. Load supabase/migrations/0001 … 0035 in order, as in docs/SETUP.md
 --
--- Verified end to end against Postgres 16: 34 migrations → this reset → 34
+-- Verified end to end against Postgres 16: 35 migrations → this reset → 35
 -- migrations again, clean both times.
 -- =============================================================================
 

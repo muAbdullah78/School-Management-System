@@ -36,9 +36,13 @@
 
 -- ===========================================================================
 -- 1. The role
+--
+-- 'parent' is added by 0032_parent_role.sql, deliberately in a file of its
+-- own: Postgres refuses to let a new enum value be USED in the transaction
+-- that added it, and the Supabase SQL Editor runs each file as one
+-- transaction. Everything below compares against 'parent', so the value must
+-- already be committed by the time this file runs.
 -- ===========================================================================
-
-alter type public.user_role add value if not exists 'parent';
 
 -- Which family a parent account speaks for. Null for every member of staff.
 alter table public.profiles add column family_id uuid references public.families(id);
