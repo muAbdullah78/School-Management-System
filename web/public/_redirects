@@ -1,0 +1,13 @@
+# Cloudflare Pages / Netlify SPA fallback.
+#
+# This app uses BrowserRouter, so /fees, /portal and /platform are real URLs
+# the browser will request from the server. Without this rule the host looks
+# for a file at that path, does not find one, and returns 404 — which happens
+# on a bookmark, a shared link, or simply pressing refresh.
+#
+# The service worker also falls back to the app shell, but ONLY once it is
+# installed. A first-time visitor opening /portal directly has no service
+# worker yet, so the server has to get this right on its own.
+#
+# 200 (not 301) so the URL stays as the user typed it and the router can read it.
+/*    /index.html   200

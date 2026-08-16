@@ -134,6 +134,14 @@ diagnose.
 
 ## Step 3 — Point the app at your project — **YOU DO THIS**
 
+> **Putting it online?** Follow [`DEPLOY.md`](DEPLOY.md) instead — it covers
+> Cloudflare Pages end to end, including the two settings people get wrong
+> (root directory `web`, and the fact that environment variables are read at
+> build time so changing one needs a redeploy). Come back here for Step 4.
+>
+> The instructions below are for running it **on your own machine**, which needs
+> Node.js installed.
+
 1. In this project, go to the `web` folder.
 2. Make a copy of `.env.example` and name the copy `.env`.
 3. Open `.env` and fill in the two values from Step 1:
