@@ -67,10 +67,21 @@ jobs:
           end $$;
           SQL
       - name: Apply all migrations in order
+        # --single-transaction is not a nicety, it is the point.
+        #
+        # Schools apply these by pasting each file into the Supabase SQL
+        # Editor, which runs the whole file as ONE transaction. Plain psql
+        # autocommits every statement instead, so the two behave differently —
+        # and a migration that did `alter type ... add value` and then USED the
+        # new value passed here while failing for every real school
+        # (ERROR 55P04: unsafe use of new value).
+        #
+        # Applying each file in a single transaction makes CI match the way the
+        # migrations are actually run, so that class of bug fails the build.
         run: |
           for f in supabase/migrations/*.sql; do
-            echo "── applying $f"
-            psql -v ON_ERROR_STOP=1 -q -f "$f"
+            echo "── applying $f (single transaction, as the SQL Editor does)"
+            psql -v ON_ERROR_STOP=1 -q --single-transaction -f "$f"
           done
       - name: Sanity checks
         run: |

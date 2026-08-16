@@ -79,7 +79,9 @@ This creates all the tables, rules and safety checks.
 1. In Supabase, click **SQL Editor** in the left sidebar.
 2. Open the folder `supabase/migrations/` from this project.
 3. Open the files **in number order** — `0001_...` first, then `0002_...`, and
-   so on to the last one (currently `0034_fee_ops.sql`). For each file:
+   so on to the last one (currently `0035_fee_ops.sql`). Run them **one file at
+   a time** — the SQL Editor treats each run as one transaction, and the files
+   are written to suit that. For each file:
    - Copy everything in it
    - Paste into the SQL Editor
    - Click **Run**

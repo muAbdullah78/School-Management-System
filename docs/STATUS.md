@@ -10,7 +10,7 @@ The money engine's design and reasoning are in [`10-MONEY-ENGINE-V2.md`](10-MONE
 
 ## ✅ Built and tested
 
-**Database — `supabase/migrations/` (34 migrations, applied clean from empty on Postgres 16)**
+**Database — `supabase/migrations/` (35 migrations, each applied in a single transaction exactly as the Supabase SQL Editor does)**
 
 | Area | What it does |
 |---|---|
@@ -44,7 +44,7 @@ schema.org. See [`site/README.md`](../site/README.md) for what to replace before
 - **98 web unit tests**, typecheck + build
 - **7 SQL suites**: `tenant_isolation`, `subscription_rules`, `family_money`,
   `finance`, `portal`, `outbox`, `fee_ops`
-- CI applies all 34 migrations to a real Postgres 16 and runs every suite plus an
+- CI applies all 35 migrations to a real Postgres 16, each in ONE transaction so it matches how a school actually pastes them into the SQL Editor and runs every suite plus an
   end-to-end sanity pass (import → rollover → fee ops → reconciliation)
 
 ---
@@ -54,7 +54,7 @@ schema.org. See [`site/README.md`](../site/README.md) for what to replace before
 Everything below needs a human. Nothing in the code is waiting on them.
 
 1. **Supabase project** — reset the existing one (its data is disposable) and load
-   `0001` → `0034`. Full walkthrough in [`SETUP.md`](SETUP.md).
+   `0001` → `0035`. Full walkthrough in [`SETUP.md`](SETUP.md).
 2. **Deploy the two Edge Functions** — `SETUP.md` step 4.
 3. **Make yourself the operator** — one SQL snippet, `SETUP.md` step 5.
 4. **Marketing site** — register the domain, then replace the placeholders listed
