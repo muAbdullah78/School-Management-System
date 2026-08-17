@@ -1,0 +1,60 @@
+/**
+ * Cloudflare Workers Static Assets configuration for the app.
+ *
+ * WHY THIS FILE EXISTS
+ *
+ * Cloudflare merged Pages into Workers. "Workers & Pages → Create" now walks
+ * you into creating a WORKER, with a deploy command of `npx wrangler deploy`,
+ * even when what you are shipping is a static site. Without a wrangler config
+ * that command has nothing to deploy and fails.
+ *
+ * Rather than send people hunting for the older Pages flow — which Cloudflare
+ * keeps moving and is no longer taking new projects in some accounts — this
+ * makes the flow they are actually shown work correctly.
+ *
+ * There is deliberately NO "main" entry: this is an assets-only Worker. No
+ * server-side code runs. The app talks straight to Supabase from the browser,
+ * and Row Level Security is what protects the data.
+ */
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "school-manager",
+  "compatibility_date": "2025-08-01",
+
+  "assets": {
+    "directory": "./dist",
+
+    /**
+     * The single most important line here.
+     *
+     * This app uses BrowserRouter, so /fees, /portal and /platform are real
+     * URLs the browser asks the server for. Without this, Cloudflare looks for
+     * a file at that path, does not find one, and returns 404 — on a bookmark,
+     * a shared parent-portal link, or simply pressing refresh.
+     *
+     * "single-page-application" serves index.html for any path that is not a
+     * real file, and does it with a 200 so the router can read the URL.
+     *
+     * public/_redirects does the same job on Pages and on Netlify. Keeping both
+     * is intentional: whichever host this ends up on, deep links work.
+     */
+    "not_found_handling": "single-page-application"
+  }
+
+  /**
+   * Environment variables are NOT set here.
+   *
+   * VITE_* values are read by Vite at BUILD time and baked into the JavaScript,
+   * so they have to exist when the build runs — which means the dashboard's
+   * build variables, not a runtime binding. Putting them in this file would
+   * look right and do nothing.
+   *
+   * Set these in the dashboard, for Production:
+   *   VITE_SUPABASE_URL        https://YOUR-PROJECT.supabase.co
+   *   VITE_SUPABASE_ANON_KEY   the long anon key
+   *   VITE_SCHOOL_NAME         School
+   *
+   * Never put the service_role key anywhere near this app. It bypasses every
+   * rule in the database.
+   */
+}
