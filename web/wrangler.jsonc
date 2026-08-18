@@ -15,10 +15,14 @@
  * There is deliberately NO "main" entry: this is an assets-only Worker. No
  * server-side code runs. The app talks straight to Supabase from the browser,
  * and Row Level Security is what protects the data.
+ *
+ * The "name" must match the Worker that Cloudflare created from the repository,
+ * or every build logs a name-mismatch warning and Workers Builds offers to open
+ * a pull request "fixing" it.
  */
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "school-manager",
+  "name": "school-management-system",
   "compatibility_date": "2025-08-01",
 
   "assets": {
@@ -35,8 +39,18 @@
      * "single-page-application" serves index.html for any path that is not a
      * real file, and does it with a 200 so the router can read the URL.
      *
-     * public/_redirects does the same job on Pages and on Netlify. Keeping both
-     * is intentional: whichever host this ends up on, deep links work.
+     * DO NOT also ship a public/_redirects with `/* /index.html 200`. That is
+     * the correct SPA rule on Pages and Netlify, but Workers Static Assets
+     * reads _redirects as CONFIGURATION and its validator rejects that rule
+     * outright:
+     *
+     *     Invalid _redirects configuration: Line 13: Infinite loop detected in
+     *     this rule. [code: 100324]
+     *
+     * The deploy fails AFTER the assets have uploaded, which makes it look like
+     * an upload problem rather than a config one. On Workers, this setting is
+     * the whole mechanism. A Netlify deployment would need the _redirects file
+     * instead — see docs/DEPLOY.md.
      */
     "not_found_handling": "single-page-application"
   }

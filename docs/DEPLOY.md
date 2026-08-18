@@ -121,7 +121,7 @@ Then **Deploy**.
 ### Pages flow (older accounts)
 
 If your dashboard still offers **Pages → Connect to Git**, it works too and
-needs no wrangler config:
+ignores `wrangler.jsonc`:
 
 | Setting | Value |
 |---|---|
@@ -132,14 +132,50 @@ needs no wrangler config:
 
 Same three environment variables, same build-time caveat.
 
+**On Pages or Netlify you must add the SPA rule yourself**, because Workers
+needs it absent. Create `web/public/_redirects` containing:
+
+```
+/*    /index.html   200
+```
+
+Do not commit that file while deploying to Workers — it breaks the deploy (see
+above).
+
+### If the deploy fails
+
+**`Invalid _redirects configuration: Infinite loop detected in this rule`**
+
+Workers Static Assets reads `_redirects` as *configuration*, not as a file to
+serve, and its validator rejects `/* /index.html 200` — the standard SPA rule on
+Pages and Netlify. On Workers, `not_found_handling` in `wrangler.jsonc` does that
+job instead, so the repo deliberately ships **no** `web/public/_redirects`.
+
+The failure is confusing because it happens **after** the assets upload
+successfully, so it reads like an upload problem. It is not. If you have added a
+`_redirects` back, remove it.
+
+**`Failed to match Worker name ... the CI system expected "..."`**
+
+The `name` in `wrangler.jsonc` must match the Worker Cloudflare created from the
+repository. It is set to `school-management-system`. If your Worker has a
+different name, change the `name` field to match, or Workers Builds keeps
+offering to open a pull request "fixing" it on every build.
+
+**`Could not read package.json`** — the Path is not `/web`.
+
+**The build hangs, then times out** — the build command is `npm run dev`. It
+should be `npm run build`.
+
 ### Check it worked
 
 - Open the URL. You should see a **sign-in page**, not "App not configured yet".
   That message means the environment variables were missing when the build ran —
   add them and redeploy.
 - Open `<your-url>/signup` **directly**, not by clicking. It must load the form,
-  not a 404. On Workers that is `not_found_handling` in `wrangler.jsonc`; on
-  Pages it is `public/_redirects`. Both are in the repo.
+  not a 404. On Workers that is `not_found_handling` in `wrangler.jsonc`. This is
+  the check that catches a broken SPA fallback, and it is the one most worth
+  doing — a parent-portal link you send out is exactly this case.
 - Open it on a phone. The parent portal is phone-first and that is where it will
   actually be used.
 
