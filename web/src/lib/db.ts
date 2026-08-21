@@ -2124,6 +2124,95 @@ export function whatsappLink(phone: string | null, text: string): string | null 
   return `https://wa.me/${n}?text=${encodeURIComponent(text)}`
 }
 
+// ---- Bulk collection ------------------------------------------------------
+
+export interface ClassDue {
+  student_id: string
+  full_name: string
+  gr_no: string | null
+  roll_no: string | null
+  father_name: string | null
+  phone: string | null
+  family_id: string | null
+  family_head: string | null
+  invoice_id: string | null
+  voucher_code: string | null
+  month_charge: number
+  month_paid: number
+  month_due: number
+  /** Everything the student owes, not just this month. */
+  total_due: number
+  last_paid_at: string | null
+}
+
+/** The whole class and what each child owes — paid ones included, so a clerk
+ *  working down a register can see they have not skipped anybody. */
+export async function getClassDues(
+  sessionId: string, classId: string, sectionId: string | null, periodMonth: string,
+): Promise<ClassDue[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_class_dues', {
+    p_session_id: sessionId, p_class_id: classId,
+    p_section_id: sectionId, p_period_month: periodMonth,
+  })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    ...(r as unknown as ClassDue),
+    month_charge: Number(r.month_charge ?? 0),
+    month_paid: Number(r.month_paid ?? 0),
+    month_due: Number(r.month_due ?? 0),
+    total_due: Number(r.total_due ?? 0),
+  }))
+}
+
+export interface BulkPaymentResult {
+  count: number
+  total: number
+  receipts: { student_id: string; amount: number; receipt_no: number | null }[]
+}
+
+/**
+ * Record many payments as ONE transaction.
+ *
+ * If any row is bad the whole batch is refused and nothing is written — a clerk
+ * who cannot tell which of forty rows went through has no way to recover.
+ */
+export async function recordBulkPayments(
+  items: { student_id: string; amount: number }[],
+  method: string,
+  note?: string,
+  pending = false,
+): Promise<BulkPaymentResult> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_record_bulk_payments', {
+    p_items: items, p_method: method, p_note: note ?? null, p_pending: pending,
+  })
+  if (error) throw new Error(error.message)
+  const d = (data ?? {}) as Record<string, unknown>
+  return {
+    count: Number(d.count ?? 0),
+    total: Number(d.total ?? 0),
+    receipts: ((d.receipts ?? []) as Record<string, unknown>[]).map((r) => ({
+      student_id: String(r.student_id),
+      amount: Number(r.amount ?? 0),
+      receipt_no: r.receipt_no == null ? null : Number(r.receipt_no),
+    })),
+  }
+}
+
+/** Queue one WhatsApp reminder per FAMILY that owes, escalating on repeats. */
+export async function queueClassReminders(
+  sessionId: string, classId: string, sectionId: string | null,
+): Promise<{ queued: number; skipped: number }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_queue_class_reminders', {
+    p_session_id: sessionId, p_class_id: classId, p_section_id: sectionId,
+  })
+  if (error) throw new Error(error.message)
+  const d = (data ?? {}) as Record<string, unknown>
+  return { queued: Number(d.queued ?? 0), skipped: Number(d.skipped ?? 0) }
+}
+
 // ---- Fee operations -------------------------------------------------------
 
 export interface FeeIncrementRow { class: string; fee_head: string; from: number; to: number }

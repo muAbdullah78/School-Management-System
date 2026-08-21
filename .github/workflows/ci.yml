@@ -335,6 +335,15 @@ jobs:
         # holds at every step.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/family_money.sql
 
+      - name: Bulk collection — is a bad batch really all-or-nothing?
+        # The load-bearing assertion: ten good rows and a bad eleventh must
+        # leave NOTHING behind, because a clerk who cannot tell which of forty
+        # rows went through has no way to recover. Also that bulk payments
+        # allocate identically to counter payments (they go through the same
+        # function by design), that receipts stay distinct across a batch, and
+        # that reminders go once per FAMILY and escalate on repeats.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/bulk_fees.sql
+
       - name: Challan — does the printed slip agree with the ledger?
         # A challan is the only artefact a parent can hold up and argue with, so
         # this asserts total_payable == student_balance() exactly, that the two

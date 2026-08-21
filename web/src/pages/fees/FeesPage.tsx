@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { FamilyCollect } from './FamilyCollect'
 import { CollectPayment } from './CollectPayment'
+import { BulkCollect } from './BulkCollect'
 import { GenerateChallans } from './GenerateChallans'
 import { Defaulters } from './Defaulters'
 import { Discounts } from './Discounts'
@@ -12,6 +13,9 @@ import { PendingClearances } from './PendingClearances'
 // correction — but it is no longer the way a fee is normally taken.
 const TABS = [
   { key: 'collect', label: 'Collect' },
+  // The first ten days of a month are a class-at-a-time job, not a
+  // family-at-a-time one: 400 collections used to mean 400 searches.
+  { key: 'bulk', label: 'Bulk collect' },
   { key: 'single', label: 'Single student' },
   { key: 'generate', label: 'Generate Challans' },
   { key: 'discounts', label: 'Discounts' },
@@ -42,6 +46,7 @@ export function FeesPage() {
       </div>
       <div>
         {tab === 'collect' && <FamilyCollect />}
+        {tab === 'bulk' && <BulkCollect />}
         {tab === 'single' && <CollectPayment />}
         {tab === 'generate' && <GenerateChallans />}
         {tab === 'discounts' && <Discounts />}
