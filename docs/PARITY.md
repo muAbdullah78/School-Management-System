@@ -174,6 +174,11 @@ Their **Automation Settings** pattern is worth copying exactly: every event has
 an editable template with `$merge_tags`, a **supported-tags** hint under the
 box, and an **Enabled** toggle so a school can silence any one of them.
 
+**Built** — Settings → Messages (0043). Editable body, clickable merge tags
+drawn from the actual call sites rather than a guess, an Enabled toggle that
+genuinely blocks the message, "Restore original", and a live preview with sample
+values, which theirs does not have.
+
 Their events, mapped to ours (excluded ones dropped):
 
 | Their template | Ours |
@@ -181,7 +186,7 @@ Their events, mapped to ours (excluded ones dropped):
 | Admission SMS | `missing` |
 | Inquiry Add / Inquiry Admit | `missing` (needs enquiries) |
 | Exam Marks / Final Exam Marks | `missing` |
-| First / Second / Third Fee Reminder | `partial` — two templates exist, nothing ever sends them |
+| First / Second / Third Fee Reminder | `have` — two templates, escalating; sent from Bulk collect (0040) |
 | Absent SMS | `missing` |
 | Transfer Student | `missing` (needs campuses) |
 | Fee Payment / Direct Student Payment | `have` — receipt on payment |
@@ -220,18 +225,24 @@ ours does not.
 Ordered by what a school touches most and what breaks worst, not by module
 number.
 
-1. **Parent accounts** — finish making the portal reachable. *(in progress)*
-2. **The fee counter** — two-mode search, today's tiles, Latest Payments always
-   visible, scan-a-voucher.
-3. **Printable fee vouchers** — 3-part bank-payable challan, batch per class.
-4. **Bulk fee payment.**
-5. **A real table component**, then apply it everywhere; kill the 50-row cap.
-6. **Dashboard honesty** — "never billed" must not render as "nothing owed".
+Items 1-6 and 9 are **done** (PR #17). What follows is the remaining work.
+
+1. ~~**Parent accounts** — make the portal reachable.~~ Done (0037).
+   Along the way: `profiles.active` was written by the Settings screen and read
+   by nothing, so "Deactivate" left a dismissed clerk with full access.
+2. ~~**The fee counter**~~ Done (0038).
+3. ~~**Printable fee vouchers**~~ Done (0039) — 3-part, batch per class, reprint.
+4. ~~**Bulk fee payment**~~ Done (0040), with escalating WhatsApp reminders.
+5. ~~**A real table component**~~ Done — applied to Students and Defaulters;
+   the 50-row cap is gone (0041). Still to apply to the other 31 tables.
+6. ~~**Dashboard honesty**~~ Done (0042). It also turned out to be leaking
+   every school's admissions and collections to every other school, plus three
+   more unscoped SECURITY DEFINER functions. A structural CI guard now blocks
+   that class of bug.
 7. **Teacher remarks and a position-holders screen.** The tabulation sheet,
    date sheet and admit cards already exist — verified reachable, not assumed.
 8. **The reporting area** — the eight missing financial reports.
-9. **WhatsApp automation** — templates, merge tags, per-event enable toggles,
-   three escalating fee reminders.
+9. ~~**WhatsApp automation**~~ Done (0043).
 10. **Admission enquiries and requests.**
 11. **Global search, module search, student photos, birthdays.**
 12. **Multi-campus** — last, because it touches every table, and only if a real

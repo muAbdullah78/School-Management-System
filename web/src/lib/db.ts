@@ -2199,6 +2199,77 @@ export function whatsappLink(phone: string | null, text: string): string | null 
   return `https://wa.me/${n}?text=${encodeURIComponent(text)}`
 }
 
+// ---- Message settings (their "Automation Settings") -----------------------
+
+export interface MessageSetting {
+  template_key: string
+  label: string
+  body: string
+  enabled: boolean
+  /** Merge tags this template may use. Comes from SQL because it is a fact
+   *  about the call site — {receipt} only resolves for payment_received. */
+  tags: string[]
+  is_default: boolean
+}
+
+/** What the school currently sends, and what each message may reference. */
+export async function listMessageSettings(): Promise<MessageSetting[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_message_settings')
+  if (error) throw new Error(error.message)
+  return (data ?? []) as MessageSetting[]
+}
+
+/**
+ * Change the wording, or switch a message type off entirely.
+ *
+ * A direct table write rather than an RPC: message_templates already carries an
+ * owner/principal-only write policy, so the database is enforcing this whether
+ * the call comes from here or anywhere else.
+ */
+export async function saveMessageSetting(
+  templateKey: string, patch: { body?: string; enabled?: boolean },
+): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb
+    .from('message_templates')
+    .update(patch)
+    .eq('template_key', templateKey)
+  if (error) throw new Error(error.message)
+}
+
+/** Put one template's original wording back. Returns the restored text. */
+export async function resetMessageTemplate(templateKey: string): Promise<string> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_reset_message_template', {
+    p_template_key: templateKey,
+  })
+  if (error) throw new Error(error.message)
+  return String(data ?? '')
+}
+
+/**
+ * Fill merge tags with sample values so the editor can show what a parent will
+ * actually receive. Mirrors fn__render_template's simple {tag} replacement —
+ * deliberately not a second templating engine, just the same substitution.
+ */
+export function previewMessage(body: string, schoolName: string): string {
+  const sample: Record<string, string> = {
+    parent: 'Muhammad Aslam',
+    children: 'Ahmed, Bilal',
+    school: schoolName,
+    date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+    balance: '4,850',
+    amount: '3,650',
+    receipt: '1042',
+    received_by: 'Basha Salamat',
+  }
+  return Object.entries(sample).reduce(
+    (out, [k, v]) => out.split(`{${k}}`).join(v),
+    body,
+  )
+}
+
 // ---- Bulk collection ------------------------------------------------------
 
 export interface ClassDue {

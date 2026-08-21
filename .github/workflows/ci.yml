@@ -335,6 +335,15 @@ jobs:
         # holds at every step.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/family_money.sql
 
+      - name: Message settings — does switching a message off actually stop it?
+        # message_templates has carried an `enabled` flag since 0034 that
+        # nothing in the app could set. A toggle that only greys out a checkbox
+        # while parents keep receiving the message is worse than no toggle, so
+        # this asserts a disabled template writes NO outbox row — including
+        # through the bulk "WhatsApp everyone who owes" path, which loops and
+        # swallows per-family errors.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/message_settings.sql
+
       - name: Dashboard — is every figure this school's own?
         # fn_dashboard_summary is SECURITY DEFINER, so RLS does not apply to it,
         # and three of its queries had NO school filter: "New this month",
