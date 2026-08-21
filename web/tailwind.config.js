@@ -25,18 +25,32 @@ export default {
         money: {
           50: '#ecfdf5',
           100: '#d1fae5',
+          // 200/300/800 were missing while several screens already used
+          // border-money-200, border-money-300 and text-money-800 — Tailwind
+          // emits nothing for an undefined shade, so those borders and that
+          // text were simply invisible. Ramp completed rather than rewriting
+          // the call sites to the shades that happened to exist.
+          200: '#a7f3d0',
+          300: '#6ee7b7',
           500: '#10b981',
           600: '#059669',
           700: '#047857',
+          800: '#065f46',
           900: '#064e3b',
         },
         // Money owed / attention needed — not an error, just outstanding.
         due: {
           50: '#fffbeb',
           100: '#fef3c7',
+          200: '#fde68a',
+          300: '#fcd34d',
           500: '#f59e0b',
           600: '#d97706',
           700: '#b45309',
+          // text-due-800 was already used by the till, the accounts screen and
+          // the parent portal while this shade did not exist, so that text was
+          // inheriting its colour instead of reading as a warning.
+          800: '#92400e',
           900: '#78350f',
         },
         // Genuinely wrong: overdue, failed, destructive.

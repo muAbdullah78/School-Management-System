@@ -335,6 +335,17 @@ jobs:
         # holds at every step.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/family_money.sql
 
+      - name: Student list — does the fast balance equal the real one?
+        # fn_student_list recomputes each balance SET-BASED rather than calling
+        # student_balance() per row, because per-row is 800 correlated
+        # subqueries on a real school. That is only acceptable if the two agree
+        # exactly, so assertion 1 compares them row by row over a fixture with
+        # charges, a discount, a fine, an adjustment, a part payment and a
+        # reversal. Also: total_count is the whole set not the page, paging
+        # loses nobody, and a typed "%" is a character rather than a wildcard
+        # that returns the entire school.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/student_list.sql
+
       - name: Bulk collection — is a bad batch really all-or-nothing?
         # The load-bearing assertion: ten good rows and a bad eleventh must
         # leave NOTHING behind, because a clerk who cannot tell which of forty

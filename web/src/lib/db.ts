@@ -709,12 +709,72 @@ export async function importStaff(
   return data as ImportResult
 }
 
+/**
+ * A short list of students for a picker. Capped at 50 BY DESIGN — it feeds
+ * type-ahead boxes, not the roster.
+ *
+ * For the roster use listStudentPage(), which pages properly and reports the
+ * real total. This function's cap was the roster's bug: an 800-student school
+ * saw fifty names and was never told the rest existed.
+ */
 export async function listStudents(term: string): Promise<StudentRow[]> {
   const sb = requireSupabase()
   const t = term.trim()
   let q = sb.from('students').select('id, gr_no, full_name, father_name').is('deleted_at', null)
   if (t) { const like = `%${t.replace(/[%,()]/g, ' ')}%`; q = q.or(`full_name.ilike.${like},gr_no.ilike.${like}`) }
   return unwrap(await q.order('full_name').limit(50))
+}
+
+export interface StudentListRow {
+  student_id: string
+  full_name: string
+  gr_no: string | null
+  admission_no: string | null
+  father_name: string | null
+  gender: string | null
+  phone: string | null
+  status: string
+  class_name: string | null
+  section_name: string | null
+  roll_no: string | null
+  family_id: string | null
+  /** Everything this student owes. Computed set-based in SQL and asserted equal
+   *  to student_balance() — see supabase/tests/student_list.sql. */
+  balance: number
+}
+
+export interface StudentListPage { rows: StudentListRow[]; total: number }
+
+/** One page of the roster, with class, section, roll and balance, and the real
+ *  total so the UI can say "showing 50 of 812" instead of quietly truncating. */
+export async function listStudentPage(opts: {
+  term?: string
+  classId?: string | null
+  sectionId?: string | null
+  includeInactive?: boolean
+  limit?: number
+  offset?: number
+}): Promise<StudentListPage> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_student_list', {
+    p_term: opts.term?.trim() || null,
+    p_class_id: opts.classId || null,
+    p_section_id: opts.sectionId || null,
+    p_include_inactive: opts.includeInactive ?? false,
+    p_limit: opts.limit ?? 50,
+    p_offset: opts.offset ?? 0,
+  })
+  if (error) throw new Error(error.message)
+  const raw = (data ?? []) as Record<string, unknown>[]
+  return {
+    // total_count is repeated on every row (one aggregate, cross-joined), so an
+    // empty page legitimately means a total of zero.
+    total: raw.length > 0 ? Number(raw[0].total_count ?? 0) : 0,
+    rows: raw.map((r) => ({
+      ...(r as unknown as StudentListRow),
+      balance: Number(r.balance ?? 0),
+    })),
+  }
 }
 
 /** Detect likely siblings: other (non-deleted) students with the same father's
