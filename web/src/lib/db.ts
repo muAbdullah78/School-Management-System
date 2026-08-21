@@ -1758,6 +1758,21 @@ export interface DashboardSummary {
   collected_month: number | null
   outstanding: number | null
   defaulters: number | null
+  /**
+   * How many students actually have a CHARGING challan this month.
+   *
+   * Exists because "outstanding: 0" is ambiguous: it means both "everyone has
+   * paid" and "nobody was ever billed", and the second was being rendered as
+   * good news in green. Zero-value challans — which a class with no fee
+   * structure produces — do not count.
+   */
+  billed_students_month: number | null
+  /** Classes with active students and no fee structure: the root cause of a
+   *  Rs 0 challan. */
+  classes_without_fee: number | null
+  /** False when no current academic session is set, which otherwise makes every
+   *  session-scoped figure silently zero. */
+  session_set: boolean
 }
 
 export async function getDashboardSummary(): Promise<DashboardSummary> {

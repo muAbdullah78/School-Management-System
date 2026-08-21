@@ -335,6 +335,26 @@ jobs:
         # holds at every step.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/family_money.sql
 
+      - name: Dashboard — is every figure this school's own?
+        # fn_dashboard_summary is SECURITY DEFINER, so RLS does not apply to it,
+        # and three of its queries had NO school filter: "New this month",
+        # "Collected today" and "Collected this month" were summed across every
+        # school in the database. A school with one student and no payments was
+        # shown 271 admissions and Rs 24,577 collected.
+        #
+        # tenant_isolation.sql could not catch this — it tests table access, and
+        # the leak was inside a function where policies are never consulted. So
+        # this suite loads school B with much larger numbers and asserts every
+        # figure school A reports is A's own. Also covers "never billed" not
+        # rendering as "nothing owed", and a Rs 0 challan not counting as billed.
+        #
+        # It also carries the STRUCTURAL guard (assertion 20): every SECURITY
+        # DEFINER function that reads a school_id-bearing table must scope
+        # itself, with reviewed exceptions listed in the file. That guard is
+        # what turns "we audited them once" into something CI enforces — and it
+        # was verified to fail on a deliberately planted unscoped function.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/dashboard.sql
+
       - name: Student list — does the fast balance equal the real one?
         # fn_student_list recomputes each balance SET-BASED rather than calling
         # student_balance() per row, because per-row is 800 correlated
