@@ -72,7 +72,10 @@ begin
     (v_par2,  'PA Mother',  'parent',      v_school),
     (v_oown,  'Other Owner','owner',       v_other),
     (v_opar,  'Other Dad',  'parent',      v_other)
-    on conflict (id) do update set school_id = excluded.school_id, role = excluded.role;
+    on conflict (id) do update set school_id = excluded.school_id,
+                                   role      = excluded.role,
+                                   full_name = excluded.full_name,
+                                   active    = true;
   alter table public.profiles enable trigger user;
 
   perform set_config('test.uid', v_owner::text, false);

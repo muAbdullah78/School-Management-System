@@ -2144,6 +2144,74 @@ export async function feeIncrement(
   return data as FeeIncrementResult
 }
 
+export interface CounterSummary {
+  unpaid_invoices: number
+  income_today: number
+  expense_today: number
+  balance_today: number
+  pending_count: number
+  pending_amount: number
+}
+
+/**
+ * The four figures the fee counter opens on. One round trip on purpose — the
+ * clerk reloads this screen all morning and the numbers have to agree with each
+ * other, so they are computed together.
+ */
+export async function getCounterSummary(): Promise<CounterSummary> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_counter_summary')
+  if (error) throw new Error(error.message)
+  const d = (data ?? {}) as Record<string, unknown>
+  return {
+    unpaid_invoices: Number(d.unpaid_invoices ?? 0),
+    income_today: Number(d.income_today ?? 0),
+    expense_today: Number(d.expense_today ?? 0),
+    balance_today: Number(d.balance_today ?? 0),
+    pending_count: Number(d.pending_count ?? 0),
+    pending_amount: Number(d.pending_amount ?? 0),
+  }
+}
+
+export interface RecentPayment {
+  payment_id: string
+  receipt_no: number | null
+  paid_at: string
+  student_id: string | null
+  student_name: string
+  gr_no: string | null
+  family_id: string | null
+  parent_name: string | null
+  class_name: string | null
+  section_name: string | null
+  /** Which months this receipt settled. Null for money held as family credit. */
+  paid_for: string | null
+  amount: number
+  method: string
+  /** Fine on the challans this receipt paid — not a share apportioned to it. */
+  late_fee: number
+  /** Discount on those same challans, same caveat. */
+  discount: number
+  note: string | null
+  status: string
+  received_by: string
+  is_reversal: boolean
+}
+
+/** The day's receipts, newest first. Shown before anyone searches for anything. */
+export async function listRecentPayments(limit = 25): Promise<RecentPayment[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_recent_payments', { p_limit: limit })
+  if (error) throw new Error(error.message)
+  return (data ?? []).map((r: Record<string, unknown>) => ({
+    ...(r as unknown as RecentPayment),
+    receipt_no: r.receipt_no == null ? null : Number(r.receipt_no),
+    amount: Number(r.amount ?? 0),
+    late_fee: Number(r.late_fee ?? 0),
+    discount: Number(r.discount ?? 0),
+  }))
+}
+
 export async function findByVoucher(code: string) {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_find_by_voucher', { p_code: code })

@@ -335,6 +335,15 @@ jobs:
         # holds at every step.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/family_money.sql
 
+      - name: Fee counter — are the figures on the busiest screen right?
+        # The counter opens on four numbers and the day's receipts. Asserts a
+        # pending bank transfer never inflates "collected today" (the drawer
+        # would look short at closing), that pending money is still reported
+        # rather than hidden, that the unpaid-challan count is derived from
+        # allocations and falls when one is settled, and that neither read
+        # leaks across schools or is callable by a parent.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/counter.sql
+
       - name: Parent access — can a parent ever reach the portal?
         # portal.sql's fourteen assertions all passed while the portal was
         # unreachable, because its fixture set profiles.family_id by hand.
