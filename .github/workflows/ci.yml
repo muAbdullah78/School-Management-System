@@ -334,3 +334,15 @@ jobs:
         #   family_outstanding = sum(student_balance) - family_credit
         # holds at every step.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/family_money.sql
+
+      - name: Family linkage — do siblings actually share a family?
+        # The suite above passed for weeks while family billing was completely
+        # broken in production, because it built its families with direct
+        # INSERTs. Nothing in the app does that: admissions go through
+        # fn_admit_student, which never set family_id, so every real student got
+        # a family to themselves and no payment ever spanned siblings.
+        #
+        # This suite admits students the way the app does and never inserts a
+        # family or a student directly. If it is ever "simplified" into building
+        # its own fixtures, it stops testing anything.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/family_linkage.sql

@@ -81,3 +81,36 @@ describe('missingRequiredColumns', () => {
     expect(missingRequiredColumns(['Section', 'Roll'])).toEqual(['full_name', 'class'])
   })
 })
+
+describe("the father's CNIC column", () => {
+  // Migration 0036: this value is what puts siblings in one family, so where it
+  // lands decides whether an imported parent gets one challan or three.
+  it("maps a bare CNIC heading to the father, not to the child's B-Form", () => {
+    expect(canonicalColumn('CNIC')).toBe('father_cnic')
+    expect(canonicalColumn('cnic no')).toBe('father_cnic')
+    expect(canonicalColumn("Father's CNIC")).toBe('father_cnic')
+    expect(canonicalColumn('Guardian CNIC')).toBe('father_cnic')
+    expect(canonicalColumn('Parent CNIC')).toBe('father_cnic')
+  })
+
+  it('still maps B-Form headings to b_form', () => {
+    expect(canonicalColumn('B-Form No')).toBe('b_form')
+    expect(canonicalColumn('bform')).toBe('b_form')
+    expect(canonicalColumn('Bay Form')).toBe('b_form')
+  })
+
+  it("routes an explicit student CNIC to the child's own field", () => {
+    expect(canonicalColumn('Student CNIC')).toBe('b_form')
+    expect(canonicalColumn('Child CNIC')).toBe('b_form')
+  })
+
+  it('carries the value through a mapped row so the admit RPC receives it', () => {
+    expect(mapImportRow({ Name: 'Ahmed', Grade: '1', CNIC: '35201-1234567-1' })).toEqual({
+      full_name: 'Ahmed', class: '1', father_cnic: '35201-1234567-1',
+    })
+  })
+
+  it('is optional — a register with no CNIC column still imports', () => {
+    expect(missingRequiredColumns(['Student Name', 'Grade'])).toEqual([])
+  })
+})

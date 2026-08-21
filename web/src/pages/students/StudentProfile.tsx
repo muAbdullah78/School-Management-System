@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getStudent, getStudentEnrollments, getGuardians, updateStudent, setStudentStatus,
   getStudentBalance, getStudentInvoices, getStudentPayments, attendanceSummary,
-  getSiblings, getStudentLinks, removeStudentLink,
+  getSiblings, getStudentLinks, removeStudentLink, studentJoinFamily, getStudentFamilyId,
   getStudentMonthlyFee, getEnrollmentDiscounts, addDiscount, setDiscountStatus,
   recordPayment, billStudentMonth, deferInvoice, undoDefer, addAdjustment,
   getStudentMonthTests, getStudentMonthAttendance,
@@ -195,6 +195,25 @@ function Overview({
     onSuccess: () => qc.invalidateQueries({ queryKey: ['studentLinks', student.id] }),
   })
 
+  // Which family this student bills under. Needed to tell a sibling who shares
+  // the family from one who only shares a father's name — before migration 0036
+  // every child had a family to themselves, so "linked" meant nothing to the
+  // money, and any student admitted before then is still in that state.
+  const myFamily = useQuery({
+    queryKey: ['studentFamily', student.id],
+    queryFn: () => getStudentFamilyId(student.id),
+  })
+
+  const join = useMutation({
+    mutationFn: (siblingId: string) => studentJoinFamily(student.id, siblingId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['studentFamily', student.id] })
+      qc.invalidateQueries({ queryKey: ['studentLinks', student.id] })
+      qc.invalidateQueries({ queryKey: ['siblings', student.id] })
+      qc.invalidateQueries({ queryKey: ['studentFees', student.id] })
+    },
+  })
+
   const linkedIds = new Set((links.data ?? []).map((l) => l.student_id))
   const inferred = (siblings.data ?? []).filter((s) => !linkedIds.has(s.id))
 
@@ -294,12 +313,17 @@ function Overview({
           ) : (
             <ul className="mt-2 space-y-1.5 text-sm">
               {links.data?.map((l) => (
-                <li key={l.link_id} className="flex items-center justify-between gap-2">
-                  <button onClick={() => onOpen?.(l.student_id)} disabled={!onOpen}
-                    className="text-left text-slate-700 hover:text-brand-700 hover:underline disabled:cursor-default disabled:no-underline">
-                    {l.full_name}{l.gr_no ? ` · ${l.gr_no}` : ''}{l.class_name ? ` · ${l.class_name}` : ''}
-                    {l.relation ? <span className="text-slate-400"> · {l.relation}</span> : ''}
-                  </button>
+                <li key={l.link_id} className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <button onClick={() => onOpen?.(l.student_id)} disabled={!onOpen}
+                      className="text-left text-slate-700 hover:text-brand-700 hover:underline disabled:cursor-default disabled:no-underline">
+                      {l.full_name}{l.gr_no ? ` · ${l.gr_no}` : ''}{l.class_name ? ` · ${l.class_name}` : ''}
+                      {l.relation ? <span className="text-slate-400"> · {l.relation}</span> : ''}
+                    </button>
+                    <FamilyState mine={myFamily.data} theirs={l.family_id} canEdit={canEdit}
+                      pending={join.isPending}
+                      onJoin={() => join.mutate(l.student_id)} />
+                  </div>
                   {canEdit && (
                     <button onClick={() => unlink.mutate(l.link_id)} className="text-xs text-slate-400 hover:text-red-600">✕</button>
                   )}
@@ -314,9 +338,15 @@ function Overview({
                     className="text-left text-slate-500 hover:text-brand-700 hover:underline disabled:cursor-default disabled:no-underline">
                     {sib.full_name}{sib.gr_no ? ` · ${sib.gr_no}` : ''}
                   </button>
+                  <FamilyState mine={myFamily.data} theirs={sib.family_id} canEdit={canEdit}
+                    pending={join.isPending}
+                    onJoin={() => join.mutate(sib.id)} />
                 </li>
               ))}
             </ul>
+          )}
+          {join.isError && (
+            <p className="mt-2 text-xs text-red-600">{(join.error as Error).message}</p>
           )}
         </div>
       </div>
@@ -1011,5 +1041,46 @@ function Info({ label, value }: { label: string; value: string | null }) {
       <dt className="text-slate-500">{label}</dt>
       <dd className="text-right text-slate-700">{value || '—'}</dd>
     </div>
+  )
+}
+
+/**
+ * Says out loud whether two children actually bill together.
+ *
+ * This exists because the old panel showed "Qabi e Momin · Brother" and stopped
+ * there, which read as "these two are one family" while the billing engine had
+ * them completely separate — the fees never pooled and nobody could tell from
+ * looking. The relationship and the money are two different facts, so the panel
+ * now states the money one, and offers the fix when they disagree.
+ */
+function FamilyState({ mine, theirs, canEdit, pending, onJoin }: {
+  mine: string | null | undefined
+  theirs: string | null
+  canEdit: boolean
+  pending: boolean
+  onJoin: () => void
+}) {
+  // Still loading, or a student with no family at all: say nothing rather than
+  // claim something false.
+  if (!mine || !theirs) return null
+
+  if (mine === theirs) {
+    return (
+      <span className="mt-0.5 block text-xs text-money-700">
+        ✓ Fees collect together
+      </span>
+    )
+  }
+
+  return (
+    <span className="mt-0.5 flex flex-wrap items-center gap-2 text-xs">
+      <span className="text-amber-700">Bills separately</span>
+      {canEdit && (
+        <button type="button" onClick={onJoin} disabled={pending}
+          className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50">
+          {pending ? 'Joining…' : 'Put in one family'}
+        </button>
+      )}
+    </span>
   )
 }
