@@ -335,6 +335,18 @@ jobs:
         # holds at every step.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/family_money.sql
 
+      - name: RPC contract — do the app's calls match the database?
+        # The seam nothing else checks. `sb.rpc('fn_x', {...})` is an untyped
+        # string and an untyped object, so a renamed function or a renamed
+        # parameter typechecks, builds, deploys, and fails the first time a
+        # school opens the screen. Both of these actually shipped and were found
+        # by hand: publishResults passed `p_term_id` where the function takes
+        # `p_exam_term_id`, and a call had fn_record_expense's arguments in the
+        # wrong order.
+        #
+        # Verified to fail on both faults deliberately re-introduced.
+        run: ./supabase/check-rpc-contract.sh
+
       - name: Reports — does the statement agree with the Accounts screen?
         # Assertion 6 is the point of this suite: the debit-and-credit statement
         # must net to the same profit fn_finance_summary reports for the same
