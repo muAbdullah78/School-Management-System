@@ -14,7 +14,7 @@ const LABEL = 'text-sm text-slate-600'
 
 const BLANK = {
   full_name: '', father_name: '', mother_name: '', gender: '', dob: '', b_form: '',
-  phone: '', whatsapp: '', address: '',
+  father_cnic: '', phone: '', whatsapp: '', address: '',
   class_id: '', section_id: '', roll_no: '', gr_no: '', admission_date: todayISO(), notes: '',
 }
 
@@ -72,6 +72,7 @@ export function AdmissionsPage() {
       const input: AdmitInput = {
         full_name: form.full_name.trim(),
         father_name: form.father_name || undefined,
+        father_cnic: form.father_cnic || undefined,
         mother_name: form.mother_name || undefined,
         gender: form.gender || undefined,
         dob: form.dob || undefined,
@@ -211,6 +212,18 @@ export function AdmissionsPage() {
 
           {/* Contact */}
           <Section title="Parent / guardian contact">
+            <label className="block sm:col-span-2">
+              <span className={LABEL}>
+                Father&rsquo;s CNIC <span className="font-normal text-slate-400">(joins brothers and sisters together)</span>
+              </span>
+              <input value={form.father_cnic} onChange={(e) => set('father_cnic', e.target.value)}
+                className={FIELD} placeholder="35201-1234567-1" inputMode="numeric" />
+              <span className="mt-1 block text-xs text-slate-500">
+                Enter the same CNIC for every child of one father and their fees collect together as one
+                family &mdash; one payment, one receipt. Leave it blank if the parent does not have their card
+                with them; you can still tick the sibling box below, or fix it later from the student&rsquo;s profile.
+              </span>
+            </label>
             <label className="block">
               <span className={LABEL}>Phone</span>
               <input value={form.phone} onChange={(e) => set('phone', e.target.value)} className={FIELD} placeholder="03xx-xxxxxxx" />
@@ -305,7 +318,8 @@ export function AdmissionsPage() {
                   </ul>
                 )}
                 <p className="mt-2 text-xs text-slate-400">
-                  Links this admission to existing students — powers the family view and the sibling discount.
+                  Puts this child in the same family as the ones you pick, so their fees collect together.
+                  Use this when you do not have the father&rsquo;s CNIC to hand &mdash; it does the same job.
                 </p>
               </div>
             )}

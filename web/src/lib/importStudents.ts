@@ -9,6 +9,7 @@
 
 export const STUDENT_IMPORT_COLUMNS = [
   'full_name', 'father_name', 'mother_name', 'gender', 'dob', 'b_form',
+  'father_cnic',
   'phone', 'whatsapp', 'address',
   'class', 'section', 'roll_no', 'gr_no', 'admission_no', 'admission_date',
   'guardian_name', 'guardian_relation', 'guardian_phone', 'guardian_whatsapp',
@@ -29,7 +30,22 @@ const ALIASES: Record<string, StudentImportColumn> = {
   gender: 'gender', sex: 'gender',
   dob: 'dob', date_of_birth: 'dob', birth_date: 'dob', birthday: 'dob',
   b_form: 'b_form', bform: 'b_form', b_form_no: 'b_form', bform_no: 'b_form',
-  b_form_number: 'b_form', cnic: 'b_form', bay_form: 'b_form',
+  b_form_number: 'b_form', bay_form: 'b_form', child_cnic: 'b_form',
+  student_cnic: 'b_form',
+
+  // A column headed just "CNIC" in a Pakistani school register is the PARENT's,
+  // not the child's — children carry a B-Form, adults carry a CNIC, and B-Form
+  // columns are labelled as such (handled above). This used to map to b_form,
+  // which was wrong twice over: it filed an adult's ID as the child's, and it
+  // discarded the one value that puts siblings in a single family for billing.
+  //
+  // If a register really does mean the student's own CNIC (an over-18 in
+  // matric), the cost of this choice is nil: their CNIC is unique to them, so
+  // they land in a family of their own exactly as they would have anyway.
+  cnic: 'father_cnic', cnic_no: 'father_cnic', cnic_number: 'father_cnic',
+  father_cnic: 'father_cnic', fathers_cnic: 'father_cnic',
+  father_cnic_no: 'father_cnic', guardian_cnic: 'father_cnic',
+  parent_cnic: 'father_cnic', father_nic: 'father_cnic', nic: 'father_cnic',
   phone: 'phone', mobile: 'phone', contact: 'phone', phone_no: 'phone',
   mobile_no: 'phone', contact_no: 'phone', cell: 'phone',
   whatsapp: 'whatsapp', whatsapp_no: 'whatsapp', whatsapp_number: 'whatsapp', wa: 'whatsapp',

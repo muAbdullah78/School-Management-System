@@ -550,6 +550,13 @@ export interface AdmitInput {
   full_name: string
   father_name?: string; mother_name?: string; b_form?: string; dob?: string; gender?: string
   address?: string; phone?: string; whatsapp?: string
+  /**
+   * The father's (or guardian's) CNIC. This is what puts siblings in the SAME
+   * family, so a single payment covers all of them — see migration 0036. It is
+   * optional on purpose: a walk-in without their card must still be admitted,
+   * and the sibling checkbox below covers that case.
+   */
+  father_cnic?: string
   admission_no?: string; admission_date?: string; notes?: string
   session_id: string; class_id: string; section_id?: string | null; roll_no?: string; gr_no?: string
   guardian?: { name: string; relation?: string; phone?: string; whatsapp?: string }
@@ -558,6 +565,7 @@ export interface AdmitInput {
 }
 export interface AdmitResult {
   student_id: string; enrollment_id: string; gr_no: string; roll_no: string
+  family_id: string | null
   admission_fee_amount: number | null; admission_receipt_no: number | null
 }
 
@@ -581,6 +589,37 @@ export async function admitStudent(input: AdmitInput): Promise<AdmitResult> {
   const { data, error } = await sb.rpc('fn_admit_student', { p: input })
   if (error) throw new Error(error.message)
   return data as AdmitResult
+}
+
+/**
+ * Move a student into a sibling's family, merging the two.
+ *
+ * The repair path for the 0036 bug. No automatic rule catches every case — a
+ * father with two phone numbers, a name spelled two ways, or anything admitted
+ * before 0036 existed — so the counter needs a way to fix it without SQL.
+ * Returns the surviving family id.
+ */
+export async function studentJoinFamily(studentId: string, siblingStudentId: string): Promise<string> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_student_join_family', {
+    p_student_id: studentId, p_sibling_student_id: siblingStudentId,
+  })
+  if (error) throw new Error(error.message)
+  return data as string
+}
+
+/**
+ * Sweep the whole school for siblings sitting in separate families and merge
+ * them: explicit sibling links first, then same father name + same phone.
+ *
+ * Mainly for after a CSV import, which has no father-CNIC column and so leaves
+ * every imported sibling apart. Returns how many families were merged.
+ */
+export async function repairFamilies(): Promise<number> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_repair_families')
+  if (error) throw new Error(error.message)
+  return (data as number) ?? 0
 }
 
 // ---- Bulk import (onboarding a paper register) ----
@@ -680,16 +719,21 @@ export async function listStudents(term: string): Promise<StudentRow[]> {
 
 /** Detect likely siblings: other (non-deleted) students with the same father's
  *  name. A pragmatic family view without a schema-level family link. */
-export async function getSiblings(studentId: string): Promise<StudentRow[]> {
+export interface SiblingRow extends StudentRow { family_id: string | null }
+
+export async function getSiblings(studentId: string): Promise<SiblingRow[]> {
   const sb = requireSupabase()
   const me = unwrap<{ father_name: string | null }>(
     await sb.from('students').select('father_name').eq('id', studentId).single(),
   )
   const father = (me.father_name ?? '').trim()
   if (!father) return []
+  // family_id comes back so the profile can say whether these children actually
+  // bill together. Sharing a father's name and sharing a FAMILY are different
+  // things, and conflating them is exactly the bug 0036 fixed.
   return unwrap(
     await sb.from('students')
-      .select('id, gr_no, full_name, father_name')
+      .select('id, gr_no, full_name, father_name, family_id')
       .neq('id', studentId).ilike('father_name', father).is('deleted_at', null)
       .order('full_name').limit(20),
   )
@@ -699,6 +743,9 @@ export async function getSiblings(studentId: string): Promise<StudentRow[]> {
 export interface LinkedStudent {
   link_id: string; student_id: string; full_name: string; gr_no: string | null
   relation: string | null; class_name: string | null
+  /** The linked student's family. Compare with your own: equal means their fees
+   *  collect together, different means the link is only a label. */
+  family_id: string | null
 }
 
 /** Explicit family links for a student, queried in both directions (one row per
@@ -707,7 +754,7 @@ export async function getStudentLinks(studentId: string): Promise<LinkedStudent[
   const sb = requireSupabase()
   const rows = unwrap<Record<string, any>[]>(
     await sb.from('student_links')
-      .select('id, relation, student_id, related_student_id, a:students!student_links_student_id_fkey(full_name, gr_no), b:students!student_links_related_student_id_fkey(full_name, gr_no)')
+      .select('id, relation, student_id, related_student_id, a:students!student_links_student_id_fkey(full_name, gr_no, family_id), b:students!student_links_related_student_id_fkey(full_name, gr_no, family_id)')
       .or(`student_id.eq.${studentId},related_student_id.eq.${studentId}`),
   )
   const out: LinkedStudent[] = rows.map((r) => {
@@ -717,6 +764,7 @@ export async function getStudentLinks(studentId: string): Promise<LinkedStudent[
     return {
       link_id: r.id, student_id: otherId, full_name: other?.full_name ?? '—',
       gr_no: other?.gr_no ?? null, relation: r.relation ?? null, class_name: null,
+      family_id: other?.family_id ?? null,
     }
   })
   // attach current class (best-effort)

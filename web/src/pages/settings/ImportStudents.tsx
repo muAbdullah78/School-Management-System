@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { getCurrentSession, importStudents, type ImportResult } from '@/lib/db'
+import { getCurrentSession, importStudents, repairFamilies, type ImportResult } from '@/lib/db'
 import { parseCSVToObjects, toCSV, downloadCSV } from '@/lib/csv'
 import {
   STUDENT_IMPORT_COLUMNS, mapImportRows, canonicalColumn, missingRequiredColumns,
@@ -76,6 +76,12 @@ export function ImportStudents() {
           <li>Only <span className="font-medium">Full name</span> and <span className="font-medium">Class</span> are required. Everything else is optional.</li>
           <li>The <span className="font-medium">Class</span> and <span className="font-medium">Section</span> must already exist (create them under <span className="font-medium">Classes &amp; Sections</span> first). They’re matched by name.</li>
           <li>Leave <span className="font-medium">GR No</span> blank to auto-assign gapless GR numbers; supply your own to keep existing ones.</li>
+          <li>
+            Include a <span className="font-medium">Father CNIC</span> column if your register has one. Children
+            sharing a CNIC are put in one family, so the parent gets a single challan instead of one per child.
+            A column headed just <span className="font-medium">CNIC</span> is read as the father’s — children are
+            identified by B-Form.
+          </li>
           <li>Always <span className="font-medium">Validate</span> first — it checks every row and changes nothing.</li>
         </ul>
         <button onClick={downloadTemplate}
@@ -159,6 +165,56 @@ export function ImportStudents() {
           footer="Tip: re-uploading the same file is safe for rows that carry a GR No or Admission No — those are skipped as duplicates. Rows without either identifier can’t be de-duplicated, so import a file once."
         />
       )}
+
+      <JoinSiblings />
+    </div>
+  )
+}
+
+/**
+ * After an import, put brothers and sisters back together.
+ *
+ * A spreadsheet from a paper register has no father-CNIC column, so every
+ * imported child arrives in a family of its own and their fees do not pool —
+ * the parent gets one challan per child instead of one for the family. This
+ * sweeps the school for siblings sitting apart and merges them: explicit
+ * sibling links first, then same father's name AND same phone number.
+ *
+ * Deliberately a button rather than something that runs on import: merging
+ * families changes how money is collected, so it is the school's decision and
+ * it should be visible when it happens.
+ */
+function JoinSiblings() {
+  const repair = useMutation({ mutationFn: repairFamilies })
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <h3 className="text-sm font-semibold text-slate-800">Join brothers and sisters after an import</h3>
+      <p className="mt-1 max-w-2xl text-sm text-slate-600">
+        Imported students start in a family of their own, so a parent with three children here would get three
+        separate challans. This finds children who belong together and merges them, so one payment covers the
+        family.
+      </p>
+      <p className="mt-2 max-w-2xl text-xs text-slate-500">
+        Two children are merged when the admission form linked them as siblings, or when they share{' '}
+        <strong>both</strong> the father&rsquo;s name and the phone number. A shared name alone is never enough —
+        too many fathers in Pakistan are called the same thing. Anything it misses can be fixed on the
+        student&rsquo;s own profile, under Siblings&nbsp;/&nbsp;family.
+      </p>
+
+      <button type="button" onClick={() => repair.mutate()} disabled={repair.isPending}
+        className="mt-3 rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
+        {repair.isPending ? 'Checking…' : 'Find and join siblings'}
+      </button>
+
+      {repair.isSuccess && (
+        <p className="mt-2 text-sm text-money-700">
+          {repair.data === 0
+            ? 'Nothing to join — every family is already together.'
+            : `Joined ${repair.data} ${repair.data === 1 ? 'family' : 'families'}. Their fees now collect together.`}
+        </p>
+      )}
+      {repair.isError && <p className="mt-2 text-sm text-red-600">{(repair.error as Error).message}</p>}
     </div>
   )
 }
