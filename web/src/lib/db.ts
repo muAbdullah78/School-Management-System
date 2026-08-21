@@ -2212,6 +2212,93 @@ export async function listRecentPayments(limit = 25): Promise<RecentPayment[]> {
   }))
 }
 
+export interface ChallanLine { description: string; amount: number; is_discount: boolean }
+
+export interface Challan {
+  invoice_id: string
+  voucher_code: string | null
+  status: string
+  period_month: string | null
+  period_label: string
+  due_date: string | null
+  student_id: string
+  student_name: string
+  gr_no: string | null
+  roll_no: string | null
+  father_name: string | null
+  family_head: string | null
+  family_cnic: string | null
+  phone: string | null
+  class_name: string | null
+  section_name: string | null
+  lines: ChallanLine[]
+  fine: number
+  this_month: number
+  already_paid: number
+  this_month_due: number
+  /** Computed live, not the generation-time snapshot — see migration 0039. */
+  previous_dues: number
+  /** Equals student_balance(). The paper and the ledger are the same number. */
+  total_payable: number
+  arrears_snapshot_at_generation: number
+}
+
+function toChallan(raw: Record<string, unknown>): Challan {
+  const num = (v: unknown) => Number(v ?? 0)
+  return {
+    ...(raw as unknown as Challan),
+    lines: ((raw.lines ?? []) as Record<string, unknown>[]).map((l) => ({
+      description: String(l.description ?? ''),
+      amount: num(l.amount),
+      is_discount: !!l.is_discount,
+    })),
+    fine: num(raw.fine),
+    this_month: num(raw.this_month),
+    already_paid: num(raw.already_paid),
+    this_month_due: num(raw.this_month_due),
+    previous_dues: num(raw.previous_dues),
+    total_payable: num(raw.total_payable),
+    arrears_snapshot_at_generation: num(raw.arrears_snapshot_at_generation),
+  }
+}
+
+/** One challan, everything the paper needs. Reprintable at any time. */
+export async function getChallan(invoiceId: string): Promise<Challan> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_challan', { p_invoice_id: invoiceId })
+  if (error) throw new Error(error.message)
+  return toChallan((data ?? {}) as Record<string, unknown>)
+}
+
+/** A whole class's challans for one month, in roll-number order. */
+export async function getClassChallans(
+  sessionId: string, classId: string, sectionId: string | null, periodMonth: string,
+): Promise<Challan[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_challans_for_class', {
+    p_session_id: sessionId, p_class_id: classId,
+    p_section_id: sectionId, p_period_month: periodMonth,
+  })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, unknown>[]).map(toChallan)
+}
+
+export interface ChallanMonth { period_month: string; challans: number; unpaid: number }
+
+/** Which months actually have challans, so the print screen offers real choices. */
+export async function listChallanMonths(sessionId: string, classId: string): Promise<ChallanMonth[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_challan_months', {
+    p_session_id: sessionId, p_class_id: classId,
+  })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    period_month: String(r.period_month),
+    challans: Number(r.challans ?? 0),
+    unpaid: Number(r.unpaid ?? 0),
+  }))
+}
+
 export async function findByVoucher(code: string) {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_find_by_voucher', { p_code: code })

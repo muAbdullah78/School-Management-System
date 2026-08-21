@@ -335,6 +335,15 @@ jobs:
         # holds at every step.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/family_money.sql
 
+      - name: Challan — does the printed slip agree with the ledger?
+        # A challan is the only artefact a parent can hold up and argue with, so
+        # this asserts total_payable == student_balance() exactly, that the two
+        # halves a parent reads add up to it, that previous dues are computed
+        # live rather than from the generation-time snapshot (which would demand
+        # money already paid), that void challans never print, and that the
+        # batch is roll-ordered numerically and does not leak another school.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/challan.sql
+
       - name: Fee counter — are the figures on the busiest screen right?
         # The counter opens on four numbers and the day's receipts. Asserts a
         # pending bank transfer never inflates "collected today" (the drawer

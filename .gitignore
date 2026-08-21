@@ -16,3 +16,4 @@ desktop/src-tauri/icons/
 # Editor / OS
 .DS_Store
 *.log
+scratch/

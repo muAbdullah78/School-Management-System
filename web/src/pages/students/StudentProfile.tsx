@@ -4,7 +4,7 @@ import {
   getStudent, getStudentEnrollments, getGuardians, updateStudent, setStudentStatus,
   getStudentBalance, getStudentInvoices, getStudentPayments, attendanceSummary,
   getSiblings, getStudentLinks, removeStudentLink, studentJoinFamily, getStudentFamilyId,
-  listFamilyParents, createParentLogin, unlinkParent,
+  listFamilyParents, createParentLogin, unlinkParent, getChallan, type Challan,
   getStudentMonthlyFee, getEnrollmentDiscounts, addDiscount, setDiscountStatus,
   recordPayment, billStudentMonth, deferInvoice, undoDefer, addAdjustment,
   getStudentMonthTests, getStudentMonthAttendance,
@@ -19,6 +19,7 @@ import { useAuth } from '@/auth/AuthProvider'
 import { APPROVER_ROLES, ADMIN_ROLES, type Role } from '@/auth/roles'
 import { Receipt, type ReceiptData } from '@/components/Receipt'
 import { useSchoolName } from '@/hooks/useSchoolName'
+import { ChallanPrint } from '@/pages/fees/ChallanPrint'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 const FINANCE_ROLES: Role[] = ['owner', 'principal', 'admin_clerk', 'accountant']
@@ -503,6 +504,17 @@ function FeesTab({
   const discounts = useQuery({ queryKey: ['enrollmentDiscounts', enrollment.enrollment_id], queryFn: () => getEnrollmentDiscounts(enrollment.enrollment_id) })
 
   const [receipt, setReceipt] = useState<ReceiptData | null>(null)
+  const feeSchoolName = useSchoolName()
+  // Single-challan reprint. Fetched on demand rather than with the month rows:
+  // a clerk prints one slip out of twelve, and pre-loading twelve challans to
+  // support that would make the tab slower for everyone.
+  const [challan, setChallan] = useState<Challan | null>(null)
+  const [challanErr, setChallanErr] = useState<string | null>(null)
+  async function printOne(invoiceId: string) {
+    setChallanErr(null)
+    try { setChallan(await getChallan(invoiceId)) }
+    catch (e) { setChallanErr((e as Error).message) }
+  }
   const [pay, setPay] = useState<null | { month?: string; billMonthISO?: string; defaultAmount: number; note: string }>(null)
   const [settle, setSettle] = useState(false)
   const [showDiscount, setShowDiscount] = useState(false)
@@ -625,6 +637,7 @@ function FeesTab({
               onPay={() => setPay({ month: r.key, billMonthISO: r.invoice ? undefined : monthFirst(r.key), defaultAmount: r.due, note: `Fee · ${r.label}` })}
               onDelay={() => setDefer({ invoiceId: r.invoice?.invoice_id, billMonthISO: r.invoice ? undefined : monthFirst(r.key), label: r.label })}
               onUndoDefer={r.invoice ? () => { undoDefer(r.invoice!.invoice_id).then(refresh) } : undefined}
+              onPrint={r.invoice ? () => { void printOne(r.invoice!.invoice_id) } : undefined}
             />
           ))}
         </div>
@@ -659,6 +672,15 @@ function FeesTab({
         )}
       </div>
 
+      {challanErr && <p className="text-sm text-red-600">{challanErr}</p>}
+      {challan && (
+        <ChallanPrint
+          challans={[challan]}
+          school={{ name: feeSchoolName, address: null, phone: null }}
+          onClose={() => setChallan(null)}
+        />
+      )}
+
       {pay && (
         <PaymentModal
           studentId={studentId} studentName={student.full_name} grNo={student.gr_no}
@@ -688,8 +710,14 @@ function FeesTab({
 }
 
 function MonthLine({
-  row, enrollment, onPay, onDelay, onUndoDefer,
-}: { row: MonthRow; enrollment: EnrollmentInfo; onPay: () => void; onDelay: () => void; onUndoDefer?: () => void }) {
+  row, enrollment, onPay, onDelay, onUndoDefer, onPrint,
+}: {
+  row: MonthRow; enrollment: EnrollmentInfo
+  onPay: () => void; onDelay: () => void; onUndoDefer?: () => void
+  /** Present only for a month that has actually been billed — there is no
+   *  challan to reprint for a month the school has not issued one for. */
+  onPrint?: () => void
+}) {
   void enrollment
   const paidDate = row.invoice?.status === 'paid' ? row.invoice.due_date : null
   return (
@@ -717,6 +745,12 @@ function MonthLine({
             <button onClick={onPay} className="rounded bg-brand-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-brand-700">Mark paid</button>
             {onUndoDefer && <button onClick={onUndoDefer} className="rounded border border-slate-300 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50">Undo delay</button>}
           </>
+        )}
+        {/* Reprint. Deliberately available on PAID months too: a parent asking
+            for a duplicate of a settled challan is routine, and the slip shows
+            the payment against it. */}
+        {onPrint && (
+          <button onClick={onPrint} className="rounded border border-slate-300 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50">Print challan</button>
         )}
       </div>
     </div>

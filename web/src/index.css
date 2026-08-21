@@ -37,7 +37,9 @@ body {
   #date-sheet,
   #date-sheet *,
   #admit-cards,
-  #admit-cards * {
+  #admit-cards *,
+  #challan,
+  #challan * {
     visibility: visible;
   }
   #receipt,
@@ -48,7 +50,8 @@ body {
   #report,
   #tabulation,
   #date-sheet,
-  #admit-cards {
+  #admit-cards,
+  #challan {
     position: absolute;
     left: 0;
     top: 0;
