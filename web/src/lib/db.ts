@@ -929,6 +929,9 @@ export interface ResultCardRow {
   roll_no: string | null; total_marks: number | null; total_max: number | null
   percentage: number | null; grade: string | null; position: number | null
   attendance_pct: number | null; version: number; frozen: ResultCardFrozen
+  /** Set by fn_publish_results. Non-null means parents can see this card in the
+   *  portal. Null means it exists but is withheld. */
+  published_at: string | null
 }
 export interface ResultCardFrozen {
   subjects: { subject: string; max: number; pass: number; marks: number | null; is_absent: boolean; grade: string | null }[]
@@ -1116,7 +1119,7 @@ export async function listResultCards(termId: string, classId: string): Promise<
   const sb = requireSupabase()
   const rows = unwrap<Record<string, any>[]>(
     await sb.from('result_cards')
-      .select('id, enrollment_id, student_id, total_marks, total_max, percentage, grade, position, attendance_pct, version, frozen, students(full_name, gr_no), enrollments!inner(class_id, roll_no)')
+      .select('id, enrollment_id, student_id, total_marks, total_max, percentage, grade, position, attendance_pct, version, frozen, published_at, students(full_name, gr_no), enrollments!inner(class_id, roll_no)')
       .eq('exam_term_id', termId)
       .eq('enrollments.class_id', classId)
       .order('version', { ascending: false }),
@@ -1133,6 +1136,7 @@ export async function listResultCards(termId: string, classId: string): Promise<
       total_marks: r.total_marks, total_max: r.total_max, percentage: r.percentage,
       grade: r.grade, position: r.position, attendance_pct: r.attendance_pct,
       version: r.version, frozen: r.frozen as ResultCardFrozen,
+      published_at: r.published_at ?? null,
     })
   }
   return out.sort((a, b) => (a.position ?? 1e9) - (b.position ?? 1e9))
@@ -1542,6 +1546,58 @@ export async function createTeacherLogin(input: CreateTeacherInput): Promise<{ i
   }
   return { id: newId, email, role }
 }
+
+/**
+ * Create a login for a parent and attach it to a family, in one step.
+ *
+ * Two separate things have to happen and both can fail, so the order matters:
+ * the login is created first, then linked. If the link fails the login still
+ * exists — which is recoverable (link it from the family sheet) — whereas
+ * linking a login that was never created is not.
+ *
+ * Before migration 0037 this was impossible in two ways: the Edge Function
+ * rejected the 'parent' role outright, and nothing anywhere called
+ * fn_link_parent, so profiles.family_id was never written and every portal read
+ * refused with "Not a parent account".
+ */
+export async function createParentLogin(input: {
+  email: string; password: string; full_name: string; family_id: string
+}): Promise<{ id: string; email: string }> {
+  const created = await createTeacherLogin({
+    email: input.email, password: input.password, full_name: input.full_name, role: 'parent',
+  })
+  await linkParent(created.id, input.family_id)
+  return { id: created.id, email: created.email }
+}
+
+/** Attach an existing parent login to a family. */
+export async function linkParent(profileId: string, familyId: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_link_parent', {
+    p_profile_id: profileId, p_family_id: familyId,
+  })
+  if (error) throw new Error(error.message)
+}
+
+export interface FamilyParent {
+  profile_id: string; full_name: string | null; email: string | null; active: boolean
+}
+
+/** Who can already see this family's portal. Checked before creating another. */
+export async function listFamilyParents(familyId: string): Promise<FamilyParent[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_family_parents', { p_family_id: familyId })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as FamilyParent[]
+}
+
+/** Cut a parent's access: detaches the family and deactivates the login. */
+export async function unlinkParent(profileId: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_unlink_parent', { p_profile_id: profileId })
+  if (error) throw new Error(error.message)
+}
+
 
 // ---- Certificates ----
 export interface IssueCertResult { id: string; serial_no: number; cert_type: string; issued_on: string }

@@ -53,7 +53,16 @@ Deno.serve(async (req) => {
     const password = String(body.password ?? '')
     const fullName = String(body.full_name ?? '').trim()
     const role = String(body.role ?? 'class_teacher')
-    const allowedRoles = ['principal', 'admin_clerk', 'accountant', 'class_teacher', 'subject_teacher', 'readonly']
+    // 'parent' belongs here even though the function is named create-teacher:
+    // a parent login is created by exactly the same mechanism (service key,
+    // email pre-confirmed) and is then attached to a family by fn_link_parent.
+    // Leaving it out is what made the parent portal impossible to reach —
+    // asking for one came back "Invalid role".
+    const allowedRoles = [
+      'principal', 'admin_clerk', 'accountant',
+      'class_teacher', 'subject_teacher', 'readonly',
+      'parent',
+    ]
     if (!email || !/^\S+@\S+\.\S+$/.test(email)) return json({ error: 'A valid email is required' }, 400)
     if (password.length < 6) return json({ error: 'Password must be at least 6 characters' }, 400)
     if (!allowedRoles.includes(role)) return json({ error: 'Invalid role' }, 400)

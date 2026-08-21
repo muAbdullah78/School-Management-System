@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getCurrentSession, listClasses, listExamTerms, listResultCards, generateResultCards,
+  publishResults, unpublishResults,
   type ResultCardRow,
 } from '@/lib/db'
 import { useAuth } from '@/auth/AuthProvider'
@@ -14,6 +15,9 @@ export function ResultsTab() {
   const qc = useQueryClient()
   const { profile } = useAuth()
   const canGenerate = !!profile && ['owner', 'principal', 'admin_clerk'].includes(profile.role)
+  // Releasing results to parents is a separate, narrower permission than
+  // generating the cards — a clerk may prepare them, only the head lets them out.
+  const canRelease = !!profile && ['owner', 'principal'].includes(profile.role)
 
   const session = useQuery({ queryKey: ['currentSession'], queryFn: getCurrentSession })
   const sessionId = session.data?.id
@@ -78,6 +82,11 @@ export function ResultsTab() {
             Re-generating creates a new version from the current marks; earlier versions are kept. Cards print from a frozen snapshot.
           </p>
 
+          {(cards.data?.length ?? 0) > 0 && (
+            <ReleaseToParents termId={termId} classId={classId}
+              cards={cards.data ?? []} canRelease={canRelease} />
+          )}
+
           <div className="mt-4 overflow-hidden rounded-lg border border-slate-200 bg-white">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
@@ -112,6 +121,73 @@ export function ResultsTab() {
       {showTabulation && (
         <TabulationSheet cards={cards.data ?? []} termName={termName} className={className} onClose={() => setShowTabulation(false)} />
       )}
+    </div>
+  )
+}
+
+/**
+ * The gate between "results exist" and "parents can see them".
+ *
+ * result_cards.published_at was added in migration 0033 and had no writer in
+ * the app, so the portal's whole release mechanism was inert: cards were
+ * generated and no parent could ever be shown one. Generating and releasing
+ * have to stay separate — a clerk prepares the cards, the head decides the day
+ * they go out, usually the morning of the result-day assembly.
+ */
+function ReleaseToParents({ termId, classId, cards, canRelease }: {
+  termId: string
+  classId: string
+  cards: ResultCardRow[]
+  canRelease: boolean
+}) {
+  const qc = useQueryClient()
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['resultCards', termId, classId] })
+
+  const publish = useMutation({ mutationFn: () => publishResults(termId, classId), onSuccess: invalidate })
+  const withdraw = useMutation({ mutationFn: () => unpublishResults(termId, classId), onSuccess: invalidate })
+
+  // published_at is per card, so a class can be part-released after a
+  // re-generate. Report the real split rather than a single yes/no.
+  const released = cards.filter((c) => !!c.published_at).length
+  const total = cards.length
+  const busy = publish.isPending || withdraw.isPending
+  const err = (publish.error ?? withdraw.error) as Error | null
+
+  return (
+    <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="text-sm">
+          {released === 0 && <span className="text-slate-600">Not released — parents cannot see these results.</span>}
+          {released > 0 && released < total && (
+            <span className="text-amber-700">{released} of {total} released — the rest are still hidden from parents.</span>
+          )}
+          {released === total && total > 0 && (
+            <span className="text-money-700">✓ Released — parents can see these in the portal.</span>
+          )}
+        </div>
+
+        {canRelease && released < total && (
+          <button onClick={() => publish.mutate()} disabled={busy}
+            className="rounded bg-money-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-money-700 disabled:opacity-60">
+            {publish.isPending ? 'Releasing…' : 'Release to parents'}
+          </button>
+        )}
+        {canRelease && released > 0 && (
+          <button onClick={() => withdraw.mutate()} disabled={busy}
+            className="rounded border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60">
+            {withdraw.isPending ? 'Withdrawing…' : 'Withdraw'}
+          </button>
+        )}
+      </div>
+
+      {!canRelease && (
+        <p className="mt-2 text-xs text-slate-400">Only the owner or principal can release results.</p>
+      )}
+      {err && <p className="mt-2 text-xs text-red-600">{err.message}</p>}
+      <p className="mt-2 text-xs text-slate-500">
+        Releasing only affects what parents see in the portal. Printing and re-generating are unaffected,
+        and a withdrawn result disappears from the portal immediately.
+      </p>
     </div>
   )
 }

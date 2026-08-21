@@ -335,6 +335,15 @@ jobs:
         # holds at every step.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/family_money.sql
 
+      - name: Parent access — can a parent ever reach the portal?
+        # portal.sql's fourteen assertions all passed while the portal was
+        # unreachable, because its fixture set profiles.family_id by hand.
+        # Nothing in the app wrote that column. This suite goes through
+        # fn_link_parent instead, and also covers the separate bug it turned up:
+        # profiles.active was written by the Settings screen and read by
+        # nothing, so "Deactivate" left a dismissed clerk with full access.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/parent_access.sql
+
       - name: Family linkage — do siblings actually share a family?
         # The suite above passed for weeks while family billing was completely
         # broken in production, because it built its families with direct
