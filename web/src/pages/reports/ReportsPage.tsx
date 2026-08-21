@@ -15,6 +15,13 @@ import { toCSV, downloadCSV } from '@/lib/csv'
 const FIELD = 'rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 const TABS = [
   { key: 'collection', label: 'Fee Collection' },
+  // The money reports a head teacher asks for at month end. "Debit & Credit"
+  // also serves as the detailed income and detailed expense reports via its
+  // own filter, which is why there are four tabs and not six.
+  { key: 'statement', label: 'Debit & Credit' },
+  { key: 'unpaid', label: 'Unpaid Challans' },
+  { key: 'discounts', label: 'Discounts' },
+  { key: 'admissions', label: 'Admissions' },
   { key: 'daybook', label: 'Day Book / Cash' },
   { key: 'reconciliation', label: 'Reconciliation' },
   { key: 'defaulters', label: 'Defaulters' },
@@ -22,6 +29,11 @@ const TABS = [
   { key: 'register', label: 'Attendance Register' },
   { key: 'ledger', label: 'Student Ledger' },
 ] as const
+
+import {
+  LedgerReport, UnpaidInvoicesReport, DiscountsReport, AdmissionsReport,
+} from './FinanceReports'
+
 type TabKey = (typeof TABS)[number]['key']
 
 function monthStart() { return `${todayISO().slice(0, 7)}-01` }
@@ -42,6 +54,10 @@ export function ReportsPage() {
       </div>
       <div className="mt-5">
         {tab === 'collection' && <CollectionReport />}
+        {tab === 'statement' && <LedgerReport />}
+        {tab === 'unpaid' && <UnpaidInvoicesReport />}
+        {tab === 'discounts' && <DiscountsReport />}
+        {tab === 'admissions' && <AdmissionsReport />}
         {tab === 'daybook' && <DayBookReport />}
         {tab === 'reconciliation' && <ReconciliationReport />}
         {tab === 'defaulters' && <DefaultersReport />}

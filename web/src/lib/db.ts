@@ -2199,6 +2199,128 @@ export function whatsappLink(phone: string | null, text: string): string | null 
   return `https://wa.me/${n}?text=${encodeURIComponent(text)}`
 }
 
+// ---- Reporting area -------------------------------------------------------
+
+export interface LedgerRow {
+  entry_date: string
+  kind: 'income' | 'expense'
+  category: string
+  particulars: string
+  reference: string
+  party: string
+  method: string
+  debit: number
+  credit: number
+  recorded_by: string
+  is_reversal: boolean
+}
+
+/**
+ * Debit & credit statement. `kind` narrows it to a detailed income or expense
+ * report — one function rather than three, because they are the same rows.
+ *
+ * Asserted in supabase/tests/reports.sql to net to the same profit the Accounts
+ * screen shows. Two screens disagreeing about one month is the fastest way to
+ * lose a school's trust.
+ */
+export async function getLedger(
+  from: string, to: string, kind: 'all' | 'income' | 'expense' = 'all',
+): Promise<LedgerRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_report_ledger', {
+    p_from: from, p_to: to, p_kind: kind,
+  })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    ...(r as unknown as LedgerRow),
+    debit: Number(r.debit ?? 0),
+    credit: Number(r.credit ?? 0),
+  }))
+}
+
+export interface UnpaidInvoiceRow {
+  invoice_id: string
+  voucher_code: string | null
+  period_label: string
+  due_date: string | null
+  days_overdue: number
+  student_id: string
+  student_name: string
+  gr_no: string | null
+  class_name: string | null
+  section_name: string | null
+  father_name: string | null
+  charge: number
+  paid: number
+  due: number
+}
+
+/** Per CHALLAN, not per student — which is what the defaulter report cannot say. */
+export async function getUnpaidInvoices(sessionId: string): Promise<UnpaidInvoiceRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_report_unpaid_invoices', { p_session_id: sessionId })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    ...(r as unknown as UnpaidInvoiceRow),
+    days_overdue: Number(r.days_overdue ?? 0),
+    charge: Number(r.charge ?? 0),
+    paid: Number(r.paid ?? 0),
+    due: Number(r.due ?? 0),
+  }))
+}
+
+export interface DiscountReportRow {
+  granted_on: string
+  student_id: string
+  student_name: string
+  gr_no: string | null
+  class_name: string | null
+  reason_type: string
+  is_percent: boolean
+  amount: number
+  reason: string | null
+  status: string
+  proposed_by: string
+  approved_by: string
+  approved_at: string | null
+}
+
+/** Money the school chose not to collect, and who signed it off. */
+export async function getDiscountReport(
+  from: string | null, to: string | null,
+): Promise<DiscountReportRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_report_discounts', { p_from: from, p_to: to })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    ...(r as unknown as DiscountReportRow),
+    amount: Number(r.amount ?? 0),
+  }))
+}
+
+export interface AdmissionReportRow {
+  admitted_on: string
+  student_id: string
+  student_name: string
+  gr_no: string | null
+  admission_no: string | null
+  father_name: string | null
+  gender: string | null
+  class_name: string | null
+  section_name: string | null
+  status: string
+  admitted_by: string
+}
+
+export async function getAdmissionReport(
+  from: string | null, to: string | null,
+): Promise<AdmissionReportRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_report_admissions', { p_from: from, p_to: to })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as AdmissionReportRow[]
+}
+
 // ---- Message settings (their "Automation Settings") -----------------------
 
 export interface MessageSetting {

@@ -335,6 +335,16 @@ jobs:
         # holds at every step.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/family_money.sql
 
+      - name: Reports — does the statement agree with the Accounts screen?
+        # Assertion 6 is the point of this suite: the debit-and-credit statement
+        # must net to the same profit fn_finance_summary reports for the same
+        # dates. Two screens disagreeing about one month is the fastest way to
+        # lose a school's trust, and both derive from the same rows so there is
+        # no excuse for it. Also asserts a pending payment is not income, a
+        # reversal shows as its own line rather than being netted away, and the
+        # money reports follow fn_finance_summary's role boundary.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/reports.sql
+
       - name: Message settings — does switching a message off actually stop it?
         # message_templates has carried an `enabled` flag since 0034 that
         # nothing in the app could set. A toggle that only greys out a checkbox

@@ -139,14 +139,14 @@ Their busiest screen, and the one ours gets most wrong. Theirs opens with:
 | Fee Defaulters Report | `have` |
 | Head Wise Dues Summary | `partial` — `fn_head_wise_dues` has no UI |
 | Income & Expense Report | `have` |
-| Debit & Credit Statement | `missing` |
-| List Of Unpaid Invoices | `missing` |
-| Fee Discount Report | `missing` |
-| Accounts Summary Report | `missing` |
-| Detailed Income Report | `missing` |
-| Detailed Expense Report | `missing` |
-| Find A Balance Sheet | `missing` |
-| Admission Date Report | `missing` |
+| Debit & Credit Statement | `have` (0044) |
+| List Of Unpaid Invoices | `have` (0044) — per challan, with overdue age |
+| Fee Discount Report | `have` (0044) — with the approver |
+| Accounts Summary Report | `partial` — the statement's head totals cover it; no separate screen |
+| Detailed Income Report | `have` (0044) — the statement, filtered |
+| Detailed Expense Report | `have` (0044) — the statement, filtered |
+| Find A Balance Sheet | `missing` — needs an as-at-date snapshot, not a range |
+| Admission Date Report | `have` (0044) — with a still-here column |
 
 ## 9. Test Management and Exam Management
 
@@ -241,7 +241,9 @@ Items 1-6 and 9 are **done** (PR #17). What follows is the remaining work.
    that class of bug.
 7. **Teacher remarks and a position-holders screen.** The tabulation sheet,
    date sheet and admit cards already exist — verified reachable, not assumed.
-8. **The reporting area** — the eight missing financial reports.
+8. ~~**The reporting area**~~ Six of the eight done (0044). Remaining: a
+   balance sheet (needs an as-at-date snapshot rather than a range) and a
+   standalone accounts-summary screen.
 9. ~~**WhatsApp automation**~~ Done (0043).
 10. **Admission enquiries and requests.**
 11. **Global search, module search, student photos, birthdays.**
