@@ -2432,6 +2432,96 @@ export async function getBalanceSheet(asAt: string | null): Promise<BalanceSheet
   }
 }
 
+// ---- Teacher remarks and position holders --------------------------------
+
+export interface ExamRemarkRow {
+  student_id: string
+  student_name: string
+  gr_no: string | null
+  roll_no: string | null
+  section_name: string | null
+  remark: string | null
+  remark_by_name: string
+  updated_at: string | null
+  percentage: number | null
+  grade: string | null
+  class_position: number | null
+}
+
+/** Every child in the class, remark or not — a teacher needs to see who is left. */
+export async function listExamRemarks(
+  examTermId: string, classId: string,
+): Promise<ExamRemarkRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_exam_remarks', {
+    p_exam_term_id: examTermId, p_class_id: classId,
+  })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    ...(r as unknown as ExamRemarkRow),
+    percentage: r.percentage == null ? null : Number(r.percentage),
+    class_position: r.class_position == null ? null : Number(r.class_position),
+  }))
+}
+
+/** Blank removes the remark rather than storing an empty string. */
+export async function setExamRemark(
+  examTermId: string, studentId: string, remark: string,
+): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_set_exam_remark', {
+    p_exam_term_id: examTermId, p_student_id: studentId, p_remark: remark,
+  })
+  if (error) throw new Error(error.message)
+}
+
+export interface PositionHolder {
+  class_id: string
+  class_name: string
+  level_order: number
+  class_position: number
+  student_id: string
+  student_name: string
+  gr_no: string | null
+  roll_no: string | null
+  section_name: string | null
+  total_marks: number | null
+  total_max: number | null
+  percentage: number | null
+  grade: string | null
+  /** Result held back over unpaid fees — worth knowing BEFORE the announcement. */
+  withheld: boolean
+  remark: string | null
+  /** How many children share this position. 1 means outright. */
+  tied_with: number
+}
+
+/**
+ * Top N in every class for one exam term.
+ *
+ * Ties are preserved as they are on the result card: two children on 90% are
+ * both first and the next is third. Handing one of them the prize on an
+ * unstated tie-break is not something software should do quietly.
+ */
+export async function getPositionHolders(
+  examTermId: string, top = 3,
+): Promise<PositionHolder[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_position_holders', {
+    p_exam_term_id: examTermId, p_top: top,
+  })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    ...(r as unknown as PositionHolder),
+    level_order: Number(r.level_order ?? 0),
+    class_position: Number(r.class_position ?? 0),
+    total_marks: r.total_marks == null ? null : Number(r.total_marks),
+    total_max: r.total_max == null ? null : Number(r.total_max),
+    percentage: r.percentage == null ? null : Number(r.percentage),
+    tied_with: Number(r.tied_with ?? 1),
+  }))
+}
+
 // ---- Mark and attendance corrections -------------------------------------
 
 export interface MarkCorrection {

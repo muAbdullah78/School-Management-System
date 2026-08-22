@@ -2,11 +2,15 @@ import { useState } from 'react'
 import { ExamSetup } from './ExamSetup'
 import { MarksEntry } from './MarksEntry'
 import { ResultsTab } from './ResultsTab'
+import { RemarksTab } from './RemarksTab'
 
 const TABS = [
   { key: 'setup', label: 'Setup' },
   { key: 'marks', label: 'Marks Entry' },
   { key: 'results', label: 'Result Cards' },
+  // Remarks had nowhere in the schema to live at all; position was computed and
+  // printed but had no school-wide view. Both are item 7 of docs/PARITY.md.
+  { key: 'remarks', label: 'Remarks & Positions' },
 ] as const
 type TabKey = (typeof TABS)[number]['key']
 
@@ -27,6 +31,7 @@ export function ExamsPage() {
         {tab === 'setup' && <ExamSetup />}
         {tab === 'marks' && <MarksEntry />}
         {tab === 'results' && <ResultsTab />}
+        {tab === 'remarks' && <RemarksTab />}
       </div>
     </div>
   )

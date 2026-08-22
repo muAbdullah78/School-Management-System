@@ -454,6 +454,22 @@ jobs:
         # ENTER marks, which is exactly why they must not be able to audit them.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/corrections.sql
 
+      - name: Remarks and position holders — do ties and remarks survive?
+        # Assertion 12 is why exam_remarks is its own table rather than a column
+        # on result_cards: fn_generate_result_cards INSERTS a new version rather
+        # than updating, so a remark stored on the card would silently vanish
+        # from the printed report the moment anybody regenerated the class.
+        # Assertion 11 proves that risk is real by counting the versions.
+        #
+        # Assertions 2-4 are the prize-distribution rules: two children on 90%
+        # are BOTH first and the next is THIRD. Any other behaviour hands one
+        # child a prize and not the other on a tie-break nobody chose.
+        #
+        # Assertion 9 records a modelling trap: an unmarked child scores 0.00,
+        # NOT null, so percentage cannot distinguish "never marked" from "sat and
+        # scored nothing". The function tests for a mark row instead.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/remarks_positions.sql
+
       - name: Message settings — does switching a message off actually stop it?
         # message_templates has carried an `enabled` flag since 0034 that
         # nothing in the app could set. A toggle that only greys out a checkbox

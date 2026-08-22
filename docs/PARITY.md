@@ -159,10 +159,10 @@ them into one, and that is probably wrong.
 | Test / Exam List | `have` | |
 | Assign Grades | `have` | Grade scale in settings. |
 | Marks Entry | `have` | |
-| Teacher Remarks | `missing` | Per-student comment on the result card. Nothing in the schema stores one. |
+| Teacher Remarks | `have` (0049) | Kept per exam term, not per printed card, so regenerating result cards cannot lose one. Class teacher writes it; a subject teacher on the same class cannot. |
 | Test Schedule / Exam Timetable | `have` | `DateSheet.tsx`, reached from Exam Setup. |
 | **Tabulation Sheet** | `have` | `TabulationSheet.tsx`, reached from Result Cards. Corrected — first drafted as `missing`, then found and confirmed reachable. |
-| **Position Holders** | `partial` | Position is computed and printed on the result card and the tabulation sheet. There is no standalone "top three in each class" screen. |
+| **Position Holders** | `have` (0049) | Top N per class, ties preserved as on the card (two firsts means no second), withheld results flagged before an announcement. |
 | **Print Admit Cards / Slips** | `have` | `AdmitCards.tsx`, reached from Exam Setup. Corrected as above. |
 | Print Marksheets | `partial` | Result cards exist and print; the `published_at` gate that releases them to parents has no UI. |
 | Send Marks / Marksheets to parents | `missing` | Becomes WhatsApp. |
@@ -239,8 +239,9 @@ Items 1-6 and 9 are **done** (PR #17). What follows is the remaining work.
    every school's admissions and collections to every other school, plus three
    more unscoped SECURITY DEFINER functions. A structural CI guard now blocks
    that class of bug.
-7. **Teacher remarks and a position-holders screen.** The tabulation sheet,
-   date sheet and admit cards already exist — verified reachable, not assumed.
+7. ~~**Teacher remarks and a position-holders screen**~~ Done (0049). The
+   tabulation sheet, date sheet and admit cards already existed — verified
+   reachable, not assumed.
 8. ~~**The reporting area**~~ Seven of the eight done (0044, 0045). Remaining:
    a standalone accounts-summary screen. The balance sheet (0045) was the one
    that could not be served by filtering the ledger, because it is a position
