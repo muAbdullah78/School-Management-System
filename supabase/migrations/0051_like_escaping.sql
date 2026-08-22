@@ -150,6 +150,15 @@ begin
   order by b.full_name, b.id
   limit v_limit offset v_offset;
 end;
-$function$
+$function$;
 
-
+-- The semicolon matters. pg_get_functiondef() — which this body was copied from,
+-- so that nothing could drift — emits NO trailing terminator. On its own the file
+-- still applies, because psql flushes whatever is left in the buffer at EOF. But
+-- supabase/bundles/ CONCATENATES the migrations, so without it this
+-- function's closing $function$ ran straight into the next migration's CREATE
+-- and bundle 5 died with "syntax error at or near CREATE".
+--
+-- Caught by CI's "bundles apply as single transactions" step, which exists for
+-- exactly this: a migration can be perfectly valid alone and invalid in the
+-- artefact a school actually pastes.
