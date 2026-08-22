@@ -199,13 +199,34 @@ begin
   perform pg_temp.ok(v_n = 2,
     '13. both of school A''s payments are listed, B''s is not (' || v_n || ')');
 
-  select * into r from public.fn_recent_payments(25) limit 1;
+  -- Targeted at the VERIFIED cash receipt by amount, not at `limit 1`.
+  --
+  -- Asserting on the first row was wrong and it took the reverse-order CI pass
+  -- to prove it: now() is transaction-stable, so both of this fixture's payments
+  -- share a created_at to the microsecond, and which one came back first
+  -- depended on physical heap order. The assertion passed forward and failed in
+  -- reverse. 0052 gives the function a receipt_no tie-break so the list is
+  -- stable for a clerk; this test no longer leans on the order at all.
+  select * into r from public.fn_recent_payments(25) where amount = 1000;
   perform pg_temp.ok(r.received_by = 'Counter Owner A',
     '14. the list names who took the money — the whole point of the column');
   perform pg_temp.ok(r.parent_name is not null,
     '15. and the parent, so a clerk can confirm who is at the window');
   perform pg_temp.ok(r.class_name = 'Class 1',
-    '16. and the class');
+    '16. and the class, for a receipt that settled one child''s challan');
+
+  -- The pending transfer allocated nothing, so it has no class to show. Blank
+  -- rather than guessed is the promise; this pins it.
+  perform pg_temp.ok(
+    (select class_name from public.fn_recent_payments(25) where amount = 700) is null,
+    '16b. and blank for a pending receipt that has settled nothing yet');
+
+  -- And the order is now defined, not incidental.
+  perform pg_temp.ok(
+    (select receipt_no from public.fn_recent_payments(25) limit 1)
+      = (select max(receipt_no) from public.payments
+          where school_id = public.current_school_id()),
+    '16c. the newest receipt is first, deterministically (0052''s tie-break)');
 
   -- The cash payment settled this month's challan, so it must say which month.
   perform pg_temp.ok(exists (
