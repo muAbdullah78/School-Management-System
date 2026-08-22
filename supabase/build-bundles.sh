@@ -93,6 +93,12 @@ emit supabase/bundles/4_operations.sql    supabase/migrations/004*.sql
 # A FIFTH bundle rather than widening bundle 4's glob: a school that has already
 # pasted bundle 4 must not be told to paste it again, because re-running a
 # migration fails with "already exists". New work goes in a new bundle.
+#
+# The glob is 005*, so bundle 5 is "everything from 0050 onwards" and the name
+# undersells it — 0053 (staff leaving) rides along with search and birthdays.
+# That is deliberate: the filename is what SETUP.md tells schools to paste, so
+# renaming it would break every existing set of instructions to save a word.
+# When bundle 5 has itself shipped widely, start a sixth rather than widen this.
 emit supabase/bundles/5_search.sql        supabase/migrations/005*.sql
 
 # --- Every migration must be in exactly one bundle ---------------------------

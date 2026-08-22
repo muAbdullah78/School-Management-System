@@ -1386,13 +1386,120 @@ export interface StaffInput {
 }
 export interface SectionTeacherRow { id: string; name: string; class_teacher_id: string | null }
 
-export async function listStaff(): Promise<StaffRow[]> {
+/** A staff row as the roster returns it: the record, plus the two things the
+ *  old screen could not see — whether the login works, and what the person
+ *  still holds. */
+export interface StaffRosterRow extends StaffRow {
+  left_on: string | null
+  /** null = no account at all; false = account switched off. */
+  login_active: boolean | null
+  login_role: string | null
+  /** "Class 1-A, Class 2-B", or null. */
+  class_teacher_of: string | null
+  /** Teaching assignments in the CURRENT session. */
+  assignments: number
+}
+
+export interface StaffLeaveResult {
+  staff_name: string
+  left_on: string
+  login_revoked: boolean
+  had_login: boolean
+  sections_vacated: string
+  sections_count: number
+  assignments_removed: number
+}
+
+/** Staff WITH their login state and what they still hold.
+ *
+ *  Replaced a plain `from('staff')` select, which could not see whether a
+ *  "deactivated" member of staff could still log in — that fact lives in
+ *  profiles, and PostgREST cannot embed it unambiguously because staff and
+ *  profiles reference each other twice (staff.profile_id, profiles.staff_id).
+ *  The screen was therefore unable to show the one thing that mattered. */
+export async function getStaffRoster(): Promise<StaffRosterRow[]> {
   const sb = requireSupabase()
-  return unwrap(
-    await sb.from('staff')
-      .select('id, full_name, designation, employee_no, mobile, whatsapp, cnic, joined_on, dob, status, profile_id')
-      .is('deleted_at', null).order('full_name'),
-  )
+  const rows = unwrap<Record<string, any>[]>(await sb.rpc('fn_staff_roster'))
+  return (rows ?? []).map((r) => ({
+    id: r.id,
+    full_name: r.full_name,
+    designation: r.designation ?? null,
+    employee_no: r.employee_no ?? null,
+    mobile: r.mobile ?? null,
+    whatsapp: r.whatsapp ?? null,
+    cnic: r.cnic ?? null,
+    joined_on: r.joined_on ?? null,
+    dob: r.dob ?? null,
+    left_on: r.left_on ?? null,
+    status: r.status,
+    profile_id: r.profile_id ?? null,
+    // Deliberately NOT coalesced to false. null means "no account at all",
+    // false means "account switched off", and the screen says different things
+    // about them.
+    login_active: r.login_active === null || r.login_active === undefined ? null : !!r.login_active,
+    login_role: r.login_role ?? null,
+    class_teacher_of: r.class_teacher_of ?? null,
+    assignments: Number(r.assignments ?? 0),
+  }))
+}
+
+/** Record a member of staff leaving: the date, the revoked login, the vacated
+ *  class-teacher slots and the dropped current-session assignments, in one
+ *  transaction. Returns a summary of what it actually changed so the screen can
+ *  tell the principal which classes now need somebody. */
+export async function staffLeave(
+  staffId: string, leftOn: string, reason: string | null,
+): Promise<StaffLeaveResult> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_staff_leave', {
+    p_staff_id: staffId, p_left_on: leftOn, p_reason: reason,
+  })
+  if (error) throw new Error(error.message)
+  const r = (data ?? {}) as Record<string, any>
+  return {
+    staff_name: r.staff_name ?? '',
+    left_on: r.left_on ?? leftOn,
+    login_revoked: !!r.login_revoked,
+    had_login: !!r.had_login,
+    sections_vacated: r.sections_vacated ?? '',
+    sections_count: Number(r.sections_count ?? 0),
+    assignments_removed: Number(r.assignments_removed ?? 0),
+  }
+}
+
+export async function staffRejoin(
+  staffId: string, reason: string | null,
+): Promise<{ staff_name: string; login_restored: boolean; had_login: boolean }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_staff_rejoin', {
+    p_staff_id: staffId, p_reason: reason,
+  })
+  if (error) throw new Error(error.message)
+  const r = (data ?? {}) as Record<string, any>
+  return {
+    staff_name: r.staff_name ?? '',
+    login_restored: !!r.login_restored,
+    had_login: !!r.had_login,
+  }
+}
+
+/** The access switch on its own — suspension without falsifying the employment
+ *  record, and the remedy for staff the old Deactivate button left able to
+ *  log in. */
+export async function staffSetLoginActive(
+  staffId: string, active: boolean, reason: string | null,
+): Promise<{ staff_name: string; login_active: boolean; changed: boolean }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_staff_set_login_active', {
+    p_staff_id: staffId, p_active: active, p_reason: reason,
+  })
+  if (error) throw new Error(error.message)
+  const r = (data ?? {}) as Record<string, any>
+  return {
+    staff_name: r.staff_name ?? '',
+    login_active: !!r.login_active,
+    changed: !!r.changed,
+  }
 }
 
 export async function createStaff(input: StaffInput): Promise<string> {
@@ -1412,11 +1519,12 @@ export async function updateStaff(id: string, patch: Partial<StaffInput>): Promi
   if (error) throw new Error(error.message)
 }
 
-export async function setStaffStatus(id: string, status: 'active' | 'inactive'): Promise<void> {
-  const sb = requireSupabase()
-  const { error } = await sb.from('staff').update({ status }).eq('id', id)
-  if (error) throw new Error(error.message)
-}
+// setStaffStatus is deliberately gone. It wrote `status = 'inactive'` and
+// nothing anywhere read staff.status, so the button it powered looked like it
+// closed a departed teacher's access and did not: access is gated on
+// profiles.active. 0053 replaces it with staffLeave / staffRejoin /
+// staffSetLoginActive, and adds a CHECK constraint that would now reject
+// 'inactive' outright.
 
 export async function linkStaffProfile(staffId: string, profileId: string | null): Promise<void> {
   const sb = requireSupabase()

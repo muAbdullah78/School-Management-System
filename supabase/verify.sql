@@ -68,14 +68,21 @@ select 'daily operations (bundle 4)',
        then 'PASS' else 'FAIL — re-run bundle 4 (4_operations.sql)' end
 
 union all
-select 'search and birthdays (bundle 5)',
+select 'search, birthdays, staff leaving (bundle 5)',
        case when (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
                    where n.nspname = 'public' and p.proname in
-                     ('fn_global_search',   -- 0050 the header search box
-                      'fn_birthdays')) = 2  -- 0050 birthdays
+                     ('fn_global_search',      -- 0050 the header search box
+                      'fn_birthdays',          -- 0050 birthdays
+                      'fn_staff_roster',       -- 0053 staff with their login state
+                      'fn_staff_leave')) = 4   -- 0053 recording a leaving
                  and exists (select 1 from information_schema.columns
                               where table_schema = 'public' and table_name = 'staff'
                                 and column_name = 'dob')
+                 -- 0053's constraint. Its absence means the migration applied
+                 -- only in part, which would let 'inactive' back in.
+                 and exists (select 1 from pg_constraint
+                              where conname = 'staff_status_chk'
+                                and conrelid = 'public.staff'::regclass)
        then 'PASS' else 'FAIL — re-run bundle 5 (5_search.sql)' end
 
 union all
