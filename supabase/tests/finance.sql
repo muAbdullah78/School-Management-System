@@ -224,6 +224,68 @@ begin
 end $t$;
 
 -- =============================================================================
+-- 5b. A reversed OTHER INCOME entry leaves income too
+--
+-- fn_reverse_other_income shipped in 0030 with ZERO callers: no db.ts wrapper,
+-- no button, and no test. So a clerk who typed Rs 50,000 of hall rent instead
+-- of Rs 5,000 had no way to correct it — the ledger is append-only by design,
+-- so there was no edit path either, and the error sat in the income figure, the
+-- profit, the day book and the balance sheet permanently.
+--
+-- Found by supabase/check-reachable.sh, which now fails CI for any function the
+-- app may call that nothing anywhere reaches.
+-- =============================================================================
+do $t$
+declare
+  v_before numeric; v_after numeric; v_id uuid; j jsonb;
+  v_bs_before numeric; v_bs_after numeric;
+begin
+  select (public.fn_finance_summary(current_date, current_date)->>'other_income')::numeric
+    into v_before;
+  v_bs_before := (public.fn_report_balance_sheet(current_date)->>'other_income')::numeric;
+
+  j := public.fn_record_other_income(50000, 'Hall rent (typo)', current_date, 'cash', null);
+  v_id := (j->>'income_id')::uuid;
+
+  select (public.fn_finance_summary(current_date, current_date)->>'other_income')::numeric
+    into v_after;
+  if v_after <> v_before + 50000 then
+    raise exception 'FAIL: the typo did not land in income (% -> %)', v_before, v_after;
+  end if;
+
+  perform public.fn_reverse_other_income(v_id, 'typed 50,000 instead of 5,000');
+
+  select (public.fn_finance_summary(current_date, current_date)->>'other_income')::numeric
+    into v_after;
+  if v_after <> v_before then
+    raise exception 'FAIL: reversed other income still counted (% -> %)', v_before, v_after;
+  end if;
+
+  -- And the correction must reach the balance sheet, not just this one screen.
+  v_bs_after := (public.fn_report_balance_sheet(current_date)->>'other_income')::numeric;
+  if v_bs_after <> v_bs_before then
+    raise exception 'FAIL: balance sheet still carries the reversed income (% -> %)',
+      v_bs_before, v_bs_after;
+  end if;
+
+  -- Append-only: the mistake and its correction are BOTH on the record.
+  if (select count(*) from public.other_income
+       where source = 'Hall rent (typo)' or reversal_of = v_id) <> 2 then
+    raise exception 'FAIL: a reversal must add a row, not edit or delete one';
+  end if;
+
+  -- And it cannot be reversed twice, or the income would go negative.
+  begin
+    perform public.fn_reverse_other_income(v_id, 'again');
+    raise exception 'FAIL: other income was reversed twice';
+  exception when others then
+    if sqlerrm like 'FAIL%' then raise; end if;
+  end;
+
+  raise notice '5b. a mistyped other-income entry can be corrected, once — ok';
+end $t$;
+
+-- =============================================================================
 -- 6. A reversed FEE payment leaves income automatically
 -- =============================================================================
 do $t$

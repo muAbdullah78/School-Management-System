@@ -253,6 +253,40 @@ Items 1-6 and 9 are **done** (PR #17). What follows is the remaining work.
 12. **Multi-campus** — last, because it touches every table, and only if a real
     school asks for it.
 
+## The bug class this project keeps producing (0047)
+
+Almost every serious defect found in this work has been the same shape:
+**correct logic that nothing could reach.** Not one of these was a logic error.
+
+| What | Consequence |
+|---|---|
+| `fn_link_parent` had zero callers | the only writer of `profiles.family_id`, so every parent portal read threw |
+| `fn_family_for` had zero callers | siblings never shared a family; family billing had never worked in production |
+| `profiles.active` had no reader | "Deactivate" left a dismissed clerk full access |
+| `message_templates.enabled` had no writer | the WhatsApp toggle was decorative |
+| `result_cards.published_at` never selected | no result could reach a parent |
+| `fn_find_by_voucher` had zero callers | a printed challan could not be scanned |
+| `fn_reverse_other_income` had zero callers | a mistyped income entry could never be corrected, in an append-only ledger |
+| `supabase/bundles/` stopped at 0039 | seven migrations never reached any real school |
+| `students.photo_url` | still dead — the one item on this list not yet fixed |
+
+Every one was found by hand, late, usually while building something unrelated.
+So `supabase/check-reachable.sh` now asks the catalogue on every CI run: for each
+function granted to `authenticated`, is it named by another function, a trigger,
+an RLS policy, a column default, a check constraint, an index expression, a view,
+or by `web/src`? If not, it is either a feature with no way to use it or dead code
+that `authenticated` can nonetheless EXECUTE. Verified by planting
+`fn_planted_orphan()` and confirming CI fails.
+
+Its first run found `fn_reverse_other_income`, and pulling that thread found
+something worse next to it: **other income had no read path at all.** It could
+be recorded and fed the totals, but nothing ever listed the individual entries,
+so a wrong one could not even be found. The Accounts screen now has an other
+income register mirroring the expense register, with the reversal wired.
+
+Two dead helpers, `auth_role()` and `is_parent()`, were dropped in 0047 after
+confirming by catalogue query — not by reading — that nothing references them.
+
 ## Found while building the enquiry module (0046)
 
 **THE BUNDLES STOPPED AT MIGRATION 0039.** `supabase/bundles/` is what a school

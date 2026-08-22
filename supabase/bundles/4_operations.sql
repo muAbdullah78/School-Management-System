@@ -2364,3 +2364,72 @@ begin
     perform public.fn__seed_message_templates(s);
   end loop;
 end $$;
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- 0047_reachability.sql
+-- ─────────────────────────────────────────────────────────────────────────
+-- =============================================================================
+-- 0047 — Close the "declared but unreachable" class of bug.
+--
+-- WHY THIS MIGRATION EXISTS
+--
+-- The single most common defect in this codebase has not been wrong logic. It
+-- has been CORRECT logic that nothing could reach. Every one of these shipped,
+-- passed CI, and did nothing:
+--
+--   * fn_link_parent          — the only writer of profiles.family_id, no callers,
+--                               so the whole parent portal threw for every parent
+--   * profiles.active         — written by the Settings screen, read by nothing,
+--                               so "Deactivate" left a dismissed clerk full access
+--   * fn_family_for           — no callers, so siblings never shared a family and
+--                               family billing had never worked in production
+--   * fn_find_by_voucher      — no callers, so a printed challan could not be scanned
+--   * message_templates.enabled — no writer, so the WhatsApp toggle was decorative
+--   * result_cards.published_at — never selected, so no result could reach a parent
+--   * students.photo_url      — still dead
+--   * supabase/bundles/       — stopped at migration 0039, so seven migrations
+--                               never reached any real school at all
+--
+-- Each was found by hand, late, one at a time. supabase/check-reachable.sh now
+-- finds them by query on every CI run. This migration fixes what that check
+-- turned up on its first run.
+-- =============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 1. THE BUG: other income could be recorded but never reversed
+--
+-- 0030 built expenses and other income as mirror images, both append-only:
+-- never edit, never delete, correct with a reversing entry. fn_reverse_expense
+-- got a db.ts wrapper and a button on the Accounts screen. Its twin,
+-- fn_reverse_other_income, got neither — so a clerk who typed Rs 50,000 of hall
+-- rent instead of Rs 5,000 had NO way to correct it, ever. The error sat in the
+-- income figure, the profit figure, the day book and the balance sheet
+-- permanently.
+--
+-- The function itself was correct all along. Only the wiring was missing, which
+-- is exactly the pattern above. Nothing to change here — the fix is the db.ts
+-- wrapper and the Accounts screen button in this same commit. This comment
+-- records WHY a function that already existed suddenly appears in a changelog,
+-- so nobody later "cleans up" the apparently-redundant reversal path.
+-- ---------------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------------
+-- 2. Two genuinely dead helpers, dropped
+--
+-- Both were confirmed unreferenced by querying the live catalogue, not by
+-- reading: no function body, no trigger, no RLS policy (USING or WITH CHECK),
+-- no column default, no check constraint, no index expression, no view — and no
+-- mention anywhere in web/src or supabase/functions.
+--
+--   auth_role()  — from 0001. Superseded by has_role()/is_staff(), which every
+--                  policy and guard actually uses.
+--   is_parent()  — from 0033. The portal gates on my_family_id() and
+--                  fn__assert_my_child() instead.
+--
+-- Dropped rather than left in place, because a dead function that `authenticated`
+-- may EXECUTE is attack surface for no benefit, and because a reviewed-exceptions
+-- list should hold deliberate exceptions rather than things nobody got round to.
+-- If either is ever wanted again it is four lines of git history away.
+-- ---------------------------------------------------------------------------
+drop function if exists public.auth_role();
+drop function if exists public.is_parent();

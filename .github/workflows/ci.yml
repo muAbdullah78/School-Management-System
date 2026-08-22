@@ -362,6 +362,22 @@ jobs:
         # Verified to fail on both faults deliberately re-introduced.
         run: ./supabase/check-rpc-contract.sh
 
+      - name: Is every function the app may call reachable from anywhere?
+        # The most common defect in this repo has never been wrong logic — it has
+        # been correct logic nothing could reach. fn_link_parent, fn_family_for,
+        # fn_find_by_voucher, message_templates.enabled, profiles.active,
+        # result_cards.published_at and fn_reverse_other_income all shipped,
+        # passed CI, and did nothing. Every one was found by hand, late.
+        #
+        # This asks the catalogue instead: for each function granted to
+        # `authenticated`, is it named by another function, a trigger, an RLS
+        # policy, a default, a check, an index, a view, or by web/src? If not it
+        # is either a feature with no way to use it, or dead code that
+        # `authenticated` can nonetheless EXECUTE.
+        #
+        # Verified by planting fn_planted_orphan() and confirming this fails.
+        run: ./supabase/check-reachable.sh
+
       - name: Reports — does the statement agree with the Accounts screen?
         # Assertion 6 is the point of this suite: the debit-and-credit statement
         # must net to the same profit fn_finance_summary reports for the same

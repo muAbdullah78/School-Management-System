@@ -2071,6 +2071,23 @@ export async function recordOtherIncome(
   return data as { income_id: string; voucher_no: number }
 }
 
+/**
+ * The twin of reverseExpense, and it was missing for a long time.
+ *
+ * fn_reverse_other_income has existed since 0030 with zero callers, so a clerk
+ * who typed Rs 50,000 of hall rent instead of Rs 5,000 had no way to correct
+ * it — the ledger is append-only by design, so there was no edit either. The
+ * error sat in the income figure, the profit, the day book and the balance
+ * sheet permanently. Found by supabase/check-reachable.sh.
+ */
+export async function reverseOtherIncome(incomeId: string, reason: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_reverse_other_income', {
+    p_income_id: incomeId, p_reason: reason,
+  })
+  if (error) throw new Error(error.message)
+}
+
 export async function getFinanceSummary(from: string, to: string): Promise<FinanceSummary> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_finance_summary', { p_from: from, p_to: to })
@@ -2098,6 +2115,30 @@ export async function listExpenses(from: string, to: string): Promise<ExpenseRow
       .select('id, spent_on, amount, payee, method, note, voucher_no, category_id, reversal_of')
       .gte('spent_on', from).lte('spent_on', to)
       .order('spent_on', { ascending: false }).order('voucher_no', { ascending: false }),
+  )
+}
+
+export interface OtherIncomeRow {
+  id: string; received_on: string; amount: number; source: string
+  method: string; note: string | null; voucher_no: number | null
+  reversal_of: string | null
+}
+
+/**
+ * Other income had no read path at all until now, only a write one.
+ *
+ * recordOtherIncome existed and fed the totals, but nothing ever listed the
+ * individual entries, so a wrong one could not be found — let alone reversed.
+ * A write-only money ledger is not a ledger. Same shape as listExpenses; the
+ * table's own RLS policy already restricts it to owner/principal/accountant.
+ */
+export async function listOtherIncome(from: string, to: string): Promise<OtherIncomeRow[]> {
+  const sb = requireSupabase()
+  return unwrap(
+    await sb.from('other_income')
+      .select('id, received_on, amount, source, method, note, voucher_no, reversal_of')
+      .gte('received_on', from).lte('received_on', to)
+      .order('received_on', { ascending: false }).order('voucher_no', { ascending: false }),
   )
 }
 

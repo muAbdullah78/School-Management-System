@@ -14,6 +14,8 @@ import {
   recordExpense,
   recordOtherIncome,
   reverseExpense,
+  reverseOtherIncome,
+  listOtherIncome,
   getProfitSnapshot,
   getFinanceSummary,
   listExpenses,
@@ -83,6 +85,13 @@ export function AccountsPage() {
     queryFn: () => listExpenses(from, to),
   })
 
+  // Other income had no read path at all before this: it could be recorded and
+  // never seen again, so a wrong entry could not be found or corrected.
+  const incomeRows = useQuery({
+    queryKey: ['otherIncome', from, to],
+    queryFn: () => listOtherIncome(from, to),
+  })
+
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: ['profitSnapshot'] })
     void qc.invalidateQueries({ queryKey: ['financeSummary'] })
@@ -111,6 +120,14 @@ export function AccountsPage() {
   const undo = useMutation({
     mutationFn: (v: { id: string; reason: string }) => reverseExpense(v.id, v.reason),
     onSuccess: () => { setFlash('Expense reversed'); refresh() },
+  })
+
+  // The twin of `undo`, missing since 0030. fn_reverse_other_income had zero
+  // callers, so a mistyped income entry was permanent — the ledger is
+  // append-only by design, so there was no edit path either.
+  const undoIncome = useMutation({
+    mutationFn: (v: { id: string; reason: string }) => reverseOtherIncome(v.id, v.reason),
+    onSuccess: () => { setFlash('Income reversed'); refresh() },
   })
 
   const catName = (id: string | null) => cats.data?.find((c) => c.id === id)?.name ?? 'Uncategorised'
@@ -290,6 +307,69 @@ export function AccountsPage() {
             )}
             {undo.isError && (
               <p className="mt-3 text-sm text-danger-600">{(undo.error as Error).message}</p>
+            )}
+          </Card>
+
+          {/* Other income register — the mirror of the expense register above,
+              and absent until now. Recording other income fed the totals while
+              nothing ever listed the entries, so a Rs 50,000 typo for Rs 5,000
+              of hall rent could not be found, let alone reversed. */}
+          <Card>
+            <CardTitle>Other income register</CardTitle>
+            {incomeRows.data && incomeRows.data.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-[11px] uppercase tracking-wide text-slate-400">
+                      <th className="pb-2 pr-3">Voucher</th>
+                      <th className="pb-2 pr-3">Date</th>
+                      <th className="pb-2 pr-3">Source</th>
+                      <th className="pb-2 pr-3">Method</th>
+                      <th className="pb-2 pr-3 text-right">Amount</th>
+                      <th className="pb-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {incomeRows.data.map((i) => (
+                      <tr key={i.id} className="border-t border-slate-100">
+                        <td className="py-2 pr-3 tabular-nums text-slate-500">#{i.voucher_no}</td>
+                        <td className="py-2 pr-3 text-slate-600">{i.received_on}</td>
+                        <td className="py-2 pr-3">{i.source}</td>
+                        <td className="py-2 pr-3 text-slate-600">{i.method}</td>
+                        <td className={`py-2 pr-3 text-right tabular-nums font-medium ${
+                          i.amount < 0 ? 'text-danger-600' : 'text-money-700'}`}>
+                          {money(i.amount)}
+                        </td>
+                        <td className="py-2 text-right">
+                          {i.amount > 0 && !i.reversal_of && (
+                            <button
+                              className="text-xs text-danger-600 hover:underline"
+                              onClick={() => {
+                                const reason = window.prompt('Why is this being reversed?')
+                                if (reason && reason.trim()) {
+                                  undoIncome.mutate({ id: i.id, reason: reason.trim() })
+                                }
+                              }}
+                            >
+                              Reverse
+                            </button>
+                          )}
+                          {i.reversal_of && <Badge tone="neutral">reversal</Badge>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <EmptyState
+                icon={<IconWallet />}
+                title="No other income in this period"
+                message="Hall rent, canteen, donations and anything else that is not a fee will appear here."
+              />
+            )}
+            {undoIncome.isError && (
+              <p className="mt-3 text-sm text-danger-600">{(undoIncome.error as Error).message}</p>
             )}
           </Card>
         </div>
