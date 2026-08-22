@@ -38,12 +38,10 @@ cd "$(dirname "$0")/.."
 # here should mean the column got wired up — see docs/PARITY.md.
 KNOWN="
 assessments.weightage
-attendance_daily.correction_reason
 enrollments.bise_reg_no
 enrollments.stream
 exam_subjects.practical_max
 fee_heads.is_refundable
-mark_entries.correction_reason
 result_cards.generated_at
 school_settings.logo_url
 staff.left_on

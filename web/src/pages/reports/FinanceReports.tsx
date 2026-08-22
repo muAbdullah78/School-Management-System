@@ -19,9 +19,9 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   getLedger, getUnpaidInvoices, getDiscountReport, getAdmissionReport,
-  getBalanceSheet, getCurrentSession,
+  getBalanceSheet, getMarkCorrections, getAttendanceCorrections, getCurrentSession,
   type LedgerRow, type UnpaidInvoiceRow, type DiscountReportRow, type AdmissionReportRow,
-  type BalanceSheet,
+  type BalanceSheet, type MarkCorrection, type AttendanceCorrection,
 } from '@/lib/db'
 import { DataTable, type Column } from '@/components/DataTable'
 import { fmtPKR, fmtDate } from '@/lib/format'
@@ -642,4 +642,224 @@ function lastDayOfJune(): string {
   const d = new Date()
   const year = d.getMonth() >= 6 ? d.getFullYear() : d.getFullYear() - 1
   return `${year}-06-30`
+}
+
+/* ==================================================== mark corrections */
+
+/**
+ * Every mark somebody changed after entering it.
+ *
+ * mark_entries has recorded the previous mark all along and nothing ever read
+ * it, so the school held the answer to "my son got 45, you have written 40" and
+ * could not get at it. This is that answer, and it is also the report a head
+ * teacher wants the week before results go out.
+ */
+export function MarkCorrectionsReport() {
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+
+  const q = useQuery({
+    queryKey: ['markCorrections', from, to],
+    queryFn: () => getMarkCorrections(from || null, to || null),
+  })
+  const rows = q.data ?? []
+  const noReason = rows.filter((r) => !r.reason?.trim()).length
+
+  const columns: Column<MarkCorrection>[] = [
+    {
+      key: 'changed_at', header: 'Changed', sortable: true, value: (r) => r.changed_at,
+      render: (r) => (
+        <span className="whitespace-nowrap text-slate-600">{fmtDate(r.changed_at)}</span>
+      ),
+    },
+    {
+      key: 'student_name', header: 'Student', sortable: true, value: (r) => r.student_name,
+      render: (r) => (
+        <div>
+          <div className="text-slate-800">{r.student_name}</div>
+          <div className="text-xs text-slate-400">
+            {r.gr_no ?? '—'}
+            {r.class_name ? ` · ${r.class_name}` : ''}{r.section_name ? `-${r.section_name}` : ''}
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'paper', header: 'Paper', sortable: true,
+      value: (r) => `${r.subject_name ?? ''} ${r.paper ?? ''}`,
+      render: (r) => (
+        <div>
+          <div className="text-slate-700">{r.subject_name ?? '—'}</div>
+          <div className="text-xs text-slate-400">{r.kind} · {r.paper ?? '—'}</div>
+        </div>
+      ),
+    },
+    {
+      // The whole point: the two numbers side by side, with the direction of
+      // travel visible at a glance.
+      key: 'was', header: 'Was → is', align: 'right', sortable: true, value: (r) => r.was,
+      render: (r) => (
+        <span className="whitespace-nowrap tabular-nums">
+          <span className="text-slate-400 line-through">{r.was ?? '—'}</span>
+          <span className="mx-1 text-slate-300">→</span>
+          <span className={`font-medium ${
+            r.was != null && r.now_is != null && r.now_is < r.was
+              ? 'text-danger-700' : 'text-money-700'}`}>
+            {r.now_is ?? '—'}
+          </span>
+          {r.max_marks != null && (
+            <span className="ml-1 text-xs text-slate-400">/{r.max_marks}</span>
+          )}
+        </span>
+      ),
+    },
+    {
+      key: 'reason', header: 'Reason', value: (r) => r.reason,
+      render: (r) =>
+        r.reason?.trim()
+          ? <span className="text-slate-700">{r.reason}</span>
+          : <span className="text-danger-600">none given</span>,
+    },
+    { key: 'changed_by', header: 'By', sortable: true, value: (r) => r.changed_by },
+  ]
+
+  return (
+    <div>
+      <div className="mb-3 flex flex-wrap items-end gap-3">
+        <label className="block text-sm">
+          <span className="text-slate-600">From</span>
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)}
+            className={`mt-1 block ${FIELD}`} />
+        </label>
+        <label className="block text-sm">
+          <span className="text-slate-600">To</span>
+          <input type="date" value={to} onChange={(e) => setTo(e.target.value)}
+            className={`mt-1 block ${FIELD}`} />
+        </label>
+        <span className="ml-auto rounded bg-slate-100 px-2 py-1 text-sm text-slate-700">
+          {rows.length} changed
+          {noReason > 0 && (
+            <span className="ml-1 text-danger-700">· {noReason} with no reason</span>
+          )}
+        </span>
+      </div>
+
+      <DataTable
+        rows={rows}
+        columns={columns}
+        rowKey={(r) => `${r.changed_at}-${r.student_name}-${r.paper}`}
+        loading={q.isLoading}
+        error={q.isError ? (q.error as Error).message : null}
+        emptyTitle="No mark has been changed"
+        emptyMessage="Leave both dates blank to check the whole session."
+        exportName="mark-corrections"
+        printId="report"
+      />
+
+      <p className="mt-3 text-xs leading-relaxed text-slate-500">
+        A mark appears here only if it was changed <em>after</em> being entered — a first entry is
+        not a correction. The previous mark has always been recorded; until now nothing could show
+        it. Rows marked <span className="text-danger-600">none given</span> were changed without a
+        reason, which is worth asking about.
+      </p>
+    </div>
+  )
+}
+
+/* ============================================== attendance corrections */
+
+export function AttendanceCorrectionsReport() {
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+
+  const q = useQuery({
+    queryKey: ['attendanceCorrections', from, to],
+    queryFn: () => getAttendanceCorrections(from || null, to || null),
+  })
+  const rows = q.data ?? []
+
+  const columns: Column<AttendanceCorrection>[] = [
+    {
+      key: 'attendance_date', header: 'For the day', sortable: true,
+      value: (r) => r.attendance_date,
+      render: (r) => (
+        <span className="whitespace-nowrap text-slate-700">{fmtDate(r.attendance_date)}</span>
+      ),
+    },
+    {
+      key: 'changed_at', header: 'Changed on', sortable: true, secondary: true,
+      value: (r) => r.changed_at,
+      render: (r) => (
+        <span className="whitespace-nowrap text-slate-500">{fmtDate(r.changed_at)}</span>
+      ),
+    },
+    {
+      key: 'student_name', header: 'Student', sortable: true, value: (r) => r.student_name,
+      render: (r) => (
+        <div>
+          <div className="text-slate-800">{r.student_name}</div>
+          <div className="text-xs text-slate-400">
+            {r.gr_no ?? '—'}
+            {r.class_name ? ` · ${r.class_name}` : ''}{r.section_name ? `-${r.section_name}` : ''}
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'was', header: 'Was → is', sortable: true, value: (r) => r.was,
+      render: (r) => (
+        <span className="whitespace-nowrap capitalize">
+          <span className="text-slate-400 line-through">{r.was ?? '—'}</span>
+          <span className="mx-1 text-slate-300">→</span>
+          <span className="font-medium text-slate-800">{r.now_is ?? '—'}</span>
+        </span>
+      ),
+    },
+    {
+      key: 'reason', header: 'Reason', value: (r) => r.reason,
+      render: (r) =>
+        r.reason?.trim()
+          ? <span className="text-slate-700">{r.reason}</span>
+          : <span className="text-danger-600">none given</span>,
+    },
+    { key: 'changed_by', header: 'By', sortable: true, value: (r) => r.changed_by },
+  ]
+
+  return (
+    <div>
+      <div className="mb-3 flex flex-wrap items-end gap-3">
+        <label className="block text-sm">
+          <span className="text-slate-600">From</span>
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)}
+            className={`mt-1 block ${FIELD}`} />
+        </label>
+        <label className="block text-sm">
+          <span className="text-slate-600">To</span>
+          <input type="date" value={to} onChange={(e) => setTo(e.target.value)}
+            className={`mt-1 block ${FIELD}`} />
+        </label>
+        <span className="ml-auto rounded bg-slate-100 px-2 py-1 text-sm text-slate-700">
+          {rows.length} changed
+        </span>
+      </div>
+
+      <DataTable
+        rows={rows}
+        columns={columns}
+        rowKey={(r) => `${r.changed_at}-${r.student_name}-${r.attendance_date}`}
+        loading={q.isLoading}
+        error={q.isError ? (q.error as Error).message : null}
+        emptyTitle="No attendance record has been changed"
+        emptyMessage="Leave both dates blank to check the whole session."
+        exportName="attendance-corrections"
+        printId="report"
+      />
+
+      <p className="mt-3 text-xs leading-relaxed text-slate-500">
+        &ldquo;For the day&rdquo; is the day being marked; &ldquo;changed on&rdquo; is when somebody
+        altered it. A gap between the two is the thing worth looking at — an absence rewritten
+        weeks later is different from one corrected the same afternoon.
+      </p>
+    </div>
+  )
 }

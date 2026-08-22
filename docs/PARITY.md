@@ -286,12 +286,20 @@ Worth ranking against real market knowledge before building: these change how
 results are computed, and a semantic change to marks after a school has entered
 them is not a safe thing to do casually.
 
-### Audit trail
+### ~~Audit trail~~ — done (0048)
 
-| Column | What its absence implies |
-|---|---|
-| `attendance_daily.correction_reason` | Attendance can be corrected with no reason recorded. |
-| `mark_entries.correction_reason` | So can marks — which matters far more, and is exactly what a parent disputes. |
+Both `correction_reason` columns are now written, and — the bigger half —
+`corrected_from` is now READ. It had been recorded faithfully since the exam
+module was built and nothing ever displayed it, so the school held the answer to
+"my son got 45, you have written 40" and could not get at it.
+
+`fn_mark_corrections` and `fn_attendance_corrections` are two new report tabs,
+owner and principal only: a subject teacher can enter marks, which is exactly
+why they must not be able to audit them. The marks entry screen asks for a
+reason only when a mark that already had a value is being changed — a first
+entry is not a correction, and demanding a reason for one trains teachers to
+type anything to get past it. A change made with no reason is still reported,
+flagged "none given".
 
 ### Minor
 

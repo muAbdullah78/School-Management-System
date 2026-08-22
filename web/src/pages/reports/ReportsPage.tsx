@@ -25,6 +25,11 @@ const TABS = [
   // A position as at one day, not a range — which is why it sits apart from
   // the four above and is the only report here that is not a table.
   { key: 'balancesheet', label: 'Balance Sheet' },
+  // Oversight, not money. mark_entries has recorded the previous mark since the
+  // exam module was built and nothing ever read it, so a school held the answer
+  // to a disputed mark and could not get at it.
+  { key: 'markfixes', label: 'Mark Changes' },
+  { key: 'attfixes', label: 'Attendance Changes' },
   { key: 'daybook', label: 'Day Book / Cash' },
   { key: 'reconciliation', label: 'Reconciliation' },
   { key: 'defaulters', label: 'Defaulters' },
@@ -35,7 +40,7 @@ const TABS = [
 
 import {
   LedgerReport, UnpaidInvoicesReport, DiscountsReport, AdmissionsReport,
-  BalanceSheetReport,
+  BalanceSheetReport, MarkCorrectionsReport, AttendanceCorrectionsReport,
 } from './FinanceReports'
 
 type TabKey = (typeof TABS)[number]['key']
@@ -63,6 +68,8 @@ export function ReportsPage() {
         {tab === 'discounts' && <DiscountsReport />}
         {tab === 'admissions' && <AdmissionsReport />}
         {tab === 'balancesheet' && <BalanceSheetReport />}
+        {tab === 'markfixes' && <MarkCorrectionsReport />}
+        {tab === 'attfixes' && <AttendanceCorrectionsReport />}
         {tab === 'daybook' && <DayBookReport />}
         {tab === 'reconciliation' && <ReconciliationReport />}
         {tab === 'defaulters' && <DefaultersReport />}

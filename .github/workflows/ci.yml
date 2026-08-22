@@ -437,6 +437,23 @@ jobs:
         # would quietly stop testing anything.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/enquiries.sql
 
+      - name: Corrections — can a school SEE that a mark was changed?
+        # mark_entries and attendance_daily have recorded `corrected_from` all
+        # along and NOTHING ever read it, while `correction_reason` was never
+        # written at all. So the system knew a teacher changed a mark from 45 to
+        # 40 the night before results, and no principal could see it and no
+        # parent disputing it could be answered.
+        #
+        # Assertion 1 is load-bearing for a different reason: the three entry
+        # functions had to be DROPPED and recreated to gain the reason parameter
+        # (create-or-replace cannot add one — it makes an ambiguous overload), so
+        # this proves the existing two-argument callers, the app among them, all
+        # still work.
+        #
+        # Assertion 20 is the point of the role boundary: a subject teacher can
+        # ENTER marks, which is exactly why they must not be able to audit them.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/corrections.sql
+
       - name: Message settings — does switching a message off actually stop it?
         # message_templates has carried an `enabled` flag since 0034 that
         # nothing in the app could set. A toggle that only greys out a checkbox

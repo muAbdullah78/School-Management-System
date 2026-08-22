@@ -514,11 +514,18 @@ export async function getRoster(
   return (data as RosterRow[]) ?? []
 }
 
+/**
+ * `reason` is recorded only against rows whose status actually CHANGED, and it
+ * is what makes the corrections report readable — see getAttendanceCorrections.
+ */
 export async function markAttendance(
   date: string, marks: { enrollment_id: string; status: AttendanceStatus }[],
+  reason?: string | null,
 ): Promise<MarkResult> {
   const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_mark_attendance', { p_date: date, p_marks: marks })
+  const { data, error } = await sb.rpc('fn_mark_attendance', {
+    p_date: date, p_marks: marks, p_reason: reason ?? null,
+  })
   if (error) throw new Error(error.message)
   return data as MarkResult
 }
@@ -1102,11 +1109,18 @@ export async function getMarksheet(examSubjectId: string): Promise<MarksheetRow[
   return (data as MarksheetRow[]) ?? []
 }
 
+/**
+ * `reason` lands only on marks that actually CHANGED. Entering a mark for the
+ * first time is not a correction and needs no reason.
+ */
 export async function enterMarks(
   examSubjectId: string, marks: { enrollment_id: string; marks: number | null; is_absent: boolean }[],
+  reason?: string | null,
 ): Promise<MarkResult> {
   const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_enter_marks', { p_exam_subject_id: examSubjectId, p_marks: marks })
+  const { data, error } = await sb.rpc('fn_enter_marks', {
+    p_exam_subject_id: examSubjectId, p_marks: marks, p_reason: reason ?? null,
+  })
   if (error) throw new Error(error.message)
   return data as MarkResult
 }
@@ -1154,9 +1168,12 @@ export async function getAssessmentMarksheet(assessmentId: string): Promise<Mark
 
 export async function enterAssessmentMarks(
   assessmentId: string, marks: { enrollment_id: string; marks: number | null; is_absent: boolean }[],
+  reason?: string | null,
 ): Promise<MarkResult> {
   const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_enter_assessment_marks', { p_assessment_id: assessmentId, p_marks: marks })
+  const { data, error } = await sb.rpc('fn_enter_assessment_marks', {
+    p_assessment_id: assessmentId, p_marks: marks, p_reason: reason ?? null,
+  })
   if (error) throw new Error(error.message)
   return data as MarkResult
 }
@@ -2413,6 +2430,72 @@ export async function getBalanceSheet(asAt: string | null): Promise<BalanceSheet
     students_owing: num('students_owing'),
     basis: String(r.basis ?? ''),
   }
+}
+
+// ---- Mark and attendance corrections -------------------------------------
+
+export interface MarkCorrection {
+  changed_at: string
+  kind: 'Exam' | 'Class test'
+  student_name: string
+  gr_no: string | null
+  class_name: string | null
+  section_name: string | null
+  subject_name: string | null
+  paper: string | null
+  /** What the mark was before it was changed. */
+  was: number | null
+  now_is: number | null
+  max_marks: number | null
+  is_absent: boolean
+  reason: string | null
+  changed_by: string
+  is_locked: boolean
+}
+
+/**
+ * Every mark changed since it was first entered — what it was, what it is, who
+ * changed it and why.
+ *
+ * mark_entries has recorded `corrected_from` all along and NOTHING ever read
+ * it, so a parent disputing "my son got 45, you have written 40" could not be
+ * answered from data the database already held. Owner and principal only: the
+ * person most likely to want this hidden is the person who changed the mark.
+ */
+export async function getMarkCorrections(
+  from: string | null = null, to: string | null = null,
+): Promise<MarkCorrection[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_mark_corrections', { p_from: from, p_to: to })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    ...(r as unknown as MarkCorrection),
+    was: r.was == null ? null : Number(r.was),
+    now_is: r.now_is == null ? null : Number(r.now_is),
+    max_marks: r.max_marks == null ? null : Number(r.max_marks),
+  }))
+}
+
+export interface AttendanceCorrection {
+  changed_at: string
+  attendance_date: string
+  student_name: string
+  gr_no: string | null
+  class_name: string | null
+  section_name: string | null
+  was: string | null
+  now_is: string | null
+  reason: string | null
+  changed_by: string
+}
+
+export async function getAttendanceCorrections(
+  from: string | null = null, to: string | null = null,
+): Promise<AttendanceCorrection[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_attendance_corrections', { p_from: from, p_to: to })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as AttendanceCorrection[]
 }
 
 // ---- Admission enquiries (their "Admission Inquiries") --------------------
