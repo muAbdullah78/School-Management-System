@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  listStaff, createStaff, updateStaff, setStaffStatus, linkStaffProfile, listProfiles,
+  getStaffRoster, createStaff, updateStaff, linkStaffProfile, listProfiles,
+  staffLeave, staffRejoin, staffSetLoginActive,
   listClasses, listSectionTeachers, getCurrentSession, listTeacherAssignments, setClassTeacher,
   getStaffAttendanceSummary, getStaffMonthAttendance, createTeacherLogin,
-  type StaffRow, type StaffInput,
+  type StaffRow, type StaffInput, type StaffRosterRow, type StaffLeaveResult,
 } from '@/lib/db'
 import { ROLE_LABELS, ROLES, type Role } from '@/auth/roles'
 import { ATTENDANCE_SHORT } from '@/lib/constants'
@@ -53,15 +54,23 @@ function StaffTab() {
   const qc = useQueryClient()
   const { profile } = useAuth()
   const canLink = !!profile && ['owner', 'principal'].includes(profile.role)
-  const staff = useQuery({ queryKey: ['staff'], queryFn: listStaff })
+  const staff = useQuery({ queryKey: ['staff'], queryFn: getStaffRoster })
   const profiles = useQuery({ queryKey: ['profiles'], queryFn: listProfiles })
   const [editing, setEditing] = useState<string | null>(null) // staff id, or 'new'
   const [form, setForm] = useState<StaffInput>(BLANK)
   const [idCard, setIdCard] = useState<StaffRow | null>(null)
   const [attFor, setAttFor] = useState<StaffRow | null>(null)
   const [showLogin, setShowLogin] = useState(false)
+  const [leaving, setLeaving] = useState<StaffRosterRow | null>(null)
+  const [flash, setFlash] = useState<string | null>(null)
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['staff'] })
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['staff'] })
+    // The Class Teachers tab and every result card read sections.class_teacher_id,
+    // which a leaving vacates.
+    qc.invalidateQueries({ queryKey: ['sectionTeachers'] })
+    qc.invalidateQueries({ queryKey: ['teacherAssignments'] })
+  }
   const save = useMutation({
     mutationFn: async () => {
       const payload = { ...form, full_name: form.full_name.trim() }
@@ -70,9 +79,28 @@ function StaffTab() {
     },
     onSuccess: () => { setEditing(null); setForm(BLANK); invalidate() },
   })
-  const status = useMutation({
-    mutationFn: (v: { id: string; status: 'active' | 'inactive' }) => setStaffStatus(v.id, v.status),
-    onSuccess: invalidate,
+  const rejoin = useMutation({
+    mutationFn: (v: { id: string; reason: string | null }) => staffRejoin(v.id, v.reason),
+    onSuccess: (r) => {
+      setFlash(
+        `${r.staff_name} is back on the staff list.` +
+        (r.login_restored ? ' Their login works again.' : '') +
+        ' They are not class teacher of anything — assign that on the Class Teachers tab.',
+      )
+      invalidate()
+    },
+  })
+  // The access switch on its own: suspension without saying somebody left, and
+  // the fix for anyone the OLD Deactivate button left able to log in.
+  const login = useMutation({
+    mutationFn: (v: { id: string; active: boolean; reason: string | null }) =>
+      staffSetLoginActive(v.id, v.active, v.reason),
+    onSuccess: (r) => {
+      setFlash(r.changed
+        ? `${r.staff_name}'s login is now ${r.login_active ? 'open' : 'closed'}.`
+        : `${r.staff_name}'s login was already ${r.login_active ? 'open' : 'closed'}.`)
+      invalidate()
+    },
   })
   const link = useMutation({
     mutationFn: (v: { id: string; profileId: string | null }) => linkStaffProfile(v.id, v.profileId),
@@ -135,19 +163,80 @@ function StaffTab() {
         </form>
       )}
 
+      {flash && (
+        <div className="flex items-start justify-between gap-3 rounded-lg border border-money-200 bg-money-50 px-4 py-3 text-sm text-money-800">
+          <span>{flash}</span>
+          <button onClick={() => setFlash(null)} className="shrink-0 text-money-700 hover:underline">Dismiss</button>
+        </div>
+      )}
+
+      {/* Anyone recorded as having left whose login still works. This is the one
+          thing 0053 refuses to fix silently: it cannot tell "resigned in March"
+          from "the old Deactivate button was clicked by mistake", and closing
+          somebody's access from inside a migration is how a person who is still
+          working gets locked out on a Monday morning. So the school is shown the
+          list and decides. */}
+      {(() => {
+        const stranded = (staff.data ?? []).filter((s) => s.status !== 'active' && s.login_active === true)
+        if (!stranded.length || !canLink) return null
+        return (
+          <div className="rounded-lg border border-danger-200 bg-danger-50 p-4 text-sm">
+            <p className="font-medium text-danger-800">
+              {stranded.length === 1 ? 'One person who has left can still log in' :
+                `${stranded.length} people who have left can still log in`}
+            </p>
+            <p className="mt-1 text-danger-700">
+              They can still open the app and read the children&rsquo;s records. Close each
+              login unless they are in fact still working here.
+            </p>
+            <ul className="mt-2 space-y-1">
+              {stranded.map((s) => (
+                <li key={s.id} className="flex items-center justify-between gap-3">
+                  <span className="text-danger-900">
+                    {s.full_name}
+                    {s.left_on ? <span className="text-danger-600"> · left {fmtDate(s.left_on)}</span> : null}
+                  </span>
+                  <button
+                    onClick={() => login.mutate({ id: s.id, active: false, reason: 'Left the school' })}
+                    className="shrink-0 rounded bg-danger-600 px-2 py-1 text-xs font-medium text-white hover:bg-danger-700">
+                    Close login
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )
+      })()}
+
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-            <tr><th className="px-3 py-2">Name</th><th className="px-3 py-2">Designation</th><th className="px-3 py-2">Mobile</th><th className="px-3 py-2 w-56">Login</th><th className="px-3 py-2 w-40"></th></tr>
+            <tr><th className="px-3 py-2">Name</th><th className="px-3 py-2">Designation</th><th className="px-3 py-2">Mobile</th><th className="px-3 py-2 w-56">Login</th><th className="px-3 py-2 w-52"></th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {staff.isLoading && <tr><td colSpan={5} className="px-3 py-3 text-slate-500">Loading…</td></tr>}
             {staff.data?.length === 0 && <tr><td colSpan={5} className="px-3 py-3 text-slate-500">No staff yet.</td></tr>}
             {staff.data?.map((s) => {
               const logins = (profiles.data ?? []).filter((p) => !p.staff_id || p.id === s.profile_id)
+              const here = s.status === 'active'
               return (
-                <tr key={s.id} className={s.status === 'active' ? '' : 'opacity-60'}>
-                  <td className="px-3 py-2 font-medium text-slate-800">{s.full_name}{s.employee_no && <span className="ml-1 text-xs text-slate-400">#{s.employee_no}</span>}</td>
+                <tr key={s.id} className={here ? '' : 'bg-slate-50/60'}>
+                  <td className="px-3 py-2 font-medium text-slate-800">
+                    <span className={here ? '' : 'text-slate-500'}>{s.full_name}</span>
+                    {s.employee_no && <span className="ml-1 text-xs text-slate-400">#{s.employee_no}</span>}
+                    {!here && (
+                      <span className="ml-2 rounded bg-slate-200 px-1.5 py-0.5 text-[11px] font-medium text-slate-600">
+                        left{s.left_on ? ` ${fmtDate(s.left_on)}` : ''}
+                      </span>
+                    )}
+                    {/* Named, not counted: "Class 1-A, Class 2-B" is what the
+                        principal needs in order to reassign. */}
+                    {here && s.class_teacher_of && (
+                      <span className="ml-2 text-xs font-normal text-slate-500">
+                        class teacher · {s.class_teacher_of}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-slate-600">{s.designation ?? '—'}</td>
                   <td className="px-3 py-2 text-slate-600">{s.mobile ?? '—'}</td>
                   <td className="px-3 py-2">
@@ -160,15 +249,29 @@ function StaffTab() {
                     ) : (
                       <span className="text-slate-500">{profiles.data?.find((p) => p.id === s.profile_id)?.full_name ?? '—'}</span>
                     )}
+                    {/* null and false are different facts and the old screen
+                        could see neither: it read the staff table, and this
+                        lives in profiles. */}
+                    <LoginState row={s} canLink={canLink}
+                      onOpen={() => login.mutate({ id: s.id, active: true, reason: null })}
+                      onClose={() => login.mutate({ id: s.id, active: false, reason: null })} />
                   </td>
                   <td className="px-3 py-2 text-right">
                     <button onClick={() => startEdit(s)} className="mr-2 text-sm text-brand-700 hover:underline">Edit</button>
                     <button onClick={() => setAttFor(s)} className="mr-2 text-sm text-brand-700 hover:underline">Attendance</button>
                     <button onClick={() => setIdCard(s)} className="mr-2 text-sm text-brand-700 hover:underline">ID card</button>
-                    <button onClick={() => status.mutate({ id: s.id, status: s.status === 'active' ? 'inactive' : 'active' })}
-                      className="rounded border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50">
-                      {s.status === 'active' ? 'Deactivate' : 'Activate'}
-                    </button>
+                    {canLink && (here ? (
+                      <button onClick={() => setLeaving(s)}
+                        className="rounded border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50">
+                        Left the school
+                      </button>
+                    ) : (
+                      <button onClick={() => rejoin.mutate({ id: s.id, reason: null })}
+                        disabled={rejoin.isPending}
+                        className="rounded border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60">
+                        Rejoined
+                      </button>
+                    ))}
                   </td>
                 </tr>
               )
@@ -177,8 +280,128 @@ function StaffTab() {
         </table>
       </div>
       {link.isError && <p className="text-sm text-red-600">{(link.error as Error).message}</p>}
+      {rejoin.isError && <p className="text-sm text-red-600">{(rejoin.error as Error).message}</p>}
+      {login.isError && <p className="text-sm text-red-600">{(login.error as Error).message}</p>}
+      {leaving && (
+        <LeaveDialog
+          row={leaving}
+          onClose={() => setLeaving(null)}
+          onDone={(r) => {
+            setLeaving(null)
+            setFlash(
+              `${r.staff_name} recorded as having left on ${fmtDate(r.left_on)}.` +
+              (r.login_revoked ? ' Their login is closed.'
+                : r.had_login ? ' Their login was already closed.' : '') +
+              (r.sections_count > 0
+                ? ` ${r.sections_vacated} ${r.sections_count === 1 ? 'now has' : 'now have'} no class teacher — assign somebody on the Class Teachers tab.`
+                : ''),
+            )
+            invalidate()
+          }}
+        />
+      )}
       {idCard && <StaffIdCard staff={idCard} onClose={() => setIdCard(null)} />}
       {attFor && <StaffAttendanceModal staff={attFor} onClose={() => setAttFor(null)} />}
+    </div>
+  )
+}
+
+/** Whether this person can actually get into the app.
+ *
+ *  Three states, not two. The old screen showed none of them, which is how a
+ *  resigned teacher kept working access: "Deactivate" wrote staff.status and
+ *  every access check reads profiles.active. */
+function LoginState({ row, canLink, onOpen, onClose }: {
+  row: StaffRosterRow; canLink: boolean; onOpen: () => void; onClose: () => void
+}) {
+  if (row.login_active === null) {
+    return <p className="mt-1 text-xs text-slate-400">No account — cannot sign in.</p>
+  }
+  if (row.login_active) {
+    return (
+      <p className="mt-1 text-xs text-money-700">
+        Can sign in{row.login_role ? ` as ${ROLE_LABELS[row.login_role as Role] ?? row.login_role}` : ''}.
+        {canLink && row.status === 'active' && (
+          <button onClick={onClose} className="ml-1 text-slate-500 hover:underline">Suspend</button>
+        )}
+      </p>
+    )
+  }
+  return (
+    <p className="mt-1 text-xs text-slate-500">
+      Login closed.
+      {/* Reopening is offered only for somebody who is still on the staff —
+          reopening a departed person's login would leave the two facts
+          contradicting each other, and SQL refuses it anyway. */}
+      {canLink && row.status === 'active' && (
+        <button onClick={onOpen} className="ml-1 text-brand-700 hover:underline">Reopen</button>
+      )}
+    </p>
+  )
+}
+
+/** Recording a leaving, with what it is about to do stated before it happens. */
+function LeaveDialog({ row, onClose, onDone }: {
+  row: StaffRosterRow; onClose: () => void; onDone: (r: StaffLeaveResult) => void
+}) {
+  const [leftOn, setLeftOn] = useState(todayISO())
+  const [reason, setReason] = useState('')
+  const go = useMutation({
+    mutationFn: () => staffLeave(row.id, leftOn, reason.trim() || null),
+    onSuccess: onDone,
+  })
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4">
+      <div className="mt-16 w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
+        <h2 className="text-base font-semibold text-slate-800">{row.full_name} has left</h2>
+
+        <label className="mt-4 block"><span className="text-sm text-slate-600">Last working day</span>
+          {/* Capped at today because the login closes on save, not on the date.
+              A future date would put a lie in the record: employed on a day the
+              system had already locked them out. */}
+          <input type="date" value={leftOn} max={todayISO()} min={row.joined_on ?? undefined}
+            onChange={(e) => setLeftOn(e.target.value)} className={FIELD} />
+        </label>
+        <label className="mt-3 block"><span className="text-sm text-slate-600">Reason (optional)</span>
+          <input value={reason} onChange={(e) => setReason(e.target.value)} className={FIELD}
+            placeholder="e.g. Resigned — moved to Lahore" />
+        </label>
+
+        <div className="mt-4 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
+          <p className="font-medium text-slate-700">Saving this will:</p>
+          <ul className="mt-1 space-y-1">
+            <li>
+              {row.login_active === true
+                ? '• close their login straight away — they will not be able to sign in'
+                : row.login_active === false
+                  ? '• leave their login closed (it already is)'
+                  : '• change no login, because they do not have one'}
+            </li>
+            {row.class_teacher_of
+              ? <li>• leave <b>{row.class_teacher_of}</b> with no class teacher, so you will need to appoint somebody</li>
+              : <li>• change no class-teacher assignment</li>}
+            {row.assignments > 0 && (
+              <li>• remove {row.assignments === 1 ? 'their teaching assignment' : `their ${row.assignments} teaching assignments`} for this session</li>
+            )}
+            <li>• keep every past record: attendance, marks entered, and who taught what in earlier sessions</li>
+          </ul>
+          <p className="mt-2 text-slate-500">
+            It can be undone with &ldquo;Rejoined&rdquo;, which restores the login but not the
+            class-teacher assignments.
+          </p>
+        </div>
+
+        {go.isError && <p className="mt-3 text-sm text-red-600">{(go.error as Error).message}</p>}
+
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50">Cancel</button>
+          <button onClick={() => go.mutate()} disabled={go.isPending || !leftOn}
+            className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
+            {go.isPending ? 'Saving…' : 'Record leaving'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -284,7 +507,7 @@ function ClassTeachersTab() {
   const session = useQuery({ queryKey: ['currentSession'], queryFn: getCurrentSession })
   const sessionId = session.data?.id
   const classes = useQuery({ queryKey: ['classes'], queryFn: listClasses })
-  const staff = useQuery({ queryKey: ['staff'], queryFn: listStaff })
+  const staff = useQuery({ queryKey: ['staff'], queryFn: getStaffRoster })
   const [classId, setClassId] = useState('')
   const sections = useQuery({ queryKey: ['sectionTeachers', classId], queryFn: () => listSectionTeachers(classId), enabled: !!classId })
   const assignments = useQuery({ queryKey: ['teacherAssignments', sessionId], queryFn: () => listTeacherAssignments(sessionId!), enabled: !!sessionId })
@@ -306,6 +529,31 @@ function ClassTeachersTab() {
     if (a) return a.staff_id
     if (sectionId) return sections.data?.find((s) => s.id === sectionId)?.class_teacher_id ?? ''
     return ''
+  }
+
+  /* The options for one row.
+   *
+   * This existed as `activeStaff` alone, and that was a silent misreport. If the
+   * assigned teacher is no longer active, their id matches no <option>, and a
+   * <select> whose value matches nothing renders as the FIRST option — here,
+   * "— unassigned —". So the screen told the principal the section had no class
+   * teacher while sections.class_teacher_id still held one, and result cards
+   * still printed that name. Nothing on any screen could reveal it.
+   *
+   * 0053's fn_staff_leave vacates these slots, so it cannot happen going
+   * forward. It can still be TRUE of a school upgrading with rows the old
+   * Deactivate button left behind, which is exactly when a screen must not lie.
+   */
+  const optionsFor = (sectionId: string | null) => {
+    const current = teacherFor(sectionId)
+    if (!current || activeStaff.some((s) => s.id === current)) return activeStaff
+    const held = (staff.data ?? []).find((s) => s.id === current)
+    return [
+      ...(held
+        ? [{ ...held, full_name: `${held.full_name} (has left — please reassign)` }]
+        : [{ id: current, full_name: 'A former member of staff — please reassign' } as StaffRosterRow]),
+      ...activeStaff,
+    ]
   }
 
   return (
@@ -331,7 +579,7 @@ function ClassTeachersTab() {
               <select value={teacherFor(null)} onChange={(e) => setTeacher.mutate({ sectionId: null, staffId: e.target.value || null })}
                 disabled={!sessionId} className="w-56 rounded border border-slate-300 px-2 py-1 text-sm focus:border-brand-500 focus:outline-none">
                 <option value="">— unassigned —</option>
-                {activeStaff.map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
+                {optionsFor(null).map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
               </select>
             </li>
             {sections.data?.map((sec) => (
@@ -340,7 +588,7 @@ function ClassTeachersTab() {
                 <select value={teacherFor(sec.id)} onChange={(e) => setTeacher.mutate({ sectionId: sec.id, staffId: e.target.value || null })}
                   disabled={!sessionId} className="w-56 rounded border border-slate-300 px-2 py-1 text-sm focus:border-brand-500 focus:outline-none">
                   <option value="">— unassigned —</option>
-                  {activeStaff.map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
+                  {optionsFor(sec.id).map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
                 </select>
               </li>
             ))}

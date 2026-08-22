@@ -308,8 +308,45 @@ flagged "none given".
 | Column | Note |
 |---|---|
 | `fee_heads.is_refundable` | A security deposit is money the school **owes back**. Unwired, it is billed and collected as ordinary income, and `fn_report_balance_sheet` counts it as settled rather than as a liability alongside `advance_held`. |
-| `staff.left_on` | No way to record when a staff member left. |
 | `result_cards.generated_at` | Metadata only. |
+
+### Staff leaving (0053)
+
+`staff.left_on` was on the list above until 0053, and pulling on it found
+something worse than an unused column.
+
+The staff screen's "Deactivate" button wrote `staff.status`, and **nothing
+anywhere reads `staff.status`** — `current_school_id()`, `has_role()` and
+`is_staff()` all gate on `profiles.active`. So a teacher who resigned and was
+"deactivated" could open the app the next morning and mark attendance, enter
+marks and read every child's record in their class. Two switches existed: an
+obvious one that did nothing about access, and an effective one in
+Settings → Users that nobody would look for after pressing the obvious one.
+
+Two further consequences followed from the same button:
+
+* `sections.class_teacher_id` was left pointing at the departed teacher — and
+  it is what result cards print. The Class Teachers screen builds its dropdown
+  from *active* staff, so the stored id matched no `<option>` and the select
+  rendered "— unassigned —". The screen said the section had no class teacher
+  while the database had one and the card still printed their name.
+* `left_on` was never written, so the school had no record of when anybody left.
+
+`fn_staff_leave` makes it one action: the date, the revoked login, the vacated
+class-teacher slots, the dropped current-and-future assignments, an audit row
+with the reason, and a summary the screen turns into "Class 1-A and Class 1-B
+now have no class teacher". Assignments for sessions that had already ended are
+kept, because *who taught 1-A in 2023-24* must still be answerable. `fn_staff_rejoin`
+undoes it and deliberately does **not** restore the class-teacher slots: a
+replacement may be in them.
+
+**Deliberately not silent.** The migration renames existing `'inactive'` rows to
+`'left'` but does **not** close their logins. It cannot tell "resigned in March"
+from "clicked by mistake", and revoking access from inside a migration is how
+somebody still working gets locked out on a Monday. Instead the roster reports
+anyone who has left whose login still works, and the staff screen shows that as
+a red banner with a Close login button per person. The school sees the list and
+decides.
 
 ## The bug class this project keeps producing (0047)
 

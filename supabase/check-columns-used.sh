@@ -44,7 +44,6 @@ exam_subjects.practical_max
 fee_heads.is_refundable
 result_cards.generated_at
 school_settings.logo_url
-staff.left_on
 students.photo_url
 subjects.is_practical
 subjects.stream
@@ -85,6 +84,7 @@ fi
 
 new=()
 known_still=()
+stale=()
 checked=0
 
 while read -r tc; do
@@ -108,6 +108,30 @@ if [ ${#known_still[@]} -gt 0 ]; then
   echo
   echo "Known unused, still unwired (${#known_still[@]}) — see docs/PARITY.md:"
   printf '  %s\n' "${known_still[@]}"
+fi
+
+# A RATCHET ONLY TIGHTENS IF SOMETHING MAKES IT. Every entry in KNOWN that is
+# no longer unused — because it got wired up, or because the column was dropped
+# — is dead weight, and dead weight is not harmless: it is a standing permission
+# for that column to go unused AGAIN without failing the build. staff.left_on
+# sat here after 0053 started writing it, and nothing said so.
+while read -r tc; do
+  [ -z "$tc" ] && continue
+  hit=0
+  for k in ${known_still[@]+"${known_still[@]}"}; do
+    [ "$k" = "$tc" ] && hit=1 && break
+  done
+  [ "$hit" = 0 ] && stale+=("$tc")
+done <<< "$KNOWN"
+
+if [ ${#stale[@]} -gt 0 ]; then
+  echo
+  echo "STALE BASELINE ENTRIES (${#stale[@]}) — these are used now, or gone:"
+  printf '  %s\n' "${stale[@]}"
+  echo
+  echo "Delete them from KNOWN in this script. Leaving them is a standing licence"
+  echo "for the same column to fall out of use again without failing the build."
+  exit 1
 fi
 
 if [ ${#new[@]} -gt 0 ]; then

@@ -486,6 +486,51 @@ jobs:
         # resolves in a non-leap year instead of raising from make_date.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/search_birthdays.sql
 
+      - name: Staff leaving
+        # Assertion 19 is the reason 0053 exists. The old "Deactivate" button
+        # wrote staff.status, and NOTHING anywhere reads staff.status — every
+        # access check goes through profiles.active. A resigned teacher could
+        # therefore log in the next morning and mark attendance. Assertions 31-33
+        # do not check that a column changed: they become the departed teacher
+        # and assert is_staff(), has_role() and current_school_id() all refuse
+        # her.
+        #
+        # Assertions 16-18 are the transactional half. fn_staff_leave writes the
+        # status, vacates the class-teacher slots and drops the assignments
+        # BEFORE it touches the login, so if the "only active owner" guard fired
+        # and the function were not one transaction, a school would be left with
+        # an owner marked as gone who can still log in.
+        #
+        # Assertion 27 is the other direction: a session that had already ended
+        # keeps its assignment, because "who taught 1-A in 2023-24" must still be
+        # answerable after the teacher has gone.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/staff_leaving.sql
+
+      - name: Every suite on disk has a step above
+        # The gap this closes has already happened twice in this repo, in two
+        # different places: supabase/bundles/ stopped at 0039 while CI stayed
+        # green, and fn_reverse_other_income shipped with no caller. Both were
+        # "the artefact exists, nothing runs it".
+        #
+        # A test suite added without a step here is the same failure: the file is
+        # in the repo, it passes on a laptop, and CI never opens it. Comparing
+        # the directory against this file is the only thing that notices.
+        run: |
+          missing=0
+          for f in supabase/tests/*.sql; do
+            b=$(basename "$f")
+            if ! grep -q -F "tests/$b" .github/workflows/ci.yml; then
+              echo "NO CI STEP RUNS supabase/tests/$b"
+              missing=1
+            fi
+          done
+          if [ "$missing" = 1 ]; then
+            echo
+            echo "Add a step above that runs it. A suite CI never opens is not a test."
+            exit 1
+          fi
+          echo "all $(ls supabase/tests/*.sql | wc -l) suites are run by a step above"
+
       - name: Message settings — does switching a message off actually stop it?
         # message_templates has carried an `enabled` flag since 0034 that
         # nothing in the app could set. A toggle that only greys out a checkbox
