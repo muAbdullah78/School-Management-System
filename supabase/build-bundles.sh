@@ -51,6 +51,33 @@ emit() {                       # emit <output> <first-file-glob-index> <files...
   echo "  wrote $out ($(wc -l < "$out") lines)"
 }
 
+# --- Every migration must END with a terminated statement ---------------------
+# A bundle CONCATENATES the migrations. A file whose last statement has no
+# trailing semicolon still applies on its own, because psql flushes the buffer at
+# EOF — but in a bundle its closing $function$ runs straight into the next file's
+# CREATE and the whole paste dies with "syntax error at or near CREATE".
+#
+# That happened: 0051 and 0052 were generated from pg_get_functiondef(), which
+# emits no terminator. Both were valid alone and broke bundle 5. Checking here
+# means generation fails rather than the school-facing artefact silently
+# breaking, which is a better place to find out than CI.
+unterminated=()
+for f in supabase/migrations/*.sql; do
+  last=$( { grep -vE '^[[:space:]]*(--.*)?$' "$f" || true; } | tail -1 )
+  case "$last" in
+    *\;) ;;
+    *) unterminated+=("$(basename "$f") — last code line: ${last}") ;;
+  esac
+done
+if [ ${#unterminated[@]} -gt 0 ]; then
+  echo "MIGRATIONS WHOSE LAST STATEMENT IS NOT TERMINATED:"
+  printf '  %s\n' "${unterminated[@]}"
+  echo
+  echo "Each of these applies fine alone and BREAKS the bundle it lands in,"
+  echo "because a bundle concatenates the files. Add the missing semicolon."
+  exit 1
+fi
+
 # Clear the directory first. The coverage check below inspects the bundle FILES
 # on disk, so a stale bundle left over from a deleted glob would satisfy it and
 # the check would pass while the script no longer generates that bundle at all.
