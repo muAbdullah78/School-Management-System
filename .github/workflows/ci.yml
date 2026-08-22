@@ -378,6 +378,20 @@ jobs:
         # Verified by planting fn_planted_orphan() and confirming this fails.
         run: ./supabase/check-reachable.sh
 
+      - name: Is every column used by something?
+        # The column-level twin, and it exists because the function check cannot
+        # see the worst bug of this kind we have had: profiles.active was WRITTEN
+        # by the Settings screen and read by NOTHING, so "Deactivate" left a
+        # dismissed clerk with full access.
+        #
+        # A column nothing reads is a promise the software does not keep; a
+        # column nothing writes is a feature designed and never built. Thirteen
+        # existing ones are listed as a baseline in the script and in
+        # docs/PARITY.md; any NEW one fails the build.
+        #
+        # Verified by adding students.planted_dead_col and confirming this fails.
+        run: ./supabase/check-columns-used.sh
+
       - name: Reports — does the statement agree with the Accounts screen?
         # Assertion 6 is the point of this suite: the debit-and-credit statement
         # must net to the same profit fn_finance_summary reports for the same

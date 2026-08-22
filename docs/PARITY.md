@@ -253,6 +253,54 @@ Items 1-6 and 9 are **done** (PR #17). What follows is the remaining work.
 12. **Multi-campus** — last, because it touches every table, and only if a real
     school asks for it.
 
+## Thirteen columns nothing uses (found by check-columns-used.sh)
+
+The column-level twin of the reachability check found thirteen. Ranked by what
+their absence actually costs a school, because several are not cosmetic.
+
+### Needs a decision — no Supabase Storage exists at all
+
+| Column | What is missing |
+|---|---|
+| `students.photo_url` | Student photographs. Theirs has file upload **and** webcam capture, and a photo appears on the student profile, class lists and ID cards. |
+| `school_settings.logo_url` | The school's logo on the printed challan, result card and certificates. A fee voucher with no logo does not look like it came from the school. |
+
+**Not built, deliberately.** Both need a Storage bucket, and bucket policies are
+not table RLS — they are `storage.objects` policies, which this environment
+cannot exercise at all (there is no Supabase here, only Postgres). Shipping
+untested bucket policies for **photographs of children in a multi-tenant system**
+is not a risk worth taking: the failure mode is one school fetching another
+school's pupils' photographs. This needs to be built against a real project and
+verified there.
+
+### Exam and board module — these look like correctness gaps
+
+| Column | What its absence implies |
+|---|---|
+| `exam_subjects.practical_max` | No practical marks. Pakistani boards examine practicals in the science subjects, so a science result computed without them is incomplete. |
+| `assessments.weightage` | Assessments cannot be weighted, so a 10-mark class test may count the same as a 100-mark paper in whatever aggregates it. |
+| `enrollments.stream`, `subjects.stream`, `subjects.is_practical` | No streams. Science / Arts / Pre-medical is fundamental from class 9, and subject lists differ by stream. |
+| `enrollments.bise_reg_no` | The BISE registration number, which a school must hold for every board candidate. |
+
+Worth ranking against real market knowledge before building: these change how
+results are computed, and a semantic change to marks after a school has entered
+them is not a safe thing to do casually.
+
+### Audit trail
+
+| Column | What its absence implies |
+|---|---|
+| `attendance_daily.correction_reason` | Attendance can be corrected with no reason recorded. |
+| `mark_entries.correction_reason` | So can marks — which matters far more, and is exactly what a parent disputes. |
+
+### Minor
+
+| Column | Note |
+|---|---|
+| `fee_heads.is_refundable` | A security deposit is money the school **owes back**. Unwired, it is billed and collected as ordinary income, and `fn_report_balance_sheet` counts it as settled rather than as a liability alongside `advance_held`. |
+| `staff.left_on` | No way to record when a staff member left. |
+| `result_cards.generated_at` | Metadata only. |
+
 ## The bug class this project keeps producing (0047)
 
 Almost every serious defect found in this work has been the same shape:
