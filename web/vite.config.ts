@@ -22,7 +22,12 @@ export default defineConfig({
     // they write files, and they need `npm run build` to have run first for the
     // stylesheet — so they must never run in CI. Run one deliberately with:
     //
-    //   npx vitest run --dir tools tools/challan-preview.test.tsx
+    //   npm run harness                    (all of them)
+    //   npm run harness -- balance-sheet   (just one)
+    //
+    // A bare `vitest run tools/...` does NOT work: a CLI file argument filters
+    // `include` rather than adding to it, so it matches nothing. That is what
+    // vitest.harness.config.ts exists for.
     //
     // The challan harness earned its keep immediately: it showed a fully paid
     // slip printing "PAST DUE — PAY IMMEDIATELY", which no assertion about

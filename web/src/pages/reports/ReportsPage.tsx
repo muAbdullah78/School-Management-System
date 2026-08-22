@@ -22,6 +22,9 @@ const TABS = [
   { key: 'unpaid', label: 'Unpaid Challans' },
   { key: 'discounts', label: 'Discounts' },
   { key: 'admissions', label: 'Admissions' },
+  // A position as at one day, not a range — which is why it sits apart from
+  // the four above and is the only report here that is not a table.
+  { key: 'balancesheet', label: 'Balance Sheet' },
   { key: 'daybook', label: 'Day Book / Cash' },
   { key: 'reconciliation', label: 'Reconciliation' },
   { key: 'defaulters', label: 'Defaulters' },
@@ -32,6 +35,7 @@ const TABS = [
 
 import {
   LedgerReport, UnpaidInvoicesReport, DiscountsReport, AdmissionsReport,
+  BalanceSheetReport,
 } from './FinanceReports'
 
 type TabKey = (typeof TABS)[number]['key']
@@ -58,6 +62,7 @@ export function ReportsPage() {
         {tab === 'unpaid' && <UnpaidInvoicesReport />}
         {tab === 'discounts' && <DiscountsReport />}
         {tab === 'admissions' && <AdmissionsReport />}
+        {tab === 'balancesheet' && <BalanceSheetReport />}
         {tab === 'daybook' && <DayBookReport />}
         {tab === 'reconciliation' && <ReconciliationReport />}
         {tab === 'defaulters' && <DefaultersReport />}

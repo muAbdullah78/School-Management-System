@@ -2321,6 +2321,59 @@ export async function getAdmissionReport(
   return (data ?? []) as AdmissionReportRow[]
 }
 
+export interface BalanceSheet {
+  as_at: string
+  /** Owed to the school on that date, across every student it has ever had. */
+  receivable: number
+  /** Of the receivable, how much belongs to children no longer on the roll. */
+  receivable_off_roll: number
+  cash_in: number
+  cash_out: number
+  cash_position: number
+  /** Fees taken for a month not yet billed — a liability, not income. */
+  advance_held: number
+  fee_receipts: number
+  other_income: number
+  charges_raised: number
+  allocated: number
+  students_on_roll: number
+  students_owing: number
+  /** What the figures do and do not include, straight from SQL. */
+  basis: string
+}
+
+/**
+ * The school's position AS AT one day, not a date range.
+ *
+ * Every other report here answers "what happened between two dates". This one
+ * answers "where did we stand", which cannot be served by summing
+ * student_balance() — that is always today's figure, whatever date you print
+ * above it. See supabase/migrations/0045_balance_sheet.sql.
+ */
+export async function getBalanceSheet(asAt: string | null): Promise<BalanceSheet> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_report_balance_sheet', { p_as_at: asAt })
+  if (error) throw new Error(error.message)
+  const r = (data ?? {}) as Record<string, unknown>
+  const num = (k: string) => Number(r[k] ?? 0)
+  return {
+    as_at: String(r.as_at ?? ''),
+    receivable: num('receivable'),
+    receivable_off_roll: num('receivable_off_roll'),
+    cash_in: num('cash_in'),
+    cash_out: num('cash_out'),
+    cash_position: num('cash_position'),
+    advance_held: num('advance_held'),
+    fee_receipts: num('fee_receipts'),
+    other_income: num('other_income'),
+    charges_raised: num('charges_raised'),
+    allocated: num('allocated'),
+    students_on_roll: num('students_on_roll'),
+    students_owing: num('students_owing'),
+    basis: String(r.basis ?? ''),
+  }
+}
+
 // ---- Message settings (their "Automation Settings") -----------------------
 
 export interface MessageSetting {

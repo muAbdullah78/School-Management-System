@@ -357,6 +357,23 @@ jobs:
         # money reports follow fn_finance_summary's role boundary.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/reports.sql
 
+      - name: Balance sheet — is the position AS AT a date, or just today's?
+        # The obvious implementation of an as-at report is to sum
+        # student_balance(), which ignores dates entirely and prints today's
+        # position under yesterday's heading. The first cut of this function did
+        # the money as-at but took the headcount from student_balance(), so a
+        # date before the school billed anything reported "receivable 0,
+        # students owing 1" — a statement contradicting itself in two adjacent
+        # numbers. Assertion 10 sweeps 17 dates for exactly that.
+        #
+        # Assertions 6 and 7 are the load-bearing ones: a parent paying August
+        # in July has NOT settled an August charge that does not exist yet, so
+        # that money is a liability. Getting it wrong makes a school that
+        # collects advance fees look like it owes nobody anything. Assertion 11
+        # is the cross-check — receivable must equal the sum of every student
+        # ledger, or two screens disagree about the same money.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/balance_sheet.sql
+
       - name: Message settings — does switching a message off actually stop it?
         # message_templates has carried an `enabled` flag since 0034 that
         # nothing in the app could set. A toggle that only greys out a checkbox
@@ -444,3 +461,25 @@ jobs:
         # family or a student directly. If it is ever "simplified" into building
         # its own fixtures, it stops testing anything.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/family_linkage.sql
+
+      - name: Every suite again, in reverse order
+        # Suites are supposed to be independent. They are not, automatically:
+        # counter.sql passed alone and failed after fee_ops.sql, because
+        # fee_ops.sql COMMITS a profile row and counter.sql's fixture upserted
+        # the same UUID without updating full_name. A suite that only passes in
+        # the position it happens to occupy in this file is a suite that will
+        # break the day someone reorders the list.
+        #
+        # Globbed rather than listed, so a new suite is covered the moment it is
+        # added and this step cannot drift out of date the way a hand-kept list
+        # does.
+        run: |
+          for f in $(ls supabase/tests/*.sql | sort -r); do
+            echo "::group::reverse $f"
+            psql -v ON_ERROR_STOP=1 -f "$f" > /dev/null || {
+              echo "::error::$f fails when run in reverse order — it depends on another suite"
+              exit 1
+            }
+            echo "::endgroup::"
+          done
+          echo "all suites pass in reverse order too"

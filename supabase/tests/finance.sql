@@ -23,6 +23,15 @@
 
 \set ON_ERROR_STOP on
 
+-- Wrapped in a transaction that is rolled back at the end, like the ten newer
+-- suites. It was not, and the "clean slate" delete below hid why: nothing
+-- cascades from public.schools — 34 tables reference it with NO ACTION — so on
+-- a fresh database that delete matches zero rows and does nothing, while on a
+-- second run it fails outright on the profiles foreign key. This suite could
+-- therefore only ever be run ONCE per database, and the rows it committed were
+-- what made counter.sql pass alone and fail after fee_ops.sql.
+begin;
+
 create or replace function auth.uid() returns uuid language sql stable as
   $$ select nullif(current_setting('test.uid', true), '')::uuid $$;
 
@@ -35,7 +44,10 @@ declare
   v_sess uuid; v_class uuid; v_sec uuid; v_head uuid; v_fam uuid; v_stu uuid;
 begin
   perform set_config('test.uid', '', false);
-  delete from public.schools where name = 'Finance Test School';
+  -- (No "clean slate" delete here. Nothing cascades from public.schools —
+  -- 34 tables reference it with NO ACTION — so the delete that used to sit
+  -- on this line matched zero rows on a fresh database and failed outright
+  -- on a re-run. The suite rolls back instead, which actually works.)
 
   insert into public.schools (name) values ('Finance Test School') returning id into v_school;
   insert into public.subscriptions (school_id, plan_code, status, trial_ends_on)
@@ -403,7 +415,10 @@ declare
   v_n bigint; s jsonb;
 begin
   perform set_config('test.uid', '', false);
-  delete from public.schools where name = 'Other Finance School';
+  -- (No "clean slate" delete here. Nothing cascades from public.schools —
+  -- 34 tables reference it with NO ACTION — so the delete that used to sit
+  -- on this line matched zero rows on a fresh database and failed outright
+  -- on a re-run. The suite rolls back instead, which actually works.)
   insert into public.schools (name) values ('Other Finance School') returning id into v_other;
   insert into public.subscriptions (school_id, plan_code, status, trial_ends_on)
     values (v_other, 'starter', 'active', current_date + 30);
@@ -435,3 +450,5 @@ begin
 end $t$;
 
 do $$ begin raise notice 'ALL FINANCE TESTS PASSED'; end $$;
+
+rollback;

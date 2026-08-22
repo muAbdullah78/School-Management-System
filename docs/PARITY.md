@@ -115,7 +115,7 @@ Their busiest screen, and the one ours gets most wrong. Theirs opens with:
 | Manage Advance Fee | `partial` | `family_credit` exists; no screen shows or applies it. |
 | Direct Payment | `missing` | Payment without an invoice — walk-in, non-student. |
 | Fee Installments | `missing` | Designed in docs, never built. |
-| Print Balance Sheet | `missing` | |
+| Print Balance Sheet | `have` (0045) | As at a date, not a range. Prints. |
 | Deleted Fees | `missing` | An audit list of reversed/removed charges. |
 | Generate Fee Increment | `partial` | `fn_fee_increment` exists, no UI. |
 | Generate Fee **Decrement** | `missing` | We only ever built increment. |
@@ -145,7 +145,7 @@ Their busiest screen, and the one ours gets most wrong. Theirs opens with:
 | Accounts Summary Report | `partial` — the statement's head totals cover it; no separate screen |
 | Detailed Income Report | `have` (0044) — the statement, filtered |
 | Detailed Expense Report | `have` (0044) — the statement, filtered |
-| Find A Balance Sheet | `missing` — needs an as-at-date snapshot, not a range |
+| Find A Balance Sheet | `have` (0045) — a genuine as-at-date reconstruction |
 | Admission Date Report | `have` (0044) — with a still-here column |
 
 ## 9. Test Management and Exam Management
@@ -241,14 +241,38 @@ Items 1-6 and 9 are **done** (PR #17). What follows is the remaining work.
    that class of bug.
 7. **Teacher remarks and a position-holders screen.** The tabulation sheet,
    date sheet and admit cards already exist — verified reachable, not assumed.
-8. ~~**The reporting area**~~ Six of the eight done (0044). Remaining: a
-   balance sheet (needs an as-at-date snapshot rather than a range) and a
-   standalone accounts-summary screen.
+8. ~~**The reporting area**~~ Seven of the eight done (0044, 0045). Remaining:
+   a standalone accounts-summary screen. The balance sheet (0045) was the one
+   that could not be served by filtering the ledger, because it is a position
+   AS AT a day rather than a range — summing `student_balance()` gives today's
+   figure whatever date you print above it.
 9. ~~**WhatsApp automation**~~ Done (0043).
 10. **Admission enquiries and requests.**
 11. **Global search, module search, student photos, birthdays.**
 12. **Multi-campus** — last, because it touches every table, and only if a real
     school asks for it.
+
+## Found while building the balance sheet (0045)
+
+Three things that were not on any list, recorded because each is the kind of
+defect that stays invisible until it matters:
+
+* **A school can never be deleted.** 34 tables reference `public.schools` with
+  `ON DELETE NO ACTION`, so `delete from schools` fails outright. That is
+  correct as a safety property — nobody should be able to erase a school by
+  accident — but it means there is no path at all for a school leaving the
+  platform, or for a data-deletion request. Relevant to item 8 below, the
+  operator console.
+* **Seven test suites could only ever be run once per database.** Each opened
+  with a `delete from public.schools where name = '…'` "clean slate" that, per
+  the above, deletes nothing on a fresh database and errors on a re-run. They
+  committed their fixtures instead of rolling back, which is also what made
+  `counter.sql` pass alone and fail after `fee_ops.sql`. All seven now roll
+  back, all 17 suites pass three times over in both orders, and CI re-runs the
+  whole set in reverse to keep it that way.
+* **The documented way to run a rendering harness had never worked.** A CLI file
+  argument FILTERS vitest's `include` rather than adding to it, so the command
+  in `vite.config.ts` matched nothing and exited 1. Now `npm run harness`.
 
 Items 1–6 are what makes the product usable daily. 7–9 are what makes a head
 teacher choose it. 10–12 are growth.

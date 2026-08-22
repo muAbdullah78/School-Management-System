@@ -10,13 +10,18 @@
  * All four are built on the shared DataTable, so every one of them sorts,
  * searches, exports to CSV and prints without any of that being written four
  * times. That is the payoff for having built the component.
+ *
+ * The fifth, added after, is the balance sheet — the only one here that is a
+ * position AS AT a day rather than a range, and so the only one that is not a
+ * table.
  */
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   getLedger, getUnpaidInvoices, getDiscountReport, getAdmissionReport,
-  getCurrentSession,
+  getBalanceSheet, getCurrentSession,
   type LedgerRow, type UnpaidInvoiceRow, type DiscountReportRow, type AdmissionReportRow,
+  type BalanceSheet,
 } from '@/lib/db'
 import { DataTable, type Column } from '@/components/DataTable'
 import { fmtPKR, fmtDate } from '@/lib/format'
@@ -391,4 +396,250 @@ export function AdmissionsReport() {
       </p>
     </div>
   )
+}
+
+/* ============================================================ balance sheet */
+
+/**
+ * The one report here that is not a list.
+ *
+ * Every other tab answers "what happened between two dates" and so renders as
+ * rows. This answers "where did the school stand on this day", which is five
+ * figures and the relationships between them — so it is laid out as a statement,
+ * with the arithmetic shown rather than asserted. A principal who cannot see
+ * how a total was reached does not trust the total.
+ */
+function Figure({ label, value, note, tone = 'plain', big = false }: {
+  label: string
+  value: string
+  note?: string
+  tone?: 'plain' | 'good' | 'bad' | 'hold'
+  big?: boolean
+}) {
+  const ring =
+    tone === 'good' ? 'border-money-300 bg-money-50'
+    : tone === 'bad' ? 'border-danger-200 bg-danger-50'
+    : tone === 'hold' ? 'border-amber-300 bg-amber-50'
+    : 'border-slate-200 bg-white'
+  const text =
+    tone === 'good' ? 'text-money-800'
+    : tone === 'bad' ? 'text-danger-700'
+    : tone === 'hold' ? 'text-amber-800'
+    : 'text-slate-800'
+  return (
+    <div className={`rounded border p-4 ${ring}`}>
+      <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
+      <div className={`mt-1 font-semibold tabular-nums ${text} ${big ? 'text-2xl' : 'text-xl'}`}>
+        {value}
+      </div>
+      {note && <div className="mt-1 text-xs leading-snug text-slate-500">{note}</div>}
+    </div>
+  )
+}
+
+function WorkingRow({ label, value, sign, muted }: {
+  label: string; value: number; sign?: '+' | '−'; muted?: boolean
+}) {
+  return (
+    <tr className={muted ? 'text-slate-500' : 'text-slate-700'}>
+      <td className="w-6 py-1 text-right align-top text-slate-400">{sign}</td>
+      <td className="py-1 pl-2">{label}</td>
+      <td className="py-1 pl-4 text-right tabular-nums">{fmtPKR(value)}</td>
+    </tr>
+  )
+}
+
+export function BalanceSheetReport() {
+  const [asAt, setAsAt] = useState(today())
+
+  const q = useQuery({
+    queryKey: ['balanceSheet', asAt],
+    queryFn: () => getBalanceSheet(asAt || null),
+    enabled: !!asAt,
+  })
+  const b = q.data
+
+  if (q.isError) {
+    return (
+      <div className="rounded border border-danger-200 bg-danger-50 p-4 text-sm text-danger-700">
+        {(q.error as Error).message}
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <div className="mb-4 flex flex-wrap items-end gap-3 print:hidden">
+        <label className="block text-sm">
+          <span className="text-slate-600">As at</span>
+          <input type="date" value={asAt} onChange={(e) => setAsAt(e.target.value)}
+            className={`mt-1 block ${FIELD}`} />
+        </label>
+        <div className="flex gap-2">
+          <button type="button" onClick={() => setAsAt(today())}
+            className="rounded border border-slate-300 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50">
+            Today
+          </button>
+          <button type="button" onClick={() => setAsAt(lastDayOfPrevMonth())}
+            className="rounded border border-slate-300 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50">
+            End of last month
+          </button>
+          <button type="button" onClick={() => setAsAt(lastDayOfJune())}
+            className="rounded border border-slate-300 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50">
+            30 June
+          </button>
+        </div>
+        <button type="button" onClick={() => window.print()}
+          className="ml-auto rounded border border-slate-300 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50">
+          Print
+        </button>
+      </div>
+
+      {q.isLoading && <div className="py-10 text-center text-sm text-slate-500">Working it out…</div>}
+
+      {b && <BalanceSheetView b={b} />}
+    </div>
+  )
+}
+
+/**
+ * The statement itself, with no data fetching in it.
+ *
+ * Split out so the layout can be rendered to a file and LOOKED AT — see
+ * web/tools/balance-sheet-preview.test.tsx. The challan printed "PAST DUE — PAY
+ * IMMEDIATELY" across fully-paid reprints for a while, and no assertion about
+ * markup caught it; rendering it and looking did.
+ */
+export function BalanceSheetView({ b }: { b: BalanceSheet }) {
+  return (
+        <div id="report">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold text-slate-800">Balance Sheet</h2>
+            <p className="text-sm text-slate-500">
+              Position as at {fmtDate(b.as_at)} · {b.students_on_roll} on the roll ·{' '}
+              {b.students_owing} owing
+            </p>
+          </div>
+
+          {/* The one thing on this page a school could act on wrongly if it
+              were left implicit. If the advance fees being held exceed the cash
+              actually in hand, that money has already been spent — and it may
+              have to be given back. Both figures are in the tiles either way;
+              saying nothing about the relationship between them is what makes a
+              statement technically true and practically misleading. */}
+          {b.advance_held > 0 && b.advance_held > b.cash_position && (
+            <div className="mb-4 rounded border border-danger-300 bg-danger-50 p-3 text-sm text-danger-800">
+              <strong>Advance fees exceed the cash in hand.</strong>{' '}
+              {fmtPKR(b.advance_held)} has been collected for months not yet billed, but the
+              cash position is only {fmtPKR(b.cash_position)}. If those parents ask for a
+              refund, or their children leave, the money to return is not there.
+            </div>
+          )}
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Figure
+              label="Receivable" big
+              // Never billed is NOT the same as nothing owed — a green zero on a
+              // school that has not issued a single challan reads as "all
+              // collected". This is the same trap fn_dashboard_summary fell into.
+              tone={b.charges_raised === 0 ? 'plain' : b.receivable > 0 ? 'bad' : 'good'}
+              value={fmtPKR(b.receivable)}
+              note={b.charges_raised === 0
+                ? 'Nothing has been billed yet, so nothing is owed. Not the same as being paid up.'
+                : b.receivable > 0
+                  ? 'Charged to parents by this date and not yet paid.'
+                  : 'Every challan issued by this date is settled.'}
+            />
+            <Figure
+              label="Cash position" big
+              // Same rule as the receivable tile: a school where nothing has
+              // happened yet is empty, not healthy, so it does not get the
+              // green tick.
+              tone={b.cash_in === 0 && b.cash_out === 0 ? 'plain'
+                    : b.cash_position >= 0 ? 'good' : 'bad'}
+              value={fmtPKR(b.cash_position)}
+              note={b.cash_in === 0 && b.cash_out === 0
+                ? 'No money in or out yet.'
+                : 'Everything received less everything spent, from the start.'}
+            />
+            <Figure
+              label="Advance held" big tone={b.advance_held > 0 ? 'hold' : 'plain'}
+              value={fmtPKR(b.advance_held)}
+              note={b.advance_held > 0
+                ? 'Fees taken for a month not yet billed. Owed back if a child leaves.'
+                : 'No fees taken for months that have not been billed.'}
+            />
+            <Figure
+              label="Arrears of leavers" big
+              tone={b.receivable_off_roll > 0 ? 'hold' : 'plain'}
+              value={fmtPKR(b.receivable_off_roll)}
+              note="Part of the receivable, owed by children no longer on the roll."
+            />
+          </div>
+
+          {/* The workings. Not decoration — this is what makes the four tiles
+              above checkable rather than something the software just asserts. */}
+          <div className="mt-6 grid gap-6 lg:grid-cols-2">
+            <div className="rounded border border-slate-200 p-4">
+              <h3 className="mb-2 text-sm font-semibold text-slate-700">
+                How the receivable is reached
+              </h3>
+              <table className="w-full text-sm">
+                <tbody>
+                  <WorkingRow label="Charged by this date (fees, fines, adjustments)"
+                    value={b.charges_raised} sign="+" />
+                  <WorkingRow label="Paid against those challans" value={b.allocated} sign="−" />
+                  <tr className="border-t border-slate-200 font-semibold text-slate-800">
+                    <td />
+                    <td className="py-2 pl-2">Receivable</td>
+                    <td className="py-2 pl-4 text-right tabular-nums">{fmtPKR(b.receivable)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div className="rounded border border-slate-200 p-4">
+              <h3 className="mb-2 text-sm font-semibold text-slate-700">
+                How the cash position is reached
+              </h3>
+              <table className="w-full text-sm">
+                <tbody>
+                  <WorkingRow label="Fee receipts (verified only)" value={b.fee_receipts} sign="+" />
+                  <WorkingRow label="Other income" value={b.other_income} sign="+" />
+                  <WorkingRow label="Expenses" value={b.cash_out} sign="−" />
+                  <tr className="border-t border-slate-200 font-semibold text-slate-800">
+                    <td />
+                    <td className="py-2 pl-2">Cash position</td>
+                    <td className="py-2 pl-4 text-right tabular-nums">{fmtPKR(b.cash_position)}</td>
+                  </tr>
+                  <WorkingRow label="of which held as advance fees"
+                    value={b.advance_held} muted />
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <p className="mt-4 text-xs leading-relaxed text-slate-500">{b.basis}</p>
+    </div>
+  )
+}
+
+/** Last day of the previous month — the date a monthly close is dated. */
+function lastDayOfPrevMonth(): string {
+  const d = new Date()
+  // Day 0 of this month is the last day of the previous one.
+  const last = new Date(d.getFullYear(), d.getMonth(), 0)
+  return `${last.getFullYear()}-${String(last.getMonth() + 1).padStart(2, '0')}-${String(last.getDate()).padStart(2, '0')}`
+}
+
+/**
+ * 30 June — the Pakistani financial year end, and the date a school's accounts
+ * are actually closed on. If we are already past it this year it means this
+ * year's; before it, last year's, because that is the close you would still be
+ * working on.
+ */
+function lastDayOfJune(): string {
+  const d = new Date()
+  const year = d.getMonth() >= 6 ? d.getFullYear() : d.getFullYear() - 1
+  return `${year}-06-30`
 }
