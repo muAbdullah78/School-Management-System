@@ -506,6 +506,26 @@ jobs:
         # answerable after the teacher has gone.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/staff_leaving.sql
 
+      - name: When a child leaves
+        # fn_set_student_status is how children leave a school and it drives
+        # billing, and it had NO suite at all until 0054. Writing one found two
+        # defects.
+        #
+        # Assertion 9 is the one a parent would care about: the UI offered only
+        # "Strike off", so a family moving city was recorded as removal for
+        # non-payment or misconduct. Assertions 18-22 cover the contradiction —
+        # reinstating a graduated child used to leave students.status = 'active'
+        # with the enrollment still 'graduated', a child reading as a current
+        # pupil while in no class, billed nothing and counted against no plan
+        # limit — and prove the refusal leaves nothing behind.
+        #
+        # Assertions 13-16b are the money, asserted by generating invoices and
+        # counting rather than by reading columns: leaving stops next month's
+        # challan and the plan count, the month they WERE here is not erased,
+        # and a child whose student record and enrollment DISAGREE is not billed
+        # either.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/student_status.sql
+
       - name: Every suite on disk has a step above
         # The gap this closes has already happened twice in this repo, in two
         # different places: supabase/bundles/ stopped at 0039 while CI stayed

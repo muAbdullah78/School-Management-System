@@ -439,3 +439,63 @@ defect that stays invisible until it matters:
 
 Items 1–6 are what makes the product usable daily. 7–9 are what makes a head
 teacher choose it. 10–12 are growth.
+
+
+### A child leaving (0054)
+
+The same thread pulled on the student side. Four findings, three of them defects.
+
+**The only button was "Strike off".** `student_status` has four values — active,
+struck_off, withdrawn, graduated. `graduated` is set by the year-end rollover,
+which is right. **`withdrawn` was unreachable from anywhere in the app.** So a
+child whose family moved city was recorded as *struck off*, which in Pakistan
+means removed for non-payment or misconduct. It is what goes in the register and
+what a parent would read on a leaving certificate. The most ordinary reason a
+child leaves a school could not be recorded correctly.
+
+**Reinstating a graduated child left the two facts contradicting.** The old
+function reactivated enrollments only where status was `struck_off` or `left`.
+Proven by running it rather than by reading it:
+
+```
+GRADUATED:       student=graduated enrollment=graduated
+REINSTATED GRAD: student=active    enrollment=graduated
+```
+
+That child then reads as a current pupil on every student screen while being in
+no class, billed nothing, and counted against no plan limit — `fn_count_students`
+requires both statuses active. Nothing on any screen could reveal it. It is now
+refused, with a message naming the enrollment status and saying what to do
+instead.
+
+**There was no date.** The only trace of a leaving was free text appended to
+`students.notes` — "Status → withdrawn: Family moved to Karachi". No date, a
+reason only if the clerk typed one, both in a blob holding every other note.
+`students.left_on` and `students.leaving_reason` are now columns, and
+`fn_students_left` is the report that reads them — without which they would be
+two more columns written and never shown, which is the bug class in 0047.
+
+**What already worked, now pinned by tests:** withdrawing a child stops next
+month's challan and stops them counting toward the plan limit. Both are asserted
+by generating invoices and calling `fn_count_students`, not by reading columns,
+because one careless `create or replace` would break either silently.
+
+**One piece of hardening, labelled as such.** `fn_generate_class_invoices` chose
+who to bill from `enrollments.status` alone, while `fn_count_students` required
+`students.status` and `deleted_at` too — two functions answering "who is a
+current pupil" with different conditions. It cannot bite today (the status
+function keeps both in step, and *nothing in the codebase writes
+`students.deleted_at`*), so this is defence in depth and claiming otherwise would
+be overclaiming. It is worth having because the failure mode is billing a child
+who has left, and the change can only ever bill fewer children — never skip one
+who is here.
+
+**A near miss worth recording.** The first version of that change was hand-typed
+from a partial view of the function and diffed against the live definition before
+being committed. The diff showed it would have silently reverted five later
+migrations: the `unique_violation` guard that makes generation re-runnable, the
+`effective_from` lateral join for dated fee structures,
+`fn__apply_discount_lines`, and — worst — the `fn_apply_family_credit` pass that
+runs after generation. The migration would have applied perfectly cleanly. The
+final version is `pg_get_functiondef()` output with eight lines inserted, and
+0052 already says why: copy, never retype.
