@@ -17,16 +17,42 @@
 
 \set ON_ERROR_STOP on
 
+-- WHY `set constraints all immediate` APPEARS THROUGHOUT
+--
+-- The receipt queue runs on a DEFERRABLE INITIALLY DEFERRED trigger, on
+-- purpose: the message must quote the balance AFTER the payment, so it has to
+-- fire once the statement has settled rather than mid-insert. That normally
+-- means at COMMIT — and this suite now rolls back instead of committing, so the
+-- trigger would never run and every assertion below would inspect an empty
+-- table and pass for the wrong reason.
+--
+-- So each block forces any pending deferred triggers to fire first. It is a
+-- no-op when nothing is pending, which is why it can be applied uniformly
+-- rather than only where it happens to be needed today.
+
+-- Wrapped in a transaction that is rolled back at the end, like the ten newer
+-- suites. It was not, and the "clean slate" delete below hid why: nothing
+-- cascades from public.schools — 34 tables reference it with NO ACTION — so on
+-- a fresh database that delete matches zero rows and does nothing, while on a
+-- second run it fails outright on the profiles foreign key. This suite could
+-- therefore only ever be run ONCE per database, and the rows it committed were
+-- what made counter.sql pass alone and fail after fee_ops.sql.
+begin;
+
 create or replace function auth.uid() returns uuid language sql stable as
   $$ select nullif(current_setting('test.uid', true), '')::uuid $$;
 
+set constraints all immediate;
 do $seed$
 declare
   v_school uuid; v_owner uuid := '00000000-0000-0000-0000-00000000c001';
   v_sess uuid; v_class uuid; v_sec uuid; v_head uuid; v_fam uuid; v_stu uuid;
 begin
   perform set_config('test.uid', '', false);
-  delete from public.schools where name = 'Outbox Test School';
+  -- (No "clean slate" delete here. Nothing cascades from public.schools —
+  -- 34 tables reference it with NO ACTION — so the delete that used to sit
+  -- on this line matched zero rows on a fresh database and failed outright
+  -- on a re-run. The suite rolls back instead, which actually works.)
   insert into public.schools (name) values ('Outbox Test School') returning id into v_school;
   insert into public.subscriptions (school_id, plan_code, status, trial_ends_on)
     values (v_school, 'starter', 'active', current_date + 30);
@@ -73,6 +99,7 @@ end $seed$;
 create table if not exists public._ob (k text primary key, v uuid);
 
 -- 1. A payment queues a receipt, and the BALANCE IS POST-PAYMENT
+set constraints all immediate;
 do $t$
 declare v_fam uuid; j jsonb;
 begin
@@ -83,6 +110,7 @@ begin
     on conflict (k) do update set v = excluded.v;
 end $t$;
 
+set constraints all immediate;
 do $t$
 declare o record;
 begin
@@ -109,6 +137,7 @@ begin
 end $t$;
 
 -- 2. A PENDING challan queues nothing
+set constraints all immediate;
 do $t$
 declare v_fam uuid; j jsonb;
 begin
@@ -118,6 +147,7 @@ begin
     on conflict (k) do update set v = excluded.v;
 end $t$;
 
+set constraints all immediate;
 do $t$
 begin
   if exists (select 1 from public.message_outbox
@@ -128,6 +158,7 @@ begin
 end $t$;
 
 -- 2b. A REVERSAL queues nothing
+set constraints all immediate;
 do $t$
 declare v_fam uuid; j jsonb; v_rev uuid;
 begin
@@ -138,6 +169,7 @@ begin
     on conflict (k) do update set v = excluded.v;
 end $t$;
 
+set constraints all immediate;
 do $t$
 begin
   if exists (select 1 from public.message_outbox
@@ -148,6 +180,7 @@ begin
 end $t$;
 
 -- 3. Sent / skipped transitions
+set constraints all immediate;
 do $t$
 declare v_id uuid; v_st public.message_status; v_school uuid;
 begin
@@ -173,6 +206,7 @@ begin
 end $t$;
 
 -- 4. The number the table exists for
+set constraints all immediate;
 do $t$
 declare j jsonb;
 begin
@@ -187,6 +221,7 @@ begin
 end $t$;
 
 -- 5. A family with no phone must not break payments
+set constraints all immediate;
 do $t$
 declare v_school uuid; v_fam uuid; v_stu uuid; j jsonb;
 begin
@@ -204,11 +239,15 @@ begin
 end $t$;
 
 -- 6. Cross-tenant
+set constraints all immediate;
 do $t$
 declare v_other uuid; v_owner uuid := '00000000-0000-0000-0000-00000000c009'; v_n bigint;
 begin
   perform set_config('test.uid', '', false);
-  delete from public.schools where name = 'Other Outbox School';
+  -- (No "clean slate" delete here. Nothing cascades from public.schools —
+  -- 34 tables reference it with NO ACTION — so the delete that used to sit
+  -- on this line matched zero rows on a fresh database and failed outright
+  -- on a re-run. The suite rolls back instead, which actually works.)
   insert into public.schools (name) values ('Other Outbox School') returning id into v_other;
   insert into public.subscriptions (school_id, plan_code, status, trial_ends_on)
     values (v_other, 'starter', 'active', current_date + 30);
@@ -228,4 +267,7 @@ begin
 end $t$;
 
 drop table if exists public._ob;
+set constraints all immediate;
 do $$ begin raise notice 'ALL OUTBOX TESTS PASSED'; end $$;
+
+rollback;

@@ -4,6 +4,7 @@ import {
   getStudent, getStudentEnrollments, getGuardians, updateStudent, setStudentStatus,
   getStudentBalance, getStudentInvoices, getStudentPayments, attendanceSummary,
   getSiblings, getStudentLinks, removeStudentLink, studentJoinFamily, getStudentFamilyId,
+  listFamilyParents, createParentLogin, unlinkParent, getChallan, type Challan,
   getStudentMonthlyFee, getEnrollmentDiscounts, addDiscount, setDiscountStatus,
   recordPayment, billStudentMonth, deferInvoice, undoDefer, addAdjustment,
   getStudentMonthTests, getStudentMonthAttendance,
@@ -18,6 +19,7 @@ import { useAuth } from '@/auth/AuthProvider'
 import { APPROVER_ROLES, ADMIN_ROLES, type Role } from '@/auth/roles'
 import { Receipt, type ReceiptData } from '@/components/Receipt'
 import { useSchoolName } from '@/hooks/useSchoolName'
+import { ChallanPrint } from '@/pages/fees/ChallanPrint'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 const FINANCE_ROLES: Role[] = ['owner', 'principal', 'admin_clerk', 'accountant']
@@ -349,7 +351,135 @@ function Overview({
             <p className="mt-2 text-xs text-red-600">{(join.error as Error).message}</p>
           )}
         </div>
+
+        <ParentAccess familyId={myFamily.data ?? null} canEdit={canEdit} />
       </div>
+    </div>
+  )
+}
+
+/**
+ * Give this child's family a login for the parent portal.
+ *
+ * The portal (migration 0033) was complete and completely unreachable: nothing
+ * in the product wrote profiles.family_id, so my_family_id() was always null
+ * and every portal read refused. This panel is the missing link.
+ *
+ * It lives on the student profile rather than in Settings because that is where
+ * the school is already standing when a father asks for access — looking at his
+ * child. Access is granted to the FAMILY, so it covers every sibling at once.
+ */
+function ParentAccess({ familyId, canEdit }: { familyId: string | null; canEdit: boolean }) {
+  const qc = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const [fullName, setFullName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [done, setDone] = useState<string | null>(null)
+
+  const parents = useQuery({
+    queryKey: ['familyParents', familyId],
+    queryFn: () => listFamilyParents(familyId!),
+    enabled: !!familyId,
+  })
+
+  const create = useMutation({
+    mutationFn: () => createParentLogin({
+      email: email.trim(), password, full_name: fullName.trim(), family_id: familyId!,
+    }),
+    onSuccess: (r) => {
+      // Shown once, deliberately: the password is not stored anywhere we can
+      // read back, so if the clerk does not write it down now it has to be
+      // reset. Saying so is better than a silent success.
+      setDone(`${r.email} — password: ${password}`)
+      setFullName(''); setEmail(''); setPassword(''); setOpen(false)
+      qc.invalidateQueries({ queryKey: ['familyParents', familyId] })
+    },
+  })
+
+  const revoke = useMutation({
+    mutationFn: (profileId: string) => unlinkParent(profileId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['familyParents', familyId] }),
+  })
+
+  const valid = /^\S+@\S+\.\S+$/.test(email.trim()) && password.length >= 6
+
+  if (!familyId) return null
+
+  return (
+    <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
+      <div className="text-xs uppercase tracking-wide text-slate-500">Parent portal</div>
+
+      {parents.isLoading && <p className="mt-2 text-sm text-slate-400">Checking…</p>}
+
+      {parents.data?.length === 0 && (
+        <p className="mt-2 text-sm text-slate-400">
+          No login yet. A parent login shows fees, attendance and released results for every child
+          in this family.
+        </p>
+      )}
+
+      {(parents.data?.length ?? 0) > 0 && (
+        <ul className="mt-2 space-y-1.5 text-sm">
+          {parents.data?.map((p) => (
+            <li key={p.profile_id} className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="truncate text-slate-700">{p.full_name || p.email}</div>
+                <div className="truncate text-xs text-slate-400">{p.email}</div>
+                {!p.active && <div className="text-xs text-amber-700">Access removed</div>}
+              </div>
+              {canEdit && p.active && (
+                <button onClick={() => revoke.mutate(p.profile_id)} disabled={revoke.isPending}
+                  className="shrink-0 text-xs text-slate-400 hover:text-red-600 disabled:opacity-50">
+                  Remove
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {done && (
+        <div className="mt-3 rounded border border-money-200 bg-money-50 p-2 text-xs text-money-800">
+          <div className="font-medium">Login created — write this down now</div>
+          <div className="mt-0.5 break-all font-mono">{done}</div>
+          <div className="mt-1 text-money-700">
+            The password is not saved anywhere you can read it back. If it is lost the parent has to
+            use “Forgot password”.
+          </div>
+        </div>
+      )}
+
+      {canEdit && !open && (
+        <button onClick={() => { setOpen(true); setDone(null) }}
+          className="mt-3 rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+          + Give this family a login
+        </button>
+      )}
+
+      {canEdit && open && (
+        <form className="mt-3 space-y-2" onSubmit={(e) => { e.preventDefault(); if (valid) create.mutate() }}>
+          <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Parent's name"
+            className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-brand-500 focus:outline-none" />
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="father@example.com"
+            className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-brand-500 focus:outline-none" />
+          <input type="text" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="temporary password (min 6)"
+            className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-brand-500 focus:outline-none" />
+          {create.isError && <p className="text-xs text-red-600">{(create.error as Error).message}</p>}
+          <div className="flex gap-2">
+            <button type="submit" disabled={!valid || create.isPending}
+              className="rounded bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-60">
+              {create.isPending ? 'Creating…' : 'Create login'}
+            </button>
+            <button type="button" onClick={() => setOpen(false)}
+              className="rounded border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50">
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+
+      {revoke.isError && <p className="mt-2 text-xs text-red-600">{(revoke.error as Error).message}</p>}
     </div>
   )
 }
@@ -374,6 +504,17 @@ function FeesTab({
   const discounts = useQuery({ queryKey: ['enrollmentDiscounts', enrollment.enrollment_id], queryFn: () => getEnrollmentDiscounts(enrollment.enrollment_id) })
 
   const [receipt, setReceipt] = useState<ReceiptData | null>(null)
+  const feeSchoolName = useSchoolName()
+  // Single-challan reprint. Fetched on demand rather than with the month rows:
+  // a clerk prints one slip out of twelve, and pre-loading twelve challans to
+  // support that would make the tab slower for everyone.
+  const [challan, setChallan] = useState<Challan | null>(null)
+  const [challanErr, setChallanErr] = useState<string | null>(null)
+  async function printOne(invoiceId: string) {
+    setChallanErr(null)
+    try { setChallan(await getChallan(invoiceId)) }
+    catch (e) { setChallanErr((e as Error).message) }
+  }
   const [pay, setPay] = useState<null | { month?: string; billMonthISO?: string; defaultAmount: number; note: string }>(null)
   const [settle, setSettle] = useState(false)
   const [showDiscount, setShowDiscount] = useState(false)
@@ -496,6 +637,7 @@ function FeesTab({
               onPay={() => setPay({ month: r.key, billMonthISO: r.invoice ? undefined : monthFirst(r.key), defaultAmount: r.due, note: `Fee · ${r.label}` })}
               onDelay={() => setDefer({ invoiceId: r.invoice?.invoice_id, billMonthISO: r.invoice ? undefined : monthFirst(r.key), label: r.label })}
               onUndoDefer={r.invoice ? () => { undoDefer(r.invoice!.invoice_id).then(refresh) } : undefined}
+              onPrint={r.invoice ? () => { void printOne(r.invoice!.invoice_id) } : undefined}
             />
           ))}
         </div>
@@ -530,6 +672,15 @@ function FeesTab({
         )}
       </div>
 
+      {challanErr && <p className="text-sm text-red-600">{challanErr}</p>}
+      {challan && (
+        <ChallanPrint
+          challans={[challan]}
+          school={{ name: feeSchoolName, address: null, phone: null }}
+          onClose={() => setChallan(null)}
+        />
+      )}
+
       {pay && (
         <PaymentModal
           studentId={studentId} studentName={student.full_name} grNo={student.gr_no}
@@ -559,8 +710,14 @@ function FeesTab({
 }
 
 function MonthLine({
-  row, enrollment, onPay, onDelay, onUndoDefer,
-}: { row: MonthRow; enrollment: EnrollmentInfo; onPay: () => void; onDelay: () => void; onUndoDefer?: () => void }) {
+  row, enrollment, onPay, onDelay, onUndoDefer, onPrint,
+}: {
+  row: MonthRow; enrollment: EnrollmentInfo
+  onPay: () => void; onDelay: () => void; onUndoDefer?: () => void
+  /** Present only for a month that has actually been billed — there is no
+   *  challan to reprint for a month the school has not issued one for. */
+  onPrint?: () => void
+}) {
   void enrollment
   const paidDate = row.invoice?.status === 'paid' ? row.invoice.due_date : null
   return (
@@ -588,6 +745,12 @@ function MonthLine({
             <button onClick={onPay} className="rounded bg-brand-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-brand-700">Mark paid</button>
             {onUndoDefer && <button onClick={onUndoDefer} className="rounded border border-slate-300 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50">Undo delay</button>}
           </>
+        )}
+        {/* Reprint. Deliberately available on PAID months too: a parent asking
+            for a duplicate of a settled challan is routine, and the slip shows
+            the payment against it. */}
+        {onPrint && (
+          <button onClick={onPrint} className="rounded border border-slate-300 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50">Print challan</button>
         )}
       </div>
     </div>

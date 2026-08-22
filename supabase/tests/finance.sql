@@ -23,6 +23,15 @@
 
 \set ON_ERROR_STOP on
 
+-- Wrapped in a transaction that is rolled back at the end, like the ten newer
+-- suites. It was not, and the "clean slate" delete below hid why: nothing
+-- cascades from public.schools — 34 tables reference it with NO ACTION — so on
+-- a fresh database that delete matches zero rows and does nothing, while on a
+-- second run it fails outright on the profiles foreign key. This suite could
+-- therefore only ever be run ONCE per database, and the rows it committed were
+-- what made counter.sql pass alone and fail after fee_ops.sql.
+begin;
+
 create or replace function auth.uid() returns uuid language sql stable as
   $$ select nullif(current_setting('test.uid', true), '')::uuid $$;
 
@@ -35,7 +44,10 @@ declare
   v_sess uuid; v_class uuid; v_sec uuid; v_head uuid; v_fam uuid; v_stu uuid;
 begin
   perform set_config('test.uid', '', false);
-  delete from public.schools where name = 'Finance Test School';
+  -- (No "clean slate" delete here. Nothing cascades from public.schools —
+  -- 34 tables reference it with NO ACTION — so the delete that used to sit
+  -- on this line matched zero rows on a fresh database and failed outright
+  -- on a re-run. The suite rolls back instead, which actually works.)
 
   insert into public.schools (name) values ('Finance Test School') returning id into v_school;
   insert into public.subscriptions (school_id, plan_code, status, trial_ends_on)
@@ -209,6 +221,68 @@ begin
     raise exception 'FAIL: profit % <> % + % - %', v_profit, v_fee, v_other, v_exp;
   end if;
   raise notice '5. profit = fee + other - expenses (profit %) — ok', v_profit;
+end $t$;
+
+-- =============================================================================
+-- 5b. A reversed OTHER INCOME entry leaves income too
+--
+-- fn_reverse_other_income shipped in 0030 with ZERO callers: no db.ts wrapper,
+-- no button, and no test. So a clerk who typed Rs 50,000 of hall rent instead
+-- of Rs 5,000 had no way to correct it — the ledger is append-only by design,
+-- so there was no edit path either, and the error sat in the income figure, the
+-- profit, the day book and the balance sheet permanently.
+--
+-- Found by supabase/check-reachable.sh, which now fails CI for any function the
+-- app may call that nothing anywhere reaches.
+-- =============================================================================
+do $t$
+declare
+  v_before numeric; v_after numeric; v_id uuid; j jsonb;
+  v_bs_before numeric; v_bs_after numeric;
+begin
+  select (public.fn_finance_summary(current_date, current_date)->>'other_income')::numeric
+    into v_before;
+  v_bs_before := (public.fn_report_balance_sheet(current_date)->>'other_income')::numeric;
+
+  j := public.fn_record_other_income(50000, 'Hall rent (typo)', current_date, 'cash', null);
+  v_id := (j->>'income_id')::uuid;
+
+  select (public.fn_finance_summary(current_date, current_date)->>'other_income')::numeric
+    into v_after;
+  if v_after <> v_before + 50000 then
+    raise exception 'FAIL: the typo did not land in income (% -> %)', v_before, v_after;
+  end if;
+
+  perform public.fn_reverse_other_income(v_id, 'typed 50,000 instead of 5,000');
+
+  select (public.fn_finance_summary(current_date, current_date)->>'other_income')::numeric
+    into v_after;
+  if v_after <> v_before then
+    raise exception 'FAIL: reversed other income still counted (% -> %)', v_before, v_after;
+  end if;
+
+  -- And the correction must reach the balance sheet, not just this one screen.
+  v_bs_after := (public.fn_report_balance_sheet(current_date)->>'other_income')::numeric;
+  if v_bs_after <> v_bs_before then
+    raise exception 'FAIL: balance sheet still carries the reversed income (% -> %)',
+      v_bs_before, v_bs_after;
+  end if;
+
+  -- Append-only: the mistake and its correction are BOTH on the record.
+  if (select count(*) from public.other_income
+       where source = 'Hall rent (typo)' or reversal_of = v_id) <> 2 then
+    raise exception 'FAIL: a reversal must add a row, not edit or delete one';
+  end if;
+
+  -- And it cannot be reversed twice, or the income would go negative.
+  begin
+    perform public.fn_reverse_other_income(v_id, 'again');
+    raise exception 'FAIL: other income was reversed twice';
+  exception when others then
+    if sqlerrm like 'FAIL%' then raise; end if;
+  end;
+
+  raise notice '5b. a mistyped other-income entry can be corrected, once — ok';
 end $t$;
 
 -- =============================================================================
@@ -403,7 +477,10 @@ declare
   v_n bigint; s jsonb;
 begin
   perform set_config('test.uid', '', false);
-  delete from public.schools where name = 'Other Finance School';
+  -- (No "clean slate" delete here. Nothing cascades from public.schools —
+  -- 34 tables reference it with NO ACTION — so the delete that used to sit
+  -- on this line matched zero rows on a fresh database and failed outright
+  -- on a re-run. The suite rolls back instead, which actually works.)
   insert into public.schools (name) values ('Other Finance School') returning id into v_other;
   insert into public.subscriptions (school_id, plan_code, status, trial_ends_on)
     values (v_other, 'starter', 'active', current_date + 30);
@@ -435,3 +512,5 @@ begin
 end $t$;
 
 do $$ begin raise notice 'ALL FINANCE TESTS PASSED'; end $$;
+
+rollback;

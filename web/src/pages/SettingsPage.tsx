@@ -9,6 +9,7 @@ import { ImportData } from './settings/ImportData'
 import { Rollover } from './settings/Rollover'
 import { AuditLog } from './settings/AuditLog'
 import { StaffCheckin } from './settings/StaffCheckin'
+import { MessageSettings } from './settings/MessageSettings'
 
 const SECTIONS = [
   { key: 'school', label: 'School Profile' },
@@ -18,6 +19,7 @@ const SECTIONS = [
   { key: 'checkin', label: 'Staff Check-in' },
   { key: 'import', label: 'Import' },
   { key: 'rollover', label: 'Year Rollover' },
+  { key: 'messages', label: 'Messages' },
   { key: 'users', label: 'Users & Roles' },
   { key: 'audit', label: 'Audit Log' },
   { key: 'backup', label: 'Backup' },
@@ -49,6 +51,7 @@ export function SettingsPage() {
         {section === 'import' && <ImportData />}
         {section === 'rollover' && <Rollover />}
         {section === 'audit' && <AuditLog />}
+        {section === 'messages' && <MessageSettings />}
         {section === 'users' && <Users />}
         {section === 'backup' && <Backup />}
       </div>

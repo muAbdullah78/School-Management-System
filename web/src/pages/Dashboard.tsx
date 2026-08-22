@@ -113,6 +113,37 @@ export function Dashboard() {
             </div>
           )}
 
+          {/* Two setup problems that otherwise show up only as numbers that look
+              fine. Both are actionable, so both name the screen to go to. */}
+          {d && !d.session_set && (
+            <div className="mb-5 flex items-start gap-3 rounded-xl border border-due-200 bg-due-50 p-4 text-sm text-due-800">
+              <span className="mt-0.5 text-due-600"><IconAlert /></span>
+              <div>
+                <p className="font-medium">No academic session is set</p>
+                <p className="mt-0.5 text-due-700">
+                  Until one is, every figure below reads zero whether or not anything has happened.
+                  Set it under <strong>Settings → Sessions</strong>.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {d && d.finance_visible && (d.classes_without_fee ?? 0) > 0 && (
+            <div className="mb-5 flex items-start gap-3 rounded-xl border border-due-200 bg-due-50 p-4 text-sm text-due-800">
+              <span className="mt-0.5 text-due-600"><IconAlert /></span>
+              <div>
+                <p className="font-medium">
+                  {d.classes_without_fee} class{d.classes_without_fee === 1 ? '' : 'es'} have students but no fee set
+                </p>
+                <p className="mt-0.5 text-due-700">
+                  Generating challans for them produces Rs 0 slips and reports success, so the school
+                  looks billed when it is not. Set the amounts under{' '}
+                  <strong>Settings → Fee Structure</strong>.
+                </p>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <LinkTile to="/attendance">
               <StatTile
@@ -151,17 +182,31 @@ export function Dashboard() {
                 </LinkTile>
 
                 <LinkTile to="/fees">
-                  <StatTile
-                    tone={(d?.outstanding ?? 0) > 0 ? 'due' : 'money'}
-                    icon={<IconAlert />}
-                    label="Outstanding"
-                    value={loading ? '…' : fmtPKR(d?.outstanding)}
-                    sub={
-                      d
-                        ? `${d.defaulters ?? 0} student${d.defaulters === 1 ? '' : 's'} with dues`
-                        : undefined
-                    }
-                  />
+                  {/* "Nothing owed" and "nothing billed" are different facts.
+                      This tile used to render the second as the first — Rs 0 in
+                      green — so a school that had never generated a challan was
+                      told it was fully paid up. */}
+                  {d && d.finance_visible && (d.billed_students_month ?? 0) === 0 ? (
+                    <StatTile
+                      tone="due"
+                      icon={<IconAlert />}
+                      label="Outstanding"
+                      value="Not billed"
+                      sub="No challans issued this month"
+                    />
+                  ) : (
+                    <StatTile
+                      tone={(d?.outstanding ?? 0) > 0 ? 'due' : 'money'}
+                      icon={<IconAlert />}
+                      label="Outstanding"
+                      value={loading ? '…' : fmtPKR(d?.outstanding)}
+                      sub={
+                        d
+                          ? `${d.defaulters ?? 0} student${d.defaulters === 1 ? '' : 's'} with dues`
+                          : undefined
+                      }
+                    />
+                  )}
                 </LinkTile>
               </>
             )}

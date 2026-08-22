@@ -95,8 +95,9 @@ jobs:
           fi
           echo "bundles are in sync with the migrations"
       - name: Bundles apply as single transactions
-        # The real install path, on a separate database: three pastes, each one
-        # transaction, exactly as the SQL Editor runs them.
+        # The real install path, on a separate database: each bundle as ONE
+        # transaction, exactly as the SQL Editor runs a paste. Globbed, so a new
+        # bundle is covered the moment build-bundles.sh emits it.
         run: |
           psql -v ON_ERROR_STOP=1 -c "create database bundlecheck;"
           PGDATABASE=bundlecheck psql -v ON_ERROR_STOP=1 -q <<'SQL'
@@ -115,6 +116,20 @@ jobs:
             PGDATABASE=bundlecheck psql -v ON_ERROR_STOP=1 -q --single-transaction -f "$b"
           done
           echo "all bundles applied cleanly"
+
+          # The check a SCHOOL runs after installing, run against the install a
+          # school actually performs. This is the only place the bundle path and
+          # verify.sql meet, and it is where the missing-bundle-4 problem would
+          # have been caught: bundles 1-3 alone reported every row PASS while the
+          # fee counter, challan, reports and enquiry book were all absent.
+          echo "── verify.sql, as a school runs it"
+          PGDATABASE=bundlecheck psql -v ON_ERROR_STOP=1 -f supabase/verify.sql \
+            | tee /tmp/verify.out
+          if grep -q 'FAIL' /tmp/verify.out; then
+            echo "::error::verify.sql reports a FAIL against a fresh bundle install"
+            exit 1
+          fi
+          echo "verify.sql is all PASS on a bundle-only install"
       - name: Sanity checks
         run: |
           psql -v ON_ERROR_STOP=1 <<'SQL'
@@ -335,6 +350,218 @@ jobs:
         # holds at every step.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/family_money.sql
 
+      - name: RPC contract — do the app's calls match the database?
+        # The seam nothing else checks. `sb.rpc('fn_x', {...})` is an untyped
+        # string and an untyped object, so a renamed function or a renamed
+        # parameter typechecks, builds, deploys, and fails the first time a
+        # school opens the screen. Both of these actually shipped and were found
+        # by hand: publishResults passed `p_term_id` where the function takes
+        # `p_exam_term_id`, and a call had fn_record_expense's arguments in the
+        # wrong order.
+        #
+        # Verified to fail on both faults deliberately re-introduced.
+        run: ./supabase/check-rpc-contract.sh
+
+      - name: Is every function the app may call reachable from anywhere?
+        # The most common defect in this repo has never been wrong logic — it has
+        # been correct logic nothing could reach. fn_link_parent, fn_family_for,
+        # fn_find_by_voucher, message_templates.enabled, profiles.active,
+        # result_cards.published_at and fn_reverse_other_income all shipped,
+        # passed CI, and did nothing. Every one was found by hand, late.
+        #
+        # This asks the catalogue instead: for each function granted to
+        # `authenticated`, is it named by another function, a trigger, an RLS
+        # policy, a default, a check, an index, a view, or by web/src? If not it
+        # is either a feature with no way to use it, or dead code that
+        # `authenticated` can nonetheless EXECUTE.
+        #
+        # Verified by planting fn_planted_orphan() and confirming this fails.
+        run: ./supabase/check-reachable.sh
+
+      - name: Is every column used by something?
+        # The column-level twin, and it exists because the function check cannot
+        # see the worst bug of this kind we have had: profiles.active was WRITTEN
+        # by the Settings screen and read by NOTHING, so "Deactivate" left a
+        # dismissed clerk with full access.
+        #
+        # A column nothing reads is a promise the software does not keep; a
+        # column nothing writes is a feature designed and never built. Thirteen
+        # existing ones are listed as a baseline in the script and in
+        # docs/PARITY.md; any NEW one fails the build.
+        #
+        # Verified by adding students.planted_dead_col and confirming this fails.
+        run: ./supabase/check-columns-used.sh
+
+      - name: Reports — does the statement agree with the Accounts screen?
+        # Assertion 6 is the point of this suite: the debit-and-credit statement
+        # must net to the same profit fn_finance_summary reports for the same
+        # dates. Two screens disagreeing about one month is the fastest way to
+        # lose a school's trust, and both derive from the same rows so there is
+        # no excuse for it. Also asserts a pending payment is not income, a
+        # reversal shows as its own line rather than being netted away, and the
+        # money reports follow fn_finance_summary's role boundary.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/reports.sql
+
+      - name: Balance sheet — is the position AS AT a date, or just today's?
+        # The obvious implementation of an as-at report is to sum
+        # student_balance(), which ignores dates entirely and prints today's
+        # position under yesterday's heading. The first cut of this function did
+        # the money as-at but took the headcount from student_balance(), so a
+        # date before the school billed anything reported "receivable 0,
+        # students owing 1" — a statement contradicting itself in two adjacent
+        # numbers. Assertion 10 sweeps 17 dates for exactly that.
+        #
+        # Assertions 6 and 7 are the load-bearing ones: a parent paying August
+        # in July has NOT settled an August charge that does not exist yet, so
+        # that money is a liability. Getting it wrong makes a school that
+        # collects advance fees look like it owes nobody anything. Assertion 11
+        # is the cross-check — receivable must equal the sum of every student
+        # ledger, or two screens disagree about the same money.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/balance_sheet.sql
+
+      - name: Enquiries — does the lead get followed up, and converted only once?
+        # A lead list nobody calls is a list nobody reads, so the load-bearing
+        # rules are that no open enquiry can be invisible (assertions 6 and 46:
+        # a follow-up date is always defaulted, and the summary reports any that
+        # slipped through) and that the list is ordered by who has waited
+        # longest rather than who called last (31).
+        #
+        # Assertion 26 is the one that protects real data: converting the same
+        # enquiry twice would burn a second GR number and leave a duplicate
+        # child for somebody to unpick by hand. 27 proves no student was created
+        # by the refused attempt.
+        #
+        # Assertions 66-66d check DELETE and UPDATE by ROW COUNT rather than by
+        # catching an error, because a DELETE with no matching RLS policy
+        # silently affects zero rows — a test waiting for an exception there
+        # would quietly stop testing anything.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/enquiries.sql
+
+      - name: Corrections — can a school SEE that a mark was changed?
+        # mark_entries and attendance_daily have recorded `corrected_from` all
+        # along and NOTHING ever read it, while `correction_reason` was never
+        # written at all. So the system knew a teacher changed a mark from 45 to
+        # 40 the night before results, and no principal could see it and no
+        # parent disputing it could be answered.
+        #
+        # Assertion 1 is load-bearing for a different reason: the three entry
+        # functions had to be DROPPED and recreated to gain the reason parameter
+        # (create-or-replace cannot add one — it makes an ambiguous overload), so
+        # this proves the existing two-argument callers, the app among them, all
+        # still work.
+        #
+        # Assertion 20 is the point of the role boundary: a subject teacher can
+        # ENTER marks, which is exactly why they must not be able to audit them.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/corrections.sql
+
+      - name: Remarks and position holders — do ties and remarks survive?
+        # Assertion 12 is why exam_remarks is its own table rather than a column
+        # on result_cards: fn_generate_result_cards INSERTS a new version rather
+        # than updating, so a remark stored on the card would silently vanish
+        # from the printed report the moment anybody regenerated the class.
+        # Assertion 11 proves that risk is real by counting the versions.
+        #
+        # Assertions 2-4 are the prize-distribution rules: two children on 90%
+        # are BOTH first and the next is THIRD. Any other behaviour hands one
+        # child a prize and not the other on a tie-break nobody chose.
+        #
+        # Assertion 9 records a modelling trap: an unmarked child scores 0.00,
+        # NOT null, so percentage cannot distinguish "never marked" from "sat and
+        # scored nothing". The function tests for a mark row instead.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/remarks_positions.sql
+
+      - name: Search and birthdays
+        # Assertion 10 is the practical one: phone numbers are typed as
+        # 0300-111 2233, 03001112233 and +92 300 111 2233, so both sides are
+        # reduced to digits before comparing. A search that only matches the
+        # stored formatting is a search nobody trusts.
+        #
+        # Assertion 13 guards a genuine trap: `exact` is built from comparisons
+        # against nullable columns, so it can be NULL, and `order by exact desc`
+        # puts NULLs FIRST in Postgres. Uncoalesced, typing a GR number sorts the
+        # right answer BELOW the fuzzy ones.
+        #
+        # Assertions 39-42 cover the date arithmetic: a birthday already past
+        # rolls to next year rather than reporting negative days, and 29 February
+        # resolves in a non-leap year instead of raising from make_date.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/search_birthdays.sql
+
+      - name: Message settings — does switching a message off actually stop it?
+        # message_templates has carried an `enabled` flag since 0034 that
+        # nothing in the app could set. A toggle that only greys out a checkbox
+        # while parents keep receiving the message is worse than no toggle, so
+        # this asserts a disabled template writes NO outbox row — including
+        # through the bulk "WhatsApp everyone who owes" path, which loops and
+        # swallows per-family errors.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/message_settings.sql
+
+      - name: Dashboard — is every figure this school's own?
+        # fn_dashboard_summary is SECURITY DEFINER, so RLS does not apply to it,
+        # and three of its queries had NO school filter: "New this month",
+        # "Collected today" and "Collected this month" were summed across every
+        # school in the database. A school with one student and no payments was
+        # shown 271 admissions and Rs 24,577 collected.
+        #
+        # tenant_isolation.sql could not catch this — it tests table access, and
+        # the leak was inside a function where policies are never consulted. So
+        # this suite loads school B with much larger numbers and asserts every
+        # figure school A reports is A's own. Also covers "never billed" not
+        # rendering as "nothing owed", and a Rs 0 challan not counting as billed.
+        #
+        # It also carries the STRUCTURAL guard (assertion 20): every SECURITY
+        # DEFINER function that reads a school_id-bearing table must scope
+        # itself, with reviewed exceptions listed in the file. That guard is
+        # what turns "we audited them once" into something CI enforces — and it
+        # was verified to fail on a deliberately planted unscoped function.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/dashboard.sql
+
+      - name: Student list — does the fast balance equal the real one?
+        # fn_student_list recomputes each balance SET-BASED rather than calling
+        # student_balance() per row, because per-row is 800 correlated
+        # subqueries on a real school. That is only acceptable if the two agree
+        # exactly, so assertion 1 compares them row by row over a fixture with
+        # charges, a discount, a fine, an adjustment, a part payment and a
+        # reversal. Also: total_count is the whole set not the page, paging
+        # loses nobody, and a typed "%" is a character rather than a wildcard
+        # that returns the entire school.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/student_list.sql
+
+      - name: Bulk collection — is a bad batch really all-or-nothing?
+        # The load-bearing assertion: ten good rows and a bad eleventh must
+        # leave NOTHING behind, because a clerk who cannot tell which of forty
+        # rows went through has no way to recover. Also that bulk payments
+        # allocate identically to counter payments (they go through the same
+        # function by design), that receipts stay distinct across a batch, and
+        # that reminders go once per FAMILY and escalate on repeats.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/bulk_fees.sql
+
+      - name: Challan — does the printed slip agree with the ledger?
+        # A challan is the only artefact a parent can hold up and argue with, so
+        # this asserts total_payable == student_balance() exactly, that the two
+        # halves a parent reads add up to it, that previous dues are computed
+        # live rather than from the generation-time snapshot (which would demand
+        # money already paid), that void challans never print, and that the
+        # batch is roll-ordered numerically and does not leak another school.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/challan.sql
+
+      - name: Fee counter — are the figures on the busiest screen right?
+        # The counter opens on four numbers and the day's receipts. Asserts a
+        # pending bank transfer never inflates "collected today" (the drawer
+        # would look short at closing), that pending money is still reported
+        # rather than hidden, that the unpaid-challan count is derived from
+        # allocations and falls when one is settled, and that neither read
+        # leaks across schools or is callable by a parent.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/counter.sql
+
+      - name: Parent access — can a parent ever reach the portal?
+        # portal.sql's fourteen assertions all passed while the portal was
+        # unreachable, because its fixture set profiles.family_id by hand.
+        # Nothing in the app wrote that column. This suite goes through
+        # fn_link_parent instead, and also covers the separate bug it turned up:
+        # profiles.active was written by the Settings screen and read by
+        # nothing, so "Deactivate" left a dismissed clerk with full access.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/parent_access.sql
+
       - name: Family linkage — do siblings actually share a family?
         # The suite above passed for weeks while family billing was completely
         # broken in production, because it built its families with direct
@@ -346,3 +573,25 @@ jobs:
         # family or a student directly. If it is ever "simplified" into building
         # its own fixtures, it stops testing anything.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/family_linkage.sql
+
+      - name: Every suite again, in reverse order
+        # Suites are supposed to be independent. They are not, automatically:
+        # counter.sql passed alone and failed after fee_ops.sql, because
+        # fee_ops.sql COMMITS a profile row and counter.sql's fixture upserted
+        # the same UUID without updating full_name. A suite that only passes in
+        # the position it happens to occupy in this file is a suite that will
+        # break the day someone reorders the list.
+        #
+        # Globbed rather than listed, so a new suite is covered the moment it is
+        # added and this step cannot drift out of date the way a hand-kept list
+        # does.
+        run: |
+          for f in $(ls supabase/tests/*.sql | sort -r); do
+            echo "::group::reverse $f"
+            psql -v ON_ERROR_STOP=1 -f "$f" > /dev/null || {
+              echo "::error::$f fails when run in reverse order — it depends on another suite"
+              exit 1
+            }
+            echo "::endgroup::"
+          done
+          echo "all suites pass in reverse order too"

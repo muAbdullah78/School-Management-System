@@ -14,6 +14,15 @@
 
 \set ON_ERROR_STOP on
 
+-- Wrapped in a transaction that is rolled back at the end, like the ten newer
+-- suites. It was not, and the "clean slate" delete below hid why: nothing
+-- cascades from public.schools — 34 tables reference it with NO ACTION — so on
+-- a fresh database that delete matches zero rows and does nothing, while on a
+-- second run it fails outright on the profiles foreign key. This suite could
+-- therefore only ever be run ONCE per database, and the rows it committed were
+-- what made counter.sql pass alone and fail after fee_ops.sql.
+begin;
+
 -- --- Make auth.uid() switchable so we can act as different users -------------
 create or replace function auth.uid() returns uuid language sql stable as
   $$ select nullif(current_setting('test.uid', true), '')::uuid $$;
@@ -33,7 +42,10 @@ declare
   a_enr uuid; b_enr uuid;
 begin
   -- Clean slate
-  delete from public.schools where name in ('Alpha School', 'Beta School');
+  -- (No "clean slate" delete here. Nothing cascades from public.schools —
+  -- 34 tables reference it with NO ACTION — so the delete that used to sit
+  -- on this line matched zero rows on a fresh database and failed outright
+  -- on a re-run. The suite rolls back instead, which actually works.)
 
   insert into public.schools (id, name) values (gen_random_uuid(), 'Alpha School') returning id into a_school;
   insert into public.schools (id, name) values (gen_random_uuid(), 'Beta School')  returning id into b_school;
@@ -439,3 +451,5 @@ end $platform$;
 
 drop table if exists public._test_ids;
 select 'TENANT ISOLATION: ALL TESTS PASSED' as result;
+
+rollback;

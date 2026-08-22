@@ -7,9 +7,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "harness": "vitest run --config vitest.harness.config.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",

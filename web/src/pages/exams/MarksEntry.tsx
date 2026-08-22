@@ -26,6 +26,7 @@ export function MarksEntry() {
   })
 
   const [entries, setEntries] = useState<Record<string, Entry>>({})
+  const [reason, setReason] = useState('')
   const [msg, setMsg] = useState<string | null>(null)
   const rows = marksheet.data ?? []
   const maxMarks = rows[0]?.max_marks
@@ -35,14 +36,27 @@ export function MarksEntry() {
     const next: Record<string, Entry> = {}
     for (const r of marksheet.data) next[r.enrollment_id] = { marks: r.marks == null ? '' : String(r.marks), is_absent: r.is_absent }
     setEntries(next)
+    setReason('')
     setMsg(null)
   }, [marksheet.data])
+
+  // How many marks differ from what was loaded, and only counting rows that
+  // ALREADY had a mark. Typing a mark into an empty box is a first entry, not a
+  // correction, and asking a teacher to justify it would train them to ignore
+  // the box.
+  const changed = rows.filter((r) => {
+    if (r.marks == null) return false
+    const e = entries[r.enrollment_id]
+    if (!e) return false
+    const now = e.is_absent || e.marks === '' ? null : Number(e.marks)
+    return now !== Number(r.marks)
+  })
 
   const save = useMutation({
     mutationFn: () => enterMarks(examSubjectId, rows.map((r) => {
       const e = entries[r.enrollment_id]
       return { enrollment_id: r.enrollment_id, marks: e?.is_absent || e?.marks === '' ? null : Number(e.marks), is_absent: !!e?.is_absent }
-    })),
+    }), reason.trim() || null),
     onSuccess: (res) => {
       setMsg(`Saved ${res.marked}${res.skipped ? ` · ${res.skipped} locked, skipped` : ''}.`)
       qc.invalidateQueries({ queryKey: ['marksheet', examSubjectId] })
@@ -122,6 +136,40 @@ export function MarksEntry() {
                   </tbody>
                 </table>
               </div>
+              {/* Only when a mark that ALREADY had a value is being changed. A
+                  first entry is not a correction, and demanding a reason for
+                  one would train teachers to type anything to get past it. */}
+              {changed.length > 0 && (
+                <div className="mt-4 rounded border border-amber-300 bg-amber-50 p-3">
+                  <label className="block text-sm">
+                    <span className="font-medium text-amber-900">
+                      {changed.length === 1
+                        ? `Changing ${changed[0].full_name}'s mark`
+                        : `Changing ${changed.length} marks that were already entered`}
+                    </span>
+                    <span className="mt-1 block text-xs text-amber-800">
+                      {changed.slice(0, 4).map((r) => {
+                        const e = entries[r.enrollment_id]
+                        const now = e?.is_absent || e?.marks === '' ? '—' : e?.marks
+                        return `${r.full_name}: ${r.marks} → ${now}`
+                      }).join(' · ')}
+                      {changed.length > 4 && ` · and ${changed.length - 4} more`}
+                    </span>
+                    <input
+                      value={reason}
+                      onChange={(ev) => setReason(ev.target.value)}
+                      placeholder="Why? e.g. re-totalled question 7, paper remarked on appeal"
+                      className="mt-2 block w-full rounded border border-amber-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
+                    />
+                    <span className="mt-1 block text-xs text-amber-700">
+                      Recorded against these marks only, and shown in Reports → Mark Changes.
+                      Leaving it blank is allowed, and the change is still recorded as
+                      &ldquo;none given&rdquo;.
+                    </span>
+                  </label>
+                </div>
+              )}
+
               <div className="mt-4 flex items-center gap-3">
                 <button onClick={() => save.mutate()} disabled={save.isPending || overMax}
                   className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">

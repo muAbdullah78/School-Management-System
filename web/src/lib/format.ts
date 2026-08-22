@@ -1,7 +1,21 @@
 /** Pakistani Rupee formatting (English, per locked decisions). */
+/**
+ * Rupees, no decimals.
+ *
+ * The sign goes OUTSIDE the currency: −Rs 33,500, not "Rs -33,500". The second
+ * form is what toLocaleString gives you by default and it is wrong — the minus
+ * belongs to the quantity, not to the unit, and buried after "Rs " it is easy
+ * to skim straight past. That matters here: negatives in this product are a
+ * credit on a family's account or a school that has spent more than it has
+ * taken, and both are exactly the figures nobody may misread.
+ */
 export function fmtPKR(n: number | null | undefined): string {
-  const v = Number(n ?? 0)
-  return 'Rs ' + v.toLocaleString('en-PK', { maximumFractionDigits: 0 })
+  // Rounded ONCE, with both the sign and the digits taken from the same rounded
+  // value — otherwise -0.4 rounds to "0" for display while still testing as
+  // negative, and prints "−Rs 0".
+  const v = Math.round(Number(n ?? 0))
+  const abs = Math.abs(v).toLocaleString('en-PK', { maximumFractionDigits: 0 })
+  return (v < 0 ? '−' : '') + 'Rs ' + abs
 }
 
 export function fmtDate(s?: string | null): string {

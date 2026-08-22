@@ -17,6 +17,25 @@ describe('fmtPKR', () => {
   it('rounds away decimals', () => {
     expect(digits(fmtPKR(99.9))).toBe('100')
   })
+
+  // The sign belongs to the quantity, not the unit. "Rs -33,500" is what
+  // toLocaleString gives by default, and a minus buried after "Rs " is easy to
+  // skim past — on a balance sheet that is the difference between a school
+  // reading "we hold 33,500" and "we are 33,500 short".
+  it('puts the minus sign before the currency, not inside it', () => {
+    expect(fmtPKR(-33500)).toBe('−Rs 33,500')
+    expect(fmtPKR(-1)).toBe('−Rs 1')
+  })
+
+  it('never prints a signed zero', () => {
+    // -0.4 rounds to zero for display, so it must not carry a minus with it.
+    expect(fmtPKR(-0.4)).toBe('Rs 0')
+    expect(fmtPKR(-0)).toBe('Rs 0')
+  })
+
+  it('rounds a negative by magnitude, not toward zero', () => {
+    expect(fmtPKR(-99.9)).toBe('−Rs 100')
+  })
 })
 
 describe('fmtDate', () => {

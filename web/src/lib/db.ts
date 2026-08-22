@@ -514,11 +514,18 @@ export async function getRoster(
   return (data as RosterRow[]) ?? []
 }
 
+/**
+ * `reason` is recorded only against rows whose status actually CHANGED, and it
+ * is what makes the corrections report readable — see getAttendanceCorrections.
+ */
 export async function markAttendance(
   date: string, marks: { enrollment_id: string; status: AttendanceStatus }[],
+  reason?: string | null,
 ): Promise<MarkResult> {
   const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_mark_attendance', { p_date: date, p_marks: marks })
+  const { data, error } = await sb.rpc('fn_mark_attendance', {
+    p_date: date, p_marks: marks, p_reason: reason ?? null,
+  })
   if (error) throw new Error(error.message)
   return data as MarkResult
 }
@@ -709,12 +716,72 @@ export async function importStaff(
   return data as ImportResult
 }
 
+/**
+ * A short list of students for a picker. Capped at 50 BY DESIGN — it feeds
+ * type-ahead boxes, not the roster.
+ *
+ * For the roster use listStudentPage(), which pages properly and reports the
+ * real total. This function's cap was the roster's bug: an 800-student school
+ * saw fifty names and was never told the rest existed.
+ */
 export async function listStudents(term: string): Promise<StudentRow[]> {
   const sb = requireSupabase()
   const t = term.trim()
   let q = sb.from('students').select('id, gr_no, full_name, father_name').is('deleted_at', null)
   if (t) { const like = `%${t.replace(/[%,()]/g, ' ')}%`; q = q.or(`full_name.ilike.${like},gr_no.ilike.${like}`) }
   return unwrap(await q.order('full_name').limit(50))
+}
+
+export interface StudentListRow {
+  student_id: string
+  full_name: string
+  gr_no: string | null
+  admission_no: string | null
+  father_name: string | null
+  gender: string | null
+  phone: string | null
+  status: string
+  class_name: string | null
+  section_name: string | null
+  roll_no: string | null
+  family_id: string | null
+  /** Everything this student owes. Computed set-based in SQL and asserted equal
+   *  to student_balance() — see supabase/tests/student_list.sql. */
+  balance: number
+}
+
+export interface StudentListPage { rows: StudentListRow[]; total: number }
+
+/** One page of the roster, with class, section, roll and balance, and the real
+ *  total so the UI can say "showing 50 of 812" instead of quietly truncating. */
+export async function listStudentPage(opts: {
+  term?: string
+  classId?: string | null
+  sectionId?: string | null
+  includeInactive?: boolean
+  limit?: number
+  offset?: number
+}): Promise<StudentListPage> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_student_list', {
+    p_term: opts.term?.trim() || null,
+    p_class_id: opts.classId || null,
+    p_section_id: opts.sectionId || null,
+    p_include_inactive: opts.includeInactive ?? false,
+    p_limit: opts.limit ?? 50,
+    p_offset: opts.offset ?? 0,
+  })
+  if (error) throw new Error(error.message)
+  const raw = (data ?? []) as Record<string, unknown>[]
+  return {
+    // total_count is repeated on every row (one aggregate, cross-joined), so an
+    // empty page legitimately means a total of zero.
+    total: raw.length > 0 ? Number(raw[0].total_count ?? 0) : 0,
+    rows: raw.map((r) => ({
+      ...(r as unknown as StudentListRow),
+      balance: Number(r.balance ?? 0),
+    })),
+  }
 }
 
 /** Detect likely siblings: other (non-deleted) students with the same father's
@@ -929,6 +996,9 @@ export interface ResultCardRow {
   roll_no: string | null; total_marks: number | null; total_max: number | null
   percentage: number | null; grade: string | null; position: number | null
   attendance_pct: number | null; version: number; frozen: ResultCardFrozen
+  /** Set by fn_publish_results. Non-null means parents can see this card in the
+   *  portal. Null means it exists but is withheld. */
+  published_at: string | null
 }
 export interface ResultCardFrozen {
   subjects: { subject: string; max: number; pass: number; marks: number | null; is_absent: boolean; grade: string | null }[]
@@ -1039,11 +1109,18 @@ export async function getMarksheet(examSubjectId: string): Promise<MarksheetRow[
   return (data as MarksheetRow[]) ?? []
 }
 
+/**
+ * `reason` lands only on marks that actually CHANGED. Entering a mark for the
+ * first time is not a correction and needs no reason.
+ */
 export async function enterMarks(
   examSubjectId: string, marks: { enrollment_id: string; marks: number | null; is_absent: boolean }[],
+  reason?: string | null,
 ): Promise<MarkResult> {
   const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_enter_marks', { p_exam_subject_id: examSubjectId, p_marks: marks })
+  const { data, error } = await sb.rpc('fn_enter_marks', {
+    p_exam_subject_id: examSubjectId, p_marks: marks, p_reason: reason ?? null,
+  })
   if (error) throw new Error(error.message)
   return data as MarkResult
 }
@@ -1091,9 +1168,12 @@ export async function getAssessmentMarksheet(assessmentId: string): Promise<Mark
 
 export async function enterAssessmentMarks(
   assessmentId: string, marks: { enrollment_id: string; marks: number | null; is_absent: boolean }[],
+  reason?: string | null,
 ): Promise<MarkResult> {
   const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_enter_assessment_marks', { p_assessment_id: assessmentId, p_marks: marks })
+  const { data, error } = await sb.rpc('fn_enter_assessment_marks', {
+    p_assessment_id: assessmentId, p_marks: marks, p_reason: reason ?? null,
+  })
   if (error) throw new Error(error.message)
   return data as MarkResult
 }
@@ -1116,7 +1196,7 @@ export async function listResultCards(termId: string, classId: string): Promise<
   const sb = requireSupabase()
   const rows = unwrap<Record<string, any>[]>(
     await sb.from('result_cards')
-      .select('id, enrollment_id, student_id, total_marks, total_max, percentage, grade, position, attendance_pct, version, frozen, students(full_name, gr_no), enrollments!inner(class_id, roll_no)')
+      .select('id, enrollment_id, student_id, total_marks, total_max, percentage, grade, position, attendance_pct, version, frozen, published_at, students(full_name, gr_no), enrollments!inner(class_id, roll_no)')
       .eq('exam_term_id', termId)
       .eq('enrollments.class_id', classId)
       .order('version', { ascending: false }),
@@ -1133,6 +1213,7 @@ export async function listResultCards(termId: string, classId: string): Promise<
       total_marks: r.total_marks, total_max: r.total_max, percentage: r.percentage,
       grade: r.grade, position: r.position, attendance_pct: r.attendance_pct,
       version: r.version, frozen: r.frozen as ResultCardFrozen,
+      published_at: r.published_at ?? null,
     })
   }
   return out.sort((a, b) => (a.position ?? 1e9) - (b.position ?? 1e9))
@@ -1293,11 +1374,15 @@ export async function setProfileActive(id: string, active: boolean): Promise<voi
 export interface StaffRow {
   id: string; full_name: string; designation: string | null; employee_no: string | null
   mobile: string | null; whatsapp: string | null; cnic: string | null
-  joined_on: string | null; status: string; profile_id: string | null
+  joined_on: string | null; dob: string | null; status: string; profile_id: string | null
 }
 export interface StaffInput {
   full_name: string; designation?: string | null; employee_no?: string | null
   mobile?: string | null; whatsapp?: string | null; cnic?: string | null; joined_on?: string | null
+  /** Added in 0050 for the Birthdays screen. Read-only would make that screen
+   *  permanently empty for staff, which is the half-wired trap this project
+   *  keeps falling into. */
+  dob?: string | null
 }
 export interface SectionTeacherRow { id: string; name: string; class_teacher_id: string | null }
 
@@ -1305,7 +1390,7 @@ export async function listStaff(): Promise<StaffRow[]> {
   const sb = requireSupabase()
   return unwrap(
     await sb.from('staff')
-      .select('id, full_name, designation, employee_no, mobile, whatsapp, cnic, joined_on, status, profile_id')
+      .select('id, full_name, designation, employee_no, mobile, whatsapp, cnic, joined_on, dob, status, profile_id')
       .is('deleted_at', null).order('full_name'),
   )
 }
@@ -1315,7 +1400,7 @@ export async function createStaff(input: StaffInput): Promise<string> {
   const { data, error } = await sb.from('staff').insert({
     full_name: input.full_name, designation: input.designation || null, employee_no: input.employee_no || null,
     mobile: input.mobile || null, whatsapp: input.whatsapp || null, cnic: input.cnic || null,
-    joined_on: input.joined_on || null,
+    joined_on: input.joined_on || null, dob: input.dob || null,
   }).select('id').single()
   if (error) throw new Error(error.message)
   return (data as { id: string }).id
@@ -1543,6 +1628,58 @@ export async function createTeacherLogin(input: CreateTeacherInput): Promise<{ i
   return { id: newId, email, role }
 }
 
+/**
+ * Create a login for a parent and attach it to a family, in one step.
+ *
+ * Two separate things have to happen and both can fail, so the order matters:
+ * the login is created first, then linked. If the link fails the login still
+ * exists — which is recoverable (link it from the family sheet) — whereas
+ * linking a login that was never created is not.
+ *
+ * Before migration 0037 this was impossible in two ways: the Edge Function
+ * rejected the 'parent' role outright, and nothing anywhere called
+ * fn_link_parent, so profiles.family_id was never written and every portal read
+ * refused with "Not a parent account".
+ */
+export async function createParentLogin(input: {
+  email: string; password: string; full_name: string; family_id: string
+}): Promise<{ id: string; email: string }> {
+  const created = await createTeacherLogin({
+    email: input.email, password: input.password, full_name: input.full_name, role: 'parent',
+  })
+  await linkParent(created.id, input.family_id)
+  return { id: created.id, email: created.email }
+}
+
+/** Attach an existing parent login to a family. */
+export async function linkParent(profileId: string, familyId: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_link_parent', {
+    p_profile_id: profileId, p_family_id: familyId,
+  })
+  if (error) throw new Error(error.message)
+}
+
+export interface FamilyParent {
+  profile_id: string; full_name: string | null; email: string | null; active: boolean
+}
+
+/** Who can already see this family's portal. Checked before creating another. */
+export async function listFamilyParents(familyId: string): Promise<FamilyParent[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_family_parents', { p_family_id: familyId })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as FamilyParent[]
+}
+
+/** Cut a parent's access: detaches the family and deactivates the login. */
+export async function unlinkParent(profileId: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_unlink_parent', { p_profile_id: profileId })
+  if (error) throw new Error(error.message)
+}
+
+
 // ---- Certificates ----
 export interface IssueCertResult { id: string; serial_no: number; cert_type: string; issued_on: string }
 export interface CertificateRow {
@@ -1642,6 +1779,21 @@ export interface DashboardSummary {
   collected_month: number | null
   outstanding: number | null
   defaulters: number | null
+  /**
+   * How many students actually have a CHARGING challan this month.
+   *
+   * Exists because "outstanding: 0" is ambiguous: it means both "everyone has
+   * paid" and "nobody was ever billed", and the second was being rendered as
+   * good news in green. Zero-value challans — which a class with no fee
+   * structure produces — do not count.
+   */
+  billed_students_month: number | null
+  /** Classes with active students and no fee structure: the root cause of a
+   *  Rs 0 challan. */
+  classes_without_fee: number | null
+  /** False when no current academic session is set, which otherwise makes every
+   *  session-scoped figure silently zero. */
+  session_set: boolean
 }
 
 export async function getDashboardSummary(): Promise<DashboardSummary> {
@@ -1940,6 +2092,23 @@ export async function recordOtherIncome(
   return data as { income_id: string; voucher_no: number }
 }
 
+/**
+ * The twin of reverseExpense, and it was missing for a long time.
+ *
+ * fn_reverse_other_income has existed since 0030 with zero callers, so a clerk
+ * who typed Rs 50,000 of hall rent instead of Rs 5,000 had no way to correct
+ * it — the ledger is append-only by design, so there was no edit either. The
+ * error sat in the income figure, the profit, the day book and the balance
+ * sheet permanently. Found by supabase/check-reachable.sh.
+ */
+export async function reverseOtherIncome(incomeId: string, reason: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_reverse_other_income', {
+    p_income_id: incomeId, p_reason: reason,
+  })
+  if (error) throw new Error(error.message)
+}
+
 export async function getFinanceSummary(from: string, to: string): Promise<FinanceSummary> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_finance_summary', { p_from: from, p_to: to })
@@ -1967,6 +2136,30 @@ export async function listExpenses(from: string, to: string): Promise<ExpenseRow
       .select('id, spent_on, amount, payee, method, note, voucher_no, category_id, reversal_of')
       .gte('spent_on', from).lte('spent_on', to)
       .order('spent_on', { ascending: false }).order('voucher_no', { ascending: false }),
+  )
+}
+
+export interface OtherIncomeRow {
+  id: string; received_on: string; amount: number; source: string
+  method: string; note: string | null; voucher_no: number | null
+  reversal_of: string | null
+}
+
+/**
+ * Other income had no read path at all until now, only a write one.
+ *
+ * recordOtherIncome existed and fed the totals, but nothing ever listed the
+ * individual entries, so a wrong one could not be found — let alone reversed.
+ * A write-only money ledger is not a ledger. Same shape as listExpenses; the
+ * table's own RLS policy already restricts it to owner/principal/accountant.
+ */
+export async function listOtherIncome(from: string, to: string): Promise<OtherIncomeRow[]> {
+  const sb = requireSupabase()
+  return unwrap(
+    await sb.from('other_income')
+      .select('id, received_on, amount, source, method, note, voucher_no, reversal_of')
+      .gte('received_on', from).lte('received_on', to)
+      .order('received_on', { ascending: false }).order('voucher_no', { ascending: false }),
   )
 }
 
@@ -2068,6 +2261,781 @@ export function whatsappLink(phone: string | null, text: string): string | null 
   return `https://wa.me/${n}?text=${encodeURIComponent(text)}`
 }
 
+// ---- Reporting area -------------------------------------------------------
+
+export interface LedgerRow {
+  entry_date: string
+  kind: 'income' | 'expense'
+  category: string
+  particulars: string
+  reference: string
+  party: string
+  method: string
+  debit: number
+  credit: number
+  recorded_by: string
+  is_reversal: boolean
+}
+
+/**
+ * Debit & credit statement. `kind` narrows it to a detailed income or expense
+ * report — one function rather than three, because they are the same rows.
+ *
+ * Asserted in supabase/tests/reports.sql to net to the same profit the Accounts
+ * screen shows. Two screens disagreeing about one month is the fastest way to
+ * lose a school's trust.
+ */
+export async function getLedger(
+  from: string, to: string, kind: 'all' | 'income' | 'expense' = 'all',
+): Promise<LedgerRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_report_ledger', {
+    p_from: from, p_to: to, p_kind: kind,
+  })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    ...(r as unknown as LedgerRow),
+    debit: Number(r.debit ?? 0),
+    credit: Number(r.credit ?? 0),
+  }))
+}
+
+export interface UnpaidInvoiceRow {
+  invoice_id: string
+  voucher_code: string | null
+  period_label: string
+  due_date: string | null
+  days_overdue: number
+  student_id: string
+  student_name: string
+  gr_no: string | null
+  class_name: string | null
+  section_name: string | null
+  father_name: string | null
+  charge: number
+  paid: number
+  due: number
+}
+
+/** Per CHALLAN, not per student — which is what the defaulter report cannot say. */
+export async function getUnpaidInvoices(sessionId: string): Promise<UnpaidInvoiceRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_report_unpaid_invoices', { p_session_id: sessionId })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    ...(r as unknown as UnpaidInvoiceRow),
+    days_overdue: Number(r.days_overdue ?? 0),
+    charge: Number(r.charge ?? 0),
+    paid: Number(r.paid ?? 0),
+    due: Number(r.due ?? 0),
+  }))
+}
+
+export interface DiscountReportRow {
+  granted_on: string
+  student_id: string
+  student_name: string
+  gr_no: string | null
+  class_name: string | null
+  reason_type: string
+  is_percent: boolean
+  amount: number
+  reason: string | null
+  status: string
+  proposed_by: string
+  approved_by: string
+  approved_at: string | null
+}
+
+/** Money the school chose not to collect, and who signed it off. */
+export async function getDiscountReport(
+  from: string | null, to: string | null,
+): Promise<DiscountReportRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_report_discounts', { p_from: from, p_to: to })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    ...(r as unknown as DiscountReportRow),
+    amount: Number(r.amount ?? 0),
+  }))
+}
+
+export interface AdmissionReportRow {
+  admitted_on: string
+  student_id: string
+  student_name: string
+  gr_no: string | null
+  admission_no: string | null
+  father_name: string | null
+  gender: string | null
+  class_name: string | null
+  section_name: string | null
+  status: string
+  admitted_by: string
+}
+
+export async function getAdmissionReport(
+  from: string | null, to: string | null,
+): Promise<AdmissionReportRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_report_admissions', { p_from: from, p_to: to })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as AdmissionReportRow[]
+}
+
+export interface BalanceSheet {
+  as_at: string
+  /** Owed to the school on that date, across every student it has ever had. */
+  receivable: number
+  /** Of the receivable, how much belongs to children no longer on the roll. */
+  receivable_off_roll: number
+  cash_in: number
+  cash_out: number
+  cash_position: number
+  /** Fees taken for a month not yet billed — a liability, not income. */
+  advance_held: number
+  fee_receipts: number
+  other_income: number
+  charges_raised: number
+  allocated: number
+  students_on_roll: number
+  students_owing: number
+  /** What the figures do and do not include, straight from SQL. */
+  basis: string
+}
+
+/**
+ * The school's position AS AT one day, not a date range.
+ *
+ * Every other report here answers "what happened between two dates". This one
+ * answers "where did we stand", which cannot be served by summing
+ * student_balance() — that is always today's figure, whatever date you print
+ * above it. See supabase/migrations/0045_balance_sheet.sql.
+ */
+export async function getBalanceSheet(asAt: string | null): Promise<BalanceSheet> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_report_balance_sheet', { p_as_at: asAt })
+  if (error) throw new Error(error.message)
+  const r = (data ?? {}) as Record<string, unknown>
+  const num = (k: string) => Number(r[k] ?? 0)
+  return {
+    as_at: String(r.as_at ?? ''),
+    receivable: num('receivable'),
+    receivable_off_roll: num('receivable_off_roll'),
+    cash_in: num('cash_in'),
+    cash_out: num('cash_out'),
+    cash_position: num('cash_position'),
+    advance_held: num('advance_held'),
+    fee_receipts: num('fee_receipts'),
+    other_income: num('other_income'),
+    charges_raised: num('charges_raised'),
+    allocated: num('allocated'),
+    students_on_roll: num('students_on_roll'),
+    students_owing: num('students_owing'),
+    basis: String(r.basis ?? ''),
+  }
+}
+
+// ---- Global search and birthdays -----------------------------------------
+
+export interface SearchHit {
+  kind: 'student' | 'staff' | 'family' | 'challan' | 'receipt' | 'enquiry'
+  id: string
+  title: string
+  subtitle: string
+  detail: string
+  /** Where this record lives. Comes from SQL so it cannot drift from the list
+   *  of things that are searchable. */
+  route: string
+  /** True when the term matched an identifier exactly; those sort first. */
+  exact: boolean
+}
+
+/**
+ * One box, several kinds of record.
+ *
+ * What a given user is allowed to find is decided in SQL: a class teacher gets
+ * pupils and not the family ledger or the receipt book. Filtering here would be
+ * decoration over an open door.
+ */
+export async function globalSearch(term: string, limit = 20): Promise<SearchHit[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_global_search', { p_term: term, p_limit: limit })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as SearchHit[]
+}
+
+export interface BirthdayRow {
+  kind: 'student' | 'staff'
+  id: string
+  full_name: string
+  dob: string
+  /** The age they are turning on that birthday. */
+  turning: number
+  birthday: string
+  /** 0 is today. Never negative — a past birthday rolls to next year. */
+  days_away: number
+  class_name: string
+  detail: string
+  phone: string | null
+}
+
+export async function getBirthdays(withinDays = 0): Promise<BirthdayRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_birthdays', { p_within_days: withinDays })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    ...(r as unknown as BirthdayRow),
+    turning: Number(r.turning ?? 0),
+    days_away: Number(r.days_away ?? 0),
+  }))
+}
+
+// ---- Teacher remarks and position holders --------------------------------
+
+export interface ExamRemarkRow {
+  student_id: string
+  student_name: string
+  gr_no: string | null
+  roll_no: string | null
+  section_name: string | null
+  remark: string | null
+  remark_by_name: string
+  updated_at: string | null
+  percentage: number | null
+  grade: string | null
+  class_position: number | null
+}
+
+/** Every child in the class, remark or not — a teacher needs to see who is left. */
+export async function listExamRemarks(
+  examTermId: string, classId: string,
+): Promise<ExamRemarkRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_exam_remarks', {
+    p_exam_term_id: examTermId, p_class_id: classId,
+  })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    ...(r as unknown as ExamRemarkRow),
+    percentage: r.percentage == null ? null : Number(r.percentage),
+    class_position: r.class_position == null ? null : Number(r.class_position),
+  }))
+}
+
+/** Blank removes the remark rather than storing an empty string. */
+export async function setExamRemark(
+  examTermId: string, studentId: string, remark: string,
+): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_set_exam_remark', {
+    p_exam_term_id: examTermId, p_student_id: studentId, p_remark: remark,
+  })
+  if (error) throw new Error(error.message)
+}
+
+export interface PositionHolder {
+  class_id: string
+  class_name: string
+  level_order: number
+  class_position: number
+  student_id: string
+  student_name: string
+  gr_no: string | null
+  roll_no: string | null
+  section_name: string | null
+  total_marks: number | null
+  total_max: number | null
+  percentage: number | null
+  grade: string | null
+  /** Result held back over unpaid fees — worth knowing BEFORE the announcement. */
+  withheld: boolean
+  remark: string | null
+  /** How many children share this position. 1 means outright. */
+  tied_with: number
+}
+
+/**
+ * Top N in every class for one exam term.
+ *
+ * Ties are preserved as they are on the result card: two children on 90% are
+ * both first and the next is third. Handing one of them the prize on an
+ * unstated tie-break is not something software should do quietly.
+ */
+export async function getPositionHolders(
+  examTermId: string, top = 3,
+): Promise<PositionHolder[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_position_holders', {
+    p_exam_term_id: examTermId, p_top: top,
+  })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    ...(r as unknown as PositionHolder),
+    level_order: Number(r.level_order ?? 0),
+    class_position: Number(r.class_position ?? 0),
+    total_marks: r.total_marks == null ? null : Number(r.total_marks),
+    total_max: r.total_max == null ? null : Number(r.total_max),
+    percentage: r.percentage == null ? null : Number(r.percentage),
+    tied_with: Number(r.tied_with ?? 1),
+  }))
+}
+
+// ---- Mark and attendance corrections -------------------------------------
+
+export interface MarkCorrection {
+  changed_at: string
+  kind: 'Exam' | 'Class test'
+  student_name: string
+  gr_no: string | null
+  class_name: string | null
+  section_name: string | null
+  subject_name: string | null
+  paper: string | null
+  /** What the mark was before it was changed. */
+  was: number | null
+  now_is: number | null
+  max_marks: number | null
+  is_absent: boolean
+  reason: string | null
+  changed_by: string
+  is_locked: boolean
+}
+
+/**
+ * Every mark changed since it was first entered — what it was, what it is, who
+ * changed it and why.
+ *
+ * mark_entries has recorded `corrected_from` all along and NOTHING ever read
+ * it, so a parent disputing "my son got 45, you have written 40" could not be
+ * answered from data the database already held. Owner and principal only: the
+ * person most likely to want this hidden is the person who changed the mark.
+ */
+export async function getMarkCorrections(
+  from: string | null = null, to: string | null = null,
+): Promise<MarkCorrection[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_mark_corrections', { p_from: from, p_to: to })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    ...(r as unknown as MarkCorrection),
+    was: r.was == null ? null : Number(r.was),
+    now_is: r.now_is == null ? null : Number(r.now_is),
+    max_marks: r.max_marks == null ? null : Number(r.max_marks),
+  }))
+}
+
+export interface AttendanceCorrection {
+  changed_at: string
+  attendance_date: string
+  student_name: string
+  gr_no: string | null
+  class_name: string | null
+  section_name: string | null
+  was: string | null
+  now_is: string | null
+  reason: string | null
+  changed_by: string
+}
+
+export async function getAttendanceCorrections(
+  from: string | null = null, to: string | null = null,
+): Promise<AttendanceCorrection[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_attendance_corrections', { p_from: from, p_to: to })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as AttendanceCorrection[]
+}
+
+// ---- Admission enquiries (their "Admission Inquiries") --------------------
+
+export type EnquiryStatus = 'new' | 'contacted' | 'visited' | 'admitted' | 'lost'
+export type EnquirySource =
+  'walk_in' | 'phone' | 'referral' | 'banner' | 'social_media' | 'other'
+
+export interface EnquiryRow {
+  id: string
+  enquiry_no: number
+  child_name: string
+  father_name: string | null
+  phone: string
+  whatsapp: string | null
+  class_name: string | null
+  class_wanted: string | null
+  session_name: string | null
+  source: EnquirySource
+  status: EnquiryStatus
+  follow_up_on: string | null
+  /** 0 unless the enquiry is open and its follow-up date has passed. */
+  days_overdue: number
+  contacts: number
+  last_contact_at: string | null
+  last_outcome: string | null
+  lost_reason: string | null
+  notes: string | null
+  created_at: string
+  created_by_name: string
+  admitted_student_id: string | null
+  admitted_gr_no: string | null
+  /** Full match count, not the page — see fn_enquiry_list. */
+  total_count: number
+}
+
+export interface EnquiryListArgs {
+  status?: EnquiryStatus | null
+  from?: string | null
+  to?: string | null
+  search?: string | null
+  /** Only open enquiries whose follow-up date is today or earlier. */
+  dueOnly?: boolean
+  limit?: number
+  offset?: number
+}
+
+/**
+ * Ordered by who has waited longest, not by who called most recently —
+ * newest-first buries the parent who has been waiting nine days.
+ */
+export async function listEnquiries(a: EnquiryListArgs = {}): Promise<EnquiryRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_enquiry_list', {
+    p_status: a.status ?? null,
+    p_from: a.from ?? null,
+    p_to: a.to ?? null,
+    p_search: a.search ?? null,
+    p_due_only: a.dueOnly ?? false,
+    p_limit: a.limit ?? 200,
+    p_offset: a.offset ?? 0,
+  })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    ...(r as unknown as EnquiryRow),
+    enquiry_no: Number(r.enquiry_no ?? 0),
+    days_overdue: Number(r.days_overdue ?? 0),
+    contacts: Number(r.contacts ?? 0),
+    total_count: Number(r.total_count ?? 0),
+  }))
+}
+
+export interface EnquiryContact {
+  id: string
+  contacted_at: string
+  outcome: string
+  note: string | null
+  by_name: string
+}
+
+export async function getEnquiryContacts(enquiryId: string): Promise<EnquiryContact[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_enquiry_contacts', { p_enquiry_id: enquiryId })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as EnquiryContact[]
+}
+
+export interface NewEnquiry {
+  child_name: string
+  phone: string
+  father_name?: string | null
+  father_cnic?: string | null
+  whatsapp?: string | null
+  address?: string | null
+  dob?: string | null
+  gender?: string | null
+  session_id?: string | null
+  class_id?: string | null
+  class_wanted?: string | null
+  source?: EnquirySource
+  source_note?: string | null
+  follow_up_on?: string | null
+  notes?: string | null
+}
+
+export interface AddEnquiryResult {
+  enquiry_id: string
+  enquiry_no: number
+  message_queued: boolean
+  /**
+   * Set when the same child name already exists on the same phone number. A
+   * WARNING, not a rejection — the same number enquiring again is usually a
+   * second child.
+   */
+  possible_duplicate: {
+    id: string
+    enquiry_no: number
+    child_name: string
+    status: EnquiryStatus
+    created_at: string
+  } | null
+}
+
+export async function addEnquiry(e: NewEnquiry): Promise<AddEnquiryResult> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_add_enquiry', { p: e })
+  if (error) throw new Error(error.message)
+  const r = (data ?? {}) as Record<string, unknown>
+  return {
+    enquiry_id: String(r.enquiry_id ?? ''),
+    enquiry_no: Number(r.enquiry_no ?? 0),
+    message_queued: Boolean(r.message_queued),
+    possible_duplicate: (r.possible_duplicate ?? null) as AddEnquiryResult['possible_duplicate'],
+  }
+}
+
+/** Appends to the history AND moves the next follow-up date, in one call. */
+export async function logEnquiryContact(
+  enquiryId: string, outcome: string, note: string | null, nextFollowUp: string | null,
+): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_log_enquiry_contact', {
+    p_enquiry_id: enquiryId, p_outcome: outcome,
+    p_note: note, p_next_follow_up: nextFollowUp,
+  })
+  if (error) throw new Error(error.message)
+}
+
+/** 'admitted' is not settable here — use admitEnquiry, which creates the student. */
+export async function setEnquiryStatus(
+  enquiryId: string, status: Exclude<EnquiryStatus, 'admitted'>,
+  lostReason: string | null = null, nextFollowUp: string | null = null,
+): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_set_enquiry_status', {
+    p_enquiry_id: enquiryId, p_status: status,
+    p_lost_reason: lostReason, p_next_follow_up: nextFollowUp,
+  })
+  if (error) throw new Error(error.message)
+}
+
+/**
+ * Converts to a real admission through fn_admit_student, so the GR number,
+ * family linkage and student limit behave exactly as for a walk-in. Refuses a
+ * second attempt on the same enquiry.
+ */
+export async function admitEnquiry(
+  enquiryId: string, overrides: Record<string, unknown> = {},
+): Promise<Record<string, unknown>> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_enquiry_admit', {
+    p_enquiry_id: enquiryId, p_overrides: overrides,
+  })
+  if (error) throw new Error(error.message)
+  return (data ?? {}) as Record<string, unknown>
+}
+
+export interface EnquirySummary {
+  open: number
+  due_today: number
+  overdue: number
+  /** Open enquiries with no follow-up date — should always be 0. */
+  open_no_date: number
+  this_month: number
+  admitted: number
+  lost: number
+  decided: number
+  /** null, not 0, when nothing has been decided yet. */
+  conversion_rate: number | null
+}
+
+export async function getEnquirySummary(): Promise<EnquirySummary> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_enquiry_summary')
+  if (error) throw new Error(error.message)
+  const r = (data ?? {}) as Record<string, unknown>
+  const n = (k: string) => Number(r[k] ?? 0)
+  return {
+    open: n('open'), due_today: n('due_today'), overdue: n('overdue'),
+    open_no_date: n('open_no_date'), this_month: n('this_month'),
+    admitted: n('admitted'), lost: n('lost'), decided: n('decided'),
+    conversion_rate: r.conversion_rate == null ? null : Number(r.conversion_rate),
+  }
+}
+
+export interface EnquirySourceRow {
+  source: EnquirySource
+  enquiries: number
+  admitted: number
+  lost: number
+  open: number
+  conversion_rate: number | null
+}
+
+/** Which sources actually convert. A banner costs money; this says what it bought. */
+export async function getEnquirySources(
+  from: string | null = null, to: string | null = null,
+): Promise<EnquirySourceRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_enquiry_sources', { p_from: from, p_to: to })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    source: r.source as EnquirySource,
+    enquiries: Number(r.enquiries ?? 0),
+    admitted: Number(r.admitted ?? 0),
+    lost: Number(r.lost ?? 0),
+    open: Number(r.open ?? 0),
+    conversion_rate: r.conversion_rate == null ? null : Number(r.conversion_rate),
+  }))
+}
+
+// ---- Message settings (their "Automation Settings") -----------------------
+
+export interface MessageSetting {
+  template_key: string
+  label: string
+  body: string
+  enabled: boolean
+  /** Merge tags this template may use. Comes from SQL because it is a fact
+   *  about the call site — {receipt} only resolves for payment_received. */
+  tags: string[]
+  is_default: boolean
+}
+
+/** What the school currently sends, and what each message may reference. */
+export async function listMessageSettings(): Promise<MessageSetting[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_message_settings')
+  if (error) throw new Error(error.message)
+  return (data ?? []) as MessageSetting[]
+}
+
+/**
+ * Change the wording, or switch a message type off entirely.
+ *
+ * A direct table write rather than an RPC: message_templates already carries an
+ * owner/principal-only write policy, so the database is enforcing this whether
+ * the call comes from here or anywhere else.
+ */
+export async function saveMessageSetting(
+  templateKey: string, patch: { body?: string; enabled?: boolean },
+): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb
+    .from('message_templates')
+    .update(patch)
+    .eq('template_key', templateKey)
+  if (error) throw new Error(error.message)
+}
+
+/** Put one template's original wording back. Returns the restored text. */
+export async function resetMessageTemplate(templateKey: string): Promise<string> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_reset_message_template', {
+    p_template_key: templateKey,
+  })
+  if (error) throw new Error(error.message)
+  return String(data ?? '')
+}
+
+/**
+ * Fill merge tags with sample values so the editor can show what a parent will
+ * actually receive. Mirrors fn__render_template's simple {tag} replacement —
+ * deliberately not a second templating engine, just the same substitution.
+ */
+export function previewMessage(body: string, schoolName: string): string {
+  const sample: Record<string, string> = {
+    parent: 'Muhammad Aslam',
+    children: 'Ahmed, Bilal',
+    school: schoolName,
+    date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+    balance: '4,850',
+    amount: '3,650',
+    receipt: '1042',
+    received_by: 'Basha Salamat',
+  }
+  return Object.entries(sample).reduce(
+    (out, [k, v]) => out.split(`{${k}}`).join(v),
+    body,
+  )
+}
+
+// ---- Bulk collection ------------------------------------------------------
+
+export interface ClassDue {
+  student_id: string
+  full_name: string
+  gr_no: string | null
+  roll_no: string | null
+  father_name: string | null
+  phone: string | null
+  family_id: string | null
+  family_head: string | null
+  invoice_id: string | null
+  voucher_code: string | null
+  month_charge: number
+  month_paid: number
+  month_due: number
+  /** Everything the student owes, not just this month. */
+  total_due: number
+  last_paid_at: string | null
+}
+
+/** The whole class and what each child owes — paid ones included, so a clerk
+ *  working down a register can see they have not skipped anybody. */
+export async function getClassDues(
+  sessionId: string, classId: string, sectionId: string | null, periodMonth: string,
+): Promise<ClassDue[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_class_dues', {
+    p_session_id: sessionId, p_class_id: classId,
+    p_section_id: sectionId, p_period_month: periodMonth,
+  })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    ...(r as unknown as ClassDue),
+    month_charge: Number(r.month_charge ?? 0),
+    month_paid: Number(r.month_paid ?? 0),
+    month_due: Number(r.month_due ?? 0),
+    total_due: Number(r.total_due ?? 0),
+  }))
+}
+
+export interface BulkPaymentResult {
+  count: number
+  total: number
+  receipts: { student_id: string; amount: number; receipt_no: number | null }[]
+}
+
+/**
+ * Record many payments as ONE transaction.
+ *
+ * If any row is bad the whole batch is refused and nothing is written — a clerk
+ * who cannot tell which of forty rows went through has no way to recover.
+ */
+export async function recordBulkPayments(
+  items: { student_id: string; amount: number }[],
+  method: string,
+  note?: string,
+  pending = false,
+): Promise<BulkPaymentResult> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_record_bulk_payments', {
+    p_items: items, p_method: method, p_note: note ?? null, p_pending: pending,
+  })
+  if (error) throw new Error(error.message)
+  const d = (data ?? {}) as Record<string, unknown>
+  return {
+    count: Number(d.count ?? 0),
+    total: Number(d.total ?? 0),
+    receipts: ((d.receipts ?? []) as Record<string, unknown>[]).map((r) => ({
+      student_id: String(r.student_id),
+      amount: Number(r.amount ?? 0),
+      receipt_no: r.receipt_no == null ? null : Number(r.receipt_no),
+    })),
+  }
+}
+
+/** Queue one WhatsApp reminder per FAMILY that owes, escalating on repeats. */
+export async function queueClassReminders(
+  sessionId: string, classId: string, sectionId: string | null,
+): Promise<{ queued: number; skipped: number }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_queue_class_reminders', {
+    p_session_id: sessionId, p_class_id: classId, p_section_id: sectionId,
+  })
+  if (error) throw new Error(error.message)
+  const d = (data ?? {}) as Record<string, unknown>
+  return { queued: Number(d.queued ?? 0), skipped: Number(d.skipped ?? 0) }
+}
+
 // ---- Fee operations -------------------------------------------------------
 
 export interface FeeIncrementRow { class: string; fee_head: string; from: number; to: number }
@@ -2086,6 +3054,161 @@ export async function feeIncrement(
   })
   if (error) throw new Error(error.message)
   return data as FeeIncrementResult
+}
+
+export interface CounterSummary {
+  unpaid_invoices: number
+  income_today: number
+  expense_today: number
+  balance_today: number
+  pending_count: number
+  pending_amount: number
+}
+
+/**
+ * The four figures the fee counter opens on. One round trip on purpose — the
+ * clerk reloads this screen all morning and the numbers have to agree with each
+ * other, so they are computed together.
+ */
+export async function getCounterSummary(): Promise<CounterSummary> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_counter_summary')
+  if (error) throw new Error(error.message)
+  const d = (data ?? {}) as Record<string, unknown>
+  return {
+    unpaid_invoices: Number(d.unpaid_invoices ?? 0),
+    income_today: Number(d.income_today ?? 0),
+    expense_today: Number(d.expense_today ?? 0),
+    balance_today: Number(d.balance_today ?? 0),
+    pending_count: Number(d.pending_count ?? 0),
+    pending_amount: Number(d.pending_amount ?? 0),
+  }
+}
+
+export interface RecentPayment {
+  payment_id: string
+  receipt_no: number | null
+  paid_at: string
+  student_id: string | null
+  student_name: string
+  gr_no: string | null
+  family_id: string | null
+  parent_name: string | null
+  class_name: string | null
+  section_name: string | null
+  /** Which months this receipt settled. Null for money held as family credit. */
+  paid_for: string | null
+  amount: number
+  method: string
+  /** Fine on the challans this receipt paid — not a share apportioned to it. */
+  late_fee: number
+  /** Discount on those same challans, same caveat. */
+  discount: number
+  note: string | null
+  status: string
+  received_by: string
+  is_reversal: boolean
+}
+
+/** The day's receipts, newest first. Shown before anyone searches for anything. */
+export async function listRecentPayments(limit = 25): Promise<RecentPayment[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_recent_payments', { p_limit: limit })
+  if (error) throw new Error(error.message)
+  return (data ?? []).map((r: Record<string, unknown>) => ({
+    ...(r as unknown as RecentPayment),
+    receipt_no: r.receipt_no == null ? null : Number(r.receipt_no),
+    amount: Number(r.amount ?? 0),
+    late_fee: Number(r.late_fee ?? 0),
+    discount: Number(r.discount ?? 0),
+  }))
+}
+
+export interface ChallanLine { description: string; amount: number; is_discount: boolean }
+
+export interface Challan {
+  invoice_id: string
+  voucher_code: string | null
+  status: string
+  period_month: string | null
+  period_label: string
+  due_date: string | null
+  student_id: string
+  student_name: string
+  gr_no: string | null
+  roll_no: string | null
+  father_name: string | null
+  family_head: string | null
+  family_cnic: string | null
+  phone: string | null
+  class_name: string | null
+  section_name: string | null
+  lines: ChallanLine[]
+  fine: number
+  this_month: number
+  already_paid: number
+  this_month_due: number
+  /** Computed live, not the generation-time snapshot — see migration 0039. */
+  previous_dues: number
+  /** Equals student_balance(). The paper and the ledger are the same number. */
+  total_payable: number
+  arrears_snapshot_at_generation: number
+}
+
+function toChallan(raw: Record<string, unknown>): Challan {
+  const num = (v: unknown) => Number(v ?? 0)
+  return {
+    ...(raw as unknown as Challan),
+    lines: ((raw.lines ?? []) as Record<string, unknown>[]).map((l) => ({
+      description: String(l.description ?? ''),
+      amount: num(l.amount),
+      is_discount: !!l.is_discount,
+    })),
+    fine: num(raw.fine),
+    this_month: num(raw.this_month),
+    already_paid: num(raw.already_paid),
+    this_month_due: num(raw.this_month_due),
+    previous_dues: num(raw.previous_dues),
+    total_payable: num(raw.total_payable),
+    arrears_snapshot_at_generation: num(raw.arrears_snapshot_at_generation),
+  }
+}
+
+/** One challan, everything the paper needs. Reprintable at any time. */
+export async function getChallan(invoiceId: string): Promise<Challan> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_challan', { p_invoice_id: invoiceId })
+  if (error) throw new Error(error.message)
+  return toChallan((data ?? {}) as Record<string, unknown>)
+}
+
+/** A whole class's challans for one month, in roll-number order. */
+export async function getClassChallans(
+  sessionId: string, classId: string, sectionId: string | null, periodMonth: string,
+): Promise<Challan[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_challans_for_class', {
+    p_session_id: sessionId, p_class_id: classId,
+    p_section_id: sectionId, p_period_month: periodMonth,
+  })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, unknown>[]).map(toChallan)
+}
+
+export interface ChallanMonth { period_month: string; challans: number; unpaid: number }
+
+/** Which months actually have challans, so the print screen offers real choices. */
+export async function listChallanMonths(sessionId: string, classId: string): Promise<ChallanMonth[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_challan_months', {
+    p_session_id: sessionId, p_class_id: classId,
+  })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    period_month: String(r.period_month),
+    challans: Number(r.challans ?? 0),
+    unpaid: Number(r.unpaid ?? 0),
+  }))
 }
 
 export async function findByVoucher(code: string) {

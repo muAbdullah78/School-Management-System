@@ -5,9 +5,20 @@
  * target is fifteen seconds: find the payer, see every child, take one amount,
  * print one receipt.
  *
- * One search box on purpose. Making the clerk choose "search by CNIC" vs
- * "search by student" before typing is how you lose ten of those seconds and
- * most of the goodwill — fn_find_family resolves all of them.
+ * IT OPENS ON TODAY'S WORK, not on an empty box. Four figures, both ways of
+ * finding a payer, and the day's receipts already listed. The previous version
+ * rendered a single text input and nothing else — there was no way to see what
+ * had been collected today without leaving for a report, which is the
+ * difference between a counter and a lookup form.
+ *
+ * Two search boxes, not one. An earlier note here argued that making the clerk
+ * choose between "by CNIC" and "by student" wastes seconds, and that was wrong
+ * in a way worth recording: they are not the same question. Searching a CHILD
+ * is what happens when a parent hands over a fee slip or says a name;
+ * searching the FATHER'S CNIC is what happens when he wants to pay for all
+ * three at once. Both land on the same family sheet, so nothing is lost by
+ * offering both, and the second box is the only place the family feature is
+ * discoverable.
  *
  * Allocation is oldest-month-first across siblings and is NOT silent: the
  * result panel names every invoice the money cleared. Silent allocation is
@@ -19,6 +30,11 @@ import {
   findFamily,
   getFamilySheet,
   recordFamilyPayment,
+  getCounterSummary,
+  listRecentPayments,
+  findByVoucher,
+  listStudents,
+  getStudentFamilyId,
   type FamilyHit,
   type FamilyPaymentResult,
 } from '@/lib/db'
@@ -32,16 +48,18 @@ import {
   Field,
   inputClass,
   MiniStat,
+  StatTile,
   money,
 } from '@/components/ui'
 import {
   IconSearch,
   IconFamily,
   IconWallet,
-  IconCheck,
-  IconAlert,
-  IconPrint,
   IconStudents,
+  IconFees,
+  IconAlert,
+  IconCheck,
+  IconPrint,
 } from '@/components/icons'
 
 const METHODS = [
@@ -70,6 +88,43 @@ export function FamilyCollect() {
   const [pending, setPending] = useState(false)
   const [result, setResult] = useState<FamilyPaymentResult | null>(null)
 
+  // The counter's own state: a second search (by child, or by scanned voucher)
+  // and the two reads that make the screen useful before anyone types.
+  const [sQuery, setSQuery] = useState('')
+  const [scanErr, setScanErr] = useState<string | null>(null)
+
+  const summary = useQuery({ queryKey: ['counterSummary'], queryFn: getCounterSummary })
+  const recent = useQuery({ queryKey: ['recentPayments'], queryFn: () => listRecentPayments(25) })
+
+  // Ungated on purpose: an empty term returns the first students by name, so
+  // the box is a filter over a list rather than a gate in front of one.
+  const students = useQuery({
+    queryKey: ['counterStudents', sQuery],
+    queryFn: () => listStudents(sQuery),
+    enabled: !familyId,
+  })
+
+  // Collection is family-based, so picking a child opens their family sheet.
+  // Every sibling's balance is on it, which is the whole point of 0036.
+  const openStudent = useMutation({
+    mutationFn: (studentId: string) => getStudentFamilyId(studentId),
+    onSuccess: (famId) => {
+      if (famId) { setFamilyId(famId); setResult(null); setScanErr(null) }
+      else setScanErr('That student is not attached to a family — open their profile to fix it.')
+    },
+  })
+
+  // A scanned or typed voucher code off the printed challan.
+  const openVoucher = useMutation({
+    mutationFn: (code: string) => findByVoucher(code),
+    onSuccess: (hit) => {
+      setScanErr(null)
+      if (hit?.family_id) { setFamilyId(hit.family_id); setResult(null) }
+      else setScanErr('No challan with that code. Check the digits, or search by name instead.')
+    },
+    onError: (e) => setScanErr((e as Error).message),
+  })
+
   const hits = useQuery({
     queryKey: ['findFamily', submitted],
     queryFn: () => findFamily(submitted),
@@ -92,6 +147,10 @@ export function FamilyCollect() {
       void qc.invalidateQueries({ queryKey: ['familySheet', familyId] })
       void qc.invalidateQueries({ queryKey: ['findFamily'] })
       void qc.invalidateQueries({ queryKey: ['dashboardSummary'] })
+      // The counter's own figures. Without these the clerk takes Rs 1,000,
+      // returns to the landing view and it still reads "collected today Rs 0".
+      void qc.invalidateQueries({ queryKey: ['counterSummary'] })
+      void qc.invalidateQueries({ queryKey: ['recentPayments'] })
     },
   })
 
@@ -128,10 +187,126 @@ export function FamilyCollect() {
         }
       />
 
-      {/* ---------------------------------------------------------- search -- */}
+      {/* ------------------------------------------------- today's figures -- */}
       {!familyId && (
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <StatTile
+            label="Unpaid challans"
+            value={summary.data?.unpaid_invoices ?? '—'}
+            sub="still owing"
+            tone="due"
+            icon={<IconFees />}
+          />
+          <StatTile
+            label="Collected today"
+            value={summary.data ? money(summary.data.income_today) : '—'}
+            sub={
+              summary.data && summary.data.pending_count > 0
+                ? `+ ${money(summary.data.pending_amount)} awaiting clearance`
+                : 'verified receipts only'
+            }
+            tone="money"
+            icon={<IconWallet />}
+          />
+          <StatTile
+            label="Spent today"
+            value={summary.data ? money(summary.data.expense_today) : '—'}
+            sub="from Accounts"
+            tone="info"
+            icon={<IconAlert />}
+          />
+          <StatTile
+            label="Balance today"
+            value={summary.data ? money(summary.data.balance_today) : '—'}
+            sub="collected − spent"
+            tone="brand"
+            icon={<IconCheck />}
+          />
+        </div>
+      )}
+
+      {/* ---------------------------------------------------------- search -- */}
+      {/* Two ways in, side by side, because they answer different questions:
+          a child (a fee slip, a name at the window) or the father (paying for
+          all of them). Both open the same family sheet. */}
+      {!familyId && (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
-          <CardTitle icon={<IconSearch />}>Find the payer</CardTitle>
+          <CardTitle icon={<IconStudents />}>By student, or scan the challan</CardTitle>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              const t = sQuery.trim()
+              if (!t) return
+              // Order matters. An unambiguous student match wins, because a
+              // clerk typing a GR number means that child — an earlier version
+              // tried the voucher lookup first and answered "no challan with
+              // that code" while the matching student sat in the list below.
+              // Only when nothing matches is it treated as a scanned code,
+              // which is also what a barcode scanner produces: the code, then
+              // Enter.
+              const list = students.data ?? []
+              if (list.length === 1) openStudent.mutate(list[0].id)
+              else if (list.length === 0 && t.length >= 4 && !t.includes(' ')) openVoucher.mutate(t)
+            }}
+            className="flex flex-wrap gap-2"
+          >
+            <input
+              autoFocus
+              value={sQuery}
+              onChange={(e) => { setSQuery(e.target.value); setScanErr(null) }}
+              placeholder="Student name, GR number, or scan the fee slip"
+              className={`${inputClass} min-w-[14rem] flex-1`}
+            />
+          </form>
+
+          {scanErr && <p className="mt-2 text-sm text-danger-600">{scanErr}</p>}
+          {openVoucher.isPending && <p className="mt-2 text-sm text-slate-400">Looking up that challan…</p>}
+
+          <div className="mt-3 max-h-72 overflow-y-auto">
+            {students.isLoading && <p className="text-sm text-slate-400">Loading…</p>}
+            {students.isError && (
+              <p className="text-sm text-danger-600">{(students.error as Error).message}</p>
+            )}
+            {students.data && students.data.length === 0 && (
+              <EmptyState
+                icon={<IconStudents />}
+                title="No student matches"
+                message="Try fewer letters, or a GR number."
+              />
+            )}
+            {students.data && students.data.length > 0 && (
+              <ul className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200">
+                {students.data.map((st) => (
+                  <li key={st.id}>
+                    <button
+                      onClick={() => openStudent.mutate(st.id)}
+                      disabled={openStudent.isPending}
+                      className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition hover:bg-brand-50/50 disabled:opacity-60"
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-slate-800">
+                          {st.full_name}
+                        </span>
+                        <span className="block truncate text-xs text-slate-500">
+                          {st.father_name ?? '—'}
+                          {st.gr_no ? ` · ${st.gr_no}` : ''}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-xs text-slate-400">Open family →</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <p className="mt-2 text-xs text-slate-400">
+            Opens the whole family, so a father paying for three children does it once.
+          </p>
+        </Card>
+
+        <Card>
+          <CardTitle icon={<IconSearch />}>By father’s CNIC or phone</CardTitle>
           <form
             onSubmit={(e) => {
               e.preventDefault()
@@ -203,6 +378,75 @@ export function FamilyCollect() {
               </ul>
             )}
           </div>
+          <p className="mt-2 text-xs text-slate-400">
+            The CNIC recorded at admission. Finds every child of that father in one go.
+          </p>
+        </Card>
+        </div>
+      )}
+
+      {/* -------------------------------------------------- today's receipts -- */}
+      {/* On screen before anyone searches. It answers "what have we taken
+          today?" without leaving for a report, and naming the collector makes
+          it a control rather than a convenience. */}
+      {!familyId && (
+        <Card>
+          <CardTitle icon={<IconWallet />}>Latest payments</CardTitle>
+          {recent.isLoading && <p className="text-sm text-slate-400">Loading…</p>}
+          {recent.isError && (
+            <p className="text-sm text-danger-600">{(recent.error as Error).message}</p>
+          )}
+          {recent.data && recent.data.length === 0 && (
+            <EmptyState
+              icon={<IconWallet />}
+              title="Nothing collected yet"
+              message="Receipts appear here the moment a payment is taken."
+            />
+          )}
+          {recent.data && recent.data.length > 0 && (
+            <div className="-mx-4 overflow-x-auto sm:mx-0">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                    <th scope="col" className="px-3 py-2 font-medium">Receipt</th>
+                    <th scope="col" className="px-3 py-2 font-medium">Student</th>
+                    <th scope="col" className="px-3 py-2 font-medium">Parent</th>
+                    <th scope="col" className="px-3 py-2 font-medium">Class</th>
+                    <th scope="col" className="px-3 py-2 font-medium">Paid for</th>
+                    <th scope="col" className="px-3 py-2 text-right font-medium">Amount</th>
+                    <th scope="col" className="px-3 py-2 font-medium">Method</th>
+                    <th scope="col" className="px-3 py-2 font-medium">Taken by</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {recent.data.map((r) => (
+                    <tr key={r.payment_id} className="hover:bg-slate-50/70">
+                      <td className="whitespace-nowrap px-3 py-2 tabular-nums text-slate-500">
+                        {r.receipt_no ?? '—'}
+                        {r.is_reversal && <Badge tone="danger">reversed</Badge>}
+                        {r.status === 'pending' && <Badge tone="due">pending</Badge>}
+                      </td>
+                      <td className="px-3 py-2 text-slate-800">{r.student_name}</td>
+                      <td className="px-3 py-2 text-slate-600">{r.parent_name ?? '—'}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-slate-600">
+                        {r.class_name ?? '—'}{r.section_name ? `-${r.section_name}` : ''}
+                      </td>
+                      <td className="px-3 py-2 text-slate-600">{r.paid_for ?? 'held as advance'}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right font-semibold tabular-nums text-slate-800">
+                        {money(r.amount)}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-slate-500">{r.method}</td>
+                      <td className="px-3 py-2 text-slate-500">{r.received_by}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className="mt-3 text-xs text-slate-400">
+            Newest first, this school only. A pending row is money accepted but not yet cleared — it is
+            not in “collected today” until you verify it under Pending.
+          </p>
         </Card>
       )}
 

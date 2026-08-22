@@ -61,7 +61,10 @@ begin
   insert into public.profiles (id, full_name, role, school_id) values
     (v_owner, 'Linkage Owner', 'owner', v_school),
     (v_o2,    'Other Owner',   'owner', v_other)
-    on conflict (id) do update set school_id = excluded.school_id, role = excluded.role;
+    on conflict (id) do update set school_id = excluded.school_id,
+                                   role      = excluded.role,
+                                   full_name = excluded.full_name,
+                                   active    = true;
   alter table public.profiles enable trigger user;
 
   -- The school_id stamping trigger refuses a row addressed to a school the

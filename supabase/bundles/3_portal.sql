@@ -1747,3 +1747,690 @@ revoke all on function public.fn_repair_families()               from anon;
 -- not decoration.
 revoke all on function public.fn__merge_two_families(uuid, uuid)  from public, anon, authenticated;
 revoke all on function public.fn__repair_families_for(uuid)       from public, anon, authenticated;
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- 0037_parent_access.sql
+-- ─────────────────────────────────────────────────────────────────────────
+-- =============================================================================
+-- 0037 — Make the parent portal reachable.
+--
+-- THE BUG THIS FIXES
+--
+-- Migration 0033 built the whole parent portal: fn_portal_me, child fee
+-- history, attendance, results, an enumeration-proof child guard, and a
+-- published_at gate on result cards. Fourteen tests cover it. Not one line of
+-- it could ever run, because there was no way to tell the system which family a
+-- parent belongs to.
+--
+--   * fn_link_parent is the ONLY code in the repo that writes
+--     profiles.family_id — and it had zero callers. No wrapper in the app, no
+--     screen, no other SQL function.
+--   * handle_new_user writes id, full_name, role and school_id. Not family_id.
+--   * So my_family_id() returned null for every parent account, which made
+--     fn__assert_my_child raise 'Not a parent account', which made
+--     fn_portal_child_fees / _attendance / _results all throw. fn_portal_me
+--     returned an empty child list.
+--
+-- A parent login created through the app landed in a portal that was either
+-- empty or erroring, every time, with no way to fix it from inside the product.
+--
+-- Worse, the login could not be created in the first place: the create-teacher
+-- Edge Function validates the requested role against an allow-list that did not
+-- include 'parent', so asking for one came back "Invalid role".
+--
+-- WHAT THIS ADDS
+--
+--   1. fn_family_parents  — who can already see this family's portal. Needed
+--      before creating anything, or a school ends up with four logins for one
+--      father and no idea which one he actually uses.
+--   2. fn_unlink_parent   — revoke access. A guardian changes, a couple
+--      separates, a phone is lost. Without this, granting access is
+--      irreversible, which makes it something a school is right to be afraid
+--      of.
+--
+--   3. Enforcement of profiles.active, which nothing read — so the
+--      "Deactivate" button in Settings was decorative and a dismissed clerk
+--      kept every permission. Found while writing the revoke above.
+--   4. A guard so enforcing that cannot let a school lock itself out by
+--      deactivating its last owner.
+--
+-- fn_link_parent itself is unchanged and was always correct. The gap was
+-- everything around it.
+-- =============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 1. Who can see this family's portal?
+--
+-- The email lives in auth.users, which the app cannot read directly — so this
+-- is SECURITY DEFINER and joins on the caller's behalf. That makes the guards
+-- load-bearing rather than decorative:
+--
+--   * is_staff() — a parent must never be able to enumerate other logins,
+--     including the other logins on their own family.
+--   * assert_own('families') — without it, passing an arbitrary family id would
+--     read another school's parent emails out of auth.users. This function is
+--     the only place in the schema that reads auth.users on request, so it is
+--     the one place that check absolutely cannot be skipped.
+-- ---------------------------------------------------------------------------
+create or replace function public.fn_family_parents(p_family_id uuid)
+returns table (profile_id uuid, full_name text, email text, active boolean)
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.is_staff() then
+    raise exception 'Not permitted' using errcode = '42501';
+  end if;
+  perform public.assert_own('families', p_family_id);
+
+  return query
+  select p.id, p.full_name, u.email::text, p.active
+  from public.profiles p
+  join auth.users u on u.id = p.id
+  where p.family_id = p_family_id
+    and p.role = 'parent'
+    and p.school_id = public.current_school_id()
+  order by p.full_name;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 2. Revoke a parent's access.
+--
+-- Deliberately NOT a delete. Deleting the auth user needs the service key and
+-- would also erase the record that this person once had access, which is
+-- exactly the thing a school wants to be able to show later. Detaching the
+-- family is what cuts the data off: my_family_id() goes null and every portal
+-- read refuses.
+--
+-- active=false is set as well, and section 3 below is what makes that mean
+-- anything — until this migration it did not.
+-- ---------------------------------------------------------------------------
+create or replace function public.fn_unlink_parent(p_profile_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.has_role('owner', 'principal') then
+    raise exception 'Only the owner or principal may remove portal access';
+  end if;
+  perform public.assert_own('profiles', p_profile_id);
+
+  if (select role from public.profiles where id = p_profile_id) <> 'parent' then
+    raise exception 'That account is not a parent account';
+  end if;
+
+  update public.profiles
+     set family_id = null, active = false
+   where id = p_profile_id;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 3. Make "Deactivate" actually deactivate.
+--
+-- A SEPARATE BUG, found while writing the revoke above.
+--
+-- profiles.active is written by Settings -> Users & Roles ("Deactivate") and is
+-- read by NOTHING. Not by current_school_id(), not by has_role(), not by
+-- is_staff(), not by a single RLS policy. The button has always been
+-- decorative: a school that dismisses a clerk, clicks Deactivate and believes
+-- access is cut is wrong — that clerk keeps every permission they had,
+-- including the fee counter, until the login is deleted in Supabase by hand.
+--
+-- Fixed at the two chokepoints every other check already flows through, so
+-- nothing else has to be touched:
+--
+--   * current_school_id() returns NULL for an inactive profile. Every RLS
+--     policy in the schema is `school_id = public.current_school_id()`, and
+--     assert_own() is built on it, so a null there closes all of them at once.
+--   * has_role() and is_staff() return false. Belt and braces: these are the
+--     role guards inside the SECURITY DEFINER functions, which do not all go
+--     through RLS.
+--
+-- Enforcing this creates a new way to break a school: an owner deactivating
+-- themselves, or the last owner, would lock everyone out of the school with no
+-- route back in except the SQL editor. Section 4 refuses that.
+-- ---------------------------------------------------------------------------
+create or replace function public.current_school_id() returns uuid
+language sql stable security definer set search_path = public as $$
+  select school_id from public.profiles where id = auth.uid() and active;
+$$;
+
+create or replace function public.has_role(variadic roles public.user_role[]) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.profiles p
+    where p.id = auth.uid() and p.active and p.role = any(roles)
+  );
+$$;
+
+create or replace function public.is_staff() returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce(
+    (select p.active and p.role <> 'parent' from public.profiles p where p.id = auth.uid()),
+    false);
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 4. Do not let a school lock itself out.
+--
+-- With section 3 live, deactivating the last active owner would leave nobody
+-- who can reactivate anyone — has_role('owner') would be false for everybody.
+-- A BEFORE UPDATE trigger is the right place: it catches the Settings screen,
+-- a stray SQL update, and anything added later, rather than trusting each
+-- caller to remember.
+-- ---------------------------------------------------------------------------
+create or replace function public.guard_last_owner_active() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if old.active and not new.active and old.role = 'owner' then
+    if not exists (
+      select 1 from public.profiles p
+      where p.school_id = old.school_id
+        and p.role = 'owner'
+        and p.active
+        and p.id <> old.id
+    ) then
+      raise exception 'This is the school''s only active owner — make someone else an owner first';
+    end if;
+  end if;
+
+  -- Changing the last active owner's ROLE has exactly the same effect.
+  if old.active and new.active and old.role = 'owner' and new.role <> 'owner' then
+    if not exists (
+      select 1 from public.profiles p
+      where p.school_id = old.school_id
+        and p.role = 'owner'
+        and p.active
+        and p.id <> old.id
+    ) then
+      raise exception 'This is the school''s only active owner — make someone else an owner first';
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_profiles_last_owner on public.profiles;
+create trigger trg_profiles_last_owner
+  before update on public.profiles
+  for each row execute function public.guard_last_owner_active();
+
+-- ---------------------------------------------------------------------------
+-- 5. Grants.
+--
+-- fn_family_parents is granted to authenticated but gated on is_staff()
+-- INSIDE the function, so a signed-in parent calling it directly gets 42501.
+-- ---------------------------------------------------------------------------
+grant execute on function public.fn_family_parents(uuid) to authenticated;
+grant execute on function public.fn_unlink_parent(uuid)  to authenticated;
+
+revoke all on function public.fn_family_parents(uuid) from anon;
+revoke all on function public.fn_unlink_parent(uuid)  from anon;
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- 0038_counter.sql
+-- ─────────────────────────────────────────────────────────────────────────
+-- =============================================================================
+-- 0038 — The fee counter: open on today's work, not on an empty box.
+--
+-- WHY
+--
+-- OurSchoolSoftware's Fee Payment screen — their busiest, the one a clerk sits
+-- on all morning during the first ten days of a month — opens showing:
+--
+--   * four figures: unpaid invoices, income today, expense today, balance today
+--   * TWO search boxes side by side: by student name/code (or by scanning the
+--     fee slip), and by the father's CNIC to pull up every connected child
+--   * the day's payments, already listed, without searching for anything
+--
+-- Ours opens as a single empty text input. Nothing is on screen until the clerk
+-- types, and there is no way to see what has been collected today without
+-- leaving for a report. That is the difference between a counter and a lookup
+-- form, and it is the single most-used screen in the product.
+--
+-- This migration adds the two reads that screen needs. No new tables: every
+-- figure is derived, so none of it can drift from the ledger.
+-- =============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 1. The four tiles.
+--
+-- Deliberately one round trip rather than four. The clerk reloads this screen
+-- constantly and each figure is a cheap aggregate; four separate calls would
+-- mean four sets of latency to Mumbai for numbers that must agree with each
+-- other anyway.
+--
+-- "Unpaid invoices" counts CHALLANS still owing, not students — that is the
+-- figure their screen shows and it is the one a clerk is asked for ("how many
+-- challans are still out?"). It is not the same as the defaulter count, and
+-- conflating them is how a dashboard ends up lying.
+-- ---------------------------------------------------------------------------
+create or replace function public.fn_counter_summary()
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare
+  v_school   uuid := public.current_school_id();
+  v_unpaid   integer;
+  v_income   numeric;
+  v_expense  numeric;
+  v_pending  integer;
+  v_pending_amt numeric;
+begin
+  if not public.is_staff() then
+    raise exception 'Not permitted' using errcode = '42501';
+  end if;
+
+  -- An invoice is "unpaid" when what it charges exceeds what has been allocated
+  -- to it from VERIFIED payments. Derived rather than read off invoices.status,
+  -- because status is a label and this is the money.
+  select count(*) into v_unpaid
+  from public.invoices i
+  where i.school_id = v_school
+    and i.status <> 'void'
+    and (
+      coalesce((select sum(case when l.is_discount then -l.amount else l.amount end)
+                  from public.invoice_lines l where l.invoice_id = i.id), 0)
+      + coalesce(i.fine, 0)
+      - coalesce((select sum(al.amount)
+                    from public.payment_allocations al
+                    join public.payments p on p.id = al.payment_id
+                   where al.invoice_id = i.id and p.status = 'verified'), 0)
+    ) > 0;
+
+  select coalesce(sum(p.amount), 0) into v_income
+  from public.payments p
+  where p.school_id = v_school
+    and p.status = 'verified'
+    and p.created_at >= date_trunc('day', now())
+    and p.created_at <  date_trunc('day', now()) + interval '1 day';
+
+  select coalesce(sum(e.amount), 0) into v_expense
+  from public.expenses e
+  where e.school_id = v_school
+    and e.spent_on = current_date
+    and e.reversal_of is null;
+
+  -- Money taken but not yet cleared. Shown next to the day's income because a
+  -- clerk who has accepted three bank transfers needs to know they are not in
+  -- that income figure — otherwise the drawer looks short at closing.
+  select count(*), coalesce(sum(p.amount), 0) into v_pending, v_pending_amt
+  from public.payments p
+  where p.school_id = v_school and p.status = 'pending';
+
+  return jsonb_build_object(
+    'unpaid_invoices', v_unpaid,
+    'income_today',    v_income,
+    'expense_today',   v_expense,
+    'balance_today',   v_income - v_expense,
+    'pending_count',   v_pending,
+    'pending_amount',  v_pending_amt);
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 2. Latest payments — the list that makes the screen useful on open.
+--
+-- Columns chosen to match theirs: student, parent, class, what it paid for,
+-- amount, late fee, discount, note, and WHO took the money. That last one is
+-- what makes the list a control rather than a convenience — a clerk can see
+-- their own receipts, and an owner can see whose counter the cash came over.
+--
+-- A caveat that belongs in the schema rather than only in the UI: late_fee and
+-- discount are the totals on the CHALLANS this receipt was allocated to, not a
+-- share apportioned to this payment. Two part-payments against one challan will
+-- each report that challan's full fine. The alternative — apportioning — would
+-- invent a number that appears nowhere in the ledger, which is worse. The
+-- column names and the UI heading both say "on the challans this paid".
+-- ---------------------------------------------------------------------------
+create or replace function public.fn_recent_payments(p_limit integer default 25)
+returns table (
+  payment_id     uuid,
+  receipt_no     bigint,
+  paid_at        timestamptz,
+  student_id     uuid,
+  student_name   text,
+  gr_no          text,
+  family_id      uuid,
+  parent_name    text,
+  class_name     text,
+  section_name   text,
+  paid_for       text,
+  amount         numeric,
+  method         public.payment_method,
+  late_fee       numeric,
+  discount       numeric,
+  note           text,
+  status         text,
+  received_by    text,
+  is_reversal    boolean
+) language plpgsql stable security definer set search_path = public as $$
+declare v_school uuid := public.current_school_id();
+begin
+  if not public.is_staff() then
+    raise exception 'Not permitted' using errcode = '42501';
+  end if;
+
+  return query
+  select
+    p.id,
+    p.receipt_no,
+    p.created_at,
+    eff.sid,
+    -- A family payment has NO payments.student_id: the money came from the
+    -- father, not from a child. Falling back to the allocations is what makes
+    -- this column non-empty for exactly the payments the family feature
+    -- creates, and it names every child the receipt actually covered — which is
+    -- what the clerk needs to say out loud at the window.
+    coalesce(s.full_name, alloc.names, '—'),
+    s.gr_no,
+    p.family_id,
+    f.head_name,
+    c.name,
+    sec.name,
+    (select string_agg(distinct
+              coalesce(to_char(i.period_month, 'Mon YYYY'), coalesce(i.notes, 'Other')),
+              ', ' order by coalesce(to_char(i.period_month, 'Mon YYYY'), coalesce(i.notes, 'Other')))
+       from public.payment_allocations al
+       join public.invoices i on i.id = al.invoice_id
+      where al.payment_id = p.id),
+    p.amount,
+    p.method,
+    coalesce((select sum(d.fine)
+                from (select distinct i2.id, i2.fine
+                        from public.payment_allocations al2
+                        join public.invoices i2 on i2.id = al2.invoice_id
+                       where al2.payment_id = p.id) d), 0),
+    coalesce((select sum(l.amount)
+                from public.payment_allocations al3
+                join public.invoice_lines l on l.invoice_id = al3.invoice_id
+               where al3.payment_id = p.id and l.is_discount), 0),
+    p.note,
+    p.status::text,
+    coalesce(pr.full_name, '—'),
+    p.reversal_of is not null
+  from public.payments p
+  -- Which children this receipt settled anything for.
+  left join lateral (
+    select string_agg(distinct s2.full_name, ', ' order by s2.full_name) as names,
+           count(distinct s2.id)                                        as n,
+           (array_agg(distinct s2.id))[1]                               as only_id
+      from public.payment_allocations al4
+      join public.invoices i4  on i4.id = al4.invoice_id
+      join public.students s2  on s2.id = i4.student_id
+     where al4.payment_id = p.id
+  ) alloc on true
+  -- The one student this payment is ABOUT, if there is exactly one. A family
+  -- payment spread across three siblings has no single class, and showing one
+  -- of the three would be worse than showing none.
+  left join lateral (
+    select coalesce(p.student_id,
+                    case when alloc.n = 1 then alloc.only_id end) as sid
+  ) eff on true
+  left join public.students   s   on s.id = eff.sid
+  left join public.families    f  on f.id = p.family_id
+  left join public.enrollments e  on e.student_id = eff.sid and e.status = 'active'
+  left join public.classes     c  on c.id = e.class_id
+  left join public.sections    sec on sec.id = e.section_id
+  left join public.profiles    pr on pr.id = p.received_by
+  where p.school_id = v_school
+  order by p.created_at desc
+  limit greatest(1, least(coalesce(p_limit, 25), 200));
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 3. Grants.
+--
+-- Both are staff-gated inside the function bodies, so a signed-in parent
+-- calling either directly gets 42501 rather than a school's cash position.
+-- ---------------------------------------------------------------------------
+grant execute on function public.fn_counter_summary()          to authenticated;
+grant execute on function public.fn_recent_payments(integer)   to authenticated;
+
+revoke all on function public.fn_counter_summary()        from anon;
+revoke all on function public.fn_recent_payments(integer) from anon;
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- 0039_challan.sql
+-- ─────────────────────────────────────────────────────────────────────────
+-- =============================================================================
+-- 0039 — The printed fee challan.
+--
+-- WHY THIS DID NOT EXIST, AND WHY THAT WAS THE WORST GAP IN THE PRODUCT
+--
+-- In a Pakistani school the challan IS the product. The parent is handed a
+-- slip, takes it to the bank, the bank stamps it, one copy comes back to the
+-- school. Everything else the software does hangs off that piece of paper.
+--
+-- We shipped none of it:
+--
+--   * fn_generate_class_invoices bulk-bills a class and returns a COUNT. It
+--     returns no invoice ids and links to no print view.
+--   * No function anywhere lists a class's invoices for a month, so there was
+--     nothing to print even if a screen had existed.
+--   * invoices.voucher_code is stamped by a trigger on every insert and is
+--     never selected or rendered anywhere — so the scannable code existed in
+--     the database and on no piece of paper.
+--   * docs/03-FEATURES.md line 25 promises "monthly challan generation in
+--     bank-payable 3-part format". Grep for 3-part, counterfoil, bank copy:
+--     nothing. And docs/STATUS.md's "Known gaps, stated plainly" did not
+--     mention it, so the documentation claimed a feature AND hid its absence.
+--
+-- The only fee printable in the whole product was a single-student receipt,
+-- issued after payment — the opposite end of the transaction.
+--
+-- WHAT THE NUMBERS ON THE SLIP MEAN
+--
+-- invoices.arrears_brought_forward is a DISPLAY SNAPSHOT of the student's
+-- balance at the moment the challan was generated (0002 says so explicitly). It
+-- is deliberately NOT part of the ledger — student_balance() ignores it,
+-- because the earlier unpaid invoices already carry that money.
+--
+-- Printing that snapshot would be wrong: a parent who paid last month's dues
+-- on the 3rd would still be handed a slip demanding them on the 5th. So this
+-- computes previous dues LIVE:
+--
+--      this_month     = this invoice's lines + its fine
+--      already_paid   = verified allocations against this invoice
+--      this_month_due = this_month - already_paid
+--      total_payable  = student_balance(student)        -- live, everything
+--      previous_dues  = total_payable - this_month_due
+--
+-- which makes total_payable exactly what the parent owes today, and makes the
+-- two halves add up to it. The snapshot is returned as well, under a name that
+-- says what it is, so a reprint can be compared against the original.
+-- =============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 1. One challan.
+--
+-- Returns everything the paper needs in a single object so the print view does
+-- no arithmetic. Print views that compute totals are how a slip ends up
+-- disagreeing with the ledger.
+-- ---------------------------------------------------------------------------
+create or replace function public.fn_challan(p_invoice_id uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare
+  v_inv     record;
+  v_lines   jsonb;
+  v_charge  numeric;
+  v_paid    numeric;
+  v_this    numeric;
+  v_total   numeric;
+begin
+  if not public.is_staff() then
+    raise exception 'Not permitted' using errcode = '42501';
+  end if;
+  perform public.assert_own('invoices', p_invoice_id);
+
+  select i.id, i.student_id, i.period_month, i.due_date, i.fine, i.voucher_code,
+         i.arrears_brought_forward, i.status, i.notes,
+         s.full_name, s.gr_no, s.father_name, s.phone, s.whatsapp,
+         f.head_name as family_head, f.head_cnic as family_cnic,
+         c.name as class_name, sec.name as section_name, e.roll_no
+    into v_inv
+  from public.invoices i
+  join public.students s   on s.id = i.student_id
+  left join public.families f on f.id = s.family_id
+  left join public.enrollments e on e.id = i.enrollment_id
+  left join public.classes c   on c.id = e.class_id
+  left join public.sections sec on sec.id = e.section_id
+  where i.id = p_invoice_id;
+
+  if not found then
+    raise exception 'No such challan' using errcode = '42704';
+  end if;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'description', l.description,
+           'amount',      l.amount,
+           'is_discount', l.is_discount) order by l.is_discount, l.description), '[]'::jsonb)
+    into v_lines
+  from public.invoice_lines l where l.invoice_id = p_invoice_id;
+
+  select coalesce(sum(case when l.is_discount then -l.amount else l.amount end), 0)
+    into v_charge
+  from public.invoice_lines l where l.invoice_id = p_invoice_id;
+  v_charge := v_charge + coalesce(v_inv.fine, 0);
+
+  select coalesce(sum(al.amount), 0) into v_paid
+  from public.payment_allocations al
+  join public.payments p on p.id = al.payment_id
+  where al.invoice_id = p_invoice_id and p.status = 'verified';
+
+  v_this  := v_charge - v_paid;
+  v_total := public.student_balance(v_inv.student_id);
+
+  return jsonb_build_object(
+    'invoice_id',     v_inv.id,
+    'voucher_code',   v_inv.voucher_code,
+    'status',         v_inv.status,
+    'period_month',   v_inv.period_month,
+    'period_label',   coalesce(to_char(v_inv.period_month, 'FMMonth YYYY'),
+                               coalesce(v_inv.notes, 'One-off charge')),
+    'due_date',       v_inv.due_date,
+    'student_id',     v_inv.student_id,
+    'student_name',   v_inv.full_name,
+    'gr_no',          v_inv.gr_no,
+    'roll_no',        v_inv.roll_no,
+    'father_name',    v_inv.father_name,
+    'family_head',    v_inv.family_head,
+    'family_cnic',    v_inv.family_cnic,
+    'phone',          coalesce(v_inv.whatsapp, v_inv.phone),
+    'class_name',     v_inv.class_name,
+    'section_name',   v_inv.section_name,
+    'lines',          v_lines,
+    'fine',           coalesce(v_inv.fine, 0),
+    'this_month',     v_charge,
+    'already_paid',   v_paid,
+    'this_month_due', v_this,
+    -- Live, so a parent who has paid since generation is not asked twice.
+    'previous_dues',  v_total - v_this,
+    'total_payable',  v_total,
+    -- The stale figure, named as such, for comparing a reprint with the original.
+    'arrears_snapshot_at_generation', v_inv.arrears_brought_forward);
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 2. A whole class's challans, for the batch print.
+--
+-- p_section_id null means every section of the class — the common case, since a
+-- clerk prints "Class 5" and hands the stack to the class teacher to give out.
+--
+-- Voided invoices are excluded: a challan that was cancelled must not come out
+-- of the printer, and a clerk who is handed one will collect against it.
+--
+-- Ordered by roll number the way a class register is, so the printed stack can
+-- be handed out down the row without sorting. Roll numbers are text in this
+-- schema and "10" sorts before "2" as text, so it is cast for the sort only.
+-- ---------------------------------------------------------------------------
+create or replace function public.fn_challans_for_class(
+  p_session_id uuid,
+  p_class_id   uuid,
+  p_section_id uuid,
+  p_period_month date
+) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare v_out jsonb;
+begin
+  if not public.is_staff() then
+    raise exception 'Not permitted' using errcode = '42501';
+  end if;
+  perform public.assert_own('academic_sessions', p_session_id);
+  perform public.assert_own('classes', p_class_id);
+  perform public.assert_own('sections', p_section_id);
+
+  select coalesce(jsonb_agg(public.fn_challan(x.id) order by x.sort_roll, x.full_name), '[]'::jsonb)
+    into v_out
+  from (
+    select i.id,
+           s.full_name,
+           coalesce(nullif(regexp_replace(coalesce(e.roll_no, ''), '[^0-9]', '', 'g'), '')::int, 999999)
+             as sort_roll
+    from public.invoices i
+    join public.enrollments e on e.id = i.enrollment_id
+    join public.students s    on s.id = i.student_id
+    where i.school_id = public.current_school_id()
+      and i.session_id = p_session_id
+      and e.class_id = p_class_id
+      and (p_section_id is null or e.section_id = p_section_id)
+      and i.period_month = p_period_month
+      and i.status <> 'void'
+      and s.deleted_at is null
+  ) x;
+
+  return v_out;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 3. Which months have challans, so the print screen can offer real choices.
+--
+-- Without this the clerk picks a month from a date input and finds out whether
+-- anything was generated for it only after pressing Print. Offering the months
+-- that exist, with a count, is the difference between a screen that works and
+-- one that guesses.
+-- ---------------------------------------------------------------------------
+create or replace function public.fn_challan_months(p_session_id uuid, p_class_id uuid)
+returns table (period_month date, challans integer, unpaid integer)
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.is_staff() then
+    raise exception 'Not permitted' using errcode = '42501';
+  end if;
+  perform public.assert_own('academic_sessions', p_session_id);
+  perform public.assert_own('classes', p_class_id);
+
+  return query
+  select i.period_month,
+         count(*)::int,
+         count(*) filter (where (
+           coalesce((select sum(case when l.is_discount then -l.amount else l.amount end)
+                       from public.invoice_lines l where l.invoice_id = i.id), 0)
+           + coalesce(i.fine, 0)
+           - coalesce((select sum(al.amount)
+                         from public.payment_allocations al
+                         join public.payments p on p.id = al.payment_id
+                        where al.invoice_id = i.id and p.status = 'verified'), 0)
+         ) > 0)::int
+  from public.invoices i
+  join public.enrollments e on e.id = i.enrollment_id
+  where i.school_id = public.current_school_id()
+    and i.session_id = p_session_id
+    and e.class_id = p_class_id
+    and i.period_month is not null
+    and i.status <> 'void'
+  group by i.period_month
+  order by i.period_month desc;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 4. Grants. All three are staff-gated in the body, so a parent calling them
+-- directly gets 42501 rather than a class's fee data.
+-- ---------------------------------------------------------------------------
+grant execute on function public.fn_challan(uuid)                             to authenticated;
+grant execute on function public.fn_challans_for_class(uuid, uuid, uuid, date) to authenticated;
+grant execute on function public.fn_challan_months(uuid, uuid)                to authenticated;
+
+revoke all on function public.fn_challan(uuid)                             from anon;
+revoke all on function public.fn_challans_for_class(uuid, uuid, uuid, date) from anon;
+revoke all on function public.fn_challan_months(uuid, uuid)                from anon;

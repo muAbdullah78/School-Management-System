@@ -47,7 +47,7 @@ export function StaffPage() {
   )
 }
 
-const BLANK: StaffInput = { full_name: '', designation: '', employee_no: '', mobile: '', whatsapp: '', cnic: '', joined_on: '' }
+const BLANK: StaffInput = { full_name: '', designation: '', employee_no: '', mobile: '', whatsapp: '', cnic: '', joined_on: '', dob: '' }
 
 function StaffTab() {
   const qc = useQueryClient()
@@ -81,7 +81,7 @@ function StaffTab() {
 
   function startEdit(s: StaffRow) {
     setEditing(s.id)
-    setForm({ full_name: s.full_name, designation: s.designation ?? '', employee_no: s.employee_no ?? '', mobile: s.mobile ?? '', whatsapp: s.whatsapp ?? '', cnic: s.cnic ?? '', joined_on: s.joined_on ?? '' })
+    setForm({ full_name: s.full_name, designation: s.designation ?? '', employee_no: s.employee_no ?? '', mobile: s.mobile ?? '', whatsapp: s.whatsapp ?? '', cnic: s.cnic ?? '', joined_on: s.joined_on ?? '', dob: s.dob ?? '' })
   }
 
   return (
@@ -121,6 +121,10 @@ function StaffTab() {
               <input value={form.cnic ?? ''} onChange={(e) => setForm((f) => ({ ...f, cnic: e.target.value }))} className={FIELD} /></label>
             <label className="block"><span className="text-sm text-slate-600">Joined on</span>
               <input type="date" value={form.joined_on ?? ''} onChange={(e) => setForm((f) => ({ ...f, joined_on: e.target.value }))} className={FIELD} /></label>
+            <label className="block"><span className="text-sm text-slate-600">Date of birth</span>
+              {/* Feeds the Birthdays screen. Without a field here the column
+                  would be read-only and that screen permanently empty of staff. */}
+              <input type="date" value={form.dob ?? ''} onChange={(e) => setForm((f) => ({ ...f, dob: e.target.value }))} className={FIELD} /></label>
           </div>
           {save.isError && <p className="mt-2 text-sm text-red-600">{(save.error as Error).message}</p>}
           <div className="mt-3 flex gap-2">
