@@ -1374,11 +1374,15 @@ export async function setProfileActive(id: string, active: boolean): Promise<voi
 export interface StaffRow {
   id: string; full_name: string; designation: string | null; employee_no: string | null
   mobile: string | null; whatsapp: string | null; cnic: string | null
-  joined_on: string | null; status: string; profile_id: string | null
+  joined_on: string | null; dob: string | null; status: string; profile_id: string | null
 }
 export interface StaffInput {
   full_name: string; designation?: string | null; employee_no?: string | null
   mobile?: string | null; whatsapp?: string | null; cnic?: string | null; joined_on?: string | null
+  /** Added in 0050 for the Birthdays screen. Read-only would make that screen
+   *  permanently empty for staff, which is the half-wired trap this project
+   *  keeps falling into. */
+  dob?: string | null
 }
 export interface SectionTeacherRow { id: string; name: string; class_teacher_id: string | null }
 
@@ -1386,7 +1390,7 @@ export async function listStaff(): Promise<StaffRow[]> {
   const sb = requireSupabase()
   return unwrap(
     await sb.from('staff')
-      .select('id, full_name, designation, employee_no, mobile, whatsapp, cnic, joined_on, status, profile_id')
+      .select('id, full_name, designation, employee_no, mobile, whatsapp, cnic, joined_on, dob, status, profile_id')
       .is('deleted_at', null).order('full_name'),
   )
 }
@@ -1396,7 +1400,7 @@ export async function createStaff(input: StaffInput): Promise<string> {
   const { data, error } = await sb.from('staff').insert({
     full_name: input.full_name, designation: input.designation || null, employee_no: input.employee_no || null,
     mobile: input.mobile || null, whatsapp: input.whatsapp || null, cnic: input.cnic || null,
-    joined_on: input.joined_on || null,
+    joined_on: input.joined_on || null, dob: input.dob || null,
   }).select('id').single()
   if (error) throw new Error(error.message)
   return (data as { id: string }).id
@@ -2430,6 +2434,61 @@ export async function getBalanceSheet(asAt: string | null): Promise<BalanceSheet
     students_owing: num('students_owing'),
     basis: String(r.basis ?? ''),
   }
+}
+
+// ---- Global search and birthdays -----------------------------------------
+
+export interface SearchHit {
+  kind: 'student' | 'staff' | 'family' | 'challan' | 'receipt' | 'enquiry'
+  id: string
+  title: string
+  subtitle: string
+  detail: string
+  /** Where this record lives. Comes from SQL so it cannot drift from the list
+   *  of things that are searchable. */
+  route: string
+  /** True when the term matched an identifier exactly; those sort first. */
+  exact: boolean
+}
+
+/**
+ * One box, several kinds of record.
+ *
+ * What a given user is allowed to find is decided in SQL: a class teacher gets
+ * pupils and not the family ledger or the receipt book. Filtering here would be
+ * decoration over an open door.
+ */
+export async function globalSearch(term: string, limit = 20): Promise<SearchHit[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_global_search', { p_term: term, p_limit: limit })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as SearchHit[]
+}
+
+export interface BirthdayRow {
+  kind: 'student' | 'staff'
+  id: string
+  full_name: string
+  dob: string
+  /** The age they are turning on that birthday. */
+  turning: number
+  birthday: string
+  /** 0 is today. Never negative — a past birthday rolls to next year. */
+  days_away: number
+  class_name: string
+  detail: string
+  phone: string | null
+}
+
+export async function getBirthdays(withinDays = 0): Promise<BirthdayRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_birthdays', { p_within_days: withinDays })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    ...(r as unknown as BirthdayRow),
+    turning: Number(r.turning ?? 0),
+    days_away: Number(r.days_away ?? 0),
+  }))
 }
 
 // ---- Teacher remarks and position holders --------------------------------

@@ -470,6 +470,22 @@ jobs:
         # scored nothing". The function tests for a mark row instead.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/remarks_positions.sql
 
+      - name: Search and birthdays
+        # Assertion 10 is the practical one: phone numbers are typed as
+        # 0300-111 2233, 03001112233 and +92 300 111 2233, so both sides are
+        # reduced to digits before comparing. A search that only matches the
+        # stored formatting is a search nobody trusts.
+        #
+        # Assertion 13 guards a genuine trap: `exact` is built from comparisons
+        # against nullable columns, so it can be NULL, and `order by exact desc`
+        # puts NULLs FIRST in Postgres. Uncoalesced, typing a GR number sorts the
+        # right answer BELOW the fuzzy ones.
+        #
+        # Assertions 39-42 cover the date arithmetic: a birthday already past
+        # rolls to next year rather than reporting negative days, and 29 February
+        # resolves in a non-leap year instead of raising from make_date.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/search_birthdays.sql
+
       - name: Message settings — does switching a message off actually stop it?
         # message_templates has carried an `enabled` flag since 0034 that
         # nothing in the app could set. A toggle that only greys out a checkbox

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '@/auth/AuthProvider'
 import { ROLE_LABELS } from '@/auth/roles'
@@ -8,12 +9,18 @@ import { OfflineIndicator } from '@/components/OfflineIndicator'
 import { LicenceBanner } from '@/components/LicenceBanner'
 import { NAV_ICONS, IconLogout, IconAlert } from '@/components/icons'
 import { EmptyState } from '@/components/ui'
+import { GlobalSearch } from '@/components/GlobalSearch'
+import { ModuleSearch } from '@/components/ModuleSearch'
 
 export function AppShell() {
   const { profile, signOut } = useAuth()
   const schoolName = useSchoolName()
   const location = useLocation()
   const nav = visibleNav(profile?.role)
+  // The module filter works over the nav THIS ROLE can already see, so it can
+  // never surface a module the user has no access to.
+  const [shownNav, setShownNav] = useState(nav)
+  useEffect(() => setShownNav(visibleNav(profile?.role)), [profile?.role])
   const permitted = canAccess(location.pathname, profile?.role)
   const current = nav.find((n) => n.path === location.pathname)
 
@@ -40,8 +47,13 @@ export function AppShell() {
           </div>
         </div>
 
+        <ModuleSearch items={nav} onFilter={setShownNav} />
+
         <nav className="flex-1 space-y-0.5 overflow-y-auto p-2">
-          {nav.map((item) => {
+          {shownNav.length === 0 && (
+            <p className="px-3 py-4 text-xs text-brand-200/60">No module matches that.</p>
+          )}
+          {shownNav.map((item) => {
             const Icon = NAV_ICONS[item.path]
             return (
               <NavLink
@@ -104,16 +116,25 @@ export function AppShell() {
         <LicenceBanner />
         <OfflineIndicator />
 
-        {/* Breadcrumb bar — tells you where you are without costing a heading */}
-        {current ? (
-          <div className="border-b border-slate-200 bg-white/80 px-6 py-2.5 backdrop-blur">
-            <div className="mx-auto flex max-w-7xl items-center gap-2 text-xs text-slate-500">
-              <span className="font-medium text-slate-700">{current.label}</span>
-              <span className="text-slate-300">·</span>
-              <span className="truncate">{current.blurb}</span>
+        {/* Top bar: where you are, and the one search box.
+            Always rendered — the breadcrumb half is conditional, the search is
+            not, because "reachable from anywhere" is the whole point of it. */}
+        <div className="border-b border-slate-200 bg-white/80 px-6 py-2.5 backdrop-blur print:hidden">
+          <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3">
+            <div className="flex min-w-0 items-center gap-2 text-xs text-slate-500">
+              {current ? (
+                <>
+                  <span className="font-medium text-slate-700">{current.label}</span>
+                  <span className="text-slate-300">·</span>
+                  <span className="truncate">{current.blurb}</span>
+                </>
+              ) : null}
+            </div>
+            <div className="ml-auto w-full sm:w-auto sm:min-w-[22rem]">
+              <GlobalSearch />
             </div>
           </div>
-        ) : null}
+        </div>
 
         <div className="flex-1 overflow-y-auto">
           <div className="mx-auto max-w-7xl p-6">

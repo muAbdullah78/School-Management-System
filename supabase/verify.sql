@@ -68,6 +68,17 @@ select 'daily operations (bundle 4)',
        then 'PASS' else 'FAIL — re-run bundle 4 (4_operations.sql)' end
 
 union all
+select 'search and birthdays (bundle 5)',
+       case when (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                   where n.nspname = 'public' and p.proname in
+                     ('fn_global_search',   -- 0050 the header search box
+                      'fn_birthdays')) = 2  -- 0050 birthdays
+                 and exists (select 1 from information_schema.columns
+                              where table_schema = 'public' and table_name = 'staff'
+                                and column_name = 'dob')
+       then 'PASS' else 'FAIL — re-run bundle 5 (5_search.sql)' end
+
+union all
 select 'price plans loaded',
        case when (select count(*) from public.plans) = 4
        then 'PASS' else 'FAIL — re-run bundle 1' end

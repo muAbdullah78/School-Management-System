@@ -51,20 +51,36 @@ emit() {                       # emit <output> <first-file-glob-index> <files...
   echo "  wrote $out ($(wc -l < "$out") lines)"
 }
 
+# Clear the directory first. The coverage check below inspects the bundle FILES
+# on disk, so a stale bundle left over from a deleted glob would satisfy it and
+# the check would pass while the script no longer generates that bundle at all.
+# Confirmed by dropping a glob and watching the guard stay green until the stale
+# file was removed by hand.
+rm -f supabase/bundles/*.sql
+
 echo "Building bundles:"
 emit supabase/bundles/1_core.sql          supabase/migrations/00[0-2]*.sql supabase/migrations/003[01]*.sql
 emit supabase/bundles/2_parent_role.sql   supabase/migrations/0032_*.sql
 emit supabase/bundles/3_portal.sql        supabase/migrations/003[3-9]*.sql
 emit supabase/bundles/4_operations.sql    supabase/migrations/004*.sql
+# A FIFTH bundle rather than widening bundle 4's glob: a school that has already
+# pasted bundle 4 must not be told to paste it again, because re-running a
+# migration fails with "already exists". New work goes in a new bundle.
+emit supabase/bundles/5_search.sql        supabase/migrations/005*.sql
 
 # --- Every migration must be in exactly one bundle ---------------------------
 # Without this, adding 0047 silently produces an install that is one migration
 # behind and CI stays green. Compares by FILENAME, which each bundle stamps in
 # its own section header.
+# `|| true` inside the substitution is load-bearing. This script runs under
+# `set -euo pipefail`, and grep exits 1 when it finds nothing — which is exactly
+# the condition being detected. Without it, the script died SILENTLY on the
+# first uncovered migration: exit 1, no message, the guard reporting nothing at
+# all on the one case it exists for. Found by tracing it, not by reading it.
 missing=()
 for f in supabase/migrations/*.sql; do
   b=$(basename "$f")
-  hits=$(grep -l -F -x -- "-- $b" supabase/bundles/*.sql 2>/dev/null | wc -l)
+  hits=$( { grep -l -F -x -- "-- $b" supabase/bundles/*.sql 2>/dev/null || true; } | wc -l )
   if [ "$hits" -ne 1 ]; then
     missing+=("$b (in $hits bundles, expected 1)")
   fi

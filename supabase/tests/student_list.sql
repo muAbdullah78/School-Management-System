@@ -14,7 +14,10 @@
 --  * total_count is the size of the whole filtered set, not of the page. The
 --    old list silently showed 50 of 812 and never said so.
 --  * Pages do not overlap and do not lose anybody.
---  * A "%" typed into the search box is a character, not a wildcard.
+--  * A "%" typed into the search box is a character, not a wildcard — AND a
+--    pupil whose name really contains "%" or "_" can still be found. The second
+--    half is the one that matters: without it the assertion passes on
+--    double-escaped code that finds nothing at all. See 0051.
 --  * Struck-off students are out of the default list but findable on request.
 --  * No cross-tenant leak; a parent cannot call it.
 --
@@ -235,6 +238,60 @@ begin
   select count(*) into v_n from public.fn_student_list('%', null, null, false, 50, 0);
   perform pg_temp.ok(v_n = 0,
     '11. a literal % matches nothing rather than everything (' || v_n || ')');
+end $t$;
+
+-- =============================================================================
+-- 11b-11d: THE ASSERTION ABOVE PASSED FOR THE WRONG REASON FOR WEEKS
+--
+-- Escaping written as replace(v_term, '\\', '\\\\') is DOUBLE-escaped:
+-- standard_conforming_strings is on in Postgres, so '\\' in SQL source is two
+-- backslash characters, not one. The pattern built for "%" then demanded a
+-- LITERAL BACKSLASH, matched nothing, and assertion 11 was satisfied — while a
+-- pupil whose name or roll number genuinely contained "_" or "%" could not be
+-- found at all.
+--
+-- "Matches nothing" and "correctly escaped" look identical from outside. The
+-- only assertion that separates them is the positive one: a child WITH the
+-- character in their name must be FOUND by searching for it. Fixed in 0051.
+-- =============================================================================
+do $t$
+declare v_n int; v_c1 uuid; v_sess uuid;
+begin
+  perform set_config('test.uid', '00000000-0000-0000-0000-0000005c0001', false);
+  select id into v_sess from public.academic_sessions
+   where school_id = public.current_school_id() and is_current limit 1;
+  select id into v_c1 from public.classes
+   where school_id = public.current_school_id() order by level_order limit 1;
+
+  -- "A_1" is an ordinary roll number, and imported CSVs transliterate names
+  -- with underscores all the time.
+  perform public.fn_admit_student(jsonb_build_object(
+    'full_name', 'Under_Score Child', 'father_name', 'Escape Father',
+    'father_cnic', '35201-9100077-7', 'session_id', v_sess, 'class_id', v_c1,
+    'roll_no', 'A_1', 'links', '[]'::jsonb));
+  perform public.fn_admit_student(jsonb_build_object(
+    'full_name', 'Fifty% Percent', 'father_name', 'Escape Father',
+    'father_cnic', '35201-9100078-8', 'session_id', v_sess, 'class_id', v_c1,
+    'roll_no', 'A2', 'links', '[]'::jsonb));
+
+  select count(*) into v_n
+  from public.fn_student_list('Under_Score', null, null, false, 50, 0);
+  perform pg_temp.ok(v_n = 1,
+    '11b. a name containing "_" IS found by searching it (' || v_n || ') — '
+    'this is what the double-escaped version got wrong');
+
+  select count(*) into v_n
+  from public.fn_student_list('Fifty%', null, null, false, 50, 0);
+  perform pg_temp.ok(v_n = 1,
+    '11c. and a name containing "%" is found too (' || v_n || ')');
+
+  -- And the escaping still holds: "_" must not behave as a single-character
+  -- wildcard. It matches the one child who really has an underscore, and not
+  -- the rest of the school.
+  select count(*) into v_n from public.fn_student_list('_', null, null, false, 50, 0);
+  perform pg_temp.ok(v_n = 1,
+    '11d. "_" matches only the child who really has one, not every 1-char '
+    'position (' || v_n || ')');
 end $t$;
 
 -- =============================================================================

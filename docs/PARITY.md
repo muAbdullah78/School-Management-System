@@ -65,7 +65,7 @@ is listed.
 | Student Attendance | `have` | Ours is genuinely good — mark-all, keyboard entry, offline, print. |
 | Student Promotion | `have` | Year Rollover. |
 | Student Transfer | `missing` | Between **campuses**. Needs multi-campus first. |
-| Student Birthdays | `missing` | Today's birthdays, students and staff, with a WhatsApp wish. |
+| Student Birthdays | `have` (0050) | One screen for children and staff, today / 7 / 30 days, with a click-to-chat wish. |
 | Student Info Reports | `partial` | Theirs: All Active / All Inactive / Class-Wise / All Passout / Free Students / Monthly Passout / Daily Passout / Gender-Wise. |
 
 ## 3. Parent Accounts
@@ -82,7 +82,7 @@ is listed.
 |---|---|---|
 | Staff Management | `have` | |
 | Departments | `missing` | Staff grouped by department. |
-| Staff Birthdays | `missing` | As above. |
+| Staff Birthdays | `have` (0050) | Same screen. `staff.dob` did not exist and was added. Office roles only — personnel data. |
 | Job Inquiries / CV Bank | `missing` | Applications for teaching posts. |
 
 ## 5. Fee Payment — the counter
@@ -191,7 +191,7 @@ Their events, mapped to ours (excluded ones dropped):
 | Transfer Student | `missing` (needs campuses) |
 | Fee Payment / Direct Student Payment | `have` — receipt on payment |
 | Leave Approval / Leave Reject | `missing` (needs a leave flow) |
-| Student / Staff Birthday Wish | `missing` |
+| Student / Staff Birthday Wish | `have` (0050) — click-to-chat from the Birthdays screen |
 | Parent Account Approve / Reject | `missing` |
 | Admission Approved / Rejected | `missing` |
 | Staff Absent / Staff Late | `missing` |
@@ -208,8 +208,8 @@ ours does not.
 | Pattern | Status | Notes |
 |---|---|---|
 | **Every list is a real table** | `missing` | Theirs: page-size selector, search box, **Excel / CSV / PDF / Print** buttons, pagination. Ours: 33 hand-rolled `<table>`s, no shared component, zero sortable columns, students silently capped at 50 rows. |
-| **Global search in the header** | `missing` | "Search Student / Teacher / Parent here…" from anywhere. |
-| Module search in the sidebar | `missing` | "Search a module…" — with ~20 modules, this is how staff navigate. |
+| **Global search in the header** | `have` (0050) | Children, staff, families, challans by voucher, receipts by number, enquiries. Role-aware in SQL. "/" focuses it. |
+| Module search in the sidebar | `have` (0050) | Filters the nav this role can already see, so it cannot surface a module they lack. |
 | **Multi-campus** | `missing` | Campus selector in the header, campus column on every list, transfer between campuses. We have an unused `campuses` table. Architecturally significant — decide before building more reports. |
 | Print-first reports | `partial` | Every report screen of theirs is a grid of named reports each with a Print button. |
 | Dashboard tiles that link to a report | `partial` | Their tiles all say "View Report". |
@@ -250,7 +250,8 @@ Items 1-6 and 9 are **done** (PR #17). What follows is the remaining work.
 9. ~~**WhatsApp automation**~~ Done (0043).
 10. ~~**Admission enquiries**~~ Done (0046). Still missing the other half:
     **admission requests** — online applications awaiting approve/reject.
-11. **Global search, module search, student photos, birthdays.**
+11. ~~**Global search, module search, birthdays**~~ Done (0050). Student photos
+    remain — they need Storage, which cannot be tested from here.
 12. **Multi-campus** — last, because it touches every table, and only if a real
     school asks for it.
 
