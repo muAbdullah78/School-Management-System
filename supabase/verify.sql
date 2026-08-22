@@ -74,7 +74,8 @@ select 'search, birthdays, staff leaving (bundle 5)',
                      ('fn_global_search',      -- 0050 the header search box
                       'fn_birthdays',          -- 0050 birthdays
                       'fn_staff_roster',       -- 0053 staff with their login state
-                      'fn_staff_leave')) = 4   -- 0053 recording a leaving
+                      'fn_staff_leave',        -- 0053 recording a leaving
+                      'fn_students_left')) = 5 -- 0054 children who have left
                  and exists (select 1 from information_schema.columns
                               where table_schema = 'public' and table_name = 'staff'
                                 and column_name = 'dob')
@@ -83,6 +84,34 @@ select 'search, birthdays, staff leaving (bundle 5)',
                  and exists (select 1 from pg_constraint
                               where conname = 'staff_status_chk'
                                 and conrelid = 'public.staff'::regclass)
+                 -- 0054's column AND its constraint. The column alone would not
+                 -- prove the migration finished.
+                 and exists (select 1 from information_schema.columns
+                              where table_schema = 'public' and table_name = 'students'
+                                and column_name = 'left_on')
+                 and exists (select 1 from pg_constraint
+                              where conname = 'students_left_on_chk'
+                                and conrelid = 'public.students'::regclass)
+                 -- 0055. Checked by looking INSIDE fn_rollover for the school
+                 -- filter on the class ladder, because the function has existed
+                 -- since 0014 and its mere presence proves nothing: the whole
+                 -- defect was that this one line was missing.
+                 and exists (
+                   select 1 from pg_proc p
+                   join pg_namespace n on n.oid = p.pronamespace
+                   where n.nspname = 'public' and p.proname = 'fn_rollover'
+                     and p.prosrc like '%c2.school_id = v_school%')
+                 -- 0056. Same reasoning as 0055: these functions have existed
+                 -- since 0015/0016, so their presence proves nothing. What has
+                 -- to be true is that the per-school key lookups inside them
+                 -- are scoped.
+                 and not exists (
+                   select 1 from pg_proc p
+                   join pg_namespace n on n.oid = p.pronamespace
+                   where n.nspname = 'public'
+                     and p.proname in ('fn_import_students', 'fn_import_opening_balances')
+                     and (p.prosrc ~ 'from public\.students where gr_no'
+                       or p.prosrc ~ 'from public\.students where admission_no'))
        then 'PASS' else 'FAIL — re-run bundle 5 (5_search.sql)' end
 
 union all

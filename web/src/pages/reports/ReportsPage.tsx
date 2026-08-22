@@ -22,6 +22,9 @@ const TABS = [
   { key: 'unpaid', label: 'Unpaid Challans' },
   { key: 'discounts', label: 'Discounts' },
   { key: 'admissions', label: 'Admissions' },
+  // The counterpart of Admissions, and impossible before 0054 gave a leaving a
+  // date. "How many left this term" is the number a proprietor watches hardest.
+  { key: 'left', label: 'Children Who Left' },
   // A position as at one day, not a range — which is why it sits apart from
   // the four above and is the only report here that is not a table.
   { key: 'balancesheet', label: 'Balance Sheet' },
@@ -41,6 +44,7 @@ const TABS = [
 import {
   LedgerReport, UnpaidInvoicesReport, DiscountsReport, AdmissionsReport,
   BalanceSheetReport, MarkCorrectionsReport, AttendanceCorrectionsReport,
+  StudentsLeftReport,
 } from './FinanceReports'
 
 type TabKey = (typeof TABS)[number]['key']
@@ -67,6 +71,7 @@ export function ReportsPage() {
         {tab === 'unpaid' && <UnpaidInvoicesReport />}
         {tab === 'discounts' && <DiscountsReport />}
         {tab === 'admissions' && <AdmissionsReport />}
+        {tab === 'left' && <StudentsLeftReport />}
         {tab === 'balancesheet' && <BalanceSheetReport />}
         {tab === 'markfixes' && <MarkCorrectionsReport />}
         {tab === 'attfixes' && <AttendanceCorrectionsReport />}

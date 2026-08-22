@@ -392,6 +392,54 @@ jobs:
         # Verified by adding students.planted_dead_col and confirming this fails.
         run: ./supabase/check-columns-used.sh
 
+      - name: Is every QUERY inside a definer function scoped?
+        # dashboard.sql assertion 20 asks whether a SECURITY DEFINER function
+        # MENTIONS scoping anywhere in its body. That guard is worth having and
+        # it is not enough: fn_rollover called assert_own on two session ids and
+        # had eight unscoped queries behind that one mention. One correct check
+        # exempted eight incorrect ones, and the result was that a school's
+        # year-end rollover promoted its children into ANOTHER SCHOOL'S
+        # classroom — five consecutive runs, in the ordinary case of two schools
+        # with the same class ladder.
+        #
+        # This looks for the shape a whole-function check cannot see. Tenant
+        # scope CHAINS through identity (`i.id = al.invoice_id`) and does NOT
+        # chain through a value comparison (`c2.level_order > c.level_order`).
+        # So it flags correlated predicates that compare two non-id columns with
+        # an inequality, inside a subquery over a tenant table with no school_id
+        # nearby.
+        #
+        # Deliberately narrow. A broad version flagged 65 of 157 functions and
+        # every top candidate was a false positive — correlated subqueries
+        # anchored to a scoped outer row, which the script cannot see because
+        # the anchor is an outer alias. A guard that cries wolf 65 times gets
+        # ignored, and then it protects nothing.
+        #
+        # Verified by restoring the pre-0055 fn_rollover and confirming this
+        # names the exact line and exits 1.
+        run: python3 ./supabase/check-definer-queries.py
+
+      - name: Are per-school key lookups scoped?
+        # gr_no, admission_no, employee_no, roll_no, receipt_no and voucher_no
+        # are PER-SCHOOL counters. Every school on the platform has a GR 0001.
+        #
+        # This class has now shipped three times, in three separate importers —
+        # the tools a school uses on its FIRST DAY. 0042 diagnosed it correctly
+        # for staff ("importing staff rejected rows as duplicates because ANOTHER
+        # school already used that employee number") and fixed one of the three.
+        # 0056 found the other two: the student importer told a school "GR 0001
+        # already exists" about another school's pupil, so a school could not
+        # finish its first bulk import; and the opening-balance importer resolved
+        # rows to another school's child and then failed with "Student is not
+        # enrolled in the selected session" about a pupil who is.
+        #
+        # A careful sweep already happened here and was right, and two instances
+        # still shipped. That is the argument for a tripwire over another sweep.
+        #
+        # Verified by unscoping fn_import_students' GR check and confirming this
+        # names the line and exits 1.
+        run: python3 ./supabase/check-import-keys.py
+
       - name: Reports — does the statement agree with the Accounts screen?
         # Assertion 6 is the point of this suite: the debit-and-credit statement
         # must net to the same profit fn_finance_summary reports for the same
@@ -505,6 +553,70 @@ jobs:
         # keeps its assignment, because "who taught 1-A in 2023-24" must still be
         # answerable after the teacher has gone.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/staff_leaving.sql
+
+      - name: When a child leaves
+        # fn_set_student_status is how children leave a school and it drives
+        # billing, and it had NO suite at all until 0054. Writing one found two
+        # defects.
+        #
+        # Assertion 9 is the one a parent would care about: the UI offered only
+        # "Strike off", so a family moving city was recorded as removal for
+        # non-payment or misconduct. Assertions 18-22 cover the contradiction —
+        # reinstating a graduated child used to leave students.status = 'active'
+        # with the enrollment still 'graduated', a child reading as a current
+        # pupil while in no class, billed nothing and counted against no plan
+        # limit — and prove the refusal leaves nothing behind.
+        #
+        # Assertions 13-16b are the money, asserted by generating invoices and
+        # counting rather than by reading columns: leaving stops next month's
+        # challan and the plan count, the month they WERE here is not erased,
+        # and a child whose student record and enrollment DISAGREE is not billed
+        # either.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/student_status.sql
+
+      - name: Year-end rollover
+        # The operation that touches every child, runs once a year, and had no
+        # suite at all. Writing one found the most serious defect in this
+        # project: fn_rollover picked "the next class up" with
+        # `select id from public.classes where active and level_order > ...` —
+        # no school anywhere in it, inside a SECURITY DEFINER function where RLS
+        # never applies. On a live multi-tenant deployment a school's rollover
+        # promoted its children into ANOTHER SCHOOL'S classroom.
+        #
+        # Assertion 6 is the ordinary case, not an edge case: two schools with
+        # the same ladder tie on level_order and the winner is whichever row the
+        # heap returns first. Assertion 7 is the other shape — a school with no
+        # class above its top one promoting into another school's higher class
+        # instead of graduating. Assertion 21 sweeps every enrolment in the
+        # database and asserts none points at a class belonging to another
+        # school.
+        #
+        # Assertion 28 covers the second leak: fn_rollover_undo counted
+        # graduated children across every tenant and handed the total to this
+        # school's principal.
+        #
+        # dashboard.sql assertion 20 could not catch any of this. It checks that
+        # a SECURITY DEFINER function MENTIONS scoping somewhere in its body, and
+        # fn_rollover calls assert_own on both session ids — so one correct check
+        # exempted eight incorrect ones.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/rollover.sql
+
+      - name: The go-live importers
+        # The first two tools a school touches: paste the register, paste last
+        # year's arrears. Neither had a suite, and both looked children up across
+        # every school on the platform.
+        #
+        # The fixture turns on one fact — gr_no is a per-school counter, so every
+        # school has a GR 0001 — and makes school B's counter run AHEAD of school
+        # A's so that B holds a GR number A genuinely does not. The first version
+        # of assertion 2 used a number both schools happened to have, which made
+        # the "duplicate" it complained about a real one and the assertion
+        # vacuous.
+        #
+        # Assertion 2 is the student-import bug, 4 and 6 the opening-balance one,
+        # and 17/19 check the money actually lands where student_balance() reads
+        # it and does not double on a re-run.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/importers.sql
 
       - name: Every suite on disk has a step above
         # The gap this closes has already happened twice in this repo, in two
