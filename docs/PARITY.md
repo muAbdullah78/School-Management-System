@@ -602,3 +602,66 @@ wolf 65 times gets ignored, and then it protects nothing.
 Auditing all 157 functions for the narrow shape found **one** instance: the
 rollover. That is the honest result — not "everything is scoped", but "one
 specific dangerous pattern now has a tripwire, and it currently fires nowhere".
+
+
+### The go-live importers looked up children across every school (0056)
+
+`gr_no`, `admission_no`, `employee_no` and `roll_no` are **per-school counters**.
+Every school on the platform has a GR 0001. Both bulk importers — the two tools a
+school uses on its very first day — resolved and de-duplicated on those keys with
+no school filter, inside `SECURITY DEFINER` functions where RLS never applies.
+
+**`fn_import_students`**, de-duplicating:
+
+```sql
+select count(*) into v_cnt from public.students where gr_no = v_gr;
+if v_cnt > 0 then ... 'GR ' || v_gr || ' already exists'
+```
+
+A school importing its register was told **"GR 0001 already exists"** because
+*another* school had a GR 0001. A school could not complete its first bulk
+import, and the rejection rate grows with every school that joins the platform.
+
+**`fn_import_opening_balances`**, resolving who a row belongs to:
+
+```sql
+select id into v_student from public.students where gr_no = v_gr ...
+```
+
+plpgsql `SELECT INTO` takes the first row and raises nothing, so a row could
+resolve to another school's child. Step 4 then checks enrolment in the target
+session, the foreign child has none, and the row fails with **"Student is not
+enrolled in the selected session"** about a pupil who is. Proven by running it.
+The name path fails more visibly — *"Name Muhammad Ali matches several students —
+use GR No"* for a school holding exactly one, with the advice pointing at the GR
+path that is also broken. And the result row carries the resolved `name`, so the
+import report could print **another school's pupil** back at the importer.
+
+**This is the third time.** Migration 0042 already found this exact class and
+described it correctly:
+
+> "No school filter, so importing staff rejected rows as duplicates because
+> ANOTHER school already used that employee number — and a teacher who works at
+> two schools on the platform could never be added to the second, because their
+> CNIC was 'taken'."
+
+That diagnosis was right and it was applied to **one of the three importers**. The
+student importer and the opening-balance importer were never revisited. A careful
+sweep happened, it was correct, and two instances still shipped — which is the
+argument for `supabase/check-import-keys.py` failing the build rather than for a
+fourth sweep.
+
+**Two things went wrong in my own work here, both worth recording.**
+
+The first version of 0056 asserted *"this replacement changed something"*. Run it
+twice and the second run raises, because the unscoped text is legitimately gone —
+so a re-run would roll back the fixes it had already made. It now asserts the
+**end state** (the unscoped form is absent *and* the scoped form is present),
+which is idempotent and still fails loudly if the function has been rewritten and
+neither form is there. Found by re-running it, not by reading it.
+
+The first version of the test's assertion 2 used a GR number that **both** schools
+happened to have — both counters produce 0001 — so the "duplicate" it objected to
+was a real one in the importing school and the assertion tested nothing. The
+fixture now runs school B's counter ahead of school A's so that B holds a number A
+genuinely does not.

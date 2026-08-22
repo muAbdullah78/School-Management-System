@@ -101,6 +101,17 @@ select 'search, birthdays, staff leaving (bundle 5)',
                    join pg_namespace n on n.oid = p.pronamespace
                    where n.nspname = 'public' and p.proname = 'fn_rollover'
                      and p.prosrc like '%c2.school_id = v_school%')
+                 -- 0056. Same reasoning as 0055: these functions have existed
+                 -- since 0015/0016, so their presence proves nothing. What has
+                 -- to be true is that the per-school key lookups inside them
+                 -- are scoped.
+                 and not exists (
+                   select 1 from pg_proc p
+                   join pg_namespace n on n.oid = p.pronamespace
+                   where n.nspname = 'public'
+                     and p.proname in ('fn_import_students', 'fn_import_opening_balances')
+                     and (p.prosrc ~ 'from public\.students where gr_no'
+                       or p.prosrc ~ 'from public\.students where admission_no'))
        then 'PASS' else 'FAIL — re-run bundle 5 (5_search.sql)' end
 
 union all

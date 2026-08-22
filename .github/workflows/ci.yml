@@ -419,6 +419,27 @@ jobs:
         # names the exact line and exits 1.
         run: python3 ./supabase/check-definer-queries.py
 
+      - name: Are per-school key lookups scoped?
+        # gr_no, admission_no, employee_no, roll_no, receipt_no and voucher_no
+        # are PER-SCHOOL counters. Every school on the platform has a GR 0001.
+        #
+        # This class has now shipped three times, in three separate importers —
+        # the tools a school uses on its FIRST DAY. 0042 diagnosed it correctly
+        # for staff ("importing staff rejected rows as duplicates because ANOTHER
+        # school already used that employee number") and fixed one of the three.
+        # 0056 found the other two: the student importer told a school "GR 0001
+        # already exists" about another school's pupil, so a school could not
+        # finish its first bulk import; and the opening-balance importer resolved
+        # rows to another school's child and then failed with "Student is not
+        # enrolled in the selected session" about a pupil who is.
+        #
+        # A careful sweep already happened here and was right, and two instances
+        # still shipped. That is the argument for a tripwire over another sweep.
+        #
+        # Verified by unscoping fn_import_students' GR check and confirming this
+        # names the line and exits 1.
+        run: python3 ./supabase/check-import-keys.py
+
       - name: Reports — does the statement agree with the Accounts screen?
         # Assertion 6 is the point of this suite: the debit-and-credit statement
         # must net to the same profit fn_finance_summary reports for the same
@@ -579,6 +600,23 @@ jobs:
         # fn_rollover calls assert_own on both session ids — so one correct check
         # exempted eight incorrect ones.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/rollover.sql
+
+      - name: The go-live importers
+        # The first two tools a school touches: paste the register, paste last
+        # year's arrears. Neither had a suite, and both looked children up across
+        # every school on the platform.
+        #
+        # The fixture turns on one fact — gr_no is a per-school counter, so every
+        # school has a GR 0001 — and makes school B's counter run AHEAD of school
+        # A's so that B holds a GR number A genuinely does not. The first version
+        # of assertion 2 used a number both schools happened to have, which made
+        # the "duplicate" it complained about a real one and the assertion
+        # vacuous.
+        #
+        # Assertion 2 is the student-import bug, 4 and 6 the opening-balance one,
+        # and 17/19 check the money actually lands where student_balance() reads
+        # it and does not double on a re-run.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/importers.sql
 
       - name: Every suite on disk has a step above
         # The gap this closes has already happened twice in this repo, in two
