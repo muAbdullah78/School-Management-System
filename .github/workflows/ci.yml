@@ -392,6 +392,33 @@ jobs:
         # Verified by adding students.planted_dead_col and confirming this fails.
         run: ./supabase/check-columns-used.sh
 
+      - name: Is every QUERY inside a definer function scoped?
+        # dashboard.sql assertion 20 asks whether a SECURITY DEFINER function
+        # MENTIONS scoping anywhere in its body. That guard is worth having and
+        # it is not enough: fn_rollover called assert_own on two session ids and
+        # had eight unscoped queries behind that one mention. One correct check
+        # exempted eight incorrect ones, and the result was that a school's
+        # year-end rollover promoted its children into ANOTHER SCHOOL'S
+        # classroom — five consecutive runs, in the ordinary case of two schools
+        # with the same class ladder.
+        #
+        # This looks for the shape a whole-function check cannot see. Tenant
+        # scope CHAINS through identity (`i.id = al.invoice_id`) and does NOT
+        # chain through a value comparison (`c2.level_order > c.level_order`).
+        # So it flags correlated predicates that compare two non-id columns with
+        # an inequality, inside a subquery over a tenant table with no school_id
+        # nearby.
+        #
+        # Deliberately narrow. A broad version flagged 65 of 157 functions and
+        # every top candidate was a false positive — correlated subqueries
+        # anchored to a scoped outer row, which the script cannot see because
+        # the anchor is an outer alias. A guard that cries wolf 65 times gets
+        # ignored, and then it protects nothing.
+        #
+        # Verified by restoring the pre-0055 fn_rollover and confirming this
+        # names the exact line and exits 1.
+        run: python3 ./supabase/check-definer-queries.py
+
       - name: Reports — does the statement agree with the Accounts screen?
         # Assertion 6 is the point of this suite: the debit-and-credit statement
         # must net to the same profit fn_finance_summary reports for the same

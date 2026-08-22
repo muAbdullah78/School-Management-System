@@ -574,3 +574,31 @@ mutation itself was malformed and the migration silently failed to apply. That i
 the third time in this project a test has had to be repaired before it was worth
 trusting, and it is the reason every mutation is now run and reported rather than
 assumed.
+
+### The rule that came out of 0055
+
+Worth stating on its own, because it is the thing a whole-function scoping check
+cannot see.
+
+**Tenant scope chains through identity. It does not chain through a value.**
+
+```sql
+join public.invoices i on i.id = al.invoice_id     -- chains: al is already scoped
+where i.student_id in (select id from base)        -- chains: base is already scoped
+where c2.level_order > c.level_order               -- chains NOTHING
+```
+
+The first two inherit their scope from something the caller was verified to own.
+The third is a scan of every school's rows wearing the appearance of a
+correlated subquery, and it is exactly what `fn_rollover` did.
+
+`supabase/check-definer-queries.py` now fails the build on that shape. It is
+deliberately narrow: a broad version of the same idea flagged 65 of 157
+`SECURITY DEFINER` functions, and every top candidate was a false positive —
+correlated subqueries anchored to a scoped outer row, which the script cannot see
+because the anchor is an outer alias rather than a parameter. A guard that cries
+wolf 65 times gets ignored, and then it protects nothing.
+
+Auditing all 157 functions for the narrow shape found **one** instance: the
+rollover. That is the honest result — not "everything is scoped", but "one
+specific dangerous pattern now has a tripwire, and it currently fires nowhere".
