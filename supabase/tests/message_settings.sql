@@ -101,8 +101,27 @@ declare v_n int; r record;
 begin
   perform set_config('test.uid', '00000000-0000-0000-0000-00000000ba01', false);
 
-  select count(*) into v_n from public.fn_message_settings();
-  perform pg_temp.ok(v_n = 5, '1. all five message types are listed (' || v_n || ')');
+  -- Asserted against fn__default_message_templates() rather than a hard-coded
+  -- count. The count WAS 5, then 0046 added the two enquiry templates and this
+  -- assertion failed for no good reason — a magic number here means every new
+  -- template breaks a test that was not testing the new template. The real
+  -- invariant is that the settings screen offers every template the schema
+  -- defines: one missing is a message a school cannot switch off.
+  select count(*) into v_n
+  from public.fn__default_message_templates() d
+  where not exists (select 1 from public.fn_message_settings() m
+                     where m.template_key = d.template_key);
+  perform pg_temp.ok(v_n = 0,
+    '1. every default template is offered on the settings screen (' || v_n || ' missing)');
+
+  -- ...and nothing extra, so a stale row cannot linger after a template is
+  -- renamed.
+  select count(*) into v_n
+  from public.fn_message_settings() m
+  where not exists (select 1 from public.fn__default_message_templates() d
+                     where d.template_key = m.template_key);
+  perform pg_temp.ok(v_n = 0,
+    '1b. and nothing is listed that the schema does not define (' || v_n || ' extra)');
 
   select * into r from public.fn_message_settings() where template_key = 'payment_received';
   perform pg_temp.ok(r.is_default, '2. an untouched template reports itself as default');
@@ -239,10 +258,14 @@ end $t$;
 do $t$
 declare v_n int; v_ok boolean := false;
 begin
-  -- A clerk should see what goes out over their name.
+  -- A clerk should see what goes out over their name — the SAME list an owner
+  -- sees, not a hard-coded count that has to be bumped whenever a template is
+  -- added. "A clerk sees everything the school defines" is the actual promise.
   perform set_config('test.uid', '00000000-0000-0000-0000-00000000ba02', false);
   select count(*) into v_n from public.fn_message_settings();
-  perform pg_temp.ok(v_n = 5, '15. a clerk can read the message settings');
+  perform pg_temp.ok(
+    v_n > 0 and v_n = (select count(*) from public.fn__default_message_templates()),
+    '15. a clerk reads the same message settings an owner does (' || v_n || ')');
 
   -- But not change them.
   --
@@ -295,7 +318,9 @@ begin
 
   perform set_config('test.uid', '00000000-0000-0000-0000-00000000ba04', false);
   select count(*) into v_n from public.fn_message_settings();
-  perform pg_temp.ok(v_n = 5, '19. the other school sees its own five templates');
+  perform pg_temp.ok(
+    v_n > 0 and v_n = (select count(*) from public.fn__default_message_templates()),
+    '19. the other school is seeded with its own full set of templates (' || v_n || ')');
 
   select body into v_b_body from public.message_templates
    where school_id = public.current_school_id() and template_key = 'result_published';

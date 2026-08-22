@@ -78,11 +78,11 @@ This creates all the tables, rules and safety checks.
 
 1. In Supabase, click **SQL Editor** in the left sidebar.
 2. Open the folder `supabase/migrations/` from this project.
-### The easy way — three pastes
+### The easy way — four pastes
 
 Use the ready-made bundles in **`supabase/bundles/`**. They contain exactly the
-same SQL as the 35 numbered files, just joined up, and CI checks they never
-drift apart.
+same SQL as the numbered migration files, just joined up, and CI checks that
+every migration is in exactly one bundle so none can be left out.
 
 Run them **in this order, one at a time**, waiting for each to say Success:
 
@@ -91,8 +91,14 @@ Run them **in this order, one at a time**, waiting for each to say Success:
 | 1 | `1_core.sql` | Everything up to and including the cash drawer |
 | 2 | `2_parent_role.sql` | One line. It has to be on its own — see below |
 | 3 | `3_portal.sql` | Parent portal, WhatsApp outbox, fee operations |
+| 4 | `4_operations.sql` | Fee counter, printable challan, bulk collection, student roster, WhatsApp settings, money reports, balance sheet, admission enquiries |
 
-**When all three say Success, check the install:** open a new query, paste
+> **If you installed before bundle 4 existed,** your database stops at the
+> parent portal and the newer screens will error when opened, because the
+> functions they call are not there. Run `4_operations.sql` on its own — it is
+> additive and does not touch anything the first three created.
+
+**When all four say Success, check the install:** open a new query, paste
 [`supabase/verify.sql`](../supabase/verify.sql) and Run. Every row should say
 **PASS**. If one does not, it names the bundle to re-run.
 
@@ -109,7 +115,7 @@ twice gives errors like `policy "…" already exists`, which means "this already
 ran", not that anything is broken. If you lose track of where you are, the safe
 move is to run `supabase/reset.sql` and start again from bundle 1.
 
-### The manual way — 35 files
+### The manual way — every numbered file
 
 If you would rather see each step, load the numbered files instead.
 

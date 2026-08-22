@@ -49,6 +49,25 @@ select 'portal functions (bundle 3)',
        then 'PASS' else 'FAIL — re-run bundle 3' end
 
 union all
+-- Bundle 4 was added after bundles 1-3 had already shipped, and its absence is
+-- the quietest possible failure: the schema looks complete, every check above
+-- says PASS, and then the fee counter, the challan, the reports and the enquiry
+-- book all fail at runtime because the functions they call are not there. One
+-- function named from each of 0038-0046, so a partial paste cannot pass.
+select 'daily operations (bundle 4)',
+       case when (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                   where n.nspname = 'public' and p.proname in
+                     ('fn_counter_summary',        -- 0038 fee counter
+                      'fn_challan',                -- 0039 printable challan
+                      'fn_record_bulk_payments',   -- 0040 bulk collection
+                      'fn_student_list',           -- 0041 the roster
+                      'fn_message_settings',       -- 0043 WhatsApp settings
+                      'fn_report_ledger',          -- 0044 money reports
+                      'fn_report_balance_sheet',   -- 0045 balance sheet
+                      'fn_enquiry_list')) = 8      -- 0046 admission enquiries
+       then 'PASS' else 'FAIL — re-run bundle 4 (4_operations.sql)' end
+
+union all
 select 'price plans loaded',
        case when (select count(*) from public.plans) = 4
        then 'PASS' else 'FAIL — re-run bundle 1' end

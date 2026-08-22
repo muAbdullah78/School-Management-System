@@ -95,8 +95,9 @@ jobs:
           fi
           echo "bundles are in sync with the migrations"
       - name: Bundles apply as single transactions
-        # The real install path, on a separate database: three pastes, each one
-        # transaction, exactly as the SQL Editor runs them.
+        # The real install path, on a separate database: each bundle as ONE
+        # transaction, exactly as the SQL Editor runs a paste. Globbed, so a new
+        # bundle is covered the moment build-bundles.sh emits it.
         run: |
           psql -v ON_ERROR_STOP=1 -c "create database bundlecheck;"
           PGDATABASE=bundlecheck psql -v ON_ERROR_STOP=1 -q <<'SQL'
@@ -115,6 +116,20 @@ jobs:
             PGDATABASE=bundlecheck psql -v ON_ERROR_STOP=1 -q --single-transaction -f "$b"
           done
           echo "all bundles applied cleanly"
+
+          # The check a SCHOOL runs after installing, run against the install a
+          # school actually performs. This is the only place the bundle path and
+          # verify.sql meet, and it is where the missing-bundle-4 problem would
+          # have been caught: bundles 1-3 alone reported every row PASS while the
+          # fee counter, challan, reports and enquiry book were all absent.
+          echo "── verify.sql, as a school runs it"
+          PGDATABASE=bundlecheck psql -v ON_ERROR_STOP=1 -f supabase/verify.sql \
+            | tee /tmp/verify.out
+          if grep -q 'FAIL' /tmp/verify.out; then
+            echo "::error::verify.sql reports a FAIL against a fresh bundle install"
+            exit 1
+          fi
+          echo "verify.sql is all PASS on a bundle-only install"
       - name: Sanity checks
         run: |
           psql -v ON_ERROR_STOP=1 <<'SQL'
@@ -373,6 +388,24 @@ jobs:
         # is the cross-check — receivable must equal the sum of every student
         # ledger, or two screens disagree about the same money.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/balance_sheet.sql
+
+      - name: Enquiries — does the lead get followed up, and converted only once?
+        # A lead list nobody calls is a list nobody reads, so the load-bearing
+        # rules are that no open enquiry can be invisible (assertions 6 and 46:
+        # a follow-up date is always defaulted, and the summary reports any that
+        # slipped through) and that the list is ordered by who has waited
+        # longest rather than who called last (31).
+        #
+        # Assertion 26 is the one that protects real data: converting the same
+        # enquiry twice would burn a second GR number and leave a duplicate
+        # child for somebody to unpick by hand. 27 proves no student was created
+        # by the refused attempt.
+        #
+        # Assertions 66-66d check DELETE and UPDATE by ROW COUNT rather than by
+        # catching an error, because a DELETE with no matching RLS policy
+        # silently affects zero rows — a test waiting for an exception there
+        # would quietly stop testing anything.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/enquiries.sql
 
       - name: Message settings — does switching a message off actually stop it?
         # message_templates has carried an `enabled` flag since 0034 that

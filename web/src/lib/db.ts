@@ -2374,6 +2374,235 @@ export async function getBalanceSheet(asAt: string | null): Promise<BalanceSheet
   }
 }
 
+// ---- Admission enquiries (their "Admission Inquiries") --------------------
+
+export type EnquiryStatus = 'new' | 'contacted' | 'visited' | 'admitted' | 'lost'
+export type EnquirySource =
+  'walk_in' | 'phone' | 'referral' | 'banner' | 'social_media' | 'other'
+
+export interface EnquiryRow {
+  id: string
+  enquiry_no: number
+  child_name: string
+  father_name: string | null
+  phone: string
+  whatsapp: string | null
+  class_name: string | null
+  class_wanted: string | null
+  session_name: string | null
+  source: EnquirySource
+  status: EnquiryStatus
+  follow_up_on: string | null
+  /** 0 unless the enquiry is open and its follow-up date has passed. */
+  days_overdue: number
+  contacts: number
+  last_contact_at: string | null
+  last_outcome: string | null
+  lost_reason: string | null
+  notes: string | null
+  created_at: string
+  created_by_name: string
+  admitted_student_id: string | null
+  admitted_gr_no: string | null
+  /** Full match count, not the page — see fn_enquiry_list. */
+  total_count: number
+}
+
+export interface EnquiryListArgs {
+  status?: EnquiryStatus | null
+  from?: string | null
+  to?: string | null
+  search?: string | null
+  /** Only open enquiries whose follow-up date is today or earlier. */
+  dueOnly?: boolean
+  limit?: number
+  offset?: number
+}
+
+/**
+ * Ordered by who has waited longest, not by who called most recently —
+ * newest-first buries the parent who has been waiting nine days.
+ */
+export async function listEnquiries(a: EnquiryListArgs = {}): Promise<EnquiryRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_enquiry_list', {
+    p_status: a.status ?? null,
+    p_from: a.from ?? null,
+    p_to: a.to ?? null,
+    p_search: a.search ?? null,
+    p_due_only: a.dueOnly ?? false,
+    p_limit: a.limit ?? 200,
+    p_offset: a.offset ?? 0,
+  })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    ...(r as unknown as EnquiryRow),
+    enquiry_no: Number(r.enquiry_no ?? 0),
+    days_overdue: Number(r.days_overdue ?? 0),
+    contacts: Number(r.contacts ?? 0),
+    total_count: Number(r.total_count ?? 0),
+  }))
+}
+
+export interface EnquiryContact {
+  id: string
+  contacted_at: string
+  outcome: string
+  note: string | null
+  by_name: string
+}
+
+export async function getEnquiryContacts(enquiryId: string): Promise<EnquiryContact[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_enquiry_contacts', { p_enquiry_id: enquiryId })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as EnquiryContact[]
+}
+
+export interface NewEnquiry {
+  child_name: string
+  phone: string
+  father_name?: string | null
+  father_cnic?: string | null
+  whatsapp?: string | null
+  address?: string | null
+  dob?: string | null
+  gender?: string | null
+  session_id?: string | null
+  class_id?: string | null
+  class_wanted?: string | null
+  source?: EnquirySource
+  source_note?: string | null
+  follow_up_on?: string | null
+  notes?: string | null
+}
+
+export interface AddEnquiryResult {
+  enquiry_id: string
+  enquiry_no: number
+  message_queued: boolean
+  /**
+   * Set when the same child name already exists on the same phone number. A
+   * WARNING, not a rejection — the same number enquiring again is usually a
+   * second child.
+   */
+  possible_duplicate: {
+    id: string
+    enquiry_no: number
+    child_name: string
+    status: EnquiryStatus
+    created_at: string
+  } | null
+}
+
+export async function addEnquiry(e: NewEnquiry): Promise<AddEnquiryResult> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_add_enquiry', { p: e })
+  if (error) throw new Error(error.message)
+  const r = (data ?? {}) as Record<string, unknown>
+  return {
+    enquiry_id: String(r.enquiry_id ?? ''),
+    enquiry_no: Number(r.enquiry_no ?? 0),
+    message_queued: Boolean(r.message_queued),
+    possible_duplicate: (r.possible_duplicate ?? null) as AddEnquiryResult['possible_duplicate'],
+  }
+}
+
+/** Appends to the history AND moves the next follow-up date, in one call. */
+export async function logEnquiryContact(
+  enquiryId: string, outcome: string, note: string | null, nextFollowUp: string | null,
+): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_log_enquiry_contact', {
+    p_enquiry_id: enquiryId, p_outcome: outcome,
+    p_note: note, p_next_follow_up: nextFollowUp,
+  })
+  if (error) throw new Error(error.message)
+}
+
+/** 'admitted' is not settable here — use admitEnquiry, which creates the student. */
+export async function setEnquiryStatus(
+  enquiryId: string, status: Exclude<EnquiryStatus, 'admitted'>,
+  lostReason: string | null = null, nextFollowUp: string | null = null,
+): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_set_enquiry_status', {
+    p_enquiry_id: enquiryId, p_status: status,
+    p_lost_reason: lostReason, p_next_follow_up: nextFollowUp,
+  })
+  if (error) throw new Error(error.message)
+}
+
+/**
+ * Converts to a real admission through fn_admit_student, so the GR number,
+ * family linkage and student limit behave exactly as for a walk-in. Refuses a
+ * second attempt on the same enquiry.
+ */
+export async function admitEnquiry(
+  enquiryId: string, overrides: Record<string, unknown> = {},
+): Promise<Record<string, unknown>> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_enquiry_admit', {
+    p_enquiry_id: enquiryId, p_overrides: overrides,
+  })
+  if (error) throw new Error(error.message)
+  return (data ?? {}) as Record<string, unknown>
+}
+
+export interface EnquirySummary {
+  open: number
+  due_today: number
+  overdue: number
+  /** Open enquiries with no follow-up date — should always be 0. */
+  open_no_date: number
+  this_month: number
+  admitted: number
+  lost: number
+  decided: number
+  /** null, not 0, when nothing has been decided yet. */
+  conversion_rate: number | null
+}
+
+export async function getEnquirySummary(): Promise<EnquirySummary> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_enquiry_summary')
+  if (error) throw new Error(error.message)
+  const r = (data ?? {}) as Record<string, unknown>
+  const n = (k: string) => Number(r[k] ?? 0)
+  return {
+    open: n('open'), due_today: n('due_today'), overdue: n('overdue'),
+    open_no_date: n('open_no_date'), this_month: n('this_month'),
+    admitted: n('admitted'), lost: n('lost'), decided: n('decided'),
+    conversion_rate: r.conversion_rate == null ? null : Number(r.conversion_rate),
+  }
+}
+
+export interface EnquirySourceRow {
+  source: EnquirySource
+  enquiries: number
+  admitted: number
+  lost: number
+  open: number
+  conversion_rate: number | null
+}
+
+/** Which sources actually convert. A banner costs money; this says what it bought. */
+export async function getEnquirySources(
+  from: string | null = null, to: string | null = null,
+): Promise<EnquirySourceRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_enquiry_sources', { p_from: from, p_to: to })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    source: r.source as EnquirySource,
+    enquiries: Number(r.enquiries ?? 0),
+    admitted: Number(r.admitted ?? 0),
+    lost: Number(r.lost ?? 0),
+    open: Number(r.open ?? 0),
+    conversion_rate: r.conversion_rate == null ? null : Number(r.conversion_rate),
+  }))
+}
+
 // ---- Message settings (their "Automation Settings") -----------------------
 
 export interface MessageSetting {

@@ -26,6 +26,7 @@ export const NAV: NavItem[] = [
   { path: '/till', label: 'Cash drawer', roles: ['owner', 'principal', 'admin_clerk', 'accountant'], blurb: 'Count your drawer, explain any difference, and sign off the day.' },
   { path: '/messages', label: 'WhatsApp', roles: ['owner', 'principal', 'admin_clerk', 'accountant'], blurb: 'Fee receipts and reminders, ready to send. Free click-to-chat, no credits.' },
   { path: '/staff', label: 'Staff', roles: ['owner', 'principal', 'admin_clerk'], blurb: 'Staff records and the link to teacher logins.' },
+  { path: '/enquiries', label: 'Enquiries', roles: ['owner', 'principal', 'admin_clerk'], blurb: 'Every parent who asked about admission, and who is still waiting for a call back.' },
   { path: '/certificates', label: 'Certificates', roles: ['owner', 'principal', 'admin_clerk'], blurb: 'Leaving certificate, character certificate, bonafide, ID cards — with serial tracking.' },
   { path: '/reports', label: 'Reports', roles: ['owner', 'principal', 'accountant', 'readonly'], blurb: 'Student, class, financial and staff reports; PDF/Excel export.' },
   { path: '/settings', label: 'Settings', roles: ['owner', 'principal'], blurb: 'School profile & branding, sessions, classes, fee structure, users & roles, data export.' },

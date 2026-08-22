@@ -54,7 +54,7 @@ is listed.
 | Admit Student | `partial` | We have the form. Theirs also has a **student photo** with upload *and* webcam capture — we have no photo anywhere and `students.photo_url` is a dead column. |
 | Admit Bulk Student | `partial` | We have CSV import. Theirs is an on-screen grid for typing several siblings at once, with a class/section header applied to the whole batch. |
 | Admission Requests | `missing` | Online applications awaiting approve/reject. |
-| Admission Inquiries | `missing` | Lead management — a walk-in enquiry recorded before any admission, then converted. This is how they win the admission season. |
+| Admission Inquiries | `have` (0046) | Worklist-first: opens on who is overdue a call. Append-only follow-up log, one-action conversion through `fn_admit_student`, and a source breakdown. |
 | Admission Reports | `missing` | Admissions Today / This Month / This Year / Admission Forms / **Blank Admission Form**, all printable. |
 
 ## 2. Student Management
@@ -184,7 +184,7 @@ Their events, mapped to ours (excluded ones dropped):
 | Their template | Ours |
 |---|---|
 | Admission SMS | `missing` |
-| Inquiry Add / Inquiry Admit | `missing` (needs enquiries) |
+| Inquiry Add / Inquiry Admit | `have` (0046) — WhatsApp, with the same triggers |
 | Exam Marks / Final Exam Marks | `missing` |
 | First / Second / Third Fee Reminder | `have` — two templates, escalating; sent from Bulk collect (0040) |
 | Absent SMS | `missing` |
@@ -247,10 +247,44 @@ Items 1-6 and 9 are **done** (PR #17). What follows is the remaining work.
    AS AT a day rather than a range — summing `student_balance()` gives today's
    figure whatever date you print above it.
 9. ~~**WhatsApp automation**~~ Done (0043).
-10. **Admission enquiries and requests.**
+10. ~~**Admission enquiries**~~ Done (0046). Still missing the other half:
+    **admission requests** — online applications awaiting approve/reject.
 11. **Global search, module search, student photos, birthdays.**
 12. **Multi-campus** — last, because it touches every table, and only if a real
     school asks for it.
+
+## Found while building the enquiry module (0046)
+
+**THE BUNDLES STOPPED AT MIGRATION 0039.** `supabase/bundles/` is what a school
+pastes into the Supabase SQL Editor, and its globs covered 0001-0039 only.
+Migrations 0040-0046 were in no bundle at all, so a school installing from the
+documented path got a database seven migrations behind the app: the fee counter,
+the printable challan, bulk collection, the student roster, WhatsApp settings,
+every money report, the balance sheet and the enquiry book would all error on
+open, because the functions they call were not there.
+
+CI did not catch it, and could not have: its check regenerates the bundles and
+diffs them against what is committed. With 0040+ outside every glob the
+regenerated output matched perfectly and the check stayed green. `verify.sql`
+did not catch it either — it reported every row PASS on a bundles-1-to-3
+install, which is the worst possible outcome: a school told its install is
+sound while half the product is missing.
+
+Fixed three ways, because one was clearly not enough:
+
+* `4_operations.sql` now carries 0040-0046.
+* `build-bundles.sh` asserts that **every migration is in exactly one bundle**
+  and exits non-zero otherwise, so adding 0047 without a glob fails the build
+  instead of silently shipping short.
+* `verify.sql` gained a bundle-4 row naming one function from each of
+  0038-0046, and CI now runs `verify.sql` against a fresh bundle-only install —
+  the only place the install path and the install check actually meet.
+
+Also worth recording: two assertions in `message_settings.sql` hard-coded
+"five templates". Adding the two enquiry templates broke tests that were not
+testing enquiries. Both now assert against `fn__default_message_templates()`,
+which is the real invariant — every template the schema defines is offered on
+the settings screen, so none can be a message a school cannot switch off.
 
 ## Found while building the balance sheet (0045)
 
