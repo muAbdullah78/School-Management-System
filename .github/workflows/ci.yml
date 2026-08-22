@@ -526,6 +526,33 @@ jobs:
         # either.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/student_status.sql
 
+      - name: Year-end rollover
+        # The operation that touches every child, runs once a year, and had no
+        # suite at all. Writing one found the most serious defect in this
+        # project: fn_rollover picked "the next class up" with
+        # `select id from public.classes where active and level_order > ...` —
+        # no school anywhere in it, inside a SECURITY DEFINER function where RLS
+        # never applies. On a live multi-tenant deployment a school's rollover
+        # promoted its children into ANOTHER SCHOOL'S classroom.
+        #
+        # Assertion 6 is the ordinary case, not an edge case: two schools with
+        # the same ladder tie on level_order and the winner is whichever row the
+        # heap returns first. Assertion 7 is the other shape — a school with no
+        # class above its top one promoting into another school's higher class
+        # instead of graduating. Assertion 21 sweeps every enrolment in the
+        # database and asserts none points at a class belonging to another
+        # school.
+        #
+        # Assertion 28 covers the second leak: fn_rollover_undo counted
+        # graduated children across every tenant and handed the total to this
+        # school's principal.
+        #
+        # dashboard.sql assertion 20 could not catch any of this. It checks that
+        # a SECURITY DEFINER function MENTIONS scoping somewhere in its body, and
+        # fn_rollover calls assert_own on both session ids — so one correct check
+        # exempted eight incorrect ones.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/rollover.sql
+
       - name: Every suite on disk has a step above
         # The gap this closes has already happened twice in this repo, in two
         # different places: supabase/bundles/ stopped at 0039 while CI stayed

@@ -499,3 +499,78 @@ migrations: the `unique_violation` guard that makes generation re-runnable, the
 runs after generation. The migration would have applied perfectly cleanly. The
 final version is `pg_get_functiondef()` output with eight lines inserted, and
 0052 already says why: copy, never retype.
+
+### The year-end rollover promoted children into other schools' classrooms (0055)
+
+**The most serious defect found in this project.** `fn_rollover` had no test suite
+at all — the one operation that touches every child in the school, once a year.
+
+It decides where each class promotes to. With no explicit rule it took "the next
+class up", and found it like this:
+
+```sql
+select id from public.classes c2
+where c2.active and c2.level_order > c.level_order
+order by c2.level_order limit 1
+```
+
+There is no school in that query, and the function is `SECURITY DEFINER`, so RLS
+never applies. It searched **every school's classes** and returned the
+globally-lowest class above the current level.
+
+Not an edge case. Proven by running it:
+
+* School A tops out at Class 10 with no class above it, so its leavers should
+  *graduate*. School B has a Class 11. A's rollover reported "promoted: 1" and
+  enrolled A's child in **B's classroom**.
+* Worse, **the ordinary case**: A has Class 5 and Class 6, B also has a Class 6.
+  Both sixes carry `level_order` 6, so the `limit 1` tie is settled by whichever
+  row the heap hands back first — B's. Five consecutive runs put A's child in B's
+  class every time.
+
+The enrolment carries school A's `school_id` while pointing at school B's class.
+A's own screens then print another school's class names, no fee structure exists
+for that class so the child is billed nothing, and a child who should be an
+alumnus is not.
+
+`fn_rollover_undo` had its own unscoped query: it counted graduated children
+across every tenant and returned the total to this school's principal.
+
+**Why the existing guard missed it.** `dashboard.sql` assertion 20 checks that
+every `SECURITY DEFINER` function reading a tenant table *mentions*
+`current_school_id` / `assert_own` / `school_id` somewhere in its body.
+`fn_rollover` calls `assert_own` on both session ids, so the whole function was
+treated as scoped and its individual queries were never examined. **One correct
+check exempted eight incorrect ones.** That coarseness is now recorded rather
+than quietly patched: the guard proves a function was *considered*, not that
+every query inside it is scoped. A per-query analysis in SQL is not something to
+bolt on in a hurry.
+
+**Two further changes that came out of the fix.**
+
+Sorting the ladder by id to break ties was the first attempt and it was wrong: a
+school with "Class 8" and "Class 8 Science" would have had its children silently
+funnelled into whichever won, with nothing on screen to say a choice had been made
+for them. An ambiguous rung is now reported as `unmapped` — a state the plan
+already had, message "No target class chosen" — so the dry run shows the school
+the ambiguity and asks for a rule. Getting there exposed that "no unique next
+class" and "no class above at all" were the *same condition* in the old code, so
+an ambiguous **middle** year would have been marked as having finished school.
+
+The rollover now also stamps `students.left_on` and `leaving_reason` when it
+graduates a year group, capped at today with `least()` — a rollover run before the
+session formally ends would otherwise write a leaving date in the future, which
+`fn_set_student_status` refuses outright and a direct UPDATE would sneak past.
+Without the stamp the largest leaving event of the school year would be absent
+from the leavers report added in 0054.
+
+**On the testing.** 38 assertions, and six mutations applied to prove they fail
+when the code is wrong. On the first pass **four of five mutations were not
+caught** — three because the fixture could not reach the guard (school B had no
+graduates, so a scoped and an unscoped count both returned 1; the source session
+ended in the past, so the future-date cap was unreachable; school A had only one
+class per level, so the ambiguity path was unreachable) and one because the
+mutation itself was malformed and the migration silently failed to apply. That is
+the third time in this project a test has had to be repaired before it was worth
+trusting, and it is the reason every mutation is now run and reported rather than
+assumed.

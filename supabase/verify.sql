@@ -92,6 +92,15 @@ select 'search, birthdays, staff leaving (bundle 5)',
                  and exists (select 1 from pg_constraint
                               where conname = 'students_left_on_chk'
                                 and conrelid = 'public.students'::regclass)
+                 -- 0055. Checked by looking INSIDE fn_rollover for the school
+                 -- filter on the class ladder, because the function has existed
+                 -- since 0014 and its mere presence proves nothing: the whole
+                 -- defect was that this one line was missing.
+                 and exists (
+                   select 1 from pg_proc p
+                   join pg_namespace n on n.oid = p.pronamespace
+                   where n.nspname = 'public' and p.proname = 'fn_rollover'
+                     and p.prosrc like '%c2.school_id = v_school%')
        then 'PASS' else 'FAIL — re-run bundle 5 (5_search.sql)' end
 
 union all
