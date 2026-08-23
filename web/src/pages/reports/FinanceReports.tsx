@@ -20,8 +20,10 @@ import { useQuery } from '@tanstack/react-query'
 import {
   getLedger, getUnpaidInvoices, getDiscountReport, getAdmissionReport,
   getBalanceSheet, getMarkCorrections, getAttendanceCorrections, getCurrentSession,
+  getStudentsLeft,
   type LedgerRow, type UnpaidInvoiceRow, type DiscountReportRow, type AdmissionReportRow,
   type BalanceSheet, type MarkCorrection, type AttendanceCorrection,
+  type StudentLeftRow,
 } from '@/lib/db'
 import { DataTable, type Column } from '@/components/DataTable'
 import { fmtPKR, fmtDate } from '@/lib/format'
@@ -859,6 +861,142 @@ export function AttendanceCorrectionsReport() {
         &ldquo;For the day&rdquo; is the day being marked; &ldquo;changed on&rdquo; is when somebody
         altered it. A gap between the two is the thing worth looking at — an absence rewritten
         weeks later is different from one corrected the same afternoon.
+      </p>
+    </div>
+  )
+}
+
+/**
+ * Children who have left.
+ *
+ * The counterpart of the Admissions report, and it could not exist until 0054:
+ * before that there was no leaving DATE anywhere. A child leaving left one
+ * trace, free text appended to students.notes — "Status → withdrawn: Family
+ * moved to Karachi" — with no date, a reason only if the clerk typed one, and
+ * both buried in a blob holding every other note. A school could not answer
+ * "how many children left this term", which is the number a proprietor watches
+ * more closely than admissions.
+ *
+ * It carries what each child left OWING next to the father's phone number,
+ * because that is one screen instead of two for the person who has to ring
+ * them. That is also why the SQL restricts it to office roles: a subject
+ * teacher has no business with arrears.
+ */
+export function StudentsLeftReport() {
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+  const q = useQuery({
+    queryKey: ['studentsLeft', from, to],
+    queryFn: () => getStudentsLeft(from || null, to || null),
+  })
+  const rows = q.data ?? []
+  const owing = rows.filter((r) => r.balance > 0)
+  const owed = owing.reduce((a, r) => a + r.balance, 0)
+
+  const columns: Column<StudentLeftRow>[] = [
+    {
+      key: 'left_on', header: 'Left', sortable: true, value: (r) => r.left_on,
+      render: (r) => <span className="whitespace-nowrap text-slate-600">{fmtDate(r.left_on)}</span>,
+    },
+    {
+      key: 'student_name', header: 'Child', sortable: true, value: (r) => r.student_name,
+      render: (r) => (
+        <div>
+          <div className="text-slate-800">{r.student_name}</div>
+          <div className="text-xs text-slate-400">
+            {r.gr_no ?? '—'}{r.father_name ? ` · ${r.father_name}` : ''}
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'class_name', header: 'Class', sortable: true,
+      value: (r) => `${r.class_name ?? ''}${r.section_name ?? ''}`,
+      render: (r) => (
+        <span className="whitespace-nowrap text-slate-600">
+          {r.class_name ?? '—'}{r.section_name ? `-${r.section_name}` : ''}
+        </span>
+      ),
+    },
+    {
+      key: 'status', header: 'How', sortable: true, value: (r) => r.status,
+      render: (r) => (
+        // Withdrawn and struck off are different facts about a family and the
+        // report must not blur them: one chose to go, the other was removed.
+        <span className={`whitespace-nowrap ${
+          r.status === 'struck_off' ? 'text-danger-600'
+            : r.status === 'graduated' ? 'text-brand-700' : 'text-slate-600'}`}>
+          {r.status.replace('_', ' ')}
+        </span>
+      ),
+    },
+    {
+      key: 'reason', header: 'Reason', sortable: true, value: (r) => r.reason ?? '',
+      render: (r) => r.reason
+        ? <span className="text-slate-600">{r.reason}</span>
+        : <span className="text-xs text-slate-400">none given</span>,
+    },
+    {
+      key: 'months_here', header: 'Months here', secondary: true, sortable: true,
+      value: (r) => r.months_here ?? -1,
+      render: (r) => (
+        <span className="tabular-nums text-slate-600">{r.months_here ?? '—'}</span>
+      ),
+    },
+    {
+      key: 'phone', header: 'Phone', secondary: true, sortable: true, value: (r) => r.phone ?? '',
+      render: (r) => r.phone
+        ? <span className="whitespace-nowrap text-slate-600">{r.phone}</span>
+        : <span className="text-xs text-slate-400">—</span>,
+    },
+    {
+      key: 'balance', header: 'Left owing', sortable: true, value: (r) => r.balance,
+      render: (r) => (
+        <span className={`tabular-nums ${r.balance > 0 ? 'font-medium text-danger-600' : 'text-slate-400'}`}>
+          {r.balance > 0 ? fmtPKR(r.balance) : '—'}
+        </span>
+      ),
+    },
+  ]
+
+  return (
+    <div>
+      <div className="mb-3 flex flex-wrap items-end gap-3">
+        <label className="block text-sm">
+          <span className="text-slate-600">From</span>
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={`mt-1 block ${FIELD}`} />
+        </label>
+        <label className="block text-sm">
+          <span className="text-slate-600">To</span>
+          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={`mt-1 block ${FIELD}`} />
+        </label>
+        <span className="ml-auto rounded bg-slate-100 px-2 py-1 text-sm text-slate-700">
+          {rows.length} left
+          {owing.length > 0 && (
+            <>
+              {' · '}
+              <span className="text-danger-700">{owing.length} owing {fmtPKR(owed)}</span>
+            </>
+          )}
+        </span>
+      </div>
+
+      <DataTable
+        rows={rows}
+        columns={columns}
+        rowKey={(r) => r.student_id}
+        loading={q.isLoading}
+        error={q.isError ? (q.error as Error).message : null}
+        emptyTitle="Nobody left in this period"
+        emptyMessage="Leave both dates blank to see everyone who has left."
+        exportName="children-who-left"
+        printId="report"
+      />
+
+      <p className="mt-3 text-xs text-slate-500">
+        Children who left before this feature existed have no date on record and are
+        not listed: the upgrade deliberately did not invent one, because a made-up
+        leaving date is worse than a missing one.
       </p>
     </div>
   )

@@ -2,7 +2,9 @@
 -- Did the install work? Run this in the SQL Editor after loading the bundles.
 --
 -- Read-only and safe to run any time, as often as you like.
--- Every row should say PASS. Anything else names the bundle to re-run.
+-- Every row should say PASS. A failing row names what is MISSING, not a bundle to
+-- re-run: see supabase/bundles/README.md for which file supplies what, and why
+-- 'just re-run the bundle' is not always the right advice.
 --
 -- These are structural checks, not counts of things that happen to exist today
 -- — a check that says "46 tables" starts lying the moment a table is added.
@@ -52,20 +54,30 @@ union all
 -- Bundle 4 was added after bundles 1-3 had already shipped, and its absence is
 -- the quietest possible failure: the schema looks complete, every check above
 -- says PASS, and then the fee counter, the challan, the reports and the enquiry
--- book all fail at runtime because the functions they call are not there. One
--- function named from each of 0038-0046, so a partial paste cannot pass.
-select 'daily operations (bundle 4)',
-       case when (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-                   where n.nspname = 'public' and p.proname in
-                     ('fn_counter_summary',        -- 0038 fee counter
-                      'fn_challan',                -- 0039 printable challan
-                      'fn_record_bulk_payments',   -- 0040 bulk collection
-                      'fn_student_list',           -- 0041 the roster
-                      'fn_message_settings',       -- 0043 WhatsApp settings
-                      'fn_report_ledger',          -- 0044 money reports
-                      'fn_report_balance_sheet',   -- 0045 balance sheet
-                      'fn_enquiry_list')) = 8      -- 0046 admission enquiries
-       then 'PASS' else 'FAIL — re-run bundle 4 (4_operations.sql)' end
+-- book all fail at runtime because the functions they call are not there.
+--
+-- IT NAMES THE FUNCTIONS, not a bundle. The previous version said "re-run bundle
+-- 4" and that advice was WRONG for the case it actually fired in: fn_counter_summary
+-- is migration 0038 and fn_challan is 0039, both of which live in bundle THREE.
+-- A school whose bundle 3 was stale saw this row fail and was sent to re-run
+-- bundle 4, which cannot fix it and cannot even apply. Naming the function lets
+-- you look it up instead of trusting a label I got wrong.
+select 'daily operations (0038-0046)',
+       coalesce(
+         'FAIL — missing: ' || string_agg(w.n, ', ')
+           || ' — if you installed before Aug 2026 run supabase/repair/0035_0049.sql',
+         'PASS')
+  from (values ('fn_counter_summary'),        -- 0038, bundle 3
+               ('fn_challan'),                -- 0039, bundle 3
+               ('fn_record_bulk_payments'),   -- 0040, bundle 4
+               ('fn_student_list'),           -- 0041, bundle 4
+               ('fn_message_settings'),       -- 0043, bundle 4
+               ('fn_report_ledger'),          -- 0044, bundle 4
+               ('fn_report_balance_sheet'),   -- 0045, bundle 4
+               ('fn_enquiry_list')            -- 0046, bundle 4
+       ) as w(n)
+ where not exists (select 1 from pg_proc p
+                    where p.pronamespace = 'public'::regnamespace and p.proname = w.n)
 
 union all
 select 'search, birthdays, staff leaving (bundle 5)',
@@ -74,7 +86,8 @@ select 'search, birthdays, staff leaving (bundle 5)',
                      ('fn_global_search',      -- 0050 the header search box
                       'fn_birthdays',          -- 0050 birthdays
                       'fn_staff_roster',       -- 0053 staff with their login state
-                      'fn_staff_leave')) = 4   -- 0053 recording a leaving
+                      'fn_staff_leave',        -- 0053 recording a leaving
+                      'fn_students_left')) = 5 -- 0054 children who have left
                  and exists (select 1 from information_schema.columns
                               where table_schema = 'public' and table_name = 'staff'
                                 and column_name = 'dob')
@@ -83,6 +96,34 @@ select 'search, birthdays, staff leaving (bundle 5)',
                  and exists (select 1 from pg_constraint
                               where conname = 'staff_status_chk'
                                 and conrelid = 'public.staff'::regclass)
+                 -- 0054's column AND its constraint. The column alone would not
+                 -- prove the migration finished.
+                 and exists (select 1 from information_schema.columns
+                              where table_schema = 'public' and table_name = 'students'
+                                and column_name = 'left_on')
+                 and exists (select 1 from pg_constraint
+                              where conname = 'students_left_on_chk'
+                                and conrelid = 'public.students'::regclass)
+                 -- 0055. Checked by looking INSIDE fn_rollover for the school
+                 -- filter on the class ladder, because the function has existed
+                 -- since 0014 and its mere presence proves nothing: the whole
+                 -- defect was that this one line was missing.
+                 and exists (
+                   select 1 from pg_proc p
+                   join pg_namespace n on n.oid = p.pronamespace
+                   where n.nspname = 'public' and p.proname = 'fn_rollover'
+                     and p.prosrc like '%c2.school_id = v_school%')
+                 -- 0056. Same reasoning as 0055: these functions have existed
+                 -- since 0015/0016, so their presence proves nothing. What has
+                 -- to be true is that the per-school key lookups inside them
+                 -- are scoped.
+                 and not exists (
+                   select 1 from pg_proc p
+                   join pg_namespace n on n.oid = p.pronamespace
+                   where n.nspname = 'public'
+                     and p.proname in ('fn_import_students', 'fn_import_opening_balances')
+                     and (p.prosrc ~ 'from public\.students where gr_no'
+                       or p.prosrc ~ 'from public\.students where admission_no'))
        then 'PASS' else 'FAIL — re-run bundle 5 (5_search.sql)' end
 
 union all

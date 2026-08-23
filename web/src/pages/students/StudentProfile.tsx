@@ -139,32 +139,158 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
+/* Leaving, and coming back.
+ *
+ * This used to be a single "Strike off" button. student_status has four values,
+ * and 'withdrawn' — a family moving city, which is the ORDINARY reason a child
+ * leaves — could not be reached from anywhere in the app. So an ordinary
+ * departure was recorded as removal for non-payment or misconduct, which is
+ * what goes in the register and what a parent would read on a leaving
+ * certificate. It is a different thing and it needed its own door.
+ */
 function StatusAction({ student }: { student: Student }) {
   const qc = useQueryClient()
   const active = student.status === 'active'
-  const m = useMutation({
-    mutationFn: (payload: { status: string; reason?: string }) => setStudentStatus(student.id, payload.status, payload.reason),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['student', student.id] })
-      qc.invalidateQueries({ queryKey: ['enrollments', student.id] })
-      qc.invalidateQueries({ queryKey: ['students'] })
-    },
-  })
-  function strikeOff() {
-    const reason = window.prompt('Reason for striking off this student?')
-    if (reason === null) return
-    m.mutate({ status: 'struck_off', reason: reason || undefined })
+  const [leaving, setLeaving] = useState(false)
+  const [note, setNote] = useState<string | null>(null)
+
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ['student', student.id] })
+    qc.invalidateQueries({ queryKey: ['enrollments', student.id] })
+    qc.invalidateQueries({ queryKey: ['students'] })
   }
-  return active ? (
-    <button onClick={strikeOff} disabled={m.isPending}
-      className="rounded border border-red-300 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60">
-      {m.isPending ? '…' : 'Strike off'}
-    </button>
-  ) : (
-    <button onClick={() => m.mutate({ status: 'active' })} disabled={m.isPending}
-      className="rounded border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60">
-      {m.isPending ? '…' : 'Reinstate'}
-    </button>
+  const back = useMutation({
+    mutationFn: () => setStudentStatus(student.id, 'active', undefined, undefined),
+    onSuccess: (r) => { setNote(`${r.student_name} is back on the roll in ${r.class_name}.`); refresh() },
+  })
+
+  return (
+    <>
+      <div className="flex flex-col items-end gap-1">
+        {active ? (
+          <button onClick={() => setLeaving(true)}
+            className="rounded border border-red-300 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50">
+            Record leaving
+          </button>
+        ) : (
+          <button onClick={() => back.mutate()} disabled={back.isPending}
+            className="rounded border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60">
+            {back.isPending ? '…' : 'Reinstate'}
+          </button>
+        )}
+        {/* The date, shown. It was written nowhere before 0054. */}
+        {!active && student.left_on && (
+          <span className="text-xs text-slate-500">Left {fmtDate(student.left_on)}</span>
+        )}
+        {!active && student.leaving_reason && (
+          <span className="max-w-[14rem] text-right text-xs text-slate-400">{student.leaving_reason}</span>
+        )}
+        {back.isError && (
+          <span className="max-w-[16rem] text-right text-xs text-red-600">{(back.error as Error).message}</span>
+        )}
+        {note && <span className="max-w-[16rem] text-right text-xs text-emerald-700">{note}</span>}
+      </div>
+      {leaving && (
+        <LeavingDialog student={student} onClose={() => setLeaving(false)}
+          onDone={(msg) => { setLeaving(false); setNote(msg); refresh() }} />
+      )}
+    </>
+  )
+}
+
+const LEAVING_KINDS = [
+  {
+    value: 'withdrawn',
+    label: 'Withdrawn',
+    blurb: 'The family chose to leave — moved city, changed school, any ordinary reason.',
+  },
+  {
+    value: 'struck_off',
+    label: 'Struck off',
+    blurb: 'The school removed them — long non-payment, or a disciplinary decision.',
+  },
+  {
+    value: 'graduated',
+    label: 'Graduated',
+    blurb: 'Finished at this school. Normally set for a whole class by the year-end rollover.',
+  },
+] as const
+
+function LeavingDialog({ student, onClose, onDone }: {
+  student: Student; onClose: () => void; onDone: (msg: string) => void
+}) {
+  const [kind, setKind] = useState<string>('withdrawn')
+  const [leftOn, setLeftOn] = useState(todayISO())
+  const [reason, setReason] = useState('')
+
+  const go = useMutation({
+    mutationFn: () => setStudentStatus(student.id, kind, reason.trim() || undefined, leftOn),
+    onSuccess: (r) => onDone(
+      `${r.student_name} recorded as ${STUDENT_STATUS_LABELS[r.status] ?? r.status}` +
+      (r.left_on ? ` from ${fmtDate(r.left_on)}` : '') +
+      '. They will not be billed for next month and no longer count toward your student limit.',
+    ),
+  })
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4">
+      <div className="mt-16 w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
+        <h2 className="text-base font-semibold text-slate-800">{student.full_name} has left</h2>
+
+        <div className="mt-4 space-y-2">
+          {LEAVING_KINDS.map((k) => (
+            <label key={k.value}
+              className={`flex cursor-pointer gap-2 rounded border p-2.5 ${
+                kind === k.value ? 'border-brand-500 bg-brand-50' : 'border-slate-200 hover:bg-slate-50'}`}>
+              <input type="radio" name="leaving-kind" value={k.value} checked={kind === k.value}
+                onChange={() => setKind(k.value)} className="mt-0.5" />
+              <span>
+                <span className="block text-sm font-medium text-slate-800">{k.label}</span>
+                <span className="block text-xs text-slate-500">{k.blurb}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+
+        <label className="mt-4 block"><span className="text-sm text-slate-600">Last day at school</span>
+          {/* Capped at today: billing stops on save, not on the date, and a
+              future date would claim the child was on the roll on a day the
+              school had already stopped billing them. */}
+          <input type="date" value={leftOn} max={todayISO()}
+            min={student.admission_date ?? undefined}
+            onChange={(e) => setLeftOn(e.target.value)}
+            className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none" />
+        </label>
+        <label className="mt-3 block"><span className="text-sm text-slate-600">Reason (optional)</span>
+          <input value={reason} onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. Family moved to Karachi"
+            className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none" />
+        </label>
+
+        <div className="mt-4 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
+          <p className="font-medium text-slate-700">Saving this will:</p>
+          <ul className="mt-1 space-y-1">
+            <li>• stop next month&rsquo;s challan for this child</li>
+            <li>• take them off your student count, so they stop using up your plan</li>
+            <li>• keep every past record — fees already billed, payments, attendance and marks</li>
+          </ul>
+          <p className="mt-2 text-slate-500">
+            Anything still owed on their last day stays owed and stays on the arrears
+            reports. Use &ldquo;Reinstate&rdquo; if this was a mistake.
+          </p>
+        </div>
+
+        {go.isError && <p className="mt-3 text-sm text-red-600">{(go.error as Error).message}</p>}
+
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50">Cancel</button>
+          <button onClick={() => go.mutate()} disabled={go.isPending || !leftOn}
+            className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
+            {go.isPending ? 'Saving…' : 'Record leaving'}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 

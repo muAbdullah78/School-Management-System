@@ -581,6 +581,21 @@ export interface StudentProfile {
   father_name: string | null; mother_name: string | null; b_form: string | null
   dob: string | null; gender: string | null; address: string | null; phone: string | null
   whatsapp: string | null; status: string; admission_date: string | null; notes: string | null
+  /** Added in 0054. Null for a child who is here, and null for one who left
+   *  before 0054 existed — the migration deliberately did not invent dates. */
+  left_on: string | null; leaving_reason: string | null
+}
+
+export interface StudentLeftRow {
+  left_on: string; student_id: string; student_name: string
+  gr_no: string | null; father_name: string | null; phone: string | null
+  class_name: string | null; section_name: string | null
+  status: string; reason: string | null
+  admitted_on: string | null; months_here: number | null; balance: number
+}
+
+export interface StudentStatusResult {
+  student_name: string; status: string; left_on: string | null; class_name: string
 }
 export interface EnrollmentInfo {
   enrollment_id: string; session_id: string; session_name: string
@@ -923,7 +938,7 @@ export async function getStudent(studentId: string): Promise<StudentProfile> {
   const sb = requireSupabase()
   return unwrap(
     await sb.from('students')
-      .select('id, gr_no, admission_no, full_name, father_name, mother_name, b_form, dob, gender, address, phone, whatsapp, status, admission_date, notes')
+      .select('id, gr_no, admission_no, full_name, father_name, mother_name, b_form, dob, gender, address, phone, whatsapp, status, admission_date, notes, left_on, leaving_reason')
       .eq('id', studentId).single(),
   )
 }
@@ -934,12 +949,53 @@ export async function updateStudent(studentId: string, patch: Partial<StudentPro
   if (error) throw new Error(error.message)
 }
 
-export async function setStudentStatus(studentId: string, status: string, reason?: string): Promise<void> {
+/** Record a child leaving, or coming back.
+ *
+ *  `leftOn` is new in 0054. Before it there was no date anywhere: the only
+ *  trace of a leaving was free text appended to students.notes, so a school
+ *  could not answer "when did Bilal leave". */
+export async function setStudentStatus(
+  studentId: string, status: string, reason?: string, leftOn?: string,
+): Promise<StudentStatusResult> {
   const sb = requireSupabase()
-  const { error } = await sb.rpc('fn_set_student_status', {
+  const { data, error } = await sb.rpc('fn_set_student_status', {
     p_student_id: studentId, p_status: status, p_reason: reason ?? null,
+    p_left_on: leftOn ?? null,
   })
   if (error) throw new Error(error.message)
+  const r = (data ?? {}) as Record<string, any>
+  return {
+    student_name: r.student_name ?? '',
+    status: r.status ?? status,
+    left_on: r.left_on ?? null,
+    class_name: r.class_name ?? '—',
+  }
+}
+
+/** Children who have left, with what they left owing.
+ *
+ *  Without this, left_on would be one more column written and never shown —
+ *  the bug class documented in migration 0047. Office roles only: it carries
+ *  arrears. */
+export async function getStudentsLeft(from: string | null, to: string | null): Promise<StudentLeftRow[]> {
+  const sb = requireSupabase()
+  const rows = unwrap<Record<string, any>[]>(
+    await sb.rpc('fn_students_left', { p_from: from || null, p_to: to || null }))
+  return (rows ?? []).map((r) => ({
+    left_on: r.left_on,
+    student_id: r.student_id,
+    student_name: r.student_name,
+    gr_no: r.gr_no ?? null,
+    father_name: r.father_name ?? null,
+    phone: r.phone ?? null,
+    class_name: r.class_name ?? null,
+    section_name: r.section_name ?? null,
+    status: r.status,
+    reason: r.reason ?? null,
+    admitted_on: r.admitted_on ?? null,
+    months_here: r.months_here === null || r.months_here === undefined ? null : Number(r.months_here),
+    balance: Number(r.balance ?? 0),
+  }))
 }
 
 export async function getStudentEnrollments(studentId: string): Promise<EnrollmentInfo[]> {

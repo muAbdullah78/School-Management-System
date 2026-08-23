@@ -439,3 +439,229 @@ defect that stays invisible until it matters:
 
 Items 1–6 are what makes the product usable daily. 7–9 are what makes a head
 teacher choose it. 10–12 are growth.
+
+
+### A child leaving (0054)
+
+The same thread pulled on the student side. Four findings, three of them defects.
+
+**The only button was "Strike off".** `student_status` has four values — active,
+struck_off, withdrawn, graduated. `graduated` is set by the year-end rollover,
+which is right. **`withdrawn` was unreachable from anywhere in the app.** So a
+child whose family moved city was recorded as *struck off*, which in Pakistan
+means removed for non-payment or misconduct. It is what goes in the register and
+what a parent would read on a leaving certificate. The most ordinary reason a
+child leaves a school could not be recorded correctly.
+
+**Reinstating a graduated child left the two facts contradicting.** The old
+function reactivated enrollments only where status was `struck_off` or `left`.
+Proven by running it rather than by reading it:
+
+```
+GRADUATED:       student=graduated enrollment=graduated
+REINSTATED GRAD: student=active    enrollment=graduated
+```
+
+That child then reads as a current pupil on every student screen while being in
+no class, billed nothing, and counted against no plan limit — `fn_count_students`
+requires both statuses active. Nothing on any screen could reveal it. It is now
+refused, with a message naming the enrollment status and saying what to do
+instead.
+
+**There was no date.** The only trace of a leaving was free text appended to
+`students.notes` — "Status → withdrawn: Family moved to Karachi". No date, a
+reason only if the clerk typed one, both in a blob holding every other note.
+`students.left_on` and `students.leaving_reason` are now columns, and
+`fn_students_left` is the report that reads them — without which they would be
+two more columns written and never shown, which is the bug class in 0047.
+
+**What already worked, now pinned by tests:** withdrawing a child stops next
+month's challan and stops them counting toward the plan limit. Both are asserted
+by generating invoices and calling `fn_count_students`, not by reading columns,
+because one careless `create or replace` would break either silently.
+
+**One piece of hardening, labelled as such.** `fn_generate_class_invoices` chose
+who to bill from `enrollments.status` alone, while `fn_count_students` required
+`students.status` and `deleted_at` too — two functions answering "who is a
+current pupil" with different conditions. It cannot bite today (the status
+function keeps both in step, and *nothing in the codebase writes
+`students.deleted_at`*), so this is defence in depth and claiming otherwise would
+be overclaiming. It is worth having because the failure mode is billing a child
+who has left, and the change can only ever bill fewer children — never skip one
+who is here.
+
+**A near miss worth recording.** The first version of that change was hand-typed
+from a partial view of the function and diffed against the live definition before
+being committed. The diff showed it would have silently reverted five later
+migrations: the `unique_violation` guard that makes generation re-runnable, the
+`effective_from` lateral join for dated fee structures,
+`fn__apply_discount_lines`, and — worst — the `fn_apply_family_credit` pass that
+runs after generation. The migration would have applied perfectly cleanly. The
+final version is `pg_get_functiondef()` output with eight lines inserted, and
+0052 already says why: copy, never retype.
+
+### The year-end rollover promoted children into other schools' classrooms (0055)
+
+**The most serious defect found in this project.** `fn_rollover` had no test suite
+at all — the one operation that touches every child in the school, once a year.
+
+It decides where each class promotes to. With no explicit rule it took "the next
+class up", and found it like this:
+
+```sql
+select id from public.classes c2
+where c2.active and c2.level_order > c.level_order
+order by c2.level_order limit 1
+```
+
+There is no school in that query, and the function is `SECURITY DEFINER`, so RLS
+never applies. It searched **every school's classes** and returned the
+globally-lowest class above the current level.
+
+Not an edge case. Proven by running it:
+
+* School A tops out at Class 10 with no class above it, so its leavers should
+  *graduate*. School B has a Class 11. A's rollover reported "promoted: 1" and
+  enrolled A's child in **B's classroom**.
+* Worse, **the ordinary case**: A has Class 5 and Class 6, B also has a Class 6.
+  Both sixes carry `level_order` 6, so the `limit 1` tie is settled by whichever
+  row the heap hands back first — B's. Five consecutive runs put A's child in B's
+  class every time.
+
+The enrolment carries school A's `school_id` while pointing at school B's class.
+A's own screens then print another school's class names, no fee structure exists
+for that class so the child is billed nothing, and a child who should be an
+alumnus is not.
+
+`fn_rollover_undo` had its own unscoped query: it counted graduated children
+across every tenant and returned the total to this school's principal.
+
+**Why the existing guard missed it.** `dashboard.sql` assertion 20 checks that
+every `SECURITY DEFINER` function reading a tenant table *mentions*
+`current_school_id` / `assert_own` / `school_id` somewhere in its body.
+`fn_rollover` calls `assert_own` on both session ids, so the whole function was
+treated as scoped and its individual queries were never examined. **One correct
+check exempted eight incorrect ones.** That coarseness is now recorded rather
+than quietly patched: the guard proves a function was *considered*, not that
+every query inside it is scoped. A per-query analysis in SQL is not something to
+bolt on in a hurry.
+
+**Two further changes that came out of the fix.**
+
+Sorting the ladder by id to break ties was the first attempt and it was wrong: a
+school with "Class 8" and "Class 8 Science" would have had its children silently
+funnelled into whichever won, with nothing on screen to say a choice had been made
+for them. An ambiguous rung is now reported as `unmapped` — a state the plan
+already had, message "No target class chosen" — so the dry run shows the school
+the ambiguity and asks for a rule. Getting there exposed that "no unique next
+class" and "no class above at all" were the *same condition* in the old code, so
+an ambiguous **middle** year would have been marked as having finished school.
+
+The rollover now also stamps `students.left_on` and `leaving_reason` when it
+graduates a year group, capped at today with `least()` — a rollover run before the
+session formally ends would otherwise write a leaving date in the future, which
+`fn_set_student_status` refuses outright and a direct UPDATE would sneak past.
+Without the stamp the largest leaving event of the school year would be absent
+from the leavers report added in 0054.
+
+**On the testing.** 38 assertions, and six mutations applied to prove they fail
+when the code is wrong. On the first pass **four of five mutations were not
+caught** — three because the fixture could not reach the guard (school B had no
+graduates, so a scoped and an unscoped count both returned 1; the source session
+ended in the past, so the future-date cap was unreachable; school A had only one
+class per level, so the ambiguity path was unreachable) and one because the
+mutation itself was malformed and the migration silently failed to apply. That is
+the third time in this project a test has had to be repaired before it was worth
+trusting, and it is the reason every mutation is now run and reported rather than
+assumed.
+
+### The rule that came out of 0055
+
+Worth stating on its own, because it is the thing a whole-function scoping check
+cannot see.
+
+**Tenant scope chains through identity. It does not chain through a value.**
+
+```sql
+join public.invoices i on i.id = al.invoice_id     -- chains: al is already scoped
+where i.student_id in (select id from base)        -- chains: base is already scoped
+where c2.level_order > c.level_order               -- chains NOTHING
+```
+
+The first two inherit their scope from something the caller was verified to own.
+The third is a scan of every school's rows wearing the appearance of a
+correlated subquery, and it is exactly what `fn_rollover` did.
+
+`supabase/check-definer-queries.py` now fails the build on that shape. It is
+deliberately narrow: a broad version of the same idea flagged 65 of 157
+`SECURITY DEFINER` functions, and every top candidate was a false positive —
+correlated subqueries anchored to a scoped outer row, which the script cannot see
+because the anchor is an outer alias rather than a parameter. A guard that cries
+wolf 65 times gets ignored, and then it protects nothing.
+
+Auditing all 157 functions for the narrow shape found **one** instance: the
+rollover. That is the honest result — not "everything is scoped", but "one
+specific dangerous pattern now has a tripwire, and it currently fires nowhere".
+
+
+### The go-live importers looked up children across every school (0056)
+
+`gr_no`, `admission_no`, `employee_no` and `roll_no` are **per-school counters**.
+Every school on the platform has a GR 0001. Both bulk importers — the two tools a
+school uses on its very first day — resolved and de-duplicated on those keys with
+no school filter, inside `SECURITY DEFINER` functions where RLS never applies.
+
+**`fn_import_students`**, de-duplicating:
+
+```sql
+select count(*) into v_cnt from public.students where gr_no = v_gr;
+if v_cnt > 0 then ... 'GR ' || v_gr || ' already exists'
+```
+
+A school importing its register was told **"GR 0001 already exists"** because
+*another* school had a GR 0001. A school could not complete its first bulk
+import, and the rejection rate grows with every school that joins the platform.
+
+**`fn_import_opening_balances`**, resolving who a row belongs to:
+
+```sql
+select id into v_student from public.students where gr_no = v_gr ...
+```
+
+plpgsql `SELECT INTO` takes the first row and raises nothing, so a row could
+resolve to another school's child. Step 4 then checks enrolment in the target
+session, the foreign child has none, and the row fails with **"Student is not
+enrolled in the selected session"** about a pupil who is. Proven by running it.
+The name path fails more visibly — *"Name Muhammad Ali matches several students —
+use GR No"* for a school holding exactly one, with the advice pointing at the GR
+path that is also broken. And the result row carries the resolved `name`, so the
+import report could print **another school's pupil** back at the importer.
+
+**This is the third time.** Migration 0042 already found this exact class and
+described it correctly:
+
+> "No school filter, so importing staff rejected rows as duplicates because
+> ANOTHER school already used that employee number — and a teacher who works at
+> two schools on the platform could never be added to the second, because their
+> CNIC was 'taken'."
+
+That diagnosis was right and it was applied to **one of the three importers**. The
+student importer and the opening-balance importer were never revisited. A careful
+sweep happened, it was correct, and two instances still shipped — which is the
+argument for `supabase/check-import-keys.py` failing the build rather than for a
+fourth sweep.
+
+**Two things went wrong in my own work here, both worth recording.**
+
+The first version of 0056 asserted *"this replacement changed something"*. Run it
+twice and the second run raises, because the unscoped text is legitimately gone —
+so a re-run would roll back the fixes it had already made. It now asserts the
+**end state** (the unscoped form is absent *and* the scoped form is present),
+which is idempotent and still fails loudly if the function has been rewritten and
+neither form is there. Found by re-running it, not by reading it.
+
+The first version of the test's assertion 2 used a GR number that **both** schools
+happened to have — both counters produce 0001 — so the "duplicate" it objected to
+was a real one in the importing school and the assertion tested nothing. The
+fixture now runs school B's counter ahead of school A's so that B holds a number A
+genuinely does not.
