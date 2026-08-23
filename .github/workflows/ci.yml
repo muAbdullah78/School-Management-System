@@ -130,6 +130,72 @@ jobs:
             exit 1
           fi
           echo "verify.sql is all PASS on a bundle-only install"
+      - name: An EXISTING school can upgrade
+        # THE JOB THAT WAS MISSING, and its absence cost a real school fifteen
+        # migrations.
+        #
+        # Everything else here tests a FRESH install: all bundles, in order, on an
+        # empty database. That is not how an existing school upgrades, and the
+        # upgrade path was broken for months without one red tick.
+        #
+        # What happened. Bundle 3's glob is 003[3-9]*. When the school first
+        # installed, it matched {0033, 0034}. Migrations 0035-0039 were then
+        # written and the SAME glob silently swallowed them, so the file they had
+        # already pasted changed underneath them. Re-running it fails on 0033's
+        # "column family_id already exists" and — because a bundle is ONE
+        # transaction — rolls back entirely, so 0035-0039 never arrive. Bundle 4
+        # then cannot apply either: it needs fee_structures.effective_from, added
+        # by 0035. The school ended up on 0001-0034 plus 0050-0056, with a
+        # fifteen-migration hole, and verify.sql told them to re-run bundle 4 —
+        # which cannot fix it and cannot even apply.
+        #
+        # This step reproduces that exactly, then applies the documented repair,
+        # and asserts verify.sql comes back all PASS. It pins the repair path as
+        # tested rather than as advice in a chat message.
+        run: |
+          psql -v ON_ERROR_STOP=1 -c "create database upgradecheck;"
+          export PGDATABASE=upgradecheck
+          psql -v ON_ERROR_STOP=1 -q <<'SQL'
+          create schema if not exists auth;
+          create table if not exists auth.users (
+            id uuid primary key, email text, raw_user_meta_data jsonb default '{}'::jsonb);
+          create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
+          do $$ begin
+            if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
+            if not exists (select 1 from pg_roles where rolname='authenticated') then create role authenticated nologin; end if;
+            if not exists (select 1 from pg_roles where rolname='service_role') then create role service_role nologin; end if;
+          end $$;
+          SQL
+
+          echo "── the school as it was: migrations 0001-0034"
+          for f in supabase/migrations/*.sql; do
+            n=$(basename "$f" | cut -c1-4)
+            if [ "$n" -le 0034 ]; then
+              psql -v ON_ERROR_STOP=1 -q --single-transaction -f "$f"
+            fi
+          done
+
+          echo "── they paste every current bundle, as instructed. 1-3 fail; that is the bug."
+          for b in supabase/bundles/[1-5]_*.sql; do
+            if psql -v ON_ERROR_STOP=1 -q --single-transaction -f "$b" >/dev/null 2>&1; then
+              echo "   $b applied"
+            else
+              echo "   $b refused (already-applied content — expected for 1 and 3)"
+            fi
+          done
+
+          echo "── the repair, then bundle 5 again so the newer definitions win back"
+          psql -v ON_ERROR_STOP=1 -q --single-transaction -f supabase/repair/0035_0049.sql
+          psql -v ON_ERROR_STOP=1 -q --single-transaction -f supabase/bundles/5_search.sql
+
+          echo "── verify.sql, as the school runs it"
+          psql -v ON_ERROR_STOP=1 -f supabase/verify.sql | tee /tmp/upgrade.out
+          if grep -q 'FAIL' /tmp/upgrade.out; then
+            echo "::error::an existing school cannot reach a green verify.sql"
+            exit 1
+          fi
+          echo "an existing school upgrades to all PASS"
+
       - name: Sanity checks
         run: |
           psql -v ON_ERROR_STOP=1 <<'SQL'

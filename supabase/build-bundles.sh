@@ -101,6 +101,42 @@ emit supabase/bundles/4_operations.sql    supabase/migrations/004*.sql
 # When bundle 5 has itself shipped widely, start a sixth rather than widen this.
 emit supabase/bundles/5_search.sql        supabase/migrations/005*.sql
 
+# --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
+# This is the check that was missing, and its absence cost a real school fifteen
+# migrations.
+#
+# Bundle 3's glob is 003[3-9]*. When it shipped it matched {0033, 0034}. As
+# migrations 0035-0039 were written the SAME glob silently swallowed them, so the
+# file a school had already pasted changed underneath them. Re-running it fails on
+# 0033's "column family_id already exists", and because a bundle is ONE
+# transaction the whole thing rolls back — 0035-0039 never arrive. Bundle 4 then
+# cannot apply either, because it needs fee_structures.effective_from from 0035.
+#
+# The comment above bundle 5 already said "New work goes in a new bundle". A glob
+# is not a promise. This manifest is.
+MANIFEST=supabase/bundles/MANIFEST
+if [ -f "$MANIFEST" ]; then
+  fail=0
+  while IFS='|' read -r bundle files; do
+    [ -z "${bundle:-}" ] && continue
+    now=$(grep -oE '^-- [0-9]{4}_[A-Za-z0-9_]+\.sql$' "$bundle" 2>/dev/null \
+            | sed 's/^-- //' | tr '\n' ' ' | sed 's/ $//')
+    if [ "$now" != "$files" ]; then
+      echo "FROZEN BUNDLE CHANGED: $bundle"
+      echo "  manifest: $files"
+      echo "  now:      $now"
+      fail=1
+    fi
+  done < "$MANIFEST"
+  if [ "$fail" = 1 ]; then
+    echo
+    echo "A bundle a school has already pasted must never change. Put the new"
+    echo "migrations in a NEW bundle and add a line to $MANIFEST."
+    exit 1
+  fi
+  echo "  frozen bundles unchanged (per $MANIFEST)"
+fi
+
 # --- Every migration must be in exactly one bundle ---------------------------
 # Without this, adding 0047 silently produces an install that is one migration
 # behind and CI stays green. Compares by FILENAME, which each bundle stamps in
