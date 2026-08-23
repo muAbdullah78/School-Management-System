@@ -353,6 +353,69 @@ including what is deliberately not built (per-pupil electives, a configurable
 promotion rule, and GPA — `school_settings.grade_scale` still offers `gpa10` and
 `fn_grade_for` still always returns letters, which is its own piece of work).
 
+### The `readonly` role, and a save that silently did nothing — done (0059)
+
+Two defects, and the second is not about `readonly` at all.
+
+**`readonly` was incoherent in both directions at once.** It is in `ADMIN_ROLES`,
+so it was shown the whole admin navigation. Asking the database what each of
+those screens would return: students and attendance worked; invoices, payments,
+expenses, till, discounts, certificates and the audit log all returned **zero
+rows**; Reports → Debit & Credit and Staff both raised *Not permitted*; and the
+**dashboard showed it `collected_month`, `collected_today` and
+`finance_visible: true`**. So it was shown the school's takings on one screen and
+an empty table on every screen behind it. It is also the *fallback* role, so that
+was the experience of any invited login whose role nobody set.
+
+Settled as an **observer**: reads everything a staff member can read, money
+included, writes nothing anywhere. The reasoning and the argument against
+including money are in `docs/READONLY-DESIGN.md`; the short version is that two
+of the three money surfaces already showed it, so hiding money would have
+followed the minority precedent and still left the dashboard leaking — and a role
+that cannot see money cannot do the job schools want it for (a trustee, an
+auditor, the proprietor's second-in-command).
+
+One helper carries it — `may_view(roles) := has_role(roles) or
+has_role('readonly')` — applied to 27 read functions and 19 SELECT policies
+**programmatically**, from `pg_get_functiondef`, because hand-retyping
+twenty-seven bodies is how a stack of fixes gets silently reverted. Two functions
+are excluded by name: `fn_may_manage_class` and `fn_may_write_school_file` are
+`STABLE` and look exactly like read gates, but they *authorise writes elsewhere*
+— a teacher's mark entry and a storage upload policy consult them.
+
+**The worse defect: a save that reported success and changed nothing.** RLS
+treats the write verbs differently, and this is easy to forget:
+
+- `INSERT` with no matching policy → **raises**
+- `UPDATE` / `DELETE` with no matching policy → **zero rows, no error**
+
+Every direct-table write in `db.ts` was `const { error } = await
+sb.from(x).update(patch).eq('id', id)`, and `error` is null when nothing matched.
+Demonstrated: as `readonly`, `insert into students` was refused with a policy
+violation and `update students set full_name` returned **success, 0 rows**. The
+app said *"Saved."*, the value was unchanged, and reopening the record showed the
+old one. From the user's seat that is indistinguishable from lost work.
+
+The same silence had already produced a second bug: when the `create-teacher`
+Edge Function is not deployed, the fallback path called `signUp` **without
+`school_id` in the metadata**, so `handle_new_user` returned early and created no
+profile at all — the follow-up role update matched nothing, raised nothing, and
+`createTeacherLogin` returned success on a login that could sign in and be told
+*"This login is not attached to a school."*
+
+`mustWrite()` now wraps all eleven direct writes: the statement carries
+`.select('id')` and an empty result raises a message naming both real causes. And
+an invite whose role is not recognised now lands **inactive** rather than quietly
+acquiring the fallback role — a `coalesce` the test suite caught me getting wrong
+twice, once returning `true` for an unrecognised role and once returning `NULL`
+and failing the signup outright.
+
+Guarded by `supabase/check-readonly-writes.py` (no write policy and no `VOLATILE`
+function may name `may_view` or `readonly`; refuses to pass if `may_view` is used
+in fewer than 30 places, so it cannot go vacuous) and 35 assertions in
+`supabase/tests/readonly_role.sql` — where the UPDATE and DELETE assertions count
+**rows affected**, not exceptions, because there is no exception to catch.
+
 ### ~~Audit trail~~ — done (0048)
 
 Both `correction_reason` columns are now written, and — the bigger half —

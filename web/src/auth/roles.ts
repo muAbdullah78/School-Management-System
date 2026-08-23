@@ -33,6 +33,31 @@ export const ROLE_LABELS: Record<Role, string> = {
 /** Roles that operate the admin "desktop" surface. */
 export const ADMIN_ROLES: Role[] = ['owner', 'principal', 'admin_clerk', 'accountant', 'readonly']
 
+/**
+ * `readonly` may look at everything and change nothing.
+ *
+ * It is deliberately IN `ADMIN_ROLES` — it gets the admin screens, because the
+ * whole point of the role is oversight and since 0059 those screens actually
+ * return data to it. What it must never get is a write control.
+ *
+ * This exists as a named helper rather than `role !== 'readonly'` scattered
+ * across twenty components, because the scattered form is how one screen keeps
+ * its Save button. The database refuses the write either way; this only stops
+ * offering a button that cannot work — and since RLS makes a refused UPDATE
+ * affect zero rows *without raising*, a Save button that is offered and pressed
+ * used to report success and change nothing.
+ *
+ * See docs/READONLY-DESIGN.md.
+ */
+export function canWrite(role: Role | null | undefined): boolean {
+  return !!role && role !== 'readonly' && role !== 'parent'
+}
+
+/** An observer: full sight, no touch. Worth naming so a screen can say so. */
+export function isObserver(role: Role | null | undefined): boolean {
+  return role === 'readonly'
+}
+
 /** Roles that operate the teacher "live web" surface. */
 export const TEACHER_ROLES: Role[] = ['class_teacher', 'subject_teacher']
 

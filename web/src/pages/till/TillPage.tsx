@@ -11,7 +11,8 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/auth/AuthProvider'
-import { APPROVER_ROLES } from '@/auth/roles'
+import { APPROVER_ROLES, canWrite } from '@/auth/roles'
+import { ObserverNotice } from '@/components/ObserverNotice'
 import { getCurrentTill, openTill, closeTill, approveTill, getTillReport } from '@/lib/db'
 import {
   Card, CardTitle, PageHeader, Button, Badge, Field, inputClass, EmptyState, MiniStat, money,
@@ -24,7 +25,12 @@ const weekAgo = () => new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10
 export function TillPage() {
   const qc = useQueryClient()
   const { profile } = useAuth()
-  const canApprove = !!profile && APPROVER_ROLES.includes(profile.role)
+  // An observer sees the drawer history and signs nothing off. canApprove is
+  // ANDed with it rather than trusted on its own: readonly is not in
+  // APPROVER_ROLES today, and this makes it impossible for a future edit to that
+  // list to hand an observer a Sign off button.
+  const mayWrite = canWrite(profile?.role)
+  const canApprove = mayWrite && !!profile && APPROVER_ROLES.includes(profile.role)
 
   const [float, setFloat] = useState('')
   const [counted, setCounted] = useState('')
@@ -71,6 +77,8 @@ export function TillPage() {
         subtitle="Count what you took, hand it over, and sign off the day."
       />
 
+      {!mayWrite && <ObserverNotice what="cash-drawer sessions" />}
+
       {flash && (
         <div className="mb-4 flex items-center gap-2 rounded-xl border border-money-100 bg-money-50 px-4 py-3 text-sm text-money-800">
           <IconCheck /> {flash}
@@ -96,7 +104,9 @@ export function TillPage() {
                          onChange={(e) => setFloat(e.target.value.replace(/[^\d.]/g, ''))}
                          placeholder="0" className={inputClass} />
                 </Field>
-                <Button onClick={() => open.mutate()} disabled={open.isPending}>Open drawer</Button>
+                {mayWrite && (
+                  <Button onClick={() => open.mutate()} disabled={open.isPending}>Open drawer</Button>
+                )}
               </div>
             </div>
           )}
@@ -142,7 +152,7 @@ export function TillPage() {
                 )}
 
                 <Button className="mt-4 w-full" tone={variance === 0 ? 'money' : 'due'}
-                        disabled={counted === '' || close.isPending}
+                        disabled={!mayWrite || counted === '' || close.isPending}
                         onClick={() => close.mutate()}>
                   {close.isPending ? 'Closing…' : 'Close drawer'}
                 </Button>

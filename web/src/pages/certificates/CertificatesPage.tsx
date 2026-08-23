@@ -6,6 +6,9 @@ import {
 import { CERT_TYPES, CERT_LABELS } from '@/lib/constants'
 import { fmtDate, todayISO } from '@/lib/format'
 import { CertificatePrint, type CertificatePrintData } from './CertificatePrint'
+import { useAuth } from '@/auth/AuthProvider'
+import { canWrite } from '@/auth/roles'
+import { ObserverNotice } from '@/components/ObserverNotice'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 const CONDUCTS = ['Excellent', 'Very Good', 'Good', 'Satisfactory']
@@ -21,6 +24,11 @@ export function CertificatesPage() {
   const [conduct, setConduct] = useState('Good')
   const [remarks, setRemarks] = useState('')
   const [print, setPrint] = useState<CertificatePrintData | null>(null)
+  const { profile } = useAuth()
+  // Issuing a certificate takes a serial number that can never be reused, so an
+  // observer does not get the form at all. Reprinting one already issued reads a
+  // frozen snapshot and changes nothing, so that stays.
+  const mayWrite = canWrite(profile?.role)
 
   const results = useQuery({ queryKey: ['certStudentSearch', term], queryFn: () => searchStudents(term), enabled: term.trim().length >= 2 && !student })
   const register = useQuery({ queryKey: ['certificates'], queryFn: () => listCertificates(50) })
@@ -57,7 +65,10 @@ export function CertificatesPage() {
     <div className="max-w-3xl">
       <h1 className="text-xl font-semibold text-slate-800">Certificates</h1>
 
+      {!mayWrite && <ObserverNotice what="certificates already issued" />}
+
       {/* Issue */}
+      {mayWrite && (
       <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
         <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Issue a certificate</div>
 
@@ -130,6 +141,7 @@ export function CertificatesPage() {
           </div>
         )}
       </div>
+      )}
 
       {/* Register */}
       <div className="mt-6">

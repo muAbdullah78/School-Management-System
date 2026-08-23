@@ -26,6 +26,9 @@ import {
   EmptyState, money,
 } from '@/components/ui'
 import { IconWallet, IconAlert, IconCheck, IconReports } from '@/components/icons'
+import { useAuth } from '@/auth/AuthProvider'
+import { canWrite } from '@/auth/roles'
+import { ObserverNotice } from '@/components/ObserverNotice'
 
 const METHODS = ['cash', 'bank_transfer', 'bank_challan', 'jazzcash', 'easypaisa', 'other']
 
@@ -56,6 +59,8 @@ function ProfitRow({ s, label }: { s: FinanceSummary; label: string }) {
 
 export function AccountsPage() {
   const qc = useQueryClient()
+  const { profile } = useAuth()
+  const mayWrite = canWrite(profile?.role)
   const [tab, setTab] = useState<'overview' | 'expense' | 'income'>('overview')
   const [from, setFrom] = useState(firstOfMonth())
   const [to, setTo] = useState(todayStr())
@@ -140,13 +145,20 @@ export function AccountsPage() {
         subtitle="What came in, what went out, and what the school kept."
       />
 
+      {!mayWrite && <ObserverNotice what="expenses and income" />}
+
       <div className="mb-5 flex gap-1 overflow-x-auto border-b border-slate-200">
         {(
-          [
-            ['overview', 'Overview'],
-            ['expense', 'Record expense'],
-            ['income', 'Other income'],
-          ] as const
+          // The two entry tabs are hidden from an observer rather than shown
+          // with a dead Save button. Overview is the whole point of the module
+          // for that role: what came in, what went out, what the school kept.
+          mayWrite
+            ? ([
+                ['overview', 'Overview'],
+                ['expense', 'Record expense'],
+                ['income', 'Other income'],
+              ] as const)
+            : ([['overview', 'Overview']] as const)
         ).map(([k, l]) => (
           <button
             key={k}

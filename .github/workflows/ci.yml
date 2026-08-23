@@ -558,6 +558,26 @@ jobs:
         # names the line and exits 1.
         run: python3 ./supabase/check-import-keys.py
 
+      - name: Can an observer write anywhere?
+        # `readonly` reads everything a staff member reads and writes nothing.
+        # The read half rests on ONE helper —
+        #
+        #   may_view(roles) := has_role(roles) or has_role('readonly')
+        #
+        # — and the whole guarantee is that the helper never reaches a write. It
+        # is one replace() away from doing so, and the change would look exactly
+        # like the forty-odd correct ones around it. A code review does not
+        # reliably catch that; the catalogue does.
+        #
+        # It also refuses to pass when may_view is used in fewer than thirty
+        # places. A migration that dropped the helper and reverted every read gate
+        # would otherwise pass by having nothing left to find — and would silently
+        # put `readonly` back to seeing empty screens.
+        #
+        # Verified by pointing students_write at may_view and confirming this
+        # names the policy and exits 1.
+        run: python3 ./supabase/check-readonly-writes.py
+
       - name: Reports — does the statement agree with the Accounts screen?
         # Assertion 6 is the point of this suite: the debit-and-credit statement
         # must net to the same profit fn_finance_summary reports for the same
@@ -782,6 +802,33 @@ jobs:
         # the unmarked papers out of its denominator AND take no position. One
         # without the others is the original defect with a label on it.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/exam_computation.sql
+
+      - name: The observer role — can it write anywhere?
+        # `readonly` was incoherent in both directions at once. The dashboard
+        # showed it the school's takings while every screen it could click
+        # through to returned ZERO ROWS, because its SELECT policies named
+        # explicit roles and readonly was not among them. Somebody in that seat
+        # concludes the software has lost the data — and it is the FALLBACK role,
+        # so that was the experience of any invited login whose role nobody set.
+        #
+        # THE WORSE HALF, and the reason assertions 14-19 count rows instead of
+        # catching exceptions: RLS treats the write verbs differently. INSERT with
+        # no matching policy RAISES; UPDATE and DELETE affect ZERO ROWS and raise
+        # NOTHING. Every direct-table write in db.ts checked only `error`, so a
+        # blocked save reported "Saved." over an unchanged record. There is no
+        # exception to assert on — only a row count and the value afterwards.
+        #
+        # Assertion 27 is the trap in the whole approach: fn_may_manage_class and
+        # fn_may_write_school_file are STABLE and look exactly like read gates,
+        # but they AUTHORISE WRITES elsewhere — a teacher's mark entry and a
+        # storage upload policy consult them. If may_view ever reaches either, an
+        # observer can enter marks and overwrite a child's photograph, and
+        # nothing at the call site looks wrong.
+        #
+        # Assertion 29 stops the suite going vacuous: a migration that reverted
+        # every read gate to has_role would pass 25-28 perfectly, by having
+        # nothing left to find.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/readonly_role.sql
 
       - name: Every suite on disk has a step above
         # The gap this closes has already happened twice in this repo, in two

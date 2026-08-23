@@ -153,7 +153,14 @@ with sig(migration, object, present) as (values
                       and prosrc like '%fn_takes_subject%')
          and exists (select 1 from information_schema.columns
                       where table_schema = 'public' and table_name = 'mark_entries'
-                        and column_name = 'practical_marks')))
+                        and column_name = 'practical_marks'))),
+  -- 0059's signature has to be that may_view is IN USE, not merely that it
+  -- exists: a database where the helper is present but no read gate calls it is
+  -- a database where the observer role sees empty screens again.
+  ('0059_readonly_boundary',    'read gates use may_view',
+     (select (select count(*) from pg_proc
+               where pronamespace = 'public'::regnamespace
+                 and prosrc like '%may_view(%') >= 20))
 )
 select migration,
        object                                   as looked_for,

@@ -44,6 +44,47 @@ function unwrap<T>(res: { data: T | null; error: { message: string } | null }): 
   return res.data as T
 }
 
+/**
+ * A write that changed nothing is an ERROR, not a success.
+ *
+ * Row Level Security treats the three write verbs differently, and forgetting
+ * this produced a defect that reads to a school as lost work:
+ *
+ *   INSERT with no matching policy          -> raises
+ *   UPDATE / DELETE with no matching policy -> ZERO ROWS, and no error at all
+ *
+ * So every direct-table write in this file used to be written as
+ * `const { error } = await sb.from(x).update(patch).eq('id', id)` — and `error`
+ * is null when nothing matched. Demonstrated: as a `readonly` login,
+ * `update students set full_name` returned success with zero rows. The app said
+ * "Saved.", the value was unchanged, and reopening the record showed the old one.
+ *
+ * The same silence produced a second, unrelated bug: when the create-teacher
+ * Edge Function is not deployed the fallback path created a login with no
+ * profile row, so the follow-up role update matched nothing, raised nothing, and
+ * the app reported success on a login that could not use the app.
+ *
+ * So: every such statement now carries `.select('id')`, and an empty result
+ * raises. Two real causes, and the message names both, because from outside they
+ * are indistinguishable.
+ *
+ * NOT for RPCs. A SECURITY DEFINER function raises its own errors and reports
+ * what it did, which is why every write that really matters — payments, marks,
+ * leavings, rollovers — goes through one.
+ */
+async function mustWrite(
+  res: { data: unknown[] | null; error: { message: string } | null },
+  what: string,
+): Promise<void> {
+  if (res.error) throw new Error(res.error.message)
+  if (!res.data || res.data.length === 0) {
+    throw new Error(
+      `${what} was not saved. You may not have permission to change it, `
+      + 'or somebody else may have changed it first.',
+    )
+  }
+}
+
 // ---- Reference data ----
 export async function getCurrentSession(): Promise<SessionRow | null> {
   const sb = requireSupabase()
@@ -874,8 +915,9 @@ export async function linkStudents(a: string, b: string, relation: string): Prom
 
 export async function removeStudentLink(linkId: string): Promise<void> {
   const sb = requireSupabase()
-  const { error } = await sb.from('student_links').delete().eq('id', linkId)
-  if (error) throw new Error(error.message)
+  await mustWrite(
+    await sb.from('student_links').delete().eq('id', linkId).select('id'),
+    'That family link')
 }
 
 /** Search students for the admission family-link picker: match name / GR / roll,
@@ -948,8 +990,9 @@ export async function getStudent(studentId: string): Promise<StudentProfile> {
 
 export async function updateStudent(studentId: string, patch: Partial<StudentProfile>): Promise<void> {
   const sb = requireSupabase()
-  const { error } = await sb.from('students').update(patch).eq('id', studentId)
-  if (error) throw new Error(error.message)
+  await mustWrite(
+    await sb.from('students').update(patch).eq('id', studentId).select('id'),
+    'The change to this pupil')
 }
 
 /** Record a child leaving, or coming back.
@@ -1244,8 +1287,9 @@ export async function listClassRoster(sessionId: string, classId: string): Promi
 
 export async function removeExamSubject(id: string): Promise<void> {
   const sb = requireSupabase()
-  const { error } = await sb.from('exam_subjects').delete().eq('id', id)
-  if (error) throw new Error(error.message)
+  await mustWrite(
+    await sb.from('exam_subjects').delete().eq('id', id).select('id'),
+    'Removing that paper')
 }
 
 export async function getMarksheet(examSubjectId: string): Promise<MarksheetRow[]> {
@@ -1496,8 +1540,10 @@ export async function updateSchoolSettings(patch: Partial<SchoolSettingsPatch>):
   // An UPDATE, not an upsert: the settings row is created with the school, so
   // there is nothing to insert — and an upsert here could only ever write a row
   // RLS would reject anyway.
-  const { error } = await sb.from('school_settings').update(patch).eq('school_id', await mySchoolId())
-  if (error) throw new Error(error.message)
+  await mustWrite(
+    await sb.from('school_settings').update(patch)
+      .eq('school_id', await mySchoolId()).select('school_id'),
+    'The school profile')
 }
 
 export async function listSessions(): Promise<SessionFull[]> {
@@ -1581,8 +1627,9 @@ export async function createClass(name: string, levelOrder: number): Promise<voi
 
 export async function setClassActive(id: string, active: boolean): Promise<void> {
   const sb = requireSupabase()
-  const { error } = await sb.from('classes').update({ active }).eq('id', id)
-  if (error) throw new Error(error.message)
+  await mustWrite(
+    await sb.from('classes').update({ active }).eq('id', id).select('id'),
+    'The change to this class')
 }
 
 export async function createSection(classId: string, name: string, sortOrder = 0): Promise<void> {
@@ -1598,14 +1645,21 @@ export async function listProfiles(): Promise<ProfileRow[]> {
 
 export async function updateProfileRole(id: string, role: string): Promise<void> {
   const sb = requireSupabase()
-  const { error } = await sb.from('profiles').update({ role }).eq('id', id)
-  if (error) throw new Error(error.message)
+  // The one that made a broken teacher login look like a working one: when the
+  // create-teacher Edge Function is not deployed, the fallback used to create the
+  // auth user with no school_id, so no profile row existed and this update matched
+  // nothing — silently. The signUp now passes school_id; this makes the failure
+  // loud if it ever happens again.
+  await mustWrite(
+    await sb.from('profiles').update({ role }).eq('id', id).select('id'),
+    'That login\u2019s role')
 }
 
 export async function setProfileActive(id: string, active: boolean): Promise<void> {
   const sb = requireSupabase()
-  const { error } = await sb.from('profiles').update({ active }).eq('id', id)
-  if (error) throw new Error(error.message)
+  await mustWrite(
+    await sb.from('profiles').update({ active }).eq('id', id).select('id'),
+    'The change to that login')
 }
 
 // ---- Staff ----
@@ -1813,8 +1867,9 @@ export async function createStaff(input: StaffInput): Promise<string> {
 
 export async function updateStaff(id: string, patch: Partial<StaffInput>): Promise<void> {
   const sb = requireSupabase()
-  const { error } = await sb.from('staff').update(patch).eq('id', id)
-  if (error) throw new Error(error.message)
+  await mustWrite(
+    await sb.from('staff').update(patch).eq('id', id).select('id'),
+    'The change to this staff member')
 }
 
 // setStaffStatus is deliberately gone. It wrote `status = 'inactive'` and
@@ -1839,8 +1894,10 @@ export async function listSectionTeachers(classId: string): Promise<SectionTeach
 
 export async function assignClassTeacher(sectionId: string, staffId: string | null): Promise<void> {
   const sb = requireSupabase()
-  const { error } = await sb.from('sections').update({ class_teacher_id: staffId }).eq('id', sectionId)
-  if (error) throw new Error(error.message)
+  await mustWrite(
+    await sb.from('sections').update({ class_teacher_id: staffId })
+      .eq('id', sectionId).select('id'),
+    'The class teacher')
 }
 
 // ---- Teacher portal: assignments, self-attendance, check-in ----
@@ -1885,8 +1942,9 @@ export async function assignTeacher(
 }
 export async function removeTeacherAssignment(id: string): Promise<void> {
   const sb = requireSupabase()
-  const { error } = await sb.from('teacher_assignments').delete().eq('id', id)
-  if (error) throw new Error(error.message)
+  await mustWrite(
+    await sb.from('teacher_assignments').delete().eq('id', id).select('id'),
+    'Removing that assignment')
 }
 
 /** Assign (or clear, staffId=null) a class teacher for a (class, section-or-null)
@@ -2013,13 +2071,31 @@ export async function createTeacherLogin(input: CreateTeacherInput): Promise<{ i
   const tmp = createClient(config.supabaseUrl!, config.supabaseAnonKey!, {
     auth: { persistSession: false, autoRefreshToken: false, storageKey: 'provision-teacher' },
   })
+  // school_id AND role in the metadata. Without school_id, handle_new_user
+  // returns early and creates NO profile row at all — so the updateProfileRole
+  // below matched nothing, raised nothing (RLS makes a blocked or missing-row
+  // UPDATE affect zero rows silently), and this function reported success on a
+  // login that could then sign in and be told "This login is not attached to a
+  // school." With the role there too, the profile is created ACTIVE and correct
+  // in one step rather than patched afterwards.
+  const schoolId = await mySchoolId()
   const { data: su, error: suErr } = await tmp.auth.signUp({
-    email, password: input.password, options: { data: { full_name: fullName || email.split('@')[0] } },
+    email,
+    password: input.password,
+    options: {
+      data: {
+        full_name: fullName || email.split('@')[0],
+        school_id: schoolId,
+        role,
+      },
+    },
   })
   if (suErr) throw new Error(suErr.message)
   const newId = su.user?.id
   if (!newId) throw new Error('Could not create the login.')
 
+  // Still set explicitly: handle_new_user only honours a role it recognises, and
+  // mustWrite now makes a failure here loud instead of silent.
   await updateProfileRole(newId, role)
 
   // If the project still requires email confirmation, the teacher can't sign in
@@ -3320,11 +3396,10 @@ export async function saveMessageSetting(
   templateKey: string, patch: { body?: string; enabled?: boolean },
 ): Promise<void> {
   const sb = requireSupabase()
-  const { error } = await sb
-    .from('message_templates')
-    .update(patch)
-    .eq('template_key', templateKey)
-  if (error) throw new Error(error.message)
+  await mustWrite(
+    await sb.from('message_templates').update(patch)
+      .eq('template_key', templateKey).select('template_key'),
+    'That message template')
 }
 
 /** Put one template's original wording back. Returns the restored text. */

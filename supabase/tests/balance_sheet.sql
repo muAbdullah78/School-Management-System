@@ -431,13 +431,27 @@ begin
     raise notice 'PASS  26 an admin_clerk is refused, matching fn_finance_summary';
   end;
 
+  -- REVERSED by 0059, on purpose, and kept rather than deleted so the decision
+  -- is recorded where somebody will trip over it.
+  --
+  -- `readonly` used to be refused this. It is now allowed, because the role was
+  -- settled as an OBSERVER — a trustee, an auditor at year end, the proprietor's
+  -- second-in-command — and the balance sheet is precisely the document such a
+  -- person is there to read. It writes nothing.
+  --
+  -- Note what did NOT change: assertion 26 above. An admin_clerk is still
+  -- refused. Breadth of READING and a role in operations are different axes, so
+  -- an observer being more widely-read than a clerk is coherent rather than a
+  -- privilege escalation. See docs/READONLY-DESIGN.md.
   perform set_config('test.uid',
     (select id::text from public.profiles where full_name = 'BS Readonly'), false);
   begin
     perform pg_temp.bs(current_date);
-    raise exception 'FAIL  27 a readonly user read the balance sheet';
+    raise notice 'PASS  27 a readonly OBSERVER reads the balance sheet — the document '
+                 'the role exists for';
   exception when insufficient_privilege then
-    raise notice 'PASS  27 a readonly user is refused';
+    raise exception 'FAIL  27 a readonly observer was refused the balance sheet — '
+                    '0059 grants it deliberately; check may_view reached fn_report_balance_sheet';
   end;
 
   perform set_config('test.uid',

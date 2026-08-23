@@ -7,7 +7,8 @@ import {
   getStaffAttendanceSummary, getStaffMonthAttendance, createTeacherLogin,
   type StaffRow, type StaffInput, type StaffRosterRow, type StaffLeaveResult,
 } from '@/lib/db'
-import { ROLE_LABELS, ROLES, type Role } from '@/auth/roles'
+import { ROLE_LABELS, ROLES, canWrite, type Role } from '@/auth/roles'
+import { ObserverNotice } from '@/components/ObserverNotice'
 import { ATTENDANCE_SHORT } from '@/lib/constants'
 import { fmtDate, todayISO } from '@/lib/format'
 import { useAuth } from '@/auth/AuthProvider'
@@ -56,7 +57,11 @@ const BLANK: StaffInput = { full_name: '', designation: '', employee_no: '', mob
 function StaffTab() {
   const qc = useQueryClient()
   const { profile } = useAuth()
-  const canLink = !!profile && ['owner', 'principal'].includes(profile.role)
+  // An observer reads the roster and changes nothing on it. canLink is ANDed
+  // with mayWrite so a future edit to that list cannot hand an observer the
+  // login dropdown.
+  const mayWrite = canWrite(profile?.role)
+  const canLink = mayWrite && !!profile && ['owner', 'principal'].includes(profile.role)
   const staff = useQuery({ queryKey: ['staff'], queryFn: getStaffRoster })
   const profiles = useQuery({ queryKey: ['profiles'], queryFn: listProfiles })
   const [editing, setEditing] = useState<string | null>(null) // staff id, or 'new'
@@ -139,7 +144,9 @@ function StaffTab() {
 
   return (
     <div className="space-y-5">
-      {!editing && (
+      {!mayWrite && <ObserverNotice what="staff records" />}
+
+      {!editing && mayWrite && (
         <div className="flex flex-wrap gap-2">
           <button onClick={() => { setEditing('new'); setForm(BLANK) }}
             className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">+ Add staff</button>
@@ -310,7 +317,11 @@ function StaffTab() {
                       onClose={() => login.mutate({ id: s.id, active: false, reason: null })} />
                   </td>
                   <td className="px-3 py-2 text-right">
-                    <button onClick={() => startEdit(s)} className="mr-2 text-sm text-brand-700 hover:underline">Edit</button>
+                    {/* Edit is a write; Attendance and ID card are reads and an
+                        observer keeps both. */}
+                    {mayWrite && (
+                      <button onClick={() => startEdit(s)} className="mr-2 text-sm text-brand-700 hover:underline">Edit</button>
+                    )}
                     <button onClick={() => setAttFor(s)} className="mr-2 text-sm text-brand-700 hover:underline">Attendance</button>
                     <button onClick={() => setIdCard(s)} className="mr-2 text-sm text-brand-700 hover:underline">ID card</button>
                     {canLink && (here ? (

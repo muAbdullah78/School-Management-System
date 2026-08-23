@@ -219,6 +219,41 @@ select 'exam computation (0058)',
        then 'PASS' else 'FAIL — run migrations/0058_exam_computation.sql' end
 
 union all
+select 'the observer role (0059)',
+       case when exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                          where n.nspname='public' and p.proname='may_view'
+                            and p.provolatile in ('s','i'))
+                 -- In use, not merely present. A database where may_view exists
+                 -- but no read gate calls it is a database where `readonly` sees
+                 -- empty screens again, which is the defect 0059 removed.
+                 and (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                       where n.nspname='public' and p.prosrc like '%may_view(%') >= 20
+                 -- THE ONE THAT MATTERS. An observer must not be able to write.
+                 -- A write policy consulting may_view would let one change a
+                 -- child's record, and RLS would let it through with nothing
+                 -- looking different.
+                 and not exists (
+                   select 1 from pg_policy pol
+                   join pg_class c on c.oid = pol.polrelid
+                   join pg_namespace n on n.oid = c.relnamespace
+                   where n.nspname='public' and pol.polcmd <> 'r'
+                     and (coalesce(pg_get_expr(pol.polqual, pol.polrelid), '')
+                       || coalesce(pg_get_expr(pol.polwithcheck, pol.polrelid), ''))
+                        like '%may_view(%')
+                 and not exists (
+                   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                   where n.nspname='public' and p.provolatile='v'
+                     and p.prosrc like '%may_view(%')
+                 -- The two permission predicates that LOOK like reads but
+                 -- authorise writes elsewhere must still gate on has_role.
+                 and not exists (
+                   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                   where n.nspname='public'
+                     and p.proname in ('fn_may_manage_class','fn_may_write_school_file')
+                     and p.prosrc like '%may_view(%')
+       then 'PASS' else 'FAIL — run migrations/0059_readonly_boundary.sql' end
+
+union all
 select 'price plans loaded',
        case when (select count(*) from public.plans) = 4
        then 'PASS' else 'FAIL — re-run bundle 1' end

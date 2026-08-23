@@ -1,4 +1,7 @@
 import { useState } from 'react'
+import { useAuth } from '@/auth/AuthProvider'
+import { canWrite } from '@/auth/roles'
+import { ObserverNotice } from '@/components/ObserverNotice'
 import { FamilyCollect } from './FamilyCollect'
 import { CollectPayment } from './CollectPayment'
 import { BulkCollect } from './BulkCollect'
@@ -11,26 +14,34 @@ import { PendingClearances } from './PendingClearances'
 // that runs two hundred times a day. The per-student screen stays as "Single
 // student" for the cases that genuinely are one child — a one-off charge, a
 // correction — but it is no longer the way a fee is normally taken.
+// `writes` marks a tab whose whole purpose is to change something. An observer
+// is shown the other tabs and not these, rather than being shown a counter with
+// a dead Take Payment button — a form that cannot submit reads as a fault in the
+// software, and its Save button used to report success while doing nothing.
 const TABS = [
-  { key: 'collect', label: 'Collect' },
+  { key: 'collect', label: 'Collect', writes: true },
   // The first ten days of a month are a class-at-a-time job, not a
   // family-at-a-time one: 400 collections used to mean 400 searches.
-  { key: 'bulk', label: 'Bulk collect' },
-  { key: 'single', label: 'Single student' },
-  { key: 'generate', label: 'Generate Challans' },
-  { key: 'discounts', label: 'Discounts' },
-  { key: 'pending', label: 'Pending' },
-  { key: 'defaulters', label: 'Defaulters' },
+  { key: 'bulk', label: 'Bulk collect', writes: true },
+  { key: 'single', label: 'Single student', writes: true },
+  { key: 'generate', label: 'Generate Challans', writes: true },
+  { key: 'discounts', label: 'Discounts', writes: true },
+  { key: 'pending', label: 'Pending', writes: false },
+  { key: 'defaulters', label: 'Defaulters', writes: false },
 ] as const
 
 type TabKey = (typeof TABS)[number]['key']
 
 export function FeesPage() {
-  const [tab, setTab] = useState<TabKey>('collect')
+  const { profile } = useAuth()
+  const mayWrite = canWrite(profile?.role)
+  const tabs = TABS.filter((t) => mayWrite || !t.writes)
+  const [tab, setTab] = useState<TabKey>(mayWrite ? 'collect' : 'defaulters')
   return (
     <div>
+      {!mayWrite && <ObserverNotice what="fee records" />}
       <div className="mb-5 flex gap-1 overflow-x-auto border-b border-slate-200">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}

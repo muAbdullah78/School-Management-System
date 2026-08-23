@@ -16,7 +16,8 @@ import {
 } from '@/lib/constants'
 import { fmtPKR, fmtDate, waLink, todayISO } from '@/lib/format'
 import { useAuth } from '@/auth/AuthProvider'
-import { APPROVER_ROLES, ADMIN_ROLES, type Role } from '@/auth/roles'
+import { APPROVER_ROLES, ADMIN_ROLES, canWrite, type Role } from '@/auth/roles'
+import { ObserverNotice } from '@/components/ObserverNotice'
 import { Receipt, type ReceiptData } from '@/components/Receipt'
 import { useSchoolName } from '@/hooks/useSchoolName'
 import { ChallanPrint } from '@/pages/fees/ChallanPrint'
@@ -56,9 +57,17 @@ export function StudentProfile({ studentId, onBack, onOpen }: { studentId: strin
   const { profile } = useAuth()
   const qc = useQueryClient()
   const role = profile?.role
-  const canEdit = !!role && ADMIN_ROLES.includes(role) && role !== 'readonly' && role !== 'accountant'
+  // canWrite() rather than `role !== 'readonly'` spelled out here: the scattered
+  // form is how one screen keeps its Save button. The accountant exclusion is a
+  // separate rule — they handle money, not bio-data.
+  const mayWrite = canWrite(role)
+  const canEdit = !!role && ADMIN_ROLES.includes(role) && mayWrite && role !== 'accountant'
   const canStatus = !!role && APPROVER_ROLES.includes(role)
-  const canFinance = !!role && FINANCE_ROLES.includes(role)
+  // Two different questions. An observer READS the fee ledger — that is the
+  // point of the role since 0059 — and takes no payment, waives no fine and
+  // proposes no discount.
+  const canFinanceView = !!role && (FINANCE_ROLES.includes(role) || role === 'readonly')
+  const canFinance = !!role && FINANCE_ROLES.includes(role) && mayWrite
 
   const student = useQuery({ queryKey: ['student', studentId], queryFn: () => getStudent(studentId) })
   const enroll = useQuery({ queryKey: ['enrollments', studentId], queryFn: () => getStudentEnrollments(studentId) })
@@ -114,6 +123,8 @@ export function StudentProfile({ studentId, onBack, onOpen }: { studentId: strin
         </div>
       </div>
 
+      {!mayWrite && <ObserverNotice what="this pupil's record" />}
+
       <div className="mt-4 flex gap-1 border-b border-slate-200">
         {TABS.map((t) => (
           <button key={t} onClick={() => setTab(t)}
@@ -128,10 +139,11 @@ export function StudentProfile({ studentId, onBack, onOpen }: { studentId: strin
           <Overview student={s} guardians={guardians.data ?? []} enrollments={enroll.data ?? []} canEdit={canEdit} onOpen={onOpen} />
         )}
         {tab === 'Fees' && (
-          !canFinance
+          !canFinanceView
             ? <p className="text-sm text-slate-500">You don’t have access to fees.</p>
             : cur
-              ? <FeesTab studentId={studentId} student={s} enrollment={cur} canApprove={canStatus} />
+              ? <FeesTab studentId={studentId} student={s} enrollment={cur}
+                          canApprove={canStatus} canCollect={canFinance} />
               : <p className="text-sm text-slate-500">No current enrolment — nothing to bill yet.</p>
         )}
         {tab === 'Attendance & Tests' && (
@@ -639,8 +651,13 @@ interface MonthRow {
 }
 
 function FeesTab({
-  studentId, student, enrollment, canApprove,
-}: { studentId: string; student: Student; enrollment: EnrollmentInfo; canApprove: boolean }) {
+  studentId, student, enrollment, canApprove, canCollect,
+}: {
+  studentId: string; student: Student; enrollment: EnrollmentInfo
+  canApprove: boolean
+  /** False for an observer: the ledger is shown, the money buttons are not. */
+  canCollect: boolean
+}) {
   const qc = useQueryClient()
   const balance = useQuery({ queryKey: ['balance', studentId], queryFn: () => getStudentBalance(studentId) })
   const invoices = useQuery({ queryKey: ['invoices', studentId], queryFn: () => getStudentInvoices(studentId) })
@@ -736,14 +753,16 @@ function FeesTab({
           <div className={`mt-1 text-2xl font-semibold ${bal > 0 ? 'text-red-600' : bal < 0 ? 'text-sky-600' : 'text-emerald-600'}`}>
             {balance.isLoading ? '…' : fmtPKR(bal)}
           </div>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <button onClick={() => setPay({ defaultAmount: bal > 0 ? bal : 0, note: '' })}
-              className="rounded bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700">Record payment</button>
-            {bal > 0 && (
-              <button onClick={() => setSettle(true)}
-                className="rounded border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50">Settle balance</button>
-            )}
-          </div>
+          {canCollect && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button onClick={() => setPay({ defaultAmount: bal > 0 ? bal : 0, note: '' })}
+                className="rounded bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700">Record payment</button>
+              {bal > 0 && (
+                <button onClick={() => setSettle(true)}
+                  className="rounded border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50">Settle balance</button>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -751,9 +770,11 @@ function FeesTab({
       <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
         <div className="flex items-center justify-between">
           <div className="text-xs uppercase tracking-wide text-slate-500">Discount on fee</div>
-          <div className="flex gap-3">
-            <button onClick={() => setShowDiscount(true)} className="text-sm text-brand-700 hover:underline">Propose discount</button>
-          </div>
+          {canCollect && (
+            <div className="flex gap-3">
+              <button onClick={() => setShowDiscount(true)} className="text-sm text-brand-700 hover:underline">Propose discount</button>
+            </div>
+          )}
         </div>
         {discounts.isLoading ? <p className="mt-2 text-sm text-slate-400">…</p> : (discounts.data?.length ?? 0) === 0 ? (
           <p className="mt-2 text-sm text-slate-400">No discount. The full monthly fee applies.</p>
@@ -782,6 +803,7 @@ function FeesTab({
               onPay={() => setPay({ month: r.key, billMonthISO: r.invoice ? undefined : monthFirst(r.key), defaultAmount: r.due, note: `Fee · ${r.label}` })}
               onDelay={() => setDefer({ invoiceId: r.invoice?.invoice_id, billMonthISO: r.invoice ? undefined : monthFirst(r.key), label: r.label })}
               onUndoDefer={r.invoice ? () => { undoDefer(r.invoice!.invoice_id).then(refresh) } : undefined}
+              canCollect={canCollect}
               onPrint={r.invoice ? () => { void printOne(r.invoice!.invoice_id) } : undefined}
             />
           ))}
@@ -855,13 +877,17 @@ function FeesTab({
 }
 
 function MonthLine({
-  row, enrollment, onPay, onDelay, onUndoDefer, onPrint,
+  row, enrollment, onPay, onDelay, onUndoDefer, onPrint, canCollect = true,
 }: {
   row: MonthRow; enrollment: EnrollmentInfo
   onPay: () => void; onDelay: () => void; onUndoDefer?: () => void
   /** Present only for a month that has actually been billed — there is no
    *  challan to reprint for a month the school has not issued one for. */
   onPrint?: () => void
+  /** False for an observer. Printing a challan stays: it reads a frozen row
+   *  and writes nothing, and a trustee checking what a parent was billed is
+   *  exactly what the role is for. */
+  canCollect?: boolean
 }) {
   void enrollment
   const paidDate = row.invoice?.status === 'paid' ? row.invoice.due_date : null
@@ -879,13 +905,13 @@ function MonthLine({
         )}
       </div>
       <div className="flex gap-2">
-        {(row.state === 'unpaid' || row.state === 'partial' || row.state === 'unbilled') && (
+        {canCollect && (row.state === 'unpaid' || row.state === 'partial' || row.state === 'unbilled') && (
           <>
             <button onClick={onPay} className="rounded bg-brand-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-brand-700">Mark paid</button>
             <button onClick={onDelay} className="rounded border border-slate-300 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50">Delay</button>
           </>
         )}
-        {row.state === 'deferred' && (
+        {canCollect && row.state === 'deferred' && (
           <>
             <button onClick={onPay} className="rounded bg-brand-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-brand-700">Mark paid</button>
             {onUndoDefer && <button onClick={onUndoDefer} className="rounded border border-slate-300 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50">Undo delay</button>}
