@@ -223,11 +223,24 @@ select 'the observer role (0059)',
        case when exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
                           where n.nspname='public' and p.proname='may_view'
                             and p.provolatile in ('s','i'))
-                 -- In use, not merely present. A database where may_view exists
-                 -- but no read gate calls it is a database where `readonly` sees
-                 -- empty screens again, which is the defect 0059 removed.
-                 and (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-                       where n.nspname='public' and p.prosrc like '%may_view(%') >= 20
+                 -- EXACT, not a threshold. Every STABLE security-definer
+                 -- function that gates on a role must use may_view — the two
+                 -- write-authorising predicates below excepted.
+                 --
+                 -- A count threshold was the first version of this line and it
+                 -- was not good enough. Proven, not guessed: on the upgrade path,
+                 -- re-applying bundle 5 after 0059 restores SEVEN has_role read
+                 -- gates from migrations 0050-0056, and a `>= 20` check passes
+                 -- happily on the remaining forty. Those seven screens would
+                 -- silently return zero rows to an observer again — the exact
+                 -- defect 0059 exists to remove, reintroduced with verify.sql
+                 -- reporting PASS. Only an exact check sees a PARTIAL revert.
+                 and not exists (
+                   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                   where n.nspname='public' and p.prosecdef and p.provolatile in ('s','i')
+                     and p.prosrc like '%has_role(%'
+                     and p.proname not in ('fn_may_manage_class',
+                                           'fn_may_write_school_file', 'may_view'))
                  -- THE ONE THAT MATTERS. An observer must not be able to write.
                  -- A write policy consulting may_view would let one change a
                  -- child's record, and RLS would let it through with nothing

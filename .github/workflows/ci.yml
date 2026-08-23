@@ -225,20 +225,43 @@ jobs:
             grep -q "$m.*MISSING" /tmp/detect.out || { echo "::error::detect.sql failed to spot $m"; exit 1; }
           done
 
-          echo "── the repair, then bundle 5 again so the newer definitions win back"
-          # ONLY the files detect.sql marked MISSING, in order. Applying the
-          # whole repair directory blindly is what the school was told to do the
-          # first time and it fails on its first statement — reproduced here,
-          # deliberately, before this loop was written:
+          echo "── the repair, driven by the ACTION COLUMN detect.sql prints"
+          # ONLY the files detect.sql marked MISSING, in the order it names them.
+          # Applying the whole repair directory blindly is what the school was
+          # told to do the first time and it fails on its first statement —
+          # reproduced here, deliberately, before this loop was written:
           #   ERROR: column "effective_from" of relation "fee_structures"
           #          already exists
           # A repair must be driven by what the database is missing, never by a
           # fixed list.
-          awk -F'|' '/MISSING/ {gsub(/ /,"",$1); print $1}' /tmp/detect.out | sort | while read -r m; do
-            echo "   applying supabase/repair/$m.sql"
-            psql -v ON_ERROR_STOP=1 -q --single-transaction -f "supabase/repair/$m.sql"
+          #
+          # It must also be driven by the PATH detect.sql prints, not by a path
+          # reconstructed from the migration name. This loop used to do the
+          # latter — `supabase/repair/$name.sql` — and broke the moment detect.sql
+          # was extended past 0049, because 0050 onward have no repair file and
+          # their action column says `run supabase/migrations/...` instead:
+          #   psql: error: supabase/repair/0057_photos_and_logo.sql:
+          #                No such file or directory
+          # The job was ignoring the very instruction it exists to test. Reading
+          # field 4 makes it follow exactly what a school is shown.
+          awk -F'|' '/MISSING/ {
+            name = $1; gsub(/ /, "", name)
+            act  = $4; sub(/^ *run */, "", act); gsub(/ *$/, "", act)
+            print name "\t" act
+          }' /tmp/detect.out | sort | while IFS=$'\t' read -r m path; do
+            echo "   applying $path"
+            test -f "$path" || { echo "::error::detect.sql named a file that does not exist: $path"; exit 1; }
+            psql -v ON_ERROR_STOP=1 -q --single-transaction -f "$path"
           done
+
+          # Then the LAST TWO bundles in order, so the newest definitions win
+          # back. Bundle 5 alone is not enough any more and getting this wrong is
+          # silent: the repair files for 0035-0049 restore definitions that later
+          # migrations superseded, and bundle 5 carries 0050-0056 — several of
+          # whose function bodies 0059 rewrites. Re-running bundle 5 LAST would
+          # put the has_role read gates back and quietly undo the observer role.
           psql -v ON_ERROR_STOP=1 -q --single-transaction -f supabase/bundles/5_search.sql
+          psql -v ON_ERROR_STOP=1 -q --single-transaction -f supabase/bundles/6_photos_and_records.sql
 
           echo "── verify.sql, as the school runs it"
           psql -v ON_ERROR_STOP=1 -f supabase/verify.sql | tee /tmp/upgrade.out

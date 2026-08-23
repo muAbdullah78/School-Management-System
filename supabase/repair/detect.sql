@@ -154,13 +154,21 @@ with sig(migration, object, present) as (values
          and exists (select 1 from information_schema.columns
                       where table_schema = 'public' and table_name = 'mark_entries'
                         and column_name = 'practical_marks'))),
-  -- 0059's signature has to be that may_view is IN USE, not merely that it
-  -- exists: a database where the helper is present but no read gate calls it is
-  -- a database where the observer role sees empty screens again.
-  ('0059_readonly_boundary',    'read gates use may_view',
-     (select (select count(*) from pg_proc
-               where pronamespace = 'public'::regnamespace
-                 and prosrc like '%may_view(%') >= 20))
+  -- 0059's signature is that NO read gate is left on has_role — exact, not a
+  -- count. A threshold was the first version and it misses a PARTIAL revert:
+  -- re-applying bundle 5 after 0059 restores seven has_role gates from
+  -- migrations 0050-0056, and a `>= 20` check passes on the remaining forty
+  -- while those seven screens silently return zero rows to an observer again.
+  ('0059_readonly_boundary',    'no read gate left on has_role',
+     (select exists (select 1 from pg_proc where proname = 'may_view'
+                      and pronamespace = 'public'::regnamespace)
+         and not exists (
+           select 1 from pg_proc
+            where pronamespace = 'public'::regnamespace
+              and prosecdef and provolatile in ('s','i')
+              and prosrc like '%has_role(%'
+              and proname not in ('fn_may_manage_class', 'fn_may_write_school_file',
+                                  'may_view'))))
 )
 select migration,
        object                                   as looked_for,

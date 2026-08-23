@@ -108,7 +108,32 @@ def main() -> int:
             f'VOLATILE function mentions may_view/readonly: {name} — '
             'a volatile function can write')
 
-    # ---- 3. The check is not vacuous ----------------------------------------
+    # ---- 3. No read gate left behind — EXACT, not a threshold ---------------
+    # A count threshold was the first version of this and it is not good enough.
+    # On the upgrade path, re-applying bundle 5 after 0059 restores SEVEN
+    # has_role read gates from migrations 0050-0056; a `>= 30` check passes
+    # happily on the remaining forty while those seven screens silently return
+    # zero rows to an observer again. Only naming the stragglers sees a PARTIAL
+    # revert. Proven by running the upgrade job, not reasoned about.
+    stragglers = q("""
+        select p.proname
+          from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+         where n.nspname = 'public' and p.prosecdef and p.provolatile in ('s','i')
+           and p.prosrc like '%has_role(%'
+           and p.proname not in ('fn_may_manage_class', 'fn_may_write_school_file',
+                                 'may_view')
+         order by 1
+    """)
+    if stragglers:
+        print(f'\n{len(stragglers)} READ GATE(S) STILL ON has_role:', file=sys.stderr)
+        for name in stragglers:
+            print(f'  {name}', file=sys.stderr)
+        print('\nEach of these is a screen that returns zero rows to a `readonly` '
+              'login — the defect 0059 removed. If a bundle or migration was '
+              're-applied out of order, re-run migrations/0059_readonly_boundary.sql: '
+              'its rewrite is idempotent.', file=sys.stderr)
+        return 1
+
     uses = int(q("""
         select (
           (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -121,12 +146,14 @@ def main() -> int:
         )::text
     """)[0])
 
+    # Kept as a floor as well as the exact check above: if somebody deleted
+    # may_view AND every read gate that used it, the exact check would find
+    # nothing to complain about by having nothing left to look at.
     if uses < MIN_USES:
         print(f'\nmay_view is used in only {uses} place(s), expected at least {MIN_USES}.',
               file=sys.stderr)
-        print('Either the read gates were reverted to has_role — in which case the '
-              '`readonly` role no longer reads anything and the screens are empty '
-              'again — or this check has been made vacuous. Both are failures.',
+        print('The read gates were removed rather than reverted, so the exact check '
+              'above found nothing. `readonly` now reads nothing at all.',
               file=sys.stderr)
         return 1
 
