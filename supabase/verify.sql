@@ -3,7 +3,7 @@
 --
 -- Read-only and safe to run any time, as often as you like.
 -- Every row should say PASS. A failing row names what is MISSING, not a bundle to
--- re-run: see supabase/bundles/README.md for which file supplies what, and why
+-- re-run: run supabase/repair/detect.sql to see exactly what a database is missing, and why
 -- 'just re-run the bundle' is not always the right advice.
 --
 -- These are structural checks, not counts of things that happen to exist today
@@ -65,7 +65,7 @@ union all
 select 'daily operations (0038-0046)',
        coalesce(
          'FAIL — missing: ' || string_agg(w.n, ', ')
-           || ' — if you installed before Aug 2026 run supabase/repair/0035_0049.sql',
+           || ' — run supabase/repair/detect.sql to see exactly which migrations you are missing',
          'PASS')
   from (values ('fn_counter_summary'),        -- 0038, bundle 3
                ('fn_challan'),                -- 0039, bundle 3

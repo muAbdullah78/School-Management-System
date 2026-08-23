@@ -138,20 +138,20 @@ jobs:
         # empty database. That is not how an existing school upgrades, and the
         # upgrade path was broken for months without one red tick.
         #
-        # What happened. Bundle 3's glob is 003[3-9]*. When the school first
-        # installed, it matched {0033, 0034}. Migrations 0035-0039 were then
-        # written and the SAME glob silently swallowed them, so the file they had
-        # already pasted changed underneath them. Re-running it fails on 0033's
-        # "column family_id already exists" and — because a bundle is ONE
-        # transaction — rolls back entirely, so 0035-0039 never arrive. Bundle 4
-        # then cannot apply either: it needs fee_structures.effective_from, added
-        # by 0035. The school ended up on 0001-0034 plus 0050-0056, with a
-        # fifteen-migration hole, and verify.sql told them to re-run bundle 4 —
-        # which cannot fix it and cannot even apply.
+        # What happened. Bundle 3's glob is 003[3-9]*. It kept absorbing new
+        # migrations AFTER it had already shipped, so the file a school had
+        # already pasted changed underneath them — and different schools stopped
+        # at different points inside it. Re-running it fails on 0033's "column
+        # family_id already exists" and, because a bundle is ONE transaction,
+        # rolls back entirely, so nothing later in the file arrives.
         #
-        # This step reproduces that exactly, then applies the documented repair,
-        # and asserts verify.sql comes back all PASS. It pins the repair path as
-        # tested rather than as advice in a chat message.
+        # The real report stopped at 0037: migrations 0038 and 0039 were missing
+        # and everything else was present. I first GUESSED the cutoff was 0034,
+        # built a fifteen-migration repair on that guess, and it failed on its
+        # first statement because the school already had 0035. That is why the
+        # repair is now ONE FILE PER MIGRATION plus a detect.sql that asks the
+        # database instead of inferring — and why this step stops at 0037, the
+        # cutoff that actually occurred.
         run: |
           psql -v ON_ERROR_STOP=1 -c "create database upgradecheck;"
           export PGDATABASE=upgradecheck
@@ -167,10 +167,10 @@ jobs:
           end $$;
           SQL
 
-          echo "── the school as it was: migrations 0001-0034"
+          echo "── the school as it was: migrations 0001-0037 (the real cutoff)"
           for f in supabase/migrations/*.sql; do
             n=$(basename "$f" | cut -c1-4)
-            if [ "$n" -le 0034 ]; then
+            if [ "$n" -le 0037 ]; then
               psql -v ON_ERROR_STOP=1 -q --single-transaction -f "$f"
             fi
           done
@@ -184,8 +184,25 @@ jobs:
             fi
           done
 
+          echo "── detect.sql must name the gap, not guess it"
+          psql -v ON_ERROR_STOP=1 -f supabase/repair/detect.sql | tee /tmp/detect.out
+          for m in 0038_counter 0039_challan; do
+            grep -q "$m.*MISSING" /tmp/detect.out || { echo "::error::detect.sql failed to spot $m"; exit 1; }
+          done
+
           echo "── the repair, then bundle 5 again so the newer definitions win back"
-          psql -v ON_ERROR_STOP=1 -q --single-transaction -f supabase/repair/0035_0049.sql
+          # ONLY the files detect.sql marked MISSING, in order. Applying the
+          # whole repair directory blindly is what the school was told to do the
+          # first time and it fails on its first statement — reproduced here,
+          # deliberately, before this loop was written:
+          #   ERROR: column "effective_from" of relation "fee_structures"
+          #          already exists
+          # A repair must be driven by what the database is missing, never by a
+          # fixed list.
+          awk -F'|' '/MISSING/ {gsub(/ /,"",$1); print $1}' /tmp/detect.out | sort | while read -r m; do
+            echo "   applying supabase/repair/$m.sql"
+            psql -v ON_ERROR_STOP=1 -q --single-transaction -f "supabase/repair/$m.sql"
+          done
           psql -v ON_ERROR_STOP=1 -q --single-transaction -f supabase/bundles/5_search.sql
 
           echo "── verify.sql, as the school runs it"
