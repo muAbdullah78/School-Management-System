@@ -17,10 +17,15 @@
 -- Each row names one migration and looks for an object that migration and only
 -- that migration creates. A missing object means the migration never applied.
 --
--- 0035-0049 is the range where this can happen: bundle 3's file pattern kept
--- absorbing new migrations after it had already shipped, so different schools
--- stopped at different points inside it. Bundles 1, 2 and 5 have fixed contents
--- and are checked by verify.sql.
+-- 0035-0049 is the range where the SCATTERED kind of gap happened: bundle 3's
+-- file pattern kept absorbing new migrations after it had already shipped, so
+-- different schools stopped at different points inside it. Those rows each have
+-- a repair file.
+--
+-- 0050 onward are listed too, without repair files, because "is my database up
+-- to date?" is a question a school asks every time it upgrades and the answer
+-- should not stop at 0049. For those rows the action is to run the migration
+-- itself, which is safe: every one of them is written to be re-runnable.
 -- =============================================================================
 
 with sig(migration, object, present) as (values
@@ -74,12 +79,77 @@ with sig(migration, object, present) as (values
                       and pronamespace = 'public'::regnamespace))),
   ('0049_remarks_and_positions','exam_remarks table',
      (select exists (select 1 from information_schema.tables
-                      where table_schema = 'public' and table_name = 'exam_remarks')))
+                      where table_schema = 'public' and table_name = 'exam_remarks'))),
+
+  -- ---------------------------------------------------------------------------
+  -- 0050 onward. No repair files: run the migration itself.
+  --
+  -- Several of these REPLACED existing functions rather than adding new ones, so
+  -- their signature has to be a fact about a body — the same trap 0042 set. A
+  -- row that checks for a function which has existed since 0014 proves nothing
+  -- and would report a broken database as healthy, which is exactly the failure
+  -- verify.sql already made once.
+  -- ---------------------------------------------------------------------------
+  ('0050_search_and_birthdays', 'fn_global_search',
+     (select exists (select 1 from pg_proc where proname = 'fn_global_search'
+                      and pronamespace = 'public'::regnamespace))),
+  -- 0051 fixed OVER-escaping in fn_student_list: 0041 wrote '\\' where it meant
+  -- '\', so a roll number containing an underscore could not be found. Nothing
+  -- new was created, so the signature is the corrected literal itself.
+  --
+  -- Dollar-quoted, and matched with strpos rather than LIKE, because LIKE has its
+  -- own backslash escaping on top of the string literal's and the first version
+  -- of this row got that wrong twice over: it looked at fn_global_search, which
+  -- 0051 never touched, and matched a pattern 0041's body satisfies too. It
+  -- reported a database missing 0051 as healthy — the same false-PASS this whole
+  -- file exists to prevent.
+  ('0051_like_escaping',        'fn_student_list escapes LIKE correctly',
+     (select exists (select 1 from pg_proc where proname = 'fn_student_list'
+                      and pronamespace = 'public'::regnamespace
+                      and strpos(prosrc, $q$, '\%'$q$) > 0))),
+  -- 0052 added a TIE-BREAK to an ORDER BY, so the signature is that second sort
+  -- key. fn_recent_payments has existed since 0038; its presence proves nothing,
+  -- and the first version of this row looked for a 'nulls last' clause 0052 does
+  -- not contain, which reported a complete database as broken.
+  ('0052_recent_payments_order','recent payments order has a tie-break',
+     (select exists (select 1 from pg_proc where proname = 'fn_recent_payments'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%order by p.created_at desc, p.receipt_no desc%'))),
+  ('0053_staff_leaving',        'fn_staff_leave',
+     (select exists (select 1 from pg_proc where proname = 'fn_staff_leave'
+                      and pronamespace = 'public'::regnamespace))),
+  ('0054_student_leaving',      'students.left_on',
+     (select exists (select 1 from information_schema.columns
+                      where table_schema = 'public' and table_name = 'students'
+                        and column_name = 'left_on'))),
+  -- 0055 scoped fn_rollover, which has existed since 0014. Its presence proves
+  -- nothing; the missing school filter WAS the defect.
+  ('0055_rollover_scoping',     'rollover scoped to one school',
+     (select exists (select 1 from pg_proc where proname = 'fn_rollover'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%c2.school_id = v_school%'))),
+  -- 0056 likewise: the importers date from 0015/0016, so the signature is the
+  -- ABSENCE of the unscoped lookup.
+  ('0056_importer_scoping',     'importers scoped on GR / admission no',
+     (select not exists (select 1 from pg_proc
+                          where proname in ('fn_import_students', 'fn_import_opening_balances')
+                            and pronamespace = 'public'::regnamespace
+                            and (prosrc ~ 'from public\.students where gr_no'
+                              or prosrc ~ 'from public\.students where admission_no')))),
+  -- 0057 RENAMED two columns, so the old name still being there is the tell.
+  ('0057_photos_and_logo',      'students.photo_path (renamed from photo_url)',
+     (select exists (select 1 from information_schema.columns
+                      where table_schema = 'public' and table_name = 'students'
+                        and column_name = 'photo_path')
+         and exists (select 1 from pg_proc where proname = 'fn_set_student_photo'
+                      and pronamespace = 'public'::regnamespace)))
 )
 select migration,
        object                                   as looked_for,
        case when present then 'present' else 'MISSING' end as status,
        case when present then ''
-            else 'run supabase/repair/' || migration || '.sql' end as action
+            when migration < '0050'
+              then 'run supabase/repair/' || migration || '.sql'
+            else 'run supabase/migrations/' || migration || '.sql' end as action
 from sig
 order by migration;

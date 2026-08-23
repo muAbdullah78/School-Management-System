@@ -581,6 +581,9 @@ export interface StudentProfile {
   father_name: string | null; mother_name: string | null; b_form: string | null
   dob: string | null; gender: string | null; address: string | null; phone: string | null
   whatsapp: string | null; status: string; admission_date: string | null; notes: string | null
+  /** Added in 0057. A PATH inside the school-files bucket, never a URL — a
+   *  signed URL expires and a persisted one becomes a broken image. */
+  photo_path: string | null
   /** Added in 0054. Null for a child who is here, and null for one who left
    *  before 0054 existed — the migration deliberately did not invent dates. */
   left_on: string | null; leaving_reason: string | null
@@ -938,7 +941,7 @@ export async function getStudent(studentId: string): Promise<StudentProfile> {
   const sb = requireSupabase()
   return unwrap(
     await sb.from('students')
-      .select('id, gr_no, admission_no, full_name, father_name, mother_name, b_form, dob, gender, address, phone, whatsapp, status, admission_date, notes, left_on, leaving_reason')
+      .select('id, gr_no, admission_no, full_name, father_name, mother_name, b_form, dob, gender, address, phone, whatsapp, status, admission_date, notes, left_on, leaving_reason, photo_path')
       .eq('id', studentId).single(),
   )
 }
@@ -1281,7 +1284,14 @@ export interface SchoolSettings {
   email: string | null; principal_name: string | null; grade_scale: string; pass_percent: number
   gr_prefix: string | null; receipt_prefix: string | null; current_session_id: string | null
   geofence_enabled: boolean; geo_lat: number | null; geo_lng: number | null; geo_radius_m: number
+  /** A storage PATH, never a URL — see docs/PHOTOS-DESIGN.md. Read-only here;
+   *  written only by fn_set_school_logo, which derives the path itself. */
+  logo_path: string | null
 }
+/** Everything a settings form is allowed to write. `logo_path` is deliberately
+ *  absent: a direct update could store a path this school does not own, and the
+ *  CHECK constraint would then reject the whole save with an opaque message. */
+export type SchoolSettingsPatch = Omit<SchoolSettings, 'logo_path'>
 export interface SessionFull {
   id: string; name: string; starts_on: string | null; ends_on: string | null
   is_current: boolean; is_closed: boolean
@@ -1303,13 +1313,29 @@ export async function getSchoolSettings(): Promise<SchoolSettings | null> {
   // No id filter: `school_settings` used to be a single row keyed id = 1, and is
   // now one row per school. RLS already narrows this to the caller's school.
   const { data, error } = await sb.from('school_settings')
-    .select('name, name_short, address, phone, email, principal_name, grade_scale, pass_percent, gr_prefix, receipt_prefix, current_session_id, geofence_enabled, geo_lat, geo_lng, geo_radius_m')
+    .select('name, name_short, address, phone, email, principal_name, grade_scale, pass_percent, gr_prefix, receipt_prefix, current_session_id, geofence_enabled, geo_lat, geo_lng, geo_radius_m, logo_path')
     .limit(1).maybeSingle()
   if (error) throw new Error(error.message)
   return data
 }
 
-export async function updateSchoolSettings(patch: Partial<SchoolSettings>): Promise<void> {
+/**
+ * The school logo path on its own, for the printed documents.
+ *
+ * A separate, tiny read so a challan or a result card does not pull the whole
+ * settings row (including the geofence coordinates) just to draw a letterhead.
+ * Returns null rather than throwing: a print that fails because the logo could
+ * not be read would be a worse bug than a print with no logo.
+ */
+export async function getSchoolLogoPath(): Promise<string | null> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.from('school_settings')
+    .select('logo_path').limit(1).maybeSingle()
+  if (error) return null
+  return (data?.logo_path as string | null) ?? null
+}
+
+export async function updateSchoolSettings(patch: Partial<SchoolSettingsPatch>): Promise<void> {
   const sb = requireSupabase()
   // An UPDATE, not an upsert: the settings row is created with the school, so
   // there is nothing to insert — and an upsert here could only ever write a row
@@ -1431,6 +1457,8 @@ export interface StaffRow {
   id: string; full_name: string; designation: string | null; employee_no: string | null
   mobile: string | null; whatsapp: string | null; cnic: string | null
   joined_on: string | null; dob: string | null; status: string; profile_id: string | null
+  /** A storage path, for the ID card. Written only by fn_set_staff_photo. */
+  photo_path: string | null
 }
 export interface StaffInput {
   full_name: string; designation?: string | null; employee_no?: string | null
@@ -1456,6 +1484,50 @@ export interface StaffRosterRow extends StaffRow {
   assignments: number
 }
 
+export interface ClassPhotoRow {
+  student_id: string; full_name: string; roll_no: string | null; photo_path: string | null
+}
+
+/**
+ * Photograph paths for a list of pupils already on screen.
+ *
+ * A separate select rather than an extra column on `fn_student_page`: adding a
+ * column to a `returns table` function means dropping and recreating it, and
+ * re-typing that body by hand is how a stack of earlier fixes gets silently
+ * reverted. RLS scopes the select, so it cannot return another school's rows.
+ *
+ * Returns an empty map on failure — a roster without faces is still a roster,
+ * and a page that refuses to load because a photograph could not be looked up
+ * would be a far worse defect than a missing face.
+ */
+export async function getStudentPhotoPaths(ids: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  if (ids.length === 0) return out
+  const sb = requireSupabase()
+  const { data, error } = await sb.from('students').select('id, photo_path').in('id', ids)
+  if (error) return out
+  for (const r of (data ?? []) as { id: string; photo_path: string | null }[]) {
+    if (r.photo_path) out.set(r.id, r.photo_path)
+  }
+  return out
+}
+
+/** Every pupil in a class with their photo PATH, in one call, so the whole class
+ *  can be signed in a single createSignedUrls request rather than forty. */
+export async function getClassPhotoPaths(
+  classId: string, sectionId: string | null,
+): Promise<ClassPhotoRow[]> {
+  const sb = requireSupabase()
+  const rows = unwrap<Record<string, any>[]>(
+    await sb.rpc('fn_class_photo_paths', { p_class_id: classId, p_section_id: sectionId }))
+  return (rows ?? []).map((r) => ({
+    student_id: r.student_id,
+    full_name: r.full_name,
+    roll_no: r.roll_no ?? null,
+    photo_path: r.photo_path ?? null,
+  }))
+}
+
 export interface StaffLeaveResult {
   staff_name: string
   left_on: string
@@ -1476,7 +1548,21 @@ export interface StaffLeaveResult {
 export async function getStaffRoster(): Promise<StaffRosterRow[]> {
   const sb = requireSupabase()
   const rows = unwrap<Record<string, any>[]>(await sb.rpc('fn_staff_roster'))
+  // Photo paths come from a second, tiny select rather than from the roster
+  // function. Adding a column to a `returns table` function means dropping and
+  // recreating it, and re-typing that body by hand is how five migrations' worth
+  // of fixes get silently reverted. Staff is a small table and RLS scopes it, so
+  // one extra round trip is the cheaper risk. Failure here is non-fatal: a
+  // roster with no faces is still a roster.
+  const photos = new Map<string, string | null>()
+  const ph = await sb.from('staff').select('id, photo_path')
+  if (!ph.error) {
+    for (const p of (ph.data ?? []) as { id: string; photo_path: string | null }[]) {
+      photos.set(p.id, p.photo_path ?? null)
+    }
+  }
   return (rows ?? []).map((r) => ({
+    photo_path: photos.get(r.id) ?? null,
     id: r.id,
     full_name: r.full_name,
     designation: r.designation ?? null,
@@ -1849,6 +1935,11 @@ export interface IssueCertResult { id: string; serial_no: number; cert_type: str
 export interface CertificateRow {
   id: string; cert_type: string; serial_no: number; issued_on: string
   student_name: string | null; gr_no: string | null; data: Record<string, any>
+  /** Read LIVE, not from the frozen snapshot. A certificate's wording must never
+   *  drift on a reprint, but an ID card exists to let somebody recognise the
+   *  child holding it — so it shows the photograph on file today, not the one
+   *  that was on file the day the card was first issued. */
+  photo_path: string | null
 }
 
 export async function issueCertificate(
@@ -1971,7 +2062,7 @@ export async function listCertificates(limit = 50): Promise<CertificateRow[]> {
   const sb = requireSupabase()
   const rows = unwrap<Record<string, any>[]>(
     await sb.from('certificates')
-      .select('id, cert_type, serial_no, issued_on, data, students(full_name, gr_no)')
+      .select('id, cert_type, serial_no, issued_on, data, students(full_name, gr_no, photo_path)')
       .order('created_at', { ascending: false }).limit(limit),
   )
   return rows.map((r) => ({
@@ -1979,6 +2070,7 @@ export async function listCertificates(limit = 50): Promise<CertificateRow[]> {
     student_name: r.students?.full_name ?? r.data?.student_name ?? null,
     gr_no: r.students?.gr_no ?? r.data?.gr_no ?? null,
     data: r.data ?? {},
+    photo_path: r.students?.photo_path ?? null,
   }))
 }
 

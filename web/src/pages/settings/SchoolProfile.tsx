@@ -1,20 +1,30 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getSchoolSettings, updateSchoolSettings, type SchoolSettings } from '@/lib/db'
+import { PhotoUpload } from '@/components/PhotoUpload'
+import { removeLogo, uploadLogo } from '@/lib/photos'
+import { useAuth } from '@/auth/AuthProvider'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 
 const EMPTY: SchoolSettings = {
   name: '', name_short: '', address: '', phone: '', email: '', principal_name: '',
   grade_scale: 'letter', pass_percent: 33, gr_prefix: '', receipt_prefix: '', current_session_id: null,
-  geofence_enabled: false, geo_lat: null, geo_lng: null, geo_radius_m: 200,
+  geofence_enabled: false, geo_lat: null, geo_lng: null, geo_radius_m: 200, logo_path: null,
 }
 
 export function SchoolProfile() {
   const qc = useQueryClient()
+  const { profile } = useAuth()
   const settings = useQuery({ queryKey: ['schoolSettings'], queryFn: getSchoolSettings })
   const [f, setF] = useState<SchoolSettings>(EMPTY)
   const [saved, setSaved] = useState(false)
+
+  // The logo lands on every printed challan and result card, so it is an
+  // owner/principal decision — not something a clerk changes mid-term. The
+  // database agrees (fn_set_school_logo checks the same two roles); this only
+  // keeps a clerk from being shown a button that would refuse them.
+  const mayChangeLogo = profile?.role === 'owner' || profile?.role === 'principal'
 
   useEffect(() => {
     if (settings.data) setF({ ...EMPTY, ...settings.data })
@@ -39,6 +49,28 @@ export function SchoolProfile() {
 
   return (
     <form className="max-w-2xl space-y-4" onSubmit={(e) => { e.preventDefault(); save.mutate() }}>
+      <section className="rounded border border-slate-200 bg-white p-4">
+        <h3 className="text-sm font-semibold text-slate-800">School logo</h3>
+        <p className="mb-3 mt-0.5 text-xs text-slate-500">
+          Printed on fee challans, receipts and result cards. A PNG with a transparent
+          background prints best. A school with no logo gets its name in type instead —
+          nothing is left blank.
+        </p>
+        <PhotoUpload
+          name={f.name || 'School'}
+          path={settings.data?.logo_path ?? null}
+          label="logo"
+          square
+          disabled={!mayChangeLogo}
+          onUpload={(file) => uploadLogo(file, settings.data?.logo_path ?? null)}
+          onRemove={() => removeLogo(settings.data?.logo_path ?? null)}
+          onChanged={() => {
+            qc.invalidateQueries({ queryKey: ['schoolSettings'] })
+            qc.invalidateQueries({ queryKey: ['schoolLogo'] })
+          }}
+        />
+      </section>
+
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block sm:col-span-2">
           <span className="text-sm text-slate-600">School name</span>

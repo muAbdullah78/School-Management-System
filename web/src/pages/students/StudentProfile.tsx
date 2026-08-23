@@ -20,6 +20,8 @@ import { APPROVER_ROLES, ADMIN_ROLES, type Role } from '@/auth/roles'
 import { Receipt, type ReceiptData } from '@/components/Receipt'
 import { useSchoolName } from '@/hooks/useSchoolName'
 import { ChallanPrint } from '@/pages/fees/ChallanPrint'
+import { PhotoUpload } from '@/components/PhotoUpload'
+import { removeStudentPhoto, uploadStudentPhoto } from '@/lib/photos'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 const FINANCE_ROLES: Role[] = ['owner', 'principal', 'admin_clerk', 'accountant']
@@ -52,6 +54,7 @@ function monthsRange(startYM: string, endYM: string): string[] {
 
 export function StudentProfile({ studentId, onBack, onOpen }: { studentId: string; onBack: () => void; onOpen?: (id: string) => void }) {
   const { profile } = useAuth()
+  const qc = useQueryClient()
   const role = profile?.role
   const canEdit = !!role && ADMIN_ROLES.includes(role) && role !== 'readonly' && role !== 'accountant'
   const canStatus = !!role && APPROVER_ROLES.includes(role)
@@ -74,14 +77,30 @@ export function StudentProfile({ studentId, onBack, onOpen }: { studentId: strin
       <button onClick={onBack} className="text-sm text-brand-700 hover:underline">← Back to students</button>
 
       <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold text-slate-800">{s.full_name}</h1>
-            <StatusBadge status={s.status} />
-          </div>
-          <div className="mt-0.5 text-sm text-slate-500">
-            GR {s.gr_no ?? '—'}{s.father_name ? ` · ${s.father_name}` : ''}
-            {cur ? ` · ${cur.class_name}${cur.section_name ? ` (${cur.section_name})` : ''}${cur.roll_no ? ` · Roll ${cur.roll_no}` : ''}` : ''}
+        <div className="flex items-start gap-4">
+          <PhotoUpload
+            name={s.full_name}
+            path={s.photo_path}
+            size="lg"
+            disabled={!canEdit}
+            onUpload={(file) => uploadStudentPhoto(studentId, file)}
+            onRemove={() => removeStudentPhoto(studentId, s.photo_path)}
+            onChanged={() => {
+              qc.invalidateQueries({ queryKey: ['student', studentId] })
+              // The class photo sheet and the student list read the same paths.
+              qc.invalidateQueries({ queryKey: ['classPhotos'] })
+              qc.invalidateQueries({ queryKey: ['students'] })
+            }}
+          />
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-semibold text-slate-800">{s.full_name}</h1>
+              <StatusBadge status={s.status} />
+            </div>
+            <div className="mt-0.5 text-sm text-slate-500">
+              GR {s.gr_no ?? '—'}{s.father_name ? ` · ${s.father_name}` : ''}
+              {cur ? ` · ${cur.class_name}${cur.section_name ? ` (${cur.section_name})` : ''}${cur.roll_no ? ` · Roll ${cur.roll_no}` : ''}` : ''}
+            </div>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">

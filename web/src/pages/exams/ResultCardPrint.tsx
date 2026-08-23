@@ -1,4 +1,5 @@
 import { useSchoolName } from '@/hooks/useSchoolName'
+import { useSchoolLogo } from '@/hooks/useSchoolLogo'
 import { fmtDate } from '@/lib/format'
 import type { ResultCardRow } from '@/lib/db'
 
@@ -15,12 +16,20 @@ export function ResultCardPrint({
   onClose: () => void
 }) {
   const schoolName = useSchoolName()
+  // Not part of the frozen snapshot on purpose: the snapshot exists so MARKS
+  // never drift on a reprint. A school that adopts a logo in March should have
+  // it on a reprint of February's card, and a school that changes its logo
+  // should not have two different letterheads in circulation.
+  const logo = useSchoolLogo()
   const f = card.frozen
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 print:static print:block print:bg-white print:p-0">
       <div className="w-full max-w-2xl rounded-lg bg-white p-6 shadow-lg print:max-w-none print:shadow-none" id="result-card">
         <div className="text-center">
+          {logo && (
+            <img src={logo} alt="" className="mx-auto mb-1 max-h-16 max-w-[10rem] object-contain" />
+          )}
           <div className="text-xl font-semibold text-slate-800">{schoolName}</div>
           <div className="text-xs uppercase tracking-wide text-slate-500">Result Card — {termName}</div>
         </div>

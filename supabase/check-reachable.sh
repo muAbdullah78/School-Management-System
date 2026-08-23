@@ -54,6 +54,13 @@ declare -A ALLOWED=(
   [fn_provision_school_settings]="called by fn_provision_school"
   [fn_provision_expense_categories]="called by fn_provision_school"
   [fn_provision_message_templates]="called by fn_provision_school"
+  # The two storage-policy helpers from 0057. On a real Supabase project the
+  # four policies on storage.objects reference them, so they ARE reached — but
+  # there is no storage schema in CI, so nothing here can see that reference.
+  # They are exercised directly by supabase/tests/photos.sql, which builds a
+  # faithful storage.objects stub and installs the same policies against it.
+  [fn_may_read_school_file]="referenced by the storage.objects policies; tested in tests/photos.sql"
+  [fn_may_write_school_file]="referenced by the storage.objects policies; tested in tests/photos.sql"
 )
 
 # The redirect and the heredoc marker must be the LAST thing on this line:

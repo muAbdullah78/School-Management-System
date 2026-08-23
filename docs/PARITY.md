@@ -38,9 +38,23 @@ and no per-message cost. The workflow survives; the channel changes.
 Modules ruled out entirely, and therefore absent from the plan below: SMS
 sending and SMS settings, mobile apps and app notifications, biometric and
 facial-recognition attendance, online classes, holiday calendar, salary and loan
-management, stock and inventory, student behaviour, ID card printing,
-certificates, daily student diary, study material LMS, email alerts, school
-notice board, transport, parent complaints.
+management, stock and inventory, student behaviour, daily student diary, study
+material LMS, email alerts, school notice board, transport, parent complaints.
+
+**Two items came back off that list**, on an explicit later decision:
+
+- **Certificates and ID cards.** A Pakistani school cannot operate without a
+  School Leaving Certificate — a family moving city cannot enrol a child
+  anywhere else without one — so ruling it out ruled out a document the school is
+  legally expected to produce. Built.
+- **QR check-in for staff** — but still **no biometric**. Biometric needs a
+  physical device and its own support burden; a QR code needs a printed card and
+  a phone. The loopholes a QR system opens (photograph the code, mark in from
+  home) are closed in software, and how is set out where that feature is
+  described.
+
+`biometric and facial-recognition attendance` stays excluded, and nothing in the
+QR work moves toward it.
 
 Where one of their screens mixes excluded and wanted work, only the wanted half
 is listed.
@@ -51,7 +65,7 @@ is listed.
 
 | Their screen | Status | Notes |
 |---|---|---|
-| Admit Student | `partial` | We have the form. Theirs also has a **student photo** with upload *and* webcam capture — we have no photo anywhere and `students.photo_url` is a dead column. |
+| Admit Student | `done` | The form, plus the photograph — added on the pupil's profile once admitted rather than mid-form, because a clerk admitting a queue of children should not be blocked on finding a photo. The class photo sheet then fills them all in one pass. |
 | Admit Bulk Student | `partial` | We have CSV import. Theirs is an on-screen grid for typing several siblings at once, with a class/section header applied to the whole batch. |
 | Admission Requests | `missing` | Online applications awaiting approve/reject. |
 | Admission Inquiries | `have` (0046) | Worklist-first: opens on who is overdue a call. Append-only follow-up log, one-action conversion through `fn_admit_student`, and a source breakdown. |
@@ -214,7 +228,7 @@ ours does not.
 | Print-first reports | `partial` | Every report screen of theirs is a grid of named reports each with a Print button. |
 | Dashboard tiles that link to a report | `partial` | Their tiles all say "View Report". |
 | Running session shown in the footer | `missing` | Small, but it is always visible and prevents entering marks into last year. |
-| Student photo | `missing` | Upload and webcam capture. |
+| Student photo | `done` | Upload from file or phone camera (0057). No webcam-capture screen: on a phone or tablet the file picker already offers the camera, and on a desktop a clerk photographing 800 children uses a phone. The class photo sheet is the part their product does not have. |
 | Admin role management | `partial` | Theirs toggles web login and app login per admin. |
 | School's own public website | `excluded` for now | They generate a full public site per school — gallery, principal's message, facilities, colours. A separate product; our marketing site is not the same thing. |
 
@@ -250,8 +264,9 @@ Items 1-6 and 9 are **done** (PR #17). What follows is the remaining work.
 9. ~~**WhatsApp automation**~~ Done (0043).
 10. ~~**Admission enquiries**~~ Done (0046). Still missing the other half:
     **admission requests** — online applications awaiting approve/reject.
-11. ~~**Global search, module search, birthdays**~~ Done (0050). Student photos
-    remain — they need Storage, which cannot be tested from here.
+11. ~~**Global search, module search, birthdays**~~ Done (0050).
+    ~~Student photos~~ Done (0057) — including the storage policies, which turned
+    out to be testable after all: see below.
 12. **Multi-campus** — last, because it touches every table, and only if a real
     school asks for it.
 
@@ -260,20 +275,34 @@ Items 1-6 and 9 are **done** (PR #17). What follows is the remaining work.
 The column-level twin of the reachability check found thirteen. Ranked by what
 their absence actually costs a school, because several are not cosmetic.
 
-### Needs a decision — no Supabase Storage exists at all
+### ~~Needs a decision — no Supabase Storage exists at all~~ Built (0057)
 
-| Column | What is missing |
+| Column | Status |
 |---|---|
-| `students.photo_url` | Student photographs. Theirs has file upload **and** webcam capture, and a photo appears on the student profile, class lists and ID cards. |
-| `school_settings.logo_url` | The school's logo on the printed challan, result card and certificates. A fee voucher with no logo does not look like it came from the school. |
+| `students.photo_url` → **`photo_path`** | Built. Upload on the pupil's profile and on a class photo sheet where the face IS the upload button, so a whole class is photographed in one screen rather than forty. Shown on the profile, the roster, the class sheet and the ID card. |
+| `school_settings.logo_url` → **`logo_path`** | Built. Uploaded in Settings by owner or principal only, and printed on the challan (all three copies), the receipt, the result card, every certificate and both ID cards. |
+| `staff.photo_path` (new) | Built. On the staff roster and the staff ID card. |
 
-**Not built, deliberately.** Both need a Storage bucket, and bucket policies are
-not table RLS — they are `storage.objects` policies, which this environment
-cannot exercise at all (there is no Supabase here, only Postgres). Shipping
-untested bucket policies for **photographs of children in a multi-tenant system**
-is not a risk worth taking: the failure mode is one school fetching another
-school's pupils' photographs. This needs to be built against a real project and
-verified there.
+**What I said before, and why it was wrong.** The earlier note here refused to
+build this on the grounds that `storage.objects` policies "cannot be exercised at
+all" in this environment. That was a real risk, honestly stated, and the
+conclusion was still wrong: a storage policy is *ordinary SQL over an ordinary
+table*. `supabase/tests/photos.sql` builds a faithful `storage.objects` stub —
+same shape, same `storage.foldername()` behaviour — installs the same four
+policies, and drives them as `authenticated` from two schools **in both
+directions**. 34 assertions. The isolation guarantee is tested, not asserted.
+
+What genuinely cannot be tested here is that Supabase's storage API consults
+those policies, plus the bucket's own size and mime limits and the signed-URL
+flow. Those are one manual pass on the live project, written out box by box in
+`docs/PHOTOS-CHECKLIST.md`. The design and every objection to it are in
+`docs/PHOTOS-DESIGN.md`.
+
+The columns were **renamed** rather than reused: they hold a storage *path* and
+never a URL. A URL in a column is a URL that expires, or a public link that
+outlives the child's time at the school. `verify.sql` fails if the old name is
+still present, because that would mean every read in the app is looking at a
+column that is not there.
 
 ### Exam and board module — these look like correctness gaps
 
@@ -363,7 +392,7 @@ Almost every serious defect found in this work has been the same shape:
 | `fn_find_by_voucher` had zero callers | a printed challan could not be scanned |
 | `fn_reverse_other_income` had zero callers | a mistyped income entry could never be corrected, in an append-only ledger |
 | `supabase/bundles/` stopped at 0039 | seven migrations never reached any real school |
-| `students.photo_url` | still dead — the one item on this list not yet fixed |
+| `students.photo_url` | was the last item on this list; fixed in 0057, and the column renamed to `photo_path` because it holds a path and not a URL |
 
 Every one was found by hand, late, usually while building something unrelated.
 So `supabase/check-reachable.sh` now asks the catalogue on every CI run: for each

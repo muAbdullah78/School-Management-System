@@ -4,12 +4,18 @@ import { getSchoolSettings } from '@/lib/db'
 import { fmtDate } from '@/lib/format'
 import { CERT_LABELS } from '@/lib/constants'
 import { QrCode } from '@/components/QrCode'
+import { Avatar } from '@/components/Avatar'
+import { useSchoolLogo } from '@/hooks/useSchoolLogo'
+import { signPath } from '@/lib/photos'
 
 export interface CertificatePrintData {
   certType: string
   serialNo: number
   issuedOn: string
   data: Record<string, any>
+  /** The pupil's photograph path, for the ID card. Live rather than snapshotted:
+   *  a card exists so somebody can recognise the child holding it. */
+  photoPath?: string | null
 }
 
 function pronouns(gender: string | undefined) {
@@ -55,16 +61,28 @@ function bodyText(certType: string, d: Record<string, any>): string {
 export function CertificatePrint({ cert, onClose }: { cert: CertificatePrintData; onClose: () => void }) {
   const schoolName = useSchoolName()
   const settings = useQuery({ queryKey: ['schoolSettings'], queryFn: getSchoolSettings })
+  const logo = useSchoolLogo()
   const title = CERT_LABELS[cert.certType] ?? 'Certificate'
 
   if (cert.certType === 'id_card') {
-    return <IdCardModal cert={cert} schoolName={schoolName} address={settings.data?.address ?? null} onClose={onClose} />
+    return (
+      <IdCardModal
+        cert={cert} schoolName={schoolName} address={settings.data?.address ?? null}
+        logo={logo} onClose={onClose}
+      />
+    )
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 print:static print:block print:bg-white print:p-0">
       <div className="w-full max-w-2xl rounded-lg bg-white p-8 shadow-lg print:max-w-none print:shadow-none" id="certificate">
         <div className="text-center">
+          {/* A leaving certificate is presented to another school, so the
+              letterhead does real work. No logo means no line here — the name
+              below carries it — never an empty box. */}
+          {logo && (
+            <img src={logo} alt="" className="mx-auto mb-2 max-h-20 max-w-[12rem] object-contain" />
+          )}
           <div className="text-2xl font-bold text-slate-800">{schoolName}</div>
           {settings.data?.address && <div className="text-xs text-slate-500">{settings.data.address}</div>}
           <div className="mt-4 inline-block border-b-2 border-slate-800 pb-1 text-lg font-semibold uppercase tracking-wide text-slate-800">
@@ -103,25 +121,45 @@ export function CertificatePrint({ cert, onClose }: { cert: CertificatePrintData
 
 /** A printable student ID card with an on-device QR of the GR number. */
 function IdCardModal({
-  cert, schoolName, address, onClose,
-}: { cert: CertificatePrintData; schoolName: string; address: string | null; onClose: () => void }) {
+  cert, schoolName, address, logo, onClose,
+}: {
+  cert: CertificatePrintData; schoolName: string; address: string | null
+  logo: string | null; onClose: () => void
+}) {
   const d = cert.data
   const cls = d.class_name ? `${d.class_name}${d.section_name ? ` · ${d.section_name}` : ''}` : '—'
   const qrText = d.gr_no ? `GR:${d.gr_no}` : `CERT:${cert.serialNo}`
+  const photo = useQuery({
+    queryKey: ['signedPhoto', cert.photoPath],
+    queryFn: () => signPath(cert.photoPath ?? null),
+    enabled: !!cert.photoPath,
+  })
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 print:static print:block print:bg-white print:p-0">
       <div className="print:max-w-none" id="certificate">
         <div className="w-[340px] overflow-hidden rounded-xl border border-slate-300 bg-white shadow-lg print:shadow-none">
-          <div className="bg-brand-700 px-4 py-2 text-center text-white">
-            <div className="text-sm font-semibold leading-tight">{schoolName}</div>
-            {address && <div className="text-[10px] text-brand-100/80">{address}</div>}
-            <div className="mt-0.5 text-[10px] uppercase tracking-widest text-brand-100">Student ID Card</div>
+          <div className="flex items-center gap-2 bg-brand-700 px-4 py-2 text-white">
+            {logo && (
+              // A white plate behind the logo: most school logos are dark ink on
+              // a transparent background and vanish on the coloured header.
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-white p-0.5">
+                <img src={logo} alt="" className="max-h-8 max-w-8 object-contain" />
+              </span>
+            )}
+            <div className="min-w-0 flex-1 text-center">
+              <div className="truncate text-sm font-semibold leading-tight">{schoolName}</div>
+              {address && <div className="truncate text-[10px] text-brand-100/80">{address}</div>}
+              <div className="mt-0.5 text-[10px] uppercase tracking-widest text-brand-100">Student ID Card</div>
+            </div>
           </div>
           <div className="flex gap-3 p-3">
-            <div className="flex h-24 w-20 shrink-0 items-center justify-center rounded border border-dashed border-slate-300 text-[10px] text-slate-400">
-              PHOTO
-            </div>
+            {/* A card printed for a pupil with no photograph still has to look
+                like a card, so the initials plate fills the same slot. */}
+            <Avatar
+              name={d.student_name ?? null} url={photo.data ?? null}
+              size="lg" square className="!h-24 !w-20 border border-slate-200"
+            />
             <div className="min-w-0 flex-1 text-[11px] leading-5 text-slate-700">
               <div className="truncate text-sm font-semibold text-slate-900">{d.student_name ?? '—'}</div>
               {d.father_name && <div className="truncate text-slate-500">c/o {d.father_name}</div>}

@@ -43,8 +43,6 @@ enrollments.stream
 exam_subjects.practical_max
 fee_heads.is_refundable
 result_cards.generated_at
-school_settings.logo_url
-students.photo_url
 subjects.is_practical
 subjects.stream
 "

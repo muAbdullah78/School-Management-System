@@ -38,7 +38,12 @@ export function CertificatesPage() {
       const list = await listCertificates(50)
       qc.setQueryData(['certificates'], list)
       const row = list.find((c) => c.id === res.id)
-      if (row) setPrint({ certType: row.cert_type, serialNo: row.serial_no, issuedOn: row.issued_on, data: row.data })
+      if (row) {
+        setPrint({
+          certType: row.cert_type, serialNo: row.serial_no, issuedOn: row.issued_on,
+          data: row.data, photoPath: row.photo_path,
+        })
+      }
       setReason(''); setPurpose(''); setRemarks('')
     },
   })
@@ -143,7 +148,7 @@ export function CertificatesPage() {
                   <td className="px-3 py-2 text-slate-700">{c.student_name ?? '—'}<span className="text-slate-400">{c.gr_no ? ` · ${c.gr_no}` : ''}</span></td>
                   <td className="px-3 py-2 text-slate-500">{fmtDate(c.issued_on)}</td>
                   <td className="px-3 py-2 text-right">
-                    <button onClick={() => setPrint({ certType: c.cert_type, serialNo: c.serial_no, issuedOn: c.issued_on, data: c.data })}
+                    <button onClick={() => setPrint({ certType: c.cert_type, serialNo: c.serial_no, issuedOn: c.issued_on, data: c.data, photoPath: c.photo_path })}
                       className="rounded border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">Reprint</button>
                   </td>
                 </tr>

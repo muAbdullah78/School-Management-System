@@ -131,7 +131,58 @@ select 'search, birthdays, staff leaving (bundle 5)',
                      and p.proname in ('fn_import_students', 'fn_import_opening_balances')
                      and (p.prosrc ~ 'from public\.students where gr_no'
                        or p.prosrc ~ 'from public\.students where admission_no'))
+                 -- 0051. 0041 wrote '\\' where it meant '\', so the student
+                 -- roster could not find a roll number containing an underscore
+                 -- — "A_1" is an ordinary roll number here. strpos rather than
+                 -- LIKE because LIKE adds its own backslash escaping on top of
+                 -- the literal's, and getting that wrong is how the first
+                 -- version of this check passed on the broken body.
+                 and exists (
+                   select 1 from pg_proc p
+                   join pg_namespace n on n.oid = p.pronamespace
+                   where n.nspname = 'public' and p.proname = 'fn_student_list'
+                     and strpos(p.prosrc, $q$, '\%'$q$) > 0)
+                 -- 0052. A tie-break on an ORDER BY that had none, so the
+                 -- counter's "recent payments" list stopped reshuffling rows
+                 -- taken in the same second.
+                 and exists (
+                   select 1 from pg_proc p
+                   join pg_namespace n on n.oid = p.pronamespace
+                   where n.nspname = 'public' and p.proname = 'fn_recent_payments'
+                     and p.prosrc like '%order by p.created_at desc, p.receipt_no desc%')
        then 'PASS' else 'FAIL — re-run bundle 5 (5_search.sql)' end
+
+union all
+select 'photographs and school logo (0057)',
+       case when (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                   where n.nspname = 'public' and p.proname in
+                     ('fn_set_student_photo', 'fn_set_staff_photo', 'fn_set_school_logo',
+                      'fn_class_photo_paths', 'fn_photo_path_ok',
+                      'fn_may_read_school_file', 'fn_may_write_school_file')) = 7
+                 -- The RENAMED columns, not the old ones. 0057 renames
+                 -- photo_url → photo_path and logo_url → logo_path, because the
+                 -- column holds a storage path and never a URL; finding the old
+                 -- name means the rename did not happen and every read in the
+                 -- app is looking at a column that is not there.
+                 and exists (select 1 from information_schema.columns
+                              where table_schema='public' and table_name='students'
+                                and column_name='photo_path')
+                 and exists (select 1 from information_schema.columns
+                              where table_schema='public' and table_name='staff'
+                                and column_name='photo_path')
+                 and exists (select 1 from information_schema.columns
+                              where table_schema='public' and table_name='school_settings'
+                                and column_name='logo_path')
+                 and not exists (select 1 from information_schema.columns
+                                  where table_schema='public' and table_name='students'
+                                    and column_name='photo_url')
+                 -- The three CHECK constraints. Without them a path is whatever
+                 -- a client sends, and a path is a folder — so their absence is
+                 -- the difference between per-school isolation and none.
+                 and (select count(*) from pg_constraint
+                       where conname in ('students_photo_path_chk', 'staff_photo_path_chk',
+                                         'school_settings_logo_path_chk')) = 3
+       then 'PASS' else 'FAIL — run migrations/0057_photos_and_logo.sql' end
 
 union all
 select 'price plans loaded',

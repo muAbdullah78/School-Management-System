@@ -38,6 +38,9 @@ const TABS = [
   { key: 'defaulters', label: 'Defaulters' },
   { key: 'strength', label: 'Class Strength' },
   { key: 'register', label: 'Attendance Register' },
+  // Not a money report: the sheet a class teacher pins up, and the screen where
+  // a whole class actually gets photographed.
+  { key: 'photos', label: 'Class Photo Sheet' },
   { key: 'ledger', label: 'Student Ledger' },
 ] as const
 
@@ -46,6 +49,7 @@ import {
   BalanceSheetReport, MarkCorrectionsReport, AttendanceCorrectionsReport,
   StudentsLeftReport,
 } from './FinanceReports'
+import { ClassPhotoSheet } from './ClassPhotoSheet'
 
 type TabKey = (typeof TABS)[number]['key']
 
@@ -78,6 +82,7 @@ export function ReportsPage() {
         {tab === 'daybook' && <DayBookReport />}
         {tab === 'reconciliation' && <ReconciliationReport />}
         {tab === 'defaulters' && <DefaultersReport />}
+        {tab === 'photos' && <ClassPhotoSheet />}
         {tab === 'strength' && <StrengthReport />}
         {tab === 'register' && <AttendanceRegisterReport />}
         {tab === 'ledger' && <StudentLedgerReport />}

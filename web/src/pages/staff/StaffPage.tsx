@@ -13,6 +13,9 @@ import { fmtDate, todayISO } from '@/lib/format'
 import { useAuth } from '@/auth/AuthProvider'
 import { useSchoolName } from '@/hooks/useSchoolName'
 import { StaffIdCard } from './StaffIdCard'
+import { PhotoUpload } from '@/components/PhotoUpload'
+import { Avatar } from '@/components/Avatar'
+import { removeStaffPhoto, signPaths, uploadStaffPhoto } from '@/lib/photos'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 const TABS = [{ key: 'staff', label: 'Staff' }, { key: 'teachers', label: 'Class Teachers' }] as const
@@ -107,6 +110,28 @@ function StaffTab() {
     onSuccess: () => { invalidate(); qc.invalidateQueries({ queryKey: ['profiles'] }) },
   })
 
+  /**
+   * One signing request for the whole roster.
+   *
+   * Keyed on the sorted list of paths, so it re-signs when a photograph is added
+   * or removed and not on every render. `signPaths` returns an empty map rather
+   * than throwing, so a storage outage costs the faces and not the page.
+   */
+  const photoPaths = (staff.data ?? []).map((s) => s.photo_path).filter(Boolean) as string[]
+  const facesQ = useQuery({
+    queryKey: ['staffFaces', [...photoPaths].sort().join('|')],
+    queryFn: () => signPaths(photoPaths),
+    enabled: photoPaths.length > 0,
+    staleTime: 20 * 60 * 1000,
+  })
+  const faces = facesQ.data ?? new Map<string, string>()
+
+  /** The row being edited, for the fields the form does not hold — currently the
+   *  photograph path, which is written by an RPC rather than by the form save. */
+  const editingRow = editing && editing !== 'new'
+    ? staff.data?.find((r) => r.id === editing) ?? null
+    : null
+
   function startEdit(s: StaffRow) {
     setEditing(s.id)
     setForm({ full_name: s.full_name, designation: s.designation ?? '', employee_no: s.employee_no ?? '', mobile: s.mobile ?? '', whatsapp: s.whatsapp ?? '', cnic: s.cnic ?? '', joined_on: s.joined_on ?? '', dob: s.dob ?? '' })
@@ -134,6 +159,29 @@ function StaffTab() {
       {editing && (
         <form className="rounded-lg border border-slate-200 bg-white p-4" onSubmit={(e) => { e.preventDefault(); if (form.full_name.trim()) save.mutate() }}>
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{editing === 'new' ? 'New staff member' : 'Edit staff'}</div>
+
+          {/* Only for a saved record: the photograph is stored under the staff
+              id, so there is nowhere to put it until the row exists. Saying so
+              beats a control that silently fails. */}
+          {editing === 'new'
+            ? (
+              <p className="mt-2 text-xs text-slate-500">
+                Save the staff member first, then reopen Edit to add their photograph.
+              </p>
+            )
+            : (
+              <div className="mt-3 border-b border-slate-100 pb-3">
+                <PhotoUpload
+                  name={form.full_name}
+                  path={editingRow?.photo_path ?? null}
+                  size="lg"
+                  onUpload={(file) => uploadStaffPhoto(editing, file)}
+                  onRemove={() => removeStaffPhoto(editing, editingRow?.photo_path ?? null)}
+                  onChanged={invalidate}
+                />
+              </div>
+            )}
+
           <div className="mt-2 grid gap-3 sm:grid-cols-3">
             <label className="block sm:col-span-2"><span className="text-sm text-slate-600">Full name</span>
               <input value={form.full_name} onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))} className={FIELD} /></label>
@@ -222,20 +270,25 @@ function StaffTab() {
               return (
                 <tr key={s.id} className={here ? '' : 'bg-slate-50/60'}>
                   <td className="px-3 py-2 font-medium text-slate-800">
-                    <span className={here ? '' : 'text-slate-500'}>{s.full_name}</span>
-                    {s.employee_no && <span className="ml-1 text-xs text-slate-400">#{s.employee_no}</span>}
-                    {!here && (
-                      <span className="ml-2 rounded bg-slate-200 px-1.5 py-0.5 text-[11px] font-medium text-slate-600">
-                        left{s.left_on ? ` ${fmtDate(s.left_on)}` : ''}
-                      </span>
-                    )}
-                    {/* Named, not counted: "Class 1-A, Class 2-B" is what the
-                        principal needs in order to reassign. */}
-                    {here && s.class_teacher_of && (
-                      <span className="ml-2 text-xs font-normal text-slate-500">
-                        class teacher · {s.class_teacher_of}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      <Avatar name={s.full_name} url={faces.get(s.photo_path ?? '') ?? null} size="sm" />
+                      <div className="min-w-0">
+                        <span className={here ? '' : 'text-slate-500'}>{s.full_name}</span>
+                        {s.employee_no && <span className="ml-1 text-xs text-slate-400">#{s.employee_no}</span>}
+                        {!here && (
+                          <span className="ml-2 rounded bg-slate-200 px-1.5 py-0.5 text-[11px] font-medium text-slate-600">
+                            left{s.left_on ? ` ${fmtDate(s.left_on)}` : ''}
+                          </span>
+                        )}
+                        {/* Named, not counted: "Class 1-A, Class 2-B" is what the
+                            principal needs in order to reassign. */}
+                        {here && s.class_teacher_of && (
+                          <span className="ml-2 text-xs font-normal text-slate-500">
+                            class teacher · {s.class_teacher_of}
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </td>
                   <td className="px-3 py-2 text-slate-600">{s.designation ?? '—'}</td>
                   <td className="px-3 py-2 text-slate-600">{s.mobile ?? '—'}</td>

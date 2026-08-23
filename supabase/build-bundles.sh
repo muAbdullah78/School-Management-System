@@ -41,6 +41,15 @@ emit() {                       # emit <output> <first-file-glob-index> <files...
     echo "-- ============================================================================="
     echo
     for f in "$@"; do
+      # An UNMATCHED glob arrives here verbatim, because this script does not set
+      # nullglob and bash passes a pattern that matched nothing through as text.
+      # A bundle may legitimately name a range that is not full yet — bundle 6
+      # claims 006* before any 0060 exists — so skip the literal pattern rather
+      # than dying on `cat: no such file`.
+      #
+      # Matching on '*' and not on "file missing": a real migration that has been
+      # DELETED must still be a hard error, and no filename contains an asterisk.
+      case "$f" in *'*'*) continue ;; esac
       echo
       echo "-- ─────────────────────────────────────────────────────────────────────────"
       echo "-- $(basename "$f")"
@@ -99,7 +108,20 @@ emit supabase/bundles/4_operations.sql    supabase/migrations/004*.sql
 # That is deliberate: the filename is what SETUP.md tells schools to paste, so
 # renaming it would break every existing set of instructions to save a word.
 # When bundle 5 has itself shipped widely, start a sixth rather than widen this.
-emit supabase/bundles/5_search.sql        supabase/migrations/005*.sql
+emit supabase/bundles/5_search.sql        supabase/migrations/005[0-6]*.sql
+# A SIXTH bundle, for the same reason there was a fifth: bundle 5 has already
+# been pasted into a live database, so it is frozen and its glob was narrowed to
+# 005[0-6] — the exact set the MANIFEST records — rather than left as 005*, which
+# would have silently swallowed 0057 and broken that school's upgrade path for
+# the third time.
+#
+# NOT YET IN THE MANIFEST, deliberately. The manifest records bundles that have
+# SHIPPED; a bundle nobody has pasted is still free to change, and this one is
+# still gaining migrations as the remaining features land. Its line goes into the
+# manifest at the moment it is handed to a school, and from then on it is frozen
+# like the other five.
+emit supabase/bundles/6_photos_and_records.sql \
+     supabase/migrations/005[7-9]*.sql supabase/migrations/006*.sql
 
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
