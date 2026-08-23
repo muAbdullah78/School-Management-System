@@ -142,7 +142,18 @@ with sig(migration, object, present) as (values
                       where table_schema = 'public' and table_name = 'students'
                         and column_name = 'photo_path')
          and exists (select 1 from pg_proc where proname = 'fn_set_student_photo'
-                      and pronamespace = 'public'::regnamespace)))
+                      and pronamespace = 'public'::regnamespace))),
+  -- 0058 REWROTE fn_generate_result_cards, which has existed since 0005. Its
+  -- presence proves nothing; what has to be true is that it reads the stream
+  -- rule, because without that a class-9 card was computed over every paper in
+  -- the class and turned two A+ pupils into a C and a D.
+  ('0058_exam_computation',     'result cards read the stream rule',
+     (select exists (select 1 from pg_proc where proname = 'fn_generate_result_cards'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%fn_takes_subject%')
+         and exists (select 1 from information_schema.columns
+                      where table_schema = 'public' and table_name = 'mark_entries'
+                        and column_name = 'practical_marks')))
 )
 select migration,
        object                                   as looked_for,

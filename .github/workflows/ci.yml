@@ -756,6 +756,33 @@ jobs:
         # another school's folder" inexpressible from the client at all.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/photos.sql
 
+      - name: The result card — is a pupil marked out of their OWN subjects?
+        # The generator was confidently wrong in three ways at once, and the
+        # arithmetic was plausible enough that nobody would have questioned it.
+        # Reproduced on a real database before it was touched: a class-9 pupil
+        # with 160 of the 175 marks they actually sat was printed as 160/275 =
+        # 58.18%, grade D. Their Arts classmate on 180/200 = 90% was printed as
+        # 65.45%, grade C. And the wrong denominator punished the Science pupil
+        # harder, so the RANKING inverted and prize day would have gone to the
+        # wrong child. A third pupil, whose marks were simply not typed in yet,
+        # printed as 0.00%, grade F, ranked third.
+        #
+        # Every rule here has a specific defect behind it. The two that matter
+        # most for how the assertions are written:
+        #
+        #  * The two streams have DIFFERENT paper totals (Physics 75, Civics
+        #    100). With equal totals a wrong denominator produces the right
+        #    answer by accident and the whole suite passes on broken code.
+        #  * The ranking is asserted as an ORDER, not as two percentages. The
+        #    old defect got both numbers wrong in a way that also swapped them;
+        #    testing the numbers alone catches one fault and not the other.
+        #
+        # Assertions 30-34 are the provisional-card rules, which have to hold
+        # TOGETHER: a card generated with marks missing must say so AND leave
+        # the unmarked papers out of its denominator AND take no position. One
+        # without the others is the original defect with a label on it.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/exam_computation.sql
+
       - name: Every suite on disk has a step above
         # The gap this closes has already happened twice in this repo, in two
         # different places: supabase/bundles/ stopped at 0039 while CI stayed

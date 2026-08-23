@@ -3,9 +3,14 @@ import { ExamSetup } from './ExamSetup'
 import { MarksEntry } from './MarksEntry'
 import { ResultsTab } from './ResultsTab'
 import { RemarksTab } from './RemarksTab'
+import { StreamsTab } from './StreamsTab'
 
 const TABS = [
   { key: 'setup', label: 'Setup' },
+  // Where a school sets who is Science and who is Arts. Not a corner of each
+  // pupil's profile: setting a stream forty profiles at a time is why the column
+  // stayed empty, and an empty stream in a streamed class means no result card.
+  { key: 'streams', label: 'Streams & Board Nos' },
   { key: 'marks', label: 'Marks Entry' },
   { key: 'results', label: 'Result Cards' },
   // Remarks had nowhere in the schema to live at all; position was computed and
@@ -29,6 +34,7 @@ export function ExamsPage() {
       </div>
       <div className="mt-5">
         {tab === 'setup' && <ExamSetup />}
+        {tab === 'streams' && <StreamsTab />}
         {tab === 'marks' && <MarksEntry />}
         {tab === 'results' && <ResultsTab />}
         {tab === 'remarks' && <RemarksTab />}

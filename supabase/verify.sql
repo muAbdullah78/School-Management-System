@@ -185,6 +185,40 @@ select 'photographs and school logo (0057)',
        then 'PASS' else 'FAIL — run migrations/0057_photos_and_logo.sql' end
 
 union all
+select 'exam computation (0058)',
+       case when (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                   where n.nspname = 'public' and p.proname in
+                     ('fn_takes_subject', 'fn_result_readiness', 'fn_upsert_exam_subject',
+                      'fn_set_enrollment_stream', 'fn_class_streams',
+                      'fn_set_subject_details')) = 6
+                 and exists (select 1 from information_schema.columns
+                              where table_schema='public' and table_name='mark_entries'
+                                and column_name='practical_marks')
+                 and exists (select 1 from information_schema.columns
+                              where table_schema='public' and table_name='exam_terms'
+                                and column_name='assessment_weight_pct')
+                 -- The generator must be the THREE-argument version. The two-arg
+                 -- one had no completeness check at all: it printed a pupil
+                 -- nobody had marked as 0%, grade F, ranked. If the old
+                 -- signature is still present the app can still call it.
+                 and exists (select 1 from pg_proc p
+                              join pg_namespace n on n.oid = p.pronamespace
+                              where n.nspname='public' and p.proname='fn_generate_result_cards'
+                                and p.pronargs = 3)
+                 and not exists (select 1 from pg_proc p
+                                  join pg_namespace n on n.oid = p.pronamespace
+                                  where n.nspname='public' and p.proname='fn_generate_result_cards'
+                                    and p.pronargs = 2)
+                 -- And it must actually consult the stream rule. The function has
+                 -- existed since 0005; its presence proves nothing, exactly as
+                 -- with 0055's rollover fix.
+                 and exists (select 1 from pg_proc p
+                              join pg_namespace n on n.oid = p.pronamespace
+                              where n.nspname='public' and p.proname='fn_generate_result_cards'
+                                and p.prosrc like '%fn_takes_subject%')
+       then 'PASS' else 'FAIL — run migrations/0058_exam_computation.sql' end
+
+union all
 select 'price plans loaded',
        case when (select count(*) from public.plans) = 4
        then 'PASS' else 'FAIL — re-run bundle 1' end

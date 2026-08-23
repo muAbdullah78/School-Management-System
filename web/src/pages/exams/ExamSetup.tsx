@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getCurrentSession, listClasses, listExamTerms, createExamTerm,
   listSubjects, createSubject, listExamSubjects, upsertExamSubject, removeExamSubject,
-  listClassRoster,
+  listClassRoster, setSubjectDetails,
   type ExamSubjectRow, type SubjectRow,
 } from '@/lib/db'
 import { TERM_TYPES } from '@/lib/constants'
@@ -139,10 +139,19 @@ function PaperSetup({
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-            <tr><th className="px-3 py-2">Subject</th><th className="px-3 py-2 w-24">Max</th><th className="px-3 py-2 w-24">Pass</th><th className="px-3 py-2 w-36">Date</th><th className="px-3 py-2 w-28">Time</th><th className="px-3 py-2 w-40">In this term</th></tr>
+            <tr>
+              <th className="px-3 py-2">Subject</th>
+              <th className="px-3 py-2 w-40">Stream</th>
+              <th className="px-3 py-2 w-24">Theory</th>
+              <th className="px-3 py-2 w-24">Practical</th>
+              <th className="px-3 py-2 w-24">Pass</th>
+              <th className="px-3 py-2 w-36">Date</th>
+              <th className="px-3 py-2 w-28">Time</th>
+              <th className="px-3 py-2 w-40">In this term</th>
+            </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {subjects.data?.length === 0 && <tr><td colSpan={6} className="px-3 py-3 text-slate-500">No subjects for this class yet — add one below.</td></tr>}
+            {subjects.data?.length === 0 && <tr><td colSpan={8} className="px-3 py-3 text-slate-500">No subjects for this class yet — add one below.</td></tr>}
             {subjects.data?.map((s) => (
               <PaperRow key={s.id} subject={s} termId={termId} classId={classId} existing={byId.get(s.id)} />
             ))}
@@ -185,41 +194,100 @@ function PaperSetup({
 function PaperRow({ subject, termId, classId, existing }: { subject: SubjectRow; termId: string; classId: string; existing?: ExamSubjectRow }) {
   const qc = useQueryClient()
   const [max, setMax] = useState(String(existing?.max_marks ?? 100))
+  const [pmax, setPmax] = useState(String(existing?.practical_max ?? 0))
   const [pass, setPass] = useState(String(existing?.pass_marks ?? 33))
   const [pdate, setPdate] = useState(existing?.exam_date ?? '')
   const [ptime, setPtime] = useState(existing?.paper_time ?? '')
+  const [stream, setStream] = useState(subject.stream ?? '')
   const included = !!existing
 
   const save = useMutation({
-    mutationFn: () => upsertExamSubject(termId, classId, subject.id, Number(max), Number(pass), pdate || null, ptime || null),
+    mutationFn: () => upsertExamSubject(
+      termId, classId, subject.id, Number(max), Number(pass),
+      subject.is_practical ? Number(pmax) : 0, pdate || null, ptime || null),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['examSubjects', termId, classId] }),
   })
   const remove = useMutation({
     mutationFn: () => removeExamSubject(existing!.id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['examSubjects', termId, classId] }),
   })
+  // Stream and the practical flag live on the SUBJECT, not the paper: they are
+  // the same every term, and a school that had to restate them each term would
+  // eventually restate one of them wrongly.
+  const details = useMutation({
+    mutationFn: (v: { stream: string; practical: boolean }) =>
+      setSubjectDetails(subject.id, v.stream.trim() || null, v.practical),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['subjects', classId] })
+      qc.invalidateQueries({ queryKey: ['examSubjects', termId, classId] })
+    },
+  })
+
+  const err = (details.isError && (details.error as Error).message)
+    || (save.isError && (save.error as Error).message)
+    || null
 
   return (
-    <tr>
-      <td className="px-3 py-2 font-medium text-slate-800">{subject.name}</td>
-      <td className="px-3 py-2"><input type="number" min="1" value={max} onChange={(e) => setMax(e.target.value)} className="w-16 rounded border border-slate-300 px-2 py-1 text-sm" /></td>
-      <td className="px-3 py-2"><input type="number" min="0" value={pass} onChange={(e) => setPass(e.target.value)} className="w-16 rounded border border-slate-300 px-2 py-1 text-sm" /></td>
-      <td className="px-3 py-2"><input type="date" value={pdate} onChange={(e) => setPdate(e.target.value)} className="rounded border border-slate-300 px-2 py-1 text-sm" /></td>
-      <td className="px-3 py-2"><input value={ptime} onChange={(e) => setPtime(e.target.value)} placeholder="09:00 AM" className="w-24 rounded border border-slate-300 px-2 py-1 text-sm" /></td>
-      <td className="px-3 py-2">
-        <div className="flex gap-2">
-          <button onClick={() => save.mutate()} disabled={save.isPending}
-            className={`rounded px-2.5 py-1 text-xs font-medium ${included ? 'border border-slate-300 text-slate-700 hover:bg-slate-50' : 'bg-brand-600 text-white hover:bg-brand-700'} disabled:opacity-60`}>
-            {included ? 'Update' : 'Include'}
-          </button>
-          {included && (
-            <button onClick={() => remove.mutate()} disabled={remove.isPending}
-              className="rounded border border-red-300 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-60">
-              Remove
-            </button>
+    <>
+      <tr>
+        <td className="px-3 py-2 font-medium text-slate-800">
+          {subject.name}
+          <label className="mt-0.5 flex items-center gap-1 text-[11px] font-normal text-slate-500">
+            <input
+              type="checkbox" checked={subject.is_practical} disabled={details.isPending}
+              onChange={(e) => details.mutate({ stream, practical: e.target.checked })}
+              className="h-3.5 w-3.5"
+            />
+            has a practical
+          </label>
+        </td>
+        <td className="px-3 py-2">
+          {/* Blank = every pupil in the class takes it. A value = only pupils
+              whose enrolment stream matches, compared without case, so
+              "science" and "Science" are the same stream. */}
+          <input
+            value={stream} onChange={(e) => setStream(e.target.value)}
+            onBlur={() => {
+              if ((stream.trim() || null) !== (subject.stream ?? null)) {
+                details.mutate({ stream, practical: subject.is_practical })
+              }
+            }}
+            placeholder="all pupils"
+            className="w-32 rounded border border-slate-300 px-2 py-1 text-sm"
+          />
+        </td>
+        <td className="px-3 py-2"><input type="number" min="1" value={max} onChange={(e) => setMax(e.target.value)} className="w-16 rounded border border-slate-300 px-2 py-1 text-sm" /></td>
+        <td className="px-3 py-2">
+          {subject.is_practical
+            ? <input type="number" min="0" value={pmax} onChange={(e) => setPmax(e.target.value)} className="w-16 rounded border border-slate-300 px-2 py-1 text-sm" />
+            : <span className="text-xs text-slate-400">—</span>}
+        </td>
+        <td className="px-3 py-2">
+          <input type="number" min="0" value={pass} onChange={(e) => setPass(e.target.value)} className="w-16 rounded border border-slate-300 px-2 py-1 text-sm" />
+          {subject.is_practical && Number(pmax) > 0 && (
+            <div className="text-[10px] text-slate-400">of {Number(max) + Number(pmax)}</div>
           )}
-        </div>
-      </td>
-    </tr>
+        </td>
+        <td className="px-3 py-2"><input type="date" value={pdate} onChange={(e) => setPdate(e.target.value)} className="rounded border border-slate-300 px-2 py-1 text-sm" /></td>
+        <td className="px-3 py-2"><input value={ptime} onChange={(e) => setPtime(e.target.value)} placeholder="09:00 AM" className="w-24 rounded border border-slate-300 px-2 py-1 text-sm" /></td>
+        <td className="px-3 py-2">
+          <div className="flex gap-2">
+            <button onClick={() => save.mutate()} disabled={save.isPending}
+              className={`rounded px-2.5 py-1 text-xs font-medium ${included ? 'border border-slate-300 text-slate-700 hover:bg-slate-50' : 'bg-brand-600 text-white hover:bg-brand-700'} disabled:opacity-60`}>
+              {included ? 'Update' : 'Include'}
+            </button>
+            {included && (
+              <button onClick={() => remove.mutate()} disabled={remove.isPending}
+                className="rounded border border-red-300 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-60">
+                Remove
+              </button>
+            )}
+          </div>
+        </td>
+      </tr>
+      {err && (
+        <tr><td colSpan={8} className="px-3 pb-2 text-xs text-red-600">{err}</td></tr>
+      )}
+    </>
   )
 }

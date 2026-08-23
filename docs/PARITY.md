@@ -275,6 +275,11 @@ Items 1-6 and 9 are **done** (PR #17). What follows is the remaining work.
 The column-level twin of the reachability check found thirteen. Ranked by what
 their absence actually costs a school, because several are not cosmetic.
 
+**One left.** 0057 and 0058 wired the other twelve. The baseline in
+`check-columns-used.sh` now holds a single entry — `fee_heads.is_refundable` —
+and every line removed from it was removed because the column got used, never
+because the check was relaxed.
+
 ### ~~Needs a decision — no Supabase Storage exists at all~~ Built (0057)
 
 | Column | Status |
@@ -304,18 +309,49 @@ outlives the child's time at the school. `verify.sql` fails if the old name is
 still present, because that would mean every read in the app is looking at a
 column that is not there.
 
-### Exam and board module — these look like correctness gaps
+### ~~Exam and board module — these look like correctness gaps~~ Built (0058)
 
-| Column | What its absence implies |
+They were not "gaps that look like" correctness problems. They **were** the
+correctness problem, and it was worse than this note guessed. Reproduced on a
+real database before anything was changed — one class of three in class 9,
+English for everyone, Physics for Science, Civics for Arts, everyone who sat a
+paper doing well:
+
+| Pupil | Card said | Truth |
+|---|---|---|
+| Arts Child | 180/275 = **65.45%**, grade **C**, position **1** | 180/200 = 90.0%, A+ |
+| Science Child | 160/275 = **58.18%**, grade **D**, position **2** | 160/175 = 91.4%, A+ |
+| Unmarked Child | 0/275 = **0.00%**, grade **F**, position **3** | marks not typed in yet |
+
+With `stream` unread, every pupil was marked out of *every* paper in the class,
+so a zero was silently supplied for the other stream's syllabus. Two A+ pupils
+printed as a C and a D. The ranking **inverted** — the Science pupil is genuinely
+first — so prize day would have gone to the wrong child. And a pupil nobody had
+marked printed as having failed, because one `coalesce(sum(…), 0)` made "no mark
+exists" and "a mark of zero" the same thing.
+
+| Column | Status |
 |---|---|
-| `exam_subjects.practical_max` | No practical marks. Pakistani boards examine practicals in the science subjects, so a science result computed without them is incomplete. |
-| `assessments.weightage` | Assessments cannot be weighted, so a 10-mark class test may count the same as a 100-mark paper in whatever aggregates it. |
-| `enrollments.stream`, `subjects.stream`, `subjects.is_practical` | No streams. Science / Arts / Pre-medical is fundamental from class 9, and subject lists differ by stream. |
-| `enrollments.bise_reg_no` | The BISE registration number, which a school must hold for every board candidate. |
+| `enrollments.stream`, `subjects.stream` | Built. A subject with no stream is everyone's; a streamed subject is only for pupils in that stream, matched case-insensitively. A streamed class with a streamless pupil is **refused**, by name, rather than quietly given half a card. Set in Exams → Streams & Board Nos, as one list per class. |
+| `exam_subjects.practical_max`, `subjects.is_practical` | Built. `mark_entries.practical_marks` is new; theory and practical are kept apart on the card and combined for the pass mark, validated against their own maximum. `is_practical` gates whether a paper may carry practical marks at all, so the two columns cannot disagree. |
+| `assessments.weightage` | Built, **opt-in**. `exam_terms.assessment_weight_pct` defaults to 0, which is exactly the old behaviour, so no existing card moves on upgrade. A pupil with no weighted assessment gets 100% from the exam rather than a zero for a component that does not exist. |
+| `enrollments.bise_reg_no` | Built. On the result card when present, and exportable as a board list. |
+| `exam_subjects.pass_marks` | Was frozen onto every card since 0005 and never used. Now drives per-subject Pass/Fail and an overall verdict, and the card prints *both* the aggregate and the number of subjects failed so a school with a different promotion rule can apply it. |
+| `result_cards.generated_at` | Printed, with the version, so two cards in circulation after a correction can be told apart. |
 
-Worth ranking against real market knowledge before building: these change how
-results are computed, and a semantic change to marks after a school has entered
-them is not a safe thing to do casually.
+The rule that shaped all of it: **a refusal is recoverable, a plausible wrong
+card is not.** Generation now refuses while marks are missing and names the
+subject and the count — "Chemistry is missing for 12 pupils" is actionable where
+a silent zero was not. An explicit provisional run is allowed, and then the card
+says PROVISIONAL, excludes the unmarked papers from its denominator, and takes no
+position. All three together; one without the others is the original defect with
+a label on it.
+
+51 assertions in `supabase/tests/exam_computation.sql`. The design and the
+argument against each decision are in `docs/EXAM-COMPUTATION-DESIGN.md`,
+including what is deliberately not built (per-pupil electives, a configurable
+promotion rule, and GPA — `school_settings.grade_scale` still offers `gpa10` and
+`fn_grade_for` still always returns letters, which is its own piece of work).
 
 ### ~~Audit trail~~ — done (0048)
 

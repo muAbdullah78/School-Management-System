@@ -36,15 +36,14 @@ cd "$(dirname "$0")/.."
 # BASELINE, not an amnesty: it stops the check failing on debt that already
 # existed, while any NEW unused column fails the build. Removing a line from
 # here should mean the column got wired up — see docs/PARITY.md.
+# 0058 wired seven of the nine entries that used to be here: assessments.weightage,
+# enrollments.stream, enrollments.bise_reg_no, exam_subjects.practical_max,
+# subjects.stream, subjects.is_practical and result_cards.generated_at. They were
+# not cosmetic — with streams unread, a class-9 result card was computed over
+# every paper in the class, so two A+ pupils printed as a C and a D and the
+# ranking inverted. See docs/EXAM-COMPUTATION-DESIGN.md.
 KNOWN="
-assessments.weightage
-enrollments.bise_reg_no
-enrollments.stream
-exam_subjects.practical_max
 fee_heads.is_refundable
-result_cards.generated_at
-subjects.is_practical
-subjects.stream
 "
 
 psql -tA -v ON_ERROR_STOP=1 > /tmp/cols_unused.txt <<'SQL'

@@ -150,7 +150,11 @@ begin
   where e.school_id = v_a and s.full_name <> 'Unmarked Kid';
 
   perform public.fn_enter_marks(v_es, v_marks);
-  perform public.fn_generate_result_cards(v_term, v_cl);
+  -- allow_incomplete, on purpose: this fixture deliberately keeps a child with
+  -- no marks at all, which is what assertion 9 is about. Since 0058 the
+  -- generator REFUSES an incomplete class by default, so the override is how
+  -- this suite says "yes, I know, that is the case under test".
+  perform public.fn_generate_result_cards(v_term, v_cl, true);
 
   -- School B, for isolation.
   perform set_config('test.uid', v_ob::text, false);
@@ -209,16 +213,27 @@ begin
              where student_name = 'Fourth Kid'),
     '8  ...and inside the top four when asked for four');
 
-  -- A child who was never marked gets percentage 0.00, NOT null:
-  -- fn_generate_result_cards coalesces the mark sum to 0. So "never entered" and
-  -- "sat and scored nothing" are identical in `percentage`, and in a small class
-  -- the unmarked child would land inside the top three. The function draws the
-  -- line where it really exists — does any mark row exist for this term.
+  -- Before 0058 an unmarked child scored 0.00, NOT null: the generator coalesced
+  -- the mark sum to zero, so "never entered" and "sat and scored nothing" were
+  -- indistinguishable in `percentage` and in a small class the unmarked child
+  -- landed inside the top three. fn_position_holders worked around it by asking
+  -- whether any mark row exists.
+  --
+  -- 0058 fixed it at the source: an unmarked pupil now has NO percentage and NO
+  -- position, and the card says it is provisional. The assertion is inverted
+  -- rather than deleted, because the workaround in fn_position_holders is still
+  -- there and this is what proves it is no longer load-bearing.
   perform pg_temp.ok(
     (select percentage from public.result_cards rc
       join public.students s2 on s2.id = rc.student_id
-      where s2.full_name = 'Unmarked Kid' order by rc.version desc limit 1) = 0,
-    '9  an unmarked child scores 0.00, not null — which is why percentage cannot be the test');
+      where s2.full_name = 'Unmarked Kid' order by rc.version desc limit 1) is null,
+    '9  an unmarked child now has NO percentage at all — 0.00 was the old defect, and '
+    || 'it printed a child nobody had marked as having failed');
+  perform pg_temp.ok(
+    (select (frozen->>'provisional')::boolean from public.result_cards rc
+      join public.students s2 on s2.id = rc.student_id
+      where s2.full_name = 'Unmarked Kid' order by rc.version desc limit 1),
+    '9a and their card says it is provisional');
   perform pg_temp.ok(
     not exists (select 1 from public.fn_position_holders(pg_temp.term(), 99)
                  where student_name = 'Unmarked Kid'),
@@ -245,7 +260,7 @@ begin
   -- Regenerate. fn_generate_result_cards INSERTS a new version rather than
   -- updating, which is exactly why a remark stored on result_cards would be
   -- lost here without anybody noticing.
-  perform public.fn_generate_result_cards(pg_temp.term(), pg_temp.cls());
+  perform public.fn_generate_result_cards(pg_temp.term(), pg_temp.cls(), true);
   select count(distinct version) into v_versions from public.result_cards
    where exam_term_id = pg_temp.term();
   perform pg_temp.ok(v_versions = 2,
@@ -381,7 +396,7 @@ begin
           (select id from public.profiles where full_name = 'Pos Owner'),
           public.current_school_id());
 
-  perform public.fn_generate_result_cards(pg_temp.term(), pg_temp.cls());
+  perform public.fn_generate_result_cards(pg_temp.term(), pg_temp.cls(), true);
 
   select count(*) into v_flagged from public.fn_position_holders(pg_temp.term(), 3)
    where withheld;
