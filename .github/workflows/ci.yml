@@ -130,6 +130,28 @@ jobs:
             exit 1
           fi
           echo "verify.sql is all PASS on a bundle-only install"
+      - name: verify.sql and detect.sql cover the same migrations
+        # They are two lists of the same facts, maintained by hand, and they drifted
+        # once already: verify.sql checked 0033 then jumped to 0038-0046, so a real
+        # school got all PASS while 0036 (the family-linkage fix) and 0037 were
+        # MISSING. verify.sql certified a database on which sibling billing did not
+        # work.
+        #
+        # A subset check reports health it has not measured. This asserts both files
+        # name every migration in the range where a gap can occur.
+        run: |
+          fail=0
+          for n in 0035 0036 0037 0038 0039 0040 0041 0042 0043 0044 0045 0046 0047 0048 0049; do
+            grep -q "'$n'" supabase/verify.sql || { echo "verify.sql does not check $n"; fail=1; }
+            grep -q "'${n}_" supabase/repair/detect.sql || { echo "detect.sql does not check $n"; fail=1; }
+            test -f "supabase/repair/${n}_"*.sql || { echo "no repair file for $n"; fail=1; }
+          done
+          if [ "$fail" = 1 ]; then
+            echo "::error::the install checks and the repair files have drifted apart"
+            exit 1
+          fi
+          echo "verify.sql, detect.sql and supabase/repair/ all cover 0035-0049"
+
       - name: An EXISTING school can upgrade
         # THE JOB THAT WAS MISSING, and its absence cost a real school fifteen
         # migrations.

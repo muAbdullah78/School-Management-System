@@ -51,33 +51,40 @@ select 'portal functions (bundle 3)',
        then 'PASS' else 'FAIL — re-run bundle 3' end
 
 union all
--- Bundle 4 was added after bundles 1-3 had already shipped, and its absence is
--- the quietest possible failure: the schema looks complete, every check above
--- says PASS, and then the fee counter, the challan, the reports and the enquiry
--- book all fail at runtime because the functions they call are not there.
+-- EVERY migration from 0035 to 0049, not a hand-picked subset.
 --
--- IT NAMES THE FUNCTIONS, not a bundle. The previous version said "re-run bundle
--- 4" and that advice was WRONG for the case it actually fired in: fn_counter_summary
--- is migration 0038 and fn_challan is 0039, both of which live in bundle THREE.
--- A school whose bundle 3 was stale saw this row fail and was sent to re-run
--- bundle 4, which cannot fix it and cannot even apply. Naming the function lets
--- you look it up instead of trusting a label I got wrong.
-select 'daily operations (0038-0046)',
-       coalesce(
-         'FAIL — missing: ' || string_agg(w.n, ', ')
-           || ' — run supabase/repair/detect.sql to see exactly which migrations you are missing',
-         'PASS')
-  from (values ('fn_counter_summary'),        -- 0038, bundle 3
-               ('fn_challan'),                -- 0039, bundle 3
-               ('fn_record_bulk_payments'),   -- 0040, bundle 4
-               ('fn_student_list'),           -- 0041, bundle 4
-               ('fn_message_settings'),       -- 0043, bundle 4
-               ('fn_report_ledger'),          -- 0044, bundle 4
-               ('fn_report_balance_sheet'),   -- 0045, bundle 4
-               ('fn_enquiry_list')            -- 0046, bundle 4
-       ) as w(n)
- where not exists (select 1 from pg_proc p
-                    where p.pronamespace = 'public'::regnamespace and p.proname = w.n)
+-- The previous version checked 0033 and then jumped to 0038-0046. A real school
+-- ran it and got all PASS while migrations 0036 and 0037 were MISSING — 0036 is
+-- the family-linkage fix, so verify.sql certified a database on which sibling
+-- billing did not work. A check that covers a subset reports health it has not
+-- measured.
+--
+-- 0035-0049 is the range where a gap can occur, because bundle 3's file pattern
+-- kept absorbing new migrations after it had shipped and different schools
+-- stopped at different points inside it. The signatures here are the same ones
+-- supabase/repair/detect.sql uses, and CI asserts the two lists agree.
+select 'migrations 0035-0049',
+       coalesce('FAIL — missing ' || string_agg(m, ', ')
+                  || ' — run supabase/repair/detect.sql, then the files it names',
+                'PASS')
+  from (
+    select '0035' as m where not exists (select 1 from pg_proc where proname='fn_fee_amount' and pronamespace='public'::regnamespace)
+    union all select '0036' where not exists (select 1 from pg_proc where proname='fn_merge_families' and pronamespace='public'::regnamespace)
+    union all select '0037' where not exists (select 1 from pg_proc where proname='fn_family_parents' and pronamespace='public'::regnamespace)
+    union all select '0038' where not exists (select 1 from pg_proc where proname='fn_counter_summary' and pronamespace='public'::regnamespace)
+    union all select '0039' where not exists (select 1 from pg_proc where proname='fn_challan' and pronamespace='public'::regnamespace)
+    union all select '0040' where not exists (select 1 from pg_proc where proname='fn_record_bulk_payments' and pronamespace='public'::regnamespace)
+    union all select '0041' where not exists (select 1 from pg_proc where proname='fn_student_list' and pronamespace='public'::regnamespace)
+    union all select '0042' where not exists (select 1 from pg_proc where proname='fn_import_staff' and pronamespace='public'::regnamespace
+                                               and prosrc like '%employee_no = v_emp and deleted_at is null and school_id%')
+    union all select '0043' where not exists (select 1 from pg_proc where proname='fn_message_settings' and pronamespace='public'::regnamespace)
+    union all select '0044' where not exists (select 1 from pg_proc where proname='fn_report_ledger' and pronamespace='public'::regnamespace)
+    union all select '0045' where not exists (select 1 from pg_proc where proname='fn_report_balance_sheet' and pronamespace='public'::regnamespace)
+    union all select '0046' where not exists (select 1 from information_schema.tables where table_schema='public' and table_name='admission_enquiries')
+    union all select '0047' where     exists (select 1 from pg_proc where proname='auth_role' and pronamespace='public'::regnamespace)
+    union all select '0048' where not exists (select 1 from pg_proc where proname='fn_mark_corrections' and pronamespace='public'::regnamespace)
+    union all select '0049' where not exists (select 1 from information_schema.tables where table_schema='public' and table_name='exam_remarks')
+  ) gaps
 
 union all
 select 'search, birthdays, staff leaving (bundle 5)',
