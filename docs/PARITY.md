@@ -38,9 +38,23 @@ and no per-message cost. The workflow survives; the channel changes.
 Modules ruled out entirely, and therefore absent from the plan below: SMS
 sending and SMS settings, mobile apps and app notifications, biometric and
 facial-recognition attendance, online classes, holiday calendar, salary and loan
-management, stock and inventory, student behaviour, ID card printing,
-certificates, daily student diary, study material LMS, email alerts, school
-notice board, transport, parent complaints.
+management, stock and inventory, student behaviour, daily student diary, study
+material LMS, email alerts, school notice board, transport, parent complaints.
+
+**Two items came back off that list**, on an explicit later decision:
+
+- **Certificates and ID cards.** A Pakistani school cannot operate without a
+  School Leaving Certificate — a family moving city cannot enrol a child
+  anywhere else without one — so ruling it out ruled out a document the school is
+  legally expected to produce. Built.
+- **QR check-in for staff** — but still **no biometric**. Biometric needs a
+  physical device and its own support burden; a QR code needs a printed card and
+  a phone. The loopholes a QR system opens (photograph the code, mark in from
+  home) are closed in software, and how is set out where that feature is
+  described.
+
+`biometric and facial-recognition attendance` stays excluded, and nothing in the
+QR work moves toward it.
 
 Where one of their screens mixes excluded and wanted work, only the wanted half
 is listed.
@@ -51,7 +65,7 @@ is listed.
 
 | Their screen | Status | Notes |
 |---|---|---|
-| Admit Student | `partial` | We have the form. Theirs also has a **student photo** with upload *and* webcam capture — we have no photo anywhere and `students.photo_url` is a dead column. |
+| Admit Student | `done` | The form, plus the photograph — added on the pupil's profile once admitted rather than mid-form, because a clerk admitting a queue of children should not be blocked on finding a photo. The class photo sheet then fills them all in one pass. |
 | Admit Bulk Student | `partial` | We have CSV import. Theirs is an on-screen grid for typing several siblings at once, with a class/section header applied to the whole batch. |
 | Admission Requests | `missing` | Online applications awaiting approve/reject. |
 | Admission Inquiries | `have` (0046) | Worklist-first: opens on who is overdue a call. Append-only follow-up log, one-action conversion through `fn_admit_student`, and a source breakdown. |
@@ -214,7 +228,7 @@ ours does not.
 | Print-first reports | `partial` | Every report screen of theirs is a grid of named reports each with a Print button. |
 | Dashboard tiles that link to a report | `partial` | Their tiles all say "View Report". |
 | Running session shown in the footer | `missing` | Small, but it is always visible and prevents entering marks into last year. |
-| Student photo | `missing` | Upload and webcam capture. |
+| Student photo | `done` | Upload from file or phone camera (0057). No webcam-capture screen: on a phone or tablet the file picker already offers the camera, and on a desktop a clerk photographing 800 children uses a phone. The class photo sheet is the part their product does not have. |
 | Admin role management | `partial` | Theirs toggles web login and app login per admin. |
 | School's own public website | `excluded` for now | They generate a full public site per school — gallery, principal's message, facilities, colours. A separate product; our marketing site is not the same thing. |
 
@@ -250,8 +264,9 @@ Items 1-6 and 9 are **done** (PR #17). What follows is the remaining work.
 9. ~~**WhatsApp automation**~~ Done (0043).
 10. ~~**Admission enquiries**~~ Done (0046). Still missing the other half:
     **admission requests** — online applications awaiting approve/reject.
-11. ~~**Global search, module search, birthdays**~~ Done (0050). Student photos
-    remain — they need Storage, which cannot be tested from here.
+11. ~~**Global search, module search, birthdays**~~ Done (0050).
+    ~~Student photos~~ Done (0057) — including the storage policies, which turned
+    out to be testable after all: see below.
 12. **Multi-campus** — last, because it touches every table, and only if a real
     school asks for it.
 
@@ -260,33 +275,434 @@ Items 1-6 and 9 are **done** (PR #17). What follows is the remaining work.
 The column-level twin of the reachability check found thirteen. Ranked by what
 their absence actually costs a school, because several are not cosmetic.
 
-### Needs a decision — no Supabase Storage exists at all
+**None left.** 0057, 0058 and 0060 wired all thirteen, and the baseline in
+`check-columns-used.sh` is now **empty**. Every line removed from it went because
+the column got used, never because the check was relaxed — and from here any
+unused column fails the build outright, with no debt left to grant an exception
+to.
 
-| Column | What is missing |
+### ~~Needs a decision — no Supabase Storage exists at all~~ Built (0057)
+
+| Column | Status |
 |---|---|
-| `students.photo_url` | Student photographs. Theirs has file upload **and** webcam capture, and a photo appears on the student profile, class lists and ID cards. |
-| `school_settings.logo_url` | The school's logo on the printed challan, result card and certificates. A fee voucher with no logo does not look like it came from the school. |
+| `students.photo_url` → **`photo_path`** | Built. Upload on the pupil's profile and on a class photo sheet where the face IS the upload button, so a whole class is photographed in one screen rather than forty. Shown on the profile, the roster, the class sheet and the ID card. |
+| `school_settings.logo_url` → **`logo_path`** | Built. Uploaded in Settings by owner or principal only, and printed on the challan (all three copies), the receipt, the result card, every certificate and both ID cards. |
+| `staff.photo_path` (new) | Built. On the staff roster and the staff ID card. |
 
-**Not built, deliberately.** Both need a Storage bucket, and bucket policies are
-not table RLS — they are `storage.objects` policies, which this environment
-cannot exercise at all (there is no Supabase here, only Postgres). Shipping
-untested bucket policies for **photographs of children in a multi-tenant system**
-is not a risk worth taking: the failure mode is one school fetching another
-school's pupils' photographs. This needs to be built against a real project and
-verified there.
+**What I said before, and why it was wrong.** The earlier note here refused to
+build this on the grounds that `storage.objects` policies "cannot be exercised at
+all" in this environment. That was a real risk, honestly stated, and the
+conclusion was still wrong: a storage policy is *ordinary SQL over an ordinary
+table*. `supabase/tests/photos.sql` builds a faithful `storage.objects` stub —
+same shape, same `storage.foldername()` behaviour — installs the same four
+policies, and drives them as `authenticated` from two schools **in both
+directions**. 34 assertions. The isolation guarantee is tested, not asserted.
 
-### Exam and board module — these look like correctness gaps
+What genuinely cannot be tested here is that Supabase's storage API consults
+those policies, plus the bucket's own size and mime limits and the signed-URL
+flow. Those are one manual pass on the live project, written out box by box in
+`docs/PHOTOS-CHECKLIST.md`. The design and every objection to it are in
+`docs/PHOTOS-DESIGN.md`.
 
-| Column | What its absence implies |
+The columns were **renamed** rather than reused: they hold a storage *path* and
+never a URL. A URL in a column is a URL that expires, or a public link that
+outlives the child's time at the school. `verify.sql` fails if the old name is
+still present, because that would mean every read in the app is looking at a
+column that is not there.
+
+### ~~Exam and board module — these look like correctness gaps~~ Built (0058)
+
+They were not "gaps that look like" correctness problems. They **were** the
+correctness problem, and it was worse than this note guessed. Reproduced on a
+real database before anything was changed — one class of three in class 9,
+English for everyone, Physics for Science, Civics for Arts, everyone who sat a
+paper doing well:
+
+| Pupil | Card said | Truth |
+|---|---|---|
+| Arts Child | 180/275 = **65.45%**, grade **C**, position **1** | 180/200 = 90.0%, A+ |
+| Science Child | 160/275 = **58.18%**, grade **D**, position **2** | 160/175 = 91.4%, A+ |
+| Unmarked Child | 0/275 = **0.00%**, grade **F**, position **3** | marks not typed in yet |
+
+With `stream` unread, every pupil was marked out of *every* paper in the class,
+so a zero was silently supplied for the other stream's syllabus. Two A+ pupils
+printed as a C and a D. The ranking **inverted** — the Science pupil is genuinely
+first — so prize day would have gone to the wrong child. And a pupil nobody had
+marked printed as having failed, because one `coalesce(sum(…), 0)` made "no mark
+exists" and "a mark of zero" the same thing.
+
+| Column | Status |
 |---|---|
-| `exam_subjects.practical_max` | No practical marks. Pakistani boards examine practicals in the science subjects, so a science result computed without them is incomplete. |
-| `assessments.weightage` | Assessments cannot be weighted, so a 10-mark class test may count the same as a 100-mark paper in whatever aggregates it. |
-| `enrollments.stream`, `subjects.stream`, `subjects.is_practical` | No streams. Science / Arts / Pre-medical is fundamental from class 9, and subject lists differ by stream. |
-| `enrollments.bise_reg_no` | The BISE registration number, which a school must hold for every board candidate. |
+| `enrollments.stream`, `subjects.stream` | Built. A subject with no stream is everyone's; a streamed subject is only for pupils in that stream, matched case-insensitively. A streamed class with a streamless pupil is **refused**, by name, rather than quietly given half a card. Set in Exams → Streams & Board Nos, as one list per class. |
+| `exam_subjects.practical_max`, `subjects.is_practical` | Built. `mark_entries.practical_marks` is new; theory and practical are kept apart on the card and combined for the pass mark, validated against their own maximum. `is_practical` gates whether a paper may carry practical marks at all, so the two columns cannot disagree. |
+| `assessments.weightage` | Built, **opt-in**. `exam_terms.assessment_weight_pct` defaults to 0, which is exactly the old behaviour, so no existing card moves on upgrade. A pupil with no weighted assessment gets 100% from the exam rather than a zero for a component that does not exist. |
+| `enrollments.bise_reg_no` | Built. On the result card when present, and exportable as a board list. |
+| `exam_subjects.pass_marks` | Was frozen onto every card since 0005 and never used. Now drives per-subject Pass/Fail and an overall verdict, and the card prints *both* the aggregate and the number of subjects failed so a school with a different promotion rule can apply it. |
+| `result_cards.generated_at` | Printed, with the version, so two cards in circulation after a correction can be told apart. |
 
-Worth ranking against real market knowledge before building: these change how
-results are computed, and a semantic change to marks after a school has entered
-them is not a safe thing to do casually.
+The rule that shaped all of it: **a refusal is recoverable, a plausible wrong
+card is not.** Generation now refuses while marks are missing and names the
+subject and the count — "Chemistry is missing for 12 pupils" is actionable where
+a silent zero was not. An explicit provisional run is allowed, and then the card
+says PROVISIONAL, excludes the unmarked papers from its denominator, and takes no
+position. All three together; one without the others is the original defect with
+a label on it.
+
+51 assertions in `supabase/tests/exam_computation.sql`. The design and the
+argument against each decision are in `docs/EXAM-COMPUTATION-DESIGN.md`,
+including what is deliberately not built (per-pupil electives, a configurable
+promotion rule, and GPA — `school_settings.grade_scale` still offers `gpa10` and
+`fn_grade_for` still always returns letters, which is its own piece of work).
+
+### Staff QR check-in was decorative — done (0062), and nobody could admit a student — done (0063)
+
+**Two defects, and the second is not about check-in at all.**
+
+#### The QR was doing nothing
+
+Probed on a real database. One teacher, login linked to her staff record, at home:
+
+| What she did | Result |
+|---|---|
+| Inserted her own attendance row, `source = 'qr'`, `code_id` null | **allowed** |
+| Back-dated seven days she never worked | **allowed** |
+| The code itself | 32 static hex chars, no expiry |
+| Check-out, lateness, school day | **none of the three existed** |
+
+`staff_att_insert` allowed `staff_id = my_staff_id()`, and `fn_staff_check_in` has
+been SECURITY DEFINER since it was written — so that policy branch was never
+needed for the feature to work. It was pure surplus, and it handed away the entire
+mechanism: the QR code was a suggestion. On a school that pays by attendance, the
+back-dating is payroll fraud in one call.
+
+No biometric — that was the instruction, and it is also what shapes the design:
+**a QR cannot prove a body was at the gate.** It can prove a valid,
+currently-displayed code was presented by a signed-in account.
+`docs/STAFF-CHECKIN-DESIGN.md` closes every gap between those two that can be
+closed and states the one that cannot. Five decisions matter:
+
+- **A teacher can never write her own attendance row.** The only paths in are a
+  scan and an office mark. Worth more than everything else put together: the
+  rotating code is a lock, and this is the wall next to it.
+- **`check (attendance_date <= current_date)`** — declarative, so it also covers
+  paths nobody has written yet. Office back-dating stays possible and audited; a
+  teacher cannot back-date at all.
+- **The code rotates.** A second mode: a screen at the gate showing a QR that
+  changes every 30 seconds, so a photograph is worth under a minute instead of a
+  whole term. The token is `code.window.digest` and **the secret never leaves the
+  database** — the display asks the server for a token rather than computing one,
+  because a rotating code whose seed sits in a browser tab is not a rotating code.
+  Built on the built-in `sha256()`, not `pgcrypto`, which this project has never
+  required. A code marked rotating **refuses its own bare code**, or the rotation
+  would be decorative in exactly the way the direct insert was. The printed poster
+  stays available, because most schools have no device at the gate — but the
+  Settings screen states in a table that a photograph of a poster works for ever.
+- **A second scan is the check-out**, with a floor so a nervous double-scan on
+  arrival does not check somebody out at 08:01. And the school day becomes a
+  setting, so `late` — a status that has existed since the first migration and
+  that nothing could ever produce — finally means something. With no start time
+  set, nothing is ever late: a default would have marked a whole staff room late
+  on the day the school upgraded.
+- **Every refusal is recorded**, and more than ten in ten minutes stops the
+  account. The token space is comfortable; comfortable is not a control.
+
+**What cannot be fixed, said plainly rather than hidden:** a teacher at the gate
+can photograph the rotating QR and send it to a colleague who uses it within the
+minute. Only proving presence stops that, and that is biometric. So the register
+records the token window, the device and the second, and shows them — two
+check-ins four seconds apart on one token from two devices is a question a
+principal can ask. The geofence stays, labelled as a deterrent rather than proof,
+because the coordinates come from the teacher's phone.
+
+**A mistake in the first draft, worth recording.** `fn_staff_check_in` logged each
+refusal and then raised. That logs nothing: plpgsql has no autonomous transaction,
+so the raise rolls the log row back with it. The refusal register would have been
+permanently empty and the brute-force counter that reads it would never have
+counted past zero — two features silently dead. Refusals now return
+`{status: 'refused', ...}` and the web wrapper turns that back into a thrown error
+so no caller can mistake one for a success.
+
+#### Nobody could admit a student
+
+The check-in suite is the first test in this project to write `students` as the
+`authenticated` role rather than as the table owner. It stopped dead:
+
+```
+set local role authenticated;
+insert into public.students (school_id, full_name, father_name, status) values (…);
+ERROR:  permission denied for function fn_photo_path_ok
+```
+
+**A CHECK constraint's function runs with the privileges of whoever writes the
+row.** 0057 put such a constraint on `students.photo_path`, `staff.photo_path` and
+`school_settings.logo_path`, then revoked the function from PUBLIC — the default
+grant Postgres gives new functions, and the only reason it worked — without
+granting it to `authenticated`. Admitting a child, adding a teacher and saving the
+school's own name and address were **all impossible for every signed-in user**.
+
+Thirty-four assertions in `photos.sql` covered that constraint and not one could
+see it, because they all write as the table owner and the owner bypasses both RLS
+and function-privilege checks. **A test that runs as postgres is not testing what a
+school experiences** — that is the lesson, and it is a bigger one than the grant.
+
+0063 is the grant. `supabase/check-constraint-functions.sh` is the guard, and it
+asks the question of every constraint function rather than that one, so a
+constraint added in 0080 with a forgotten grant fails the build instead of a
+school's first admission. `photos.sql` 35 and 36 admit a child as a signed-in
+owner and then confirm the constraint still refuses another school's folder from
+that same position.
+
+44 assertions in `supabase/tests/staff_checkin.sql`.
+
+### The operator had no books — done (0064)
+
+The last task on the list, and the one that had been open longest: "no platform
+billing tables exist at all."
+
+This product's central promise to a school is that every rupee has a row. The
+person **selling** the software kept no such rows. Three customer schools;
+Al-Noor renews twelve months of `growth`:
+
+| Question the operator has to answer | The answer before 0064 |
+|---|---|
+| What was Al-Noor **charged**? | no table records a charge to a school |
+| How much has Al-Noor paid us, **ever**? | no function answers it |
+| Which schools **owe us** money right now? | unanswerable |
+| What did we invoice and collect **this month**? | `plans` holds a price list, nothing else |
+| **Who** granted that subscription? | nothing; `audit_log` had 0 rows for it |
+
+The subtle one is the third. The console shows `days_left`, so it **looks** like
+it answers "who do I chase?" — but a school that renewed on trust and never paid
+is indistinguishable from one that paid in full. Both show 335 days left. The
+receivable was invisible precisely because the screen looked like it was showing
+it. `fn_platform_schools` now carries `outstanding`, and `actionRank` puts an
+unpaid invoice above an over-limit school: one is a debt, the other is a
+conversation.
+
+The design and the argument against each decision are in
+`docs/OPERATOR-BILLING-DESIGN.md`. Two decisions carry the weight:
+
+- **A charge is a row, written by the same call that grants the time.** The
+  objection is that operators often grant time with no money attached — a pilot, a
+  favour, an apology. `amount = 0` **is** a charge, and recording it is the point:
+  a free year that leaves no trace is how a business loses track of what it has
+  given away. The amount defaults to the plan's list price, and an amount that
+  differs from list **requires a reason**, including zero.
+- **Outstanding is derived, never stored** — the same rule the school-facing side
+  follows, for the same reason. A stored balance drifts from the rows that
+  produced it and then two screens disagree about what a customer owes.
+
+**A revenue leak found in the same probe.** Al-Noor is on `growth` (limit 300)
+with **420 students**. The console itself computed `limit_state = 'over'` and
+`suggested_plan = 'institution'` — and `fn_activate_subscription` renewed them
+onto `growth` for another twelve months at the 300-student price. The screen knew;
+the renewal path never asked. It now refuses, naming the count, the limit and the
+plan that fits, and the override records the breach **on the invoice**. The
+renewal also re-counts before deciding rather than trusting the stored figure — a
+stale count would wave the whole thing straight through.
+
+**The isolation guard caught the new tables, correctly.** `tenant_isolation.sql`
+requires every policy on a table carrying `school_id` to reference
+`current_school_id()`. `platform_invoices` and `platform_payments` carry it but
+must be gated on `is_platform_admin()` instead — a school must see none of it, so
+`current_school_id()` there would be the bug. Excluding them from the rule without
+asserting what *does* hold is how an exclusion list becomes a hole, so two rules
+replaced it: every policy on a `platform_%` table must gate on
+`is_platform_admin()`, and none of them may be a write policy — every write goes
+through a definer function, so one place decides what a valid charge is. Both were
+negative-tested by adding `using (true)` and then an UPDATE policy and watching
+the suite fail. `platform_admins` is exempt from the first by name: its policy is
+"you may see your own row", and `is_platform_admin()` answers itself by reading
+that table.
+
+46 assertions in `supabase/tests/operator_billing.sql`, nine of which are the
+boundary in both directions: a school's own **owner** reads no operator invoice —
+not even one raised against their own school — and the operator, with every
+billing power there is, still reads no student, no fee invoice and no receipt.
+
+### Certificates — the leaving certificate handed over free, and the leaving never recorded — done (0061)
+
+The certificate module existed since 0021: a gapless per-type serial, a frozen
+snapshot for reprints, append-only inserts. All of that was sound. What it did
+not do, reproduced on a real database with one pupil **still enrolled, owing
+Rs 4,000**, who asked for a School Leaving Certificate:
+
+| What happened | What should happen |
+|---|---|
+| Issued, serial 1 | **Refused** — Rs 4,000 outstanding |
+| `students.status` still `active`, `left_on` null, enrolment still `active` | the child is recorded as having left |
+| Snapshot: name, father, class, roll — **and nothing else** | GR no, dates of attendance, date of leaving, DOB, conduct |
+| Issued again → serial 2, **also looking original** | a second copy says **DUPLICATE** |
+| No way to cancel one issued in error | a cancellation, recorded |
+
+An SLC is the document a Pakistani family **cannot enrol a child anywhere else
+without**, which makes it the school's one real lever for unpaid fees — and it
+was being handed over for nothing. Worse than the money: issuing it did not
+record the leaving, so the child stayed on the attendance sheet, in the class
+strength and **in next month's billing** while holding a certificate saying they
+had left. That drift is silent and compounds every month.
+
+The design and the argument against each decision are in
+`docs/CERTIFICATES-DESIGN.md`. Four decisions matter:
+
+- **The dues gate is on `leaving` only.** A bonafide certificate is proof of
+  enrolment — a family needs it for a bank account, a passport, a scholarship
+  form — and a character certificate is a statement about conduct. Withholding
+  either over fees is punitive and is not what schools do.
+- **An owner or principal can release it anyway, with a reason**, and the amount
+  outstanding and who authorised it are frozen **onto the document**. A gate that
+  cannot be opened gets bypassed outside the system — the school issues an
+  `other` certificate with the same wording and records nothing — and then it has
+  neither the money nor the record. The printed SLC also drops the line "no dues
+  are outstanding" when it is not true.
+- **Issuing records the leaving, in the same transaction**, through
+  `fn_set_student_status` so 0054's rules and audit trail apply unchanged. The
+  objection — printing a document should not quietly change a pupil's status — is
+  answered by making the leaving date and reason **required arguments**: nobody
+  can issue one by accident to see the wording.
+- **A second copy is a DUPLICATE and says so on its face**, carrying the
+  original's serial, and still taking its own serial so the register shows that
+  two documents exist. Refusing a replacement outright only means the school
+  writes one by hand.
+
+Cancellation is a separate table rather than an edit, because RLS cannot restrict
+*which columns* an UPDATE touches and an append-only certificate table is worth
+more than the convenience. The register shows cancelled serials struck through
+with the reason rather than hiding them.
+
+**A defect in this migration's own code, found by probing it rather than reading
+it.** `p_data` — the free-form field a clerk types conduct and remarks into — was
+merged **over** the frozen snapshot, so every field the register and the printed
+document depend on was whatever the caller sent. Proven: a clerk issued a second
+bonafide with `{"is_duplicate": false, "dues_cleared": true, "balance_at_issue":
+0, "student_name": "Somebody Else", "gr_no": "GR-9999"}` and got serial 2 — a
+legitimate serial in the school's own register, printing a different child's name,
+with no DUPLICATE stamp, stating the fees as cleared while Rs 4,000 was
+outstanding. The web app sends none of those keys, but "the app doesn't send it"
+is not a boundary, and a certificate is precisely the document somebody has a
+motive to forge. The snapshot's keys are now stripped out of `p_data` before the
+merge; `conduct`, `purpose` and `remarks` still get through, because locking it
+down must not empty it. 46 assertions in `supabase/tests/certificates.sql`.
+
+**And the detect/verify signature for 0061 had to be tightened twice** — the same
+mistake this project keeps making, now for the fourth time. `fn_issue_certificate`
+has existed since 0021, so its presence proves nothing; the first signature looked
+for the name `v_reserved`, which a revert leaves declared in the `declare` block;
+the second looked for `- v_reserved`, which a revert leaves in the assignment. Only
+the **insert expression** is evidence that the stripped copy is what actually gets
+stored. Both versions were caught by reverting the fix and watching the check stay
+green.
+
+### Refundable deposits — a security deposit counted as profit — done (0060)
+
+`fee_heads.is_refundable` and the `security_deposit` value of `fee_head_type` had
+both existed since the first migration and nothing read either. That was not a
+cosmetic gap. One pupil, Rs 2,000 tuition + Rs 5,000 **refundable** deposit,
+family pays all 7,000:
+
+| Figure | System said | Truth |
+|---|---|---|
+| `fee_income` | 7,000 | 2,000 |
+| **`profit`** | **7,000** | **2,000** |
+| balance-sheet liability for the deposit | 0 | 5,000 held |
+| ways to record a refund | **none** | needed on every leaving |
+
+`fn_finance_summary` summed every verified payment into `fee_income`, and a
+deposit is a payment. A school of 200 pupils on a Rs 5,000 deposit showed **a
+million rupees of profit that was a liability** — and a proprietor pays a salary
+or a building instalment out of that number.
+
+The design and the argument against each decision are in
+`docs/DEPOSITS-DESIGN.md`. Three decisions matter:
+
+- **A refundable charge gets its own challan.** Forced by an existing fact:
+  `payment_allocations` allocates to an *invoice*, not a line, so on a mixed
+  challan a part-payment cannot be split into "deposit" and "tuition". Any
+  splitting rule would be one a parent can argue with at the counter and the
+  school cannot defend, because it exists only inside the software. A trigger on
+  `invoice_lines` enforces it on every path.
+- **Netting on leaving is an adjustment, never a payment.** "You owe 3,000, your
+  deposit is 5,000, here is 2,000 back" — recorded as a negative adjustment, so
+  the day book and the till do not gain 3,000 that nobody handed over.
+- **Deposits held survive the pupil leaving.** A child who has gone and not been
+  refunded is exactly the money still owed, so the liability must not shrink when
+  they go.
+
+Safe by default: a school with **no** refundable head sees no change to any
+figure, because every new sum is zero. 39 assertions in
+`supabase/tests/deposits.sql`.
+
+**A gap in 0059 surfaced while wiring this.** `fn_profit_snapshot` — the Accounts
+overview — is declared VOLATILE though it writes nothing, so 0059's "rewrite read
+gates in STABLE functions" rule skipped it and it kept refusing `readonly`, on the
+one screen the module exists for. `check-readonly-writes.py` was blind to it for
+the same reason. Fixed both ways round (the gate, and the volatility declaration
+so the guard can see it), and `readonly_role.sql` now **walks the observer's
+navigation and requires every screen behind it to answer** — a "no write policy
+names may_view" check can never find a screen that is offered and then refuses.
+
+### The `readonly` role, and a save that silently did nothing — done (0059)
+
+Two defects, and the second is not about `readonly` at all.
+
+**`readonly` was incoherent in both directions at once.** It is in `ADMIN_ROLES`,
+so it was shown the whole admin navigation. Asking the database what each of
+those screens would return: students and attendance worked; invoices, payments,
+expenses, till, discounts, certificates and the audit log all returned **zero
+rows**; Reports → Debit & Credit and Staff both raised *Not permitted*; and the
+**dashboard showed it `collected_month`, `collected_today` and
+`finance_visible: true`**. So it was shown the school's takings on one screen and
+an empty table on every screen behind it. It is also the *fallback* role, so that
+was the experience of any invited login whose role nobody set.
+
+Settled as an **observer**: reads everything a staff member can read, money
+included, writes nothing anywhere. The reasoning and the argument against
+including money are in `docs/READONLY-DESIGN.md`; the short version is that two
+of the three money surfaces already showed it, so hiding money would have
+followed the minority precedent and still left the dashboard leaking — and a role
+that cannot see money cannot do the job schools want it for (a trustee, an
+auditor, the proprietor's second-in-command).
+
+One helper carries it — `may_view(roles) := has_role(roles) or
+has_role('readonly')` — applied to 27 read functions and 19 SELECT policies
+**programmatically**, from `pg_get_functiondef`, because hand-retyping
+twenty-seven bodies is how a stack of fixes gets silently reverted. Two functions
+are excluded by name: `fn_may_manage_class` and `fn_may_write_school_file` are
+`STABLE` and look exactly like read gates, but they *authorise writes elsewhere*
+— a teacher's mark entry and a storage upload policy consult them.
+
+**The worse defect: a save that reported success and changed nothing.** RLS
+treats the write verbs differently, and this is easy to forget:
+
+- `INSERT` with no matching policy → **raises**
+- `UPDATE` / `DELETE` with no matching policy → **zero rows, no error**
+
+Every direct-table write in `db.ts` was `const { error } = await
+sb.from(x).update(patch).eq('id', id)`, and `error` is null when nothing matched.
+Demonstrated: as `readonly`, `insert into students` was refused with a policy
+violation and `update students set full_name` returned **success, 0 rows**. The
+app said *"Saved."*, the value was unchanged, and reopening the record showed the
+old one. From the user's seat that is indistinguishable from lost work.
+
+The same silence had already produced a second bug: when the `create-teacher`
+Edge Function is not deployed, the fallback path called `signUp` **without
+`school_id` in the metadata**, so `handle_new_user` returned early and created no
+profile at all — the follow-up role update matched nothing, raised nothing, and
+`createTeacherLogin` returned success on a login that could sign in and be told
+*"This login is not attached to a school."*
+
+`mustWrite()` now wraps all eleven direct writes: the statement carries
+`.select('id')` and an empty result raises a message naming both real causes. And
+an invite whose role is not recognised now lands **inactive** rather than quietly
+acquiring the fallback role — a `coalesce` the test suite caught me getting wrong
+twice, once returning `true` for an unrecognised role and once returning `NULL`
+and failing the signup outright.
+
+Guarded by `supabase/check-readonly-writes.py` (no write policy and no `VOLATILE`
+function may name `may_view` or `readonly`; refuses to pass if `may_view` is used
+in fewer than 30 places, so it cannot go vacuous) and 35 assertions in
+`supabase/tests/readonly_role.sql` — where the UPDATE and DELETE assertions count
+**rows affected**, not exceptions, because there is no exception to catch.
 
 ### ~~Audit trail~~ — done (0048)
 
@@ -363,7 +779,7 @@ Almost every serious defect found in this work has been the same shape:
 | `fn_find_by_voucher` had zero callers | a printed challan could not be scanned |
 | `fn_reverse_other_income` had zero callers | a mistyped income entry could never be corrected, in an append-only ledger |
 | `supabase/bundles/` stopped at 0039 | seven migrations never reached any real school |
-| `students.photo_url` | still dead — the one item on this list not yet fixed |
+| `students.photo_url` | was the last item on this list; fixed in 0057, and the column renamed to `photo_path` because it holds a path and not a URL |
 
 Every one was found by hand, late, usually while building something unrelated.
 So `supabase/check-reachable.sh` now asks the catalogue on every CI run: for each

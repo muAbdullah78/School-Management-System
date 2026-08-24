@@ -7,6 +7,10 @@ export interface SessionRow { id: string; name: string; is_current: boolean }
 export interface ClassRow { id: string; name: string; level_order: number }
 export interface FeeHead {
   id: string; name: string; type: string; is_recurring: boolean; active: boolean; sort_order: number
+  /** Money the school HOLDS and must give back — a security deposit. It is a
+   *  liability, not income, and is billed on its own challan. See
+   *  docs/DEPOSITS-DESIGN.md. */
+  is_refundable: boolean
 }
 export interface StudentRow {
   id: string; gr_no: string | null; full_name: string; father_name: string | null
@@ -44,6 +48,47 @@ function unwrap<T>(res: { data: T | null; error: { message: string } | null }): 
   return res.data as T
 }
 
+/**
+ * A write that changed nothing is an ERROR, not a success.
+ *
+ * Row Level Security treats the three write verbs differently, and forgetting
+ * this produced a defect that reads to a school as lost work:
+ *
+ *   INSERT with no matching policy          -> raises
+ *   UPDATE / DELETE with no matching policy -> ZERO ROWS, and no error at all
+ *
+ * So every direct-table write in this file used to be written as
+ * `const { error } = await sb.from(x).update(patch).eq('id', id)` — and `error`
+ * is null when nothing matched. Demonstrated: as a `readonly` login,
+ * `update students set full_name` returned success with zero rows. The app said
+ * "Saved.", the value was unchanged, and reopening the record showed the old one.
+ *
+ * The same silence produced a second, unrelated bug: when the create-teacher
+ * Edge Function is not deployed the fallback path created a login with no
+ * profile row, so the follow-up role update matched nothing, raised nothing, and
+ * the app reported success on a login that could not use the app.
+ *
+ * So: every such statement now carries `.select('id')`, and an empty result
+ * raises. Two real causes, and the message names both, because from outside they
+ * are indistinguishable.
+ *
+ * NOT for RPCs. A SECURITY DEFINER function raises its own errors and reports
+ * what it did, which is why every write that really matters — payments, marks,
+ * leavings, rollovers — goes through one.
+ */
+async function mustWrite(
+  res: { data: unknown[] | null; error: { message: string } | null },
+  what: string,
+): Promise<void> {
+  if (res.error) throw new Error(res.error.message)
+  if (!res.data || res.data.length === 0) {
+    throw new Error(
+      `${what} was not saved. You may not have permission to change it, `
+      + 'or somebody else may have changed it first.',
+    )
+  }
+}
+
 // ---- Reference data ----
 export async function getCurrentSession(): Promise<SessionRow | null> {
   const sb = requireSupabase()
@@ -66,7 +111,9 @@ export async function listClasses(): Promise<ClassRow[]> {
 export async function listFeeHeads(): Promise<FeeHead[]> {
   const sb = requireSupabase()
   return unwrap(
-    await sb.from('fee_heads').select('id, name, type, is_recurring, active, sort_order').eq('active', true).order('sort_order'),
+    await sb.from('fee_heads')
+      .select('id, name, type, is_recurring, is_refundable, active, sort_order')
+      .eq('active', true).order('sort_order'),
   )
 }
 
@@ -581,6 +628,9 @@ export interface StudentProfile {
   father_name: string | null; mother_name: string | null; b_form: string | null
   dob: string | null; gender: string | null; address: string | null; phone: string | null
   whatsapp: string | null; status: string; admission_date: string | null; notes: string | null
+  /** Added in 0057. A PATH inside the school-files bucket, never a URL — a
+   *  signed URL expires and a persisted one becomes a broken image. */
+  photo_path: string | null
   /** Added in 0054. Null for a child who is here, and null for one who left
    *  before 0054 existed — the migration deliberately did not invent dates. */
   left_on: string | null; leaving_reason: string | null
@@ -871,8 +921,9 @@ export async function linkStudents(a: string, b: string, relation: string): Prom
 
 export async function removeStudentLink(linkId: string): Promise<void> {
   const sb = requireSupabase()
-  const { error } = await sb.from('student_links').delete().eq('id', linkId)
-  if (error) throw new Error(error.message)
+  await mustWrite(
+    await sb.from('student_links').delete().eq('id', linkId).select('id'),
+    'That family link')
 }
 
 /** Search students for the admission family-link picker: match name / GR / roll,
@@ -938,15 +989,16 @@ export async function getStudent(studentId: string): Promise<StudentProfile> {
   const sb = requireSupabase()
   return unwrap(
     await sb.from('students')
-      .select('id, gr_no, admission_no, full_name, father_name, mother_name, b_form, dob, gender, address, phone, whatsapp, status, admission_date, notes, left_on, leaving_reason')
+      .select('id, gr_no, admission_no, full_name, father_name, mother_name, b_form, dob, gender, address, phone, whatsapp, status, admission_date, notes, left_on, leaving_reason, photo_path')
       .eq('id', studentId).single(),
   )
 }
 
 export async function updateStudent(studentId: string, patch: Partial<StudentProfile>): Promise<void> {
   const sb = requireSupabase()
-  const { error } = await sb.from('students').update(patch).eq('id', studentId)
-  if (error) throw new Error(error.message)
+  await mustWrite(
+    await sb.from('students').update(patch).eq('id', studentId).select('id'),
+    'The change to this pupil')
 }
 
 /** Record a child leaving, or coming back.
@@ -1034,10 +1086,20 @@ export interface ExamTerm {
   id: string; name: string; term_type: string; starts_on: string | null; ends_on: string | null
   result_withheld_for_defaulters: boolean
 }
-export interface SubjectRow { id: string; name: string; class_id: string | null; sort_order: number }
+export interface SubjectRow {
+  id: string; name: string; class_id: string | null; sort_order: number
+  /** null = every pupil in the class takes it. A value = only pupils whose
+   *  enrolment stream matches. See docs/EXAM-COMPUTATION-DESIGN.md. */
+  stream: string | null
+  /** This subject has a practical component, which is what lets a paper carry
+   *  practical marks at all. */
+  is_practical: boolean
+}
 export interface ExamSubjectRow {
   id: string; subject_id: string; subject_name: string; max_marks: number; pass_marks: number
+  practical_max: number
   exam_date: string | null; paper_time: string | null
+  subject_stream: string | null; subject_is_practical: boolean
 }
 export interface ClassRosterRow {
   enrollment_id: string; student_id: string; full_name: string; father_name: string | null
@@ -1046,6 +1108,9 @@ export interface ClassRosterRow {
 export interface MarksheetRow {
   enrollment_id: string; student_id: string; full_name: string; roll_no: string | null
   section_name: string | null; marks: number | null; is_absent: boolean; is_locked: boolean; max_marks: number
+  /** Absent on an assessment marksheet, which has no practical concept. */
+  practical_marks?: number | null
+  practical_max?: number
 }
 export interface ResultCardRow {
   id: string; enrollment_id: string; student_id: string; full_name: string; gr_no: string | null
@@ -1057,9 +1122,51 @@ export interface ResultCardRow {
   published_at: string | null
 }
 export interface ResultCardFrozen {
-  subjects: { subject: string; max: number; pass: number; marks: number | null; is_absent: boolean; grade: string | null }[]
+  subjects: {
+    subject: string; max: number; practical_max: number; pass: number
+    marks: number | null; practical: number | null
+    obtained: number | null; out_of: number
+    is_absent: boolean
+    /** false = no mark row exists. NOT the same as a mark of zero, and the whole
+     *  reason a pupil nobody had marked used to print as having failed. */
+    marked: boolean
+    passed: boolean | null
+    grade: string | null
+  }[]
   total_marks: number; total_max: number; percentage: number | null; grade: string | null
   position: number | null; attendance_pct: number | null; withheld: boolean; balance: number
+  /** Present on cards generated by 0058 onward. Older frozen snapshots have
+   *  none of these, so every reader must tolerate undefined — a reprint of last
+   *  term's card must not break because this term's card gained fields. */
+  exam_percentage?: number | null
+  assessment_percentage?: number | null
+  assessment_weight_pct?: number
+  stream?: string | null
+  bise_reg_no?: string | null
+  failed_subjects?: number
+  result?: 'PASS' | 'FAIL' | 'PENDING'
+  pass_percent?: number
+  provisional?: boolean
+  unmarked_subjects?: number
+  generated_at?: string
+  version?: number
+}
+
+/** One thing standing between a class and its result cards. */
+export interface ResultBlocker {
+  problem: 'no papers' | 'pupils without a stream' | 'marks not entered' | string
+  detail: string
+  affected: number
+}
+export interface GenerateResult {
+  generated: number
+  provisional: boolean
+  missing_marks: number
+}
+export interface ClassStreamRow {
+  enrollment_id: string; student_id: string; full_name: string; father_name: string | null
+  gr_no: string | null; roll_no: string | null; section_name: string | null
+  stream: string | null; bise_reg_no: string | null
 }
 
 export async function listExamTerms(sessionId: string): Promise<ExamTerm[]> {
@@ -1083,9 +1190,32 @@ export async function createExamTerm(
 
 export async function listSubjects(classId: string): Promise<SubjectRow[]> {
   const sb = requireSupabase()
-  return unwrap(
-    await sb.from('subjects').select('id, name, class_id, sort_order').eq('class_id', classId).order('sort_order').order('name'),
+  const rows = unwrap<Record<string, any>[]>(
+    await sb.from('subjects')
+      .select('id, name, class_id, sort_order, stream, is_practical')
+      .eq('class_id', classId).order('sort_order').order('name'),
   )
+  return (rows ?? []).map((r) => ({
+    id: r.id, name: r.name, class_id: r.class_id ?? null,
+    sort_order: Number(r.sort_order ?? 0),
+    stream: r.stream ?? null,
+    is_practical: !!r.is_practical,
+  }))
+}
+
+/** Set a subject's stream and whether it has a practical.
+ *
+ *  An RPC rather than a direct update because turning the practical flag OFF
+ *  while papers still carry practical marks would leave those marks unreachable
+ *  and silently out of every total — the function refuses that. */
+export async function setSubjectDetails(
+  subjectId: string, stream: string | null, isPractical: boolean,
+): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_set_subject_details', {
+    p_subject_id: subjectId, p_stream: stream, p_is_practical: isPractical,
+  })
+  if (error) throw new Error(error.message)
 }
 
 export async function createSubject(name: string, classId: string, sortOrder = 0): Promise<void> {
@@ -1098,33 +1228,42 @@ export async function listExamSubjects(termId: string, classId: string): Promise
   const sb = requireSupabase()
   const rows = unwrap<Record<string, any>[]>(
     await sb.from('exam_subjects')
-      .select('id, subject_id, max_marks, pass_marks, exam_date, paper_time, subjects(name, sort_order)')
+      .select('id, subject_id, max_marks, pass_marks, practical_max, exam_date, paper_time, subjects(name, sort_order, stream, is_practical)')
       .eq('exam_term_id', termId).eq('class_id', classId),
   )
   return rows
     .map((r) => ({
       id: r.id, subject_id: r.subject_id, subject_name: r.subjects?.name ?? '—',
       max_marks: Number(r.max_marks), pass_marks: Number(r.pass_marks),
+      practical_max: Number(r.practical_max ?? 0),
       exam_date: r.exam_date ?? null, paper_time: r.paper_time ?? null,
+      subject_stream: r.subjects?.stream ?? null,
+      subject_is_practical: !!r.subjects?.is_practical,
       _sort: r.subjects?.sort_order ?? 0,
     }))
     .sort((a, b) => a._sort - b._sort || a.subject_name.localeCompare(b.subject_name))
     .map(({ _sort, ...rest }) => rest)
 }
 
+/**
+ * Set up one paper.
+ *
+ * An RPC rather than a direct upsert. The upsert it replaced could not check
+ * anything: it accepted a pass mark higher than the paper's total, a paper
+ * against a locked term, and — once practicals existed — practical marks on a
+ * subject that has no practical, which is how a practical mark ends up
+ * somewhere nobody looks.
+ */
 export async function upsertExamSubject(
   termId: string, classId: string, subjectId: string, maxMarks: number, passMarks: number,
-  examDate?: string | null, paperTime?: string | null,
+  practicalMax = 0, examDate?: string | null, paperTime?: string | null,
 ): Promise<void> {
   const sb = requireSupabase()
-  const { error } = await sb.from('exam_subjects').upsert(
-    {
-      exam_term_id: termId, class_id: classId, subject_id: subjectId,
-      max_marks: maxMarks, pass_marks: passMarks,
-      exam_date: examDate || null, paper_time: paperTime || null,
-    },
-    { onConflict: 'exam_term_id,class_id,subject_id' },
-  )
+  const { error } = await sb.rpc('fn_upsert_exam_subject', {
+    p_exam_term_id: termId, p_class_id: classId, p_subject_id: subjectId,
+    p_max_marks: maxMarks, p_pass_marks: passMarks, p_practical_max: practicalMax,
+    p_exam_date: examDate || null, p_paper_time: paperTime || null,
+  })
   if (error) throw new Error(error.message)
 }
 
@@ -1154,8 +1293,9 @@ export async function listClassRoster(sessionId: string, classId: string): Promi
 
 export async function removeExamSubject(id: string): Promise<void> {
   const sb = requireSupabase()
-  const { error } = await sb.from('exam_subjects').delete().eq('id', id)
-  if (error) throw new Error(error.message)
+  await mustWrite(
+    await sb.from('exam_subjects').delete().eq('id', id).select('id'),
+    'Removing that paper')
 }
 
 export async function getMarksheet(examSubjectId: string): Promise<MarksheetRow[]> {
@@ -1170,7 +1310,13 @@ export async function getMarksheet(examSubjectId: string): Promise<MarksheetRow[
  * first time is not a correction and needs no reason.
  */
 export async function enterMarks(
-  examSubjectId: string, marks: { enrollment_id: string; marks: number | null; is_absent: boolean }[],
+  examSubjectId: string,
+  marks: {
+    enrollment_id: string; marks: number | null; is_absent: boolean
+    /** Omitted for a subject with no practical. Validated server-side against
+     *  exam_subjects.practical_max, not against the theory paper's maximum. */
+    practical_marks?: number | null
+  }[],
   reason?: string | null,
 ): Promise<MarkResult> {
   const sb = requireSupabase()
@@ -1240,11 +1386,74 @@ export async function lockAssessment(assessmentId: string): Promise<void> {
   if (error) throw new Error(error.message)
 }
 
-export async function generateResultCards(termId: string, classId: string): Promise<number> {
+/**
+ * What is stopping this class's result cards?
+ *
+ * Read BEFORE offering the Generate button, so a school sees "Chemistry is
+ * missing for 12 pupils" on the screen rather than as an exception after
+ * clicking. The generator checks the same rules again itself — this is the
+ * courtesy, not the enforcement.
+ */
+export async function getResultReadiness(
+  termId: string, classId: string,
+): Promise<ResultBlocker[]> {
   const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_generate_result_cards', { p_exam_term_id: termId, p_class_id: classId })
+  const rows = unwrap<Record<string, any>[]>(
+    await sb.rpc('fn_result_readiness', { p_exam_term_id: termId, p_class_id: classId }))
+  return (rows ?? []).map((r) => ({
+    problem: r.problem, detail: r.detail, affected: Number(r.affected ?? 0),
+  }))
+}
+
+/**
+ * Generate the class's result cards.
+ *
+ * `allowIncomplete` is a deliberate act, not a retry. Without it the generator
+ * refuses while any pupil has an unmarked paper, because the alternative —
+ * which is what it used to do — is printing a child nobody had marked as having
+ * failed. With it, the affected cards are stamped provisional and their
+ * denominators exclude what is missing.
+ */
+export async function generateResultCards(
+  termId: string, classId: string, allowIncomplete = false,
+): Promise<GenerateResult> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_generate_result_cards', {
+    p_exam_term_id: termId, p_class_id: classId, p_allow_incomplete: allowIncomplete,
+  })
   if (error) throw new Error(error.message)
-  return Number(data)
+  const r = (data ?? {}) as Record<string, any>
+  return {
+    generated: Number(r.generated ?? 0),
+    provisional: !!r.provisional,
+    missing_marks: Number(r.missing_marks ?? 0),
+  }
+}
+
+/** The class list a school works down when setting streams, and the list it
+ *  fills board forms from. */
+export async function getClassStreams(
+  classId: string, sessionId?: string | null,
+): Promise<ClassStreamRow[]> {
+  const sb = requireSupabase()
+  const rows = unwrap<Record<string, any>[]>(
+    await sb.rpc('fn_class_streams', { p_class_id: classId, p_session_id: sessionId ?? null }))
+  return (rows ?? []).map((r) => ({
+    enrollment_id: r.enrollment_id, student_id: r.student_id, full_name: r.full_name,
+    father_name: r.father_name ?? null, gr_no: r.gr_no ?? null, roll_no: r.roll_no ?? null,
+    section_name: r.section_name ?? null,
+    stream: r.stream ?? null, bise_reg_no: r.bise_reg_no ?? null,
+  }))
+}
+
+export async function setEnrollmentStream(
+  enrollmentId: string, stream: string | null, biseRegNo: string | null,
+): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_set_enrollment_stream', {
+    p_enrollment_id: enrollmentId, p_stream: stream, p_bise_reg_no: biseRegNo,
+  })
+  if (error) throw new Error(error.message)
 }
 
 /** Latest-version result card per enrollment for a class in a term. */
@@ -1281,7 +1490,18 @@ export interface SchoolSettings {
   email: string | null; principal_name: string | null; grade_scale: string; pass_percent: number
   gr_prefix: string | null; receipt_prefix: string | null; current_session_id: string | null
   geofence_enabled: boolean; geo_lat: number | null; geo_lng: number | null; geo_radius_m: number
+  /** The school day, for staff lateness. With `day_starts_at` unset NOTHING is
+   *  ever late — a default start time would mark a whole staff room late on the
+   *  day the school upgraded. */
+  day_starts_at: string | null; day_ends_at: string | null; late_grace_minutes: number
+  /** A storage PATH, never a URL — see docs/PHOTOS-DESIGN.md. Read-only here;
+   *  written only by fn_set_school_logo, which derives the path itself. */
+  logo_path: string | null
 }
+/** Everything a settings form is allowed to write. `logo_path` is deliberately
+ *  absent: a direct update could store a path this school does not own, and the
+ *  CHECK constraint would then reject the whole save with an opaque message. */
+export type SchoolSettingsPatch = Omit<SchoolSettings, 'logo_path'>
 export interface SessionFull {
   id: string; name: string; starts_on: string | null; ends_on: string | null
   is_current: boolean; is_closed: boolean
@@ -1303,19 +1523,37 @@ export async function getSchoolSettings(): Promise<SchoolSettings | null> {
   // No id filter: `school_settings` used to be a single row keyed id = 1, and is
   // now one row per school. RLS already narrows this to the caller's school.
   const { data, error } = await sb.from('school_settings')
-    .select('name, name_short, address, phone, email, principal_name, grade_scale, pass_percent, gr_prefix, receipt_prefix, current_session_id, geofence_enabled, geo_lat, geo_lng, geo_radius_m')
+    .select('name, name_short, address, phone, email, principal_name, grade_scale, pass_percent, gr_prefix, receipt_prefix, current_session_id, geofence_enabled, geo_lat, geo_lng, geo_radius_m, day_starts_at, day_ends_at, late_grace_minutes, logo_path')
     .limit(1).maybeSingle()
   if (error) throw new Error(error.message)
   return data
 }
 
-export async function updateSchoolSettings(patch: Partial<SchoolSettings>): Promise<void> {
+/**
+ * The school logo path on its own, for the printed documents.
+ *
+ * A separate, tiny read so a challan or a result card does not pull the whole
+ * settings row (including the geofence coordinates) just to draw a letterhead.
+ * Returns null rather than throwing: a print that fails because the logo could
+ * not be read would be a worse bug than a print with no logo.
+ */
+export async function getSchoolLogoPath(): Promise<string | null> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.from('school_settings')
+    .select('logo_path').limit(1).maybeSingle()
+  if (error) return null
+  return (data?.logo_path as string | null) ?? null
+}
+
+export async function updateSchoolSettings(patch: Partial<SchoolSettingsPatch>): Promise<void> {
   const sb = requireSupabase()
   // An UPDATE, not an upsert: the settings row is created with the school, so
   // there is nothing to insert — and an upsert here could only ever write a row
   // RLS would reject anyway.
-  const { error } = await sb.from('school_settings').update(patch).eq('school_id', await mySchoolId())
-  if (error) throw new Error(error.message)
+  await mustWrite(
+    await sb.from('school_settings').update(patch)
+      .eq('school_id', await mySchoolId()).select('school_id'),
+    'The school profile')
 }
 
 export async function listSessions(): Promise<SessionFull[]> {
@@ -1399,8 +1637,9 @@ export async function createClass(name: string, levelOrder: number): Promise<voi
 
 export async function setClassActive(id: string, active: boolean): Promise<void> {
   const sb = requireSupabase()
-  const { error } = await sb.from('classes').update({ active }).eq('id', id)
-  if (error) throw new Error(error.message)
+  await mustWrite(
+    await sb.from('classes').update({ active }).eq('id', id).select('id'),
+    'The change to this class')
 }
 
 export async function createSection(classId: string, name: string, sortOrder = 0): Promise<void> {
@@ -1416,14 +1655,21 @@ export async function listProfiles(): Promise<ProfileRow[]> {
 
 export async function updateProfileRole(id: string, role: string): Promise<void> {
   const sb = requireSupabase()
-  const { error } = await sb.from('profiles').update({ role }).eq('id', id)
-  if (error) throw new Error(error.message)
+  // The one that made a broken teacher login look like a working one: when the
+  // create-teacher Edge Function is not deployed, the fallback used to create the
+  // auth user with no school_id, so no profile row existed and this update matched
+  // nothing — silently. The signUp now passes school_id; this makes the failure
+  // loud if it ever happens again.
+  await mustWrite(
+    await sb.from('profiles').update({ role }).eq('id', id).select('id'),
+    'That login\u2019s role')
 }
 
 export async function setProfileActive(id: string, active: boolean): Promise<void> {
   const sb = requireSupabase()
-  const { error } = await sb.from('profiles').update({ active }).eq('id', id)
-  if (error) throw new Error(error.message)
+  await mustWrite(
+    await sb.from('profiles').update({ active }).eq('id', id).select('id'),
+    'The change to that login')
 }
 
 // ---- Staff ----
@@ -1431,6 +1677,8 @@ export interface StaffRow {
   id: string; full_name: string; designation: string | null; employee_no: string | null
   mobile: string | null; whatsapp: string | null; cnic: string | null
   joined_on: string | null; dob: string | null; status: string; profile_id: string | null
+  /** A storage path, for the ID card. Written only by fn_set_staff_photo. */
+  photo_path: string | null
 }
 export interface StaffInput {
   full_name: string; designation?: string | null; employee_no?: string | null
@@ -1456,6 +1704,50 @@ export interface StaffRosterRow extends StaffRow {
   assignments: number
 }
 
+export interface ClassPhotoRow {
+  student_id: string; full_name: string; roll_no: string | null; photo_path: string | null
+}
+
+/**
+ * Photograph paths for a list of pupils already on screen.
+ *
+ * A separate select rather than an extra column on `fn_student_page`: adding a
+ * column to a `returns table` function means dropping and recreating it, and
+ * re-typing that body by hand is how a stack of earlier fixes gets silently
+ * reverted. RLS scopes the select, so it cannot return another school's rows.
+ *
+ * Returns an empty map on failure — a roster without faces is still a roster,
+ * and a page that refuses to load because a photograph could not be looked up
+ * would be a far worse defect than a missing face.
+ */
+export async function getStudentPhotoPaths(ids: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  if (ids.length === 0) return out
+  const sb = requireSupabase()
+  const { data, error } = await sb.from('students').select('id, photo_path').in('id', ids)
+  if (error) return out
+  for (const r of (data ?? []) as { id: string; photo_path: string | null }[]) {
+    if (r.photo_path) out.set(r.id, r.photo_path)
+  }
+  return out
+}
+
+/** Every pupil in a class with their photo PATH, in one call, so the whole class
+ *  can be signed in a single createSignedUrls request rather than forty. */
+export async function getClassPhotoPaths(
+  classId: string, sectionId: string | null,
+): Promise<ClassPhotoRow[]> {
+  const sb = requireSupabase()
+  const rows = unwrap<Record<string, any>[]>(
+    await sb.rpc('fn_class_photo_paths', { p_class_id: classId, p_section_id: sectionId }))
+  return (rows ?? []).map((r) => ({
+    student_id: r.student_id,
+    full_name: r.full_name,
+    roll_no: r.roll_no ?? null,
+    photo_path: r.photo_path ?? null,
+  }))
+}
+
 export interface StaffLeaveResult {
   staff_name: string
   left_on: string
@@ -1476,7 +1768,21 @@ export interface StaffLeaveResult {
 export async function getStaffRoster(): Promise<StaffRosterRow[]> {
   const sb = requireSupabase()
   const rows = unwrap<Record<string, any>[]>(await sb.rpc('fn_staff_roster'))
+  // Photo paths come from a second, tiny select rather than from the roster
+  // function. Adding a column to a `returns table` function means dropping and
+  // recreating it, and re-typing that body by hand is how five migrations' worth
+  // of fixes get silently reverted. Staff is a small table and RLS scopes it, so
+  // one extra round trip is the cheaper risk. Failure here is non-fatal: a
+  // roster with no faces is still a roster.
+  const photos = new Map<string, string | null>()
+  const ph = await sb.from('staff').select('id, photo_path')
+  if (!ph.error) {
+    for (const p of (ph.data ?? []) as { id: string; photo_path: string | null }[]) {
+      photos.set(p.id, p.photo_path ?? null)
+    }
+  }
   return (rows ?? []).map((r) => ({
+    photo_path: photos.get(r.id) ?? null,
     id: r.id,
     full_name: r.full_name,
     designation: r.designation ?? null,
@@ -1571,8 +1877,9 @@ export async function createStaff(input: StaffInput): Promise<string> {
 
 export async function updateStaff(id: string, patch: Partial<StaffInput>): Promise<void> {
   const sb = requireSupabase()
-  const { error } = await sb.from('staff').update(patch).eq('id', id)
-  if (error) throw new Error(error.message)
+  await mustWrite(
+    await sb.from('staff').update(patch).eq('id', id).select('id'),
+    'The change to this staff member')
 }
 
 // setStaffStatus is deliberately gone. It wrote `status = 'inactive'` and
@@ -1597,8 +1904,10 @@ export async function listSectionTeachers(classId: string): Promise<SectionTeach
 
 export async function assignClassTeacher(sectionId: string, staffId: string | null): Promise<void> {
   const sb = requireSupabase()
-  const { error } = await sb.from('sections').update({ class_teacher_id: staffId }).eq('id', sectionId)
-  if (error) throw new Error(error.message)
+  await mustWrite(
+    await sb.from('sections').update({ class_teacher_id: staffId })
+      .eq('id', sectionId).select('id'),
+    'The class teacher')
 }
 
 // ---- Teacher portal: assignments, self-attendance, check-in ----
@@ -1643,8 +1952,9 @@ export async function assignTeacher(
 }
 export async function removeTeacherAssignment(id: string): Promise<void> {
   const sb = requireSupabase()
-  const { error } = await sb.from('teacher_assignments').delete().eq('id', id)
-  if (error) throw new Error(error.message)
+  await mustWrite(
+    await sb.from('teacher_assignments').delete().eq('id', id).select('id'),
+    'Removing that assignment')
 }
 
 /** Assign (or clear, staffId=null) a class teacher for a (class, section-or-null)
@@ -1659,26 +1969,77 @@ export async function setClassTeacher(
   if (error) throw new Error(error.message)
 }
 
-export interface CheckinCode { id: string; code: string; label: string | null; valid_from: string | null; valid_to: string | null; active: boolean }
+export interface CheckinCode {
+  id: string; code: string; label: string | null
+  valid_from: string | null; valid_to: string | null; active: boolean
+  /** A rotating code is shown on a screen and changes every 30 seconds; a static
+   *  one is printed on a poster, and a photograph of that works for ever. */
+  rotating: boolean
+}
 export async function generateCheckinCode(
-  label: string, validFrom: string | null, validTo: string | null, deactivateOthers = true,
-): Promise<{ id: string; code: string }> {
+  label: string, validFrom: string | null, validTo: string | null,
+  deactivateOthers = true, rotating = false,
+): Promise<{ id: string; code: string; rotating: boolean }> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_generate_checkin_code', {
-    p_label: label, p_valid_from: validFrom, p_valid_to: validTo, p_deactivate_others: deactivateOthers,
+    p_label: label, p_valid_from: validFrom, p_valid_to: validTo,
+    p_deactivate_others: deactivateOthers, p_rotating: rotating,
   })
   if (error) throw new Error(error.message)
-  return data as { id: string; code: string }
+  return data as { id: string; code: string; rotating: boolean }
 }
 export async function listCheckinCodes(): Promise<CheckinCode[]> {
   const sb = requireSupabase()
+  // Deliberately NOT selecting `secret`. The column is readable by the office
+  // through RLS, and a rotating code whose seed reaches a browser is not a
+  // rotating code — so the seed must never be in a network response the school's
+  // own screen renders.
   return unwrap(
-    await sb.from('staff_checkin_codes').select('id, code, label, valid_from, valid_to, active')
+    await sb.from('staff_checkin_codes')
+      .select('id, code, label, valid_from, valid_to, active, rotating')
       .order('created_at', { ascending: false }),
   )
 }
 
-export interface CheckInResult { status: 'ok' | 'already'; checked_at: string; attendance_status?: string }
+/** What the screen at the gate should render right now. Polled, because the token
+ *  changes every 30 seconds and the secret it is derived from stays in the
+ *  database. `status: 'none'` means no active code — the school has not set one up. */
+export interface CheckinDisplay {
+  status: 'none' | 'static' | 'rotating'
+  code?: string
+  label?: string | null
+  rotating?: boolean
+  token?: string
+  period_seconds?: number
+  /** Seconds this token still has. Refresh on it rather than on a fixed timer, so
+   *  the screen never shows a token that has already stopped working. */
+  expires_in?: number
+  valid_to?: string | null
+}
+export async function getCheckinDisplay(): Promise<CheckinDisplay> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_checkin_display')
+  if (error) throw new Error(error.message)
+  return data as CheckinDisplay
+}
+
+export interface CheckInResult {
+  status: 'ok' | 'already' | 'out' | 'office_marked'
+  checked_at: string
+  checked_out_at?: string | null
+  attendance_status?: string
+  late_minutes?: number | null
+  worked_minutes?: number | null
+  reason?: string | null
+  rotating?: boolean
+}
+
+/** Record a check-in (or, on the second scan of the day, a check-out).
+ *
+ *  The database RETURNS refusals rather than raising them, because a refusal has
+ *  to leave a durable row in the attempt log and a raise would roll that row back
+ *  with it. This wrapper turns a refusal back into a thrown error, so no caller
+ *  can quietly treat one as a successful check-in. */
 export async function staffCheckIn(
   code: string, lat: number | null, lng: number | null, device: string | null,
 ): Promise<CheckInResult> {
@@ -1687,7 +2048,64 @@ export async function staffCheckIn(
     p_code: code, p_lat: lat, p_lng: lng, p_device: device,
   })
   if (error) throw new Error(error.message)
-  return data as CheckInResult
+  const res = (data ?? {}) as Record<string, any>
+  if (res.status === 'refused') {
+    throw new Error(res.message || 'That check-in was not accepted.')
+  }
+  return res as CheckInResult
+}
+
+export interface StaffDayRow {
+  staff_id: string; full_name: string; designation: string | null; employee_no: string | null
+  status: string
+  checked_at: string | null; checked_out_at: string | null
+  late_minutes: number | null; worked_minutes: number | null
+  source: string | null
+  /** Whether a check-in code was actually presented. The forged rows the old
+   *  policy allowed said source 'qr' with no code at all, and nothing displayed
+   *  it — which is why the loophole survived. */
+  scanned: boolean
+  code_label: string | null
+  code_window: number | null
+  device: string | null
+  reason: string | null
+  marked_by_name: string | null
+}
+
+/** The day's staff register: everybody, marked or not. */
+export async function getStaffAttendanceDay(date: string | null): Promise<StaffDayRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_staff_attendance_day', { p_date: date })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, any>[]).map((r) => ({
+    staff_id: r.staff_id, full_name: r.full_name, designation: r.designation ?? null,
+    employee_no: r.employee_no ?? null, status: r.status,
+    checked_at: r.checked_at ?? null, checked_out_at: r.checked_out_at ?? null,
+    late_minutes: r.late_minutes == null ? null : Number(r.late_minutes),
+    worked_minutes: r.worked_minutes == null ? null : Number(r.worked_minutes),
+    source: r.source ?? null, scanned: !!r.scanned,
+    code_label: r.code_label ?? null,
+    code_window: r.code_window == null ? null : Number(r.code_window),
+    device: r.device ?? null, reason: r.reason ?? null,
+    marked_by_name: r.marked_by_name ?? null,
+  }))
+}
+
+export interface CheckinAttempt {
+  id: number; staff_name: string | null; reason: string
+  presented: string | null; device: string | null; created_at: string
+}
+
+/** Refused check-ins. Somebody trying an old photograph forty times is only
+ *  visible if the school can see this. */
+export async function listCheckinAttempts(limit = 50): Promise<CheckinAttempt[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_checkin_attempts', { p_limit: limit })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, any>[]).map((r) => ({
+    id: Number(r.id), staff_name: r.staff_name ?? null, reason: r.reason,
+    presented: r.presented ?? null, device: r.device ?? null, created_at: r.created_at,
+  }))
 }
 
 export async function setStaffAttendance(
@@ -1771,13 +2189,31 @@ export async function createTeacherLogin(input: CreateTeacherInput): Promise<{ i
   const tmp = createClient(config.supabaseUrl!, config.supabaseAnonKey!, {
     auth: { persistSession: false, autoRefreshToken: false, storageKey: 'provision-teacher' },
   })
+  // school_id AND role in the metadata. Without school_id, handle_new_user
+  // returns early and creates NO profile row at all — so the updateProfileRole
+  // below matched nothing, raised nothing (RLS makes a blocked or missing-row
+  // UPDATE affect zero rows silently), and this function reported success on a
+  // login that could then sign in and be told "This login is not attached to a
+  // school." With the role there too, the profile is created ACTIVE and correct
+  // in one step rather than patched afterwards.
+  const schoolId = await mySchoolId()
   const { data: su, error: suErr } = await tmp.auth.signUp({
-    email, password: input.password, options: { data: { full_name: fullName || email.split('@')[0] } },
+    email,
+    password: input.password,
+    options: {
+      data: {
+        full_name: fullName || email.split('@')[0],
+        school_id: schoolId,
+        role,
+      },
+    },
   })
   if (suErr) throw new Error(suErr.message)
   const newId = su.user?.id
   if (!newId) throw new Error('Could not create the login.')
 
+  // Still set explicitly: handle_new_user only honours a role it recognises, and
+  // mustWrite now makes a failure here loud instead of silent.
   await updateProfileRole(newId, role)
 
   // If the project still requires email confirmation, the teacher can't sign in
@@ -1845,21 +2281,115 @@ export async function unlinkParent(profileId: string): Promise<void> {
 
 
 // ---- Certificates ----
-export interface IssueCertResult { id: string; serial_no: number; cert_type: string; issued_on: string }
-export interface CertificateRow {
-  id: string; cert_type: string; serial_no: number; issued_on: string
-  student_name: string | null; gr_no: string | null; data: Record<string, any>
+//
+// A School Leaving Certificate is the document a Pakistani family cannot enrol a
+// child anywhere else without, and it is the school's main lever for unpaid
+// fees. Three things follow from that, and all three live in the database rather
+// than here: the dues gate, the fact that issuing one RECORDS the leaving, and
+// the DUPLICATE marking on a second copy. See docs/CERTIFICATES-DESIGN.md.
+
+export interface IssueCertResult {
+  id: string; serial_no: number; cert_type: string; issued_on: string
+  is_duplicate: boolean; original_serial_no: number | null
 }
 
+/** What the database will do if this certificate is asked for right now —
+ *  fetched BEFORE the form is submitted so the clerk sees the refusal as a
+ *  condition to resolve rather than as an error after pressing Issue. */
+export interface CertReadiness {
+  student_name: string
+  balance: number
+  status: string | null
+  left_on: string | null
+  /** Whether dues are checked for this type at all — only `leaving` is gated. */
+  dues_gate: boolean
+  blocked_by_dues: boolean
+  would_be_duplicate: boolean
+  original_serial_no: number | null
+}
+
+export interface CertificateRow {
+  id: string; cert_type: string; serial_no: number; issued_on: string
+  student_id: string | null
+  student_name: string | null; gr_no: string | null; data: Record<string, any>
+  /** Read LIVE, not from the frozen snapshot. A certificate's wording must never
+   *  drift on a reprint, but an ID card exists to let somebody recognise the
+   *  child holding it — so it shows the photograph on file today, not the one
+   *  that was on file the day the card was first issued. */
+  photo_path: string | null
+  is_duplicate: boolean
+  original_serial_no: number | null
+  /** What was outstanding when it was issued, and whether that was cleared.
+   *  A released-under-override leaving certificate is a fact the register has
+   *  to show, not something to find out about later. */
+  dues_cleared: boolean
+  balance_at_issue: number
+  cancelled_at: string | null
+  cancel_reason: string | null
+  issued_by_name: string | null
+}
+
+export async function certificateReadiness(
+  studentId: string, certType: string,
+): Promise<CertReadiness> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_certificate_readiness', {
+    p_student_id: studentId, p_cert_type: certType,
+  })
+  if (error) throw new Error(error.message)
+  const d = (data ?? {}) as Record<string, any>
+  return {
+    student_name: d.student_name ?? '',
+    balance: Number(d.balance ?? 0),
+    status: d.status ?? null,
+    left_on: d.left_on ?? null,
+    dues_gate: !!d.dues_gate,
+    blocked_by_dues: !!d.blocked_by_dues,
+    would_be_duplicate: !!d.would_be_duplicate,
+    original_serial_no: d.original_serial_no == null ? null : Number(d.original_serial_no),
+  }
+}
+
+/** Issue a certificate. For `leaving`, `leavingOn` and `leavingReason` are
+ *  REQUIRED by the database — issuing one records the child as having left, so
+ *  there is deliberately no way to produce one without stating when and why. */
 export async function issueCertificate(
   certType: string, studentId: string, data: Record<string, any>,
+  opts: {
+    leavingOn?: string | null
+    leavingReason?: string | null
+    leavingStatus?: string
+    overrideDues?: boolean
+    overrideReason?: string | null
+  } = {},
 ): Promise<IssueCertResult> {
   const sb = requireSupabase()
   const { data: res, error } = await sb.rpc('fn_issue_certificate', {
     p_cert_type: certType, p_student_id: studentId, p_data: data,
+    p_leaving_on: opts.leavingOn ?? null,
+    p_leaving_reason: opts.leavingReason ?? null,
+    p_leaving_status: opts.leavingStatus ?? 'withdrawn',
+    p_override_dues: opts.overrideDues ?? false,
+    p_override_reason: opts.overrideReason ?? null,
   })
   if (error) throw new Error(error.message)
-  return res as IssueCertResult
+  const r = (res ?? {}) as Record<string, any>
+  return {
+    id: r.id, serial_no: Number(r.serial_no), cert_type: r.cert_type, issued_on: r.issued_on,
+    is_duplicate: !!r.is_duplicate,
+    original_serial_no: r.original_serial_no == null ? null : Number(r.original_serial_no),
+  }
+}
+
+/** Mark a certificate cancelled. Owner or principal only, and the reason is
+ *  required — a cancelled serial is a fact somebody may later have to explain.
+ *  `certificates` itself is append-only; this writes a separate row. */
+export async function cancelCertificate(certificateId: string, reason: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_cancel_certificate', {
+    p_certificate_id: certificateId, p_reason: reason,
+  })
+  if (error) throw new Error(error.message)
 }
 
 // ---- Audit log (owner/principal read-only via RLS) ----
@@ -1967,18 +2497,136 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
   return data as DashboardSummary
 }
 
+/** The certificate register. Goes through fn_certificate_register rather than
+ *  selecting the table, because a register that does not show which serials were
+ *  cancelled, which are duplicates and which were released over unpaid dues is
+ *  not a register — it is a list. */
 export async function listCertificates(limit = 50): Promise<CertificateRow[]> {
   const sb = requireSupabase()
-  const rows = unwrap<Record<string, any>[]>(
-    await sb.from('certificates')
-      .select('id, cert_type, serial_no, issued_on, data, students(full_name, gr_no)')
-      .order('created_at', { ascending: false }).limit(limit),
-  )
-  return rows.map((r) => ({
+  const { data, error } = await sb.rpc('fn_certificate_register', { p_limit: limit })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, any>[]).map((r) => ({
     id: r.id, cert_type: r.cert_type, serial_no: Number(r.serial_no), issued_on: r.issued_on,
-    student_name: r.students?.full_name ?? r.data?.student_name ?? null,
-    gr_no: r.students?.gr_no ?? r.data?.gr_no ?? null,
+    student_id: r.student_id ?? null,
+    student_name: r.student_name ?? r.data?.student_name ?? null,
+    gr_no: r.gr_no ?? r.data?.gr_no ?? null,
     data: r.data ?? {},
+    photo_path: r.photo_path ?? null,
+    is_duplicate: !!r.is_duplicate,
+    original_serial_no: r.original_serial_no == null ? null : Number(r.original_serial_no),
+    dues_cleared: !!r.dues_cleared,
+    balance_at_issue: Number(r.balance_at_issue ?? 0),
+    cancelled_at: r.cancelled_at ?? null,
+    cancel_reason: r.cancel_reason ?? null,
+    issued_by_name: r.issued_by_name ?? null,
+  }))
+}
+
+// ---- Refundable deposits ---------------------------------------------------
+//
+// A security deposit is the one kind of money a school takes that is NOT its
+// own. Before 0060 it counted as profit: a Rs 5,000 deposit made a proprietor's
+// "what did we keep" figure Rs 5,000 too high, and at 200 pupils that is a
+// million rupees they might pay a salary out of.
+
+export interface DepositHeldRow {
+  student_id: string; full_name: string; gr_no: string | null
+  father_name: string | null; class_name: string | null
+  status: string; left_on: string | null
+  collected: number; refunded: number; held: number
+}
+export interface DepositRefundResult {
+  refund_id: string
+  student_name: string
+  amount: number
+  /** Netted against what the family owed, as an ADJUSTMENT — so no cash report
+   *  gains money that never crossed the counter. */
+  applied_to_dues: number
+  paid_out: number
+  still_held: number
+  was_enrolled: boolean
+}
+
+/** Refundable money the school is holding for one pupil. Derived from
+ *  allocations against deposit invoices, less refunds — never stored, so it
+ *  cannot drift from the ledger. */
+export async function getDepositHeld(studentId: string): Promise<number> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_deposit_held', { p_student_id: studentId })
+  if (error) throw new Error(error.message)
+  return Number(data ?? 0)
+}
+
+/**
+ * Charge a deposit. It goes on its OWN challan, by construction.
+ *
+ * Not a choice of layout: `payment_allocations` allocates to an invoice, not a
+ * line, so on a mixed challan a part-payment could not be split into "deposit"
+ * and "tuition" — and any splitting rule would be one a parent could argue with
+ * and the school could not defend.
+ */
+export async function chargeDeposit(
+  studentId: string, feeHeadId: string, amount: number,
+  dueDate?: string | null, note?: string | null,
+): Promise<{ invoice_id: string; amount: number; fee_head: string }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_charge_deposit', {
+    p_student_id: studentId, p_fee_head_id: feeHeadId, p_amount: amount,
+    p_due_date: dueDate ?? null, p_note: note ?? null,
+  })
+  if (error) throw new Error(error.message)
+  const r = (data ?? {}) as Record<string, any>
+  return { invoice_id: r.invoice_id, amount: Number(r.amount ?? 0), fee_head: r.fee_head ?? '' }
+}
+
+/**
+ * Refund a deposit, netting arrears first.
+ *
+ * `amount` omitted means everything held. `netAgainstDues` is the normal case
+ * and is what a clerk says at the counter: "you owe 3,000, your deposit is
+ * 5,000, here is 2,000 back."
+ */
+export async function refundDeposit(input: {
+  studentId: string
+  amount?: number | null
+  netAgainstDues?: boolean
+  method?: string
+  reason?: string | null
+}): Promise<DepositRefundResult> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_refund_deposit', {
+    p_student_id: input.studentId,
+    p_amount: input.amount ?? null,
+    p_net_against_dues: input.netAgainstDues ?? true,
+    p_method: input.method ?? 'cash',
+    p_reason: input.reason ?? null,
+  })
+  if (error) throw new Error(error.message)
+  const r = (data ?? {}) as Record<string, any>
+  return {
+    refund_id: r.refund_id,
+    student_name: r.student_name ?? '',
+    amount: Number(r.amount ?? 0),
+    applied_to_dues: Number(r.applied_to_dues ?? 0),
+    paid_out: Number(r.paid_out ?? 0),
+    still_held: Number(r.still_held ?? 0),
+    was_enrolled: !!r.was_enrolled,
+  }
+}
+
+/** Everyone the school is holding refundable money for — INCLUDING pupils who
+ *  have left and not been refunded, because that is exactly what is still owed. */
+export async function listDepositsHeld(): Promise<DepositHeldRow[]> {
+  const sb = requireSupabase()
+  const rows = unwrap<Record<string, any>[]>(await sb.rpc('fn_deposits_held'))
+  return (rows ?? []).map((r) => ({
+    student_id: r.student_id, full_name: r.full_name,
+    gr_no: r.gr_no ?? null, father_name: r.father_name ?? null,
+    class_name: r.class_name ?? null,
+    status: r.status, left_on: r.left_on ?? null,
+    collected: Number(r.collected ?? 0),
+    refunded: Number(r.refunded ?? 0),
+    held: Number(r.held ?? 0),
   }))
 }
 
@@ -3072,11 +3720,10 @@ export async function saveMessageSetting(
   templateKey: string, patch: { body?: string; enabled?: boolean },
 ): Promise<void> {
   const sb = requireSupabase()
-  const { error } = await sb
-    .from('message_templates')
-    .update(patch)
-    .eq('template_key', templateKey)
-  if (error) throw new Error(error.message)
+  await mustWrite(
+    await sb.from('message_templates').update(patch)
+      .eq('template_key', templateKey).select('template_key'),
+    'That message template')
 }
 
 /** Put one template's original wording back. Returns the restored text. */

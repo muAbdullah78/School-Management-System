@@ -21,6 +21,9 @@ import {
 } from '@/lib/db'
 import { DataTable, type Column } from '@/components/DataTable'
 import { fmtDate } from '@/lib/format'
+import { useAuth } from '@/auth/AuthProvider'
+import { canWrite } from '@/auth/roles'
+import { ObserverNotice } from '@/components/ObserverNotice'
 
 const FIELD =
   'rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
@@ -59,6 +62,10 @@ function Pill({ status }: { status: EnquiryStatus }) {
 
 export function EnquiriesPage() {
   const qc = useQueryClient()
+  const { profile } = useAuth()
+  // An observer reads the enquiry book and does not record calls on it — the
+  // follow-up trail is a record of who actually spoke to the parent.
+  const mayWrite = canWrite(profile?.role)
   const [tab, setTab] = useState<'worklist' | 'all' | 'sources'>('worklist')
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<EnquiryStatus | ''>('')
@@ -180,11 +187,15 @@ export function EnquiriesPage() {
             Every parent who asked, and who is still waiting to hear back.
           </p>
         </div>
-        <button type="button" onClick={() => setAdding(true)}
-          className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
-          Record an enquiry
-        </button>
+        {mayWrite && (
+          <button type="button" onClick={() => setAdding(true)}
+            className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
+            Record an enquiry
+          </button>
+        )}
       </div>
+
+      {!mayWrite && <ObserverNotice what="admission enquiries" />}
 
       {/* The worklist framing. "Overdue" first and in red, because it is the
           only figure here that means somebody must do something today. */}
@@ -247,7 +258,7 @@ export function EnquiriesPage() {
             search={search}
             onSearchChange={setSearch}
             searchPlaceholder="Child, father, phone or enquiry number…"
-            onRowClick={setOpen}
+            onRowClick={mayWrite ? setOpen : undefined}
             loading={list.isLoading}
             error={list.isError ? (list.error as Error).message : null}
             emptyTitle={tab === 'worklist' ? 'Nobody is waiting on a call' : 'No enquiries yet'}
@@ -277,7 +288,10 @@ export function EnquiriesPage() {
           onDone={() => { setAdding(false); refresh() }}
         />
       )}
-      {open && (
+      {/* The drawer is where a call is logged and an outcome recorded, both of
+          which are writes. An observer sees the list and the summary and does not
+          get the drawer — a drawer full of dead buttons is worse than no drawer. */}
+      {open && mayWrite && (
         <EnquiryDrawer
           enquiry={open}
           onClose={() => setOpen(null)}

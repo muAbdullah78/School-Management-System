@@ -16,23 +16,53 @@ export function TabulationSheet({
 }) {
   const schoolName = useSchoolName()
 
-  // Column subjects, in first-seen order across all cards (handles a card that
-  // happens to miss a subject).
+  // Column subjects, in first-seen order across all cards. In a streamed class
+  // this is the UNION — Physics and Civics both get a column — because a
+  // consolidated sheet is meant to cover the whole class. Which is exactly why
+  // "this pupil does not take it" has to look different from "not marked":
+  // otherwise half a class-9 grid is identical dashes carrying two meanings.
   const subjects: { name: string; max: number }[] = []
   const seen = new Set<string>()
   for (const c of cards) {
     for (const s of c.frozen?.subjects ?? []) {
-      if (!seen.has(s.subject)) { seen.add(s.subject); subjects.push({ name: s.subject, max: s.max }) }
+      if (!seen.has(s.subject)) {
+        seen.add(s.subject)
+        subjects.push({ name: s.subject, max: s.out_of ?? s.max })
+      }
     }
   }
 
-  function cell(card: ResultCardRow, subject: string): string {
+  function cell(card: ResultCardRow, subject: string): { text: string; muted?: boolean } {
     const s = card.frozen?.subjects.find((x) => x.subject === subject)
-    if (!s) return '—'
-    return s.is_absent ? 'ABS' : (s.marks == null ? '—' : String(s.marks))
+    // Not on this pupil's card at all — a different stream. Blank and greyed,
+    // never a dash.
+    if (!s) return { text: '·', muted: true }
+    if (s.marked === false) return { text: '—' }
+    if (s.is_absent) return { text: 'ABS' }
+    // The combined figure when there is a practical, so the column agrees with
+    // the /max in its own header.
+    const v = s.obtained ?? s.marks
+    return { text: v == null ? '—' : String(v) }
   }
+
+  /**
+   * The verdict, taken FROM the card.
+   *
+   * This used to recompute it here, and got a different answer: it failed any
+   * pupil who was absent for a paper regardless of the pass mark, and ignored
+   * the aggregate entirely. A tabulation sheet that disagrees with the result
+   * cards it was built from is worse than no tabulation sheet — and this file's
+   * own comment claims it always agrees with them.
+   *
+   * Cards generated before 0058 carry no `result`, so the old computation stays
+   * as the fallback for them and nothing else.
+   */
   function result(card: ResultCardRow): { label: string; fail: boolean } {
     if (card.frozen?.withheld) return { label: 'Withheld', fail: true }
+    const r = card.frozen?.result
+    if (r === 'PASS') return { label: 'Pass', fail: false }
+    if (r === 'FAIL') return { label: 'Fail', fail: true }
+    if (r === 'PENDING' || card.frozen?.provisional) return { label: 'Pending', fail: false }
     const fail = (card.frozen?.subjects ?? []).some((s) => s.is_absent || (s.marks != null && s.marks < s.pass))
     return { label: fail ? 'Fail' : 'Pass', fail }
   }
@@ -70,9 +100,16 @@ export function TabulationSheet({
                   <tr key={c.id} className="border-b border-slate-100">
                     <td className="px-1.5 py-1 text-right text-slate-500">{c.roll_no ?? '—'}</td>
                     <td className="px-1.5 py-1 text-slate-800">{c.full_name}</td>
-                    {subjects.map((s) => (
-                      <td key={s.name} className="px-1.5 py-1 text-right text-slate-700">{cell(c, s.name)}</td>
-                    ))}
+                    {subjects.map((s) => {
+                      const v = cell(c, s.name)
+                      return (
+                        <td key={s.name}
+                          className={`px-1.5 py-1 text-right ${v.muted ? 'text-slate-300' : 'text-slate-700'}`}
+                          title={v.muted ? 'Not taken — different stream' : undefined}>
+                          {v.text}
+                        </td>
+                      )
+                    })}
                     <td className="px-1.5 py-1 text-right text-slate-800">{c.total_marks ?? '—'}/{c.total_max ?? '—'}</td>
                     <td className="px-1.5 py-1 text-right text-slate-700">{c.percentage == null ? '—' : c.percentage}</td>
                     <td className="px-1.5 py-1 font-medium text-slate-800">{c.grade ?? '—'}</td>

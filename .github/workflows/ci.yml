@@ -130,6 +130,41 @@ jobs:
             exit 1
           fi
           echo "verify.sql is all PASS on a bundle-only install"
+      - name: verify.sql and detect.sql cover the same migrations
+        # They are two lists of the same facts, maintained by hand, and they drifted
+        # once already: verify.sql checked 0033 then jumped to 0038-0046, so a real
+        # school got all PASS while 0036 (the family-linkage fix) and 0037 were
+        # MISSING. verify.sql certified a database on which sibling billing did not
+        # work.
+        #
+        # A subset check reports health it has not measured. This asserts both files
+        # name every migration in the range where a gap can occur.
+        run: |
+          fail=0
+          # 0035-0049: the scattered-gap range. Three artefacts must agree — a
+          # named literal in verify.sql, a row in detect.sql, and a repair file.
+          for n in 0035 0036 0037 0038 0039 0040 0041 0042 0043 0044 0045 0046 0047 0048 0049; do
+            grep -q "'$n'" supabase/verify.sql || { echo "verify.sql does not check $n"; fail=1; }
+            grep -q "'${n}_" supabase/repair/detect.sql || { echo "detect.sql does not check $n"; fail=1; }
+            test -f "supabase/repair/${n}_"*.sql || { echo "no repair file for $n"; fail=1; }
+          done
+          # 0050 to the newest migration on disk. No repair files here — the
+          # migration itself is the remedy — but "is my database up to date?"
+          # must not silently stop answering at 0049. Derived from the directory
+          # rather than a hand-kept list, so the next migration is covered the
+          # day it lands instead of the day somebody remembers this file.
+          for f in supabase/migrations/*.sql; do
+            n=$(basename "$f" | cut -c1-4)
+            [ "$n" \> "0049" ] || continue
+            grep -q "$n" supabase/verify.sql || { echo "verify.sql never mentions $n"; fail=1; }
+            grep -q "'${n}_" supabase/repair/detect.sql || { echo "detect.sql does not check $n"; fail=1; }
+          done
+          if [ "$fail" = 1 ]; then
+            echo "::error::the install checks and the repair files have drifted apart"
+            exit 1
+          fi
+          echo "verify.sql and detect.sql cover every migration from 0035 to $(ls supabase/migrations/*.sql | tail -1 | xargs basename | cut -c1-4)"
+
       - name: An EXISTING school can upgrade
         # THE JOB THAT WAS MISSING, and its absence cost a real school fifteen
         # migrations.
@@ -138,20 +173,20 @@ jobs:
         # empty database. That is not how an existing school upgrades, and the
         # upgrade path was broken for months without one red tick.
         #
-        # What happened. Bundle 3's glob is 003[3-9]*. When the school first
-        # installed, it matched {0033, 0034}. Migrations 0035-0039 were then
-        # written and the SAME glob silently swallowed them, so the file they had
-        # already pasted changed underneath them. Re-running it fails on 0033's
-        # "column family_id already exists" and — because a bundle is ONE
-        # transaction — rolls back entirely, so 0035-0039 never arrive. Bundle 4
-        # then cannot apply either: it needs fee_structures.effective_from, added
-        # by 0035. The school ended up on 0001-0034 plus 0050-0056, with a
-        # fifteen-migration hole, and verify.sql told them to re-run bundle 4 —
-        # which cannot fix it and cannot even apply.
+        # What happened. Bundle 3's glob is 003[3-9]*. It kept absorbing new
+        # migrations AFTER it had already shipped, so the file a school had
+        # already pasted changed underneath them — and different schools stopped
+        # at different points inside it. Re-running it fails on 0033's "column
+        # family_id already exists" and, because a bundle is ONE transaction,
+        # rolls back entirely, so nothing later in the file arrives.
         #
-        # This step reproduces that exactly, then applies the documented repair,
-        # and asserts verify.sql comes back all PASS. It pins the repair path as
-        # tested rather than as advice in a chat message.
+        # The real report stopped at 0037: migrations 0038 and 0039 were missing
+        # and everything else was present. I first GUESSED the cutoff was 0034,
+        # built a fifteen-migration repair on that guess, and it failed on its
+        # first statement because the school already had 0035. That is why the
+        # repair is now ONE FILE PER MIGRATION plus a detect.sql that asks the
+        # database instead of inferring — and why this step stops at 0037, the
+        # cutoff that actually occurred.
         run: |
           psql -v ON_ERROR_STOP=1 -c "create database upgradecheck;"
           export PGDATABASE=upgradecheck
@@ -167,10 +202,10 @@ jobs:
           end $$;
           SQL
 
-          echo "── the school as it was: migrations 0001-0034"
+          echo "── the school as it was: migrations 0001-0037 (the real cutoff)"
           for f in supabase/migrations/*.sql; do
             n=$(basename "$f" | cut -c1-4)
-            if [ "$n" -le 0034 ]; then
+            if [ "$n" -le 0037 ]; then
               psql -v ON_ERROR_STOP=1 -q --single-transaction -f "$f"
             fi
           done
@@ -184,9 +219,49 @@ jobs:
             fi
           done
 
-          echo "── the repair, then bundle 5 again so the newer definitions win back"
-          psql -v ON_ERROR_STOP=1 -q --single-transaction -f supabase/repair/0035_0049.sql
+          echo "── detect.sql must name the gap, not guess it"
+          psql -v ON_ERROR_STOP=1 -f supabase/repair/detect.sql | tee /tmp/detect.out
+          for m in 0038_counter 0039_challan; do
+            grep -q "$m.*MISSING" /tmp/detect.out || { echo "::error::detect.sql failed to spot $m"; exit 1; }
+          done
+
+          echo "── the repair, driven by the ACTION COLUMN detect.sql prints"
+          # ONLY the files detect.sql marked MISSING, in the order it names them.
+          # Applying the whole repair directory blindly is what the school was
+          # told to do the first time and it fails on its first statement —
+          # reproduced here, deliberately, before this loop was written:
+          #   ERROR: column "effective_from" of relation "fee_structures"
+          #          already exists
+          # A repair must be driven by what the database is missing, never by a
+          # fixed list.
+          #
+          # It must also be driven by the PATH detect.sql prints, not by a path
+          # reconstructed from the migration name. This loop used to do the
+          # latter — `supabase/repair/$name.sql` — and broke the moment detect.sql
+          # was extended past 0049, because 0050 onward have no repair file and
+          # their action column says `run supabase/migrations/...` instead:
+          #   psql: error: supabase/repair/0057_photos_and_logo.sql:
+          #                No such file or directory
+          # The job was ignoring the very instruction it exists to test. Reading
+          # field 4 makes it follow exactly what a school is shown.
+          awk -F'|' '/MISSING/ {
+            name = $1; gsub(/ /, "", name)
+            act  = $4; sub(/^ *run */, "", act); gsub(/ *$/, "", act)
+            print name "\t" act
+          }' /tmp/detect.out | sort | while IFS=$'\t' read -r m path; do
+            echo "   applying $path"
+            test -f "$path" || { echo "::error::detect.sql named a file that does not exist: $path"; exit 1; }
+            psql -v ON_ERROR_STOP=1 -q --single-transaction -f "$path"
+          done
+
+          # Then the LAST TWO bundles in order, so the newest definitions win
+          # back. Bundle 5 alone is not enough any more and getting this wrong is
+          # silent: the repair files for 0035-0049 restore definitions that later
+          # migrations superseded, and bundle 5 carries 0050-0056 — several of
+          # whose function bodies 0059 rewrites. Re-running bundle 5 LAST would
+          # put the has_role read gates back and quietly undo the observer role.
           psql -v ON_ERROR_STOP=1 -q --single-transaction -f supabase/bundles/5_search.sql
+          psql -v ON_ERROR_STOP=1 -q --single-transaction -f supabase/bundles/6_photos_and_records.sql
 
           echo "── verify.sql, as the school runs it"
           psql -v ON_ERROR_STOP=1 -f supabase/verify.sql | tee /tmp/upgrade.out
@@ -458,6 +533,31 @@ jobs:
         # Verified by adding students.planted_dead_col and confirming this fails.
         run: ./supabase/check-columns-used.sh
 
+      - name: Can a signed-in user actually WRITE the tables?
+        # A CHECK constraint's function runs with the privileges of whoever is
+        # writing the row — not the table's owner, not the function's owner. So a
+        # constraint calling a function `authenticated` cannot execute makes the
+        # table completely unwritable, and the error mentions the function rather
+        # than the table.
+        #
+        # THIS SHIPPED. 0057 put a CHECK on students.photo_path, staff.photo_path
+        # and school_settings.logo_path calling fn_photo_path_ok, then revoked
+        # that function from PUBLIC — the default grant that was the only reason
+        # it worked — without granting it to authenticated:
+        #
+        #   set local role authenticated;
+        #   insert into public.students (...) values (...);
+        #   ERROR:  permission denied for function fn_photo_path_ok
+        #
+        # Admitting a child. Adding a teacher. Saving the school's own address.
+        # Nothing caught it because every suite writes those tables AS THE TABLE
+        # OWNER, and the owner bypasses both RLS and function-privilege checks.
+        # The constraint was well tested — from a position where the privilege
+        # question cannot arise.
+        #
+        # Verified by revoking the grant again and confirming this fails.
+        run: ./supabase/check-constraint-functions.sh
+
       - name: Is every QUERY inside a definer function scoped?
         # dashboard.sql assertion 20 asks whether a SECURITY DEFINER function
         # MENTIONS scoping anywhere in its body. That guard is worth having and
@@ -505,6 +605,26 @@ jobs:
         # Verified by unscoping fn_import_students' GR check and confirming this
         # names the line and exits 1.
         run: python3 ./supabase/check-import-keys.py
+
+      - name: Can an observer write anywhere?
+        # `readonly` reads everything a staff member reads and writes nothing.
+        # The read half rests on ONE helper —
+        #
+        #   may_view(roles) := has_role(roles) or has_role('readonly')
+        #
+        # — and the whole guarantee is that the helper never reaches a write. It
+        # is one replace() away from doing so, and the change would look exactly
+        # like the forty-odd correct ones around it. A code review does not
+        # reliably catch that; the catalogue does.
+        #
+        # It also refuses to pass when may_view is used in fewer than thirty
+        # places. A migration that dropped the helper and reverted every read gate
+        # would otherwise pass by having nothing left to find — and would silently
+        # put `readonly` back to seeing empty screens.
+        #
+        # Verified by pointing students_write at may_view and confirming this
+        # names the policy and exits 1.
+        run: python3 ./supabase/check-readonly-writes.py
 
       - name: Reports — does the statement agree with the Accounts screen?
         # Assertion 6 is the point of this suite: the debit-and-credit statement
@@ -683,6 +803,209 @@ jobs:
         # and 17/19 check the money actually lands where student_balance() reads
         # it and does not double on a re-run.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/importers.sql
+
+      - name: Photographs — can one school reach another school's faces?
+        # Storage is the one part of this product where the access rule is NOT
+        # table RLS. It is four policies on storage.objects, matching on the
+        # object's NAME, and that changes what can go wrong: a path is a string,
+        # and a string a client chooses is a folder a client chooses.
+        #
+        # There is no storage schema in CI, so this suite builds a faithful stub
+        # of storage.objects — same columns, same RLS-enabled table, same four
+        # policies, the real fn_may_read_school_file / fn_may_write_school_file —
+        # and drives it as `authenticated` in BOTH directions: school A must not
+        # read, write, overwrite or delete school B's objects, and vice versa.
+        # Testing one direction only would pass on a policy that happened to be
+        # scoped to whichever school the fixture created first.
+        #
+        # It also asserts the three CHECK constraints refuse a malformed path
+        # outright, and that the setter functions DERIVE the path rather than
+        # storing what they are handed — the property that makes "upload into
+        # another school's folder" inexpressible from the client at all.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/photos.sql
+
+      - name: The result card — is a pupil marked out of their OWN subjects?
+        # The generator was confidently wrong in three ways at once, and the
+        # arithmetic was plausible enough that nobody would have questioned it.
+        # Reproduced on a real database before it was touched: a class-9 pupil
+        # with 160 of the 175 marks they actually sat was printed as 160/275 =
+        # 58.18%, grade D. Their Arts classmate on 180/200 = 90% was printed as
+        # 65.45%, grade C. And the wrong denominator punished the Science pupil
+        # harder, so the RANKING inverted and prize day would have gone to the
+        # wrong child. A third pupil, whose marks were simply not typed in yet,
+        # printed as 0.00%, grade F, ranked third.
+        #
+        # Every rule here has a specific defect behind it. The two that matter
+        # most for how the assertions are written:
+        #
+        #  * The two streams have DIFFERENT paper totals (Physics 75, Civics
+        #    100). With equal totals a wrong denominator produces the right
+        #    answer by accident and the whole suite passes on broken code.
+        #  * The ranking is asserted as an ORDER, not as two percentages. The
+        #    old defect got both numbers wrong in a way that also swapped them;
+        #    testing the numbers alone catches one fault and not the other.
+        #
+        # Assertions 30-34 are the provisional-card rules, which have to hold
+        # TOGETHER: a card generated with marks missing must say so AND leave
+        # the unmarked papers out of its denominator AND take no position. One
+        # without the others is the original defect with a label on it.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/exam_computation.sql
+
+      - name: The observer role — can it write anywhere?
+        # `readonly` was incoherent in both directions at once. The dashboard
+        # showed it the school's takings while every screen it could click
+        # through to returned ZERO ROWS, because its SELECT policies named
+        # explicit roles and readonly was not among them. Somebody in that seat
+        # concludes the software has lost the data — and it is the FALLBACK role,
+        # so that was the experience of any invited login whose role nobody set.
+        #
+        # THE WORSE HALF, and the reason assertions 14-19 count rows instead of
+        # catching exceptions: RLS treats the write verbs differently. INSERT with
+        # no matching policy RAISES; UPDATE and DELETE affect ZERO ROWS and raise
+        # NOTHING. Every direct-table write in db.ts checked only `error`, so a
+        # blocked save reported "Saved." over an unchanged record. There is no
+        # exception to assert on — only a row count and the value afterwards.
+        #
+        # Assertion 27 is the trap in the whole approach: fn_may_manage_class and
+        # fn_may_write_school_file are STABLE and look exactly like read gates,
+        # but they AUTHORISE WRITES elsewhere — a teacher's mark entry and a
+        # storage upload policy consult them. If may_view ever reaches either, an
+        # observer can enter marks and overwrite a child's photograph, and
+        # nothing at the call site looks wrong.
+        #
+        # Assertion 29 stops the suite going vacuous: a migration that reverted
+        # every read gate to has_role would pass 25-28 perfectly, by having
+        # nothing left to find.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/readonly_role.sql
+
+      - name: Refundable deposits — is a security deposit counted as PROFIT?
+        # It was. Reproduced on a real database: one pupil, Rs 2,000 tuition plus
+        # a Rs 5,000 REFUNDABLE deposit, family pays all 7,000 — and
+        # fn_finance_summary reported fee_income 7,000 and profit 7,000. A deposit
+        # is money the school HOLDS and must give back. At 200 pupils that is a
+        # million rupees of profit that is a liability, and a proprietor pays a
+        # salary out of it. There was also no way at all to record a refund, and
+        # nothing anywhere read fee_heads.is_refundable.
+        #
+        # Assertions 1 and 2 test BOTH insert orders on the mixed-invoice rule.
+        # The trigger counts refundable and ordinary lines, so a check that only
+        # adds a deposit to a tuition invoice passes on half a bug.
+        #
+        # Assertion 18 is the one that would be easiest to get wrong and hardest
+        # to notice: netting a deposit against arrears must move the BALANCE and
+        # not the CASH. The tempting implementation is a payments row, which would
+        # put money nobody handed over into the day book and the till, and the
+        # drawer would not balance. It is an adjustment.
+        #
+        # Assertion 30 keeps a liability from shrinking when a child leaves — a
+        # pupil who has gone and not been refunded is precisely the money still
+        # owed. Assertion 32 is the safety property: a school with no refundable
+        # head sees no change to any figure at all.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/deposits.sql
+
+      - name: Certificates — the SLC, the dues lever, and the leaving it must record
+        # Reproduced on a real database. One pupil, STILL ENROLLED, owing
+        # Rs 4,000. A leaving certificate was requested and:
+        #
+        #   issued ............................ yes, serial 1
+        #   students.status afterwards ........ 'active', left_on null
+        #   snapshot .......................... name, father, class, roll. Nothing else.
+        #   issued again ...................... serial 2, also looking original
+        #   way to cancel one issued in error . none
+        #
+        # Each of those is a separate failure in a school. The dues gate is the
+        # one lever a school has for unpaid fees and it did not exist. Issuing
+        # without recording the leaving leaves a child on the attendance
+        # register, in the class strength and in next month's billing while
+        # holding a certificate saying they left. An SLC that does not state the
+        # dates of attendance is not an SLC. And two indistinguishable originals
+        # let a family present one at each of two schools.
+        #
+        # Assertions 40-46 are a defect found by probing this migration's OWN
+        # code, not the code it replaced: `p_data` — the free-form field a clerk
+        # types into — was merged OVER the frozen snapshot, so a caller could
+        # send {"is_duplicate": false, "dues_cleared": true, "student_name":
+        # "Somebody Else"} and get a legitimate serial printing a different
+        # child's name with no DUPLICATE stamp and the fees shown as cleared.
+        # "The app doesn't send those keys" is not a boundary, and a certificate
+        # is exactly the document somebody has a motive to forge. Assertion 46
+        # is the other half: locking it down must not empty it — purpose and
+        # remarks still have to reach the document.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/certificates.sql
+
+      - name: Staff QR check-in — was the QR doing anything at all?
+        # It was not. Probed on a real database: one teacher, login linked to her
+        # staff record, sitting at home.
+        #
+        #   inserted her own attendance row ......... yes. No QR code involved.
+        #     with source = 'qr' and code_id null ... and nothing read code_id
+        #   back-dated seven days she never worked .. yes
+        #   the code ............................... 32 static hex chars, no expiry
+        #   check-out / lateness / school day ....... none of the three existed
+        #
+        # staff_att_insert allowed `staff_id = my_staff_id()`, and
+        # fn_staff_check_in has been SECURITY DEFINER all along — so that policy
+        # branch was never needed for the feature to work, and it handed away the
+        # entire mechanism. On a school that pays by attendance, the back-dating
+        # is payroll fraud in one call.
+        #
+        # Assertions 1-3 are worth more than the rest of the file put together:
+        # the rotating code is a lock, and this is the wall next to it.
+        #
+        # Assertion 8 is the one that keeps the rotation honest — a rotating code
+        # that still accepts its own bare code is decorative in exactly the way
+        # the direct insert was. 14 and 15 are the pair that matter for the
+        # window: the PREVIOUS 30 seconds must work (a token has to survive the
+        # second between the screen and the phone) and two minutes ago must not.
+        #
+        # Assertion 32 exists because of a mistake in the first draft: it logged
+        # the refusal and then RAISED, which logs nothing — plpgsql has no
+        # autonomous transaction, so the raise rolls the log row back with it. The
+        # refusal register would have been permanently empty and the brute-force
+        # counter that reads it would never have counted past zero. Refusals
+        # return; the web wrapper turns them back into thrown errors.
+        #
+        # Everything after the fixture runs as `authenticated`, because RLS does
+        # not apply to a table's owner and a negative assertion made as postgres
+        # would pass with no policies at all. That is also how the 0063 defect
+        # surfaced.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/staff_checkin.sql
+
+      - name: The operator's own books — could the seller answer what a school owes?
+        # No. The product's promise to a school is that every rupee has a row;
+        # the person selling it kept none. Reproduced on a real database — three
+        # customer schools, Al-Noor renews twelve months of `growth`:
+        #
+        #   what was Al-Noor charged? ......... no table records a charge
+        #   how much has Al-Noor ever paid? ... no function answers it
+        #   which schools owe us money? ....... unanswerable
+        #   who granted it, and when? ......... audit_log had zero rows for it
+        #
+        # The subtle one is "which schools owe us money". The console shows
+        # days_left, so it LOOKS like it answers that — but a school that renewed
+        # on trust and never paid is indistinguishable from one that paid in
+        # full. Both show 335 days left. The receivable was invisible precisely
+        # because the screen looked like it was showing it.
+        #
+        # Assertions 4-7 are a revenue leak found in the same probe: Al-Noor is
+        # on growth (limit 300) with 420 students, the console itself computed
+        # limit_state='over' and suggested_plan='institution', and the renewal
+        # put them back on growth for another year at the 300-student price. The
+        # screen knew; the renewal path never asked. 6 and 7 are the halves that
+        # matter — a refused renewal must leave neither an invoice nor a moved
+        # period behind.
+        #
+        # Assertions 13-17 defend the discount rule in both directions: a price
+        # that is not the list price needs a reason, INCLUDING zero, and a zero
+        # charge still activates the school. A free year that leaves no trace is
+        # how a business loses track of what it has given away.
+        #
+        # Assertions 38-46 are the boundary. A school's own OWNER must read none
+        # of the operator's books — not even invoices raised against their own
+        # school — and the operator, with every billing power there is, must
+        # still read no student, no fee invoice and no receipt. Adding the
+        # operator's books must not widen the operator's reach.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/operator_billing.sql
 
       - name: Every suite on disk has a step above
         # The gap this closes has already happened twice in this repo, in two

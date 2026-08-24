@@ -1,5 +1,6 @@
 import { fmtPKR, fmtDate } from '@/lib/format'
 import { useSchoolName } from '@/hooks/useSchoolName'
+import { useSchoolLogo } from '@/hooks/useSchoolLogo'
 
 export interface ReceiptData {
   receiptNo: number
@@ -15,10 +16,14 @@ export interface ReceiptData {
 /** A printable fee receipt. Print with the browser (Ctrl+P); print CSS hides everything else. */
 export function Receipt({ data, onClose }: { data: ReceiptData; onClose: () => void }) {
   const schoolName = useSchoolName()
+  const logo = useSchoolLogo()
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 print:static print:bg-white print:p-0">
       <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-lg print:max-w-none print:shadow-none" id="receipt">
         <div className="text-center">
+          {logo && (
+            <img src={logo} alt="" className="mx-auto mb-1 max-h-12 max-w-[8rem] object-contain" />
+          )}
           <div className="text-lg font-semibold text-slate-800">{schoolName}</div>
           <div className="text-xs uppercase tracking-wide text-slate-500">Fee Receipt</div>
         </div>

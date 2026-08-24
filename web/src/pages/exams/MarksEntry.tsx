@@ -5,7 +5,7 @@ import {
 } from '@/lib/db'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
-type Entry = { marks: string; is_absent: boolean }
+type Entry = { marks: string; practical: string; is_absent: boolean }
 
 export function MarksEntry() {
   const qc = useQueryClient()
@@ -30,11 +30,22 @@ export function MarksEntry() {
   const [msg, setMsg] = useState<string | null>(null)
   const rows = marksheet.data ?? []
   const maxMarks = rows[0]?.max_marks
+  // Comes from the marksheet rather than being looked up separately, so the
+  // screen and the server cannot disagree about whether this paper has a
+  // practical at all.
+  const practicalMax = rows[0]?.practical_max ?? 0
+  const hasPractical = practicalMax > 0
 
   useEffect(() => {
     if (!marksheet.data) return
     const next: Record<string, Entry> = {}
-    for (const r of marksheet.data) next[r.enrollment_id] = { marks: r.marks == null ? '' : String(r.marks), is_absent: r.is_absent }
+    for (const r of marksheet.data) {
+      next[r.enrollment_id] = {
+        marks: r.marks == null ? '' : String(r.marks),
+        practical: r.practical_marks == null ? '' : String(r.practical_marks),
+        is_absent: r.is_absent,
+      }
+    }
     setEntries(next)
     setReason('')
     setMsg(null)
@@ -55,7 +66,16 @@ export function MarksEntry() {
   const save = useMutation({
     mutationFn: () => enterMarks(examSubjectId, rows.map((r) => {
       const e = entries[r.enrollment_id]
-      return { enrollment_id: r.enrollment_id, marks: e?.is_absent || e?.marks === '' ? null : Number(e.marks), is_absent: !!e?.is_absent }
+      return {
+        enrollment_id: r.enrollment_id,
+        marks: e?.is_absent || e?.marks === '' ? null : Number(e.marks),
+        // Sent only when the paper HAS a practical. Sending a value against a
+        // paper with practical_max 0 is refused server-side, and rightly — but
+        // the screen should never provoke that refusal.
+        practical_marks: hasPractical && !e?.is_absent && e?.practical !== ''
+          ? Number(e?.practical) : null,
+        is_absent: !!e?.is_absent,
+      }
     }), reason.trim() || null),
     onSuccess: (res) => {
       setMsg(`Saved ${res.marked}${res.skipped ? ` · ${res.skipped} locked, skipped` : ''}.`)
@@ -69,7 +89,14 @@ export function MarksEntry() {
 
   const overMax = rows.some((r) => {
     const e = entries[r.enrollment_id]
-    return e && !e.is_absent && e.marks !== '' && (Number(e.marks) < 0 || Number(e.marks) > r.max_marks)
+    if (!e || e.is_absent) return false
+    const theoryBad = e.marks !== '' && (Number(e.marks) < 0 || Number(e.marks) > r.max_marks)
+    // Checked against the PRACTICAL maximum, not the theory paper's. Checking
+    // both against max_marks would let a 25-mark practical be typed as 70
+    // whenever the theory paper happened to be out of 75.
+    const pracBad = hasPractical && e.practical !== ''
+      && (Number(e.practical) < 0 || Number(e.practical) > practicalMax)
+    return theoryBad || pracBad
   })
 
   return (
@@ -93,7 +120,13 @@ export function MarksEntry() {
           <span className="text-sm text-slate-600">Subject</span>
           <select value={examSubjectId} onChange={(e) => setExamSubjectId(e.target.value)} className={FIELD} disabled={!termId || !classId}>
             <option value="">{!termId || !classId ? 'Pick term & class' : 'Select subject…'}</option>
-            {examSubjects.data?.map((es) => <option key={es.id} value={es.id}>{es.subject_name} (max {es.max_marks})</option>)}
+            {examSubjects.data?.map((es) => (
+              <option key={es.id} value={es.id}>
+                {es.subject_name}
+                {es.subject_stream ? ` · ${es.subject_stream}` : ''}
+                {' '}(max {es.max_marks}{es.practical_max > 0 ? ` + ${es.practical_max} practical` : ''})
+              </option>
+            ))}
           </select>
         </label>
       </div>
@@ -111,12 +144,21 @@ export function MarksEntry() {
               <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                    <tr><th className="px-3 py-2 w-14">Roll</th><th className="px-3 py-2">Student</th><th className="px-3 py-2 w-32">Marks (/{maxMarks})</th><th className="px-3 py-2 w-24">Absent</th></tr>
+                    <tr>
+                      <th className="px-3 py-2 w-14">Roll</th>
+                      <th className="px-3 py-2">Student</th>
+                      <th className="px-3 py-2 w-32">{hasPractical ? 'Theory' : 'Marks'} (/{maxMarks})</th>
+                      {hasPractical && <th className="px-3 py-2 w-32">Practical (/{practicalMax})</th>}
+                      {hasPractical && <th className="px-3 py-2 w-20 text-right">Total</th>}
+                      <th className="px-3 py-2 w-24">Absent</th>
+                    </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {rows.map((r) => {
-                      const e = entries[r.enrollment_id] ?? { marks: '', is_absent: false }
+                      const e = entries[r.enrollment_id] ?? { marks: '', practical: '', is_absent: false }
                       const bad = !e.is_absent && e.marks !== '' && (Number(e.marks) < 0 || Number(e.marks) > r.max_marks)
+                      const pbad = hasPractical && !e.is_absent && e.practical !== ''
+                        && (Number(e.practical) < 0 || Number(e.practical) > practicalMax)
                       return (
                         <tr key={r.enrollment_id} className={r.is_locked ? 'opacity-60' : ''}>
                           <td className="px-3 py-2 text-slate-500">{r.roll_no ?? '—'}</td>
@@ -126,7 +168,32 @@ export function MarksEntry() {
                               value={e.is_absent ? '' : e.marks} onChange={(ev) => upd(r.enrollment_id, { marks: ev.target.value })}
                               className={`w-24 rounded border px-2 py-1 text-sm ${bad ? 'border-red-400' : 'border-slate-300'} disabled:bg-slate-100`} />
                           </td>
+                          {hasPractical && (
+                            <td className="px-3 py-2">
+                              <input type="number" min="0" max={practicalMax} step="0.5"
+                                disabled={e.is_absent || r.is_locked}
+                                value={e.is_absent ? '' : e.practical}
+                                onChange={(ev) => upd(r.enrollment_id, { practical: ev.target.value })}
+                                className={`w-24 rounded border px-2 py-1 text-sm ${pbad ? 'border-red-400' : 'border-slate-300'} disabled:bg-slate-100`} />
+                            </td>
+                          )}
+                          {hasPractical && (
+                            <td className="px-3 py-2 text-right text-slate-600">
+                              {/* The combined figure, live, because the pass mark
+                                  applies to it and a teacher should see the number
+                                  the card will carry. */}
+                              {e.is_absent
+                                ? <span className="text-slate-400">0</span>
+                                : (e.marks === '' && e.practical === ''
+                                    ? <span className="text-slate-400">—</span>
+                                    : (Number(e.marks || 0) + Number(e.practical || 0)))}
+                            </td>
+                          )}
                           <td className="px-3 py-2">
+                            {/* An explicit control, not "leave it blank". Since
+                                0058 a blank box means NOT MARKED and keeps the
+                                paper out of the pupil's total; absence is a fact
+                                that has to be recorded, and it scores zero. */}
                             <input type="checkbox" checked={e.is_absent} disabled={r.is_locked}
                               onChange={(ev) => upd(r.enrollment_id, { is_absent: ev.target.checked })} className="h-4 w-4" />
                           </td>
@@ -176,6 +243,11 @@ export function MarksEntry() {
                   {save.isPending ? 'Saving…' : 'Save marks'}
                 </button>
                 {overMax && <span className="text-sm text-red-600">Some marks exceed the maximum.</span>}
+                <span className="text-xs text-slate-500">
+                  A blank box means <strong>not marked yet</strong> and keeps that paper out of the
+                  pupil&rsquo;s total. Tick <strong>Absent</strong> for a pupil who did not sit it —
+                  that scores zero and counts.
+                </span>
                 {msg && <span className="text-sm text-emerald-700">{msg}</span>}
                 {save.isError && <span className="text-sm text-red-600">{(save.error as Error).message}</span>}
               </div>

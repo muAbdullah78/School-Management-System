@@ -26,6 +26,7 @@
 import { QrCode } from '@/components/QrCode'
 import { fmtPKR } from '@/lib/format'
 import type { Challan } from '@/lib/db'
+import { useSchoolLogo } from '@/hooks/useSchoolLogo'
 
 const COPIES = ['Bank Copy', 'School Copy', 'Parent Copy'] as const
 
@@ -38,6 +39,9 @@ export function ChallanPrint({
   school: { name: string; address?: string | null; phone?: string | null }
   onClose: () => void
 }) {
+  // Fetched here, not passed in: five different screens open this modal, and a
+  // prop is a thing two of them would forget.
+  const logo = useSchoolLogo()
   return (
     <div className="fixed inset-0 z-50 overflow-auto bg-slate-900/40 p-4 print:static print:bg-white print:p-0">
       <div className="mx-auto max-w-[1100px]">
@@ -72,7 +76,7 @@ export function ChallanPrint({
 
         <div id="challan" className="space-y-3">
           {challans.map((c) => (
-            <ChallanSheet key={c.invoice_id} c={c} school={school} />
+            <ChallanSheet key={c.invoice_id} c={c} school={school} logo={logo} />
           ))}
         </div>
       </div>
@@ -83,9 +87,11 @@ export function ChallanPrint({
 function ChallanSheet({
   c,
   school,
+  logo,
 }: {
   c: Challan
   school: { name: string; address?: string | null; phone?: string | null }
+  logo: string | null
 }) {
   return (
     // break-after-page so a class of forty comes out as forty sheets rather
@@ -93,7 +99,7 @@ function ChallanSheet({
     <div className="break-after-page bg-white p-2 shadow print:shadow-none">
       <div className="grid grid-cols-3 gap-2">
         {COPIES.map((copy) => (
-          <Copy key={copy} copy={copy} c={c} school={school} />
+          <Copy key={copy} copy={copy} c={c} school={school} logo={logo} />
         ))}
       </div>
     </div>
@@ -104,10 +110,12 @@ function Copy({
   copy,
   c,
   school,
+  logo,
 }: {
   copy: string
   c: Challan
   school: { name: string; address?: string | null; phone?: string | null }
+  logo: string | null
 }) {
   const settled = c.total_payable <= 0
   // Past due only if something is actually OWED. Checking the date alone
@@ -122,6 +130,12 @@ function Copy({
     <div className="flex min-h-[26rem] flex-col border border-slate-400 p-2 text-[10px] leading-tight text-black">
       {/* header */}
       <div className="border-b border-slate-400 pb-1 text-center">
+        {/* The logo above the name, centred, so all three copies read as one
+            slip. A school with no logo simply has no line here — never a gap
+            or a broken-image box on something a parent takes to a bank. */}
+        {logo && (
+          <img src={logo} alt="" className="mx-auto mb-0.5 max-h-8 max-w-[6rem] object-contain" />
+        )}
         <div className="truncate text-[11px] font-bold uppercase">{school.name}</div>
         {school.address && <div className="truncate text-[8px] text-slate-600">{school.address}</div>}
         {school.phone && <div className="text-[8px] text-slate-600">Ph: {school.phone}</div>}

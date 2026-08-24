@@ -15,10 +15,12 @@
  */
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { listStudentPage, listClasses, listSections, type StudentListRow } from '@/lib/db'
+import { listStudentPage, listClasses, listSections, getStudentPhotoPaths, type StudentListRow } from '@/lib/db'
 import { DataTable, type Column } from '@/components/DataTable'
 import { fmtPKR } from '@/lib/format'
 import { StudentProfile } from './StudentProfile'
+import { Avatar } from '@/components/Avatar'
+import { signPaths } from '@/lib/photos'
 
 const SELECT =
   'rounded border border-slate-300 px-2 py-2 text-sm focus:border-brand-500 focus:outline-none'
@@ -50,6 +52,32 @@ export function StudentsPage() {
         limit: pageSize,
         offset: page * pageSize,
       }),
+  })
+
+  /**
+   * Faces for the fifty rows on screen, in two requests regardless of page size.
+   *
+   * Worth the round trips: four boys called Muhammad Ali in one school is
+   * ordinary here, and a face is how a clerk knows they opened the right one.
+   * Both steps degrade to nothing rather than failing the page.
+   */
+  const ids = (q.data?.rows ?? []).map((r) => r.student_id)
+  const idKey = ids.join('|')
+  const faces = useQuery({
+    queryKey: ['studentFaces', idKey],
+    queryFn: async () => {
+      const paths = await getStudentPhotoPaths(ids)
+      const signed = await signPaths([...paths.values()])
+      // Re-keyed by student id: the table has a pupil in hand, not a path.
+      const byStudent = new Map<string, string>()
+      for (const [studentId, path] of paths) {
+        const url = signed.get(path)
+        if (url) byStudent.set(studentId, url)
+      }
+      return byStudent
+    },
+    enabled: ids.length > 0,
+    staleTime: 20 * 60 * 1000,
   })
 
   if (selectedId) {
@@ -85,11 +113,20 @@ export function StudentsPage() {
       sortable: true,
       value: (r) => r.full_name,
       render: (r) => (
-        <div>
-          <div className="font-medium text-slate-800">{r.full_name}</div>
-          <div className="text-xs text-slate-400">
-            {r.gr_no ?? '—'}
-            {r.status !== 'active' ? ` · ${r.status.replace('_', ' ')}` : ''}
+        <div className="flex items-center gap-2">
+          {/* print:hidden — signed URLs do not survive a printed page reliably,
+              and a printed roster with forty broken image boxes is worse than a
+              printed roster of names. */}
+          <Avatar
+            name={r.full_name} url={faces.data?.get(r.student_id) ?? null}
+            size="sm" className="print:hidden"
+          />
+          <div className="min-w-0">
+            <div className="font-medium text-slate-800">{r.full_name}</div>
+            <div className="text-xs text-slate-400">
+              {r.gr_no ?? '—'}
+              {r.status !== 'active' ? ` · ${r.status.replace('_', ' ')}` : ''}
+            </div>
           </div>
         </div>
       ),
