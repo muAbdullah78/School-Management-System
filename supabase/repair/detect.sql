@@ -159,6 +159,16 @@ with sig(migration, object, present) as (values
   -- re-applying bundle 5 after 0059 restores seven has_role gates from
   -- migrations 0050-0056, and a `>= 20` check passes on the remaining forty
   -- while those seven screens silently return zero rows to an observer again.
+  -- 0060 REWROTE two money functions that date from 0030 and 0045, so the
+  -- signature must be a fact about a body: does the profit calculation know that
+  -- a refundable deposit is not income? Without it, a Rs 5,000 deposit counts as
+  -- Rs 5,000 of profit.
+  ('0060_refundable_deposits',  'deposits are excluded from profit',
+     (select exists (select 1 from pg_proc where proname = 'fn_finance_summary'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%deposits_collected%')
+         and exists (select 1 from information_schema.tables
+                      where table_schema = 'public' and table_name = 'deposit_refunds'))),
   ('0059_readonly_boundary',    'no read gate left on has_role',
      (select exists (select 1 from pg_proc where proname = 'may_view'
                       and pronamespace = 'public'::regnamespace)

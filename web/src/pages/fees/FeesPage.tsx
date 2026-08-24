@@ -9,6 +9,7 @@ import { GenerateChallans } from './GenerateChallans'
 import { Defaulters } from './Defaulters'
 import { Discounts } from './Discounts'
 import { PendingClearances } from './PendingClearances'
+import { Deposits } from './Deposits'
 
 // "Collect" is the family counter and is the default, because it is the screen
 // that runs two hundred times a day. The per-student screen stays as "Single
@@ -28,6 +29,10 @@ const TABS = [
   { key: 'discounts', label: 'Discounts', writes: true },
   { key: 'pending', label: 'Pending', writes: false },
   { key: 'defaulters', label: 'Defaulters', writes: false },
+  // Reading what is held is not a write, so an observer keeps this tab; the
+  // Refund and Charge buttons inside it are gated separately, and refunding
+  // needs owner or principal rather than merely write access.
+  { key: 'deposits', label: 'Deposits', writes: false },
 ] as const
 
 type TabKey = (typeof TABS)[number]['key']
@@ -62,6 +67,7 @@ export function FeesPage() {
         {tab === 'generate' && <GenerateChallans />}
         {tab === 'discounts' && <Discounts />}
         {tab === 'pending' && <PendingClearances />}
+        {tab === 'deposits' && <Deposits />}
         {tab === 'defaulters' && <Defaulters />}
       </div>
     </div>

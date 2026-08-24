@@ -267,6 +267,34 @@ select 'the observer role (0059)',
        then 'PASS' else 'FAIL — run migrations/0059_readonly_boundary.sql' end
 
 union all
+select 'refundable deposits (0060)',
+       case when (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                   where n.nspname='public' and p.proname in
+                     ('fn_deposit_held', 'fn_charge_deposit', 'fn_refund_deposit',
+                      'fn_deposits_held', 'fn_invoice_no_mixed_refundable')) = 5
+                 and exists (select 1 from information_schema.tables
+                              where table_schema='public' and table_name='deposit_refunds')
+                 -- The trigger, without which a deposit can share a challan with
+                 -- tuition and "how much of this payment was the deposit" stops
+                 -- being answerable at all.
+                 and exists (select 1 from pg_trigger
+                              where tgname = 'trg_invoice_no_mixed_refundable'
+                                and tgrelid = 'public.invoice_lines'::regclass
+                                and not tgisinternal)
+                 -- THE ONE THAT MATTERS. Both money functions must actually
+                 -- exclude deposits; their mere presence proves nothing, since
+                 -- both have existed since 0030/0045.
+                 and exists (select 1 from pg_proc p
+                              join pg_namespace n on n.oid = p.pronamespace
+                              where n.nspname='public' and p.proname='fn_finance_summary'
+                                and p.prosrc like '%deposits_collected%')
+                 and exists (select 1 from pg_proc p
+                              join pg_namespace n on n.oid = p.pronamespace
+                              where n.nspname='public' and p.proname='fn_report_balance_sheet'
+                                and p.prosrc like '%deposits_held%')
+       then 'PASS' else 'FAIL — run migrations/0060_refundable_deposits.sql' end
+
+union all
 select 'price plans loaded',
        case when (select count(*) from public.plans) = 4
        then 'PASS' else 'FAIL — re-run bundle 1' end

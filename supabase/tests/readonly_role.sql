@@ -289,6 +289,64 @@ select pg_temp.ok(
 reset role;
 
 -- =============================================================================
+-- 3b. EVERY SCREEN THE OBSERVER'S NAVIGATION OFFERS MUST ANSWER
+--
+-- The gap this closes was real and shipped one migration later: 0059 put
+-- Accounts into the observer's navigation, and fn_profit_snapshot — the Accounts
+-- overview — kept its has_role gate, so the one screen the module exists for
+-- said 'Not permitted to view finances'.
+--
+-- It escaped BOTH guards for the same reason: it is declared VOLATILE (it writes
+-- nothing, but nobody had said so), and 0059 rewrote read gates only in STABLE
+-- functions while check-readonly-writes.py looks only at STABLE ones too. A
+-- blind spot in the migration and in the check, in the same place.
+--
+-- So this walks the RPCs behind the observer's nav and requires each to ANSWER.
+-- A "no write policy names may_view" check can never find a screen that is
+-- offered and then refuses; only calling it can.
+-- =============================================================================
+select set_config('test.uid', '00000000-0000-0000-0000-00000000c002', false);
+set local role authenticated;
+
+create or replace function pg_temp.answers(p_sql text) returns boolean
+language plpgsql as $$
+begin
+  execute p_sql;
+  return true;
+exception when others then
+  raise notice '      (refused: %)', sqlerrm;
+  return false;
+end;
+$$;
+
+select pg_temp.ok(pg_temp.answers('select public.fn_profit_snapshot()'),
+  '24a. Accounts overview (fn_profit_snapshot) answers — it is in the observer''s '
+  || 'nav, and it refused until 0060');
+select pg_temp.ok(pg_temp.answers('select public.fn_finance_summary(current_date, current_date)'),
+  '24b. the finance summary answers');
+select pg_temp.ok(pg_temp.answers('select public.fn_report_balance_sheet(current_date)'),
+  '24c. the balance sheet answers');
+select pg_temp.ok(pg_temp.answers('select public.fn_counter_summary()'),
+  '24d. the fee counter summary answers');
+select pg_temp.ok(pg_temp.answers('select public.fn_dashboard_summary()'),
+  '24e. the dashboard answers');
+select pg_temp.ok(pg_temp.answers('select count(*) from public.fn_staff_roster()'),
+  '24f. the staff roster answers');
+select pg_temp.ok(pg_temp.answers('select count(*) from public.fn_deposits_held()'),
+  '24g. the deposits-held report answers');
+select pg_temp.ok(pg_temp.answers(
+  'select count(*) from public.fn_defaulters((select current_session_id from '
+  || 'public.school_settings where school_id = public.current_school_id()))'),
+  '24h. the defaulters report answers');
+select pg_temp.ok(pg_temp.answers(
+  'select count(*) from public.fn_report_ledger(current_date - 30, current_date, null)'),
+  '24i. the debit-and-credit statement answers');
+select pg_temp.ok(pg_temp.answers('select count(*) from public.fn_enquiry_list()'),
+  '24j. the enquiry list answers');
+
+reset role;
+
+-- =============================================================================
 -- 4. may_view never reaches a write — asserted here, not only in the script
 -- =============================================================================
 select pg_temp.ok(

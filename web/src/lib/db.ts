@@ -7,6 +7,10 @@ export interface SessionRow { id: string; name: string; is_current: boolean }
 export interface ClassRow { id: string; name: string; level_order: number }
 export interface FeeHead {
   id: string; name: string; type: string; is_recurring: boolean; active: boolean; sort_order: number
+  /** Money the school HOLDS and must give back — a security deposit. It is a
+   *  liability, not income, and is billed on its own challan. See
+   *  docs/DEPOSITS-DESIGN.md. */
+  is_refundable: boolean
 }
 export interface StudentRow {
   id: string; gr_no: string | null; full_name: string; father_name: string | null
@@ -107,7 +111,9 @@ export async function listClasses(): Promise<ClassRow[]> {
 export async function listFeeHeads(): Promise<FeeHead[]> {
   const sb = requireSupabase()
   return unwrap(
-    await sb.from('fee_heads').select('id, name, type, is_recurring, active, sort_order').eq('active', true).order('sort_order'),
+    await sb.from('fee_heads')
+      .select('id, name, type, is_recurring, is_refundable, active, sort_order')
+      .eq('active', true).order('sort_order'),
   )
 }
 
@@ -2303,6 +2309,114 @@ export async function listCertificates(limit = 50): Promise<CertificateRow[]> {
     gr_no: r.students?.gr_no ?? r.data?.gr_no ?? null,
     data: r.data ?? {},
     photo_path: r.students?.photo_path ?? null,
+  }))
+}
+
+// ---- Refundable deposits ---------------------------------------------------
+//
+// A security deposit is the one kind of money a school takes that is NOT its
+// own. Before 0060 it counted as profit: a Rs 5,000 deposit made a proprietor's
+// "what did we keep" figure Rs 5,000 too high, and at 200 pupils that is a
+// million rupees they might pay a salary out of.
+
+export interface DepositHeldRow {
+  student_id: string; full_name: string; gr_no: string | null
+  father_name: string | null; class_name: string | null
+  status: string; left_on: string | null
+  collected: number; refunded: number; held: number
+}
+export interface DepositRefundResult {
+  refund_id: string
+  student_name: string
+  amount: number
+  /** Netted against what the family owed, as an ADJUSTMENT — so no cash report
+   *  gains money that never crossed the counter. */
+  applied_to_dues: number
+  paid_out: number
+  still_held: number
+  was_enrolled: boolean
+}
+
+/** Refundable money the school is holding for one pupil. Derived from
+ *  allocations against deposit invoices, less refunds — never stored, so it
+ *  cannot drift from the ledger. */
+export async function getDepositHeld(studentId: string): Promise<number> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_deposit_held', { p_student_id: studentId })
+  if (error) throw new Error(error.message)
+  return Number(data ?? 0)
+}
+
+/**
+ * Charge a deposit. It goes on its OWN challan, by construction.
+ *
+ * Not a choice of layout: `payment_allocations` allocates to an invoice, not a
+ * line, so on a mixed challan a part-payment could not be split into "deposit"
+ * and "tuition" — and any splitting rule would be one a parent could argue with
+ * and the school could not defend.
+ */
+export async function chargeDeposit(
+  studentId: string, feeHeadId: string, amount: number,
+  dueDate?: string | null, note?: string | null,
+): Promise<{ invoice_id: string; amount: number; fee_head: string }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_charge_deposit', {
+    p_student_id: studentId, p_fee_head_id: feeHeadId, p_amount: amount,
+    p_due_date: dueDate ?? null, p_note: note ?? null,
+  })
+  if (error) throw new Error(error.message)
+  const r = (data ?? {}) as Record<string, any>
+  return { invoice_id: r.invoice_id, amount: Number(r.amount ?? 0), fee_head: r.fee_head ?? '' }
+}
+
+/**
+ * Refund a deposit, netting arrears first.
+ *
+ * `amount` omitted means everything held. `netAgainstDues` is the normal case
+ * and is what a clerk says at the counter: "you owe 3,000, your deposit is
+ * 5,000, here is 2,000 back."
+ */
+export async function refundDeposit(input: {
+  studentId: string
+  amount?: number | null
+  netAgainstDues?: boolean
+  method?: string
+  reason?: string | null
+}): Promise<DepositRefundResult> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_refund_deposit', {
+    p_student_id: input.studentId,
+    p_amount: input.amount ?? null,
+    p_net_against_dues: input.netAgainstDues ?? true,
+    p_method: input.method ?? 'cash',
+    p_reason: input.reason ?? null,
+  })
+  if (error) throw new Error(error.message)
+  const r = (data ?? {}) as Record<string, any>
+  return {
+    refund_id: r.refund_id,
+    student_name: r.student_name ?? '',
+    amount: Number(r.amount ?? 0),
+    applied_to_dues: Number(r.applied_to_dues ?? 0),
+    paid_out: Number(r.paid_out ?? 0),
+    still_held: Number(r.still_held ?? 0),
+    was_enrolled: !!r.was_enrolled,
+  }
+}
+
+/** Everyone the school is holding refundable money for — INCLUDING pupils who
+ *  have left and not been refunded, because that is exactly what is still owed. */
+export async function listDepositsHeld(): Promise<DepositHeldRow[]> {
+  const sb = requireSupabase()
+  const rows = unwrap<Record<string, any>[]>(await sb.rpc('fn_deposits_held'))
+  return (rows ?? []).map((r) => ({
+    student_id: r.student_id, full_name: r.full_name,
+    gr_no: r.gr_no ?? null, father_name: r.father_name ?? null,
+    class_name: r.class_name ?? null,
+    status: r.status, left_on: r.left_on ?? null,
+    collected: Number(r.collected ?? 0),
+    refunded: Number(r.refunded ?? 0),
+    held: Number(r.held ?? 0),
   }))
 }
 

@@ -853,6 +853,31 @@ jobs:
         # nothing left to find.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/readonly_role.sql
 
+      - name: Refundable deposits — is a security deposit counted as PROFIT?
+        # It was. Reproduced on a real database: one pupil, Rs 2,000 tuition plus
+        # a Rs 5,000 REFUNDABLE deposit, family pays all 7,000 — and
+        # fn_finance_summary reported fee_income 7,000 and profit 7,000. A deposit
+        # is money the school HOLDS and must give back. At 200 pupils that is a
+        # million rupees of profit that is a liability, and a proprietor pays a
+        # salary out of it. There was also no way at all to record a refund, and
+        # nothing anywhere read fee_heads.is_refundable.
+        #
+        # Assertions 1 and 2 test BOTH insert orders on the mixed-invoice rule.
+        # The trigger counts refundable and ordinary lines, so a check that only
+        # adds a deposit to a tuition invoice passes on half a bug.
+        #
+        # Assertion 18 is the one that would be easiest to get wrong and hardest
+        # to notice: netting a deposit against arrears must move the BALANCE and
+        # not the CASH. The tempting implementation is a payments row, which would
+        # put money nobody handed over into the day book and the till, and the
+        # drawer would not balance. It is an adjustment.
+        #
+        # Assertion 30 keeps a liability from shrinking when a child leaves — a
+        # pupil who has gone and not been refunded is precisely the money still
+        # owed. Assertion 32 is the safety property: a school with no refundable
+        # head sees no change to any figure at all.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/deposits.sql
+
       - name: Every suite on disk has a step above
         # The gap this closes has already happened twice in this repo, in two
         # different places: supabase/bundles/ stopped at 0039 while CI stayed

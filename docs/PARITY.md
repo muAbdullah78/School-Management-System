@@ -275,10 +275,11 @@ Items 1-6 and 9 are **done** (PR #17). What follows is the remaining work.
 The column-level twin of the reachability check found thirteen. Ranked by what
 their absence actually costs a school, because several are not cosmetic.
 
-**One left.** 0057 and 0058 wired the other twelve. The baseline in
-`check-columns-used.sh` now holds a single entry — `fee_heads.is_refundable` —
-and every line removed from it was removed because the column got used, never
-because the check was relaxed.
+**None left.** 0057, 0058 and 0060 wired all thirteen, and the baseline in
+`check-columns-used.sh` is now **empty**. Every line removed from it went because
+the column got used, never because the check was relaxed — and from here any
+unused column fails the build outright, with no debt left to grant an exception
+to.
 
 ### ~~Needs a decision — no Supabase Storage exists at all~~ Built (0057)
 
@@ -352,6 +353,54 @@ argument against each decision are in `docs/EXAM-COMPUTATION-DESIGN.md`,
 including what is deliberately not built (per-pupil electives, a configurable
 promotion rule, and GPA — `school_settings.grade_scale` still offers `gpa10` and
 `fn_grade_for` still always returns letters, which is its own piece of work).
+
+### Refundable deposits — a security deposit counted as profit — done (0060)
+
+`fee_heads.is_refundable` and the `security_deposit` value of `fee_head_type` had
+both existed since the first migration and nothing read either. That was not a
+cosmetic gap. One pupil, Rs 2,000 tuition + Rs 5,000 **refundable** deposit,
+family pays all 7,000:
+
+| Figure | System said | Truth |
+|---|---|---|
+| `fee_income` | 7,000 | 2,000 |
+| **`profit`** | **7,000** | **2,000** |
+| balance-sheet liability for the deposit | 0 | 5,000 held |
+| ways to record a refund | **none** | needed on every leaving |
+
+`fn_finance_summary` summed every verified payment into `fee_income`, and a
+deposit is a payment. A school of 200 pupils on a Rs 5,000 deposit showed **a
+million rupees of profit that was a liability** — and a proprietor pays a salary
+or a building instalment out of that number.
+
+The design and the argument against each decision are in
+`docs/DEPOSITS-DESIGN.md`. Three decisions matter:
+
+- **A refundable charge gets its own challan.** Forced by an existing fact:
+  `payment_allocations` allocates to an *invoice*, not a line, so on a mixed
+  challan a part-payment cannot be split into "deposit" and "tuition". Any
+  splitting rule would be one a parent can argue with at the counter and the
+  school cannot defend, because it exists only inside the software. A trigger on
+  `invoice_lines` enforces it on every path.
+- **Netting on leaving is an adjustment, never a payment.** "You owe 3,000, your
+  deposit is 5,000, here is 2,000 back" — recorded as a negative adjustment, so
+  the day book and the till do not gain 3,000 that nobody handed over.
+- **Deposits held survive the pupil leaving.** A child who has gone and not been
+  refunded is exactly the money still owed, so the liability must not shrink when
+  they go.
+
+Safe by default: a school with **no** refundable head sees no change to any
+figure, because every new sum is zero. 39 assertions in
+`supabase/tests/deposits.sql`.
+
+**A gap in 0059 surfaced while wiring this.** `fn_profit_snapshot` — the Accounts
+overview — is declared VOLATILE though it writes nothing, so 0059's "rewrite read
+gates in STABLE functions" rule skipped it and it kept refusing `readonly`, on the
+one screen the module exists for. `check-readonly-writes.py` was blind to it for
+the same reason. Fixed both ways round (the gate, and the volatility declaration
+so the guard can see it), and `readonly_role.sql` now **walks the observer's
+navigation and requires every screen behind it to answer** — a "no write policy
+names may_view" check can never find a screen that is offered and then refuses.
 
 ### The `readonly` role, and a save that silently did nothing — done (0059)
 

@@ -36,14 +36,24 @@ cd "$(dirname "$0")/.."
 # BASELINE, not an amnesty: it stops the check failing on debt that already
 # existed, while any NEW unused column fails the build. Removing a line from
 # here should mean the column got wired up — see docs/PARITY.md.
-# 0058 wired seven of the nine entries that used to be here: assessments.weightage,
-# enrollments.stream, enrollments.bise_reg_no, exam_subjects.practical_max,
-# subjects.stream, subjects.is_practical and result_cards.generated_at. They were
-# not cosmetic — with streams unread, a class-9 result card was computed over
-# every paper in the class, so two A+ pupils printed as a C and a D and the
-# ranking inverted. See docs/EXAM-COMPUTATION-DESIGN.md.
+# THE BASELINE IS NOW EMPTY, and that is the point of keeping the mechanism.
+#
+# It held thirteen entries. 0057 wired the photograph and logo columns; 0058
+# wired seven exam columns (assessments.weightage, enrollments.stream,
+# enrollments.bise_reg_no, exam_subjects.practical_max, subjects.stream,
+# subjects.is_practical, result_cards.generated_at); 0060 wired the last one,
+# fee_heads.is_refundable.
+#
+# None of them were cosmetic. With `stream` unread a class-9 result card was
+# computed over every paper in the class, so two A+ pupils printed as a C and a
+# D and the ranking inverted. With `is_refundable` unread a Rs 5,000 security
+# deposit counted as Rs 5,000 of PROFIT — a liability shown to a proprietor as
+# money they had kept.
+#
+# From here, ANY unused column fails the build. There is no debt left to grant an
+# exception to, so a new line below should be a deliberate, argued decision and
+# not a place to park something for later.
 KNOWN="
-fee_heads.is_refundable
 "
 
 psql -tA -v ON_ERROR_STOP=1 > /tmp/cols_unused.txt <<'SQL'
