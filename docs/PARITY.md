@@ -354,6 +354,79 @@ including what is deliberately not built (per-pupil electives, a configurable
 promotion rule, and GPA — `school_settings.grade_scale` still offers `gpa10` and
 `fn_grade_for` still always returns letters, which is its own piece of work).
 
+### Certificates — the leaving certificate handed over free, and the leaving never recorded — done (0061)
+
+The certificate module existed since 0021: a gapless per-type serial, a frozen
+snapshot for reprints, append-only inserts. All of that was sound. What it did
+not do, reproduced on a real database with one pupil **still enrolled, owing
+Rs 4,000**, who asked for a School Leaving Certificate:
+
+| What happened | What should happen |
+|---|---|
+| Issued, serial 1 | **Refused** — Rs 4,000 outstanding |
+| `students.status` still `active`, `left_on` null, enrolment still `active` | the child is recorded as having left |
+| Snapshot: name, father, class, roll — **and nothing else** | GR no, dates of attendance, date of leaving, DOB, conduct |
+| Issued again → serial 2, **also looking original** | a second copy says **DUPLICATE** |
+| No way to cancel one issued in error | a cancellation, recorded |
+
+An SLC is the document a Pakistani family **cannot enrol a child anywhere else
+without**, which makes it the school's one real lever for unpaid fees — and it
+was being handed over for nothing. Worse than the money: issuing it did not
+record the leaving, so the child stayed on the attendance sheet, in the class
+strength and **in next month's billing** while holding a certificate saying they
+had left. That drift is silent and compounds every month.
+
+The design and the argument against each decision are in
+`docs/CERTIFICATES-DESIGN.md`. Four decisions matter:
+
+- **The dues gate is on `leaving` only.** A bonafide certificate is proof of
+  enrolment — a family needs it for a bank account, a passport, a scholarship
+  form — and a character certificate is a statement about conduct. Withholding
+  either over fees is punitive and is not what schools do.
+- **An owner or principal can release it anyway, with a reason**, and the amount
+  outstanding and who authorised it are frozen **onto the document**. A gate that
+  cannot be opened gets bypassed outside the system — the school issues an
+  `other` certificate with the same wording and records nothing — and then it has
+  neither the money nor the record. The printed SLC also drops the line "no dues
+  are outstanding" when it is not true.
+- **Issuing records the leaving, in the same transaction**, through
+  `fn_set_student_status` so 0054's rules and audit trail apply unchanged. The
+  objection — printing a document should not quietly change a pupil's status — is
+  answered by making the leaving date and reason **required arguments**: nobody
+  can issue one by accident to see the wording.
+- **A second copy is a DUPLICATE and says so on its face**, carrying the
+  original's serial, and still taking its own serial so the register shows that
+  two documents exist. Refusing a replacement outright only means the school
+  writes one by hand.
+
+Cancellation is a separate table rather than an edit, because RLS cannot restrict
+*which columns* an UPDATE touches and an append-only certificate table is worth
+more than the convenience. The register shows cancelled serials struck through
+with the reason rather than hiding them.
+
+**A defect in this migration's own code, found by probing it rather than reading
+it.** `p_data` — the free-form field a clerk types conduct and remarks into — was
+merged **over** the frozen snapshot, so every field the register and the printed
+document depend on was whatever the caller sent. Proven: a clerk issued a second
+bonafide with `{"is_duplicate": false, "dues_cleared": true, "balance_at_issue":
+0, "student_name": "Somebody Else", "gr_no": "GR-9999"}` and got serial 2 — a
+legitimate serial in the school's own register, printing a different child's name,
+with no DUPLICATE stamp, stating the fees as cleared while Rs 4,000 was
+outstanding. The web app sends none of those keys, but "the app doesn't send it"
+is not a boundary, and a certificate is precisely the document somebody has a
+motive to forge. The snapshot's keys are now stripped out of `p_data` before the
+merge; `conduct`, `purpose` and `remarks` still get through, because locking it
+down must not empty it. 46 assertions in `supabase/tests/certificates.sql`.
+
+**And the detect/verify signature for 0061 had to be tightened twice** — the same
+mistake this project keeps making, now for the fourth time. `fn_issue_certificate`
+has existed since 0021, so its presence proves nothing; the first signature looked
+for the name `v_reserved`, which a revert leaves declared in the `declare` block;
+the second looked for `- v_reserved`, which a revert leaves in the assignment. Only
+the **insert expression** is evidence that the stripped copy is what actually gets
+stored. Both versions were caught by reverting the fix and watching the check stay
+green.
+
 ### Refundable deposits — a security deposit counted as profit — done (0060)
 
 `fee_heads.is_refundable` and the `security_deposit` value of `fee_head_type` had

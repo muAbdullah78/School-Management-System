@@ -482,7 +482,17 @@ end $t$;
 do $t$
 declare v_fam uuid; j jsonb;
 begin
-  select id into v_fam from public.families where head_name = 'Muhammad Aslam';
+  -- Scoped to the school. Section 14 above deliberately created a SECOND
+  -- 'Muhammad Aslam' in another school to prove the CNIC unique index is
+  -- per-school, so an unscoped lookup here is ambiguous: `select into` takes
+  -- whichever row the heap happens to return first, and that flipped between
+  -- runs depending on where earlier rolled-back suites left free space in the
+  -- page. It failed as "families not found in this school" — the sheet's own
+  -- tenant guard firing correctly on a test that had asked the wrong question.
+  select f.id into v_fam
+    from public.families f
+    join public.schools s on s.id = f.school_id
+   where f.head_name = 'Muhammad Aslam' and s.name = 'Family Test School';
   j := public.fn_family_sheet(v_fam);
   if (j->>'outstanding')::numeric <> public.family_outstanding(v_fam) then
     raise exception 'FAIL: sheet outstanding % <> function %',

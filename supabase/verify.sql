@@ -295,6 +295,49 @@ select 'refundable deposits (0060)',
        then 'PASS' else 'FAIL — run migrations/0060_refundable_deposits.sql' end
 
 union all
+select 'certificates (0061)',
+       case when exists (select 1 from information_schema.tables
+                          where table_schema='public'
+                            and table_name='certificate_cancellations')
+                 and (select count(*) from pg_proc p
+                       join pg_namespace n on n.oid = p.pronamespace
+                       where n.nspname='public' and p.proname in
+                         ('fn_certificate_readiness','fn_cancel_certificate',
+                          'fn_certificate_register')) = 3
+                 -- THE ONES THAT MATTER. fn_issue_certificate has existed since
+                 -- 0021, so its presence proves nothing. What 0061 changed is
+                 -- that it takes the leaving date and reason as arguments (the
+                 -- 3-argument form is DROPPED, not left as an overload), refuses
+                 -- over unpaid dues, records the leaving, and cannot have its
+                 -- snapshot forged by the caller's free-form data.
+                 and exists (select 1 from pg_proc p
+                              join pg_namespace n on n.oid = p.pronamespace
+                              where n.nspname='public'
+                                and p.proname='fn_issue_certificate'
+                                and p.pronargs = 8)
+                 and not exists (select 1 from pg_proc p
+                                  join pg_namespace n on n.oid = p.pronamespace
+                                  where n.nspname='public'
+                                    and p.proname='fn_issue_certificate'
+                                    and p.pronargs <> 8)
+                 and exists (select 1 from pg_proc p
+                              join pg_namespace n on n.oid = p.pronamespace
+                              where n.nspname='public'
+                                and p.proname='fn_issue_certificate'
+                                and p.prosrc like '%fn_set_student_status%'
+                                -- The INSERT expression, not the declaration and
+                                -- not the assignment: a revert leaves both of those
+                                -- in place doing nothing.
+                                and strpos(p.prosrc, '|| v_extra') > 0
+                                and strpos(p.prosrc, '|| coalesce(p_data') = 0)
+                 and exists (select 1 from pg_proc p
+                              join pg_namespace n on n.oid = p.pronamespace
+                              where n.nspname='public'
+                                and p.proname='fn_certificate_readiness'
+                                and p.prosrc like '%blocked_by_dues%')
+       then 'PASS' else 'FAIL — run migrations/0061_certificates.sql' end
+
+union all
 select 'price plans loaded',
        case when (select count(*) from public.plans) = 4
        then 'PASS' else 'FAIL — re-run bundle 1' end

@@ -878,6 +878,36 @@ jobs:
         # head sees no change to any figure at all.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/deposits.sql
 
+      - name: Certificates — the SLC, the dues lever, and the leaving it must record
+        # Reproduced on a real database. One pupil, STILL ENROLLED, owing
+        # Rs 4,000. A leaving certificate was requested and:
+        #
+        #   issued ............................ yes, serial 1
+        #   students.status afterwards ........ 'active', left_on null
+        #   snapshot .......................... name, father, class, roll. Nothing else.
+        #   issued again ...................... serial 2, also looking original
+        #   way to cancel one issued in error . none
+        #
+        # Each of those is a separate failure in a school. The dues gate is the
+        # one lever a school has for unpaid fees and it did not exist. Issuing
+        # without recording the leaving leaves a child on the attendance
+        # register, in the class strength and in next month's billing while
+        # holding a certificate saying they left. An SLC that does not state the
+        # dates of attendance is not an SLC. And two indistinguishable originals
+        # let a family present one at each of two schools.
+        #
+        # Assertions 40-46 are a defect found by probing this migration's OWN
+        # code, not the code it replaced: `p_data` — the free-form field a clerk
+        # types into — was merged OVER the frozen snapshot, so a caller could
+        # send {"is_duplicate": false, "dues_cleared": true, "student_name":
+        # "Somebody Else"} and get a legitimate serial printing a different
+        # child's name with no DUPLICATE stamp and the fees shown as cleared.
+        # "The app doesn't send those keys" is not a boundary, and a certificate
+        # is exactly the document somebody has a motive to forge. Assertion 46
+        # is the other half: locking it down must not empty it — purpose and
+        # remarks still have to reach the document.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/certificates.sql
+
       - name: Every suite on disk has a step above
         # The gap this closes has already happened twice in this repo, in two
         # different places: supabase/bundles/ stopped at 0039 while CI stayed

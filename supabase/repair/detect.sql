@@ -178,7 +178,34 @@ with sig(migration, object, present) as (values
               and prosecdef and provolatile in ('s','i')
               and prosrc like '%has_role(%'
               and proname not in ('fn_may_manage_class', 'fn_may_write_school_file',
-                                  'may_view'))))
+                                  'may_view')))),
+  -- 0061 REWROTE fn_issue_certificate, which has existed since 0021. Its
+  -- presence proves nothing at all, and neither does the new table: the
+  -- signature has to be a fact about the body. Two facts, because the two
+  -- defects are independent. It must record the leaving through
+  -- fn_set_student_status — without that a child holds a leaving certificate
+  -- while still on the attendance register and in next month's billing — and it
+  -- must strip the reserved keys, or the caller's free-form data can forge the
+  -- pupil's name, the DUPLICATE stamp and the dues position on the document.
+  ('0061_certificates',         'issuing records the leaving, snapshot not forgeable',
+     (select exists (select 1 from pg_proc where proname = 'fn_issue_certificate'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%fn_set_student_status%'
+                      -- What goes into the ROW, not what the function computes
+                      -- on the way there. Two earlier versions of this line were
+                      -- both too loose and were caught by reverting the fix and
+                      -- watching the check still pass: `v_reserved` alone matches
+                      -- the declaration, and `- v_reserved` matches the
+                      -- assignment to v_extra — both of which a revert leaves in
+                      -- place, doing nothing. Only the insert expression is
+                      -- evidence that the stripped copy is what gets stored.
+                      and strpos(prosrc, '|| v_extra') > 0
+                      and strpos(prosrc, '|| coalesce(p_data') = 0)
+         and exists (select 1 from pg_proc where proname = 'fn_certificate_readiness'
+                      and pronamespace = 'public'::regnamespace)
+         and exists (select 1 from information_schema.tables
+                      where table_schema = 'public'
+                        and table_name = 'certificate_cancellations')))
 )
 select migration,
        object                                   as looked_for,

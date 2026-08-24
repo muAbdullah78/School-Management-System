@@ -2169,26 +2169,115 @@ export async function unlinkParent(profileId: string): Promise<void> {
 
 
 // ---- Certificates ----
-export interface IssueCertResult { id: string; serial_no: number; cert_type: string; issued_on: string }
+//
+// A School Leaving Certificate is the document a Pakistani family cannot enrol a
+// child anywhere else without, and it is the school's main lever for unpaid
+// fees. Three things follow from that, and all three live in the database rather
+// than here: the dues gate, the fact that issuing one RECORDS the leaving, and
+// the DUPLICATE marking on a second copy. See docs/CERTIFICATES-DESIGN.md.
+
+export interface IssueCertResult {
+  id: string; serial_no: number; cert_type: string; issued_on: string
+  is_duplicate: boolean; original_serial_no: number | null
+}
+
+/** What the database will do if this certificate is asked for right now —
+ *  fetched BEFORE the form is submitted so the clerk sees the refusal as a
+ *  condition to resolve rather than as an error after pressing Issue. */
+export interface CertReadiness {
+  student_name: string
+  balance: number
+  status: string | null
+  left_on: string | null
+  /** Whether dues are checked for this type at all — only `leaving` is gated. */
+  dues_gate: boolean
+  blocked_by_dues: boolean
+  would_be_duplicate: boolean
+  original_serial_no: number | null
+}
+
 export interface CertificateRow {
   id: string; cert_type: string; serial_no: number; issued_on: string
+  student_id: string | null
   student_name: string | null; gr_no: string | null; data: Record<string, any>
   /** Read LIVE, not from the frozen snapshot. A certificate's wording must never
    *  drift on a reprint, but an ID card exists to let somebody recognise the
    *  child holding it — so it shows the photograph on file today, not the one
    *  that was on file the day the card was first issued. */
   photo_path: string | null
+  is_duplicate: boolean
+  original_serial_no: number | null
+  /** What was outstanding when it was issued, and whether that was cleared.
+   *  A released-under-override leaving certificate is a fact the register has
+   *  to show, not something to find out about later. */
+  dues_cleared: boolean
+  balance_at_issue: number
+  cancelled_at: string | null
+  cancel_reason: string | null
+  issued_by_name: string | null
 }
 
+export async function certificateReadiness(
+  studentId: string, certType: string,
+): Promise<CertReadiness> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_certificate_readiness', {
+    p_student_id: studentId, p_cert_type: certType,
+  })
+  if (error) throw new Error(error.message)
+  const d = (data ?? {}) as Record<string, any>
+  return {
+    student_name: d.student_name ?? '',
+    balance: Number(d.balance ?? 0),
+    status: d.status ?? null,
+    left_on: d.left_on ?? null,
+    dues_gate: !!d.dues_gate,
+    blocked_by_dues: !!d.blocked_by_dues,
+    would_be_duplicate: !!d.would_be_duplicate,
+    original_serial_no: d.original_serial_no == null ? null : Number(d.original_serial_no),
+  }
+}
+
+/** Issue a certificate. For `leaving`, `leavingOn` and `leavingReason` are
+ *  REQUIRED by the database — issuing one records the child as having left, so
+ *  there is deliberately no way to produce one without stating when and why. */
 export async function issueCertificate(
   certType: string, studentId: string, data: Record<string, any>,
+  opts: {
+    leavingOn?: string | null
+    leavingReason?: string | null
+    leavingStatus?: string
+    overrideDues?: boolean
+    overrideReason?: string | null
+  } = {},
 ): Promise<IssueCertResult> {
   const sb = requireSupabase()
   const { data: res, error } = await sb.rpc('fn_issue_certificate', {
     p_cert_type: certType, p_student_id: studentId, p_data: data,
+    p_leaving_on: opts.leavingOn ?? null,
+    p_leaving_reason: opts.leavingReason ?? null,
+    p_leaving_status: opts.leavingStatus ?? 'withdrawn',
+    p_override_dues: opts.overrideDues ?? false,
+    p_override_reason: opts.overrideReason ?? null,
   })
   if (error) throw new Error(error.message)
-  return res as IssueCertResult
+  const r = (res ?? {}) as Record<string, any>
+  return {
+    id: r.id, serial_no: Number(r.serial_no), cert_type: r.cert_type, issued_on: r.issued_on,
+    is_duplicate: !!r.is_duplicate,
+    original_serial_no: r.original_serial_no == null ? null : Number(r.original_serial_no),
+  }
+}
+
+/** Mark a certificate cancelled. Owner or principal only, and the reason is
+ *  required — a cancelled serial is a fact somebody may later have to explain.
+ *  `certificates` itself is append-only; this writes a separate row. */
+export async function cancelCertificate(certificateId: string, reason: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_cancel_certificate', {
+    p_certificate_id: certificateId, p_reason: reason,
+  })
+  if (error) throw new Error(error.message)
 }
 
 // ---- Audit log (owner/principal read-only via RLS) ----
@@ -2296,19 +2385,28 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
   return data as DashboardSummary
 }
 
+/** The certificate register. Goes through fn_certificate_register rather than
+ *  selecting the table, because a register that does not show which serials were
+ *  cancelled, which are duplicates and which were released over unpaid dues is
+ *  not a register — it is a list. */
 export async function listCertificates(limit = 50): Promise<CertificateRow[]> {
   const sb = requireSupabase()
-  const rows = unwrap<Record<string, any>[]>(
-    await sb.from('certificates')
-      .select('id, cert_type, serial_no, issued_on, data, students(full_name, gr_no, photo_path)')
-      .order('created_at', { ascending: false }).limit(limit),
-  )
-  return rows.map((r) => ({
+  const { data, error } = await sb.rpc('fn_certificate_register', { p_limit: limit })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, any>[]).map((r) => ({
     id: r.id, cert_type: r.cert_type, serial_no: Number(r.serial_no), issued_on: r.issued_on,
-    student_name: r.students?.full_name ?? r.data?.student_name ?? null,
-    gr_no: r.students?.gr_no ?? r.data?.gr_no ?? null,
+    student_id: r.student_id ?? null,
+    student_name: r.student_name ?? r.data?.student_name ?? null,
+    gr_no: r.gr_no ?? r.data?.gr_no ?? null,
     data: r.data ?? {},
-    photo_path: r.students?.photo_path ?? null,
+    photo_path: r.photo_path ?? null,
+    is_duplicate: !!r.is_duplicate,
+    original_serial_no: r.original_serial_no == null ? null : Number(r.original_serial_no),
+    dues_cleared: !!r.dues_cleared,
+    balance_at_issue: Number(r.balance_at_issue ?? 0),
+    cancelled_at: r.cancelled_at ?? null,
+    cancel_reason: r.cancel_reason ?? null,
+    issued_by_name: r.issued_by_name ?? null,
   }))
 }
 
