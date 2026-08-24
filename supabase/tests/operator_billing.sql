@@ -63,6 +63,21 @@ create or replace function pg_temp.sch(p_name text) returns uuid language sql as
   select id from public.schools where name = p_name;
 $$;
 
+-- THIS SUITE'S three schools, by name.
+--
+-- Every count below is scoped through this rather than taken platform-wide, and
+-- that is not tidiness. The first version asserted
+-- `count(*) from fn_platform_schools() = 3` and passed on a laptop and failed in
+-- CI, because CI's importer smoke-test COMMITS a school into the same database
+-- before the suites run. A platform-wide count silently asserts "this database
+-- contains nothing else", which is never a safe thing to assume and was not
+-- true. Scoped, not loosened to `>= 3`: a threshold would pass over a fixture
+-- that had stopped creating one of them.
+create or replace function pg_temp.mine() returns setof uuid language sql as $$
+  select id from public.schools
+   where name in ('Al-Noor Public School', 'City Grammar', 'Iqbal Model School');
+$$;
+
 create or replace function pg_temp.be_operator() returns void language sql as $$
   select set_config('test.uid', '00000000-0000-0000-0000-00000000b0d1', false);
 $$;
@@ -153,12 +168,20 @@ $seed$;
 
 select pg_temp.be_operator();
 
+-- The books BEFORE this suite writes anything. fn_platform_revenue is a
+-- platform-wide figure by definition — that is what the operator is asking for —
+-- so the assertions in section 8 check the DELTA this suite caused. Asserting
+-- the absolute figure would be asserting "no other school has ever been
+-- invoiced", which is the same mistake as counting all the schools.
+select public.fn_platform_revenue(current_date - 1, current_date + 1) as base \gset
+
 -- =============================================================================
 -- 1. The state the probe found: an expiry date that is not a debt
 -- =============================================================================
 select pg_temp.ok(
-  (select count(*) from public.fn_platform_schools()) = 3,
-  '1. the console lists all three schools');
+  (select count(*) from public.fn_platform_schools()
+    where school_id in (select pg_temp.mine())) = 3,
+  '1. the console lists all three of this suite''s schools');
 
 select pg_temp.ok(
   (select outstanding from public.fn_platform_schools()
@@ -190,7 +213,8 @@ select pg_temp.ok(
   '5. and names the plan that fits, so the fix is one word and not an investigation');
 
 select pg_temp.ok(
-  (select count(*) from public.platform_invoices) = 0,
+  (select count(*) from public.platform_invoices
+    where school_id in (select pg_temp.mine())) = 0,
   '6. and the refusal wrote no invoice — a refused renewal must not leave a '
   || 'charge behind');
 
@@ -338,7 +362,8 @@ select pg_temp.ok(
 -- =============================================================================
 select pg_temp.ok(
   (select count(*) from public.audit_log
-    where entity = 'subscriptions' and action = 'subscription_activated') = 3,
+    where entity = 'subscriptions' and action = 'subscription_activated'
+      and school_id in (select pg_temp.mine())) = 3,
   '26. every activation is audited — it was zero before');
 
 select pg_temp.ok(
@@ -361,7 +386,8 @@ select pg_temp.ok(
   '29. and the free year is on the record with its reason');
 
 select pg_temp.ok(
-  (select count(*) from public.audit_log where action = 'platform_payment_recorded') = 1,
+  (select count(*) from public.audit_log where action = 'platform_payment_recorded'
+    and school_id in (select pg_temp.mine())) = 1,
   '30. payments are audited too');
 
 -- =============================================================================
@@ -370,27 +396,28 @@ select pg_temp.ok(
 select public.fn_platform_revenue(current_date - 1, current_date + 1) as rev \gset
 
 select pg_temp.ok(
-  (:'rev'::jsonb->>'invoiced')::numeric = 40700,
+  (:'rev'::jsonb->>'invoiced')::numeric - (:'base'::jsonb->>'invoiced')::numeric = 40700,
   '31. invoiced this period: 35,000 + 0 + 5,700');
 
 select pg_temp.ok(
-  (:'rev'::jsonb->>'collected')::numeric = 20000,
+  (:'rev'::jsonb->>'collected')::numeric - (:'base'::jsonb->>'collected')::numeric = 20000,
   '32. collected: 20,000. Invoiced and collected are different questions and the '
   || 'answer must not conflate them');
 
 select pg_temp.ok(
-  (:'rev'::jsonb->>'discounted')::numeric = 9500,
+  (:'rev'::jsonb->>'discounted')::numeric - (:'base'::jsonb->>'discounted')::numeric = 9500,
   '33. and 9,500 was given away — a figure nothing could produce before');
 
 select pg_temp.ok(
-  (:'rev'::jsonb->>'outstanding_total')::numeric = 20700,
+  (:'rev'::jsonb->>'outstanding_total')::numeric
+    - (:'base'::jsonb->>'outstanding_total')::numeric = 20700,
   '34. outstanding across all schools is 15,000 + 5,700 — everything ever '
   || 'invoiced minus everything ever paid, because a receivable does not belong '
   || 'to the month it was raised in');
 
 select pg_temp.ok(
-  jsonb_array_length(:'rev'::jsonb->'schools_owing') = 2
-  and (:'rev'::jsonb->'schools_owing'->0->>'school_name') = 'Al-Noor Public School',
+  (select count(*) from jsonb_array_elements(:'rev'::jsonb->'schools_owing') e
+    where e->>'school_name' in ('Al-Noor Public School', 'Iqbal Model School')) = 2,
   '35. and it names who owes it — the "who do I call this morning" list the '
   || 'expiry dates only looked like they were giving');
 
@@ -415,6 +442,9 @@ select set_config('test.uid', '00000000-0000-0000-0000-00000000b0d2', false);
 set local role authenticated;
 
 select pg_temp.ok(
+  -- Platform-wide ON PURPOSE here: the claim is that this user sees NOTHING in
+  -- the table, so scoping it to three schools would weaken exactly the assertion
+  -- that matters.
   (select count(*) from public.platform_invoices) = 0,
   '38. the school''s own OWNER sees no operator invoices — not even the ones '
   || 'raised against their own school');
