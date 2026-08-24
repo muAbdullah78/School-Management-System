@@ -25,6 +25,37 @@ export interface PlatformSchool {
   limit_state: LimitState
   suggested_plan: string
   needs_upgrade: boolean
+  /** Everything ever invoiced to this school minus everything it ever paid.
+   *  This is the column that makes an expiry date and a debt two different
+   *  things: before it existed, a school that renewed on trust and never paid
+   *  looked identical to one that paid in full. */
+  outstanding: number
+  last_paid_on: string | null
+}
+
+export interface LedgerEntry {
+  entry_date: string
+  kind: 'invoice' | 'payment'
+  description: string
+  charged: number | null
+  paid: number | null
+  note: string | null
+  reference: string | null
+}
+
+export interface PlatformRevenue {
+  from: string
+  to: string
+  invoiced: number
+  collected: number
+  /** List price minus what was actually charged, over the period. A figure
+   *  nothing could produce before — discounts left no trace. */
+  discounted: number
+  /** Everything ever invoiced minus everything ever paid. Not period-scoped: a
+   *  receivable does not belong to the month it was raised in. */
+  outstanding_total: number
+  by_plan: { plan_code: string; invoices: number; amount: number }[]
+  schools_owing: { school_id: string; school_name: string; outstanding: number }[]
 }
 
 export interface Plan {
@@ -59,14 +90,79 @@ export async function listPlans(): Promise<Plan[]> {
   return (data ?? []) as Plan[]
 }
 
+export interface ActivationResult {
+  invoice_id: string
+  amount: number
+  list_amount: number
+  outstanding: number
+  period_start: string
+  period_end: string
+}
+
+/**
+ * Grant a school time, and write the charge for it in the same transaction.
+ *
+ * `amount` null means "charge the plan's list price". An amount that differs
+ * from list REQUIRES a note — including zero, because a free year that leaves no
+ * trace is how a business loses track of what it has given away.
+ *
+ * The call REFUSES a school whose student count has outgrown the target plan,
+ * naming the count, the limit and the plan that fits. `allowOverLimit` is the
+ * deliberate override, and the breach then goes on the invoice.
+ */
 export async function activateSubscription(
   schoolId: string, planCode: string, months: number,
-): Promise<void> {
+  opts: { amount?: number | null; note?: string | null; allowOverLimit?: boolean } = {},
+): Promise<ActivationResult> {
   const sb = requireSupabase()
-  const { error } = await sb.rpc('fn_activate_subscription', {
+  const { data, error } = await sb.rpc('fn_activate_subscription', {
     p_school_id: schoolId, p_plan_code: planCode, p_months: months,
+    p_amount: opts.amount ?? null,
+    p_note: opts.note ?? null,
+    p_allow_over_limit: opts.allowOverLimit ?? false,
   })
   if (error) throw new Error(error.message)
+  return data as ActivationResult
+}
+
+/** Record money a school actually sent us. */
+export async function recordPlatformPayment(input: {
+  schoolId: string; amount: number; paidOn?: string | null
+  method?: string; reference?: string | null; invoiceId?: string | null; note?: string | null
+}): Promise<{ payment_id: string; outstanding: number }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_record_payment', {
+    p_school_id: input.schoolId, p_amount: input.amount,
+    p_paid_on: input.paidOn ?? null, p_method: input.method ?? 'bank',
+    p_reference: input.reference ?? null, p_invoice_id: input.invoiceId ?? null,
+    p_note: input.note ?? null,
+  })
+  if (error) throw new Error(error.message)
+  return data as { payment_id: string; outstanding: number }
+}
+
+/** One school's invoices and payments, interleaved, oldest first. */
+export async function platformLedger(schoolId: string): Promise<LedgerEntry[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_ledger', { p_school_id: schoolId })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as LedgerEntry[]
+}
+
+/** What we invoiced and collected over a period, and who owes us. */
+export async function platformRevenue(from: string, to: string): Promise<PlatformRevenue> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_revenue', { p_from: from, p_to: to })
+  if (error) throw new Error(error.message)
+  return data as PlatformRevenue
+}
+
+/** What one school owes right now. */
+export async function platformOutstanding(schoolId: string): Promise<number> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_outstanding', { p_school_id: schoolId })
+  if (error) throw new Error(error.message)
+  return Number(data ?? 0)
 }
 
 export async function extendTrial(schoolId: string, days: number): Promise<void> {
@@ -91,9 +187,13 @@ export function actionRank(s: PlatformSchool): number {
   if (s.status === 'locked' || s.status === 'cancelled') return 0
   if (s.status === 'grace') return 1
   if (s.days_left !== null && s.days_left <= 7) return 2
-  if (s.limit_state === 'over') return 3
-  if (s.status === 'trialing') return 4
-  return 5
+  // Money already invoiced and not paid outranks an over-limit school: one is a
+  // debt, the other is a conversation. Before `outstanding` existed this
+  // ranking could not tell the two apart at all.
+  if (s.outstanding > 0) return 3
+  if (s.limit_state === 'over') return 4
+  if (s.status === 'trialing') return 5
+  return 6
 }
 
 export function sortByAction(list: PlatformSchool[]): PlatformSchool[] {
@@ -109,6 +209,11 @@ export function sortByAction(list: PlatformSchool[]): PlatformSchool[] {
 
 /** One short line saying what to do about this school, or null if nothing. */
 export function actionNeeded(s: PlatformSchool): string | null {
+  // An unpaid invoice is worth saying whatever the licence status is: a school
+  // can be comfortably active and still owe for the year it is halfway through.
+  if (s.outstanding > 0 && s.status !== 'locked' && s.status !== 'cancelled') {
+    return `Owes ${s.outstanding.toLocaleString('en-PK')} — unpaid invoice`
+  }
   switch (s.status) {
     case 'locked':
       return 'Locked — chase payment or reactivate'

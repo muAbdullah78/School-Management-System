@@ -454,6 +454,72 @@ that same position.
 
 44 assertions in `supabase/tests/staff_checkin.sql`.
 
+### The operator had no books — done (0064)
+
+The last task on the list, and the one that had been open longest: "no platform
+billing tables exist at all."
+
+This product's central promise to a school is that every rupee has a row. The
+person **selling** the software kept no such rows. Three customer schools;
+Al-Noor renews twelve months of `growth`:
+
+| Question the operator has to answer | The answer before 0064 |
+|---|---|
+| What was Al-Noor **charged**? | no table records a charge to a school |
+| How much has Al-Noor paid us, **ever**? | no function answers it |
+| Which schools **owe us** money right now? | unanswerable |
+| What did we invoice and collect **this month**? | `plans` holds a price list, nothing else |
+| **Who** granted that subscription? | nothing; `audit_log` had 0 rows for it |
+
+The subtle one is the third. The console shows `days_left`, so it **looks** like
+it answers "who do I chase?" — but a school that renewed on trust and never paid
+is indistinguishable from one that paid in full. Both show 335 days left. The
+receivable was invisible precisely because the screen looked like it was showing
+it. `fn_platform_schools` now carries `outstanding`, and `actionRank` puts an
+unpaid invoice above an over-limit school: one is a debt, the other is a
+conversation.
+
+The design and the argument against each decision are in
+`docs/OPERATOR-BILLING-DESIGN.md`. Two decisions carry the weight:
+
+- **A charge is a row, written by the same call that grants the time.** The
+  objection is that operators often grant time with no money attached — a pilot, a
+  favour, an apology. `amount = 0` **is** a charge, and recording it is the point:
+  a free year that leaves no trace is how a business loses track of what it has
+  given away. The amount defaults to the plan's list price, and an amount that
+  differs from list **requires a reason**, including zero.
+- **Outstanding is derived, never stored** — the same rule the school-facing side
+  follows, for the same reason. A stored balance drifts from the rows that
+  produced it and then two screens disagree about what a customer owes.
+
+**A revenue leak found in the same probe.** Al-Noor is on `growth` (limit 300)
+with **420 students**. The console itself computed `limit_state = 'over'` and
+`suggested_plan = 'institution'` — and `fn_activate_subscription` renewed them
+onto `growth` for another twelve months at the 300-student price. The screen knew;
+the renewal path never asked. It now refuses, naming the count, the limit and the
+plan that fits, and the override records the breach **on the invoice**. The
+renewal also re-counts before deciding rather than trusting the stored figure — a
+stale count would wave the whole thing straight through.
+
+**The isolation guard caught the new tables, correctly.** `tenant_isolation.sql`
+requires every policy on a table carrying `school_id` to reference
+`current_school_id()`. `platform_invoices` and `platform_payments` carry it but
+must be gated on `is_platform_admin()` instead — a school must see none of it, so
+`current_school_id()` there would be the bug. Excluding them from the rule without
+asserting what *does* hold is how an exclusion list becomes a hole, so two rules
+replaced it: every policy on a `platform_%` table must gate on
+`is_platform_admin()`, and none of them may be a write policy — every write goes
+through a definer function, so one place decides what a valid charge is. Both were
+negative-tested by adding `using (true)` and then an UPDATE policy and watching
+the suite fail. `platform_admins` is exempt from the first by name: its policy is
+"you may see your own row", and `is_platform_admin()` answers itself by reading
+that table.
+
+46 assertions in `supabase/tests/operator_billing.sql`, nine of which are the
+boundary in both directions: a school's own **owner** reads no operator invoice —
+not even one raised against their own school — and the operator, with every
+billing power there is, still reads no student, no fee invoice and no receipt.
+
 ### Certificates — the leaving certificate handed over free, and the leaving never recorded — done (0061)
 
 The certificate module existed since 0021: a gapless per-type serial, a frozen

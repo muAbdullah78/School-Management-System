@@ -971,6 +971,42 @@ jobs:
         # surfaced.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/staff_checkin.sql
 
+      - name: The operator's own books — could the seller answer what a school owes?
+        # No. The product's promise to a school is that every rupee has a row;
+        # the person selling it kept none. Reproduced on a real database — three
+        # customer schools, Al-Noor renews twelve months of `growth`:
+        #
+        #   what was Al-Noor charged? ......... no table records a charge
+        #   how much has Al-Noor ever paid? ... no function answers it
+        #   which schools owe us money? ....... unanswerable
+        #   who granted it, and when? ......... audit_log had zero rows for it
+        #
+        # The subtle one is "which schools owe us money". The console shows
+        # days_left, so it LOOKS like it answers that — but a school that renewed
+        # on trust and never paid is indistinguishable from one that paid in
+        # full. Both show 335 days left. The receivable was invisible precisely
+        # because the screen looked like it was showing it.
+        #
+        # Assertions 4-7 are a revenue leak found in the same probe: Al-Noor is
+        # on growth (limit 300) with 420 students, the console itself computed
+        # limit_state='over' and suggested_plan='institution', and the renewal
+        # put them back on growth for another year at the 300-student price. The
+        # screen knew; the renewal path never asked. 6 and 7 are the halves that
+        # matter — a refused renewal must leave neither an invoice nor a moved
+        # period behind.
+        #
+        # Assertions 13-17 defend the discount rule in both directions: a price
+        # that is not the list price needs a reason, INCLUDING zero, and a zero
+        # charge still activates the school. A free year that leaves no trace is
+        # how a business loses track of what it has given away.
+        #
+        # Assertions 38-46 are the boundary. A school's own OWNER must read none
+        # of the operator's books — not even invoices raised against their own
+        # school — and the operator, with every billing power there is, must
+        # still read no student, no fee invoice and no receipt. Adding the
+        # operator's books must not widen the operator's reach.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/operator_billing.sql
+
       - name: Every suite on disk has a step above
         # The gap this closes has already happened twice in this repo, in two
         # different places: supabase/bundles/ stopped at 0039 while CI stayed

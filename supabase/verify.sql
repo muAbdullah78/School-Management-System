@@ -400,6 +400,42 @@ select 'a signed-in user can write the tables (0063)',
        then 'PASS' else 'FAIL — run migrations/0063_constraint_function_grants.sql' end
 
 union all
+select 'operator billing (0064)',
+       case when (select count(*) from information_schema.tables
+                   where table_schema='public' and table_name in
+                     ('platform_invoices','platform_payments')) = 2
+                 and (select count(*) from pg_proc p
+                       join pg_namespace n on n.oid = p.pronamespace
+                       where n.nspname='public' and p.proname in
+                         ('fn_platform_outstanding','fn_platform_record_payment',
+                          'fn_platform_ledger','fn_platform_revenue')) = 4
+                 -- THE ONE THAT MATTERS. fn_activate_subscription has existed
+                 -- since 0026 and fn_platform_schools since 0027, so their
+                 -- presence proves nothing. What 0064 changed is that granting
+                 -- time WRITES THE CHARGE and that the console carries the
+                 -- receivable — without those two the operator has an expiry
+                 -- date where a debt should be.
+                 and exists (select 1 from pg_proc p
+                              join pg_namespace n on n.oid = p.pronamespace
+                              where n.nspname='public'
+                                and p.proname='fn_activate_subscription'
+                                and p.prosrc like '%platform_invoices%'
+                                and p.prosrc like '%plan_margin_limit%')
+                 -- The 3-argument form must be gone, not left as an overload:
+                 -- it grants a year and records no money.
+                 and not exists (select 1 from pg_proc p
+                                  join pg_namespace n on n.oid = p.pronamespace
+                                  where n.nspname='public'
+                                    and p.proname='fn_activate_subscription'
+                                    and p.pronargs <> 6)
+                 and exists (select 1 from pg_proc p
+                              join pg_namespace n on n.oid = p.pronamespace
+                              where n.nspname='public'
+                                and p.proname='fn_platform_schools'
+                                and pg_get_function_result(p.oid) like '%outstanding%')
+       then 'PASS' else 'FAIL — run migrations/0064_operator_billing.sql' end
+
+union all
 select 'price plans loaded',
        case when (select count(*) from public.plans) = 4
        then 'PASS' else 'FAIL — re-run bundle 1' end

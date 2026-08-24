@@ -240,7 +240,22 @@ with sig(migration, object, present) as (values
           join pg_proc f on f.pronamespace = 'public'::regnamespace
          where n.nspname = 'public' and con.contype = 'c' and rel.relkind = 'r'
            and pg_get_constraintdef(con.oid) like '%' || f.proname || '(%'
-           and not has_function_privilege('authenticated', f.oid, 'EXECUTE'))))
+           and not has_function_privilege('authenticated', f.oid, 'EXECUTE')))),
+  -- 0064 REWROTE fn_activate_subscription (0026) and fn_platform_schools (0027),
+  -- so neither name proves anything. The signature is the two facts that were
+  -- missing: granting time writes a charge, and the console carries the
+  -- receivable. Without the second, "who owes me money" and "who expires soon"
+  -- are the same screen — which was the defect.
+  ('0064_operator_billing',     'granting time writes the charge',
+     (select exists (select 1 from pg_proc where proname = 'fn_activate_subscription'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%platform_invoices%')
+         and exists (select 1 from pg_proc where proname = 'fn_platform_schools'
+                      and pronamespace = 'public'::regnamespace
+                      and pg_get_function_result(oid) like '%outstanding%')
+         and exists (select 1 from information_schema.tables
+                      where table_schema = 'public'
+                        and table_name = 'platform_payments')))
 )
 select migration,
        object                                   as looked_for,

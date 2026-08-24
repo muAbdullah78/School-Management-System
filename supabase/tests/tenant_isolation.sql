@@ -362,14 +362,54 @@ begin
   end if;
 
   -- 4b. Every policy on a tenant table must reference current_school_id().
+  --
+  -- The `platform_%` tables are excluded because they are the OPERATOR's own
+  -- books — what each school was charged and what it paid. They carry school_id
+  -- because they are keyed on it, but a school must see none of them, so
+  -- current_school_id() is the wrong gate and its presence would be the bug.
+  -- 4b-ii below is what replaces it for them: excluding a table from a guard
+  -- without asserting what DOES hold is how an exclusion list becomes a hole.
   select coalesce(string_agg('  ' || tablename || '.' || policyname, chr(10)), '') into bad
   from pg_policies
   where schemaname = 'public'
     and tablename not in ('schools','plans','subscriptions','student_count_snapshots','platform_admins')
+    and tablename not like 'platform\_%'
     and coalesce(qual, '') not like '%current_school_id%'
     and coalesce(with_check, '') not like '%current_school_id%';
   if bad <> '' then
     raise exception E'Policies with no tenant check:\n%', bad;
+  end if;
+
+  -- 4b-ii. Every policy on a `platform_%` table must gate on is_platform_admin().
+  -- Without this, a future policy of `using (true)` on platform_invoices would
+  -- make every school's billing history readable by every signed-in user, and
+  -- 4b would have been told to look away.
+  --
+  -- platform_admins is the one exception, and it has to be: its policy is "you
+  -- may see your own row", and is_platform_admin() ANSWERS ITSELF by reading
+  -- this table — gating it on that function would be circular.
+  select coalesce(string_agg('  ' || tablename || '.' || policyname, chr(10)), '') into bad
+  from pg_policies
+  where schemaname = 'public'
+    and tablename like 'platform\_%'
+    and tablename <> 'platform_admins'
+    and coalesce(qual, '') not like '%is_platform_admin%'
+    and coalesce(with_check, '') not like '%is_platform_admin%';
+  if bad <> '' then
+    raise exception E'Policies on a platform table that do not gate on is_platform_admin():\n%', bad;
+  end if;
+
+  -- 4b-iii. And the operator's books must be READ-ONLY through RLS: every write
+  -- goes through a SECURITY DEFINER function, so there is one place that decides
+  -- what a valid charge or receipt looks like. An UPDATE path would let an
+  -- invoice be edited into something it never was.
+  select coalesce(string_agg('  ' || tablename || '.' || policyname || ' (' || cmd || ')', chr(10)), '')
+    into bad
+  from pg_policies
+  where schemaname = 'public' and tablename like 'platform\_%'
+    and tablename <> 'platform_admins' and cmd <> 'SELECT';
+  if bad <> '' then
+    raise exception E'A platform table has a write policy; writes must go through a definer function:\n%', bad;
   end if;
 
   -- 4c. Every tenant table must have RLS enabled.
