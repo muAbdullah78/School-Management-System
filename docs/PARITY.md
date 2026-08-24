@@ -354,6 +354,106 @@ including what is deliberately not built (per-pupil electives, a configurable
 promotion rule, and GPA — `school_settings.grade_scale` still offers `gpa10` and
 `fn_grade_for` still always returns letters, which is its own piece of work).
 
+### Staff QR check-in was decorative — done (0062), and nobody could admit a student — done (0063)
+
+**Two defects, and the second is not about check-in at all.**
+
+#### The QR was doing nothing
+
+Probed on a real database. One teacher, login linked to her staff record, at home:
+
+| What she did | Result |
+|---|---|
+| Inserted her own attendance row, `source = 'qr'`, `code_id` null | **allowed** |
+| Back-dated seven days she never worked | **allowed** |
+| The code itself | 32 static hex chars, no expiry |
+| Check-out, lateness, school day | **none of the three existed** |
+
+`staff_att_insert` allowed `staff_id = my_staff_id()`, and `fn_staff_check_in` has
+been SECURITY DEFINER since it was written — so that policy branch was never
+needed for the feature to work. It was pure surplus, and it handed away the entire
+mechanism: the QR code was a suggestion. On a school that pays by attendance, the
+back-dating is payroll fraud in one call.
+
+No biometric — that was the instruction, and it is also what shapes the design:
+**a QR cannot prove a body was at the gate.** It can prove a valid,
+currently-displayed code was presented by a signed-in account.
+`docs/STAFF-CHECKIN-DESIGN.md` closes every gap between those two that can be
+closed and states the one that cannot. Five decisions matter:
+
+- **A teacher can never write her own attendance row.** The only paths in are a
+  scan and an office mark. Worth more than everything else put together: the
+  rotating code is a lock, and this is the wall next to it.
+- **`check (attendance_date <= current_date)`** — declarative, so it also covers
+  paths nobody has written yet. Office back-dating stays possible and audited; a
+  teacher cannot back-date at all.
+- **The code rotates.** A second mode: a screen at the gate showing a QR that
+  changes every 30 seconds, so a photograph is worth under a minute instead of a
+  whole term. The token is `code.window.digest` and **the secret never leaves the
+  database** — the display asks the server for a token rather than computing one,
+  because a rotating code whose seed sits in a browser tab is not a rotating code.
+  Built on the built-in `sha256()`, not `pgcrypto`, which this project has never
+  required. A code marked rotating **refuses its own bare code**, or the rotation
+  would be decorative in exactly the way the direct insert was. The printed poster
+  stays available, because most schools have no device at the gate — but the
+  Settings screen states in a table that a photograph of a poster works for ever.
+- **A second scan is the check-out**, with a floor so a nervous double-scan on
+  arrival does not check somebody out at 08:01. And the school day becomes a
+  setting, so `late` — a status that has existed since the first migration and
+  that nothing could ever produce — finally means something. With no start time
+  set, nothing is ever late: a default would have marked a whole staff room late
+  on the day the school upgraded.
+- **Every refusal is recorded**, and more than ten in ten minutes stops the
+  account. The token space is comfortable; comfortable is not a control.
+
+**What cannot be fixed, said plainly rather than hidden:** a teacher at the gate
+can photograph the rotating QR and send it to a colleague who uses it within the
+minute. Only proving presence stops that, and that is biometric. So the register
+records the token window, the device and the second, and shows them — two
+check-ins four seconds apart on one token from two devices is a question a
+principal can ask. The geofence stays, labelled as a deterrent rather than proof,
+because the coordinates come from the teacher's phone.
+
+**A mistake in the first draft, worth recording.** `fn_staff_check_in` logged each
+refusal and then raised. That logs nothing: plpgsql has no autonomous transaction,
+so the raise rolls the log row back with it. The refusal register would have been
+permanently empty and the brute-force counter that reads it would never have
+counted past zero — two features silently dead. Refusals now return
+`{status: 'refused', ...}` and the web wrapper turns that back into a thrown error
+so no caller can mistake one for a success.
+
+#### Nobody could admit a student
+
+The check-in suite is the first test in this project to write `students` as the
+`authenticated` role rather than as the table owner. It stopped dead:
+
+```
+set local role authenticated;
+insert into public.students (school_id, full_name, father_name, status) values (…);
+ERROR:  permission denied for function fn_photo_path_ok
+```
+
+**A CHECK constraint's function runs with the privileges of whoever writes the
+row.** 0057 put such a constraint on `students.photo_path`, `staff.photo_path` and
+`school_settings.logo_path`, then revoked the function from PUBLIC — the default
+grant Postgres gives new functions, and the only reason it worked — without
+granting it to `authenticated`. Admitting a child, adding a teacher and saving the
+school's own name and address were **all impossible for every signed-in user**.
+
+Thirty-four assertions in `photos.sql` covered that constraint and not one could
+see it, because they all write as the table owner and the owner bypasses both RLS
+and function-privilege checks. **A test that runs as postgres is not testing what a
+school experiences** — that is the lesson, and it is a bigger one than the grant.
+
+0063 is the grant. `supabase/check-constraint-functions.sh` is the guard, and it
+asks the question of every constraint function rather than that one, so a
+constraint added in 0080 with a forgotten grant fails the build instead of a
+school's first admission. `photos.sql` 35 and 36 admit a child as a signed-in
+owner and then confirm the constraint still refuses another school's folder from
+that same position.
+
+44 assertions in `supabase/tests/staff_checkin.sql`.
+
 ### Certificates — the leaving certificate handed over free, and the leaving never recorded — done (0061)
 
 The certificate module existed since 0021: a gapless per-type serial, a frozen

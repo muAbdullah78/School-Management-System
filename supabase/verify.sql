@@ -239,8 +239,11 @@ select 'the observer role (0059)',
                    select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
                    where n.nspname='public' and p.prosecdef and p.provolatile in ('s','i')
                      and p.prosrc like '%has_role(%'
+                     -- fn_checkin_display gates on has_role on purpose: a live
+                     -- check-in token is a key to the gate, not a read.
                      and p.proname not in ('fn_may_manage_class',
-                                           'fn_may_write_school_file', 'may_view'))
+                                           'fn_may_write_school_file',
+                                           'fn_checkin_display', 'may_view'))
                  -- THE ONE THAT MATTERS. An observer must not be able to write.
                  -- A write policy consulting may_view would let one change a
                  -- child's record, and RLS would let it through with nothing
@@ -336,6 +339,65 @@ select 'certificates (0061)',
                                 and p.proname='fn_certificate_readiness'
                                 and p.prosrc like '%blocked_by_dues%')
        then 'PASS' else 'FAIL — run migrations/0061_certificates.sql' end
+
+union all
+select 'staff check-in (0062)',
+       case when exists (select 1 from information_schema.tables
+                          where table_schema='public'
+                            and table_name='staff_checkin_attempts')
+                 and (select count(*) from pg_proc p
+                       join pg_namespace n on n.oid = p.pronamespace
+                       where n.nspname='public' and p.proname in
+                         ('fn_checkin_display','fn__checkin_digest','fn__checkin_period',
+                          'fn__checkin_refuse','fn_staff_attendance_day',
+                          'fn_checkin_attempts')) = 6
+                 -- THE ONE THAT MATTERS, and it is an ABSENCE. The whole QR
+                 -- mechanism was decorative because staff_att_insert allowed
+                 -- `staff_id = my_staff_id()`: a teacher wrote her own row, with
+                 -- source 'qr' and no code, from home. fn_staff_check_in has been
+                 -- SECURITY DEFINER all along, so that branch was never needed.
+                 and not exists (
+                   select 1 from pg_policy pol
+                   where pol.polname = 'staff_att_insert'
+                     and pol.polrelid = 'public.staff_attendance'::regclass
+                     and coalesce(pg_get_expr(pol.polwithcheck, pol.polrelid), '')
+                         like '%my_staff_id%')
+                 -- Nobody records a day that has not happened.
+                 and exists (select 1 from pg_constraint
+                              where conname = 'staff_attendance_not_future'
+                                and conrelid = 'public.staff_attendance'::regclass)
+                 -- fn_staff_check_in has existed since 0032, so its presence
+                 -- proves nothing. What must be true of the body: it refuses a
+                 -- plain code against a rotating one, and it RETURNS refusals
+                 -- (a raise would roll the attempt log back with it).
+                 and exists (select 1 from pg_proc p
+                              join pg_namespace n on n.oid = p.pronamespace
+                              where n.nspname='public' and p.proname='fn_staff_check_in'
+                                and p.prosrc like '%fn__checkin_refuse%'
+                                and p.prosrc like '%rotating code%')
+                 and exists (select 1 from information_schema.columns
+                              where table_schema='public' and table_name='school_settings'
+                                and column_name='day_starts_at')
+       then 'PASS' else 'FAIL — run migrations/0062_staff_checkin.sql' end
+
+union all
+select 'a signed-in user can write the tables (0063)',
+       -- A CHECK constraint's function runs as the WRITING user. 0057 revoked
+       -- fn_photo_path_ok from PUBLIC without granting it to authenticated, and
+       -- that made students, staff and school_settings unwritable by every
+       -- signed-in user: nobody could admit a child. Asked as a question about
+       -- privileges rather than about a migration, so it covers any constraint
+       -- function added later too.
+       case when not exists (
+              select 1
+                from pg_constraint con
+                join pg_class rel on rel.oid = con.conrelid
+                join pg_namespace n on n.oid = rel.relnamespace
+                join pg_proc f on f.pronamespace = 'public'::regnamespace
+               where n.nspname = 'public' and con.contype = 'c' and rel.relkind = 'r'
+                 and pg_get_constraintdef(con.oid) like '%' || f.proname || '(%'
+                 and not has_function_privilege('authenticated', f.oid, 'EXECUTE'))
+       then 'PASS' else 'FAIL — run migrations/0063_constraint_function_grants.sql' end
 
 union all
 select 'price plans loaded',

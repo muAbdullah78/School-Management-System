@@ -177,8 +177,10 @@ with sig(migration, object, present) as (values
             where pronamespace = 'public'::regnamespace
               and prosecdef and provolatile in ('s','i')
               and prosrc like '%has_role(%'
+              -- fn_checkin_display gates on has_role on purpose: a live
+              -- check-in token is a key to the gate, not a read of the records.
               and proname not in ('fn_may_manage_class', 'fn_may_write_school_file',
-                                  'may_view')))),
+                                  'fn_checkin_display', 'may_view')))),
   -- 0061 REWROTE fn_issue_certificate, which has existed since 0021. Its
   -- presence proves nothing at all, and neither does the new table: the
   -- signature has to be a fact about the body. Two facts, because the two
@@ -205,7 +207,40 @@ with sig(migration, object, present) as (values
                       and pronamespace = 'public'::regnamespace)
          and exists (select 1 from information_schema.tables
                       where table_schema = 'public'
-                        and table_name = 'certificate_cancellations')))
+                        and table_name = 'certificate_cancellations'))),
+  -- 0062's signature is an ABSENCE, because the defect was a PERMISSION, not a
+  -- missing object. staff_att_insert allowed `staff_id = my_staff_id()`, so a
+  -- teacher wrote her own attendance row — source 'qr', no code, from home — and
+  -- the whole QR mechanism was decorative. A row that checked for the new table
+  -- or fn_checkin_display would pass on a database where that branch had been
+  -- put back.
+  ('0062_staff_checkin',        'a teacher cannot write her own attendance row',
+     (select not exists (select 1 from pg_policy pol
+                          where pol.polname = 'staff_att_insert'
+                            and pol.polrelid = 'public.staff_attendance'::regclass
+                            and coalesce(pg_get_expr(pol.polwithcheck, pol.polrelid), '')
+                                like '%my_staff_id%')
+         and exists (select 1 from pg_proc where proname = 'fn_checkin_display'
+                      and pronamespace = 'public'::regnamespace)
+         and exists (select 1 from pg_constraint
+                      where conname = 'staff_attendance_not_future'
+                        and conrelid = 'public.staff_attendance'::regclass))),
+  -- 0063 is a GRANT, so the signature is the privilege itself and not any object.
+  -- A CHECK constraint's function runs as the writing user; fn_photo_path_ok was
+  -- revoked from PUBLIC and never granted to authenticated, which made students,
+  -- staff and school_settings unwritable by every signed-in user. Nobody could
+  -- admit a child. Asked as a question about privileges, so it also covers a
+  -- constraint function some later migration adds and forgets to grant.
+  ('0063_constraint_function_grants', 'constraint functions executable by authenticated',
+     (select not exists (
+        select 1
+          from pg_constraint con
+          join pg_class rel on rel.oid = con.conrelid
+          join pg_namespace n on n.oid = rel.relnamespace
+          join pg_proc f on f.pronamespace = 'public'::regnamespace
+         where n.nspname = 'public' and con.contype = 'c' and rel.relkind = 'r'
+           and pg_get_constraintdef(con.oid) like '%' || f.proname || '(%'
+           and not has_function_privilege('authenticated', f.oid, 'EXECUTE'))))
 )
 select migration,
        object                                   as looked_for,

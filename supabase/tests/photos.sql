@@ -439,4 +439,75 @@ begin
 end;
 $$;
 
+-- =============================================================================
+-- 8. The constraint has to be writable, not just correct
+--
+-- Everything above this section writes `students` AS THE TABLE OWNER, and the
+-- owner bypasses both RLS and function-privilege checks. That is why 34
+-- assertions about this constraint could all pass while the constraint made the
+-- table unwritable by every signed-in user:
+--
+--   set local role authenticated;
+--   insert into public.students (...) values (...);
+--   ERROR:  permission denied for function fn_photo_path_ok
+--
+-- A CHECK constraint's function runs with the privileges of whoever is writing
+-- the row. 0057 revoked fn_photo_path_ok from PUBLIC — the default grant that
+-- was the only reason it worked — without granting it to authenticated, so
+-- admitting a child, adding a teacher and saving the school's own address were
+-- all impossible. 0063 grants it; these two assertions are what would have
+-- caught it, and supabase/check-constraint-functions.sh is what stops the whole
+-- class of it recurring.
+-- =============================================================================
+do $$
+declare n integer;
+begin
+  perform pg_temp.be('Ph Owner');
+  set local role authenticated;
+  insert into public.students (school_id, full_name, father_name, status)
+  values (public.current_school_id(), 'Constraint Child', 'Constraint Father', 'active');
+  select count(*) into n from public.students where full_name = 'Constraint Child';
+  reset role;
+  perform pg_temp.ok(n = 1,
+    '35. a signed-in owner can actually ADMIT A CHILD. The photo_path constraint '
+    || 'made this impossible and 34 assertions above did not notice, because they '
+    || 'all write as the table owner');
+exception when others then
+  reset role;
+  raise exception 'FAIL  35. a signed-in owner could not admit a child: %', sqlerrm;
+end;
+$$;
+
+do $$
+declare n integer; v_path text;
+begin
+  -- Resolve the foreign school id BEFORE switching role. As `authenticated`, RLS
+  -- on public.schools hides the other school, so the lookup returns NULL, the
+  -- path becomes NULL through concatenation, and the constraint then passes
+  -- because a null path is legitimately allowed. The assertion would have gone
+  -- green while testing nothing — the same shape of vacuous pass this file
+  -- exists to prevent.
+  v_path := 'students/' || pg_temp.sch('Photo B')::text || '/x.jpg';
+  if v_path is null or v_path not like 'students/%/x.jpg' then
+    raise exception 'FAIL  36. the test path did not build: %', coalesce(v_path, '(null)');
+  end if;
+
+  perform pg_temp.be('Ph Owner');
+  set local role authenticated;
+  begin
+    -- The constraint still does its job from that position: a path pointing into
+    -- another school's folder is refused, not merely unreachable.
+    insert into public.students (school_id, full_name, father_name, status, photo_path)
+    values (public.current_school_id(), 'Leaky Child', 'Leaky Father', 'active', v_path);
+    n := 1;
+  exception when check_violation then
+    n := 0;
+  end;
+  reset role;
+  perform pg_temp.ok(n = 0,
+    '36. and the constraint still refuses another school''s folder when the write '
+    || 'comes from a signed-in user — granting execute must not weaken it');
+end;
+$$;
+
 rollback;

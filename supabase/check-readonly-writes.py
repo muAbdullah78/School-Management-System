@@ -120,8 +120,12 @@ def main() -> int:
           from pg_proc p join pg_namespace n on n.oid = p.pronamespace
          where n.nspname = 'public' and p.prosecdef and p.provolatile in ('s','i')
            and p.prosrc like '%has_role(%'
+           -- fn_checkin_display is STABLE and gated on has_role on purpose:
+           -- handing an observer a live check-in token is not letting them look
+           -- at the school's records, it is giving them a key to the gate. Same
+           -- category as the other two — looks like a read, authorises something.
            and p.proname not in ('fn_may_manage_class', 'fn_may_write_school_file',
-                                 'may_view')
+                                 'fn_checkin_display', 'may_view')
          order by 1
     """)
     if stragglers:

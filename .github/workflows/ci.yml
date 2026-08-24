@@ -533,6 +533,31 @@ jobs:
         # Verified by adding students.planted_dead_col and confirming this fails.
         run: ./supabase/check-columns-used.sh
 
+      - name: Can a signed-in user actually WRITE the tables?
+        # A CHECK constraint's function runs with the privileges of whoever is
+        # writing the row — not the table's owner, not the function's owner. So a
+        # constraint calling a function `authenticated` cannot execute makes the
+        # table completely unwritable, and the error mentions the function rather
+        # than the table.
+        #
+        # THIS SHIPPED. 0057 put a CHECK on students.photo_path, staff.photo_path
+        # and school_settings.logo_path calling fn_photo_path_ok, then revoked
+        # that function from PUBLIC — the default grant that was the only reason
+        # it worked — without granting it to authenticated:
+        #
+        #   set local role authenticated;
+        #   insert into public.students (...) values (...);
+        #   ERROR:  permission denied for function fn_photo_path_ok
+        #
+        # Admitting a child. Adding a teacher. Saving the school's own address.
+        # Nothing caught it because every suite writes those tables AS THE TABLE
+        # OWNER, and the owner bypasses both RLS and function-privilege checks.
+        # The constraint was well tested — from a position where the privilege
+        # question cannot arise.
+        #
+        # Verified by revoking the grant again and confirming this fails.
+        run: ./supabase/check-constraint-functions.sh
+
       - name: Is every QUERY inside a definer function scoped?
         # dashboard.sql assertion 20 asks whether a SECURITY DEFINER function
         # MENTIONS scoping anywhere in its body. That guard is worth having and
@@ -907,6 +932,44 @@ jobs:
         # is the other half: locking it down must not empty it — purpose and
         # remarks still have to reach the document.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/certificates.sql
+
+      - name: Staff QR check-in — was the QR doing anything at all?
+        # It was not. Probed on a real database: one teacher, login linked to her
+        # staff record, sitting at home.
+        #
+        #   inserted her own attendance row ......... yes. No QR code involved.
+        #     with source = 'qr' and code_id null ... and nothing read code_id
+        #   back-dated seven days she never worked .. yes
+        #   the code ............................... 32 static hex chars, no expiry
+        #   check-out / lateness / school day ....... none of the three existed
+        #
+        # staff_att_insert allowed `staff_id = my_staff_id()`, and
+        # fn_staff_check_in has been SECURITY DEFINER all along — so that policy
+        # branch was never needed for the feature to work, and it handed away the
+        # entire mechanism. On a school that pays by attendance, the back-dating
+        # is payroll fraud in one call.
+        #
+        # Assertions 1-3 are worth more than the rest of the file put together:
+        # the rotating code is a lock, and this is the wall next to it.
+        #
+        # Assertion 8 is the one that keeps the rotation honest — a rotating code
+        # that still accepts its own bare code is decorative in exactly the way
+        # the direct insert was. 14 and 15 are the pair that matter for the
+        # window: the PREVIOUS 30 seconds must work (a token has to survive the
+        # second between the screen and the phone) and two minutes ago must not.
+        #
+        # Assertion 32 exists because of a mistake in the first draft: it logged
+        # the refusal and then RAISED, which logs nothing — plpgsql has no
+        # autonomous transaction, so the raise rolls the log row back with it. The
+        # refusal register would have been permanently empty and the brute-force
+        # counter that reads it would never have counted past zero. Refusals
+        # return; the web wrapper turns them back into thrown errors.
+        #
+        # Everything after the fixture runs as `authenticated`, because RLS does
+        # not apply to a table's owner and a negative assertion made as postgres
+        # would pass with no policies at all. That is also how the 0063 defect
+        # surfaced.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/staff_checkin.sql
 
       - name: Every suite on disk has a step above
         # The gap this closes has already happened twice in this repo, in two

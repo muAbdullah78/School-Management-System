@@ -1490,6 +1490,10 @@ export interface SchoolSettings {
   email: string | null; principal_name: string | null; grade_scale: string; pass_percent: number
   gr_prefix: string | null; receipt_prefix: string | null; current_session_id: string | null
   geofence_enabled: boolean; geo_lat: number | null; geo_lng: number | null; geo_radius_m: number
+  /** The school day, for staff lateness. With `day_starts_at` unset NOTHING is
+   *  ever late — a default start time would mark a whole staff room late on the
+   *  day the school upgraded. */
+  day_starts_at: string | null; day_ends_at: string | null; late_grace_minutes: number
   /** A storage PATH, never a URL — see docs/PHOTOS-DESIGN.md. Read-only here;
    *  written only by fn_set_school_logo, which derives the path itself. */
   logo_path: string | null
@@ -1519,7 +1523,7 @@ export async function getSchoolSettings(): Promise<SchoolSettings | null> {
   // No id filter: `school_settings` used to be a single row keyed id = 1, and is
   // now one row per school. RLS already narrows this to the caller's school.
   const { data, error } = await sb.from('school_settings')
-    .select('name, name_short, address, phone, email, principal_name, grade_scale, pass_percent, gr_prefix, receipt_prefix, current_session_id, geofence_enabled, geo_lat, geo_lng, geo_radius_m, logo_path')
+    .select('name, name_short, address, phone, email, principal_name, grade_scale, pass_percent, gr_prefix, receipt_prefix, current_session_id, geofence_enabled, geo_lat, geo_lng, geo_radius_m, day_starts_at, day_ends_at, late_grace_minutes, logo_path')
     .limit(1).maybeSingle()
   if (error) throw new Error(error.message)
   return data
@@ -1965,26 +1969,77 @@ export async function setClassTeacher(
   if (error) throw new Error(error.message)
 }
 
-export interface CheckinCode { id: string; code: string; label: string | null; valid_from: string | null; valid_to: string | null; active: boolean }
+export interface CheckinCode {
+  id: string; code: string; label: string | null
+  valid_from: string | null; valid_to: string | null; active: boolean
+  /** A rotating code is shown on a screen and changes every 30 seconds; a static
+   *  one is printed on a poster, and a photograph of that works for ever. */
+  rotating: boolean
+}
 export async function generateCheckinCode(
-  label: string, validFrom: string | null, validTo: string | null, deactivateOthers = true,
-): Promise<{ id: string; code: string }> {
+  label: string, validFrom: string | null, validTo: string | null,
+  deactivateOthers = true, rotating = false,
+): Promise<{ id: string; code: string; rotating: boolean }> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_generate_checkin_code', {
-    p_label: label, p_valid_from: validFrom, p_valid_to: validTo, p_deactivate_others: deactivateOthers,
+    p_label: label, p_valid_from: validFrom, p_valid_to: validTo,
+    p_deactivate_others: deactivateOthers, p_rotating: rotating,
   })
   if (error) throw new Error(error.message)
-  return data as { id: string; code: string }
+  return data as { id: string; code: string; rotating: boolean }
 }
 export async function listCheckinCodes(): Promise<CheckinCode[]> {
   const sb = requireSupabase()
+  // Deliberately NOT selecting `secret`. The column is readable by the office
+  // through RLS, and a rotating code whose seed reaches a browser is not a
+  // rotating code — so the seed must never be in a network response the school's
+  // own screen renders.
   return unwrap(
-    await sb.from('staff_checkin_codes').select('id, code, label, valid_from, valid_to, active')
+    await sb.from('staff_checkin_codes')
+      .select('id, code, label, valid_from, valid_to, active, rotating')
       .order('created_at', { ascending: false }),
   )
 }
 
-export interface CheckInResult { status: 'ok' | 'already'; checked_at: string; attendance_status?: string }
+/** What the screen at the gate should render right now. Polled, because the token
+ *  changes every 30 seconds and the secret it is derived from stays in the
+ *  database. `status: 'none'` means no active code — the school has not set one up. */
+export interface CheckinDisplay {
+  status: 'none' | 'static' | 'rotating'
+  code?: string
+  label?: string | null
+  rotating?: boolean
+  token?: string
+  period_seconds?: number
+  /** Seconds this token still has. Refresh on it rather than on a fixed timer, so
+   *  the screen never shows a token that has already stopped working. */
+  expires_in?: number
+  valid_to?: string | null
+}
+export async function getCheckinDisplay(): Promise<CheckinDisplay> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_checkin_display')
+  if (error) throw new Error(error.message)
+  return data as CheckinDisplay
+}
+
+export interface CheckInResult {
+  status: 'ok' | 'already' | 'out' | 'office_marked'
+  checked_at: string
+  checked_out_at?: string | null
+  attendance_status?: string
+  late_minutes?: number | null
+  worked_minutes?: number | null
+  reason?: string | null
+  rotating?: boolean
+}
+
+/** Record a check-in (or, on the second scan of the day, a check-out).
+ *
+ *  The database RETURNS refusals rather than raising them, because a refusal has
+ *  to leave a durable row in the attempt log and a raise would roll that row back
+ *  with it. This wrapper turns a refusal back into a thrown error, so no caller
+ *  can quietly treat one as a successful check-in. */
 export async function staffCheckIn(
   code: string, lat: number | null, lng: number | null, device: string | null,
 ): Promise<CheckInResult> {
@@ -1993,7 +2048,64 @@ export async function staffCheckIn(
     p_code: code, p_lat: lat, p_lng: lng, p_device: device,
   })
   if (error) throw new Error(error.message)
-  return data as CheckInResult
+  const res = (data ?? {}) as Record<string, any>
+  if (res.status === 'refused') {
+    throw new Error(res.message || 'That check-in was not accepted.')
+  }
+  return res as CheckInResult
+}
+
+export interface StaffDayRow {
+  staff_id: string; full_name: string; designation: string | null; employee_no: string | null
+  status: string
+  checked_at: string | null; checked_out_at: string | null
+  late_minutes: number | null; worked_minutes: number | null
+  source: string | null
+  /** Whether a check-in code was actually presented. The forged rows the old
+   *  policy allowed said source 'qr' with no code at all, and nothing displayed
+   *  it — which is why the loophole survived. */
+  scanned: boolean
+  code_label: string | null
+  code_window: number | null
+  device: string | null
+  reason: string | null
+  marked_by_name: string | null
+}
+
+/** The day's staff register: everybody, marked or not. */
+export async function getStaffAttendanceDay(date: string | null): Promise<StaffDayRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_staff_attendance_day', { p_date: date })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, any>[]).map((r) => ({
+    staff_id: r.staff_id, full_name: r.full_name, designation: r.designation ?? null,
+    employee_no: r.employee_no ?? null, status: r.status,
+    checked_at: r.checked_at ?? null, checked_out_at: r.checked_out_at ?? null,
+    late_minutes: r.late_minutes == null ? null : Number(r.late_minutes),
+    worked_minutes: r.worked_minutes == null ? null : Number(r.worked_minutes),
+    source: r.source ?? null, scanned: !!r.scanned,
+    code_label: r.code_label ?? null,
+    code_window: r.code_window == null ? null : Number(r.code_window),
+    device: r.device ?? null, reason: r.reason ?? null,
+    marked_by_name: r.marked_by_name ?? null,
+  }))
+}
+
+export interface CheckinAttempt {
+  id: number; staff_name: string | null; reason: string
+  presented: string | null; device: string | null; created_at: string
+}
+
+/** Refused check-ins. Somebody trying an old photograph forty times is only
+ *  visible if the school can see this. */
+export async function listCheckinAttempts(limit = 50): Promise<CheckinAttempt[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_checkin_attempts', { p_limit: limit })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, any>[]).map((r) => ({
+    id: Number(r.id), staff_name: r.staff_name ?? null, reason: r.reason,
+    presented: r.presented ?? null, device: r.device ?? null, created_at: r.created_at,
+  }))
 }
 
 export async function setStaffAttendance(

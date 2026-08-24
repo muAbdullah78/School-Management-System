@@ -90,14 +90,49 @@ export function CheckIn() {
           <p className="mt-6 text-center text-sm text-slate-500">Recording your check-in…</p>
         ) : state === 'done' && result ? (
           <div className="mt-6 text-center">
-            <div className="text-3xl">✓</div>
-            <p className="mt-2 text-sm font-medium text-emerald-700">
-              {result.status === 'already' ? 'You were already checked in today.' : 'Checked in — have a great day!'}
+            <div className="text-3xl">{result.status === 'office_marked' ? 'ℹ️' : result.status === 'out' ? '👋' : '✓'}</div>
+            <p className={`mt-2 text-sm font-medium ${result.status === 'office_marked' ? 'text-sky-700' : 'text-emerald-700'}`}>
+              {result.status === 'out' ? 'Checked out — see you tomorrow.'
+                : result.status === 'already' ? 'You were already checked in today.'
+                : result.status === 'office_marked'
+                  ? 'The office has already recorded today for you.'
+                  : result.attendance_status === 'late' ? 'Checked in — marked late.'
+                  : 'Checked in — have a great day!'}
             </p>
+
+            {/* A late mark is the school's, not a punishment from the software:
+                say by how much so it can be discussed with a real number. */}
+            {result.status === 'ok' && result.attendance_status === 'late' && result.late_minutes != null && (
+              <p className="mt-1 text-xs text-amber-700">{result.late_minutes} minutes after the start of the day.</p>
+            )}
+
+            {/* An office mark outranks a scan, so there is nothing the teacher can
+                do here except know about it. Saying what it says is the whole
+                value of the message. */}
+            {result.status === 'office_marked' && (
+              <p className="mt-1 text-xs text-slate-600">
+                Recorded as <span className="font-medium">{(result.attendance_status ?? '').replace('_', ' ')}</span>
+                {result.reason ? ` — ${result.reason}` : ''}. Speak to the office if that is wrong.
+              </p>
+            )}
+
+            {result.status === 'out' && result.worked_minutes != null && (
+              <p className="mt-1 text-xs text-slate-600">
+                {Math.floor(result.worked_minutes / 60)}h {String(result.worked_minutes % 60).padStart(2, '0')}m at school today.
+              </p>
+            )}
+
             {result.checked_at && (
               <p className="mt-1 text-xs text-slate-500">
-                {new Date(result.checked_at).toLocaleString('en-PK', { dateStyle: 'medium', timeStyle: 'short' })}
+                In at {new Date(result.checked_at).toLocaleString('en-PK', { dateStyle: 'medium', timeStyle: 'short' })}
+                {result.checked_out_at
+                  ? `, out at ${new Date(result.checked_out_at).toLocaleTimeString('en-PK', { timeStyle: 'short' })}`
+                  : ''}
               </p>
+            )}
+
+            {result.status === 'ok' && (
+              <p className="mt-3 text-xs text-slate-400">Scan the code again on your way out.</p>
             )}
           </div>
         ) : (

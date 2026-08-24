@@ -14,12 +14,14 @@ import { fmtDate, todayISO } from '@/lib/format'
 import { useAuth } from '@/auth/AuthProvider'
 import { useSchoolName } from '@/hooks/useSchoolName'
 import { StaffIdCard } from './StaffIdCard'
+import { StaffDayRegister } from './StaffDayRegister'
 import { PhotoUpload } from '@/components/PhotoUpload'
 import { Avatar } from '@/components/Avatar'
 import { removeStaffPhoto, signPaths, uploadStaffPhoto } from '@/lib/photos'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
-const TABS = [{ key: 'staff', label: 'Staff' }, { key: 'teachers', label: 'Class Teachers' }] as const
+const TABS = [{ key: 'staff', label: 'Staff' }, { key: 'attendance', label: 'Attendance' },
+              { key: 'teachers', label: 'Class Teachers' }] as const
 
 function ymNow(): string { return todayISO().slice(0, 7) }
 function monthLabel(y: string): string {
@@ -35,7 +37,7 @@ function lastSixMonths(): string[] {
 }
 
 export function StaffPage() {
-  const [tab, setTab] = useState<'staff' | 'teachers'>('staff')
+  const [tab, setTab] = useState<'staff' | 'attendance' | 'teachers'>('staff')
   return (
     <div>
       <h1 className="text-xl font-semibold text-slate-800">Staff</h1>
@@ -47,7 +49,11 @@ export function StaffPage() {
           </button>
         ))}
       </div>
-      <div className="mt-5">{tab === 'staff' ? <StaffTab /> : <ClassTeachersTab />}</div>
+      <div className="mt-5">
+        {tab === 'staff' ? <StaffTab />
+          : tab === 'attendance' ? <StaffDayRegister />
+          : <ClassTeachersTab />}
+      </div>
     </div>
   )
 }
