@@ -423,6 +423,32 @@ begin
     raise exception E'Tenant tables with RLS disabled:\n%', bad;
   end if;
 
+  -- 4d. EVERY table in public must have RLS enabled — not only those carrying a
+  -- school_id, which is all 4c above checks.
+  --
+  -- 0001:704 grants SELECT, INSERT, UPDATE and DELETE on all tables in public to
+  -- `authenticated`, and 0025:768 makes that the DEFAULT for every table created
+  -- afterwards. Verified: `authenticated` holds all four verbs on certificates,
+  -- audit_log, platform_invoices and user_invites right now.
+  --
+  -- Those grants are inert today only because RLS denies a verb with no matching
+  -- policy — every table has RLS on, and no write policy is unconditionally
+  -- permissive. So the blanket grant is not the exposure; a table arriving
+  -- WITHOUT RLS is, and it would be readable and writable by every signed-in
+  -- user of every school from the moment it is created, with no policy needed
+  -- and nothing in the app looking different.
+  --
+  -- 4c cannot catch that: a new platform or reference table with no school_id
+  -- column passes it silently. This closes the gap by making RLS the rule for
+  -- the whole schema rather than for the tables somebody remembered to key.
+  select coalesce(string_agg('  ' || c.relname, chr(10)), '') into bad
+  from pg_class c join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public' and c.relkind = 'r' and not c.relrowsecurity
+    and c.relname <> '_test_ids';
+  if bad <> '' then
+    raise exception E'Tables in public with RLS DISABLED — the blanket grant in 0001:704 makes these fully readable and writable by every signed-in user:\n%', bad;
+  end if;
+
   raise notice 'ok: structural guards hold';
 end $guards$;
 

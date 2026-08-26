@@ -75,6 +75,21 @@ create or replace function pg_temp.cls(p_name text) returns uuid language sql as
      and school_id = public.current_school_id();
 $$;
 
+-- THIS suite's one enrolment.
+--
+-- Every query below goes through this rather than `select id from
+-- public.enrollments`. That unqualified form assumes the database contains
+-- nothing but this fixture, which is never safe and is not true in CI: the
+-- workflow's own sanity-check step COMMITS a school with pupils before any suite
+-- runs, so the bare select raised "more than one row returned by a subquery used
+-- as an expression". The same assumption broke operator_billing.sql's first
+-- assertion for the same reason.
+create or replace function pg_temp.enr() returns uuid language sql as $$
+  select e.id from public.enrollments e
+    join public.schools s on s.id = e.school_id
+   where s.name = 'Fee School';
+$$;
+
 -- --- Fixture -----------------------------------------------------------------
 do $seed$
 declare
@@ -206,12 +221,12 @@ select pg_temp.ok(
 
 -- The three billing paths, on a month BEFORE the rise.
 select pg_temp.ok(
-  (public.fn_student_monthly_fee((select id from public.enrollments))->>'gross')::numeric = 1600,
+  (public.fn_student_monthly_fee(pg_temp.enr())->>'gross')::numeric = 1600,
   '14. the monthly fee is 1600, not 3600. Summing every price on record is what '
   || 'it did before, and that figure is what a clerk quotes a parent');
 
 select public.fn_bill_student_month(
-  (select id from public.enrollments), '2026-05-01', '2026-05-10') as inv \gset
+  pg_temp.enr(), '2026-05-01', '2026-05-10') as inv \gset
 
 select pg_temp.ok(
   (select count(*) from public.invoice_lines
@@ -233,7 +248,7 @@ select pg_temp.ok(
 
 -- And a month AFTER the rise gets the new price.
 select public.fn_bill_student_month(
-  (select id from public.enrollments), '2027-02-01', '2027-02-10') as inv2 \gset
+  pg_temp.enr(), '2027-02-01', '2027-02-10') as inv2 \gset
 
 select pg_temp.ok(
   (select amount = 2000 from public.invoice_lines
