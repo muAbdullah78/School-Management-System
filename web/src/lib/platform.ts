@@ -171,6 +171,36 @@ export async function extendTrial(schoolId: string, days: number): Promise<void>
   if (error) throw new Error(error.message)
 }
 
+/**
+ * How far has the production database actually got?
+ *
+ * Until 0069 nothing recorded it. Twice the answer had to be guessed from an
+ * error message a school reported — once wrongly, and the repair built on that
+ * guess failed on its own first statement. With fifty schools behind one
+ * hand-pasted Postgres, "what is applied?" has to be a question with an answer.
+ *
+ * `gaps` is the one to read: a bundle is applied as ONE transaction, so a bundle
+ * that dies halfway rolls back entirely and its migrations never arrive. That
+ * leaves a hole in the middle of the sequence, and a human scrolling seventy
+ * filenames does not see it. The list is capped at 25 with `gaps_total` holding
+ * the real number, because one badly-named row can open a range of thousands.
+ */
+export interface SchemaState {
+  applied_count: number
+  latest: string | null
+  latest_at: string | null
+  gaps: string[]
+  gaps_total: number
+  bundles: { bundle: string; files: number; applied_at: string }[]
+}
+
+export async function platformSchemaState(): Promise<SchemaState> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_schema_state')
+  if (error) throw new Error(error.message)
+  return data as SchemaState
+}
+
 export async function refreshAllCounts(): Promise<number> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_platform_refresh_counts')

@@ -542,6 +542,46 @@ select 'signup trigger on auth.users',
        then 'PASS' else 'FAIL — re-run bundle 1' end
 
 union all
+-- 0068. The school's over-limit banner must be silent until the renewal is
+-- actually being discussed.
+--
+-- 0067 made subscriptions.student_count live, and fn_my_licence's limit_notice
+-- is rendered to the owner and principal — so without 0068 a principal is told
+-- they have outgrown their plan the same afternoon they admit the 101st child,
+-- on the admissions screen, while the school is earning money. The operator
+-- still learns immediately; only the school's copy is timed.
+--
+-- The signature is the gate variable, because fn_my_licence has existed since
+-- 0026 and its presence proves nothing.
+select 'licence banner does not nag mid-term (0068)',
+       case when exists (select 1 from pg_proc where proname = 'fn_my_licence'
+                          and pronamespace = 'public'::regnamespace
+                          and prosrc like '%v_tell%')
+       then 'PASS' else 'FAIL — re-run bundle 7' end
+
+union all
+-- The row that answers "how far has this database actually got?" (0069)
+--
+-- Until bundle 7 nothing recorded it, and the two times it mattered the answer
+-- had to be guessed from an error message. Once — wrongly, and the repair built
+-- on that guess failed on its own first statement.
+--
+-- Reported as a count rather than PASS/FAIL because there is no fixed right
+-- number: it grows with every release. What matters is that it is not zero and
+-- that the number matches what was pasted.
+select 'migrations recorded',
+       case when to_regclass('public.schema_migrations') is null
+              then 'FAIL — re-run bundle 7 (the migration ledger)'
+            when (select count(*) from public.schema_migrations) = 0
+              -- The ledger exists but 0069 refused to seed it, which happens
+              -- only when its bundle probes found the chain incomplete. The
+              -- NOTICEs it raised name which bundle is missing.
+              then 'FAIL — ledger is empty; run supabase/repair/detect.sql and apply what it names'
+            else 'PASS — ' || (select count(*) from public.schema_migrations)::text
+                 || ' applied, latest ' || (select max(filename) from public.schema_migrations)
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS — no schools yet, as expected'

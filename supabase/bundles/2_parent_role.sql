@@ -34,3 +34,15 @@
 -- =============================================================================
 
 alter type public.user_role add value if not exists 'parent';
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Record what this bundle applied (no-op before 0069 creates the ledger)
+-- ─────────────────────────────────────────────────────────────────────────
+do $ledger$
+begin
+  if to_regprocedure('public.fn_record_migration(text,text,text)') is null then
+    raise notice 'migration ledger not present yet — nothing recorded';
+    return;
+  end if;
+  perform public.fn_record_migration('0032_parent_role.sql', '2_parent_role.sql');
+end $ledger$;

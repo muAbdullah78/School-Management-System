@@ -7340,3 +7340,45 @@ grant execute on function public.fn_till_report(date, date)         to authentic
 
 -- Internal: it creates a till row for whoever calls it.
 revoke all on function public.fn__ensure_till() from public, anon, authenticated;
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Record what this bundle applied (no-op before 0069 creates the ledger)
+-- ─────────────────────────────────────────────────────────────────────────
+do $ledger$
+begin
+  if to_regprocedure('public.fn_record_migration(text,text,text)') is null then
+    raise notice 'migration ledger not present yet — nothing recorded';
+    return;
+  end if;
+  perform public.fn_record_migration('0001_core_schema.sql', '1_core.sql');
+  perform public.fn_record_migration('0002_fees.sql', '1_core.sql');
+  perform public.fn_record_migration('0003_attendance.sql', '1_core.sql');
+  perform public.fn_record_migration('0004_admissions.sql', '1_core.sql');
+  perform public.fn_record_migration('0005_exams.sql', '1_core.sql');
+  perform public.fn_record_migration('0006_settings.sql', '1_core.sql');
+  perform public.fn_record_migration('0007_certificates.sql', '1_core.sql');
+  perform public.fn_record_migration('0008_dashboard.sql', '1_core.sql');
+  perform public.fn_record_migration('0009_assessments.sql', '1_core.sql');
+  perform public.fn_record_migration('0010_staff.sql', '1_core.sql');
+  perform public.fn_record_migration('0011_auth.sql', '1_core.sql');
+  perform public.fn_record_migration('0012_import.sql', '1_core.sql');
+  perform public.fn_record_migration('0013_fee_import.sql', '1_core.sql');
+  perform public.fn_record_migration('0014_rollover.sql', '1_core.sql');
+  perform public.fn_record_migration('0015_exam_papers.sql', '1_core.sql');
+  perform public.fn_record_migration('0016_staff_import.sql', '1_core.sql');
+  perform public.fn_record_migration('0017_fee_ops.sql', '1_core.sql');
+  perform public.fn_record_migration('0018_fee_reconciliation.sql', '1_core.sql');
+  perform public.fn_record_migration('0019_student_links_and_admission_fee.sql', '1_core.sql');
+  perform public.fn_record_migration('0020_fee_month_ops.sql', '1_core.sql');
+  perform public.fn_record_migration('0021_fee_fixes.sql', '1_core.sql');
+  perform public.fn_record_migration('0022_teacher_portal.sql', '1_core.sql');
+  perform public.fn_record_migration('0023_test_scoping.sql', '1_core.sql');
+  perform public.fn_record_migration('0024_teacher_portal_hardening.sql', '1_core.sql');
+  perform public.fn_record_migration('0025_multi_tenancy.sql', '1_core.sql');
+  perform public.fn_record_migration('0026_subscriptions.sql', '1_core.sql');
+  perform public.fn_record_migration('0027_platform_admin.sql', '1_core.sql');
+  perform public.fn_record_migration('0028_pricing.sql', '1_core.sql');
+  perform public.fn_record_migration('0029_families.sql', '1_core.sql');
+  perform public.fn_record_migration('0030_expenses.sql', '1_core.sql');
+  perform public.fn_record_migration('0031_till.sql', '1_core.sql');
+end $ledger$;

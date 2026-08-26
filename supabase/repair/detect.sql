@@ -299,7 +299,28 @@ with sig(migration, object, present) as (values
                  and nr.nspname = 'public'
                  and pr.proname = 'fn__refresh_counts_touched'
                  and t.tgrelid in ('public.students'::regclass,
-                                   'public.enrollments'::regclass)) = 6))
+                                   'public.enrollments'::regclass)) = 6)),
+  -- 0068 gated fn_my_licence's limit_notice on the renewal being close. The
+  -- function has existed since 0026, so the signature is the gate variable.
+  -- Without it, 0067's live count means a principal is told they have outgrown
+  -- their plan the same afternoon they admit the 101st child.
+  ('0068_limit_notice_timing',  'the over-limit banner is timed, not immediate',
+     (select exists (select 1 from pg_proc where proname = 'fn_my_licence'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%v_tell%'))),
+  -- 0069 is the migration ledger — the thing whose absence is the reason this
+  -- whole file exists. Its own header says it: "There is no migration ledger in
+  -- this project, so nothing recorded what a given database had already
+  -- applied."
+  --
+  -- The signature is the table AND the recording function, not just the table: a
+  -- ledger nothing writes to is no better than no ledger, and the generated
+  -- block at the end of every bundle calls fn_record_migration by name.
+  ('0069_migration_ledger',     'schema_migrations + fn_record_migration',
+     (select exists (select 1 from information_schema.tables
+                      where table_schema = 'public' and table_name = 'schema_migrations')
+         and exists (select 1 from pg_proc where proname = 'fn_record_migration'
+                      and pronamespace = 'public'::regnamespace)))
 )
 select migration,
        object                                   as looked_for,

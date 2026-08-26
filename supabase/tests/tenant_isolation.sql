@@ -348,13 +348,32 @@ end $rpc$;
 -- TEST 4 — STRUCTURAL GUARDS. Catch a future change that reintroduces a hole.
 -- =============================================================================
 do $guards$
-declare bad text := '';
+declare
+  bad text := '';
+  -- Tables that describe the PLATFORM rather than a tenant. Named once, used by
+  -- 4a, 4b, 4b-ii and 4b-iii below, so adding a platform table cannot mean
+  -- remembering to edit four `not in` lists — and forgetting one of them is how
+  -- an exclusion list becomes a hole.
+  --
+  -- Everything here must satisfy 4b-ii (gates on is_platform_admin) and 4b-iii
+  -- (no write policy) instead of the tenant rules, and 4d (RLS on) regardless.
+  -- Being on this list buys exemption from the school_id and current_school_id
+  -- checks, never from all of them.
+  platform_tables text[] := array[
+    'schools', 'plans', 'subscriptions', 'student_count_snapshots',
+    'platform_admins', 'platform_invoices', 'platform_payments',
+    -- The deployment record added by 0069. It has no school_id because it
+    -- describes the database, and its only policy is a SELECT gated on
+    -- is_platform_admin() — a schema history is not a tenant's business, and a
+    -- clerk who could edit it could hide which migrations a school is missing.
+    'schema_migrations'
+  ];
 begin
   -- 4a. Every tenant table must carry school_id.
   select coalesce(string_agg('  ' || c.relname, chr(10)), '') into bad
   from pg_class c join pg_namespace n on n.oid = c.relnamespace
   where n.nspname = 'public' and c.relkind = 'r'
-    and c.relname not in ('schools','plans','subscriptions','student_count_snapshots','platform_admins','_test_ids')
+    and not (c.relname = any (platform_tables)) and c.relname <> '_test_ids'
     and not exists (select 1 from pg_attribute a
                     where a.attrelid = c.oid and a.attname = 'school_id' and not a.attisdropped);
   if bad <> '' then
@@ -372,31 +391,63 @@ begin
   select coalesce(string_agg('  ' || tablename || '.' || policyname, chr(10)), '') into bad
   from pg_policies
   where schemaname = 'public'
-    and tablename not in ('schools','plans','subscriptions','student_count_snapshots','platform_admins')
-    and tablename not like 'platform\_%'
+    and not (tablename = any (platform_tables))
     and coalesce(qual, '') not like '%current_school_id%'
     and coalesce(with_check, '') not like '%current_school_id%';
   if bad <> '' then
     raise exception E'Policies with no tenant check:\n%', bad;
   end if;
 
-  -- 4b-ii. Every policy on a `platform_%` table must gate on is_platform_admin().
-  -- Without this, a future policy of `using (true)` on platform_invoices would
-  -- make every school's billing history readable by every signed-in user, and
-  -- 4b would have been told to look away.
+  -- 4b-ii. What 4b's exclusion has to be replaced by.
   --
-  -- platform_admins is the one exception, and it has to be: its policy is "you
-  -- may see your own row", and is_platform_admin() ANSWERS ITSELF by reading
-  -- this table — gating it on that function would be circular.
+  -- 4b above cannot check the platform tables: several of them are read by the
+  -- OPERATOR, for whom current_school_id() is null and would be the wrong gate.
+  -- But excluding a table from a guard without asserting what DOES hold is how
+  -- an exclusion list becomes a hole, so every policy on every one of them must
+  -- gate on one of the two legitimate authorities — the school's own tenancy, or
+  -- platform-admin identity. What this forbids is `using (true)`, which on
+  -- platform_invoices would make every school's billing history readable by
+  -- every signed-in user of every school.
+  --
+  -- Stated as "either function" rather than per-table, because these tables are
+  -- not uniform and a per-table list gets one wrong. student_count_snapshots
+  -- carries BOTH kinds — a school may read its own growth, the operator may read
+  -- everyone's — and an earlier version of this check that demanded
+  -- is_platform_admin() on it failed against a policy that was entirely correct.
+  --
+  -- platform_admins is the one exception and it has to be: its policy is "you may
+  -- see your own row", and is_platform_admin() ANSWERS ITSELF by reading this
+  -- table, so gating it on that function would be circular. 4b-iv asserts what
+  -- holds for it instead.
   select coalesce(string_agg('  ' || tablename || '.' || policyname, chr(10)), '') into bad
   from pg_policies
   where schemaname = 'public'
-    and tablename like 'platform\_%'
-    and tablename <> 'platform_admins'
-    and coalesce(qual, '') not like '%is_platform_admin%'
-    and coalesce(with_check, '') not like '%is_platform_admin%';
+    and tablename = any (platform_tables)
+    -- `plans` is the price list, and it is DELIBERATELY world-readable: the
+    -- marketing website reads it so the site can never quote a price the console
+    -- does not charge, and a signed-in school sees its own plan's name. It holds
+    -- no tenant data and no school_id. Its exemption is paid for in 4b-iii,
+    -- which requires it to have no write policy — world-readable must not
+    -- become world-writable, or any parent with a login could reprice the
+    -- product.
+    and tablename not in ('platform_admins', 'plans')
+    and coalesce(qual, '') || coalesce(with_check, '') not like '%is_platform_admin%'
+    and coalesce(qual, '') || coalesce(with_check, '') not like '%current_school_id%';
   if bad <> '' then
-    raise exception E'Policies on a platform table that do not gate on is_platform_admin():\n%', bad;
+    raise exception E'Policies on a platform table gated on neither is_platform_admin() nor current_school_id():\n%', bad;
+  end if;
+
+  -- 4b-iv. And platform_admins itself, the table 4b-ii cannot check without
+  -- circularity, must be scoped to the caller's own row. `using (true)` here
+  -- would publish the operator's email address to every parent with a login,
+  -- and — worse — is_platform_admin() reads this table, so a policy that
+  -- widened it would widen every other check in this file at the same time.
+  select coalesce(string_agg('  ' || policyname || ' (' || cmd || ')', chr(10)), '') into bad
+  from pg_policies
+  where schemaname = 'public' and tablename = 'platform_admins'
+    and coalesce(qual, '') || coalesce(with_check, '') not like '%uid()%';
+  if bad <> '' then
+    raise exception E'A policy on platform_admins is not scoped to the caller''s own row:\n%', bad;
   end if;
 
   -- 4b-iii. And the operator's books must be READ-ONLY through RLS: every write
@@ -406,8 +457,19 @@ begin
   select coalesce(string_agg('  ' || tablename || '.' || policyname || ' (' || cmd || ')', chr(10)), '')
     into bad
   from pg_policies
-  where schemaname = 'public' and tablename like 'platform\_%'
-    and tablename <> 'platform_admins' and cmd <> 'SELECT';
+  where schemaname = 'public'
+    -- The operator-only records: what a school was charged, what it paid, and
+    -- which migrations this database has. student_count_snapshots is NOT here —
+    -- a school may read its own growth, so it is dual-policy and 4b-ii covers
+    -- it. platform_admins is not here either; membership is managed by the
+    -- service role.
+    --
+    -- `plans` is here for the other reason: it is world-readable by design, so
+    -- the thing that must never appear on it is a write path. A parent with a
+    -- login repricing Institution to Rs 0 would be a policy away.
+    and tablename in ('platform_invoices', 'platform_payments', 'schema_migrations',
+                      'plans')
+    and cmd <> 'SELECT';
   if bad <> '' then
     raise exception E'A platform table has a write policy; writes must go through a definer function:\n%', bad;
   end if;

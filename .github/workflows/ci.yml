@@ -270,6 +270,11 @@ jobs:
           # put the has_role read gates back and quietly undo the observer role.
           psql -v ON_ERROR_STOP=1 -q --single-transaction -f supabase/bundles/5_search.sql
           psql -v ON_ERROR_STOP=1 -q --single-transaction -f supabase/bundles/6_photos_and_records.sql
+          # Bundle 7 carries the migration ledger. Applied last, in ascending
+          # order, for the same reason bundle 6 goes after 5: newest definitions
+          # win. Getting the order wrong here is silent — it puts superseded
+          # function bodies back and nothing fails.
+          psql -v ON_ERROR_STOP=1 -q --single-transaction -f supabase/bundles/7_ledger_and_limits.sql
 
           echo "── verify.sql, as the school runs it"
           psql -v ON_ERROR_STOP=1 -f supabase/verify.sql | tee /tmp/upgrade.out
@@ -278,6 +283,31 @@ jobs:
             exit 1
           fi
           echo "an existing school upgrades to all PASS"
+
+          # And the ledger it ends up with must be ACCURATE, which is the whole
+          # point of adding it. This database took the ugliest possible route to
+          # here — stuck at 0037, refused bundles, a detect-driven repair, then
+          # bundles 5, 6 and 7 — and 0069's adoption block has to look at the
+          # result and decide whether the chain is really complete.
+          #
+          # A count check alone would pass over a half-seeded ledger, so this
+          # asserts the exact number of migration files on disk AND zero gaps.
+          # If the six bundle probes in 0069 were wrong, the ledger here would be
+          # empty and this is the step that says so.
+          echo "── and the ledger it ends up with is accurate"
+          want=$(ls supabase/migrations/*.sql | wc -l | tr -d ' ')
+          got=$(psql -tA -c "select count(*) from public.schema_migrations")
+          gaps=$(psql -tA -c "select count(*) from generate_series(
+                   (select min(left(filename,4)::int) from public.schema_migrations),
+                   (select max(left(filename,4)::int) from public.schema_migrations)) n
+                 where not exists (select 1 from public.schema_migrations m
+                   where left(m.filename,4) = lpad(n::text,4,'0'))")
+          echo "   ledger holds $got of $want migrations, $gaps gap(s)"
+          if [ "$got" != "$want" ] || [ "$gaps" != "0" ]; then
+            echo "::error::the upgrade path leaves an inaccurate ledger ($got/$want, $gaps gaps)"
+            psql -c "select filename, bundle, applied_at from public.schema_migrations order by filename"
+            exit 1
+          fi
 
       - name: Sanity checks
         run: |
@@ -1120,6 +1150,41 @@ jobs:
         # row-level, or a 400-row import would recount the school 400 times and
         # serialise against its own lock on the subscriptions row.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/student_count.sql
+
+      - name: Does 0069's baseline list still match the migrations on disk?
+        # 0069 seeds public.schema_migrations for a database that already has the
+        # schema but no ledger. It cannot derive the filenames — a database
+        # cannot see the repo — so they are written out in full inside the
+        # migration, and a hand-written list of 69 filenames drifts.
+        #
+        # If it drifts, the ledger reports a database as complete while omitting
+        # migrations, which makes it lie about the exact thing it exists to make
+        # true: an operator reading "69 of 69 applied" would skip a repair the
+        # database needs. Confidently wrong is worse than absent.
+        #
+        # Also checks that every bundle records exactly the migrations it
+        # carries. build-bundles.sh generates that block, so it cannot drift by
+        # hand — but it can if the generator is edited, and the failure is
+        # silent: the bundle applies perfectly and the ledger is simply missing
+        # rows. Nothing else in CI would notice.
+        run: bash supabase/check-ledger-baseline.sh
+
+      - name: The migration ledger — can it be trusted, and can it be forged?
+        # There was no ledger, and it had already cost a live school fifteen
+        # migrations: bundle 3 shipped matching {0033, 0034}, its glob kept
+        # absorbing new files, and a school that had already pasted it could not
+        # re-paste it — a bundle is ONE transaction, so the whole thing rolled
+        # back and 0035-0039 never arrived. When that school reported it, the
+        # state had to be GUESSED from the error message. The guess was wrong.
+        #
+        # A ledger is only worth having if it cannot lie, and this schema makes
+        # that non-obvious: 0001:704 grants all four verbs on every table in
+        # public to `authenticated`, and 0025:768 makes it the default for new
+        # tables — including this one. So the suite proves no signed-in session
+        # can write a row, NOT EVEN THE OPERATOR'S, and that UPDATE and DELETE
+        # affect zero rows rather than merely not raising, which is the only
+        # form of that assertion that means anything under RLS.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/migration_ledger.sql
 
       - name: Every suite on disk has a step above
         # The gap this closes has already happened twice in this repo, in two

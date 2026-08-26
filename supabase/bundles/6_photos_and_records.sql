@@ -4634,3 +4634,25 @@ begin
   raise notice '0067: recounted % school(s)', v_n;
 end;
 $backfill$;
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Record what this bundle applied (no-op before 0069 creates the ledger)
+-- ─────────────────────────────────────────────────────────────────────────
+do $ledger$
+begin
+  if to_regprocedure('public.fn_record_migration(text,text,text)') is null then
+    raise notice 'migration ledger not present yet — nothing recorded';
+    return;
+  end if;
+  perform public.fn_record_migration('0057_photos_and_logo.sql', '6_photos_and_records.sql');
+  perform public.fn_record_migration('0058_exam_computation.sql', '6_photos_and_records.sql');
+  perform public.fn_record_migration('0059_readonly_boundary.sql', '6_photos_and_records.sql');
+  perform public.fn_record_migration('0060_refundable_deposits.sql', '6_photos_and_records.sql');
+  perform public.fn_record_migration('0061_certificates.sql', '6_photos_and_records.sql');
+  perform public.fn_record_migration('0062_staff_checkin.sql', '6_photos_and_records.sql');
+  perform public.fn_record_migration('0063_constraint_function_grants.sql', '6_photos_and_records.sql');
+  perform public.fn_record_migration('0064_operator_billing.sql', '6_photos_and_records.sql');
+  perform public.fn_record_migration('0065_invite_only_provisioning.sql', '6_photos_and_records.sql');
+  perform public.fn_record_migration('0066_fee_setup.sql', '6_photos_and_records.sql');
+  perform public.fn_record_migration('0067_live_student_count.sql', '6_photos_and_records.sql');
+end $ledger$;

@@ -3,9 +3,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/auth/AuthProvider'
 import {
   activateSubscription, actionNeeded, amPlatformAdmin, extendTrial, listPlans,
-  listPlatformSchools, platformLedger, platformRevenue, recordPlatformPayment,
-  refreshAllCounts, sortByAction,
-  type PlatformSchool,
+  listPlatformSchools, platformLedger, platformRevenue, platformSchemaState,
+  recordPlatformPayment, refreshAllCounts, sortByAction,
+  type PlatformSchool, type SchemaState,
 } from '@/lib/platform'
 import { formatPkr } from '@/lib/licence'
 
@@ -53,6 +53,9 @@ export function PlatformPage() {
     queryKey: ['platformRevenue', from, to],
     queryFn: () => platformRevenue(from, to),
     enabled: isAdmin.data === true,
+  })
+  const schema = useQuery({
+    queryKey: ['platformSchemaState'], queryFn: platformSchemaState, enabled: isAdmin.data === true,
   })
 
   const rows = useMemo(() => sortByAction(schools.data ?? []), [schools.data])
@@ -163,6 +166,8 @@ export function PlatformPage() {
           )}
         </div>
 
+        <SchemaStrip state={schema.data} error={schema.error as Error | null} />
+
         {msg && <div className="rounded border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-800">{msg}</div>}
         {err && <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">{err}</div>}
 
@@ -262,6 +267,66 @@ export function PlatformPage() {
       )}
 
       {ledgerFor && <LedgerDialog school={ledgerFor} onClose={() => setLedgerFor(null)} />}
+    </div>
+  )
+}
+
+/**
+ * What schema this database is actually running.
+ *
+ * One line, because on a healthy day it is one fact and should not take up
+ * space. It goes loud in exactly two cases, and both of them are the reason the
+ * ledger was added:
+ *
+ *  - A GAP. A bundle applies as ONE transaction, so a bundle that dies halfway
+ *    rolls back entirely and its migrations never arrive. That has already
+ *    happened to a live school: fifteen migrations went missing and nobody
+ *    learned until screens started failing at runtime.
+ *
+ *  - AN EMPTY LEDGER on a database that has the table. 0069 refuses to seed
+ *    unless it can prove all six shipped bundles are present, so empty means
+ *    "this database is incomplete and I would be lying if I gave you a number".
+ */
+function SchemaStrip({ state, error }: { state?: SchemaState; error: Error | null }) {
+  // Before bundle 7 is pasted, fn_platform_schema_state does not exist and this
+  // errors. Saying so plainly beats a blank space, because the fix is one paste.
+  if (error) {
+    return (
+      <div className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+        <span className="font-medium">This database has no migration ledger.</span>{' '}
+        Paste <code className="rounded bg-amber-100 px-1">supabase/bundles/7_ledger_and_limits.sql</code>{' '}
+        into the Supabase SQL editor. Until then nothing records which migrations production has.
+      </div>
+    )
+  }
+  if (!state) return null
+
+  if (state.applied_count === 0) {
+    return (
+      <div className="rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900">
+        <span className="font-medium">The migration ledger is empty.</span>{' '}
+        0069 refused to record this database because it could not prove every shipped bundle is
+        present. Run <code className="rounded bg-red-100 px-1">supabase/repair/detect.sql</code> and
+        apply what it names.
+      </div>
+    )
+  }
+
+  const gaps = state.gaps_total > 0
+  return (
+    <div className={`rounded border px-3 py-2 text-sm ${
+      gaps ? 'border-red-300 bg-red-50 text-red-900' : 'border-slate-200 bg-white text-slate-600'
+    }`}>
+      <span className="font-medium">Schema</span>{' '}
+      {state.applied_count} migration{state.applied_count === 1 ? '' : 's'} applied
+      {state.latest && <span className="text-slate-400"> · latest {state.latest.replace(/\.sql$/, '')}</span>}
+      {gaps && (
+        <div className="mt-1 font-medium">
+          {state.gaps_total} missing in the middle: {state.gaps.join(', ')}
+          {state.gaps_total > state.gaps.length && ` … and ${state.gaps_total - state.gaps.length} more`}.
+          {' '}A bundle rolled back halfway — apply those migrations before anything else.
+        </div>
+      )}
     </div>
   )
 }
