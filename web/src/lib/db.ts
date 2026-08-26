@@ -1,6 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
 import { requireSupabase } from './supabase'
-import { config } from './config'
 
 // ---- Types (hand-written; kept in sync with supabase/migrations) ----
 export interface SessionRow { id: string; name: string; is_current: boolean }
@@ -2182,50 +2180,72 @@ export async function createTeacherLogin(input: CreateTeacherInput): Promise<{ i
     throw new Error(msg)
   }
 
-  // Function not deployed / unreachable → create the login directly with a
-  // throwaway client (a separate storageKey + no session persistence means the
-  // principal stays logged in). The handle_new_user trigger makes the profile;
-  // we then set the role as the principal (who passes the role guard).
-  const tmp = createClient(config.supabaseUrl!, config.supabaseAnonKey!, {
-    auth: { persistSession: false, autoRefreshToken: false, storageKey: 'provision-teacher' },
-  })
-  // school_id AND role in the metadata. Without school_id, handle_new_user
-  // returns early and creates NO profile row at all — so the updateProfileRole
-  // below matched nothing, raised nothing (RLS makes a blocked or missing-row
-  // UPDATE affect zero rows silently), and this function reported success on a
-  // login that could then sign in and be told "This login is not attached to a
-  // school." With the role there too, the profile is created ACTIVE and correct
-  // in one step rather than patched afterwards.
-  const schoolId = await mySchoolId()
-  const { data: su, error: suErr } = await tmp.auth.signUp({
-    email,
-    password: input.password,
-    options: {
-      data: {
-        full_name: fullName || email.split('@')[0],
-        school_id: schoolId,
-        role,
-      },
-    },
-  })
-  if (suErr) throw new Error(suErr.message)
-  const newId = su.user?.id
-  if (!newId) throw new Error('Could not create the login.')
+  // Function not deployed / unreachable.
+  //
+  // This used to create the login here with a throwaway client, passing
+  // school_id AND role in signUp's user_metadata. That was the hole 0065
+  // closed: user_metadata is written by the browser, so handle_new_user
+  // believing a role in it meant ANY signed-in user — a parent — could sign up
+  // again asking for 'principal' and get it, active. The trigger no longer reads
+  // that field for authorisation, so this path cannot work and must not pretend
+  // to.
+  //
+  // The invitation is the replacement and it is strictly better: creating one is
+  // an authorised act by an owner or principal, checked by RLS, and the person
+  // chooses their own password instead of a clerk inventing one and reading it
+  // out over the phone.
+  throw new Error(
+    'The create-teacher function is not deployed, so a login cannot be made here. '
+    + `Invite ${email} instead — they set their own password, and the role you choose is `
+    + 'applied when they sign up. (Deploy the create-teacher function once if you would '
+    + 'rather create logins directly.)',
+  )
+}
 
-  // Still set explicitly: handle_new_user only honours a role it recognises, and
-  // mustWrite now makes a failure here loud instead of silent.
-  await updateProfileRole(newId, role)
+export interface PendingInvite {
+  id: string
+  email: string
+  role: string
+  full_name: string | null
+  invited_by: string | null
+  created_at: string
+  expires_at: string
+  expired: boolean
+}
 
-  // If the project still requires email confirmation, the teacher can't sign in
-  // with just the password — tell the principal exactly what to switch off.
-  if (!su.session && !su.user?.email_confirmed_at) {
-    throw new Error(
-      'Login created, but this Supabase project requires email confirmation, so the teacher can’t sign in yet. ' +
-      'In Supabase → Authentication → Providers → Email, turn OFF “Confirm email” (one-time), then this login will work. ' +
-      '(Or deploy the create-teacher function once and it’s handled automatically.)',
-    )
-  }
-  return { id: newId, email, role }
+/**
+ * Invite somebody to this school with a role of your choosing.
+ *
+ * The role is stored on the invitation, not sent by the browser at signup — that
+ * is the whole point. When they sign up with this address the trigger reads the
+ * role from the invitation row an owner or principal created.
+ *
+ * An owner cannot be invited: the school's top privilege must not sit behind an
+ * email address. Promote an existing account on this screen instead.
+ */
+export async function inviteUser(
+  email: string, role: string, fullName?: string,
+): Promise<{ id: string; email: string; role: string; expires_at: string }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_invite_user', {
+    p_email: email.trim(), p_role: role,
+    p_full_name: fullName?.trim() || null,
+  })
+  if (error) throw new Error(error.message)
+  return data as { id: string; email: string; role: string; expires_at: string }
+}
+
+export async function listPendingInvites(): Promise<PendingInvite[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_pending_invites')
+  if (error) throw new Error(error.message)
+  return (data ?? []) as PendingInvite[]
+}
+
+export async function revokeInvite(id: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_revoke_invite', { p_id: id })
+  if (error) throw new Error(error.message)
 }
 
 /**

@@ -241,9 +241,12 @@ select 'the observer role (0059)',
                      and p.prosrc like '%has_role(%'
                      -- fn_checkin_display gates on has_role on purpose: a live
                      -- check-in token is a key to the gate, not a read.
+                     -- fn_pending_invites likewise: who is about to get a
+                     -- login is access management, not a school record.
                      and p.proname not in ('fn_may_manage_class',
                                            'fn_may_write_school_file',
-                                           'fn_checkin_display', 'may_view'))
+                                           'fn_checkin_display',
+                                           'fn_pending_invites', 'may_view'))
                  -- THE ONE THAT MATTERS. An observer must not be able to write.
                  -- A write policy consulting may_view would let one change a
                  -- child's record, and RLS would let it through with nothing
@@ -434,6 +437,28 @@ select 'operator billing (0064)',
                                 and p.proname='fn_platform_schools'
                                 and pg_get_function_result(p.oid) like '%outstanding%')
        then 'PASS' else 'FAIL — run migrations/0064_operator_billing.sql' end
+
+union all
+select 'invite-only provisioning (0065)',
+       case when exists (select 1 from information_schema.tables
+                          where table_schema='public' and table_name='user_invites')
+                 and (select count(*) from pg_proc p
+                       join pg_namespace n on n.oid = p.pronamespace
+                       where n.nspname='public' and p.proname in
+                         ('fn_invite_user','fn_revoke_invite','fn_pending_invites')) = 3
+                 -- THE ONE THAT MATTERS, and it is a NEGATIVE. handle_new_user
+                 -- has existed since 0011; its presence proves nothing. What
+                 -- 0065 changed is that it no longer believes a role the BROWSER
+                 -- sent — which is what let any parent sign up again as
+                 -- 'principal' and get it, active.
+                 and exists (select 1 from pg_proc p
+                              join pg_namespace n on n.oid = p.pronamespace
+                              where n.nspname='public' and p.proname='handle_new_user'
+                                and p.prosrc like '%raw_app_meta_data%'
+                                and p.prosrc like '%user_invites%'
+                                and strpos(p.prosrc, 'raw_user_meta_data->>''role''') = 0
+                                and strpos(p.prosrc, 'raw_user_meta_data->>''school_id''') = 0)
+       then 'PASS' else 'FAIL — run migrations/0065_invite_only_provisioning.sql' end
 
 union all
 select 'price plans loaded',

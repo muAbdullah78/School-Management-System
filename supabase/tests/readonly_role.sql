@@ -393,43 +393,58 @@ select pg_temp.ok(
 -- =============================================================================
 -- 5. An invite with no role lands INACTIVE
 -- =============================================================================
+-- 0065 moved these two assertions onto a stronger property than 0059 could
+-- state. 0059 asked "does a half-finished invite land INACTIVE?", which
+-- presumed the invite was believed at all. It should not have been: the
+-- metadata carrying it is written by the browser at auth.signUp, so
+-- `role: 'principal'` in that field was a self-service promotion. 0065 stopped
+-- reading it, and the correct assertion is now that a signup carrying school
+-- and role in USER metadata produces NOTHING — and that the trusted path,
+-- app_metadata, produces exactly what it asked for.
 do $invites$
 declare
   v_a uuid := (select id from public.schools where name = 'Obs A');
-  v_no_role uuid := '00000000-0000-0000-0000-00000000c005';
-  v_with    uuid := '00000000-0000-0000-0000-00000000c006';
+  v_forged  uuid := '00000000-0000-0000-0000-00000000c005';
+  v_trusted uuid := '00000000-0000-0000-0000-00000000c006';
 begin
-  -- No role in the metadata. Before 0059 this landed ACTIVE with the fallback
-  -- role, so a half-finished invite silently acquired sight of everything.
+  -- The attack: a browser signUp naming a school and asking for a role.
   insert into auth.users (id, email, raw_user_meta_data)
-  values (v_no_role, 'norole@obs.test',
-          jsonb_build_object('school_id', v_a::text, 'full_name', 'No Role Invite'));
-
-  insert into auth.users (id, email, raw_user_meta_data)
-  values (v_with, 'withrole@obs.test',
-          jsonb_build_object('school_id', v_a::text, 'full_name', 'Clerk Invite',
+  values (v_forged, 'forged@obs.test',
+          jsonb_build_object('school_id', v_a::text, 'full_name', 'Forged Clerk',
                              'role', 'admin_clerk'));
+
+  -- The trusted path: only the service role can write app_metadata, so this is
+  -- what an Edge Function's createUser call looks like.
+  insert into auth.users (id, email, raw_user_meta_data, raw_app_meta_data)
+  values (v_trusted, 'trusted@obs.test',
+          jsonb_build_object('full_name', 'Clerk Invite'),
+          jsonb_build_object('school_id', v_a::text, 'role', 'admin_clerk'));
 end;
 $invites$;
 
 select pg_temp.ok(
-  (select not active and role::text = 'readonly' from public.profiles
-    where id = '00000000-0000-0000-0000-00000000c005'),
-  '30. an invite with no role is created INACTIVE — inert until the owner gives '
-  || 'it a role, rather than quietly acquiring the fallback and full read access');
+  not exists (select 1 from public.profiles
+               where id = '00000000-0000-0000-0000-00000000c005'),
+  '30. a signup that names its own school AND role in USER metadata gets NO '
+  || 'profile at all — that field is written by the browser, so believing it let '
+  || 'any parent make themselves principal');
 
 select pg_temp.ok(
   (select active and role::text = 'admin_clerk' from public.profiles
     where id = '00000000-0000-0000-0000-00000000c006'),
-  '31. an invite that names its role is created active, with that role');
+  '31. while the same request through APP metadata — which only the service role '
+  || 'can write — is created active with exactly that role');
 
--- Metadata is client-supplied. An unrecognised role must not be cast — that
--- would fail the signup itself — and must not be honoured either.
+-- The whitelist still earns its keep, but its job changed. It is no longer the
+-- security boundary — app_metadata is — so what it now defends against is an
+-- Edge Function TYPO: an unrecognised role must not be cast (that would fail the
+-- signup itself) and must not be honoured either.
 do $bad$
 declare v_a uuid := (select id from public.schools where name = 'Obs A');
 begin
-  insert into auth.users (id, email, raw_user_meta_data)
+  insert into auth.users (id, email, raw_user_meta_data, raw_app_meta_data)
   values ('00000000-0000-0000-0000-00000000c007', 'bad@obs.test',
+          '{}'::jsonb,
           jsonb_build_object('school_id', v_a::text, 'role', 'superuser'));
 end;
 $bad$;
@@ -437,8 +452,9 @@ $bad$;
 select pg_temp.ok(
   (select not active and role::text = 'readonly' from public.profiles
     where id = '00000000-0000-0000-0000-00000000c007'),
-  '32. an unrecognised role in client-supplied metadata falls through to the safe '
-  || 'default AND stays inactive — it neither crashes the signup nor is honoured');
+  '32. an unrecognised role on the TRUSTED path falls through to the safe default '
+  || 'AND stays inactive — a typo in an Edge Function neither crashes the signup '
+  || 'nor grants anything');
 
 -- =============================================================================
 -- 6. Nothing crosses a school boundary, in both directions

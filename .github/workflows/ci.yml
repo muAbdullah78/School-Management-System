@@ -58,7 +58,13 @@ jobs:
           create table if not exists auth.users (
             id uuid primary key,
             email text,
-            raw_user_meta_data jsonb default '{}'::jsonb
+            raw_user_meta_data jsonb default '{}'::jsonb,
+            -- app_metadata. Real GoTrue has always had this column; the stub
+            -- did not, and 0065 moved every authorisation decision onto it
+            -- (only the service role can write it, so a browser signUp cannot
+            -- forge a role). Without it here, handle_new_user raises
+            -- "record new has no field raw_app_meta_data" on every signup.
+            raw_app_meta_data jsonb default '{}'::jsonb
           );
           create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
           do $$ begin
@@ -103,7 +109,8 @@ jobs:
           PGDATABASE=bundlecheck psql -v ON_ERROR_STOP=1 -q <<'SQL'
           create schema if not exists auth;
           create table if not exists auth.users (
-            id uuid primary key, email text, raw_user_meta_data jsonb default '{}'::jsonb);
+            id uuid primary key, email text, raw_user_meta_data jsonb default '{}'::jsonb,
+            raw_app_meta_data jsonb default '{}'::jsonb);
           create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
           do $$ begin
             if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
@@ -193,7 +200,8 @@ jobs:
           psql -v ON_ERROR_STOP=1 -q <<'SQL'
           create schema if not exists auth;
           create table if not exists auth.users (
-            id uuid primary key, email text, raw_user_meta_data jsonb default '{}'::jsonb);
+            id uuid primary key, email text, raw_user_meta_data jsonb default '{}'::jsonb,
+            raw_app_meta_data jsonb default '{}'::jsonb);
           create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
           do $$ begin
             if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
@@ -1006,6 +1014,52 @@ jobs:
         # still read no student, no fee invoice and no receipt. Adding the
         # operator's books must not widen the operator's reach.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/operator_billing.sql
+
+      - name: Provisioning — could a parent make themselves principal?
+        # They could. handle_new_user() read a new login's SCHOOL and ROLE from
+        # new.raw_user_meta_data, which is whatever the browser passes to
+        # auth.signUp({options:{data:{...}}}) with the PUBLIC anon key.
+        # 'principal' and 'accountant' were both on its accepted-role list, and
+        # an accepted role was created ACTIVE. Two strangers signed up naming a
+        # victim school and became an active accountant and an active principal
+        # in it, both passing has_role() and may_view().
+        #
+        # Every signed-in user already knows their own school_id, so the floor on
+        # this was: any parent, teacher or clerk could create a second login and
+        # become PRINCIPAL of their own school. Reaching another school needed
+        # only its UUID, which leaks through a screenshot or a support chat.
+        #
+        # The whitelist was not the bug. 0059 added it and it correctly stopped
+        # an UNRECOGNISED role landing active. The bug was that a RECOGNISED role
+        # was believed at all, because the thing supplying it is the attacker.
+        #
+        # Assertion 3 tries EVERY role on that old list, not just 'principal' —
+        # the defect was found on 'accountant' first, and a gate that holds for
+        # one and leaks for another is not a gate. Assertion 5 is the distinction
+        # that matters: the LOGIN is still created, because refusing signups is
+        # not the fix; what is refused is the login deciding what it may do.
+        #
+        # Assertions 22-24 are a flaw found in the FIX rather than the original
+        # code. The first trigger took "order by created_at desc limit 1" among
+        # matching invitations, which is arbitrary when two rows share a
+        # timestamp — and both do when written in one transaction, since now() is
+        # the transaction's start. Two schools inviting one address is ordinary
+        # in Pakistan (a teacher at both), and a profile carries ONE school_id,
+        # so guessing puts that person inside one school's pupil records while
+        # the other believes they are in. It now refuses and leaves both pending.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/provisioning.sql
+
+      - name: No authorisation is decided from client-controlled metadata
+        # The structural half of the fix above. `raw_user_meta_data->>'role'`
+        # reads exactly like `raw_app_meta_data->>'role'`, so the fix is one
+        # plausible-looking line away from being undone.
+        #
+        # Checks three things, because the obvious check alone is not enough: no
+        # function reads a non-display key from the untrusted field; AND
+        # handle_new_user still reads the trusted field; AND it still consults
+        # user_invites. Without the last two, deleting the function body
+        # entirely would report healthy.
+        run: python3 supabase/check-metadata-trust.py
 
       - name: Every suite on disk has a step above
         # The gap this closes has already happened twice in this repo, in two

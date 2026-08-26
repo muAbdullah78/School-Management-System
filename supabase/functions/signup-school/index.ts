@@ -63,7 +63,15 @@ Deno.serve(async (req) => {
       email,
       password,
       email_confirm: true,
-      user_metadata: { full_name: fullName, school_id: schoolId },
+      // full_name only. It is a display string and a forged one is cosmetic.
+      user_metadata: { full_name: fullName },
+      // school_id goes in APP metadata, which only the service role can write.
+      // handle_new_user reads authorisation from here and nowhere else since
+      // 0065: a browser signUp can set user_metadata, so a role or a school_id
+      // there was a self-service promotion (a parent could make themselves
+      // principal). No role is sent — the school has no profiles yet, so the
+      // trigger makes this first account its owner.
+      app_metadata: { school_id: schoolId, provisioned_by: 'signup-school' },
     })
 
     if (createErr || !created.user) {

@@ -124,8 +124,13 @@ def main() -> int:
            -- handing an observer a live check-in token is not letting them look
            -- at the school's records, it is giving them a key to the gate. Same
            -- category as the other two — looks like a read, authorises something.
+           -- fn_pending_invites is the same category: a list of email
+           -- addresses that are about to become logins is access management, not
+           -- a read of the school's records, and an observer has no business in
+           -- it. 0065 added it deliberately on has_role.
            and p.proname not in ('fn_may_manage_class', 'fn_may_write_school_file',
-                                 'fn_checkin_display', 'may_view')
+                                 'fn_checkin_display', 'fn_pending_invites',
+                                 'may_view')
          order by 1
     """)
     if stragglers:

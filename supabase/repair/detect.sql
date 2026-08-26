@@ -179,7 +179,9 @@ with sig(migration, object, present) as (values
               and prosrc like '%has_role(%'
               -- fn_checkin_display gates on has_role on purpose: a live
               -- check-in token is a key to the gate, not a read of the records.
+              -- fn_pending_invites: access management, not a school record.
               and proname not in ('fn_may_manage_class', 'fn_may_write_school_file',
+                                  'fn_pending_invites',
                                   'fn_checkin_display', 'may_view')))),
   -- 0061 REWROTE fn_issue_certificate, which has existed since 0021. Its
   -- presence proves nothing at all, and neither does the new table: the
@@ -255,7 +257,20 @@ with sig(migration, object, present) as (values
                       and pg_get_function_result(oid) like '%outstanding%')
          and exists (select 1 from information_schema.tables
                       where table_schema = 'public'
-                        and table_name = 'platform_payments')))
+                        and table_name = 'platform_payments'))),
+  -- 0065's signature is a NEGATIVE plus two positives. handle_new_user dates
+  -- from 0011, so "does it exist" proves nothing; what must be true is that it
+  -- no longer reads a ROLE or a SCHOOL from the field the browser writes, and
+  -- that both trusted channels are wired. A database missing 0065 lets any
+  -- parent sign up again as 'principal'.
+  ('0065_invite_only_provisioning', 'signup cannot choose its own role',
+     (select exists (select 1 from pg_proc where proname = 'handle_new_user'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%raw_app_meta_data%'
+                      and prosrc like '%user_invites%'
+                      and strpos(prosrc, 'raw_user_meta_data->>''role''') = 0)
+         and exists (select 1 from information_schema.tables
+                      where table_schema = 'public' and table_name = 'user_invites')))
 )
 select migration,
        object                                   as looked_for,
