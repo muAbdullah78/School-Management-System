@@ -362,7 +362,20 @@ with sig(migration, object, present) as (values
          and exists (select 1 from pg_proc p
                       join pg_namespace n on n.oid = p.pronamespace
                       where n.nspname = 'public' and p.proname = 'fn_signup_school'
-                        and has_function_privilege('service_role', p.oid, 'execute'))))
+                        and has_function_privilege('service_role', p.oid, 'execute')))),
+  -- 0072 scoped two lookups that searched every school. Both functions long
+  -- predate it — fn_admit_student from 0004, fn_import_students from 0012 — so
+  -- presence proves nothing and the signature has to be the predicate inside.
+  -- Without it, the first admission at any new school attaches another school's
+  -- fee head to the invoice, and the go-live importer refuses rows for a class
+  -- the school owns because another school registered the same name first.
+  ('0072_name_lookups_scoped',  'class names and fee-head types are per-school',
+     (select exists (select 1 from pg_proc where proname = 'fn_admit_student'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%type = ''admission'' and active and school_id = public.current_school_id()%')
+         and exists (select 1 from pg_proc where proname = 'fn_import_students'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%active and school_id = public.current_school_id() and lower(btrim(name))%')))
 )
 select migration,
        object                                   as looked_for,

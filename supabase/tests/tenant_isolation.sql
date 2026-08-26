@@ -817,6 +817,121 @@ begin
   raise notice 'ok: a definer function refuses another school''s family id and invoice';
 end $definer_idor$;
 
+-- =============================================================================
+-- TEST 7 — A NAME OR A TYPE MEANS ONE IN *THIS* SCHOOL.
+--
+-- The fn_rollover shape, which this project has now hit three times: a SECURITY
+-- DEFINER function resolving a row by NAME or TYPE with no school predicate.
+-- fn_rollover chose "the next class up" that way and a school's year-end
+-- rollover promoted its children into another school's classroom.
+--
+-- Neither of the two guards catches this shape. check-definer-queries.py hunts
+-- an inequality between two table columns; check-definer-idor.py needs a
+-- caller-supplied id. Here the name arrives as text and the type is a literal,
+-- so nothing keys on an id at all. Both cases below were found by a third sweep
+-- and proven before 0072 was written.
+--
+-- The fixture deliberately gives School B the LOWER level_order and sort_order,
+-- so an unscoped `order by ... limit 1` provably prefers B's row. The shared
+-- fixture above gives both schools 'Class 1' at level_order 1, which is a tie
+-- and therefore proves nothing either way — a test whose outcome depends on
+-- which row the planner happens to return first is not a test.
+-- =============================================================================
+do $name_lookups$
+declare
+  a_school uuid := (select v from public._test_ids where k='a_school');
+  b_school uuid := (select v from public._test_ids where k='b_school');
+  a_sess   uuid := (select v from public._test_ids where k='a_sess');
+  a_owner  uuid := (select v from public._test_ids where k='a_owner');
+  v_acls uuid; v_bcls uuid; v_bhead uuid;
+  v_res jsonb; v_row jsonb;
+  v_kid uuid; v_used_head uuid; v_head_school uuid;
+  v_landed uuid;
+  failures text := '';
+begin
+  perform set_config('test.uid', '', false);
+
+  -- A class name both schools use, with School B's registered lower so an
+  -- unscoped `order by level_order limit 1` picks B's.
+  insert into public.classes (name, level_order, active, school_id)
+    values ('Class 9 Collide', 1, true, b_school) returning id into v_bcls;
+  insert into public.classes (name, level_order, active, school_id)
+    values ('Class 9 Collide', 9, true, a_school) returning id into v_acls;
+  insert into public.sections (class_id, name, school_id)
+    values (v_acls, 'A', a_school);
+
+  -- School B owns the only 'admission' fee head. School A has none, which is
+  -- every school's state on its first day.
+  insert into public.fee_heads (name, type, is_recurring, sort_order, active, school_id)
+    values ('Admission Fee', 'admission', false, 1, true, b_school)
+    returning id into v_bhead;
+
+  perform set_config('test.uid', a_owner::text, false);
+
+  -- --- 1. The go-live importer -------------------------------------------
+  -- Not a leak: a later assert_own catches the foreign class. Catching it is the
+  -- defect. School A HAS a 'Class 9 Collide', and its own row was refused with a
+  -- message about another school's data:
+  --     {"status":"error","message":"classes not found in this school"}
+  -- Every Pakistani school names its classes the same things, so at any real
+  -- number of customers this refuses most rows for most schools — and the
+  -- importer is how every new school's roster arrives.
+  v_res := public.fn_import_students(
+    a_sess,
+    jsonb_build_array(jsonb_build_object(
+      'full_name', 'Collide Import', 'gr_no', 'COL-1', 'class', 'Class 9 Collide')),
+    false);
+  v_row := v_res->'rows'->0;
+
+  if v_row->>'status' <> 'created' then
+    failures := failures
+      || '  the importer refused a class this school owns: ' || coalesce(v_row->>'message','?')
+      || chr(10);
+  else
+    select e.class_id into v_landed
+      from public.enrollments e join public.students s on s.id = e.student_id
+     where s.gr_no = 'COL-1' and s.school_id = a_school;
+    if v_landed = v_bcls then
+      failures := failures || '  the importer enrolled a child in ANOTHER SCHOOL''S class'
+        || chr(10);
+    elsif v_landed is distinct from v_acls then
+      failures := failures || '  the importer used neither school''s class (' 
+        || coalesce(v_landed::text,'null') || ')' || chr(10);
+    end if;
+  end if;
+
+  -- --- 2. The admission fee head ------------------------------------------
+  -- Proven before 0072: the invoice line's own school_id was School A's, while
+  -- its fee_head_id pointed at School B's head. Any report joining the two then
+  -- shows a head this school does not own, or nothing at all under RLS — so the
+  -- admission fee vanishes from head-wise dues.
+  v_res := public.fn_admit_student(jsonb_build_object(
+    'full_name', 'Collide Admit', 'gr_no', 'COL-2',
+    'session_id', a_sess, 'class_id', v_acls,
+    'admission_fee', jsonb_build_object('charged', true, 'amount', 5000)));
+
+  select il.fee_head_id, fh.school_id into v_used_head, v_head_school
+    from public.invoice_lines il
+    join public.fee_heads fh on fh.id = il.fee_head_id
+   where il.description = 'Admission Fee' and il.school_id = a_school
+   limit 1;
+
+  if v_used_head is null then
+    failures := failures || '  no admission-fee line was written, so this proves nothing'
+      || chr(10);
+  elsif v_used_head = v_bhead or v_head_school = b_school then
+    failures := failures
+      || '  the admission fee line references ANOTHER SCHOOL''S fee head' || chr(10);
+  elsif v_head_school is distinct from a_school then
+    failures := failures || '  the admission fee head belongs to neither school' || chr(10);
+  end if;
+
+  if failures <> '' then
+    raise exception E'A NAME OR TYPE LOOKUP CROSSED SCHOOLS:\n%', failures;
+  end if;
+  raise notice 'ok: class names and fee-head types resolve within one school';
+end $name_lookups$;
+
 drop table if exists public._test_ids;
 select 'TENANT ISOLATION: ALL TESTS PASSED' as result;
 

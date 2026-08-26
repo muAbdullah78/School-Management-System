@@ -602,6 +602,23 @@ select 'unauthenticated callers can run nothing (0071)',
             || ' functions still open)' end
 
 union all
+-- 0072. Two lookups resolved a row by NAME or TYPE across every school: the
+-- admission fee head, and the importer's class-by-name. The first attached
+-- another school's fee head to a new school's very first admission invoice; the
+-- second made the go-live importer refuse rows for a class the school owns,
+-- because another school had registered the same name first. Every Pakistani
+-- school calls its classes the same things, so that bites at any real number of
+-- customers.
+select 'class names and fee heads are per-school (0072)',
+       case when exists (select 1 from pg_proc where proname = 'fn_admit_student'
+                          and pronamespace = 'public'::regnamespace
+                          and prosrc like '%type = ''admission'' and active and school_id = public.current_school_id()%')
+             and exists (select 1 from pg_proc where proname = 'fn_import_students'
+                          and pronamespace = 'public'::regnamespace
+                          and prosrc like '%active and school_id = public.current_school_id() and lower(btrim(name))%')
+       then 'PASS' else 'FAIL — re-run bundle 7' end
+
+union all
 -- The row that answers "how far has this database actually got?" (0069)
 --
 -- Until bundle 7 nothing recorded it, and the two times it mattered the answer
