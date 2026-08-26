@@ -18,6 +18,7 @@ import { BillingSettings } from './BillingSettings'
 import { LifecycleDialog } from './Lifecycle'
 import { OffboardDialog } from './Offboard'
 import { NewSchoolDialog } from './NewSchool'
+import { Business } from './Business'
 import { paymentClaims, dueSoon, platformSettings } from '@/lib/platform'
 
 const STATUS_STYLE: Record<PlatformSchool['status'], string> = {
@@ -30,12 +31,13 @@ const STATUS_STYLE: Record<PlatformSchool['status'], string> = {
 
 const FIELD = 'rounded border border-slate-300 px-2 py-1.5 text-sm'
 
-type Tab = 'schools' | 'renewals' | 'claims' | 'billing'
+type Tab = 'schools' | 'renewals' | 'claims' | 'business' | 'billing'
 
 const TAB_TITLE: Record<Tab, string> = {
   schools: 'Schools',
   renewals: 'Renewals',
   claims: 'Payments reported',
+  business: 'The business',
   billing: 'Our billing details',
 }
 
@@ -204,6 +206,7 @@ export function PlatformPage() {
             badge={renewalCount.data?.length} />
           <TabButton now={tab} me="claims" set={setTab} label="Payments reported"
             badge={claimCount.data?.length} />
+          <TabButton now={tab} me="business" set={setTab} label="The business" />
           <TabButton now={tab} me="billing" set={setTab} label="Our billing details"
             warn={settingsIncomplete} />
         </nav>
@@ -215,6 +218,7 @@ export function PlatformPage() {
           }} />
         )}
         {tab === 'claims' && <Claims />}
+        {tab === 'business' && <Business />}
         {tab === 'billing' && <BillingSettings />}
 
         {tab === 'schools' && <>
@@ -578,7 +582,10 @@ function SchoolActions({
     && school.student_count > Math.ceil(chosen.student_limit * 1.1)
 
   return (
-    <div className="flex shrink-0 flex-col items-end gap-2">
+    // Full width and left-aligned on a phone, right-aligned beside the school
+    // row from `sm` up. Fifty schools means calls made in a car park, and the
+    // controls that renew a licence cannot be the ones that fall off the screen.
+    <div className="flex w-full shrink-0 flex-col items-start gap-2 sm:w-auto sm:items-end">
       <div className="flex flex-wrap items-center gap-2">
         <select value={plan} onChange={(e) => setPlan(e.target.value)} className={FIELD}>
           {plans.map((p) => <option key={p.code} value={p.code}>{p.code}</option>)}
@@ -663,7 +670,7 @@ function PaymentDialog({ school, busy, onClose, onSave }: {
   const settles = n + t
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center">
       <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-lg">
         <h2 className="text-base font-semibold text-slate-800">Record a payment</h2>
         <p className="mt-1 text-sm text-slate-600">
@@ -850,7 +857,7 @@ function VisitDialog({ school, onClose, onError }: {
   })
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center">
       <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-lg">
         <h2 className="text-base font-semibold text-slate-800">
           Open {school.school_name}

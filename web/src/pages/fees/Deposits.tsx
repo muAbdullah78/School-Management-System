@@ -251,7 +251,7 @@ function RefundDialog({ row, onClose, onDone }: {
   })
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center">
       <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-lg">
         <div className="text-base font-semibold text-slate-800">
           Refund {row.full_name}&rsquo;s deposit
@@ -358,7 +358,7 @@ function ChargeDialog({ heads, onClose, onDone }: {
   })
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center">
       <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-lg">
         <div className="text-base font-semibold text-slate-800">Charge a deposit</div>
         <p className="mt-1 text-xs text-slate-500">

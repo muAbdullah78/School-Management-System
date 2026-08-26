@@ -761,6 +761,26 @@ select 'a school can be suspended, archived and deleted (0079, 0080)',
          else 'PASS' end
 
 union all
+-- 0081. MRR, churn, trial conversion, and the growth chart.
+--
+-- The one worth noting is student_count_snapshots: 0026 has written a row per
+-- school per recount since it shipped, 0067 made that automatic on every
+-- admission, and until 0081 nothing had ever read the table.
+select 'the business can say what it is worth (0081)',
+       case
+         when not exists (select 1 from pg_proc where proname='fn_platform_metrics'
+                           and pronamespace='public'::regnamespace)
+           then 'FAIL — re-run bundle 7'
+         when not exists (select 1 from pg_proc where proname='fn__school_mrr'
+                           and pronamespace='public'::regnamespace)
+           -- Without it MRR reads zero on a screen that looks like it is working.
+           then 'FAIL — MRR would report zero for every school; re-run bundle 7'
+         when not exists (select 1 from pg_proc where proname='fn_platform_growth'
+                           and pronamespace='public'::regnamespace)
+           then 'FAIL — the growth chart has nothing to read; re-run bundle 7'
+         else 'PASS' end
+
+union all
 -- The row that answers "how far has this database actually got?" (0069)
 --
 -- Until bundle 7 nothing recorded it, and the two times it mattered the answer

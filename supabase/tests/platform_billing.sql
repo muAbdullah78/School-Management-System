@@ -849,4 +849,109 @@ begin
     '89b and does not count voided paperwork or credit notes as invoices');
 end $queue$;
 
+-- =============================================================================
+-- 90-99  WHAT THE BUSINESS IS WORTH (0081)
+--
+-- The figure to watch is MRR. Computed from the price LIST it would have been
+-- flattering nonsense — Alpha is on a discount and Gamma was never invoiced at
+-- all — so it is computed from what each school was actually charged, and these
+-- assertions are what stop it drifting back.
+-- =============================================================================
+do $metrics$
+declare
+  a uuid := (select v from _bill where k='a');
+  b uuid := (select v from _bill where k='b');
+  g uuid := (select v from _bill where k='g');
+  m jsonb; v_expected numeric; n integer;
+begin
+  perform public._bact('ops');
+  m := public.fn_platform_metrics();
+
+  -- Computed independently, the long way, from the documents themselves.
+  select coalesce(sum(round(i.amount / greatest(i.months, 1), 2)), 0)
+    into v_expected
+    from public.schools s
+    join public.platform_invoices i on i.school_id = s.id
+   where s.archived_at is null
+     and public.fn_effective_status(s.id) in ('active', 'grace')
+     and i.kind = 'invoice' and i.voided_at is null
+     and current_date between i.period_start and i.period_end
+     -- Only the newest document per school covering today, which is what
+     -- fn__school_mrr picks.
+     and i.id = (select i2.id from public.platform_invoices i2
+                  where i2.school_id = s.id and i2.kind = 'invoice'
+                    and i2.voided_at is null
+                    and current_date between i2.period_start and i2.period_end
+                  order by i2.issued_on desc, i2.serial desc limit 1);
+  perform pg_temp.ok(pg_temp.eq((m->'recurring'->>'mrr')::numeric, v_expected),
+    '90 MRR is the monthly equivalent of what each live school was actually charged');
+  perform pg_temp.ok(pg_temp.eq((m->'recurring'->>'arr')::numeric,
+                                (m->'recurring'->>'mrr')::numeric * 12),
+    '90b ARR is twelve times it');
+
+  -- Gamma holds a licence and has an invoice that ran out 35 days ago, so
+  -- nothing covers today: it contributes zero and is COUNTED, because a silent
+  -- zero is its own lie.
+  perform pg_temp.ok((m->'unbilled'->>'schools')::int >= 1
+                 and m->'unbilled'->>'note' like '%no invoice covers%',
+    '91 a live school with no invoice covering today is reported, not hidden');
+
+  -- The per-plan breakdown must add up to the headline. fn_platform_revenue has
+  -- returned by_plan since 0064 and nothing rendered it until 0081, so nothing
+  -- had ever checked it either.
+  select coalesce(sum((x->>'mrr')::numeric), 0) into v_expected
+    from jsonb_array_elements(m->'by_plan') x;
+  perform pg_temp.ok(pg_temp.eq(v_expected, (m->'recurring'->>'mrr')::numeric),
+    '92 the per-plan breakdown adds up to MRR');
+  perform pg_temp.ok(jsonb_array_length(m->'by_plan')
+                       = (select count(*) from public.plans),
+    '92b every plan has a row, including the ones nobody is on');
+
+  -- An archived school is not a customer and must not be counted as one.
+  perform public.fn_platform_archive_school(g, 'metrics test');
+  m := public.fn_platform_metrics();
+  perform pg_temp.ok((m->'counts'->>'archived')::int >= 1,
+    '93 an archived school is counted as archived');
+  perform pg_temp.ok(not exists (
+    select 1 from jsonb_array_elements(m->'by_plan') x
+     where (x->>'plan_code') = 'starter'
+       and (x->>'schools')::int > (select count(*) from public.schools s
+                                    join public.subscriptions sub on sub.school_id = s.id
+                                   where s.archived_at is null
+                                     and sub.plan_code = 'starter')),
+    '93b and not inside any plan''s school count');
+  perform public.fn_platform_unarchive_school(g);
+
+  -- The two rates. Both must be able to say "we do not know" — a confident zero
+  -- churn on a database with no history is the most misleading number the
+  -- console could show.
+  perform pg_temp.ok((m->'churn'->>'measurable') in ('true', 'false'),
+    '94 churn either reports a rate or says it cannot');
+  perform pg_temp.ok((m->'conversion'->>'measurable') in ('true', 'false'),
+    '94b and so does conversion');
+  perform pg_temp.ok(
+    case when (m->'churn'->>'measurable')::boolean
+         then m->'churn'->>'basis' is not null
+         else m->'churn'->>'why' is not null end,
+    '95 and whichever it is, it says what it measured or why it could not');
+
+  -- The snapshots table, read for the first time since 0026 wrote it.
+  select count(*) into n from public.fn_platform_growth(12);
+  perform pg_temp.ok(n >= 1,
+    '96 the growth chart reads student_count_snapshots');
+  perform pg_temp.ok((select students >= 0 and schools >= 1
+                        from public.fn_platform_growth(12)
+                       order by month desc limit 1),
+    '96b and returns a school count for the current month');
+
+  -- A school user reaches none of it.
+  perform public._bact('a_owner');
+  set local role authenticated;
+  perform pg_temp.ok(pg_temp.refused('select public.fn_platform_metrics()'),
+    '97 a school owner cannot read the vendor''s revenue');
+  perform pg_temp.ok(pg_temp.refused('select public.fn_platform_growth(12)'),
+    '97b nor the growth of every school on the platform');
+  reset role;
+end $metrics$;
+
 rollback;

@@ -234,7 +234,7 @@ function RemindDialog({ row, onClose }: { row: DueSoonRow; onClose: () => void }
   const link = m && m.phone_intl ? whatsappLink(m.phone_intl, m.text) : null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center">
       <div className="w-full max-w-xl rounded-lg bg-white p-4 shadow-lg">
         <div className="flex items-start justify-between gap-3">
           <div>

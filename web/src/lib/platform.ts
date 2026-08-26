@@ -1148,3 +1148,80 @@ export async function createSchoolOwner(input: {
     + 'signup page and let them create their own school instead.',
   )
 }
+
+// ===========================================================================
+// Phase 5 — what the business is worth. Migration 0081.
+// ===========================================================================
+
+/**
+ * MRR, ARR, churn, trial conversion and the per-plan breakdown.
+ *
+ * Every block carries a `basis` or a `note` saying what it measures. A metric on
+ * a dashboard with no definition becomes whatever the person looking at it
+ * assumes, and two people then argue about a number they define differently.
+ *
+ * `measurable: false` is a real answer and the UI must render it as one. Churn
+ * on a database with no dated history is unknown, not zero, and a confident zero
+ * is the most misleading thing this screen could show.
+ */
+export interface PlatformMetrics {
+  as_at: string
+  recurring: {
+    mrr: number; arr: number; paying_schools: number; in_grace: number
+    /** Average revenue per PAYING school. Dividing by trials and locked accounts
+     *  makes the figure drop every time a demo is set up. */
+    arps: number
+    basis: string
+  }
+  /** Live schools with licence time no invoice covers. They add nothing to MRR
+   *  because nothing was billed — and the count is reported so the zero is
+   *  visible rather than silent. */
+  unbilled: { schools: number; note: string }
+  counts: {
+    paying: number; in_grace: number; on_trial: number
+    locked: number; cancelled: number; archived: number
+    live_total: number; students_at_paying_schools: number
+  }
+  conversion:
+    | { measurable: false; why: string }
+    | { measurable: true; trials_finished: number; converted: number; rate_pct: number; basis: string }
+  churn:
+    | { measurable: false; why: string }
+    | { measurable: true; lost_12m: number; rate_pct: number; history_starts: string; basis: string }
+  /** Returned by fn_platform_revenue since 0064 and rendered nowhere until now. */
+  by_plan: {
+    plan_code: string; plan_name: string; schools: number
+    students: number; mrr: number
+    /** What they WOULD contribute at list price. The gap is what has been given
+     *  away, which is the figure 0064 was written to make visible. */
+    list_mrr: number
+  }[]
+}
+
+export async function platformMetrics(asAt?: string): Promise<PlatformMetrics> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_metrics', { p_as_at: asAt ?? null })
+  if (error) throw new Error(error.message)
+  return data as PlatformMetrics
+}
+
+/**
+ * One row per month: schools, and the pupils inside them.
+ *
+ * Read from student_count_snapshots, which 0026 has written on every recount
+ * since it shipped and which nothing had ever read. It is a daily record of the
+ * customers' growth, which is the vendor's own growth.
+ */
+export interface GrowthPoint {
+  month: string
+  schools: number
+  students: number
+  avg_per_school: number
+}
+
+export async function platformGrowth(months = 12): Promise<GrowthPoint[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_growth', { p_months: months })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as GrowthPoint[]
+}

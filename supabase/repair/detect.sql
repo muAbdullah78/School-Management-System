@@ -487,7 +487,17 @@ with sig(migration, object, present) as (values
          and exists (select 1 from pg_proc where proname = 'fn_platform_purge_school'
                       and pronamespace = 'public'::regnamespace)
          and (select confdeltype from pg_constraint
-               where conname = 'platform_invoices_school_id_fkey') = 'n'))
+               where conname = 'platform_invoices_school_id_fkey') = 'n')),
+  -- 0081. What the business is worth. fn__school_mrr is in the signature rather
+  -- than fn_platform_metrics alone, because without it MRR falls back to nothing
+  -- and the screen shows a confident zero.
+  ('0081_platform_metrics',     'MRR, churn, and the growth chart',
+     (select exists (select 1 from pg_proc where proname = 'fn_platform_metrics'
+                      and pronamespace = 'public'::regnamespace)
+         and exists (select 1 from pg_proc where proname = 'fn__school_mrr'
+                      and pronamespace = 'public'::regnamespace)
+         and exists (select 1 from pg_proc where proname = 'fn_platform_growth'
+                      and pronamespace = 'public'::regnamespace)))
 )
 select migration,
        object                                   as looked_for,
