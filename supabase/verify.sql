@@ -527,19 +527,32 @@ union all
 -- Every table a parent must never read has to have exactly one SELECT policy,
 -- and it must consult is_staff(). Policies OR together, so a second policy
 -- without that check silently re-opens the table.
+-- `campuses` and `shifts` were on this list until 0083 dropped them: two tables
+-- created in 0001 that no function read and no screen ever wrote to. Their
+-- removal turned this row into "FAIL — campuses, shifts — re-run bundle 3",
+-- which is a lie in the most damaging direction available: it names the parent
+-- lockout, the check that protects children, and sends the reader off to re-run
+-- a bundle that will not help. A missing table is now reported AS a missing
+-- table, with its own reason, so the two cases can never be confused again.
 select 'parent lockout',
        coalesce(
-         'FAIL — ' || string_agg(t, ', ') || ' — re-run bundle 3',
+         'FAIL — ' || string_agg(t || ' (' || why || ')', ', '),
          'PASS')
   from (
-    select t from unnest(array[
-      'academic_sessions','assessments','attendance_daily','campuses','classes',
+    select t,
+           case when to_regclass('public.' || t) is null
+                  then 'table does not exist — re-run bundle 1'
+                else 'SELECT policy does not consult is_staff() — re-run bundle 3'
+           end as why
+    from unnest(array[
+      'academic_sessions','assessments','attendance_daily','classes',
       'enrollments','exam_subjects','exam_terms','families','fee_heads',
       'fee_structures','guardians','mark_entries','result_cards','sections',
-      'shifts','staff','student_links','students','subjects',
+      'staff','student_links','students','subjects',
       'teacher_assignments','school_settings'
     ]) as t
-    where (select count(*) from pg_policies p
+    where to_regclass('public.' || t) is null
+       or (select count(*) from pg_policies p
             where p.schemaname='public' and p.tablename=t and p.cmd='SELECT') <> 1
        or not exists (select 1 from pg_policies p
             where p.schemaname='public' and p.tablename=t and p.cmd='SELECT'
@@ -796,6 +809,55 @@ select 'the website can read prices and offer the installer (0082)',
            then 'FAIL — the download button has nothing to read; re-run bundle 7'
          when to_regclass('public.platform_announcements') is null
            then 'FAIL — there is no way to tell every school anything; re-run bundle 7'
+         else 'PASS' end
+
+union all
+-- 0083. The one thing a parent opens the portal for.
+--
+-- fn_generate_result_cards has frozen a PASS/FAIL verdict onto every card since
+-- 0058 and the portal returned none of it, so a parent saw a percentage and a
+-- grade and had to work out for themselves whether 41% passes at a school whose
+-- threshold is 40 or 50. Provisional cards were the worse half: a percentage
+-- computed over the marked papers only, shown with no warning that it was not
+-- the final figure.
+select 'a parent can see whether their child passed (0083)',
+       case
+         when not exists (select 1 from pg_proc where proname='fn_portal_child_results'
+                           and pronamespace='public'::regnamespace
+                           and prosrc like '%failed_subjects%')
+           then 'FAIL — the portal shows marks but not the verdict; re-run bundle 7'
+         when to_regclass('public.campuses') is not null
+           -- Not a failure if the guard found rows: it says so in a NOTICE and
+           -- leaves them alone. Reported here so the difference is visible.
+           then 'note — campuses/shifts still exist. Either bundle 7 has not been '
+                || 're-run, or the guard found rows in them and refused to drop them.'
+         else 'PASS' end
+
+union all
+-- 0084. A family receipt that could not say which child it paid for.
+--
+-- Family allocation is oldest-month-first ACROSS SIBLINGS, and the payment
+-- function returned four numbers and no detail — so a father paying Rs 9,000 for
+-- three children got a receipt saying "Rs 9,000" and nothing about whose dues
+-- moved. The allocations were in payment_allocations the whole time; nothing
+-- read them.
+select 'a fee receipt names the child and the month (0084)',
+       case
+         when not exists (select 1 from pg_proc where proname='fn__payment_applied'
+                           and pronamespace='public'::regnamespace)
+           then 'FAIL — re-run bundle 7'
+         when not exists (select 1 from pg_proc where proname='fn_record_family_payment'
+                           and pronamespace='public'::regnamespace
+                           and prosrc like '%fn__payment_applied%')
+           -- Silent: the counter still works and the receipt still prints. It
+           -- just cannot say what the money paid for.
+           then 'FAIL — family receipts cannot name the children they paid for; '
+                || 're-run bundle 7'
+         when not exists (select 1 from pg_proc where proname='fn_record_payment'
+                           and pronamespace='public'::regnamespace
+                           and prosrc like '%fn__payment_applied%')
+           then 'FAIL — single-student receipts cannot name the months they '
+                || 'cleared; re-run bundle 7'
          else 'PASS' end
 
 union all

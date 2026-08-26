@@ -26,8 +26,27 @@ export interface Defaulter {
   student_id: string; gr_no: string | null; full_name: string
   class_name: string; section_name: string | null; roll_no: string | null; balance: number
 }
+/**
+ * One entry per invoice a payment cleared — 0084.
+ *
+ * The receipt has to be able to say where the money went. Family allocation is
+ * oldest-month-first ACROSS SIBLINGS, so a father paying Rs 9,000 for three
+ * children cannot work out from the amount which child's dues moved. This comes
+ * from the database rather than being recomputed here on purpose: a second
+ * implementation of the allocator's order would agree with it right up until the
+ * day it did not, and that day would be visible only on paper in a parent's hand.
+ */
+export interface PaymentApplied {
+  student_id: string
+  student_name: string
+  gr_no: string | null
+  period_month: string | null
+  amount: number
+}
+
 export interface RecordPaymentResult {
   payment_id: string; receipt_no: number; allocated: number; unallocated: number
+  applied?: PaymentApplied[]
 }
 export type AttendanceStatus = 'present' | 'absent' | 'leave' | 'late' | 'half_day'
 export interface SectionRow { id: string; name: string; class_id: string }
@@ -2516,7 +2535,7 @@ export async function listAuditLog(limit = 200): Promise<AuditRow[]> {
 // ---- Full data export (backup) ----
 /** Every domain table, in dependency-ish order, for a complete backup. */
 export const EXPORT_TABLES = [
-  'school_settings', 'academic_sessions', 'campuses', 'shifts', 'classes', 'sections', 'subjects',
+  'school_settings', 'academic_sessions', 'classes', 'sections', 'subjects',
   'profiles', 'staff', 'students', 'guardians', 'enrollments',
   'fee_heads', 'fee_structures', 'student_fee_items', 'discounts',
   'invoices', 'invoice_lines', 'payments', 'payment_allocations', 'adjustments',
@@ -2791,6 +2810,9 @@ export interface FamilyPaymentResult {
   credit: number
   family_outstanding?: number
   pending: boolean
+  /** Which child, which month, how much — 0084. Absent on a pending payment,
+   *  because nothing has been allocated yet. */
+  applied?: PaymentApplied[]
 }
 
 /** One search box: CNIC, phone, parent name, student name or GR number. */
@@ -2906,7 +2928,41 @@ export interface PortalResult {
   grade?: string | null
   position?: number | null
   attendance_pct?: number | null
-  subjects?: { subject: string; max: number; marks: number | null; is_absent: boolean; grade: string | null }[]
+  /** PASS / FAIL / PENDING, read out of the frozen card rather than recomputed —
+   *  0083. Before that the portal showed a percentage and a grade and left the
+   *  parent to work out whether 41% passes at a school whose threshold is 40 or
+   *  50, which is the one thing they opened it for. */
+  result?: 'PASS' | 'FAIL' | 'PENDING'
+  failed_subjects?: number
+  pass_percent?: number
+  /** A card generated while some papers were unmarked. Its percentage is over
+   *  the MARKED papers only, so a parent shown 78% with no warning has been told
+   *  something that is not the final figure. The printed card says so on its
+   *  face; the portal did not. */
+  provisional?: boolean
+  unmarked_subjects?: number
+  stream?: string | null
+  /** On a board class this is the field a parent checks hardest — a wrong one is
+   *  a real problem in March. */
+  bise_reg_no?: string | null
+  /** The exact shape 0058 freezes onto the card. `marks` is the THEORY mark and
+   *  `obtained` is theory + practical, which is the distinction the portal was
+   *  losing: a pupil with 40/75 theory and 20/25 practical was shown one number
+   *  and no practical column at all. */
+  subjects?: {
+    subject: string
+    max: number
+    practical_max: number
+    pass: number
+    marks: number | null
+    practical: number | null
+    obtained: number | null
+    out_of: number
+    is_absent: boolean
+    marked: boolean
+    passed: boolean | null
+    grade: string | null
+  }[]
   issued_at: string | null
 }
 

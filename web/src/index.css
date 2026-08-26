@@ -41,7 +41,9 @@ body {
   #challan,
   #challan *,
   #invoice-doc,
-  #invoice-doc * {
+  #invoice-doc *,
+  #portal-statement,
+  #portal-statement * {
     visibility: visible;
   }
   #receipt,
@@ -54,7 +56,8 @@ body {
   #date-sheet,
   #admit-cards,
   #challan,
-  #invoice-doc {
+  #invoice-doc,
+  #portal-statement {
     position: absolute;
     left: 0;
     top: 0;

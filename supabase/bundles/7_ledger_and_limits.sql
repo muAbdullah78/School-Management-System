@@ -6589,6 +6589,362 @@ grant  execute on function public.fn_platform_announcements(integer)   to authen
 revoke execute on function public.fn_platform_announcements(integer) from public, anon;
 
 -- ─────────────────────────────────────────────────────────────────────────
+-- 0083_portal_verdict_and_dead_tables.sql
+-- ─────────────────────────────────────────────────────────────────────────
+-- =============================================================================
+-- 0083 — A parent could see the marks and not whether their child passed
+--
+-- Three gaps from the ground-truth audit, all confirmed by query rather than by
+-- reading a list.
+--
+-- 1. THE PORTAL WITHHELD THE ONE THING A PARENT OPENS IT FOR
+--
+--    fn_generate_result_cards (0058) freezes a complete verdict onto every
+--    result card:
+--
+--      'result'            PASS / FAIL / PENDING
+--      'failed_subjects'   how many papers were below the pass mark
+--      'pass_percent'      the threshold this school actually uses
+--      'provisional'       true when some papers are not marked yet
+--      'unmarked_subjects' how many
+--      'stream', 'bise_reg_no'
+--
+--    fn_portal_child_results returned NONE of them. A parent saw marks, a
+--    percentage and a grade — and had to work out for themselves whether 41%
+--    was a pass at a school whose threshold is 40 or 50.
+--
+--    Worse, `provisional` was dropped too. So a card generated while two papers
+--    were unmarked showed a percentage computed over the marked papers only, and
+--    the parent had no way to know it was not the final figure. The card the
+--    SCHOOL prints says "provisional" on its face; the portal did not.
+--
+--    Per-subject practical marks were already in `frozen->subjects` — theory,
+--    practical, practical_max — so the portal had them all along and rendered
+--    only the total. That half is a UI fix; this makes the verdict available.
+--
+-- 2. A POLICY THAT COULD NEVER FIRE
+--
+--    `schools_update_platform` grants UPDATE on public.schools to the operator.
+--    `authenticated` has no UPDATE privilege on that table at all, so the policy
+--    has never been reachable — every operator write goes through a SECURITY
+--    DEFINER function, which is the design.
+--
+--    Left alone it is worse than useless: it reads as an intended write path, so
+--    one day somebody grants the privilege "to make the policy work" and opens a
+--    direct write to the schools table. Dropped, with the reason recorded here.
+--
+-- 3. TWO TABLES AND TWO COLUMNS NOTHING HAS EVER USED
+--
+--    `campuses` and `shifts` were created in 0001 and are referenced by exactly
+--    two things: classes.campus_id and classes.shift_id. No function reads
+--    either. No screen writes either. Every install has zero rows in both,
+--    because there has never been a way to create one.
+--
+--    They are carried by every catalogue sweep in the test suite, they appear in
+--    the export list a school downloads, and they suggest a multi-campus feature
+--    that does not exist. Dropped — GUARDED, so a database that somehow has rows
+--    stops and says so rather than destroying them.
+--
+--    Multi-campus is a real request from larger schools and it will come back.
+--    When it does it needs designing properly: a campus that owns sections,
+--    staff, a fee structure and its own receipt series is not two nullable
+--    columns on `classes`. Two empty tables are not a head start on that.
+--
+-- Re-runnable.
+-- =============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 1. The verdict reaches the parent
+--
+-- Nothing new is computed. Every field here was already frozen onto the card
+-- when it was generated, which matters: a portal that recomputed a pass mark
+-- could disagree with the certificate the school printed, and the printed one is
+-- the one the family is holding.
+-- ---------------------------------------------------------------------------
+create or replace function public.fn_portal_child_results(p_student_id uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare v_out jsonb;
+begin
+  perform public.fn__assert_my_child(p_student_id);
+
+  select coalesce(jsonb_agg(
+           case when x.withheld then
+             jsonb_build_object(
+               'result_card_id', x.id, 'term', x.term, 'withheld', true,
+               'message', 'Result withheld until outstanding fees are cleared.',
+               'issued_at', x.issued_at)
+           else
+             jsonb_build_object(
+               'result_card_id', x.id, 'term', x.term, 'withheld', false,
+               'obtained_marks', x.total_marks, 'total_marks', x.total_max,
+               'percentage', x.percentage, 'grade', x.grade,
+               'position', x.position, 'attendance_pct', x.attendance_pct,
+               -- THE VERDICT. Read straight out of the frozen snapshot, so the
+               -- portal and the printed card cannot disagree — the printed one is
+               -- what the family is holding.
+               'result', x.frozen->>'result',
+               'failed_subjects', (x.frozen->>'failed_subjects')::integer,
+               'pass_percent', (x.frozen->>'pass_percent')::numeric,
+               -- A provisional card must SAY so. Its percentage is computed over
+               -- the marked papers only, and a parent shown 78% with no warning
+               -- has been told something that is not the final figure.
+               'provisional', coalesce((x.frozen->>'provisional')::boolean, false),
+               'unmarked_subjects', coalesce((x.frozen->>'unmarked_subjects')::integer, 0),
+               -- On a board class the registration number is the thing a parent
+               -- checks hardest, because a wrong one is a real problem in March.
+               'stream', x.frozen->>'stream',
+               'bise_reg_no', x.frozen->>'bise_reg_no',
+               'subjects', coalesce(x.frozen->'subjects', '[]'::jsonb),
+               'issued_at', x.issued_at)
+           end
+           order by x.issued_at desc), '[]'::jsonb)
+    into v_out
+  from (
+    select distinct on (rc.exam_term_id)
+           rc.id, et.name as term, rc.total_marks, rc.total_max, rc.percentage,
+           rc.grade, rc.position, rc.attendance_pct, rc.frozen,
+           rc.published_at as issued_at,
+           coalesce((rc.frozen->>'withheld')::boolean, false) as withheld
+    from public.result_cards rc
+    join public.exam_terms et on et.id = rc.exam_term_id
+    where rc.student_id = p_student_id
+      and rc.published_at is not null
+    order by rc.exam_term_id, rc.version desc
+  ) x;
+
+  return coalesce(v_out, '[]'::jsonb);
+end;
+$$;
+
+grant  execute on function public.fn_portal_child_results(uuid) to authenticated;
+revoke execute on function public.fn_portal_child_results(uuid) from public, anon;
+
+-- ---------------------------------------------------------------------------
+-- 2. The policy that could never fire
+-- ---------------------------------------------------------------------------
+do $deadpolicy$
+begin
+  if exists (select 1 from pg_policies
+              where schemaname = 'public' and tablename = 'schools'
+                and policyname = 'schools_update_platform') then
+    -- Asserted before dropping. If somebody HAS granted the privilege since,
+    -- then this policy is live and load-bearing, and dropping it would silently
+    -- take away a working path.
+    if has_table_privilege('authenticated', 'public.schools', 'update') then
+      raise exception
+        '0083: authenticated now has UPDATE on public.schools, so '
+        'schools_update_platform is live. Do not drop it blind — decide whether '
+        'that grant should exist at all, because every operator write is supposed '
+        'to go through a definer function.';
+    end if;
+    drop policy schools_update_platform on public.schools;
+    raise notice '0083: dropped schools_update_platform — it could never fire';
+  end if;
+end $deadpolicy$;
+
+-- ---------------------------------------------------------------------------
+-- 3. campuses and shifts
+--
+-- Guarded on being empty. A destructive migration that assumes its own premise
+-- is how a school loses data it turns out to have had.
+-- ---------------------------------------------------------------------------
+do $dead$
+declare v_c bigint := 0; v_s bigint := 0; v_used bigint := 0;
+begin
+  if to_regclass('public.campuses') is null and to_regclass('public.shifts') is null then
+    return;                                   -- already gone
+  end if;
+
+  if to_regclass('public.campuses') is not null then
+    execute 'select count(*) from public.campuses' into v_c;
+  end if;
+  if to_regclass('public.shifts') is not null then
+    execute 'select count(*) from public.shifts' into v_s;
+  end if;
+  select count(*) into v_used from public.classes
+   where campus_id is not null or shift_id is not null;
+
+  if v_c > 0 or v_s > 0 or v_used > 0 then
+    -- NOT dropped, and the migration does not fail either: a school that somehow
+    -- has campus rows must keep working, and the operator needs to know before
+    -- anything is destroyed.
+    raise notice
+      '0083: NOT dropping campuses/shifts — % campus(es), % shift(s) and % class(es) '
+      'reference them. Something created rows there. Look before removing them.',
+      v_c, v_s, v_used;
+    return;
+  end if;
+
+  -- The columns first: dropping the tables while classes still points at them
+  -- would fail on the foreign keys.
+  alter table public.classes drop column if exists campus_id;
+  alter table public.classes drop column if exists shift_id;
+  drop table if exists public.shifts;
+  drop table if exists public.campuses;
+  raise notice '0083: dropped campuses and shifts — empty, unreferenced, and no screen ever wrote to them';
+end $dead$;
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- 0084_receipt_allocation_detail.sql
+-- ─────────────────────────────────────────────────────────────────────────
+-- =============================================================================
+-- 0084 — A family receipt that does not say which child it paid for
+--
+-- FamilyCollect.tsx's own header has said this since it was written:
+--
+--     "Allocation is oldest-month-first across siblings and is NOT silent: the
+--      result panel names every invoice the money cleared. Silent allocation is
+--      what causes arguments at the counter."
+--
+-- It was not true. fn_record_family_payment returns four numbers — payment_id,
+-- receipt_no, allocated, credit — and nothing about WHERE the money went. The
+-- panel showed "Rs 9,000 applied to outstanding fees" and the printed receipt
+-- said the same. A father paying for three children could not tell from it which
+-- child's dues had moved, which is exactly the argument the comment claims to
+-- have prevented.
+--
+-- The data was always there. fn__allocate_payment writes a row into
+-- payment_allocations for every invoice it touches; nothing read them back.
+--
+-- WHAT THIS CHANGES
+--
+-- Both payment functions now return an `applied` array: one entry per invoice
+-- the money cleared, carrying the student, the GR number, the month and the
+-- amount. Ordered the way the allocator walks — oldest month first — so the
+-- receipt reads in the order the clerk can explain.
+--
+-- Adding a key to a jsonb result is safe for every existing caller: the web
+-- client destructures the keys it knows and ignores the rest, and both functions
+-- keep their signature, so no grant or policy moves.
+--
+-- WHY NOT COMPUTE IT IN THE BROWSER
+--
+-- Because it would have to guess. The allocator's order is
+-- `period_month nulls first, student_id, invoice_id` and its "paid vs partial"
+-- decision reads invoice_balances, a view. A second implementation in
+-- TypeScript would agree with it until the day it did not, and the day it did
+-- not would be visible only on a printed receipt in a parent's hand.
+--
+-- Re-runnable.
+-- =============================================================================
+
+-- ---------------------------------------------------------------------------
+-- The shared reader.
+--
+-- Internal, and revoked from everyone — but SCOPED ANYWAY, on the caller's own
+-- school. The first version filtered on the payment id alone, reasoning that
+-- both callers had just created the payment themselves so the id could not be
+-- anyone else's. dashboard.sql's assertion 20 rejected it, and the assertion is
+-- right: a SECURITY DEFINER function bypasses RLS, so "the id is trustworthy
+-- because of who calls it today" is a property of today's callers, not of this
+-- function. Pass a foreign payment id and it would have handed back another
+-- school's children's names, GR numbers and the exact amounts their parents
+-- paid. It now returns an empty array instead.
+-- ---------------------------------------------------------------------------
+create or replace function public.fn__payment_applied(p_payment_id uuid)
+returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(x order by x.period_month nulls first, x.student_name, x.amount), '[]'::jsonb)
+  from (
+    select s.id            as student_id,
+           s.full_name     as student_name,
+           s.gr_no         as gr_no,
+           i.period_month  as period_month,
+           pa.amount       as amount
+    from public.payment_allocations pa
+    join public.invoices i on i.id = pa.invoice_id
+    join public.students s on s.id = i.student_id
+    where pa.payment_id = p_payment_id
+      and i.school_id = public.current_school_id()
+      and s.school_id = public.current_school_id()
+  ) x;
+$$;
+
+revoke all on function public.fn__payment_applied(uuid) from public, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Single student.
+--
+-- Rewritten programmatically rather than restated, so that a change made to
+-- this function between 0031 and today cannot be silently reverted by a copy
+-- pasted out of an old migration. That has happened in this repository before.
+-- ---------------------------------------------------------------------------
+do $rw$
+declare v_old text; v_new text;
+begin
+  v_old := pg_get_functiondef(
+    'public.fn_record_payment(uuid, numeric, public.payment_method, text, boolean)'::regprocedure);
+
+  -- Already carries it: nothing to do, and the assertions below still run.
+  if v_old like '%fn__payment_applied%' then
+    raise notice '0084: fn_record_payment already returns the allocation detail';
+  else
+    v_new := replace(v_old,
+      $q$    'allocated', p_amount - v_left, 'unallocated', v_left, 'pending', false);$q$,
+      $q$    'allocated', p_amount - v_left, 'unallocated', v_left, 'pending', false,
+    'applied', public.fn__payment_applied(v_pay));$q$);
+
+    if v_new = v_old then
+      raise exception
+        '0084: could not find the return statement in fn_record_payment. It has '
+        'been edited since 0031 — read it and place the applied key by hand '
+        'rather than letting this migration report success.';
+    end if;
+    execute v_new;
+  end if;
+
+  -- The END STATE, asserted. A rewrite that silently matched nothing is the
+  -- failure mode this guards.
+  if pg_get_functiondef(
+       'public.fn_record_payment(uuid, numeric, public.payment_method, text, boolean)'::regprocedure)
+     not like '%fn__payment_applied%' then
+    raise exception '0084: fn_record_payment still does not return the allocation detail';
+  end if;
+end $rw$;
+
+-- ---------------------------------------------------------------------------
+-- The family. Same treatment.
+-- ---------------------------------------------------------------------------
+do $rw$
+declare v_old text; v_new text;
+begin
+  v_old := pg_get_functiondef(
+    'public.fn_record_family_payment(uuid, numeric, public.payment_method, text, boolean)'::regprocedure);
+
+  if v_old like '%fn__payment_applied%' then
+    raise notice '0084: fn_record_family_payment already returns the allocation detail';
+  else
+    v_new := replace(v_old,
+      $q$    'family_outstanding', public.family_outstanding(p_family_id),
+    'pending', false);$q$,
+      $q$    'family_outstanding', public.family_outstanding(p_family_id),
+    'applied', public.fn__payment_applied(v_pay),
+    'pending', false);$q$);
+
+    if v_new = v_old then
+      raise exception
+        '0084: could not find the return statement in fn_record_family_payment. '
+        'It has been edited since 0031 — place the applied key by hand.';
+    end if;
+    execute v_new;
+  end if;
+
+  if pg_get_functiondef(
+       'public.fn_record_family_payment(uuid, numeric, public.payment_method, text, boolean)'::regprocedure)
+     not like '%fn__payment_applied%' then
+    raise exception '0084: fn_record_family_payment still does not return the allocation detail';
+  end if;
+end $rw$;
+
+-- `create or replace` PRESERVES an existing ACL, and these two were rewritten
+-- through pg_get_functiondef which restates the definition without its grants.
+-- Restated explicitly so a future reader does not have to work out which of
+-- those two facts applied here.
+grant  execute on function public.fn_record_payment(uuid, numeric, public.payment_method, text, boolean) to authenticated;
+revoke execute on function public.fn_record_payment(uuid, numeric, public.payment_method, text, boolean) from public, anon;
+grant  execute on function public.fn_record_family_payment(uuid, numeric, public.payment_method, text, boolean) to authenticated;
+revoke execute on function public.fn_record_family_payment(uuid, numeric, public.payment_method, text, boolean) from public, anon;
+
+-- ─────────────────────────────────────────────────────────────────────────
 -- Record what this bundle applied (no-op before 0069 creates the ledger)
 -- ─────────────────────────────────────────────────────────────────────────
 do $ledger$
@@ -6612,4 +6968,6 @@ begin
   perform public.fn_record_migration('0080_offboarding.sql', '7_ledger_and_limits.sql');
   perform public.fn_record_migration('0081_platform_metrics.sql', '7_ledger_and_limits.sql');
   perform public.fn_record_migration('0082_releases_and_announcements.sql', '7_ledger_and_limits.sql');
+  perform public.fn_record_migration('0083_portal_verdict_and_dead_tables.sql', '7_ledger_and_limits.sql');
+  perform public.fn_record_migration('0084_receipt_allocation_detail.sql', '7_ledger_and_limits.sql');
 end $ledger$;

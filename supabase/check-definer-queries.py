@@ -52,11 +52,11 @@ import subprocess
 import sys
 
 TENANT = """
-academic_sessions adjustments assessments attendance_daily campuses classes
+academic_sessions adjustments assessments attendance_daily classes
 discounts enrollments exam_subjects exam_terms expenses expense_categories
 families fee_heads fee_structures guardians invoices invoice_lines mark_entries
 message_outbox message_templates other_income payment_allocations payments
-result_cards sections shifts staff staff_attendance staff_checkin_codes
+result_cards sections staff staff_attendance staff_checkin_codes
 student_fee_items student_links students subjects teacher_assignments
 till_sessions enquiries enquiry_followups exam_remarks school_settings
 """.split()

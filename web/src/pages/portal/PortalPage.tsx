@@ -14,6 +14,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AnnouncementBanner } from '@/components/AnnouncementBanner'
+import { PortalStatement } from '@/components/PortalStatement'
 import { useAuth } from '@/auth/AuthProvider'
 import {
   getPortalMe,
@@ -62,6 +63,11 @@ export function PortalPage() {
   const { signOut } = useAuth()
   const [childId, setChildId] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>('fees')
+  /* The old Print button called window.print() straight from this page. The
+     global print rule hides `body *` and reveals only named ids, and the portal
+     had none — so it printed a blank sheet, silently, every time. It now opens a
+     real statement that carries an id the print rule knows. */
+  const [statement, setStatement] = useState(false)
 
   const me = useQuery({ queryKey: ['portalMe'], queryFn: getPortalMe })
 
@@ -276,10 +282,10 @@ export function PortalPage() {
                         icon={<IconPrint />}
                         right={
                           <button
-                            onClick={() => window.print()}
+                            onClick={() => setStatement(true)}
                             className="text-xs font-medium text-brand-600 hover:underline"
                           >
-                            Print
+                            Print statement
                           </button>
                         }
                       >
@@ -392,13 +398,25 @@ export function PortalPage() {
                 )}
                 {results.data?.map((r) => (
                   <Card key={r.result_card_id}>
-                    <div className="flex items-start justify-between gap-3">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
                       <h3 className="text-base font-semibold text-slate-900">{r.term}</h3>
-                      {r.withheld ? (
-                        <Badge tone="due">Withheld</Badge>
-                      ) : (
-                        <Badge tone="money">{r.grade ?? '—'}</Badge>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {r.withheld ? (
+                          <Badge tone="due">Withheld</Badge>
+                        ) : (
+                          <>
+                            {/* THE THING A PARENT OPENS THIS FOR, and it was not
+                                here. The card has said PASS or FAIL since 0058;
+                                the portal showed a percentage and a grade and
+                                left the parent to work out whether 41% passes at
+                                a school whose threshold is 40 or 50. */}
+                            {r.result === 'PASS' && <Badge tone="money">Passed</Badge>}
+                            {r.result === 'FAIL' && <Badge tone="due">Not passed</Badge>}
+                            {r.result === 'PENDING' && <Badge tone="info">Not marked yet</Badge>}
+                            <Badge tone="money">{r.grade ?? '—'}</Badge>
+                          </>
+                        )}
+                      </div>
                     </div>
 
                     {r.withheld ? (
@@ -407,6 +425,19 @@ export function PortalPage() {
                       </p>
                     ) : (
                       <>
+                        {/* A provisional card SAYS it is provisional. Its
+                            percentage is computed over the marked papers only, so
+                            a parent shown 78% with no warning has been told
+                            something that is not the final figure — and the card
+                            the school prints carries this line already. */}
+                        {r.provisional && (
+                          <p className="mt-3 rounded-lg bg-due-50 px-3 py-2 text-xs text-due-800 ring-1 ring-due-100">
+                            Not final — {r.unmarked_subjects ?? 0} paper(s) are still
+                            being marked. The marks below are out of what has been
+                            marked so far.
+                          </p>
+                        )}
+
                         <div className="mt-3 grid grid-cols-3 gap-2">
                           <MiniStat
                             label="Marks"
@@ -416,16 +447,52 @@ export function PortalPage() {
                           <MiniStat label="Position" value={r.position ?? '—'} tone="info" />
                         </div>
 
+                        {(r.pass_percent !== undefined || (r.failed_subjects ?? 0) > 0) && (
+                          <p className="mt-2 text-xs text-slate-500">
+                            {r.pass_percent !== undefined
+                              && `Pass mark at this school is ${r.pass_percent}%.`}
+                            {(r.failed_subjects ?? 0) > 0
+                              && ` ${r.failed_subjects} subject(s) below the pass mark.`}
+                            {r.bise_reg_no && ` Board registration ${r.bise_reg_no}.`}
+                          </p>
+                        )}
+
                         {r.subjects && r.subjects.length > 0 && (
                           <ul className="mt-4 divide-y divide-slate-100">
                             {r.subjects.map((s, i) => (
-                              <li key={i} className="flex items-center justify-between py-2 text-sm">
-                                <span className="text-slate-700">{s.subject}</span>
-                                <span className="tabular-nums text-slate-600">
+                              <li key={i} className="flex items-start justify-between gap-2 py-2 text-sm">
+                                <span className="min-w-0">
+                                  <span className="text-slate-700">{s.subject}</span>
+                                  {/* Broken out when the paper has one. This was
+                                      the real defect: the row showed `marks / max`
+                                      — THEORY against the THEORY maximum — so a
+                                      pupil with 40/75 theory and 20/25 practical
+                                      was shown "40 / 75" when they had scored
+                                      60 out of 100. Understated, not merely
+                                      incomplete. */}
+                                  {s.practical_max > 0 && !s.is_absent && (
+                                    <span className="block text-xs text-slate-400">
+                                      Written {s.marks ?? '—'}/{s.max} · Practical{' '}
+                                      {s.practical ?? '—'}/{s.practical_max}
+                                    </span>
+                                  )}
+                                </span>
+                                <span className="shrink-0 text-right tabular-nums">
                                   {s.is_absent ? (
                                     <span className="text-danger-600">Absent</span>
+                                  ) : !s.marked ? (
+                                    <span className="text-slate-400">not marked</span>
                                   ) : (
-                                    `${s.marks ?? '—'} / ${s.max}`
+                                    <>
+                                      <span className="text-slate-700">
+                                        {s.obtained ?? '—'} / {s.out_of}
+                                      </span>
+                                      {s.passed === false && (
+                                        <span className="block text-xs text-danger-600">
+                                          below {s.pass}
+                                        </span>
+                                      )}
+                                    </>
                                   )}
                                 </span>
                               </li>
@@ -441,6 +508,46 @@ export function PortalPage() {
           </>
         )}
       </main>
+
+      {/* Rendered outside <main> so the print rule's absolute positioning starts
+          at the top of the sheet rather than inside the page's layout.
+
+          items-start with overflow-y-auto, not items-center: on a 360×640 phone
+          — which is most of the parents — a centred dialog taller than the
+          viewport puts its own buttons off both edges of the screen with nothing
+          to scroll. The statement is long by nature, so this one would always
+          have been in that state. */}
+      {statement && fees.data && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-3 sm:items-center print:static print:overflow-visible print:bg-white print:p-0"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Fee statement"
+        >
+          <div className="w-full max-w-2xl rounded-lg bg-white shadow-lg print:max-w-none print:rounded-none print:shadow-none">
+            <PortalStatement
+              schoolName={me.data?.school_name ?? null}
+              parentName={me.data?.full_name ?? null}
+              child={activeChild}
+              fees={fees.data}
+            />
+            <div className="flex gap-2 border-t border-slate-200 p-4 print:hidden">
+              <button
+                onClick={() => window.print()}
+                className="flex-1 rounded-lg bg-brand-600 px-3 py-2.5 text-sm font-medium text-white hover:bg-brand-700"
+              >
+                Print
+              </button>
+              <button
+                onClick={() => setStatement(false)}
+                className="flex-1 rounded-lg border border-slate-300 px-3 py-2.5 text-sm hover:bg-slate-50"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

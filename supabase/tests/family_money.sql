@@ -186,7 +186,47 @@ begin
     raise exception 'FAIL: % October invoices touched before September cleared', v_oct_paid;
   end if;
 
-  raise notice '3. FIFO across siblings — ok';
+  -- 0084: the receipt has to be able to SAY where the money went.
+  --
+  -- FamilyCollect.tsx's header promised that allocation "is NOT silent: the
+  -- result panel names every invoice the money cleared", and for a long time
+  -- the function returned four numbers and nothing else. A father paying for
+  -- three children could not tell which child's dues had moved, which is the
+  -- argument at the counter that the promise was there to prevent.
+  if j->'applied' is null then
+    raise exception 'FAIL: fn_record_family_payment returned no applied detail: %', j;
+  end if;
+  if jsonb_array_length(j->'applied') <> 3 then
+    raise exception 'FAIL: Rs 3,000 cleared 3 September invoices, applied lists %: %',
+      jsonb_array_length(j->'applied'), j->'applied';
+  end if;
+  -- The parts have to add up to the whole. A detail list that does not total
+  -- the allocated figure is worse than none: it invites the clerk to trust it.
+  if (select sum((e->>'amount')::numeric) from jsonb_array_elements(j->'applied') e)
+     <> (j->>'allocated')::numeric then
+    raise exception 'FAIL: applied sums to % but allocated says %',
+      (select sum((e->>'amount')::numeric) from jsonb_array_elements(j->'applied') e),
+      j->>'allocated';
+  end if;
+  -- Every entry must be able to name a child and a month, or it cannot be
+  -- printed on a receipt.
+  if exists (select 1 from jsonb_array_elements(j->'applied') e
+              where coalesce(e->>'student_name', '') = '' or e->>'period_month' is null) then
+    raise exception 'FAIL: an applied entry has no student name or no month: %', j->'applied';
+  end if;
+  -- Three DIFFERENT children, not the same one three times.
+  if (select count(distinct e->>'student_id') from jsonb_array_elements(j->'applied') e) <> 3 then
+    raise exception 'FAIL: applied names % distinct children, expected 3: %',
+      (select count(distinct e->>'student_id') from jsonb_array_elements(j->'applied') e),
+      j->'applied';
+  end if;
+  -- And every one of them September, since that is what month-first means.
+  if exists (select 1 from jsonb_array_elements(j->'applied') e
+              where (e->>'period_month')::date <> date '2025-09-01') then
+    raise exception 'FAIL: applied includes a month other than September: %', j->'applied';
+  end if;
+
+  raise notice '3. FIFO across siblings, and the receipt can name every child — ok';
 end $t$;
 
 -- =============================================================================
@@ -222,6 +262,15 @@ begin
   end if;
   if (j->>'credit')::numeric <> 2000 then
     raise exception 'FAIL: expected 2000 credit, got %', j;
+  end if;
+
+  -- 0084: an overpayment's detail must cover the ALLOCATED part only. The Rs
+  -- 2,000 held as advance has not paid for anything yet, so a receipt listing
+  -- it against a month would be claiming a month was settled when it was not.
+  if (select coalesce(sum((e->>'amount')::numeric), 0)
+        from jsonb_array_elements(j->'applied') e) <> 3000 then
+    raise exception 'FAIL: applied should total the 3000 allocated, not the 5000 paid: %',
+      j->'applied';
   end if;
 
   select count(*) into v_neg

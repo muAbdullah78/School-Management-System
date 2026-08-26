@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { fmtPKR, fmtDate, monthToDate, todayISO, waLink } from './format'
+import { fmtPKR, fmtAmount, fmtDate, monthToDate, todayISO, waLink } from './format'
 
 const digits = (s: string) => s.replace(/\D/g, '')
 
@@ -35,6 +35,22 @@ describe('fmtPKR', () => {
 
   it('rounds a negative by magnitude, not toward zero', () => {
     expect(fmtPKR(-99.9)).toBe('−Rs 100')
+  })
+})
+
+describe('fmtAmount', () => {
+  it('is fmtPKR without the unit, digit for digit', () => {
+    for (const n of [0, 1, 1234, 99.9, 1234567]) {
+      expect(fmtAmount(n)).toBe(fmtPKR(n).replace('Rs ', ''))
+    }
+  })
+  it('keeps the sign in front, and never a signed zero', () => {
+    expect(fmtAmount(-33500)).toBe('−33,500')
+    expect(fmtAmount(-0.4)).toBe('0')
+  })
+  it('treats null/undefined as zero', () => {
+    expect(fmtAmount(null)).toBe('0')
+    expect(fmtAmount(undefined)).toBe('0')
   })
 })
 

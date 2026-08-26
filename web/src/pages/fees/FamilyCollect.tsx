@@ -23,6 +23,26 @@
  * Allocation is oldest-month-first across siblings and is NOT silent: the
  * result panel names every invoice the money cleared. Silent allocation is
  * what causes arguments at the counter.
+ *
+ * THAT LAST PARAGRAPH WAS FALSE FOR A LONG TIME, and it is worth recording how.
+ * fn_record_family_payment returned four numbers — payment_id, receipt_no,
+ * allocated, credit — and no detail, so the panel could only say "Rs 9,000
+ * applied to outstanding fees". A father paying for three children could not
+ * tell which child's dues had moved: exactly the argument the comment claimed to
+ * prevent. The allocations were in payment_allocations the whole time and
+ * nothing read them. 0084 returns them; the panel and the receipt now name every
+ * child and month.
+ *
+ * Two more defects lived in the same block:
+ *
+ *   * "Print receipt" called window.print() on this page. The print rule in
+ *     index.css hides `body *` and reveals only named ids, and this screen has
+ *     none — so it printed a BLANK SHEET, at the counter, two hundred times a
+ *     day. It now opens the real Receipt component.
+ *
+ *   * It offered that button for a PENDING payment too. A printed receipt for a
+ *     bank challan that later fails is a document the school cannot take back,
+ *     and the single-student counter had always refused to issue one.
  */
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -38,6 +58,7 @@ import {
   type FamilyHit,
   type FamilyPaymentResult,
 } from '@/lib/db'
+import { Receipt, type ReceiptData } from '@/components/Receipt'
 import {
   Card,
   CardTitle,
@@ -87,6 +108,11 @@ export function FamilyCollect() {
   const [note, setNote] = useState('')
   const [pending, setPending] = useState(false)
   const [result, setResult] = useState<FamilyPaymentResult | null>(null)
+  /* The receipt is a real document now, not window.print() on this page.
+     "Print receipt" used to call window.print() directly — and the print rule in
+     index.css hides `body *` and reveals only named ids, so it printed a BLANK
+     SHEET at a counter that runs two hundred times a day. */
+  const [receipt, setReceipt] = useState<ReceiptData | null>(null)
 
   // The counter's own state: a second search (by child, or by scanned voucher)
   // and the two reads that make the screen useful before anyone types.
@@ -558,16 +584,67 @@ export function FamilyCollect() {
                         : ''}
                       .
                     </p>
+                    {/* WHICH CHILD. Family allocation is oldest-month-first
+                        across siblings, so "Rs 9,000 applied" does not tell a
+                        father paying for three what moved. This screen's own
+                        header has claimed since it was written that allocation
+                        "is NOT silent" — until 0084 it was: the function
+                        returned four numbers and no detail. */}
+                    {result.applied && result.applied.length > 0 && (
+                      <ul className="mt-3 space-y-0.5 text-xs text-money-800">
+                        {result.applied.map((a, i) => (
+                          <li key={i} className="flex justify-between gap-3">
+                            <span className="min-w-0 truncate">
+                              {a.student_name}
+                              {a.gr_no ? ` (GR ${a.gr_no})` : ''} · {monthLabel(a.period_month)}
+                            </span>
+                            <span className="shrink-0 tabular-nums">{money(a.amount)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                     <div className="mt-3 flex gap-2">
-                      <Button
-                        size="sm"
-                        tone="money"
-                        variant="soft"
-                        icon={<IconPrint />}
-                        onClick={() => window.print()}
-                      >
-                        Print receipt
-                      </Button>
+                      {result.pending ? (
+                        /* No receipt for money that has not cleared. A printed
+                           receipt for a bank challan or a wallet transfer that
+                           later fails is a document the school cannot take back,
+                           and the single-student counter has always refused to
+                           issue one. */
+                        <p className="text-xs text-due-800">
+                          The receipt is issued once this payment is verified under
+                          Fees → Pending clearances. Nothing has been applied to any
+                          challan yet.
+                        </p>
+                      ) : (
+                        <Button
+                          size="sm"
+                          tone="money"
+                          variant="soft"
+                          icon={<IconPrint />}
+                          onClick={() =>
+                            setReceipt({
+                              receiptNo: result.receipt_no,
+                              studentName: s?.family.head_name ?? 'Family',
+                              amount: result.allocated + result.credit,
+                              method:
+                                METHODS.find((m) => m.value === method)?.label ?? method,
+                              balanceAfter: result.family_outstanding ?? 0,
+                              note: null,
+                              payerLabel: 'Received from',
+                              balanceLabel: 'Family balance after',
+                              advance: result.credit,
+                              covers: (result.applied ?? []).map((a) => ({
+                                label:
+                                  `${a.student_name}${a.gr_no ? ` (GR ${a.gr_no})` : ''}` +
+                                  ` · ${monthLabel(a.period_month)}`,
+                                amount: a.amount,
+                              })),
+                            })
+                          }
+                        >
+                          Print receipt
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -670,6 +747,8 @@ export function FamilyCollect() {
           </Card>
         </div>
       )}
+
+      {receipt && <Receipt data={receipt} onClose={() => setReceipt(null)} />}
     </div>
   )
 }

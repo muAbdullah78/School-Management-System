@@ -509,7 +509,31 @@ with sig(migration, object, present) as (values
                       where table_schema = 'public'
                         and table_name = 'platform_announcements')
          and has_table_privilege('anon', 'public.plans', 'select')
-         and has_table_privilege('anon', 'public.app_releases', 'select')))
+         and has_table_privilege('anon', 'public.app_releases', 'select'))),
+  -- 0083. The parent could see the marks and not whether their child passed.
+  -- The DROPS are part of the signature deliberately: `campuses` still standing
+  -- means the migration did not finish, and an install that legitimately has
+  -- campus rows would have been told so by the guard rather than reported here.
+  ('0083_portal_verdict_and_dead_tables', 'the pass/fail verdict reaches the portal',
+     (select exists (select 1 from pg_proc where proname = 'fn_portal_child_results'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%failed_subjects%')
+         and to_regclass('public.campuses') is null
+         and not exists (select 1 from pg_policies
+                          where schemaname = 'public' and tablename = 'schools'
+                            and policyname = 'schools_update_platform'))),
+  -- 0084. A family receipt that could not say which child it paid for. The
+  -- signature is both payment functions returning the detail, because the
+  -- internal reader existing on its own prints nothing on any receipt.
+  ('0084_receipt_allocation_detail', 'receipts name the child and the month',
+     (select exists (select 1 from pg_proc where proname = 'fn__payment_applied'
+                      and pronamespace = 'public'::regnamespace)
+         and exists (select 1 from pg_proc where proname = 'fn_record_family_payment'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%fn__payment_applied%')
+         and exists (select 1 from pg_proc where proname = 'fn_record_payment'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%fn__payment_applied%')))
 )
 select migration,
        object                                   as looked_for,

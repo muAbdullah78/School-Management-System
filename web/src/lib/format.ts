@@ -18,6 +18,24 @@ export function fmtPKR(n: number | null | undefined): string {
   return (v < 0 ? '−' : '') + 'Rs ' + abs
 }
 
+/**
+ * The same number WITHOUT the unit, for a table that states the unit once in its
+ * heading.
+ *
+ * Not a nicety. On a 360px phone — most of the parents using the portal — four
+ * money columns each carrying "Rs " either wrap "Rs" onto its own line or push
+ * the rightmost column off the edge, and the rightmost column is Outstanding:
+ * the one number the page exists to show. Dropping the repeated unit buys back
+ * about 25px per column, which is the difference.
+ *
+ * Sign handling is fmtPKR's, deliberately: rounded once, minus in front, so a
+ * credit reads −4,500 and never "4,500" or "-0".
+ */
+export function fmtAmount(n: number | null | undefined): string {
+  const v = Math.round(Number(n ?? 0))
+  return (v < 0 ? '−' : '') + Math.abs(v).toLocaleString('en-PK', { maximumFractionDigits: 0 })
+}
+
 export function fmtDate(s?: string | null): string {
   if (!s) return '—'
   const d = new Date(s)

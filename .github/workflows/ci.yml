@@ -45,6 +45,21 @@ jobs:
         # needs eyes, which is the whole point of the output.
         run: npm run harness
 
+      - name: Every Print button puts something on the paper
+        # index.css prints by hiding `body *` and revealing a NAMED LIST of ids.
+        # Good pattern, one failure mode, and it shipped twice: the parent
+        # portal's Print button and the fee counter's "Print receipt" both called
+        # window.print() on a page with no allow-listed id on it, so both
+        # produced a BLANK SHEET — every time, on every browser, with nothing
+        # thrown and nothing logged.
+        #
+        # No unit test can see that: the defect is not in the component and not
+        # in the stylesheet, it is in the fact that they were never introduced.
+        # This checks both directions, plus every printId the shared table is
+        # handed, and needs neither a database nor a browser.
+        working-directory: .
+        run: python3 supabase/check-print-ids.py
+
       - name: The website's buttons lead somewhere
         # Needs no database, so it lives in this job. Every call to action on the
         # marketing site used to be an anchor on the page the visitor was already
