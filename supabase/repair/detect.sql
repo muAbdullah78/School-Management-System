@@ -461,7 +461,33 @@ with sig(migration, object, present) as (values
          and exists (select 1 from pg_trigger t
                        join pg_proc pr on pr.oid = t.tgfoid
                       where not t.tgisinternal
-                        and pr.proname = 'fn__refuse_duplicate_invoice')))
+                        and pr.proname = 'fn__refuse_duplicate_invoice'))),
+  -- 0079. A school could be started and never stopped. The signature includes
+  -- fn_effective_status honouring the suspension, because the columns without
+  -- that are decoration: a suspended_at nothing reads is a school still running.
+  ('0079_school_lifecycle',     'suspend, cancel, archive, per-school grace',
+     (select exists (select 1 from information_schema.columns
+                      where table_schema = 'public' and table_name = 'subscriptions'
+                        and column_name = 'suspended_at')
+         and exists (select 1 from information_schema.columns
+                      where table_schema = 'public' and table_name = 'schools'
+                        and column_name = 'archived_at')
+         and exists (select 1 from pg_proc where proname = 'fn_effective_status'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%suspended_at%')
+         and exists (select 1 from pg_proc where proname = 'fn_my_licence'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%suspend_reason%'))),
+  -- 0080. A school could never leave. The FK rule is part of the signature: with
+  -- the old ON DELETE CASCADE still in place, purging a school would destroy our
+  -- own invoices to it, which tax retention does not permit.
+  ('0080_offboarding',          'export and purge, with the sales ledger kept',
+     (select exists (select 1 from information_schema.tables
+                      where table_schema = 'public' and table_name = 'platform_exports')
+         and exists (select 1 from pg_proc where proname = 'fn_platform_purge_school'
+                      and pronamespace = 'public'::regnamespace)
+         and (select confdeltype from pg_constraint
+               where conname = 'platform_invoices_school_id_fkey') = 'n'))
 )
 select migration,
        object                                   as looked_for,

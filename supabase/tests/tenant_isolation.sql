@@ -391,7 +391,14 @@ declare
     -- to know the first one arrived. It has NO write policy: the insert goes
     -- through fn_my_report_payment, and a school-writable `status` column would
     -- be a school writing money.
-    'platform_payment_claims'
+    'platform_payment_claims',
+    -- 0080. What was handed to a school before its records were destroyed. No
+    -- school_id in the tenant sense — the column is nullable and ON DELETE SET
+    -- NULL precisely so the row OUTLIVES the school it describes, which is the
+    -- whole point of it: if a school ever says "you deleted our records", this
+    -- is the dated row saying what was given to them first. current_school_id()
+    -- would be the wrong gate and its presence would be the bug.
+    'platform_exports'
   ];
 begin
   -- 4a. Every tenant table must carry school_id.

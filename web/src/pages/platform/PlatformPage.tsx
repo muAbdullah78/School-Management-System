@@ -15,6 +15,9 @@ import { LedgerDialog } from './SchoolLedger'
 import { Renewals } from './Renewals'
 import { Claims } from './Claims'
 import { BillingSettings } from './BillingSettings'
+import { LifecycleDialog } from './Lifecycle'
+import { OffboardDialog } from './Offboard'
+import { NewSchoolDialog } from './NewSchool'
 import { paymentClaims, dueSoon, platformSettings } from '@/lib/platform'
 
 const STATUS_STYLE: Record<PlatformSchool['status'], string> = {
@@ -64,6 +67,10 @@ export function PlatformPage() {
   const [visiting, setVisiting] = useState<PlatformSchool | null>(null)
   const [openSchool, setOpenSchool] = useState<PlatformSchool | null>(null)
   const [tab, setTab] = useState<Tab>('schools')
+  const [showArchived, setShowArchived] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [lifecycleFor, setLifecycleFor] = useState<PlatformSchool | null>(null)
+  const [offboarding, setOffboarding] = useState<PlatformSchool | null>(null)
 
   const isAdmin = useQuery({ queryKey: ['amPlatformAdmin', session?.user?.id], queryFn: amPlatformAdmin })
   // Counts for the tab badges. Loaded whatever tab is showing, because the whole
@@ -86,7 +93,12 @@ export function PlatformPage() {
   })
   const settingsIncomplete = (settings.data?.missing.length ?? 0) > 0
   const schools = useQuery({
-    queryKey: ['platformSchools'], queryFn: listPlatformSchools, enabled: isAdmin.data === true,
+    // Keyed on the flag: an archived school appearing in a cache the console
+    // filled while the toggle was off is how a departed customer shows up in
+    // this month's totals.
+    queryKey: ['platformSchools', showArchived],
+    queryFn: () => listPlatformSchools(showArchived),
+    enabled: isAdmin.data === true,
   })
   const plans = useQuery({ queryKey: ['plans'], queryFn: listPlans, enabled: isAdmin.data === true })
   const revenue = useQuery({
@@ -152,7 +164,23 @@ export function PlatformPage() {
               </span>
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {tab === 'schools' && (
+              <>
+                <button onClick={() => setCreating(true)}
+                  className="rounded bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700">
+                  Add a school
+                </button>
+                {/* Archived schools are off by default. A console that shows last
+                    year's departed customers next to this year's is a console
+                    whose totals nobody trusts. */}
+                <label className="flex items-center gap-1.5 rounded border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-600">
+                  <input type="checkbox" checked={showArchived}
+                    onChange={(e) => setShowArchived(e.target.checked)} />
+                  Show archived
+                </label>
+              </>
+            )}
             <button
               onClick={() => run('Student counts refreshed.', refreshAllCounts)}
               disabled={act.isPending}
@@ -292,6 +320,21 @@ export function PlatformPage() {
                           owes {formatPkr(s.outstanding)}
                         </span>
                       )}
+                      {/* `status` reads 'locked' for a school we suspended AND
+                          for one whose licence simply ran out. Without this badge
+                          the two are indistinguishable, and the operator cannot
+                          tell "they did not pay" from "we switched them off". */}
+                      {s.suspended && (
+                        <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-800"
+                          title={s.suspend_reason ?? undefined}>
+                          we suspended them
+                        </span>
+                      )}
+                      {s.archived && (
+                        <span className="rounded bg-slate-200 px-1.5 py-0.5 text-xs text-slate-600">
+                          archived
+                        </span>
+                      )}
                     </div>
                     <div className="mt-0.5 text-xs text-slate-500">
                       {[s.city, s.contact_name, s.contact_phone].filter(Boolean).join(' · ') || 'No contact details'}
@@ -336,6 +379,20 @@ export function PlatformPage() {
                         className="font-medium text-red-700 hover:underline">
                         View as school
                       </button>
+                      <button onClick={() => { setErr(null); setMsg(null); setLifecycleFor(s) }}
+                        className="text-slate-500 hover:underline">
+                        Manage
+                      </button>
+                      {/* Only offered on an archived school, because that is the
+                          only school the database will export or delete — and a
+                          button that always refuses teaches people to ignore
+                          buttons. */}
+                      {s.archived && (
+                        <button onClick={() => { setErr(null); setMsg(null); setOffboarding(s) }}
+                          className="text-slate-500 hover:underline">
+                          Offboard
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -375,6 +432,30 @@ export function PlatformPage() {
       )}
 
       {ledgerFor && <LedgerDialog school={ledgerFor} onClose={() => setLedgerFor(null)} />}
+
+      {creating && (
+        <NewSchoolDialog
+          onClose={() => setCreating(false)}
+          onCreated={(id) => {
+            setCreating(false)
+            const s = rows.find((r) => r.school_id === id)
+            if (s) setOpenSchool(s)
+            else setMsg('School added. It will appear in the list on the next refresh.')
+          }}
+        />
+      )}
+
+      {lifecycleFor && (
+        <LifecycleDialog
+          school={lifecycleFor}
+          onClose={() => setLifecycleFor(null)}
+          onDone={(m) => { setErr(null); setMsg(m); setLifecycleFor(null) }}
+        />
+      )}
+
+      {offboarding && (
+        <OffboardDialog school={offboarding} onClose={() => setOffboarding(null)} />
+      )}
 
       {historyFor && <HistoryDialog school={historyFor} onClose={() => setHistoryFor(null)} />}
 

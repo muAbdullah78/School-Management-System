@@ -1301,6 +1301,32 @@ jobs:
         # silently rather than raising.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/platform_billing.sql
 
+      - name: Suspending, cancelling, archiving and PURGING a school
+        # 0079-0080, and the only irreversible thing in this product.
+        #
+        # Before 0080 a school could not be deleted at all: 37 tables reference
+        # public.schools with ON DELETE NO ACTION, so the delete failed on the
+        # first foreign key it met. A demo school was permanent. A customer who
+        # left and asked for their records to be deleted got "we cannot".
+        #
+        # This suite builds a school with the dependency chains that made it
+        # impossible — payment_allocations over payments over invoices,
+        # mark_entries over assessments — purges it, and then asserts the
+        # remaining row count is zero across EVERY table in the catalogue rather
+        # than a list somebody maintained. It also asserts the OTHER school lost
+        # nothing, which is the failure nothing else here would notice.
+        #
+        # And it proves all five refusals in front of the purge. A destructive
+        # action reachable by a mis-click is worse than no destructive action, and
+        # the refusals are the feature.
+        #
+        # The other assertion worth reading is 23: a suspended school is told WHY
+        # by the software, because suspend_reason is returned by fn_my_licence and
+        # not kept as an operator note. A school whose software stops with no
+        # explanation phones in a panic, and the person answering is the person
+        # who suspended it.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/school_lifecycle.sql
+
       - name: Every suite on disk has a step above
         # The gap this closes has already happened twice in this repo, in two
         # different places: supabase/bundles/ stopped at 0039 while CI stayed

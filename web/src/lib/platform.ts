@@ -31,6 +31,12 @@ export interface PlatformSchool {
    *  looked identical to one that paid in full. */
   outstanding: number
   last_paid_on: string | null
+  /** `status` reads 'locked' for a suspended school AND for an expired one.
+   *  These two are what tell them apart — which is why 0079 did not add an enum
+   *  value it could not add inside a transaction anyway. */
+  suspended: boolean
+  suspend_reason: string | null
+  archived: boolean
 }
 
 export interface LedgerEntry {
@@ -101,9 +107,13 @@ export async function amPlatformAdmin(): Promise<boolean> {
   return Boolean(data)
 }
 
-export async function listPlatformSchools(): Promise<PlatformSchool[]> {
+export async function listPlatformSchools(
+  includeArchived = false,
+): Promise<PlatformSchool[]> {
   const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_platform_schools')
+  const { data, error } = await sb.rpc('fn_platform_schools', {
+    p_include_archived: includeArchived,
+  })
   if (error) throw new Error(error.message)
   return (data ?? []) as PlatformSchool[]
 }
@@ -882,4 +892,259 @@ export async function rejectClaim(claimId: string, reason: string): Promise<void
     p_claim_id: claimId, p_reason: reason,
   })
   if (error) throw new Error(error.message)
+}
+
+// ===========================================================================
+// Phase 4 — lifecycle: start a school, suspend it, and end it.
+// Migrations 0079, 0080.
+// ===========================================================================
+
+/**
+ * Stop a school working, immediately, whatever its licence dates say.
+ *
+ * The reason is NOT an operator note. fn_my_licence returns it and the school's
+ * own banner shows it, because a school whose software stops with no explanation
+ * phones in a panic — and the person answering is the person who suspended it.
+ * The database refuses a blank reason for exactly that reason.
+ */
+export async function suspendSchool(
+  schoolId: string, reason: string,
+): Promise<{ suspended: boolean; reason: string; what_still_works: string }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_suspend_school', {
+    p_school_id: schoolId, p_reason: reason,
+  })
+  if (error) throw new Error(error.message)
+  return data as { suspended: boolean; reason: string; what_still_works: string }
+}
+
+export async function unsuspendSchool(
+  schoolId: string, note?: string | null,
+): Promise<{ suspended: boolean; status: string }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_unsuspend_school', {
+    p_school_id: schoolId, p_note: note ?? null,
+  })
+  if (error) throw new Error(error.message)
+  return data as { suspended: boolean; status: string }
+}
+
+/**
+ * End the commercial relationship. NOT archive (which hides them) and NOT purge
+ * (which destroys them) — a school that cancels in June and comes back in August
+ * finds everything as it was, which happens more often than not.
+ *
+ * `note` in the response says whether money is still owed, because cancelling
+ * does not write a debt off and the console must not imply that it does.
+ */
+export async function cancelSubscription(
+  schoolId: string, reason: string,
+): Promise<{ status: string; outstanding: number; note: string; data: string }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_cancel_subscription', {
+    p_school_id: schoolId, p_reason: reason,
+  })
+  if (error) throw new Error(error.message)
+  return data as { status: string; outstanding: number; note: string; data: string }
+}
+
+/**
+ * A different grace window for one school. Null restores the standard one and
+ * needs no reason; anything else is a favour or a squeeze and needs one.
+ */
+export async function setGrace(
+  schoolId: string, days: number | null, reason?: string | null,
+): Promise<{ grace_days: number; is_override: boolean; status: string }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_set_grace', {
+    p_school_id: schoolId, p_days: days, p_reason: reason ?? null,
+  })
+  if (error) throw new Error(error.message)
+  return data as { grace_days: number; is_override: boolean; status: string }
+}
+
+/** Out of the console, licence dead, data completely intact. Reversible. */
+export async function archiveSchool(
+  schoolId: string, reason: string,
+): Promise<{ archived: boolean; outstanding: number; what_this_did: string[]; reversible: boolean }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_archive_school', {
+    p_school_id: schoolId, p_reason: reason,
+  })
+  if (error) throw new Error(error.message)
+  return data as {
+    archived: boolean; outstanding: number; what_this_did: string[]; reversible: boolean
+  }
+}
+
+export async function unarchiveSchool(
+  schoolId: string,
+): Promise<{ archived: boolean; note: string }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_unarchive_school', {
+    p_school_id: schoolId,
+  })
+  if (error) throw new Error(error.message)
+  return data as { archived: boolean; note: string }
+}
+
+export async function createSchool(input: {
+  name: string; city?: string | null; contactName?: string | null
+  contactPhone?: string | null; contactEmail?: string | null
+  planCode?: string; trialDays?: number; notes?: string | null
+}): Promise<{
+  school_id: string; name: string; plan_code: string
+  trial_ends_on: string; trial_days: number; still_needed: string
+}> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_create_school', {
+    p: {
+      name: input.name, city: input.city ?? null,
+      contact_name: input.contactName ?? null,
+      contact_phone: input.contactPhone ?? null,
+      contact_email: input.contactEmail ?? null,
+      plan_code: input.planCode ?? 'starter',
+      trial_days: input.trialDays ?? 14,
+      notes: input.notes ?? null,
+    },
+  })
+  if (error) throw new Error(error.message)
+  return data as {
+    school_id: string; name: string; plan_code: string
+    trial_ends_on: string; trial_days: number; still_needed: string
+  }
+}
+
+// --- offboarding -----------------------------------------------------------
+
+export interface ExportManifest {
+  school_id: string
+  school_name: string
+  archived_at: string
+  /** Every data table, INCLUDING the empty ones. A manifest that omits what has
+   *  no rows makes "they never used marks" and "marks were left out of the
+   *  export" look identical. */
+  tables: { name: string; rows: number }[]
+  total_rows: number
+  previous_exports: { taken_at: string; total_rows: number; by: string | null }[]
+}
+
+/** Refuses unless the school is ARCHIVED. A full export of every child's name
+ *  and every guardian's phone number is an offboarding step, not a way to pull a
+ *  live customer's records — and archiving is reversible, logged and reasoned. */
+export async function exportManifest(schoolId: string): Promise<ExportManifest> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_export_manifest', {
+    p_school_id: schoolId,
+  })
+  if (error) throw new Error(error.message)
+  return data as ExportManifest
+}
+
+/** One table, one page. A school with three years of daily attendance for 600
+ *  children is over a million rows in that table alone, and a truncated export
+ *  that reported success is how "we gave you everything" becomes untrue. */
+export async function exportTable(
+  schoolId: string, table: string, offset = 0, limit = 1000,
+): Promise<{ table: string; offset: number; limit: number; rows: unknown[]; count: number }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_export_table', {
+    p_school_id: schoolId, p_table: table, p_offset: offset, p_limit: limit,
+  })
+  if (error) throw new Error(error.message)
+  return data as {
+    table: string; offset: number; limit: number; rows: unknown[]; count: number
+  }
+}
+
+/** The row that survives the purge, and the only answer to "you deleted our
+ *  records". Written from the counts ACTUALLY put in the file. */
+export async function recordExport(
+  schoolId: string, counts: Record<string, number>, note?: string | null,
+): Promise<{ export_id: string; total_rows: number; taken_at: string }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_record_export', {
+    p_school_id: schoolId, p_counts: counts, p_note: note ?? null,
+  })
+  if (error) throw new Error(error.message)
+  return data as { export_id: string; total_rows: number; taken_at: string }
+}
+
+/**
+ * The only irreversible thing in this product.
+ *
+ * Five refusals stand in front of it: not the operator, not archived, never
+ * exported, the typed name does not match, and money still owed. Only the last
+ * is overridable — "they will never pay and I want them gone" is a legitimate
+ * decision; the other four are not.
+ */
+export async function purgeSchool(
+  schoolId: string, confirmName: string, forceDespiteDebt = false,
+): Promise<{
+  purged: boolean; school_name: string; rows_deleted: number
+  photos_deleted: number; passes: number; by_table: Record<string, number>
+  exported_at: string
+  kept: { invoices: number; payments: number; why: string }
+  also_kept: string
+}> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_purge_school', {
+    p_school_id: schoolId, p_confirm_name: confirmName,
+    p_force_despite_debt: forceDespiteDebt,
+  })
+  if (error) throw new Error(error.message)
+  return data as {
+    purged: boolean; school_name: string; rows_deleted: number
+    photos_deleted: number; passes: number; by_table: Record<string, number>
+    exported_at: string
+    kept: { invoices: number; payments: number; why: string }
+    also_kept: string
+  }
+}
+
+/**
+ * The owner login for a school the console created.
+ *
+ * fn_platform_create_school makes the school row; nobody can sign in to it until
+ * this runs, and in the console the two states look identical. Minting an auth
+ * user needs the service_role key, so it goes through an Edge Function that
+ * checks is_platform_admin() itself and refuses a school that already has
+ * logins.
+ *
+ * NOT the public signup link: /signup calls `signup-school`, which creates a
+ * NEW school, so a principal following that link would end up with a second
+ * empty one while the school the operator set up stayed unreachable.
+ */
+export async function createSchoolOwner(input: {
+  schoolId: string; email: string; password: string; fullName: string
+}): Promise<{ school_name: string; email: string; next: string }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.functions.invoke('create-school-owner', {
+    body: {
+      school_id: input.schoolId,
+      email: input.email.trim().toLowerCase(),
+      password: input.password,
+      full_name: input.fullName.trim(),
+    },
+  })
+  if (!error) return data as { school_name: string; email: string; next: string }
+
+  // The function ran and refused. Its own message is the useful one — "that
+  // school already has logins" is an instruction, and replacing it with a
+  // generic failure is how a fixable situation becomes a support call.
+  if ((error as { name?: string }).name === 'FunctionsHttpError') {
+    let msg = error.message
+    try {
+      const ctx = await (error as unknown as {
+        context?: { json?: () => Promise<{ error?: string }> }
+      }).context?.json?.()
+      if (ctx?.error) msg = ctx.error
+    } catch { /* keep the original message */ }
+    throw new Error(msg)
+  }
+  throw new Error(
+    'The create-school-owner function is not deployed. Run '
+    + '`supabase functions deploy create-school-owner`, or send the school the '
+    + 'signup page and let them create their own school instead.',
+  )
 }

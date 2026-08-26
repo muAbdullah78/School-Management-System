@@ -169,7 +169,8 @@ emit supabase/bundles/6_photos_and_records.sql \
 # question "what does production have?" stops being archaeology. This is the
 # bundle that has to be pasted for that to start being true.
 emit supabase/bundles/7_ledger_and_limits.sql \
-     supabase/migrations/006[89]*.sql supabase/migrations/007*.sql
+     supabase/migrations/006[89]*.sql supabase/migrations/007*.sql \
+     supabase/migrations/008*.sql
 
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen

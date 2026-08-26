@@ -726,6 +726,41 @@ select 'our own invoice details are filled in',
          else 'PASS' end
 
 union all
+-- 0079 and 0080. Can a school be stopped, and can it leave?
+--
+-- Both were impossible. Locking was purely calendar-driven, so a school that had
+-- stopped paying and stopped answering stayed live until its renewal date; and 37
+-- tables reference public.schools with ON DELETE NO ACTION, so a delete failed on
+-- the first foreign key and no function in the schema even tried.
+select 'a school can be suspended, archived and deleted (0079, 0080)',
+       case
+         when not exists (select 1 from information_schema.columns
+                           where table_schema='public' and table_name='subscriptions'
+                             and column_name='suspended_at')
+           then 'FAIL — a school cannot be stopped before its renewal date; re-run bundle 7'
+         when not exists (select 1 from pg_proc where proname='fn_effective_status'
+                           and pronamespace='public'::regnamespace
+                           and prosrc like '%suspended_at%')
+           then 'FAIL — suspension is recorded but nothing reads it, so a suspended '
+                || 'school keeps working; re-run bundle 7'
+         when not exists (select 1 from pg_proc where proname='fn_my_licence'
+                           and pronamespace='public'::regnamespace
+                           and prosrc like '%suspend_reason%')
+           then 'FAIL — a suspended school would not be told why; re-run bundle 7'
+         when to_regclass('public.platform_exports') is null
+           then 'FAIL — no record of what was handed to a school before deletion; re-run bundle 7'
+         when not exists (select 1 from pg_proc where proname='fn_platform_purge_school'
+                           and pronamespace='public'::regnamespace)
+           then 'FAIL — a school still cannot be deleted; re-run bundle 7'
+         when (select confdeltype from pg_constraint
+                where conname='platform_invoices_school_id_fkey') <> 'n'
+           -- The one that would be silent: everything else works and deleting a
+           -- school takes your own sales invoices with it.
+           then 'FAIL — deleting a school would destroy your own invoices to it, '
+                || 'which tax retention does not permit; re-run bundle 7'
+         else 'PASS' end
+
+union all
 -- The row that answers "how far has this database actually got?" (0069)
 --
 -- Until bundle 7 nothing recorded it, and the two times it mattered the answer
