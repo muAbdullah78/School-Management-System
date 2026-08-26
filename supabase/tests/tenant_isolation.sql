@@ -577,6 +577,246 @@ begin
   raise notice 'ok: platform admin sees schools and subscriptions, no tenant data';
 end $platform$;
 
+-- =============================================================================
+-- TEST 6 — A DEFINER FUNCTION MUST NOT HAND OVER ANOTHER SCHOOL'S FAMILY.
+--
+-- This is a reproduction, not a hypothetical. It is the exact attack that
+-- worked, kept as an assertion so it cannot come back.
+--
+-- fn_queue_message is SECURITY DEFINER, so RLS does not apply inside it, and it
+-- looked up the family with `where id = p_family_id` and nothing else. The
+-- children's names came from an equally unscoped students query, and the balance
+-- from family_outstanding(), which summed students by family_id alone.
+--
+-- School A's owner passed School B's family id, and School A's own outbox — a
+-- table School A is entitled to read — received:
+--
+--     to_name : Haji Abdul Rehman VICTIMHEAD
+--     to_phone: 0300-9998887
+--     text    : "...A balance of Rs 7,777 is outstanding for Fatima Rehman
+--                VICTIMCHILD..."
+--
+-- Another school's family head, their phone number, their child's name and their
+-- exact debt, enumerable one uuid at a time.
+--
+-- The markers are deliberately absurd. An assertion that checked only "did a row
+-- appear" would pass on a row correctly built from School A's OWN data, which is
+-- what a half-fix produces; searching the rendered text for VICTIM proves the
+-- leaked values are the victim's and not the attacker's.
+--
+-- Note the ORDER of assertions below. Proving the fixture is real comes FIRST:
+-- the original probe of this bug returned NULL and looked like a clean refusal,
+-- when in fact the template key did not exist and nothing had been tested at
+-- all. A refusal is only evidence when the same call succeeds for a legitimate
+-- caller.
+-- =============================================================================
+do $definer_idor$
+declare
+  a_school uuid := (select v from public._test_ids where k='a_school');
+  b_school uuid := (select v from public._test_ids where k='b_school');
+  b_sess   uuid := (select v from public._test_ids where k='b_sess');
+  b_class  uuid := (select v from public._test_ids where k='b_class');
+  a_owner  uuid := (select v from public._test_ids where k='a_owner');
+  v_bfam uuid; v_bkid uuid; v_binv uuid;
+  v_afam uuid; v_akid uuid;
+  v_queued uuid; v_text text; v_name text; v_phone text;
+  failures text := '';
+begin
+  -- Seeded as the table owner, standing in for the service-role provisioning
+  -- path, before any identity is adopted.
+  perform set_config('test.uid', '', false);
+
+  -- School B: the victim family, with markers and a real debt.
+  insert into public.families (head_name, phone, whatsapp, school_id)
+    values ('Haji Abdul Rehman VICTIMHEAD', '0300-9998887', '0300-9998887', b_school)
+    returning id into v_bfam;
+  insert into public.students (gr_no, full_name, family_id, school_id)
+    values ('IDOR-B1', 'Fatima Rehman VICTIMCHILD', v_bfam, b_school)
+    returning id into v_bkid;
+  insert into public.enrollments (student_id, session_id, class_id, school_id)
+    values (v_bkid, b_sess, b_class, b_school);
+  insert into public.invoices (student_id, session_id, period_month, due_date, status, school_id)
+    values (v_bkid, b_sess, '2026-08-01', '2026-08-10', 'issued', b_school)
+    returning id into v_binv;
+  insert into public.invoice_lines (invoice_id, description, amount, school_id)
+    values (v_binv, 'Tuition Fee', 7777, b_school);
+
+  -- School A: its own family, so the control call below has something honest to
+  -- return.
+  insert into public.families (head_name, phone, whatsapp, school_id)
+    values ('Alpha Parent OWNDATA', '0311-1112222', '0311-1112222', a_school)
+    returning id into v_afam;
+  insert into public.students (gr_no, full_name, family_id, school_id)
+    values ('IDOR-A1', 'Alpha Child OWNDATA', v_afam, a_school)
+    returning id into v_akid;
+
+  perform set_config('test.uid', a_owner::text, false);
+
+  -- --- Premise: the call WORKS for a legitimate caller ---------------------
+  -- Without this, a NULL from the attack below proves nothing: it could mean
+  -- "refused" or it could mean the template key is wrong. That is the mistake
+  -- the first investigation of this bug made.
+  v_queued := public.fn_queue_message('fee_reminder', v_afam);
+  if v_queued is null then
+    raise exception
+      'PREMISE BROKEN: fn_queue_message refused School A its OWN family, so the '
+      'cross-tenant assertion below would pass without testing anything. Check '
+      'that the fee_reminder template exists and is enabled.';
+  end if;
+  select rendered_text into v_text from public.message_outbox where id = v_queued;
+  if v_text not like '%OWNDATA%' then
+    failures := failures ||
+      '  a school cannot message its own family (rendered: ' || coalesce(v_text,'<null>') || ')' || chr(10);
+  end if;
+
+  -- --- The attack ----------------------------------------------------------
+  v_queued := public.fn_queue_message('fee_reminder', v_bfam);
+
+  if v_queued is not null then
+    select to_name, to_phone, rendered_text into v_name, v_phone, v_text
+      from public.message_outbox where id = v_queued;
+    failures := failures || '  fn_queue_message accepted ANOTHER SCHOOL''S family id' || chr(10);
+    if coalesce(v_name, '') like '%VICTIM%' then
+      failures := failures || '    leaked the head name: ' || v_name || chr(10);
+    end if;
+    if coalesce(v_phone, '') = '0300-9998887' then
+      failures := failures || '    leaked the phone number: ' || v_phone || chr(10);
+    end if;
+    if coalesce(v_text, '') like '%VICTIMCHILD%' then
+      failures := failures || '    leaked the child''s name' || chr(10);
+    end if;
+    if coalesce(v_text, '') like '%7,777%' then
+      failures := failures || '    leaked the family''s outstanding balance' || chr(10);
+    end if;
+  end if;
+
+  -- Nothing referencing School B's family may exist in School A's outbox, by any
+  -- route. Checked separately from the return value because a future variant
+  -- might write the row and return null.
+  if exists (select 1 from public.message_outbox o
+              where o.family_id = v_bfam or o.rendered_text like '%VICTIM%') then
+    failures := failures || '  an outbox row referencing School B''s family exists' || chr(10);
+  end if;
+
+  -- --- And the same for the two optional foreign keys ----------------------
+  -- p_student_id was written into the row unchecked, so a row native to School A
+  -- could point at School B's pupil, and the receipt and portal screens join
+  -- through it.
+  v_queued := public.fn_queue_message('fee_reminder', v_afam, '{}'::jsonb, null, v_bkid);
+  if v_queued is not null
+     and (select student_id from public.message_outbox where id = v_queued) = v_bkid then
+    failures := failures || '  an outbox row in School A points at School B''s pupil' || chr(10);
+  end if;
+
+  -- family_outstanding — the function that produced the leaked figure — is NOT
+  -- asserted here, deliberately, and the reason is worth recording.
+  --
+  -- Its hazard is that it sums students by family_id with no school predicate,
+  -- so a pupil in a different school from their family would be counted. 0070
+  -- joins families and requires s.school_id = f.school_id to close that. But the
+  -- state cannot be reached to test: attempting it raises
+  --
+  --     ERROR:  A students row cannot be moved between schools
+  --
+  -- from the guard on students. So the hardening in 0070 defends a state the
+  -- schema already forbids, and an assertion here would be theatre. Saying so is
+  -- better than a test that passes because its premise is impossible — this
+  -- suite has already been burned once by an assertion whose premise had been
+  -- broken by an earlier step.
+  --
+  -- What DOES matter about family_outstanding is that its CALLERS scope the
+  -- family id before handing it over, since it runs with RLS off inside a
+  -- definer. That is exactly what the attack above tests.
+
+  -- --- The second defect: a cross-tenant WRITE ----------------------------
+  -- fn__apply_discount_lines is SECURITY DEFINER and took an invoice id and an
+  -- enrolment id straight from the caller. Despite the fn__ prefix, which in
+  -- this schema means "revoked from the browser", 0021:286 granted EXECUTE on it
+  -- to `authenticated`.
+  --
+  -- So School A called it with School B's invoice and enrolment and got:
+  --     line: Tuition Fee       | amount=5000 | discount=f
+  --     line: Discount: sibling | amount=1000 | discount=t | school_id: ATTACKER'S
+  --     VICTIM invoice net charge now: 4000.00
+  --
+  -- A stranger cut what another school charges a parent by Rs 1,000, and the
+  -- line they inserted carries THEIR school_id while sitting on the victim's
+  -- invoice — so the victim's fee report, the attacker's, and the paper the
+  -- parent is holding all disagree. Worse than the read leak above, because a
+  -- read leaks and a write corrupts.
+  --
+  -- Asserted on the MONEY, not on whether the call raised. A future variant that
+  -- swallowed the error and wrote the line anyway must still fail here.
+  declare
+    v_charge_before numeric;
+    v_charge_after  numeric;
+    v_bkid2 uuid; v_benr2 uuid; v_binv2 uuid;
+  begin
+    perform set_config('test.uid', '', false);
+    insert into public.students (gr_no, full_name, school_id)
+      values ('IDOR-B2', 'Discount Victim', b_school) returning id into v_bkid2;
+    insert into public.enrollments (student_id, session_id, class_id, school_id)
+      values (v_bkid2, b_sess, b_class, b_school) returning id into v_benr2;
+    insert into public.invoices (student_id, session_id, period_month, due_date, status, school_id)
+      values (v_bkid2, b_sess, '2026-09-01', '2026-09-10', 'issued', b_school)
+      returning id into v_binv2;
+    insert into public.invoice_lines (invoice_id, description, amount, school_id)
+      values (v_binv2, 'Tuition Fee', 5000, b_school);
+    -- The victim school's own approved discount, which is what the unscoped read
+    -- reached for.
+    insert into public.discounts (enrollment_id, type, amount, is_percent, status, school_id)
+      values (v_benr2, 'sibling', 1000, false, 'approved', b_school);
+
+    select sum(case when is_discount then -amount else amount end) into v_charge_before
+      from public.invoice_lines where invoice_id = v_binv2;
+
+    perform set_config('test.uid', a_owner::text, false);
+    begin
+      perform public.fn__apply_discount_lines(v_binv2, v_benr2, 5000);
+    exception when others then
+      null;   -- refused is the correct outcome; the charge check below is the proof
+    end;
+
+    select sum(case when is_discount then -amount else amount end) into v_charge_after
+      from public.invoice_lines where invoice_id = v_binv2;
+
+    if v_charge_after is distinct from v_charge_before then
+      failures := failures
+        || '  another school CHANGED this invoice: net charge ' || v_charge_before
+        || ' -> ' || v_charge_after || chr(10);
+    end if;
+    if exists (select 1 from public.invoice_lines
+                where invoice_id = v_binv2 and school_id <> b_school) then
+      failures := failures
+        || '  an invoice_lines row on School B''s invoice carries another school''s school_id'
+        || chr(10);
+    end if;
+  end;
+
+  -- And the convention that made it reachable. In this schema an fn__ prefix
+  -- means "internal, revoked from the browser roles"; a grant turns an internal
+  -- helper into an unguarded entry point.
+  if exists (
+    select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and p.proname like 'fn\_\_%'
+       and (has_function_privilege('authenticated', p.oid, 'execute')
+         or has_function_privilege('anon', p.oid, 'execute'))
+  ) then
+    failures := failures || '  an internal fn__ function is callable from a browser session: '
+      || (select string_agg(p.proname, ', ' order by p.proname)
+            from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname like 'fn\_\_%'
+             and (has_function_privilege('authenticated', p.oid, 'execute')
+               or has_function_privilege('anon', p.oid, 'execute')))
+      || chr(10);
+  end if;
+
+  if failures <> '' then
+    raise exception E'CROSS-TENANT LEAK THROUGH A DEFINER FUNCTION:\n%', failures;
+  end if;
+  raise notice 'ok: a definer function refuses another school''s family id and invoice';
+end $definer_idor$;
+
 drop table if exists public._test_ids;
 select 'TENANT ISOLATION: ALL TESTS PASSED' as result;
 

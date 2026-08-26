@@ -653,6 +653,36 @@ jobs:
         # names the exact line and exits 1.
         run: python3 ./supabase/check-definer-queries.py
 
+      - name: Does a definer function look up a tenant row by a caller's id?
+        # The plainest IDOR, and it had shipped twice.
+        #
+        # fn_queue_message did `select * from public.families where id =
+        # p_family_id` inside a SECURITY DEFINER function, where RLS does not
+        # apply. School A's owner passed School B's family id and got School B's
+        # family head name, phone number, child's name and exact outstanding
+        # balance, written into School A's own readable outbox. Enumerable one
+        # uuid at a time.
+        #
+        # fn__apply_discount_lines was worse — a WRITE. It took an invoice id and
+        # an enrolment id straight from the caller, and despite the fn__ prefix
+        # (which in this schema means "revoked from the browser") 0021:286 had
+        # granted it to `authenticated`. School A cut what School B charges a
+        # parent from Rs 5,000 to Rs 4,000.
+        #
+        # Two existing guards passed both. check-definer-queries.py hunts a
+        # different shape on purpose (inequality between two table columns — the
+        # fn_rollover bug). dashboard.sql assertion 20 asks only whether a
+        # function MENTIONS scoping somewhere: fn_queue_message mentions
+        # current_school_id() twice, so one correct mention exempted three
+        # incorrect queries.
+        #
+        # So this judges PER STATEMENT, and only that one shape — a tenant table
+        # filtered on a caller-supplied parameter, with no school_id predicate
+        # and no assert_own / fn__assert_my_child / fn_may_manage_class call on
+        # THAT parameter. It also fails if any fn__ helper becomes callable from
+        # a browser session, which is what pays for skipping internal helpers.
+        run: python3 supabase/check-definer-idor.py
+
       - name: Are per-school key lookups scoped?
         # gr_no, admission_no, employee_no, roll_no, receipt_no and voucher_no
         # are PER-SCHOOL counters. Every school on the platform has a GR 0001.

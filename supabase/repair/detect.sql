@@ -320,7 +320,29 @@ with sig(migration, object, present) as (values
      (select exists (select 1 from information_schema.tables
                       where table_schema = 'public' and table_name = 'schema_migrations')
          and exists (select 1 from pg_proc where proname = 'fn_record_migration'
-                      and pronamespace = 'public'::regnamespace)))
+                      and pronamespace = 'public'::regnamespace))),
+  -- 0070 closed TWO cross-tenant defects, so the signature is all three of its
+  -- parts. A database missing it lets one school read another school's family
+  -- head name, phone, child's name and debt through fn_queue_message, AND write
+  -- a discount line onto another school's invoice through
+  -- fn__apply_discount_lines. Both functions predate it, so presence proves
+  -- nothing — the tells are the school predicates inside them and the revoked
+  -- grant that made the second one reachable.
+  --
+  -- has_function_privilege() is called through a pg_proc JOIN, never with a text
+  -- signature: the text form RAISES on a missing function, and this file must
+  -- survive being run against a database missing anything.
+  ('0070_queue_message_scoping', 'family and invoice lookups are scoped',
+     (select exists (select 1 from pg_proc where proname = 'fn_queue_message'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%id = p_family_id and school_id = v_school%')
+         and exists (select 1 from pg_proc where proname = 'fn__apply_discount_lines'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%d.school_id = v_school%')
+         and not exists (select 1 from pg_proc p
+                          join pg_namespace n on n.oid = p.pronamespace
+                          where n.nspname = 'public' and p.proname like 'fn\_\_%'
+                            and has_function_privilege('authenticated', p.oid, 'execute'))))
 )
 select migration,
        object                                   as looked_for,

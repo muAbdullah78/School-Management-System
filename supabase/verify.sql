@@ -560,6 +560,30 @@ select 'licence banner does not nag mid-term (0068)',
        then 'PASS' else 'FAIL — re-run bundle 7' end
 
 union all
+-- 0070. Two cross-tenant defects, both proven on live fixtures.
+--
+-- fn_queue_message handed one school another school's family head name, phone
+-- number, child's name and exact debt. fn__apply_discount_lines let one school
+-- write a discount line onto another school's invoice, cutting Rs 5,000 to
+-- Rs 4,000 — and it was reachable from a browser at all only because an fn__
+-- helper had been granted to `authenticated`.
+--
+-- Both functions predate 0070, so the signature is the school predicates inside
+-- them plus the absence of that grant.
+select 'one school cannot reach another''s families or fees (0070)',
+       case when exists (select 1 from pg_proc where proname = 'fn_queue_message'
+                          and pronamespace = 'public'::regnamespace
+                          and prosrc like '%id = p_family_id and school_id = v_school%')
+             and exists (select 1 from pg_proc where proname = 'fn__apply_discount_lines'
+                          and pronamespace = 'public'::regnamespace
+                          and prosrc like '%d.school_id = v_school%')
+             and not exists (select 1 from pg_proc p
+                              join pg_namespace n on n.oid = p.pronamespace
+                              where n.nspname = 'public' and p.proname like 'fn\_\_%'
+                                and has_function_privilege('authenticated', p.oid, 'execute'))
+       then 'PASS' else 'FAIL — re-run bundle 7 (cross-tenant leak is OPEN)' end
+
+union all
 -- The row that answers "how far has this database actually got?" (0069)
 --
 -- Until bundle 7 nothing recorded it, and the two times it mattered the answer
