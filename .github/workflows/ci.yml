@@ -1071,6 +1071,56 @@ jobs:
         # entirely would report healthy.
         run: python3 supabase/check-metadata-trust.py
 
+      - name: Fee setup — could a school set a fee at all?
+        # No. Three defects, all in the module the product exists for.
+        #
+        # Saving an amount raised 42P10 every time: 0035 replaced the 3-column
+        # unique key on fee_structures with a 4-column one including
+        # effective_from, and the app still sent the old 3-column ON CONFLICT.
+        # A 100% failure rate for thirty-one migrations.
+        #
+        # And there was no fee-heads screen at all, so there was nothing to put
+        # an amount against — the grid showed an empty list with a Save button.
+        # Together that means a fresh Pakistani school could not bill a monthly
+        # fee, which is the whole product. The dashboard's "N classes have
+        # students but no fee set" warning was honest and unactionable.
+        #
+        # The third is worse because it is silent and live. effective_from
+        # arrived in 0035 and only ONE of four readers learned about it:
+        # fn_generate_class_invoices took the latest price on or before the
+        # month; fn_bill_student_month and fn_student_monthly_fee had no date
+        # filter at all. Tuition 1500 with a rise to 1800 scheduled from
+        # 2027-01-01, billing MAY 2026, produced TWO lines — 1500 and 1800 — and
+        # the monthly-fee figure read 3300. The two billing paths in the product
+        # disagreed with each other, and the wrong one is the per-student path
+        # the fee counter uses. Any school that used Fee Increment started
+        # double-billing every parent.
+        #
+        # Assertion 8 is the one that is easy to get wrong in the fix: the FIRST
+        # amount for a head is written at the base date, not today, because a
+        # school setting up in August must still be able to bill April.
+        # Assertion 18 checks the schedule is honoured in both directions — it
+        # would be easy to make May correct by ignoring dates again.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/fee_setup.sql
+
+      - name: Live student count — does a school outgrowing its plan get noticed?
+        # It did not. subscriptions.student_count is a stored number driving the
+        # console's count, limit_state, over_limit_flagged_at, suggested_plan and
+        # the school's own licence banner — and it was refreshed only by
+        # fn_activate_subscription and a manual button. 400 pupils enrolled, the
+        # console read 0 of 100, over_limit_flagged_at null, and the school's
+        # banner also read 0 of 100. A Starter school (Rs 9,500) that belonged on
+        # Institution (Rs 35,000) is Rs 25,500 a year invisible, per school.
+        #
+        # 0064 fixed the renewal path so it cannot misprice; this is the
+        # detection path that tells anybody to act.
+        #
+        # The suite asserts the count moves on all six paths, and that a bulk
+        # import refreshes ONCE — statement-level with a transition table, not
+        # row-level, or a 400-row import would recount the school 400 times and
+        # serialise against its own lock on the subscriptions row.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/student_count.sql
+
       - name: Every suite on disk has a step above
         # The gap this closes has already happened twice in this repo, in two
         # different places: supabase/bundles/ stopped at 0039 while CI stayed

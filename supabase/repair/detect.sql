@@ -270,7 +270,36 @@ with sig(migration, object, present) as (values
                       and prosrc like '%user_invites%'
                       and strpos(prosrc, 'raw_user_meta_data->>''role''') = 0)
          and exists (select 1 from information_schema.tables
-                      where table_schema = 'public' and table_name = 'user_invites')))
+                      where table_schema = 'public' and table_name = 'user_invites'))),
+  -- 0066 REWROTE two billers that date from 0017 and 0020, so presence proves
+  -- nothing. The signature is that both honour effective_from: without it, a
+  -- scheduled fee rise bills the old price AND the new one on the same challan.
+  ('0066_fee_setup',            'both billers honour effective_from',
+     (select exists (select 1 from pg_proc where proname = 'fn_bill_student_month'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%effective_from <=%')
+         and exists (select 1 from pg_proc where proname = 'fn_student_monthly_fee'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%effective_from <=%')
+         and exists (select 1 from pg_proc where proname = 'fn_set_fee_amount'
+                      and pronamespace = 'public'::regnamespace))),
+  -- 0067's signature is the SIX triggers, counted exactly. A partial set leaves
+  -- the count stale through whichever verb is missing, which is the same
+  -- invisible-revenue defect in a narrower window.
+  ('0067_live_student_count',   'six count triggers on students and enrollments',
+     -- By NAME, never ::regproc. That cast raises on a missing function, and
+     -- detect.sql must survive being run against a database missing anything —
+     -- the first version aborted the entire file with 'function
+     -- public.fn__refresh_counts_touched does not exist', taking every other
+     -- row's answer with it.
+     (select (select count(*) from pg_trigger t
+               join pg_proc pr on pr.oid = t.tgfoid
+               join pg_namespace nr on nr.oid = pr.pronamespace
+               where not t.tgisinternal
+                 and nr.nspname = 'public'
+                 and pr.proname = 'fn__refresh_counts_touched'
+                 and t.tgrelid in ('public.students'::regclass,
+                                   'public.enrollments'::regclass)) = 6))
 )
 select migration,
        object                                   as looked_for,

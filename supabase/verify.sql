@@ -461,6 +461,53 @@ select 'invite-only provisioning (0065)',
        then 'PASS' else 'FAIL — run migrations/0065_invite_only_provisioning.sql' end
 
 union all
+select 'fee setup (0066)',
+       case when (select count(*) from pg_proc p
+                   join pg_namespace n on n.oid = p.pronamespace
+                   where n.nspname='public' and p.proname in
+                     ('fn_upsert_fee_head','fn_set_fee_head_active','fn_fee_heads',
+                      'fn_set_fee_amount','fn_fee_structure')) = 5
+                 -- THE ONES THAT MATTER, and they are facts about BODIES. Both
+                 -- billers have existed since 0017/0020; what 0066 changed is
+                 -- that they honour effective_from. Without it a school that
+                 -- schedules a fee rise bills every parent the old price PLUS
+                 -- the new one, and the "monthly fee" figure is the sum of every
+                 -- price ever set.
+                 and exists (select 1 from pg_proc p
+                              join pg_namespace n on n.oid = p.pronamespace
+                              where n.nspname='public' and p.proname='fn_bill_student_month'
+                                and p.prosrc like '%effective_from <=%')
+                 and exists (select 1 from pg_proc p
+                              join pg_namespace n on n.oid = p.pronamespace
+                              where n.nspname='public' and p.proname='fn_student_monthly_fee'
+                                and p.prosrc like '%effective_from <=%')
+       then 'PASS' else 'FAIL — run migrations/0066_fee_setup.sql' end
+
+union all
+select 'live student count (0067)',
+       case when exists (select 1 from pg_proc p
+                          join pg_namespace n on n.oid = p.pronamespace
+                          where n.nspname='public'
+                            and p.proname='fn__refresh_counts_touched')
+                 -- Six statement-level triggers: insert/update/delete on both
+                 -- students and enrollments. A subset means a school still
+                 -- outgrows its plan invisibly through whichever verb is missing.
+                 -- Joined to pg_proc by NAME, not cast with ::regproc. The
+                 -- cast RAISES when the function is absent, and the database
+                 -- this row exists to diagnose is exactly the one where it is
+                 -- absent — so the first version aborted the whole file on a
+                 -- database missing 0067.
+                 and (select count(*) from pg_trigger t
+                       join pg_proc pr on pr.oid = t.tgfoid
+                       join pg_namespace nr on nr.oid = pr.pronamespace
+                       where not t.tgisinternal
+                         and nr.nspname = 'public'
+                         and pr.proname = 'fn__refresh_counts_touched'
+                         and t.tgrelid in ('public.students'::regclass,
+                                           'public.enrollments'::regclass)) = 6
+       then 'PASS' else 'FAIL — run migrations/0067_live_student_count.sql' end
+
+union all
 select 'price plans loaded',
        case when (select count(*) from public.plans) = 4
        then 'PASS' else 'FAIL — re-run bundle 1' end

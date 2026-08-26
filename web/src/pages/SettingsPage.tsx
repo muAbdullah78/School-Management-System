@@ -3,6 +3,7 @@ import { SchoolProfile } from './settings/SchoolProfile'
 import { Sessions } from './settings/Sessions'
 import { ClassesSections } from './settings/ClassesSections'
 import { FeeStructure } from './settings/FeeStructure'
+import { FeeHeads } from './settings/FeeHeads'
 import { Users } from './settings/Users'
 import { Backup } from './settings/Backup'
 import { ImportData } from './settings/ImportData'
@@ -15,6 +16,11 @@ const SECTIONS = [
   { key: 'school', label: 'School Profile' },
   { key: 'sessions', label: 'Sessions' },
   { key: 'classes', label: 'Classes & Sections' },
+  // Fee heads come BEFORE the structure, because that is the order a school
+  // has to do them in: you cannot put an amount against a charge that does not
+  // exist yet. There was no fee-heads screen at all, which is why a new school
+  // found the Fee Structure grid empty with no way forward.
+  { key: 'feeheads', label: 'Fee Heads' },
   { key: 'fees', label: 'Fee Structure' },
   { key: 'checkin', label: 'Staff Check-in' },
   { key: 'import', label: 'Import' },
@@ -46,7 +52,8 @@ export function SettingsPage() {
         {section === 'school' && <SchoolProfile />}
         {section === 'sessions' && <Sessions />}
         {section === 'classes' && <ClassesSections />}
-        {section === 'fees' && <FeeStructure />}
+        {section === 'feeheads' && <FeeHeads />}
+        {section === 'fees' && <FeeStructure onSetUpHeads={() => setSection('feeheads')} />}
         {section === 'checkin' && <StaffCheckin />}
         {section === 'import' && <ImportData />}
         {section === 'rollover' && <Rollover />}

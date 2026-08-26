@@ -115,27 +115,114 @@ export async function listFeeHeads(): Promise<FeeHead[]> {
   )
 }
 
-// ---- Fee structure (amount per class per head) ----
-export async function getFeeStructure(sessionId: string, classId: string): Promise<Record<string, number>> {
-  const sb = requireSupabase()
-  const rows = unwrap<{ fee_head_id: string; amount: number }[]>(
-    await sb.from('fee_structures').select('fee_head_id, amount').eq('session_id', sessionId).eq('class_id', classId),
-  )
-  const map: Record<string, number> = {}
-  for (const r of rows) map[r.fee_head_id] = Number(r.amount)
-  return map
+// ---- Fee heads ----
+//
+// Nothing in the app could create one until 0066, so a fresh school had no
+// 'Tuition' to put an amount against: the Fee Structure grid showed an empty
+// list with a Save button and nothing to fill in.
+
+export interface FeeHeadRow {
+  id: string
+  name: string
+  type: string
+  is_recurring: boolean
+  is_refundable: boolean
+  sort_order: number
+  active: boolean
+  /** Already referenced by a fee structure or an invoice line. Such a head can
+   *  be switched off but never deleted — a past challan names it, and removing
+   *  it would rewrite what a parent was charged for. */
+  in_use: boolean
 }
 
-export async function upsertFeeStructure(
-  sessionId: string, classId: string, feeHeadId: string, amount: number,
-): Promise<void> {
+export async function listFeeHeadsFull(includeInactive = false): Promise<FeeHeadRow[]> {
   const sb = requireSupabase()
-  const { error } = await sb
-    .from('fee_structures')
-    .upsert({ session_id: sessionId, class_id: classId, fee_head_id: feeHeadId, amount }, {
-      onConflict: 'session_id,class_id,fee_head_id',
-    })
+  const { data, error } = await sb.rpc('fn_fee_heads', { p_include_inactive: includeInactive })
   if (error) throw new Error(error.message)
+  return (data ?? []) as FeeHeadRow[]
+}
+
+export async function upsertFeeHead(input: {
+  id?: string | null
+  name: string
+  type: string
+  is_recurring: boolean
+  is_refundable: boolean
+  sort_order?: number
+}): Promise<string> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_upsert_fee_head', {
+    p_name: input.name, p_type: input.type,
+    p_is_recurring: input.is_recurring, p_is_refundable: input.is_refundable,
+    p_sort_order: input.sort_order ?? 0, p_id: input.id ?? null,
+  })
+  if (error) throw new Error(error.message)
+  return data as string
+}
+
+export async function setFeeHeadActive(id: string, active: boolean): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_set_fee_head_active', { p_id: id, p_active: active })
+  if (error) throw new Error(error.message)
+}
+
+// ---- Fee structure (amount per class per head) ----
+
+export interface FeeStructureRow {
+  fee_head_id: string
+  fee_head: string
+  is_recurring: boolean
+  /** The amount in force TODAY — what will actually be billed. Null means no
+   *  price has been set for this head and class. */
+  amount: number | null
+  effective_from: string | null
+  /** A change already scheduled. Shown on the grid so a school is never
+   *  surprised by its own increase. */
+  next_amount: number | null
+  next_from: string | null
+}
+
+/**
+ * Read through fn_fee_structure rather than the table.
+ *
+ * Selecting fee_structures directly returns EVERY dated row for a head, so once
+ * a school had used the fee-increment tool the grid showed whichever row came
+ * back last — an arbitrary price. The function returns the one in force today
+ * plus whatever is scheduled next.
+ */
+export async function getFeeStructure(
+  sessionId: string, classId: string,
+): Promise<FeeStructureRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_fee_structure', {
+    p_session_id: sessionId, p_class_id: classId,
+  })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as FeeStructureRow[]
+}
+
+/**
+ * Set what a class pays for one head.
+ *
+ * Goes through fn_set_fee_amount because fee_structures' unique key gained
+ * `effective_from` in 0035 and the direct upsert still named the old three
+ * columns — so every save raised 42P10 ("no unique or exclusion constraint
+ * matching the ON CONFLICT specification") and no school could set a fee at all.
+ *
+ * `effectiveFrom` null means "from today", and the first amount for a head is
+ * written at the base date so a month billed in arrears is still covered.
+ */
+export async function setFeeAmount(
+  sessionId: string, classId: string, feeHeadId: string, amount: number,
+  effectiveFrom?: string | null,
+): Promise<string> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_set_fee_amount', {
+    p_session_id: sessionId, p_class_id: classId, p_fee_head_id: feeHeadId,
+    p_amount: amount, p_effective_from: effectiveFrom ?? null,
+  })
+  if (error) throw new Error(error.message)
+  return data as string
 }
 
 // ---- Students ----
