@@ -519,9 +519,17 @@ begin
   perform pg_temp.ok(d->>'withholding_note' like '%153(1)(b)%'
                  and d->>'withholding_note' like '%8%',
     '55 it tells the school what to withhold and asks for the CPR');
-  perform pg_temp.ok(d->'lines'->0->>'period' is not null
+  -- The RAW dates, not a formatted string. The first version returned
+  -- 'period' as "2026-09-01 to 2027-08-31" and the rendered document put ISO
+  -- dates on a page whose every other date read "26 Aug 2026" — a customer's
+  -- accountant notices that before they notice the total. Formatting is the
+  -- document component's job, in one place.
+  perform pg_temp.ok(d->'lines'->0->>'period_start' is not null
+                 and d->'lines'->0->>'period_end' is not null
+                 and (d->'lines'->0->>'period_end')::date
+                       > (d->'lines'->0->>'period_start')::date
                  and (d->'lines'->0->>'months')::int = 12,
-    '56 one line, the licence period');
+    '56 one line, the licence period, as dates rather than a rendered string');
 
   -- The balance shown is THIS document's, not the school's. Putting the school
   -- balance here makes one invoice look unpaid because another one is.

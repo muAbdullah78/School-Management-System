@@ -670,14 +670,21 @@ select 'the operator can open a school (0075)',
        then 'PASS' else 'FAIL — re-run bundle 7' end
 
 union all
--- 0076-0078. Whether this database can produce an INVOICE, correct a wrong one,
--- and record the income tax a school withheld at source.
+-- Whether this database can produce an INVOICE, correct a wrong one, and record
+-- the income tax a school withheld at source. Three migrations, one row, and
+-- each named separately below because the CI drift check reads this file for the
+-- migration numbers — 0033 to 0038 once jumped a gap here and verify.sql
+-- certified a database on which sibling billing did not work.
+--
+--   0076  the seller: business name, NTN, address, bank account, amount in words
+--   0077  document numbers, void, credit notes, WITHHOLDING TAX
+--   0078  the renewal worklist, payment reports, the duplicate-invoice guard
 --
 -- The withholding column is the one to check first if a school insists it has
 -- paid and the software says otherwise: without it, a school that deducts tax
 -- under section 153(1)(b) transfers less than the invoice and the difference sits
 -- as outstanding forever.
-select 'invoices, corrections and withholding tax (0076-0078)',
+select 'invoices, corrections and withholding tax (0076, 0077, 0078)',
        case
          when to_regclass('public.platform_settings') is null
            then 'FAIL — re-run bundle 7 (no seller details, so no invoice can be printed)'
