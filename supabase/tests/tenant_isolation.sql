@@ -377,7 +377,21 @@ declare
     -- on is_platform_admin and one on current_school_id + has_role. 4b-ii accepts
     -- either, which is exactly why 4b-ii is stated as "one or the other" rather
     -- than per-table.
-    'operator_sessions'
+    'operator_sessions',
+    -- 0076. The VENDOR's own registered name, NTN, address and bank account. No
+    -- school_id because it describes us, not a customer, and exactly one row
+    -- exists. Its only policy is a SELECT on is_platform_admin(); the four bank
+    -- fields a school needs in order to pay reach it through fn_my_billing,
+    -- which hand-picks them — platform_billing.sql assertions 73c and 73d prove
+    -- the rest of the row does not travel.
+    'platform_settings',
+    -- 0078. A school telling us it has transferred money. Like operator_sessions
+    -- it has TWO select policies — the operator sees every report, the school
+    -- sees its own — because a school that cannot see its own report has no way
+    -- to know the first one arrived. It has NO write policy: the insert goes
+    -- through fn_my_report_payment, and a school-writable `status` column would
+    -- be a school writing money.
+    'platform_payment_claims'
   ];
 begin
   -- 4a. Every tenant table must carry school_id.

@@ -417,6 +417,61 @@ a rewrite. (Recommendation, unasked: don't add a gateway until a school asks
 twice. Pakistani schools pay by bank transfer and 2–3% on Rs 35,000/year is real
 money for a convenience nobody requested.)
 
+#### Phase 3 as built — and the one thing the design got wrong
+
+Delivered in `0076_platform_settings.sql`, `0077_invoice_documents.sql` and
+`0078_renewals_self_serve.sql`, with 125 assertions in
+`supabase/tests/platform_billing.sql`. Four differences from the plan above,
+each because the plan was wrong or incomplete:
+
+**The withholding tax needed a column on the PAYMENT, not a line on the
+invoice.** §3a said "a withholding tax line", which would have been ours to
+compute. It is not. Section 153(1)(b) makes the deduction the *buyer's* legal
+duty, and the rate depends on whether the school is on the Active Taxpayer List
+and whether it is a prescribed withholding agent at all — neither of which we
+can know. So the invoice carries a *note* asking for a rate and a CPR, and
+`platform_payments.tax_withheld` records what the school actually deducted.
+`settled = amount + tax_withheld`, and every balance in the product now uses it.
+The 4%-wrong-forever problem §3a predicted is exactly right; the fix is on the
+other side of the transaction.
+
+**Sales tax is per invoice and defaults to zero.** Also not ours to guess: it is
+provincial (PRA, SRB, KPRA, BRA), the rate differs, and printing a confident 16%
+on an invoice from a business that is not registered to charge it invents a
+liability. `fn_platform_set_invoice_tax` exists; the default is nothing.
+
+**§3c's renewal safeguard could not have worked, and the test caught it.** The
+plan implied a screen-side check for a school already invoiced ahead. The first
+implementation reported `already_invoiced` on the worklist — an unvoided invoice
+whose period starts after the current period ends — and that column can never be
+true. `fn_activate_subscription` raises the invoice AND extends `period_end` in
+the same statement, so the newest invoice always *ends* at `period_end` and never
+starts after it. A double renewal produces two contiguous invoices and a
+`period_end` that moved twice, and nothing downstream can tell that apart from
+one long renewal. It would have shipped reading `false` on every row and looked
+like a working safeguard.
+
+The guard belongs where the write happens: a trigger refuses an invoice that
+duplicates a live one exactly — same school, same plan, same period. That is
+precisely the double-click case, where the second transaction has not seen the
+first and computes the identical period. What the worklist reports instead is
+`invoiced_to` beside `expires_on`, and `unbilled_days` — licence time nobody
+billed for, which is a question this product genuinely could not answer before.
+
+**The claim, not the payment.** §3e said "I've paid — here's the reference …
+lands in the console as a payment to confirm". Built as a separate table,
+`platform_payment_claims`, with no write policy and no path to money except
+`fn_platform_confirm_claim`. A school-writable row in `platform_payments` would
+let a school clear its own balance by typing a number, and the distinction is
+worth the extra table.
+
+Not built from §3d: a `platform_reminders` table. `operator_actions` already
+records every deliberate act with a timestamp, so the reminder ladder reads its
+own history from there (`last_reminded_at`, `last_reminded_stage`) rather than
+keeping a second log that can disagree with the first. `fn_platform_mark_reminded`
+records that WhatsApp was *opened* — not that the school read anything, which we
+do not know and will not claim.
+
 ### Phase 4 — Lifecycle: start a school, and end one
 
 **4a. Provision from the console.** A UI for `fn_provision_school` — name, city,
@@ -531,8 +586,19 @@ Not blockers — I'm building Phase 1 and 2 now regardless — but both change t
 detail.
 
 1. **Your NTN and registered business name and address**, for the invoice
-   template (§3a). Placeholders until then. Don't paste them in chat if you'd
-   rather not; a settings screen can hold them.
+   template (§3a). ~~Placeholders until then.~~ **Done differently, and you do
+   not need to tell me at all:** the settings screen exists — the operator
+   console, *Our billing details* — and every field starts empty rather than
+   plausible, because a placeholder like "Your Company (Pvt) Ltd" reads as
+   configured and would be printed on a real invoice by somebody who assumed it
+   was. Until you fill it in, the console shows a warning dot on the tab, the
+   invoice preview refuses to look finished, and `supabase/verify.sql` reports
+   `ACTION NEEDED` with the reason. Nothing about it lands in the repository.
+
+   The NTN is the field that matters most: without it a school cannot claim the
+   software as an expense, and cannot file the tax it is required to deduct from
+   what it pays you — so it will either pay you late or pay you short, and it
+   will not phone to say why.
 2. **The 30-day figure in §2.3.** I'm making the school's over-limit notice
    silent until 30 days before expiry. If you'd rather they were told
    immediately, say so — I think that's a mistake and I've said why, but it's

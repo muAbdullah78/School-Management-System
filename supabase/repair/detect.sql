@@ -418,7 +418,50 @@ with sig(migration, object, present) as (values
   ('0075_school_detail',        'fn_platform_school_detail',
      (select exists (select 1 from pg_proc where proname = 'fn_platform_school_detail'
                       and pronamespace = 'public'::regnamespace
-                      and prosrc like '%readiness%')))
+                      and prosrc like '%readiness%'))),
+  -- 0076. The seller half of every invoice. The signature is the single-row
+  -- table AND fn__amount_in_words, because a settings row with no way to render
+  -- an amount in words still cannot produce a document a bank counter accepts.
+  ('0076_platform_settings',    'platform_settings + amount in words',
+     (select exists (select 1 from information_schema.tables
+                      where table_schema = 'public' and table_name = 'platform_settings')
+         and exists (select 1 from pg_proc where proname = 'fn__amount_in_words'
+                      and pronamespace = 'public'::regnamespace))),
+  -- 0077. Document numbers and the two corrections. Four predicates, because
+  -- each one is a defect on its own: no doc_no means an accountant cannot pay
+  -- against anything; no net_total means every total is computed by hand in six
+  -- places; no tax_withheld means the receivable is permanently wrong for any
+  -- school that withholds tax at source; and no numbering trigger means the
+  -- series breaks the moment anything inserts an invoice by another path.
+  ('0077_invoice_documents',    'doc numbers, void, credit notes, withholding tax',
+     (select (select count(*) from information_schema.columns
+               where table_schema = 'public' and table_name = 'platform_invoices'
+                 and column_name in ('doc_no', 'kind', 'net_total', 'voided_at')) = 4
+         and exists (select 1 from information_schema.columns
+                      where table_schema = 'public' and table_name = 'platform_payments'
+                        and column_name = 'tax_withheld')
+         and exists (select 1 from pg_proc where proname = 'fn_platform_credit_note'
+                      and pronamespace = 'public'::regnamespace)
+         and exists (select 1 from pg_trigger t
+                       join pg_proc pr on pr.oid = t.tgfoid
+                      where not t.tgisinternal and pr.proname = 'fn__assign_doc_no'))),
+  -- 0078. Renewals and the school's own view. The duplicate-invoice trigger is
+  -- part of the signature: without it a double-clicked renewal bills a school
+  -- twice for one year, and the worklist cannot detect that afterwards — see the
+  -- header of 0078 on why the screen-side check that was tried first could never
+  -- work.
+  ('0078_renewals_self_serve',  'renewal worklist, payment reports, duplicate guard',
+     (select exists (select 1 from pg_proc where proname = 'fn_platform_due_soon'
+                      and pronamespace = 'public'::regnamespace)
+         and exists (select 1 from information_schema.tables
+                      where table_schema = 'public'
+                        and table_name = 'platform_payment_claims')
+         and exists (select 1 from pg_proc where proname = 'fn_my_billing'
+                      and pronamespace = 'public'::regnamespace)
+         and exists (select 1 from pg_trigger t
+                       join pg_proc pr on pr.oid = t.tgfoid
+                      where not t.tgisinternal
+                        and pr.proname = 'fn__refuse_duplicate_invoice')))
 )
 select migration,
        object                                   as looked_for,

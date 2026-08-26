@@ -1278,6 +1278,29 @@ jobs:
         # through and only luck stopped it.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/operator_support.sql
 
+      - name: Invoices, corrections, withholding tax and the school's own bill
+        # 0076-0078. Four defects, and the one to read first if this ever fails is
+        # WITHHOLDING TAX.
+        #
+        # Under section 153(1)(b) a Pakistani buyer of services must deduct income
+        # tax at source and pay it to the FBR on the seller's behalf. So a school
+        # invoiced Rs 38,000 transfers Rs 34,960 and sends a CPR for the Rs 3,040
+        # it deducted. Before 0077 the software recorded Rs 34,960 and reported
+        # Rs 3,040 outstanding — forever, for every withholding school — and the
+        # operator would chase a customer for money it had already paid in our
+        # name. Assertion 42 is that figure being zero.
+        #
+        # The other rule this suite defends is the one that makes the school-facing
+        # "I have paid" form safe: A SCHOOL CANNOT MOVE ITS OWN BALANCE. The form
+        # writes to platform_payment_claims, which is a REQUEST and changes no
+        # total. Assertions 77-79 sweep every route from a request to money —
+        # insert a payment, insert an invoice, update a claim to 'confirmed', call
+        # the operator's confirm function, credit its own invoice, read the whole
+        # queue — and every one is refused. Note 78 checks by READING THE ROW
+        # BACK, because an UPDATE with no matching policy affects zero rows
+        # silently rather than raising.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/platform_billing.sql
+
       - name: Every suite on disk has a step above
         # The gap this closes has already happened twice in this repo, in two
         # different places: supabase/bundles/ stopped at 0039 while CI stayed

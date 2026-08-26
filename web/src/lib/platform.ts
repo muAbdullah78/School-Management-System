@@ -34,11 +34,21 @@ export interface PlatformSchool {
 }
 
 export interface LedgerEntry {
+  /** The invoice or the payment row itself, so a line can be opened. Before
+   *  0077 a ledger line could not be pointed at: "the Rs 38,000 one" was the
+   *  only way to refer to it, and two renewals of the same plan in a year made
+   *  that ambiguous. */
+  entry_id: string
   entry_date: string
-  kind: 'invoice' | 'payment'
+  kind: 'invoice' | 'credit_note' | 'payment'
+  /** Null on a payment — only documents carry a number. */
+  doc_no: string | null
   description: string
+  /** Signed: negative for a credit note, zero for a voided document. */
   charged: number | null
+  /** Cash plus any tax the school withheld and paid to the FBR in our name. */
   paid: number | null
+  voided: boolean
   note: string | null
   reference: string | null
 }
@@ -51,6 +61,21 @@ export interface PlatformRevenue {
   /** List price minus what was actually charged, over the period. A figure
    *  nothing could produce before — discounts left no trace. */
   discounted: number
+  /** Credit notes raised in the period. NOT a discount — a refund and a
+   *  discount are different facts and 0077 keeps them apart. */
+  credited: number
+  /** Invoices cancelled in the period. Reported rather than silently dropped: a
+   *  month where three invoices were voided is a month to look at. */
+  voided: number
+  net_invoiced: number
+  /** Money that actually reached the bank — collected minus withheld tax. */
+  cash_received: number
+  /** Income tax the schools deducted at source and paid on our behalf. It is
+   *  settled, but it is not cash. */
+  tax_withheld: number
+  /** Withheld tax with no CPR on record yet. Each rupee here is a deduction we
+   *  cannot claim until the certificate arrives. */
+  tax_certificates_awaited: number
   /** Everything ever invoiced minus everything ever paid. Not period-scoped: a
    *  receivable does not belong to the month it was raised in. */
   outstanding_total: number
@@ -126,19 +151,48 @@ export async function activateSubscription(
 }
 
 /** Record money a school actually sent us. */
+/**
+ * Record what a school paid us — and what it withheld.
+ *
+ * `taxWithheld` is not an optional nicety. Under section 153(1)(b) a Pakistani
+ * buyer of services must deduct income tax at source, so a school invoiced
+ * Rs 38,000 transfers Rs 34,960 and sends a CPR for the Rs 3,040 it paid to the
+ * FBR on our behalf. Recording only the 34,960 leaves Rs 3,040 outstanding
+ * forever and has the operator chasing a school for money it has already paid.
+ */
 export async function recordPlatformPayment(input: {
   schoolId: string; amount: number; paidOn?: string | null
   method?: string; reference?: string | null; invoiceId?: string | null; note?: string | null
-}): Promise<{ payment_id: string; outstanding: number }> {
+  taxWithheld?: number | null; taxCertificate?: string | null
+}): Promise<{
+  payment_id: string; outstanding: number
+  tax_withheld: number; settled: number; awaiting_certificate: boolean
+}> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_platform_record_payment', {
     p_school_id: input.schoolId, p_amount: input.amount,
     p_paid_on: input.paidOn ?? null, p_method: input.method ?? 'bank',
     p_reference: input.reference ?? null, p_invoice_id: input.invoiceId ?? null,
     p_note: input.note ?? null,
+    p_tax_withheld: input.taxWithheld ?? 0,
+    p_tax_certificate: input.taxCertificate ?? null,
   })
   if (error) throw new Error(error.message)
-  return data as { payment_id: string; outstanding: number }
+  return data as {
+    payment_id: string; outstanding: number
+    tax_withheld: number; settled: number; awaiting_certificate: boolean
+  }
+}
+
+/** The CPR usually arrives weeks after the transfer, so it can be attached later. */
+export async function attachTaxCertificate(
+  paymentId: string, certificate: string,
+): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_platform_attach_tax_certificate', {
+    p_payment_id: paymentId, p_certificate: certificate,
+  })
+  if (error) throw new Error(error.message)
 }
 
 /** One school's invoices and payments, interleaved, oldest first. */
@@ -301,6 +355,39 @@ export function describeAction(a: OperatorAction): string {
       return `Entered the school (read only) — ${String(d.reason ?? 'no reason given')}`
     case 'school_left':
       return 'Left the school'
+    // --- 0076-0078 ---------------------------------------------------------
+    case 'credit_note_raised':
+      return `Credit note ${String(d.doc_no ?? '')} for ${pkr(d.total ?? d.amount)}`
+        + (d.note ? ` — ${String(d.note)}` : '')
+    case 'invoice_voided':
+    case 'credit_note_voided':
+      return `${String(d.doc_no ?? 'A document')} voided — ${String(d.reason ?? 'no reason recorded')}`
+        + (d.licence_untouched ? ' (the licence was left running)' : '')
+    case 'invoice_tax_set':
+      return `Tax on ${String(d.doc_no ?? 'the invoice')} set to ${String(d.tax_pct ?? 0)}% (${pkr(d.tax_amount)})`
+    case 'tax_certificate_attached':
+      return `Withholding certificate ${String(d.certificate ?? '')} recorded for ${pkr(d.tax_withheld)}`
+    case 'renewal_reminder':
+      return `Renewal reminder sent by ${String(d.channel ?? 'WhatsApp')} (${String(d.stage ?? '?')} stage)`
+        + (d.note ? ` — ${String(d.note)}` : '')
+    case 'payment_claim_confirmed': {
+      // The gap between the two figures is the interesting part: it is usually
+      // the withholding tax, and it is what the school will ask about.
+      const said = Number(d.claimed_amount ?? 0)
+      const got = Number(d.confirmed_amount ?? 0)
+      return `Reported payment confirmed — ${pkr(got)}`
+        + (said && said !== got ? ` (the school reported ${pkr(said)})` : '')
+        + (d.reference ? ` · ${String(d.reference)}` : '')
+    }
+    case 'payment_claim_rejected':
+      return `Reported payment of ${pkr(d.amount)} rejected — ${String(d.reason ?? 'no reason recorded')}`
+    case 'settings_changed': {
+      const f = Array.isArray(d.fields) ? (d.fields as unknown[]).map(String) : []
+      // The KEYS, never the values: a bank account number does not belong in an
+      // activity feed, and "who changed the bank details, and when" is the
+      // question this answers.
+      return `Our own billing details changed${f.length ? `: ${f.join(', ')}` : ''}`
+    }
     default:
       return a.action.replace(/_/g, ' ')
   }
@@ -439,4 +526,360 @@ export function actionNeeded(s: PlatformSchool): string | null {
     default:
       return null
   }
+}
+
+// ===========================================================================
+// Phase 3 — billing documents, corrections, renewals and the claim queue.
+// Migrations 0076, 0077, 0078.
+// ===========================================================================
+
+/**
+ * The vendor's own registered details.
+ *
+ * `missing` is the field the screen exists for. An invoice printed with a blank
+ * NTN is useless to the school receiving it and they will not tell us — they
+ * will simply fail to claim the expense, or phone about it three weeks later.
+ */
+export interface PlatformSettings {
+  business_name: string
+  ntn: string | null
+  strn: string | null
+  address: string | null
+  city: string | null
+  phone: string | null
+  email: string | null
+  website: string | null
+  bank_name: string | null
+  bank_title: string | null
+  bank_account: string | null
+  bank_iban: string | null
+  invoice_prefix: string
+  credit_prefix: string
+  payment_terms_days: number
+  default_withholding_pct: number
+  invoice_footer: string | null
+  gateway_enabled: boolean
+  gateway_provider: string | null
+  updated_at: string
+  /** Required fields still blank. Empty means ready to invoice. */
+  missing: string[]
+}
+
+export async function platformSettings(): Promise<PlatformSettings> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_settings')
+  if (error) throw new Error(error.message)
+  return data as PlatformSettings
+}
+
+/**
+ * Save only the keys given.
+ *
+ * A patch rather than the whole row, so saving one field cannot overwrite the
+ * other nineteen with whatever the form last rendered. The database refuses a
+ * key it does not know, so a typo is an error rather than a value that appears
+ * saved and was not.
+ */
+export async function savePlatformSettings(
+  patch: Partial<Record<keyof PlatformSettings, unknown>>,
+): Promise<PlatformSettings> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_save_settings', { p: patch })
+  if (error) throw new Error(error.message)
+  return data as PlatformSettings
+}
+
+/** Everything needed to render one invoice or credit note. */
+export interface InvoiceDocument {
+  id: string
+  kind: 'invoice' | 'credit_note'
+  doc_no: string
+  title: string
+  issued_on: string
+  due_on: string | null
+  voided: boolean
+  voided_at: string | null
+  void_reason: string | null
+  credits_doc_no: string | null
+  seller: {
+    name: string | null; ntn: string | null; strn: string | null
+    address: string | null; city: string | null
+    phone: string | null; email: string | null; website: string | null
+  }
+  /** Repeated from Settings on purpose: the moment somebody is about to print
+   *  is the moment a blank NTN matters. */
+  seller_missing: string[]
+  buyer: {
+    school_id: string; name: string; address: string | null; city: string | null
+    phone: string | null; email: string | null; attention: string | null
+  }
+  lines: {
+    description: string
+    /** Raw dates. Formatted by the document component so every date on the page
+     *  reads the same way — see the note in fn__invoice_document. */
+    period_start: string; period_end: string
+    months: number; cycle: string
+    amount: number; list_amount: number | null
+  }[]
+  tax: { pct: number; amount: number; label: string | null }
+  totals: {
+    subtotal: number; tax: number; total: number
+    credited: number; paid: number
+    /** This DOCUMENT's balance, not the school's. Putting the school balance
+     *  here makes one invoice look unpaid because another one is. */
+    balance: number
+  }
+  amount_in_words: string
+  bank: { bank_name: string | null; title: string | null; account: string | null; iban: string | null } | null
+  withholding_note: string | null
+  note: string | null
+  footer: string | null
+  payments: {
+    paid_on: string; amount: number; method: string; reference: string | null
+    tax_withheld: number; tax_certificate: string | null; settled: number
+  }[]
+  credit_notes: {
+    id: string; doc_no: string; issued_on: string
+    amount: number; tax_amount: number; total: number
+    note: string | null; voided: boolean
+  }[]
+}
+
+export async function platformInvoice(invoiceId: string): Promise<InvoiceDocument> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_invoice', { p_invoice_id: invoiceId })
+  if (error) throw new Error(error.message)
+  return data as InvoiceDocument
+}
+
+/**
+ * Cancel a document that should never have existed.
+ *
+ * Refused once anything is attached to it — a payment or a credit note — which
+ * is exactly the case a credit note exists for. `warning` is returned when the
+ * licence the invoice paid for is still running: voiding the charge is a
+ * correction to the books, not a repossession of the year.
+ */
+export async function voidInvoice(
+  invoiceId: string, reason: string,
+): Promise<{ doc_no: string; warning: string | null; outstanding: number }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_void_invoice', {
+    p_invoice_id: invoiceId, p_reason: reason,
+  })
+  if (error) throw new Error(error.message)
+  return data as { doc_no: string; warning: string | null; outstanding: number }
+}
+
+/**
+ * Give part of a correct invoice back.
+ *
+ * The invoice stands; a second document reduces what is due. `taxAmount` null
+ * credits the tax in proportion, which is right in every ordinary case.
+ */
+export async function creditNote(input: {
+  invoiceId: string; amount: number; reason: string; taxAmount?: number | null
+}): Promise<{
+  credit_note_id: string; doc_no: string; credits_doc_no: string
+  amount: number; tax_amount: number; total: number; outstanding: number
+}> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_credit_note', {
+    p_invoice_id: input.invoiceId, p_amount: input.amount,
+    p_reason: input.reason, p_tax_amount: input.taxAmount ?? null,
+  })
+  if (error) throw new Error(error.message)
+  return data as {
+    credit_note_id: string; doc_no: string; credits_doc_no: string
+    amount: number; tax_amount: number; total: number; outstanding: number
+  }
+}
+
+/**
+ * Set the sales-tax line on an invoice.
+ *
+ * Separate from raising it, because the operator often does not know the rate at
+ * the moment the licence is granted, and a renewal must not wait on a tax
+ * question. Refused once the invoice has been paid or credited: the total on a
+ * document the customer is holding must not change under them.
+ */
+export async function setInvoiceTax(
+  invoiceId: string, pct: number, amount?: number | null,
+): Promise<{ doc_no: string; tax_pct: number; tax_amount: number; total: number }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_set_invoice_tax', {
+    p_invoice_id: invoiceId, p_tax_pct: pct, p_tax_amount: amount ?? null,
+  })
+  if (error) throw new Error(error.message)
+  return data as { doc_no: string; tax_pct: number; tax_amount: number; total: number }
+}
+
+export type RenewalBucket =
+  | 'cancelled' | 'locked' | 'grace' | 'overdue' | 'today'
+  | 'week' | 'fortnight' | 'month' | 'later' | 'unknown'
+
+/**
+ * The renewal worklist, worst first.
+ *
+ * With three schools you know them. With fifty, a licence that expired eleven
+ * days ago is row 34 of an alphabetical list and the first anyone hears of it is
+ * the principal phoning to say the software has locked — which is the worst
+ * possible moment for a renewal conversation.
+ */
+export interface DueSoonRow {
+  school_id: string
+  school_name: string
+  city: string | null
+  contact_name: string | null
+  contact_phone: string | null
+  plan_code: string
+  status: string
+  expires_on: string | null
+  days_left: number | null
+  bucket: RenewalBucket
+  student_count: number
+  student_limit: number | null
+  suggested_plan: string | null
+  needs_upgrade: boolean
+  /** Priced on the plan the student count fits, not the plan they are sitting
+   *  on — quoting the old price to a school that has outgrown it is how a
+   *  renewal becomes an argument. */
+  renewal_amount: number | null
+  outstanding: number
+  /** How far the live invoices reach. Null means never invoiced at all. */
+  invoiced_to: string | null
+  /** Licence time nobody billed for. Null on a school with no invoices, because
+   *  a trial is unbilled on purpose. */
+  unbilled_days: number | null
+  never_invoiced: boolean
+  last_reminded_at: string | null
+  last_reminded_stage: string | null
+}
+
+export async function dueSoon(days = 45): Promise<DueSoonRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_due_soon', { p_days: days })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as DueSoonRow[]
+}
+
+export type ReminderStage = 'ahead' | 'due' | 'today' | 'grace' | 'locked'
+
+export interface RenewalMessage {
+  school_id: string
+  school_name: string
+  stage: ReminderStage
+  contact_name: string | null
+  phone: string | null
+  expires_on: string | null
+  days_left: number | null
+  stops_on: string | null
+  renewal_amount: number | null
+  outstanding: number
+  text: string
+  /** Digits with Pakistan's country code, ready for whatsappLink(). Null when
+   *  the school has no number on record — a wa.me link built on an empty string
+   *  opens a blank contact picker, which reads as the software losing the
+   *  message. */
+  phone_intl: string | null
+  no_phone_reason: string | null
+}
+
+/** Composes the message. Does NOT record anything — see markReminded. */
+export async function renewalMessage(
+  schoolId: string, stage?: ReminderStage,
+): Promise<RenewalMessage> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_renewal_message', {
+    p_school_id: schoolId, p_stage: stage ?? null,
+  })
+  if (error) throw new Error(error.message)
+  return data as RenewalMessage
+}
+
+/**
+ * Records that WhatsApp was opened for this school, which is the honest claim:
+ * we know a message was composed and the chat opened, and we do not know it was
+ * read. The worklist shows it so nobody nags the same school twice in a morning.
+ */
+export async function markReminded(
+  schoolId: string, stage: ReminderStage, note?: string | null,
+): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_platform_mark_reminded', {
+    p_school_id: schoolId, p_stage: stage, p_note: note ?? null,
+  })
+  if (error) throw new Error(error.message)
+}
+
+/**
+ * A school saying it has transferred money.
+ *
+ * A REQUEST, not a receipt. It changes no total and appears in no revenue
+ * figure until the operator has seen the transfer on the bank statement — a
+ * school-writable payment would let a school clear its own balance by typing a
+ * number.
+ */
+export interface PaymentClaim {
+  id: string
+  school_id: string
+  school_name: string
+  amount: number
+  paid_on: string
+  method: string
+  reference: string | null
+  from_bank: string | null
+  note: string | null
+  claimed_at: string
+  /** Who at the school reported it — who to ask when a reference does not match. */
+  claimed_by_name: string | null
+  status: 'pending' | 'confirmed' | 'rejected'
+  decided_at: string | null
+  decision_note: string | null
+  payment_id: string | null
+  outstanding: number
+}
+
+export async function paymentClaims(
+  status: 'pending' | 'confirmed' | 'rejected' | 'all' = 'pending',
+): Promise<PaymentClaim[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_payment_claims', { p_status: status })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as PaymentClaim[]
+}
+
+/**
+ * Turn a report into money.
+ *
+ * Goes through the ordinary receipt path, so a confirmed report and a payment
+ * the operator typed in are indistinguishable afterwards. `amount` null accepts
+ * what the school said; an explicit amount is for when the bank statement
+ * disagrees, which happens when a school transfers net of withholding tax and
+ * reports the gross.
+ */
+export async function confirmClaim(input: {
+  claimId: string; amount?: number | null; invoiceId?: string | null
+  taxWithheld?: number | null; taxCertificate?: string | null; note?: string | null
+}): Promise<{ claim_id: string; payment_id: string; amount: number }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_confirm_claim', {
+    p_claim_id: input.claimId, p_amount: input.amount ?? null,
+    p_invoice_id: input.invoiceId ?? null,
+    p_tax_withheld: input.taxWithheld ?? 0,
+    p_tax_certificate: input.taxCertificate ?? null,
+    p_note: input.note ?? null,
+  })
+  if (error) throw new Error(error.message)
+  return data as { claim_id: string; payment_id: string; amount: number }
+}
+
+/** The reason is shown to the school. "Rejected" with nothing else is how a
+ *  customer relationship breaks over a typo in a reference number. */
+export async function rejectClaim(claimId: string, reason: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_platform_reject_claim', {
+    p_claim_id: claimId, p_reason: reason,
+  })
+  if (error) throw new Error(error.message)
 }

@@ -118,6 +118,7 @@ def main() -> int:
 
     table_alt = '|'.join(sorted(tenant, key=len, reverse=True))
     problems: "list[str]" = []
+    operator_only = 0
     inspected = 0
     statements_checked = 0
 
@@ -140,6 +141,44 @@ def main() -> int:
         # fn__apply_discount_lines carried the fn__ prefix AND a grant to
         # `authenticated` from 0021:286.
         if proname.startswith('fn__') and callable_by_auth != 't':
+            continue
+
+        # An OPERATOR-ONLY function. Its first act is to refuse everybody who is
+        # not the platform operator, so there is no school user inside it and
+        # therefore no cross-tenant boundary for a by-id lookup to cross.
+        #
+        # fn_platform_void_invoice is the clean example:
+        #
+        #     if not public.is_platform_admin() then raise ... end if;
+        #     select * into v_inv from public.platform_invoices where id = p_invoice_id;
+        #
+        # There is no school_id to scope that by. platform_invoices is the
+        # operator's own books; a school cannot read a row of it through RLS, and
+        # asking the operator to supply the school id of an invoice they are
+        # looking at would be scoping theatre.
+        #
+        # THE EXEMPTION IS PAID FOR by being narrower than "mentions
+        # is_platform_admin", which would have been satisfied by
+        #
+        #     if not (public.is_platform_admin() or public.has_role('owner')) then
+        #
+        # — a function a school owner CAN reach, where every unscoped lookup below
+        # is a live cross-tenant read. Two things are required instead:
+        #
+        #   1. the gate is a bare, unconditional refusal — `if not
+        #      public.is_platform_admin() then` immediately followed by `raise`,
+        #      with no `or` and no other condition; and
+        #   2. NOTHING is read before it. Everything in the body ahead of the gate
+        #      is checked for a tenant table, so a lookup hoisted above the guard
+        #      — deliberately or by an editor's accident — puts the whole function
+        #      back under the full check.
+        gate = re.search(
+            r'if\s+not\s+public\.is_platform_admin\s*\(\s*\)\s+then\s+raise\b',
+            prosrc, re.I)
+        if gate and not re.search(
+                r'\b(from|join|update|delete\s+from|into)\s+(public\.)?('
+                + table_alt + r')\b', prosrc[:gate.start()], re.I):
+            operator_only += 1
             continue
 
         # Which parameters were vouched for, per parameter. Matched on the
@@ -265,8 +304,14 @@ def main() -> int:
               file=sys.stderr)
         return 1
 
+    # The operator-only count is printed rather than kept quiet: an exemption
+    # nobody can see the size of is an exemption that grows. If this number ever
+    # looks large relative to the inspected count, the gate pattern has started
+    # matching functions it should not.
     print(f'inspected {inspected} SECURITY DEFINER function(s) with parameters, '
           f'{statements_checked} statement(s) touching one of {len(tenant)} tenant tables')
+    print(f'{operator_only} function(s) skipped as operator-only (refuse anyone '
+          'but the platform admin before reading anything)')
     print('no definer function looks up a tenant row by a caller-supplied id '
           'without scoping it')
     return 0

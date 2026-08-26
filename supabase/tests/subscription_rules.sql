@@ -370,6 +370,27 @@ begin
   -- path must stay open in every state, or a locked school could never be
   -- switched back on.
   perform public._act_as('ops');
+
+  -- 0078 refuses an invoice that duplicates a live one exactly — same school,
+  -- same plan, same period — because that is the signature of a double-submitted
+  -- renewal, which bills a school twice for one year.
+  --
+  -- This block trips it, and the reason is worth stating rather than working
+  -- around silently: the licence was dragged BACKWARDS in time above, by direct
+  -- UPDATE, to simulate expiry. No function in this schema moves a period_end
+  -- into the past, so in production the second activation would compute a
+  -- different period_start and there would be no collision. Here it computes
+  -- current_date again and matches the invoice raised at the top of the block.
+  --
+  -- Voiding that invoice is what an operator would actually do — it covers a
+  -- period the school turns out never to have had — so the test does the same
+  -- rather than disabling the guard.
+  perform public.fn_platform_void_invoice(
+    (select id from public.platform_invoices
+      where school_id = v_school and voided_at is null
+      order by created_at desc limit 1),
+    'test: licence was rolled back to simulate expiry');
+
   perform public.fn_activate_subscription(v_school, 'growth', 12);
   perform public._act_as('owner');
   if public.fn_effective_status(v_school) <> 'active' then

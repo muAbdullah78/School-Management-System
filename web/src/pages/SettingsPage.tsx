@@ -12,6 +12,7 @@ import { AuditLog } from './settings/AuditLog'
 import { StaffCheckin } from './settings/StaffCheckin'
 import { MessageSettings } from './settings/MessageSettings'
 import { SupportVisits } from './settings/SupportVisits'
+import { Subscription } from './settings/Subscription'
 
 const SECTIONS = [
   { key: 'school', label: 'School Profile' },
@@ -28,6 +29,12 @@ const SECTIONS = [
   { key: 'rollover', label: 'Year Rollover' },
   { key: 'messages', label: 'Messages' },
   { key: 'users', label: 'Users & Roles' },
+  // The school's own bill from us. Its own tab rather than a line on School
+  // Profile, because it is the answer to four questions a school currently has
+  // to phone about: what do we owe, where do we pay, can we have the invoice
+  // again, and did you get our transfer. Owner and principal only, refused at
+  // the database for everybody else.
+  { key: 'subscription', label: 'Subscription' },
   { key: 'audit', label: 'Audit Log' },
   // Next to the audit log on purpose: one is who at the school changed what,
   // the other is when the software company looked. Same question, two sources.
@@ -65,6 +72,7 @@ export function SettingsPage() {
         {section === 'support' && <SupportVisits />}
         {section === 'messages' && <MessageSettings />}
         {section === 'users' && <Users />}
+        {section === 'subscription' && <Subscription />}
         {section === 'backup' && <Backup />}
       </div>
     </div>

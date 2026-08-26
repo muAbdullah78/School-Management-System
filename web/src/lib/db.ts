@@ -4167,3 +4167,108 @@ export async function listSupportVisits(limit = 50): Promise<SupportVisit[]> {
   if (error) throw new Error(error.message)
   return (data ?? []) as SupportVisit[]
 }
+
+import type { InvoiceDocument } from './platform'
+
+// ===========================================================================
+// The school's own subscription bill — migration 0078.
+//
+// Every one of these calls is about THIS school's relationship with the vendor,
+// and every one is gated at the database on owner/principal. They exist because
+// a school that cannot see what it was invoiced, cannot get a copy for its own
+// accounts, does not know which bank account to pay into, and has no way to say
+// "transferred, reference 4471" has exactly one option: phone.
+// ===========================================================================
+
+export interface MyBillingDocument {
+  id: string
+  doc_no: string
+  kind: 'invoice' | 'credit_note'
+  issued_on: string
+  due_on: string | null
+  plan_code: string
+  period_start: string
+  period_end: string
+  months: number
+  amount: number
+  tax_amount: number
+  total: number
+  voided: boolean
+  /** Cash plus any tax withheld — what actually settled this document. */
+  paid: number
+  note: string | null
+}
+
+export interface MyBilling {
+  ok: boolean
+  reason?: string
+  /** Whatever fn_my_licence says, reused rather than restated so this screen and
+   *  the licence banner cannot disagree about whether a licence is expiring. */
+  licence: Record<string, unknown>
+  balance: { billed: number; paid: number; outstanding: number }
+  documents: MyBillingDocument[]
+  payments: {
+    paid_on: string; amount: number; method: string; reference: string | null
+    tax_withheld: number; tax_certificate: string | null
+  }[]
+  /** What this school has told us, and what came of it — including WHY a report
+   *  was rejected. A school that cannot see the reason is a school that phones. */
+  reports: {
+    id: string; amount: number; paid_on: string; method: string
+    reference: string | null; claimed_at: string
+    status: 'pending' | 'confirmed' | 'rejected'
+    decided_at: string | null; decision_note: string | null
+  }[]
+  /** An allow-list of the vendor's settings: the bank block, a support contact,
+   *  and whether online payment exists. Nothing else from that table travels. */
+  pay_to: {
+    business_name: string | null
+    bank_name: string | null; title: string | null
+    account: string | null; iban: string | null
+    support_phone: string | null; support_email: string | null
+    online_available: boolean
+  }
+  how_to_pay: string
+}
+
+export async function myBilling(): Promise<MyBilling> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_my_billing')
+  if (error) throw new Error(error.message)
+  return data as MyBilling
+}
+
+/**
+ * A printable copy of one of this school's own subscription invoices.
+ *
+ * Their accountant needs it with our NTN on it: without that they cannot claim
+ * the expense and cannot file the tax they are obliged to withhold. The shape is
+ * identical to the operator's copy — one document, rendered by one component.
+ */
+export async function myPlatformInvoice(invoiceId: string): Promise<InvoiceDocument> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_my_platform_invoice', { p_invoice_id: invoiceId })
+  if (error) throw new Error(error.message)
+  return data as InvoiceDocument
+}
+
+/**
+ * Tell the vendor a transfer has been made.
+ *
+ * This does NOT reduce the balance. It creates a report the operator checks
+ * against the bank statement — and the screen says so, because a form that looks
+ * like it settled the bill and did not is worse than no form.
+ */
+export async function reportSubscriptionPayment(input: {
+  amount: number; paidOn?: string | null; method?: string
+  reference?: string | null; fromBank?: string | null; note?: string | null
+}): Promise<{ claim_id: string; amount: number; paid_on: string; status: string; message: string }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_my_report_payment', {
+    p_amount: input.amount, p_paid_on: input.paidOn ?? null,
+    p_method: input.method ?? 'bank', p_reference: input.reference ?? null,
+    p_from_bank: input.fromBank ?? null, p_note: input.note ?? null,
+  })
+  if (error) throw new Error(error.message)
+  return data as { claim_id: string; amount: number; paid_on: string; status: string; message: string }
+}

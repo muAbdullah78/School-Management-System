@@ -39,7 +39,9 @@ body {
   #admit-cards,
   #admit-cards *,
   #challan,
-  #challan * {
+  #challan *,
+  #invoice-doc,
+  #invoice-doc * {
     visibility: visible;
   }
   #receipt,
@@ -51,7 +53,8 @@ body {
   #tabulation,
   #date-sheet,
   #admit-cards,
-  #challan {
+  #challan,
+  #invoice-doc {
     position: absolute;
     left: 0;
     top: 0;

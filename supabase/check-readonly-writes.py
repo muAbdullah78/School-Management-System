@@ -103,11 +103,27 @@ def main() -> int:
         problems.append(f'WRITE POLICY grants an observer: {r}')
 
     # ---- 2. Volatile functions ----------------------------------------------
-    rows = q("""
+    #
+    # Matched against the CODE, with `--` comments stripped first.
+    #
+    # This started as a plain `prosrc ~ '(may_view|readonly|...)'` and fired on
+    # fn_my_report_payment, whose body contains
+    #
+    #     -- has_role, not may_view: this is a WRITE, and an operator inside a
+    #     -- read-only support session must not be able to report a payment ...
+    #
+    # — a comment explaining that it does the RIGHT thing, reported as evidence
+    # that it does the wrong one. Adding it to ALLOWED_VOLATILE would have been
+    # the easy fix and the wrong one: the exemption would then cover a future
+    # edit that genuinely opened the gate. Stripping comments makes the check
+    # strictly more precise, since a comment cannot open a write path, and it
+    # keeps the ban on gate names in code exact.
+    rows = q(r"""
         select p.proname
           from pg_proc p join pg_namespace n on n.oid = p.pronamespace
          where n.nspname = 'public' and p.provolatile = 'v'
-           and p.prosrc ~ '(may_view|readonly|is_operator_session)'
+           and regexp_replace(p.prosrc, '--[^\n]*', '', 'g')
+               ~ '(may_view|readonly|is_operator_session)'
          order by 1
     """)
     for name in rows:

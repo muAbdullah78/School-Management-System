@@ -670,6 +670,55 @@ select 'the operator can open a school (0075)',
        then 'PASS' else 'FAIL — re-run bundle 7' end
 
 union all
+-- 0076-0078. Whether this database can produce an INVOICE, correct a wrong one,
+-- and record the income tax a school withheld at source.
+--
+-- The withholding column is the one to check first if a school insists it has
+-- paid and the software says otherwise: without it, a school that deducts tax
+-- under section 153(1)(b) transfers less than the invoice and the difference sits
+-- as outstanding forever.
+select 'invoices, corrections and withholding tax (0076-0078)',
+       case
+         when to_regclass('public.platform_settings') is null
+           then 'FAIL — re-run bundle 7 (no seller details, so no invoice can be printed)'
+         when not exists (select 1 from information_schema.columns
+                           where table_schema='public' and table_name='platform_invoices'
+                             and column_name='doc_no')
+           then 'FAIL — invoices have no document number; re-run bundle 7'
+         when not exists (select 1 from information_schema.columns
+                           where table_schema='public' and table_name='platform_payments'
+                             and column_name='tax_withheld')
+           then 'FAIL — withheld tax cannot be recorded, so every balance for a '
+                || 'withholding school will be wrong; re-run bundle 7'
+         when not exists (select 1 from pg_trigger t join pg_proc pr on pr.oid=t.tgfoid
+                           where not t.tgisinternal and pr.proname='fn__assign_doc_no')
+           then 'FAIL — the numbering trigger is missing; re-run bundle 7'
+         when not exists (select 1 from pg_trigger t join pg_proc pr on pr.oid=t.tgfoid
+                           where not t.tgisinternal
+                             and pr.proname='fn__refuse_duplicate_invoice')
+           then 'FAIL — a double-clicked renewal would bill twice; re-run bundle 7'
+         when to_regclass('public.platform_payment_claims') is null
+           then 'FAIL — schools cannot report a payment; re-run bundle 7'
+         else 'PASS' end
+
+union all
+-- Not a pass/fail: it is a business decision, and only the owner can make it.
+-- But an operator who has not filled this in will print invoices no school can
+-- claim as an expense, and will find out weeks later when nobody has paid.
+select 'our own invoice details are filled in',
+       case
+         when to_regclass('public.platform_settings') is null then 'n/a'
+         when not exists (select 1 from public.platform_settings where id) then 'n/a'
+         when (select btrim(coalesce(business_name,'')) = ''
+                   or btrim(coalesce(ntn,'')) = ''
+                   or btrim(coalesce(bank_account,'')) = ''
+                 from public.platform_settings where id)
+           then 'ACTION NEEDED — set your business name, NTN and bank account in the '
+                || 'console under "Our billing details". Until then every invoice prints '
+                || 'incomplete and a school cannot claim it or file the tax it must withhold.'
+         else 'PASS' end
+
+union all
 -- The row that answers "how far has this database actually got?" (0069)
 --
 -- Until bundle 7 nothing recorded it, and the two times it mattered the answer
