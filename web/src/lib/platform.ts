@@ -306,6 +306,77 @@ export function describeAction(a: OperatorAction): string {
   }
 }
 
+/**
+ * Everything about one school, in one call.
+ *
+ * The console listed eight fields per school and that was every fact it held
+ * about a customer. This is the screen that answers "what is going on at Al Qalam
+ * School?"
+ *
+ * `readiness` is the part worth reading first. A school that paid and never used
+ * the software looks identical, in a list, to one that runs on it daily — until
+ * it does not renew. And the commonest reason a school stalls is being stuck one
+ * step in: until 0066 no school could create a fee head at all, so every one of
+ * them was stuck at the same place with no way to say so. The first unfinished
+ * row is the phone call worth making.
+ *
+ * WHAT IT DELIBERATELY DOES NOT CONTAIN: any child, guardian, family or parent
+ * phone number. Counts and dates only. For anything about an individual there is
+ * a support visit — read-only, logged, and shown to the school. "How many pupils"
+ * is business information; "which pupils" is the school's own affair, and wanting
+ * the second should cost you a record saying why.
+ */
+export interface ReadinessItem {
+  key: string
+  label: string
+  done: boolean
+  detail: string
+}
+
+export interface SchoolDetail {
+  school: {
+    id: string; name: string; city: string | null
+    contact_name: string | null; contact_phone: string | null; contact_email: string | null
+    notes: string | null; active: boolean; created_at: string
+    display_name: string | null; address: string | null; phone: string | null
+    principal_name: string | null; has_logo: boolean
+  }
+  licence: {
+    plan_code: string; plan_name: string; status: string; cycle: string
+    expires_on: string | null; days_left: number | null
+    student_count: number; student_limit: number | null; margin_limit: number | null
+    counted_at: string | null; over_limit_since: string | null
+    limit_state: LimitState; suggested_plan: string | null
+  } | null
+  money: {
+    invoiced: number; paid: number; outstanding: number
+    last_paid_on: string | null; invoice_count: number
+  }
+  people: {
+    name: string; role: string; active: boolean; added_on: string
+    ever_signed_in: boolean; last_sign_in: string | null
+  }[]
+  counts: {
+    classes: number; sections: number; fee_heads: number; classes_priced: number
+    students: number; staff: number; families: number; parents_linked: number
+  }
+  readiness: ReadinessItem[]
+  activity: {
+    last_payment: string | null; last_invoice: string | null
+    last_attendance: string | null; last_mark: string | null
+    last_certificate: string | null; last_till_close: string | null
+    last_message: string | null
+  }
+  not_recorded: string[]
+}
+
+export async function schoolDetail(schoolId: string): Promise<SchoolDetail> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_school_detail', { p_school_id: schoolId })
+  if (error) throw new Error(error.message)
+  return data as SchoolDetail
+}
+
 export async function refreshAllCounts(): Promise<number> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_platform_refresh_counts')

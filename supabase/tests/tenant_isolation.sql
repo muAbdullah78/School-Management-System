@@ -972,6 +972,123 @@ begin
   raise notice 'ok: class names and fee-head types resolve within one school';
 end $name_lookups$;
 
+-- Did fn_platform_school_detail refuse this caller? A separate function because
+-- a dollar-quoted string inside the do-block below would terminate its own tag.
+create or replace function pg_temp_refused_detail(p_school uuid) returns boolean
+language plpgsql as $helper$
+begin
+  perform public.fn_platform_school_detail(p_school);
+  return false;
+exception when others then
+  return true;
+end;
+$helper$;
+
+-- =============================================================================
+-- TEST 9 — THE SCHOOL-DETAIL SCREEN MUST NOT BE A BACK DOOR.
+--
+-- 0075 lets the operator open a school without a support session, which is a
+-- deliberate narrow exception to TEST 5. An exception with no assertion is a
+-- hole, so the line it draws is asserted here in both directions:
+--
+--   IT MUST RETURN    counts, dates, and the school's own login list. Without
+--                     these the console cannot tell a school that runs on the
+--                     software from one that paid and never used it.
+--
+--   IT MUST NOT LEAK  a child's name, a guardian, a family, or a parent phone
+--                     number. Nothing about a person the school SERVES.
+--
+-- For those there is fn_operator_enter: read-only, logged, and shown to the
+-- school. That is the whole distinction — "how many pupils" is business
+-- information, "which pupils" is the school's own affair, and wanting the second
+-- should cost you a record saying why.
+--
+-- The check is a substring sweep over the rendered jsonb rather than a field
+-- list, because a field list only covers the fields somebody thought of. If a
+-- future edit adds a "recent admissions" block for convenience, this fails.
+-- =============================================================================
+do $detail$
+declare
+  a_school uuid := (select v from public._test_ids where k='a_school');
+  b_school uuid := (select v from public._test_ids where k='b_school');
+  a_owner  uuid := (select v from public._test_ids where k='a_owner');
+  v_ops    uuid := '00000000-0000-0000-0000-0000000000fe';
+  d jsonb; failures text := ''; needle text;
+begin
+  -- Distinctive values in School A, so a leak cannot be mistaken for anything
+  -- else. The pupil already in the fixture is 'Alpha Student'; these are the
+  -- people whose names must never appear.
+  perform set_config('test.uid', '', false);
+  insert into public.families (head_name, phone, whatsapp, school_id)
+    values ('DETAILLEAK Family Head', '0300-7654321', '0300-7654321', a_school);
+  insert into public.guardians (student_id, name, relation, phone, school_id)
+    values ((select v from public._test_ids where k='a_stu'),
+            'DETAILLEAK Guardian', 'father', '0300-1234567', a_school);
+
+  perform set_config('test.uid', v_ops::text, false);
+  set local role authenticated;
+  d := public.fn_platform_school_detail(a_school);
+  reset role;
+
+  -- --- it has to be USEFUL ------------------------------------------------
+  if d->'readiness' is null or jsonb_array_length(d->'readiness') < 8 then
+    failures := failures || '  the readiness checklist is missing or short' || chr(10);
+  end if;
+  if (d->'counts'->>'students')::int < 1 then
+    failures := failures || '  it reports no students for a school that has one' || chr(10);
+  end if;
+  if d->'people' is null or jsonb_array_length(d->'people') < 1 then
+    failures := failures || '  it lists none of the school''s own logins' || chr(10);
+  end if;
+  -- ever_signed_in is the churn signal, and it comes from auth.users. If the
+  -- stub lacks the column the whole block silently becomes null, which would
+  -- look like "nobody has ever signed in" for every school forever.
+  if not (d->'people'->0 ? 'ever_signed_in') then
+    failures := failures || '  the login list carries no ever_signed_in flag' || chr(10);
+  end if;
+  if d->'activity' is null then
+    failures := failures || '  no activity dates, so a dormant school looks live' || chr(10);
+  end if;
+
+  -- --- and it must not leak ------------------------------------------------
+  foreach needle in array array[
+    'Alpha Student',            -- the pupil
+    'DETAILLEAK Family Head',  -- the family
+    'DETAILLEAK Guardian',     -- the guardian
+    '0300-7654321',            -- the family's phone
+    '0300-1234567'             -- the guardian's phone
+  ] loop
+    if position(needle in d::text) > 0 then
+      failures := failures
+        || '  the detail payload contains "' || needle
+        || '" — a person the school SERVES. Counts and dates only; use a support '
+        || 'visit for anything about an individual.' || chr(10);
+    end if;
+  end loop;
+
+  -- --- and it is still one school at a time --------------------------------
+  perform set_config('test.uid', v_ops::text, false);
+  set local role authenticated;
+  d := public.fn_platform_school_detail(b_school);
+  reset role;
+  if position('DETAILLEAK' in d::text) > 0 then
+    failures := failures || '  School B''s detail contains School A''s data' || chr(10);
+  end if;
+
+  -- --- a school user cannot call it at all ---------------------------------
+  perform set_config('test.uid', a_owner::text, false);
+  set local role authenticated;
+  if not pg_temp_refused_detail(a_school) then
+    failures := failures || '  a school owner could call fn_platform_school_detail' || chr(10);
+  end if;
+  reset role;
+
+  if failures <> '' then
+    raise exception E'THE SCHOOL-DETAIL SCREEN IS A BACK DOOR:\n%', failures;
+  end if;
+  raise notice 'ok: school detail gives the operator counts and dates, and no pupil, family or guardian';
+end $detail$;
+
 drop table if exists public._test_ids;
 select 'TENANT ISOLATION: ALL TESTS PASSED' as result;
 

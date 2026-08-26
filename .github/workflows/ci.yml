@@ -84,7 +84,14 @@ jobs:
             -- (only the service role can write it, so a browser signUp cannot
             -- forge a role). Without it here, handle_new_user raises
             -- "record new has no field raw_app_meta_data" on every signup.
-            raw_app_meta_data jsonb default '{}'::jsonb
+            raw_app_meta_data jsonb default '{}'::jsonb,
+            -- Same story, one migration later. 0075 reads last_sign_in_at for
+            -- the operator's school-detail screen: a school with one login that
+            -- nobody has used in three weeks is churning, and nothing in this
+            -- product could see that before. The rule the two of them make is
+            -- that this stub must carry every auth column the schema touches.
+            last_sign_in_at timestamptz,
+            created_at timestamptz default now()
           );
           create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
           do $$ begin
@@ -130,7 +137,13 @@ jobs:
           create schema if not exists auth;
           create table if not exists auth.users (
             id uuid primary key, email text, raw_user_meta_data jsonb default '{}'::jsonb,
-            raw_app_meta_data jsonb default '{}'::jsonb);
+            raw_app_meta_data jsonb default '{}'::jsonb,
+            -- last_sign_in_at is real in Supabase and 0075 reads it: a school
+            -- with one login nobody has used in three weeks is churning, and
+            -- nothing in this product could see that before. The stub has to
+            -- carry every auth column the schema actually touches, the same
+            -- reason raw_app_meta_data was added here for 0065.
+            last_sign_in_at timestamptz, created_at timestamptz default now());
           create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
           do $$ begin
             if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
@@ -221,7 +234,13 @@ jobs:
           create schema if not exists auth;
           create table if not exists auth.users (
             id uuid primary key, email text, raw_user_meta_data jsonb default '{}'::jsonb,
-            raw_app_meta_data jsonb default '{}'::jsonb);
+            raw_app_meta_data jsonb default '{}'::jsonb,
+            -- last_sign_in_at is real in Supabase and 0075 reads it: a school
+            -- with one login nobody has used in three weeks is churning, and
+            -- nothing in this product could see that before. The stub has to
+            -- carry every auth column the schema actually touches, the same
+            -- reason raw_app_meta_data was added here for 0065.
+            last_sign_in_at timestamptz, created_at timestamptz default now());
           create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
           do $$ begin
             if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;

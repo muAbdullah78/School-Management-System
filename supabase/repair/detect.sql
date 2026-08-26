@@ -410,7 +410,15 @@ with sig(migration, object, present) as (values
                       and prosrc like '%operator_sessions%')
          and not exists (select 1 from pg_proc where proname = 'has_role'
                           and pronamespace = 'public'::regnamespace
-                          and prosrc like '%is_operator_session%')))
+                          and prosrc like '%is_operator_session%'))),
+  -- 0075. The school-detail screen. It reads tenant tables as the operator with
+  -- no support session open, which is a deliberate narrow exception — counts and
+  -- dates, never a child, guardian or family. tenant_isolation.sql TEST 9 sweeps
+  -- the rendered payload for pupil names to keep it that way.
+  ('0075_school_detail',        'fn_platform_school_detail',
+     (select exists (select 1 from pg_proc where proname = 'fn_platform_school_detail'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%readiness%')))
 )
 select migration,
        object                                   as looked_for,

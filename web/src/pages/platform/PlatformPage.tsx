@@ -10,6 +10,7 @@ import {
 } from '@/lib/platform'
 import { formatPkr } from '@/lib/licence'
 import { fmtDateTime } from '@/lib/format'
+import { SchoolDetailPanel } from './SchoolDetail'
 
 const STATUS_STYLE: Record<PlatformSchool['status'], string> = {
   trialing: 'bg-sky-100 text-sky-800',
@@ -47,6 +48,7 @@ export function PlatformPage() {
   const [ledgerFor, setLedgerFor] = useState<PlatformSchool | null>(null)
   const [historyFor, setHistoryFor] = useState<PlatformSchool | null>(null)
   const [visiting, setVisiting] = useState<PlatformSchool | null>(null)
+  const [openSchool, setOpenSchool] = useState<PlatformSchool | null>(null)
 
   const isAdmin = useQuery({ queryKey: ['amPlatformAdmin', session?.user?.id], queryFn: amPlatformAdmin })
   const schools = useQuery({
@@ -192,7 +194,10 @@ export function PlatformPage() {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-slate-800">{s.school_name}</span>
+                      <button onClick={() => setOpenSchool(s)}
+                        className="font-medium text-slate-800 hover:text-brand-700 hover:underline">
+                        {s.school_name}
+                      </button>
                       <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${STATUS_STYLE[s.status]}`}>
                         {s.status}
                       </span>
@@ -284,6 +289,14 @@ export function PlatformPage() {
       {ledgerFor && <LedgerDialog school={ledgerFor} onClose={() => setLedgerFor(null)} />}
 
       {historyFor && <HistoryDialog school={historyFor} onClose={() => setHistoryFor(null)} />}
+
+      {openSchool && (
+        <SchoolDetailPanel
+          schoolId={openSchool.school_id}
+          onClose={() => setOpenSchool(null)}
+          onVisit={() => { const s = openSchool; setOpenSchool(null); setErr(null); setMsg(null); setVisiting(s) }}
+        />
+      )}
 
       {visiting && (
         <VisitDialog

@@ -659,6 +659,17 @@ select 'support access is read-only (0073, 0074)',
        else 'FAIL — re-run bundle 7' end
 
 union all
+-- 0075. The operator can open a school: the getting-started checklist, when each
+-- module was last used, the logins and whether each has ever signed in. Before
+-- it, a school that paid and never used the software looked identical in the
+-- console to one that runs on it daily.
+select 'the operator can open a school (0075)',
+       case when exists (select 1 from pg_proc where proname='fn_platform_school_detail'
+                          and pronamespace='public'::regnamespace
+                          and prosrc like '%readiness%')
+       then 'PASS' else 'FAIL — re-run bundle 7' end
+
+union all
 -- The row that answers "how far has this database actually got?" (0069)
 --
 -- Until bundle 7 nothing recorded it, and the two times it mattered the answer
