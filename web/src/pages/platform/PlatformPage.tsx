@@ -2,12 +2,14 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/auth/AuthProvider'
 import {
-  activateSubscription, actionNeeded, amPlatformAdmin, extendTrial, listPlans,
-  listPlatformSchools, platformLedger, platformRevenue, platformSchemaState,
-  recordPlatformPayment, refreshAllCounts, sortByAction,
+  activateSubscription, actionNeeded, amPlatformAdmin, describeAction, extendTrial,
+  listPlans, listPlatformSchools, operatorEnter, platformLedger, platformRevenue,
+  platformSchemaState, recordPlatformPayment, refreshAllCounts, schoolActions,
+  sortByAction,
   type PlatformSchool, type SchemaState,
 } from '@/lib/platform'
 import { formatPkr } from '@/lib/licence'
+import { fmtDateTime } from '@/lib/format'
 
 const STATUS_STYLE: Record<PlatformSchool['status'], string> = {
   trialing: 'bg-sky-100 text-sky-800',
@@ -43,6 +45,8 @@ export function PlatformPage() {
   const [to, setTo] = useState(today())
   const [paying, setPaying] = useState<PlatformSchool | null>(null)
   const [ledgerFor, setLedgerFor] = useState<PlatformSchool | null>(null)
+  const [historyFor, setHistoryFor] = useState<PlatformSchool | null>(null)
+  const [visiting, setVisiting] = useState<PlatformSchool | null>(null)
 
   const isAdmin = useQuery({ queryKey: ['amPlatformAdmin', session?.user?.id], queryFn: amPlatformAdmin })
   const schools = useQuery({
@@ -230,6 +234,17 @@ export function PlatformPage() {
                       <button onClick={() => { setErr(null); setMsg(null); setPaying(s) }} className="text-brand-700 hover:underline">
                         Record payment
                       </button>
+                      <button onClick={() => setHistoryFor(s)} className="text-brand-700 hover:underline">
+                        History
+                      </button>
+                      {/* The support tool. Read-only, refused at the database,
+                          logged, and shown to the school in its own settings —
+                          so this button is not a back door, it is the front one
+                          with a bell on it. */}
+                      <button onClick={() => { setErr(null); setMsg(null); setVisiting(s) }}
+                        className="font-medium text-red-700 hover:underline">
+                        View as school
+                      </button>
                     </div>
                   </div>
 
@@ -267,6 +282,16 @@ export function PlatformPage() {
       )}
 
       {ledgerFor && <LedgerDialog school={ledgerFor} onClose={() => setLedgerFor(null)} />}
+
+      {historyFor && <HistoryDialog school={historyFor} onClose={() => setHistoryFor(null)} />}
+
+      {visiting && (
+        <VisitDialog
+          school={visiting}
+          onClose={() => setVisiting(null)}
+          onError={(m) => { setVisiting(null); setErr(m) }}
+        />
+      )}
     </div>
   )
 }
@@ -569,6 +594,162 @@ function LedgerDialog({ school, onClose }: { school: PlatformSchool; onClose: ()
             </table>
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Everything we have ever done to this school.
+ *
+ * The billing rows say what was charged. This says who chose it, that a trial was
+ * extended three times, that a year was given away for a reason somebody typed at
+ * the time, and every support visit. Before 0073 none of it was recorded, which
+ * with one customer is recoverable from memory and with fifty is not.
+ */
+function HistoryDialog({ school, onClose }: { school: PlatformSchool; onClose: () => void }) {
+  const q = useQuery({
+    queryKey: ['schoolActions', school.school_id],
+    queryFn: () => schoolActions(school.school_id),
+  })
+
+  const TONE: Record<string, string> = {
+    school_entered: 'bg-red-50 text-red-800',
+    school_left: 'bg-slate-100 text-slate-600',
+    payment_recorded: 'bg-emerald-50 text-emerald-800',
+    invoice_raised: 'bg-sky-50 text-sky-800',
+    licence_changed: 'bg-amber-50 text-amber-900',
+    school_created: 'bg-slate-100 text-slate-700',
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4">
+      <div className="w-full max-w-2xl rounded-lg bg-white p-5 shadow-lg">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold text-slate-800">{school.school_name}</h2>
+            <p className="text-sm text-slate-600">What we have done to this school</p>
+          </div>
+          <button onClick={onClose} className="text-sm text-slate-500 hover:underline">Close</button>
+        </div>
+
+        {q.isLoading && <p className="mt-3 text-sm text-slate-500">Loading…</p>}
+        {q.error && <p className="mt-3 text-sm text-red-600">{(q.error as Error).message}</p>}
+        {q.data && q.data.length === 0 && (
+          <p className="mt-3 text-sm text-slate-500">
+            Nothing recorded yet. Activating them, taking a payment or opening their
+            account all appear here.
+          </p>
+        )}
+
+        {q.data && q.data.length > 0 && (
+          <ul className="mt-3 divide-y divide-slate-100">
+            {q.data.map((a, i) => (
+              <li key={i} className="flex items-start gap-3 py-2">
+                <span className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium ${
+                  TONE[a.action] ?? 'bg-slate-100 text-slate-600'}`}>
+                  {a.action.replace(/_/g, ' ')}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm text-slate-800">{describeAction(a)}</div>
+                  <div className="text-xs text-slate-400">
+                    {fmtDateTime(a.at)}
+                    {a.actor_email && <> · {a.actor_email}</>}
+                    {a.detail?.backfilled === true && <> · reconstructed from the billing rows</>}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Entering a school, with the reason the database insists on.
+ *
+ * Deliberately a dialog with a required field rather than a one-click button. The
+ * reason is not paperwork: it is what the SCHOOL reads in its own settings, and
+ * "no reason given" appearing there would undo the whole point of showing them.
+ *
+ * The warnings are stated plainly because both are true and neither is obvious:
+ * nothing can be changed from inside, and the school will see this.
+ */
+function VisitDialog({ school, onClose, onError }: {
+  school: PlatformSchool
+  onClose: () => void
+  onError: (message: string) => void
+}) {
+  const [reason, setReason] = useState('')
+  const [minutes, setMinutes] = useState(60)
+  const qc = useQueryClient()
+
+  const enter = useMutation({
+    mutationFn: () => operatorEnter(school.school_id, reason.trim(), minutes),
+    onSuccess: () => {
+      // Nothing cached was read as this school, so nothing cached is right any
+      // more. Clear, then land on the school's own dashboard.
+      qc.clear()
+      window.location.assign('/')
+    },
+    onError: (e) => onError((e as Error).message),
+  })
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-lg">
+        <h2 className="text-base font-semibold text-slate-800">
+          Open {school.school_name}
+        </h2>
+
+        <div className="mt-3 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+          <div className="font-medium">Read only, and they will see it.</div>
+          <ul className="mt-1 list-disc space-y-0.5 pl-4 text-red-800">
+            <li>You cannot change anything — the database refuses every write.</li>
+            <li>
+              This visit and your reason appear in the school&rsquo;s own Settings →
+              Support Visits.
+            </li>
+          </ul>
+        </div>
+
+        <label className="mt-3 block">
+          <span className="text-sm text-slate-600">Why are you opening it?</span>
+          <input
+            autoFocus value={reason} onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. principal called: the fee will not save"
+            className={`${FIELD} mt-1 w-full`}
+          />
+          <span className="mt-1 block text-xs text-slate-500">
+            The school reads this. Write it for them, not for you.
+          </span>
+        </label>
+
+        <label className="mt-3 block max-w-[10rem]">
+          <span className="text-sm text-slate-600">Ends after</span>
+          <select value={minutes} onChange={(e) => setMinutes(Number(e.target.value))}
+            className={`${FIELD} mt-1 w-full`}>
+            <option value={15}>15 minutes</option>
+            <option value={60}>1 hour</option>
+            <option value={240}>4 hours</option>
+          </select>
+        </label>
+
+        <div className="mt-4 flex gap-2">
+          <button
+            onClick={() => enter.mutate()}
+            disabled={enter.isPending || reason.trim().length < 4}
+            className="flex-1 rounded bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
+          >
+            {enter.isPending ? 'Opening…' : 'Open, read only'}
+          </button>
+          <button onClick={onClose}
+            className="flex-1 rounded border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">
+            Cancel
+          </button>
+        </div>
       </div>
     </div>
   )

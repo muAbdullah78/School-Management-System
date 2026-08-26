@@ -375,7 +375,42 @@ with sig(migration, object, present) as (values
                       and prosrc like '%type = ''admission'' and active and school_id = public.current_school_id()%')
          and exists (select 1 from pg_proc where proname = 'fn_import_students'
                       and pronamespace = 'public'::regnamespace
-                      and prosrc like '%active and school_id = public.current_school_id() and lower(btrim(name))%')))
+                      and prosrc like '%active and school_id = public.current_school_id() and lower(btrim(name))%'))),
+  -- 0073. The operator's own audit trail. Captured by trigger on the tables only
+  -- the operator writes, rather than by a call in each function, because a log a
+  -- future function forgets to call is worse than none — its gaps look like
+  -- inactivity. The signature is the table AND one of the triggers, since a
+  -- table nothing writes to is the failure mode.
+  ('0073_operator_actions',     'operator_actions + its capture triggers',
+     (select exists (select 1 from information_schema.tables
+                      where table_schema = 'public' and table_name = 'operator_actions')
+         and (select count(*) from pg_trigger t
+                join pg_proc pr on pr.oid = t.tgfoid
+                join pg_namespace nr on nr.oid = pr.pronamespace
+               where not t.tgisinternal and nr.nspname = 'public'
+                 and pr.proname in ('fn__log_platform_invoice', 'fn__log_platform_payment',
+                                    'fn__log_subscription_change', 'fn__log_school_created')) = 4)),
+  -- 0074. Read-only support access. Three predicates had to change and one had to
+  -- NOT change, so the signature is all four: is_staff and may_view must consult
+  -- the session, current_school_id must fall back to it, and has_role must be
+  -- untouched — that last one is what refuses all 43 write policies, and a
+  -- database where has_role mentions it is a database where the vendor can write
+  -- to every school.
+  ('0074_operator_support_sessions', 'read-only support sessions, has_role untouched',
+     (select exists (select 1 from information_schema.tables
+                      where table_schema = 'public' and table_name = 'operator_sessions')
+         and exists (select 1 from pg_proc where proname = 'is_staff'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%is_operator_session%')
+         and exists (select 1 from pg_proc where proname = 'may_view'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%is_operator_session%')
+         and exists (select 1 from pg_proc where proname = 'current_school_id'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%operator_sessions%')
+         and not exists (select 1 from pg_proc where proname = 'has_role'
+                          and pronamespace = 'public'::regnamespace
+                          and prosrc like '%is_operator_session%')))
 )
 select migration,
        object                                   as looked_for,

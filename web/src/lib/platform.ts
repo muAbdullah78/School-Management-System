@@ -201,6 +201,111 @@ export async function platformSchemaState(): Promise<SchemaState> {
   return data as SchemaState
 }
 
+/**
+ * Read-only support access into one school.
+ *
+ * The owner chose full permanent read over consented, time-boxed access — see
+ * docs/SUPER-ADMIN-DESIGN.md §2.1 for the argument they overrode. What is fixed
+ * is the read-only half: entering a school grants the reach of the `readonly`
+ * observer role and nothing more, refused at the database rather than hidden in
+ * this file. A UI check would be a suggestion.
+ *
+ * The reason is required by the database, not by this form. Every visit is
+ * logged, and the SCHOOL can read that log under Settings → Support visits,
+ * which is what turns permanent access into something to volunteer rather than
+ * hope is never asked about.
+ */
+export interface OperatorSession {
+  session_id: string
+  school_id: string
+  school_name: string
+  reason: string
+  started_at: string
+  expires_at: string
+  read_only: true
+}
+
+export async function operatorEnter(
+  schoolId: string, reason: string, minutes = 60,
+): Promise<OperatorSession> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_operator_enter', {
+    p_school_id: schoolId, p_reason: reason, p_minutes: minutes,
+  })
+  if (error) throw new Error(error.message)
+  return data as OperatorSession
+}
+
+export async function operatorLeave(): Promise<number> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_operator_leave')
+  if (error) throw new Error(error.message)
+  return Number(data ?? 0)
+}
+
+/** The caller's own active session, or null. Drives the banner. */
+export async function operatorCurrent(): Promise<OperatorSession | null> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_operator_current')
+  if (error) return null
+  return (data ?? null) as OperatorSession | null
+}
+
+export interface OperatorAction {
+  at: string
+  actor_email: string | null
+  action: string
+  detail: Record<string, unknown>
+}
+
+/** What we have done to this school: prices chosen, trials extended, visits made. */
+export async function schoolActions(schoolId: string, limit = 100): Promise<OperatorAction[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_school_actions', {
+    p_school_id: schoolId, p_limit: limit,
+  })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as OperatorAction[]
+}
+
+/** Plain English for one logged action, for a list a human reads down. */
+export function describeAction(a: OperatorAction): string {
+  const d = a.detail ?? {}
+  const pkr = (v: unknown) => `Rs ${Number(v ?? 0).toLocaleString('en-PK')}`
+  switch (a.action) {
+    case 'school_created':
+      return `School added${d.city ? ` (${String(d.city)})` : ''}`
+    case 'licence_changed': {
+      const to = (d.to ?? {}) as Record<string, unknown>
+      const from = (d.from ?? {}) as Record<string, unknown>
+      const bits: string[] = []
+      if (to.plan_code && to.plan_code !== from.plan_code) {
+        bits.push(`plan ${from.plan_code ? `${String(from.plan_code)} → ` : ''}${String(to.plan_code)}`)
+      }
+      if (to.status && to.status !== from.status) bits.push(`status ${String(to.status)}`)
+      if (to.period_end && to.period_end !== from.period_end) bits.push(`paid until ${String(to.period_end)}`)
+      if (to.trial_ends_on && to.trial_ends_on !== from.trial_ends_on) bits.push(`trial until ${String(to.trial_ends_on)}`)
+      return `Licence changed — ${bits.length ? bits.join(', ') : 'no visible change'}`
+    }
+    case 'invoice_raised': {
+      const disc = Number(d.discount ?? 0)
+      // The discount is the figure worth surfacing: it is the one thing an
+      // invoice row alone cannot explain six months later.
+      return `Invoiced ${pkr(d.amount)} for ${String(d.months ?? '?')} month(s) on ${String(d.plan_code ?? '?')}`
+        + (disc > 0 ? ` — ${pkr(disc)} off list${d.note ? `: ${String(d.note)}` : ''}` : '')
+    }
+    case 'payment_recorded':
+      return `Payment ${pkr(d.amount)} by ${String(d.method ?? 'bank')}`
+        + (d.reference ? ` · ${String(d.reference)}` : '')
+    case 'school_entered':
+      return `Entered the school (read only) — ${String(d.reason ?? 'no reason given')}`
+    case 'school_left':
+      return 'Left the school'
+    default:
+      return a.action.replace(/_/g, ' ')
+  }
+}
+
 export async function refreshAllCounts(): Promise<number> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_platform_refresh_counts')

@@ -19,7 +19,8 @@
 #
 # WHAT IT DOES
 #
-# Extracts every `.rpc('name', { p_x: ..., p_y: ... })` from web/src/lib/db.ts,
+# Extracts every `.rpc('name', { p_x: ..., p_y: ... })` from the app's data-layer
+# files (web/src/lib/db.ts and web/src/lib/platform.ts),
 # then for each one asks the database whether a function of that name exists and
 # whether every parameter passed is one the function actually accepts.
 #
@@ -33,8 +34,15 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-DB_FILE=web/src/lib/db.ts
-[ -f "$DB_FILE" ] || { echo "cannot find $DB_FILE"; exit 1; }
+# EVERY file that calls an RPC, not just db.ts.
+#
+# This scanned db.ts alone until the operator console grew its own data layer in
+# web/src/lib/platform.ts — twelve RPC calls with hand-typed parameter names,
+# none of them checked, in exactly the seam this script exists for. A renamed
+# parameter there would have compiled, deployed, and failed the first time the
+# operator opened the console.
+RPC_FILES=$(ls web/src/lib/db.ts web/src/lib/platform.ts 2>/dev/null)
+[ -n "$RPC_FILES" ] || { echo "cannot find any RPC caller under web/src/lib"; exit 1; }
 
 # --- what the database offers -------------------------------------------------
 # name<TAB>comma-separated parameter names
@@ -69,10 +77,10 @@ psql -tAF$'\t' -c "
 
 # --- what the app calls -------------------------------------------------------
 # One line per call: name<TAB>param<TAB>param...
-python3 - "$DB_FILE" > /tmp/rpc_app.tsv <<'PY'
+python3 - $RPC_FILES > /tmp/rpc_app.tsv <<'PY'
 import re, sys
 
-src = open(sys.argv[1]).read()
+src = '\n'.join(open(f).read() for f in sys.argv[1:])
 out = []
 
 for m in re.finditer(r"\.rpc\(\s*'([a-z0-9_]+)'\s*(,)?", src):
@@ -161,7 +169,7 @@ while IFS=$'\t' read -r -a parts; do
   done
 done < /tmp/rpc_app.tsv
 
-echo "checked $checked RPC call sites in $DB_FILE"
+echo "checked $checked RPC call sites in $(echo $RPC_FILES | tr '\n' ' ')"
 
 if [ ${#missing_fns[@]} -gt 0 ]; then
   echo

@@ -7,6 +7,7 @@ import { appTitle } from '@/lib/config'
 import { useSchoolName } from '@/hooks/useSchoolName'
 import { OfflineIndicator } from '@/components/OfflineIndicator'
 import { LicenceBanner } from '@/components/LicenceBanner'
+import { OperatorBanner } from './OperatorBanner'
 import { NAV_ICONS, IconLogout, IconAlert } from '@/components/icons'
 import { EmptyState } from '@/components/ui'
 import { GlobalSearch } from '@/components/GlobalSearch'
@@ -113,6 +114,10 @@ export function AppShell() {
       </aside>
 
       <main className="flex flex-1 flex-col overflow-hidden">
+        {/* ABOVE the licence banner, deliberately. "You are in somebody
+            else's data" outranks "your subscription expires on Friday": one
+            is about what you are looking at right now. */}
+        <OperatorBanner />
         <LicenceBanner />
         <OfflineIndicator />
 

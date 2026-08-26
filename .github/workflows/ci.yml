@@ -1236,6 +1236,29 @@ jobs:
         # form of that assertion that means anything under RLS.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/migration_ledger.sql
 
+      - name: Support access — can the operator see, and can the operator write?
+        # 0074 gives the operator a read-only way into any school. The owner chose
+        # full permanent read over consented, time-boxed access; what is not
+        # negotiable is the read-only half, because a writable operator session
+        # would make every row in every school "possibly the vendor" and the
+        # school's own audit trail is the only reason this software can be
+        # trusted with money.
+        #
+        # The mechanism is three functions: current_school_id(), is_staff() and
+        # may_view() learn about support sessions, and has_role() deliberately
+        # does NOT. All 43 write policies gate on has_role, so the write refusal
+        # is not code — it is the absence of a change. That makes this suite a
+        # test that a whole CLASS of policy was left alone, which no code review
+        # reliably catches: adding `or is_operator_session()` to has_role() looks
+        # exactly like the two correct edits 0074 made a few lines away, and it
+        # would hand the vendor write access to every school at once.
+        #
+        # Sweeps EVERY tenant table from the catalogue, all three verbs, and
+        # treats a privilege refusal as a pass but an incidental stop (a foreign
+        # key, a constraint) as a failure — because that means RLS let the write
+        # through and only luck stopped it.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/operator_support.sql
+
       - name: Every suite on disk has a step above
         # The gap this closes has already happened twice in this repo, in two
         # different places: supabase/bundles/ stopped at 0039 while CI stayed

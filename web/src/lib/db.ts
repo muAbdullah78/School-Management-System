@@ -4144,3 +4144,26 @@ export async function getHeadWiseDues(sessionId: string) {
   return data as { session_id: string; basis: string
                    heads: { fee_head: string; charged: number; collected: number }[] }
 }
+
+/** One row per time our support team opened this school's account. */
+export interface SupportVisit {
+  started_at: string
+  ended_at: string | null
+  reason: string
+  minutes: number
+}
+
+/**
+ * The visits our support team made to THIS school.
+ *
+ * Owner and principal only, enforced by the database (fn_support_visits gates on
+ * has_role, not may_view — a readonly observer has no business in it, and
+ * may_view is true during a support visit anyway, which would make the gate
+ * circular).
+ */
+export async function listSupportVisits(limit = 50): Promise<SupportVisit[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_support_visits', { p_limit: limit })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as SupportVisit[]
+}

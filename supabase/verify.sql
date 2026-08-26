@@ -246,7 +246,17 @@ select 'the observer role (0059)',
                      and p.proname not in ('fn_may_manage_class',
                                            'fn_may_write_school_file',
                                            'fn_checkin_display',
-                                           'fn_pending_invites', 'may_view'))
+                                           'fn_pending_invites',
+                                           -- 0074: which support visits the
+                                           -- VENDOR made to this school is
+                                           -- accountability to whoever signed
+                                           -- the contract, not a read of the
+                                           -- school's records. An observer has
+                                           -- no business in it — and may_view is
+                                           -- true DURING a support visit, which
+                                           -- would make the gate circular.
+                                           'fn_support_visits',
+                                           'may_view'))
                  -- THE ONE THAT MATTERS. An observer must not be able to write.
                  -- A write policy consulting may_view would let one change a
                  -- child's record, and RLS would let it through with nothing
@@ -617,6 +627,36 @@ select 'class names and fee heads are per-school (0072)',
                           and pronamespace = 'public'::regnamespace
                           and prosrc like '%active and school_id = public.current_school_id() and lower(btrim(name))%')
        then 'PASS' else 'FAIL — re-run bundle 7' end
+
+union all
+-- 0073 and 0074. The operator's audit trail, and read-only support access.
+--
+-- The last clause is the important one: has_role() must NOT mention
+-- is_operator_session. All 43 write policies and every definer write gate go
+-- through has_role, so a database where it consults the support session is a
+-- database where the software vendor can write to every school in it. That is
+-- the difference between "we can look when you call us" and something no school
+-- should agree to.
+select 'support access is read-only (0073, 0074)',
+       case when exists (select 1 from information_schema.tables
+                          where table_schema='public' and table_name='operator_actions')
+             and exists (select 1 from information_schema.tables
+                          where table_schema='public' and table_name='operator_sessions')
+             and exists (select 1 from pg_proc where proname='is_staff'
+                          and pronamespace='public'::regnamespace
+                          and prosrc like '%is_operator_session%')
+             and exists (select 1 from pg_proc where proname='may_view'
+                          and pronamespace='public'::regnamespace
+                          and prosrc like '%is_operator_session%')
+             and not exists (select 1 from pg_proc where proname='has_role'
+                              and pronamespace='public'::regnamespace
+                              and prosrc like '%is_operator_session%')
+       then 'PASS'
+       when exists (select 1 from pg_proc where proname='has_role'
+                     and pronamespace='public'::regnamespace
+                     and prosrc like '%is_operator_session%')
+       then 'FAIL — has_role() consults the support session; support access is NOT read-only'
+       else 'FAIL — re-run bundle 7' end
 
 union all
 -- The row that answers "how far has this database actually got?" (0069)

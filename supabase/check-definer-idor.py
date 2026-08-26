@@ -213,6 +213,42 @@ def main() -> int:
               file=sys.stderr)
         return 1
 
+    # Nothing in public may be reachable without a login.
+    #
+    # 0071 closed this, and then 0073 and 0074 quietly reopened it six times:
+    # Postgres grants EXECUTE to PUBLIC on every new function, and the fix
+    # 0071 relies on — `alter default privileges revoke execute on functions
+    # from public` — only works in its DATABASE-WIDE spelling. The
+    # schema-qualified form is silently a no-op, which is how the first version
+    # of 0071 left six new functions open to the internet.
+    #
+    # verify.sql catches it, but verify.sql is something a school runs after an
+    # install. This is the check that stops it being committed. Any migration
+    # adding a function to a database whose default privileges were set before
+    # 0071 must revoke explicitly.
+    anon_callable = [row[0] for row in q("""
+        select p.proname
+          from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+         where n.nspname = 'public'
+           and has_function_privilege('anon', p.oid, 'execute')
+         order by 1
+    """)]
+    if anon_callable:
+        print(f'\n{len(anon_callable)} FUNCTION(S) IN public ARE CALLABLE WITHOUT '
+              'A LOGIN:', file=sys.stderr)
+        for name in anon_callable:
+            print(f'  {name}', file=sys.stderr)
+        print('\n`anon` is the role a PostgREST request uses when it carries only '
+              'the anonymous key, which ships inside the browser bundle and is '
+              'therefore public. 0071 closed this surface; a function added since '
+              'has reopened it, because Postgres grants EXECUTE to PUBLIC on every '
+              'new function.\n'
+              'Add to the migration that creates it:\n'
+              '  revoke execute on function public.<name>(<arg types>) from public, anon;\n'
+              'and grant it to `authenticated` explicitly if the app calls it.',
+              file=sys.stderr)
+        return 1
+
     if problems:
         print(f'\n{len(problems)} DEFINER FUNCTION(S) LOOK UP A TENANT ROW BY A '
               'CALLER-SUPPLIED ID WITH NO SCHOOL FILTER:', file=sys.stderr)

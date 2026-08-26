@@ -171,10 +171,36 @@ end $grants$;
 revoke execute on all functions in schema public from public;
 revoke execute on all functions in schema public from anon;
 
--- And for functions added later, so this cannot silently regress. Applies to
--- objects created by the role running this migration, which is the role that
--- applies every other migration too.
-alter default privileges in schema public revoke execute on functions from public;
+-- WHAT ABOUT FUNCTIONS ADDED LATER?
+--
+-- Not with ALTER DEFAULT PRIVILEGES. Two spellings were tried and measured, and
+-- both are wrong for different reasons:
+--
+--   alter default privileges IN SCHEMA public revoke execute on functions from public;
+--     Silently a no-op. No pg_default_acl row appears, and a function created
+--     afterwards still carries =X/postgres. Granting first so a row exists does
+--     not help: the row reads {authenticated=X/postgres} and the new function
+--     still comes out with PUBLIC, because a schema-scoped entry is merged ON TOP
+--     of the built-in default rather than replacing it. `for role postgres` and
+--     the `routines` spelling behave identically.
+--
+--   alter default privileges revoke execute on functions from public;
+--     Database-wide, and it DOES work — new functions come out
+--     {postgres=X/postgres}. It was in this migration for an hour and then
+--     removed, because "database-wide" includes pg_temp: it made pg_temp.ok
+--     uncallable by `authenticated` and broke SIXTEEN test suites with
+--     "permission denied for function ok". Anything that creates a temporary
+--     function would hit the same wall, and the set of such things is not
+--     something this migration can enumerate.
+--
+-- So the rule is enforced where it can be enforced precisely: each migration
+-- that adds a function revokes it, and supabase/check-definer-idor.py fails CI
+-- if ANY function in public is executable by `anon`. Forgetting is possible;
+-- shipping the forgetting is not. That guard exists because this exact thing
+-- happened — 0073 and 0074 reopened the surface six times while the
+-- schema-qualified ALTER that used to sit here looked like it was handling it,
+-- and verify.sql reported "6 functions still open". Which is what that verify
+-- row is for.
 
 -- ---------------------------------------------------------------------------
 -- 3. Assert the result, in the same transaction that caused it

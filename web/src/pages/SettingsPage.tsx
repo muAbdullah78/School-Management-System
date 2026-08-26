@@ -11,6 +11,7 @@ import { Rollover } from './settings/Rollover'
 import { AuditLog } from './settings/AuditLog'
 import { StaffCheckin } from './settings/StaffCheckin'
 import { MessageSettings } from './settings/MessageSettings'
+import { SupportVisits } from './settings/SupportVisits'
 
 const SECTIONS = [
   { key: 'school', label: 'School Profile' },
@@ -28,6 +29,9 @@ const SECTIONS = [
   { key: 'messages', label: 'Messages' },
   { key: 'users', label: 'Users & Roles' },
   { key: 'audit', label: 'Audit Log' },
+  // Next to the audit log on purpose: one is who at the school changed what,
+  // the other is when the software company looked. Same question, two sources.
+  { key: 'support', label: 'Support Visits' },
   { key: 'backup', label: 'Backup' },
 ] as const
 
@@ -58,6 +62,7 @@ export function SettingsPage() {
         {section === 'import' && <ImportData />}
         {section === 'rollover' && <Rollover />}
         {section === 'audit' && <AuditLog />}
+        {section === 'support' && <SupportVisits />}
         {section === 'messages' && <MessageSettings />}
         {section === 'users' && <Users />}
         {section === 'backup' && <Backup />}

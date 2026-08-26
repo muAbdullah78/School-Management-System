@@ -24,6 +24,24 @@ export function fmtDate(s?: string | null): string {
   return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
+/**
+ * Date AND time, for the few places where the hour matters.
+ *
+ * Support visits are the reason this exists: "26 Aug 2026" tells a principal
+ * nothing useful about a visit they want to ask about, and two visits on the same
+ * day would be indistinguishable.
+ */
+export function fmtDateTime(s?: string | null): string {
+  if (!s) return '—'
+  const d = new Date(s)
+  return isNaN(d.getTime())
+    ? '—'
+    : d.toLocaleString('en-PK', {
+        year: 'numeric', month: 'short', day: 'numeric',
+        hour: 'numeric', minute: '2-digit',
+      })
+}
+
 /** First day of a month as YYYY-MM-DD from a <input type="month"> value (YYYY-MM). */
 export function monthToDate(ym: string): string {
   return /^\d{4}-\d{2}$/.test(ym) ? `${ym}-01` : ym

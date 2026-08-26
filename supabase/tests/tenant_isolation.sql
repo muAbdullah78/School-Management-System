@@ -366,7 +366,18 @@ declare
     -- describes the database, and its only policy is a SELECT gated on
     -- is_platform_admin() — a schema history is not a tenant's business, and a
     -- clerk who could edit it could hide which migrations a school is missing.
-    'schema_migrations'
+    'schema_migrations',
+    -- 0073. What the operator did to a school: prices chosen, trials extended,
+    -- discounts given. It carries school_id because it is keyed on one, but a
+    -- school must see none of it, so current_school_id() would be the wrong gate
+    -- and its presence would be the bug. 4b-ii asserts is_platform_admin instead.
+    'operator_actions',
+    -- 0074. Support sessions. The one platform table a SCHOOL may read part of —
+    -- its own visits, by design, see §2.1 — so it has TWO select policies, one
+    -- on is_platform_admin and one on current_school_id + has_role. 4b-ii accepts
+    -- either, which is exactly why 4b-ii is stated as "one or the other" rather
+    -- than per-table.
+    'operator_sessions'
   ];
 begin
   -- 4a. Every tenant table must carry school_id.
@@ -468,7 +479,7 @@ begin
     -- the thing that must never appear on it is a write path. A parent with a
     -- login repricing Institution to Rs 0 would be a policy away.
     and tablename in ('platform_invoices', 'platform_payments', 'schema_migrations',
-                      'plans')
+                      'plans', 'operator_actions', 'operator_sessions')
     and cmd <> 'SELECT';
   if bad <> '' then
     raise exception E'A platform table has a write policy; writes must go through a definer function:\n%', bad;
@@ -515,13 +526,20 @@ begin
 end $guards$;
 
 -- =============================================================================
--- TEST 5 — A PLATFORM ADMIN MUST NOT REACH TENANT DATA.
+-- TEST 5 — A PLATFORM ADMIN, WITH NO SUPPORT SESSION OPEN, REACHES NO TENANT DATA.
 --
--- The product owner manages schools, subscriptions and payments. That job never
--- requires reading a child's records, so the platform role deliberately has no
--- path to them. Without this test, "just let platform admins see everything"
--- is a one-line change nobody would notice — and it would turn one compromised
--- platform login into a breach of every school at once.
+-- The qualifier is new and it is the whole of 0074. Managing schools,
+-- subscriptions and payments never requires reading a child's records, so the
+-- platform role has no standing path to them — and "just let platform admins see
+-- everything" would still be a one-line change nobody would notice, turning one
+-- compromised platform login into a breach of every school at once.
+--
+-- What 0074 added is a DELIBERATE, LOGGED, READ-ONLY path, opened by
+-- fn_operator_enter and closed by fn_operator_leave. So the invariant this test
+-- defends is now precisely: with no session open, the platform role sees nothing.
+-- TEST 8 covers the other half — with a session open, reads work and every write
+-- is still refused — and the two together are what make the boundary a boundary
+-- rather than a door left ajar.
 -- =============================================================================
 do $platform$
 declare
@@ -548,7 +566,13 @@ begin
     join pg_namespace n on n.oid = c.relnamespace
     join pg_attribute a on a.attrelid = c.oid and a.attname = 'school_id' and not a.attisdropped
     where n.nspname = 'public' and c.relkind = 'r'
-      and c.relname not in ('_test_ids', 'subscriptions', 'student_count_snapshots')
+      -- operator_actions and operator_sessions carry school_id and are keyed on
+      -- it, but they are the OPERATOR's own records of what they did to a
+      -- school, not the school's records. Excluded here and asserted visible
+      -- below, because excluding a table from a guard without asserting what
+      -- DOES hold is how an exclusion list becomes a hole.
+      and c.relname not in ('_test_ids', 'subscriptions', 'student_count_snapshots',
+                            'operator_actions', 'operator_sessions')
     order by c.relname
   loop
     execute format('select count(*) from public.%I', t) into visible;
@@ -569,12 +593,28 @@ begin
     failures := failures || '  platform admin cannot see subscriptions' || chr(10);
   end if;
 
+  -- And with no session open, current_school_id() must be NULL for them. This is
+  -- the single value the whole read boundary turns on: if it ever returned a
+  -- school for an operator who had not entered one, every tenant policy would
+  -- open at once and the sweep above would have to catch 40 tables to notice.
+  if public.current_school_id() is not null then
+    failures := failures
+      || '  a platform admin with NO support session has a current_school_id ('
+      || public.current_school_id()::text || ')' || chr(10);
+  end if;
+  if public.is_operator_session() then
+    failures := failures || '  is_operator_session() is true with no session open' || chr(10);
+  end if;
+  if public.is_staff() then
+    failures := failures || '  is_staff() is true for an operator with no session open' || chr(10);
+  end if;
+
   reset role;
 
   if failures <> '' then
     raise exception E'PLATFORM ROLE REACHES TOO FAR (or not far enough):\n%', failures;
   end if;
-  raise notice 'ok: platform admin sees schools and subscriptions, no tenant data';
+  raise notice 'ok: platform admin with no session sees schools and subscriptions, no tenant data';
 end $platform$;
 
 -- =============================================================================

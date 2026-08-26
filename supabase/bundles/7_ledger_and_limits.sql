@@ -1006,10 +1006,36 @@ end $grants$;
 revoke execute on all functions in schema public from public;
 revoke execute on all functions in schema public from anon;
 
--- And for functions added later, so this cannot silently regress. Applies to
--- objects created by the role running this migration, which is the role that
--- applies every other migration too.
-alter default privileges in schema public revoke execute on functions from public;
+-- WHAT ABOUT FUNCTIONS ADDED LATER?
+--
+-- Not with ALTER DEFAULT PRIVILEGES. Two spellings were tried and measured, and
+-- both are wrong for different reasons:
+--
+--   alter default privileges IN SCHEMA public revoke execute on functions from public;
+--     Silently a no-op. No pg_default_acl row appears, and a function created
+--     afterwards still carries =X/postgres. Granting first so a row exists does
+--     not help: the row reads {authenticated=X/postgres} and the new function
+--     still comes out with PUBLIC, because a schema-scoped entry is merged ON TOP
+--     of the built-in default rather than replacing it. `for role postgres` and
+--     the `routines` spelling behave identically.
+--
+--   alter default privileges revoke execute on functions from public;
+--     Database-wide, and it DOES work — new functions come out
+--     {postgres=X/postgres}. It was in this migration for an hour and then
+--     removed, because "database-wide" includes pg_temp: it made pg_temp.ok
+--     uncallable by `authenticated` and broke SIXTEEN test suites with
+--     "permission denied for function ok". Anything that creates a temporary
+--     function would hit the same wall, and the set of such things is not
+--     something this migration can enumerate.
+--
+-- So the rule is enforced where it can be enforced precisely: each migration
+-- that adds a function revokes it, and supabase/check-definer-idor.py fails CI
+-- if ANY function in public is executable by `anon`. Forgetting is possible;
+-- shipping the forgetting is not. That guard exists because this exact thing
+-- happened — 0073 and 0074 reopened the surface six times while the
+-- schema-qualified ALTER that used to sit here looked like it was handling it,
+-- and verify.sql reported "6 functions still open". Which is what that verify
+-- row is for.
 
 -- ---------------------------------------------------------------------------
 -- 3. Assert the result, in the same transaction that caused it
@@ -1229,6 +1255,650 @@ begin
 end $fix_import$;
 
 -- ─────────────────────────────────────────────────────────────────────────
+-- 0073_operator_actions.sql
+-- ─────────────────────────────────────────────────────────────────────────
+-- =============================================================================
+-- 0073 — Nothing recorded what the operator did to a school
+--
+-- Phase 1d of docs/SUPER-ADMIN-DESIGN.md, and the foundation the school-detail
+-- screen and impersonation both need.
+--
+-- WHAT WAS MISSING
+--
+-- The operator can activate a licence, change a plan, discount a price to zero,
+-- extend a trial and record a payment. Between them those decide what every
+-- school pays. The only trace was the billing rows themselves: an invoice says
+-- what was charged, but not who chose the price, or that a trial was extended
+-- three times, or that a school was moved between plans and back.
+--
+-- With one customer that is recoverable from memory. With fifty it is the
+-- difference between "why is this school on Starter at Rs 0" having an answer
+-- and not having one — and the person asking in six months is the operator.
+--
+-- WHY A TRIGGER RATHER THAN A CALL IN EACH FUNCTION
+--
+-- The design doc said "every operator function writes one row". That is the
+-- obvious shape and it is the weaker one: it can be forgotten. This project's
+-- most common defect by a distance is not wrong logic, it is correct logic that
+-- nothing reaches — fn_link_parent with no caller, message_templates.enabled
+-- with no writer, fn_reverse_other_income with no caller. A log that a future
+-- function forgets to call is worse than no log, because its gaps look like
+-- inactivity.
+--
+-- So capture happens where the WRITE lands, on the tables only the operator
+-- writes. A new operator function is logged the day it is written, by nobody
+-- remembering anything. fn__log_operator_action stays available for actions that
+-- touch no table at all — entering a school to help, refreshing every count —
+-- which a trigger cannot see.
+--
+-- THE ONE HARD PART
+--
+-- subscriptions is not an operator-only table. 0067 put statement-level triggers
+-- on students and enrollments that call fn_refresh_student_count, which UPDATEs
+-- subscriptions on every admission at every school. Logging those would bury the
+-- five decisions a year that matter under thousands of counter refreshes — and
+-- a log nobody can read is a log nobody reads. So the trigger compares old and
+-- new and ignores a change confined to the counter columns.
+--
+-- Re-runnable.
+-- =============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 1. The log
+--
+-- RLS on with a read policy for the operator and NO write policy, exactly like
+-- schema_migrations in 0069 and for the same reason: 0001:704 grants all four
+-- verbs on every table in public to `authenticated` and 0025:768 makes that the
+-- default for new tables. RLS is the only thing between a clerk and this table,
+-- and tenant_isolation.sql check 4d fails CI if it is ever off.
+--
+-- actor_email is denormalised deliberately. platform_admins rows can be removed,
+-- and "who granted this school a free year" must still have an answer afterwards.
+-- ---------------------------------------------------------------------------
+create table if not exists public.operator_actions (
+  id          uuid primary key default gen_random_uuid(),
+  at          timestamptz not null default now(),
+  -- Null for a service-role or cron action, which is a real and distinguishable
+  -- case rather than missing data.
+  actor       uuid,
+  actor_email text,
+  action      text not null,
+  -- Null where the action is not about one school (refreshing every count).
+  school_id   uuid references public.schools(id),
+  detail      jsonb not null default '{}'::jsonb
+);
+
+create index if not exists operator_actions_school_at_idx
+  on public.operator_actions (school_id, at desc);
+create index if not exists operator_actions_at_idx
+  on public.operator_actions (at desc);
+
+alter table public.operator_actions enable row level security;
+
+drop policy if exists operator_actions_read on public.operator_actions;
+create policy operator_actions_read on public.operator_actions
+  for select using (public.is_platform_admin());
+
+-- ---------------------------------------------------------------------------
+-- 2. Writing a row
+--
+-- SECURITY DEFINER so a trigger and an operator function can both reach it
+-- without any grant to a browser role, and revoked from those roles so nothing
+-- in the app can forge an entry.
+-- ---------------------------------------------------------------------------
+create or replace function public.fn__log_operator_action(
+  p_action text, p_school_id uuid default null, p_detail jsonb default '{}'::jsonb
+) returns void language plpgsql security definer set search_path = public as $$
+declare v_email text;
+begin
+  select email into v_email from public.platform_admins where user_id = auth.uid();
+  insert into public.operator_actions (actor, actor_email, action, school_id, detail)
+  values (auth.uid(), v_email, p_action, p_school_id, coalesce(p_detail, '{}'::jsonb));
+end;
+$$;
+
+revoke all on function public.fn__log_operator_action(text, uuid, jsonb)
+  from public, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 3. Capture at the write
+-- ---------------------------------------------------------------------------
+create or replace function public.fn__log_platform_invoice()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  perform public.fn__log_operator_action('invoice_raised', new.school_id,
+    jsonb_build_object(
+      'invoice_id',  new.id,
+      'plan_code',   new.plan_code,
+      'months',      new.months,
+      'amount',      new.amount,
+      -- The number that makes a discount visible. 0064 records list_amount so
+      -- "given away" can be computed; recording the gap here means the reason
+      -- and the amount sit in one row rather than being joined back together.
+      'list_amount', new.list_amount,
+      'discount',    coalesce(new.list_amount, new.amount) - new.amount,
+      'note',        new.note,
+      'period',      new.period_start::text || ' to ' || new.period_end::text));
+  return null;
+end;
+$$;
+
+create or replace function public.fn__log_platform_payment()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  perform public.fn__log_operator_action('payment_recorded', new.school_id,
+    jsonb_build_object(
+      'payment_id', new.id,
+      'invoice_id', new.invoice_id,
+      'amount',     new.amount,
+      'paid_on',    new.paid_on::text,
+      'method',     new.method,
+      'reference',  new.reference,
+      'note',       new.note));
+  return null;
+end;
+$$;
+
+-- subscriptions, with the counter noise excluded. See the header.
+create or replace function public.fn__log_subscription_change()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  -- Everything that is NOT the counter. If none of these moved, this update came
+  -- from fn_refresh_student_count — which 0067 fires on every admission at every
+  -- school — and is not an operator decision.
+  if new.plan_code     is not distinct from old.plan_code
+     and new.status        is not distinct from old.status
+     and new.cycle         is not distinct from old.cycle
+     and new.trial_ends_on is not distinct from old.trial_ends_on
+     and new.period_start  is not distinct from old.period_start
+     and new.period_end    is not distinct from old.period_end
+     and new.grace_ends_on is not distinct from old.grace_ends_on
+  then
+    return null;
+  end if;
+
+  perform public.fn__log_operator_action('licence_changed', new.school_id,
+    jsonb_build_object(
+      'from', jsonb_strip_nulls(jsonb_build_object(
+        'plan_code', old.plan_code, 'status', old.status::text, 'cycle', old.cycle::text,
+        'trial_ends_on', old.trial_ends_on::text, 'period_end', old.period_end::text)),
+      'to',   jsonb_strip_nulls(jsonb_build_object(
+        'plan_code', new.plan_code, 'status', new.status::text, 'cycle', new.cycle::text,
+        'trial_ends_on', new.trial_ends_on::text, 'period_end', new.period_end::text))));
+  return null;
+end;
+$$;
+
+create or replace function public.fn__log_school_created()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  perform public.fn__log_operator_action('school_created', new.id,
+    jsonb_build_object('name', new.name, 'city', new.city,
+                       'contact_name', new.contact_name,
+                       'contact_phone', new.contact_phone));
+  return null;
+end;
+$$;
+
+revoke all on function public.fn__log_platform_invoice()      from public, anon, authenticated;
+revoke all on function public.fn__log_platform_payment()      from public, anon, authenticated;
+revoke all on function public.fn__log_subscription_change()   from public, anon, authenticated;
+revoke all on function public.fn__log_school_created()        from public, anon, authenticated;
+
+-- Row-level, not statement-level: unlike 0067's counter refresh these are one
+-- row per human decision, and the detail IS the row. There is no bulk path.
+drop trigger if exists trg_log_platform_invoice on public.platform_invoices;
+create trigger trg_log_platform_invoice
+  after insert on public.platform_invoices
+  for each row execute function public.fn__log_platform_invoice();
+
+drop trigger if exists trg_log_platform_payment on public.platform_payments;
+create trigger trg_log_platform_payment
+  after insert on public.platform_payments
+  for each row execute function public.fn__log_platform_payment();
+
+drop trigger if exists trg_log_subscription_change on public.subscriptions;
+create trigger trg_log_subscription_change
+  after update on public.subscriptions
+  for each row execute function public.fn__log_subscription_change();
+
+drop trigger if exists trg_log_school_created on public.schools;
+create trigger trg_log_school_created
+  after insert on public.schools
+  for each row execute function public.fn__log_school_created();
+
+-- ---------------------------------------------------------------------------
+-- 4. Reading it back
+--
+-- One school's history, newest first, for the detail screen. Scoped by the
+-- operator gate rather than by current_school_id(), because this describes the
+-- OPERATOR's dealings with a school and a school has no business reading it.
+-- ---------------------------------------------------------------------------
+create or replace function public.fn_platform_school_actions(
+  p_school_id uuid, p_limit integer default 100
+) returns table (
+  at timestamptz, actor_email text, action text, detail jsonb
+) language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.is_platform_admin() then
+    raise exception 'Not permitted' using errcode = '42501';
+  end if;
+  return query
+    select a.at, a.actor_email, a.action, a.detail
+      from public.operator_actions a
+     where a.school_id = p_school_id
+     order by a.at desc
+     limit greatest(1, least(coalesce(p_limit, 100), 500));
+end;
+$$;
+
+-- Granted to `authenticated` because the operator's browser calls it, and
+-- revoked from public and anon because Postgres hands EXECUTE to PUBLIC on every
+-- new function and 0001:702 gives anon usage on this schema. 0071 closed that
+-- surface for everything existing; a new function has to close its own.
+-- check-definer-idor.py fails CI if this line is ever missing.
+grant  execute on function public.fn_platform_school_actions(uuid, integer) to authenticated;
+revoke execute on function public.fn_platform_school_actions(uuid, integer) from public, anon;
+
+-- ---------------------------------------------------------------------------
+-- 5. Backfill what the billing rows already prove
+--
+-- A history that starts empty makes every existing school look untouched, and
+-- the console would say "no operator activity" about a school that was activated
+-- and paid months ago. Invoices and payments are the two things already on
+-- record, so they are replayed at their real dates.
+--
+-- Licence changes are NOT backfilled: nothing recorded the before-and-after, and
+-- inventing one would put a fabricated row in an audit log. An absence is
+-- honest; a guess is not.
+-- ---------------------------------------------------------------------------
+do $backfill$
+declare r record; v_n integer := 0;
+begin
+  if exists (select 1 from public.operator_actions) then
+    raise notice '0073: operator_actions already has rows — not backfilling';
+    return;
+  end if;
+
+  for r in
+    select 'invoice_raised' as action, i.school_id, i.created_at as at, i.created_by,
+           jsonb_build_object('invoice_id', i.id, 'plan_code', i.plan_code,
+             'months', i.months, 'amount', i.amount, 'list_amount', i.list_amount,
+             'discount', coalesce(i.list_amount, i.amount) - i.amount,
+             'note', i.note, 'backfilled', true) as detail
+      from public.platform_invoices i
+    union all
+    select 'payment_recorded', p.school_id, p.created_at, p.created_by,
+           jsonb_build_object('payment_id', p.id, 'invoice_id', p.invoice_id,
+             'amount', p.amount, 'paid_on', p.paid_on::text, 'method', p.method,
+             'reference', p.reference, 'backfilled', true)
+      from public.platform_payments p
+    order by at
+  loop
+    insert into public.operator_actions (at, actor, actor_email, action, school_id, detail)
+    values (r.at, r.created_by,
+            (select email from public.platform_admins where user_id = r.created_by),
+            r.action, r.school_id, r.detail);
+    v_n := v_n + 1;
+  end loop;
+  raise notice '0073: backfilled % action(s) from the billing rows', v_n;
+end $backfill$;
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- 0074_operator_support_sessions.sql
+-- ─────────────────────────────────────────────────────────────────────────
+-- =============================================================================
+-- 0074 — The operator could not see what a school was seeing
+--
+-- Phase 2b of docs/SUPER-ADMIN-DESIGN.md. When a principal phones and says "the
+-- fee will not save", there was no way to look. This adds read-only support
+-- access into any school, with every visit recorded and the record shown to the
+-- school itself.
+--
+-- THE OWNER CHOSE FULL PERMANENT READ, over my recommendation of consented,
+-- time-boxed access. That decision is built here as chosen: no consent step, no
+-- approval, any school at any time. §2.1 of the design doc carries the argument
+-- they overrode — the risk is commercial rather than legal, and it lands in the
+-- sales meeting — and the one mitigation that costs nothing is the school-facing
+-- visit log in section 6, which restricts the operator not at all and turns the
+-- access into something to volunteer rather than hope is not asked about.
+--
+-- HOW IT WORKS, AND A CORRECTION TO THE DESIGN DOC
+--
+-- The doc claimed overriding current_school_id() was "the whole trick — ONE
+-- function grants reach where 40 new policies would have been needed". That is
+-- wrong, and measuring the policy census is what showed it. Every read policy on
+-- a tenant table has one of two shapes:
+--
+--     school_id = current_school_id() AND is_staff()          -- 25 tables
+--     school_id = current_school_id() AND may_view(…roles…)   -- 20 tables
+--
+-- and is_staff(), may_view() and has_role() all read public.profiles by
+-- auth.uid(). An operator has NO profiles row in the target school, so all three
+-- return false and the override alone would have shown them an empty console.
+--
+-- So three functions change, not one:
+--
+--     current_school_id()  falls back to the active session's school
+--     is_staff()           or is_operator_session()
+--     may_view(…)          or is_operator_session()
+--     has_role(…)          UNTOUCHED  <-- this is the entire write refusal
+--
+-- That last line is the good news and it fell out of the census rather than
+-- being designed: ALL 43 WRITE POLICIES gate on has_role(). Not one relies on
+-- current_school_id() alone. So leaving has_role() alone refuses every operator
+-- write through RLS with no new code, no new trigger, and nothing to forget.
+--
+-- The SECURITY DEFINER write path is covered too, and was already: 0059 built
+-- the `readonly` observer on exactly this split, and check-readonly-writes.py
+-- fails CI if any write policy or any VOLATILE function so much as mentions
+-- may_view or readonly. That guard's pattern now includes is_operator_session,
+-- so the operator inherits a boundary that already has a suite defending it.
+-- Impersonation is therefore not a new security boundary — it is the observer
+-- role, pointed at a school the operator has no profile in.
+--
+-- WHY A TABLE AND NOT A SESSION VARIABLE
+--
+-- The obvious implementation is set_config('app.operator_school', …). It is
+-- unsafe here. Supabase pools connections through pgbouncer, so a session-level
+-- GUC can outlive the request that set it and be read by whoever gets that
+-- connection next — a cross-tenant leak with no attacker involved. A
+-- transaction-local GUC is safe but cannot survive between the separate requests
+-- a browser makes. So the active session is a row, which is also the only form
+-- that can be audited.
+--
+-- Re-runnable.
+-- =============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 1. The sessions
+--
+-- RLS on, and TWO read policies, which is deliberate: the operator sees every
+-- visit, and a school sees the visits to itself. The second is the point of
+-- section 6 and it must not be reachable through anything the operator controls.
+--
+-- No write policy at all. Rows arrive only through fn_operator_enter, which
+-- checks is_platform_admin() — so a school user cannot manufacture a session
+-- and read another school, which would be the catastrophic failure of this
+-- design.
+-- ---------------------------------------------------------------------------
+create table if not exists public.operator_sessions (
+  id         uuid primary key default gen_random_uuid(),
+  admin_id   uuid not null,
+  school_id  uuid not null references public.schools(id),
+  -- Required, and free text. A log with no reason is a log nobody can use,
+  -- including the operator reading their own six months later.
+  reason     text not null,
+  started_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  ended_at   timestamptz,
+  constraint operator_sessions_reason_chk check (btrim(reason) <> ''),
+  constraint operator_sessions_window_chk check (expires_at > started_at)
+);
+
+-- The index current_school_id() and is_operator_session() hit on every call.
+-- Partial on the open sessions, which is the only set either one looks at.
+create index if not exists operator_sessions_open_idx
+  on public.operator_sessions (admin_id) where ended_at is null;
+create index if not exists operator_sessions_school_idx
+  on public.operator_sessions (school_id, started_at desc);
+
+alter table public.operator_sessions enable row level security;
+
+drop policy if exists operator_sessions_read_operator on public.operator_sessions;
+create policy operator_sessions_read_operator on public.operator_sessions
+  for select using (public.is_platform_admin());
+
+-- The school's own view. Leadership only: a clerk can do nothing about it, and
+-- "the software company looked at your records" is a governance fact for whoever
+-- signed the contract.
+--
+-- has_role, NOT may_view — and that is not an oversight. may_view is true during
+-- an operator session, so using it here would be circular in a confusing way;
+-- more importantly this list is about accountability to the school, and the
+-- readonly observer role has no business in it. Same category as
+-- fn_pending_invites, which 0065 put on has_role for the same reason.
+drop policy if exists operator_sessions_read_school on public.operator_sessions;
+create policy operator_sessions_read_school on public.operator_sessions
+  for select using (
+    school_id = public.current_school_id()
+    and public.has_role('owner', 'principal')
+  );
+
+-- ---------------------------------------------------------------------------
+-- 2. Is there an active support session?
+--
+-- ONE indexed probe. The platform_admins join is not belt-and-braces: an admin
+-- removed from platform_admins with a session still open would otherwise keep
+-- their reach until it expired, and revoking access has to be immediate.
+--
+-- STABLE, and it must stay STABLE. check-readonly-writes.py asserts that of
+-- may_view for the same reason: a VOLATILE predicate can be called from a write
+-- path without the guard noticing.
+-- ---------------------------------------------------------------------------
+create or replace function public.is_operator_session()
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1
+      from public.operator_sessions os
+      join public.platform_admins pa on pa.user_id = os.admin_id
+     where os.admin_id = auth.uid()
+       and os.ended_at is null
+       and os.expires_at > now()
+  );
+$$;
+
+grant  execute on function public.is_operator_session() to authenticated;
+revoke execute on function public.is_operator_session() from public, anon;
+
+-- ---------------------------------------------------------------------------
+-- 3. current_school_id() learns about support sessions
+--
+-- plpgsql rather than SQL, for a reason that is about cost. This function is
+-- called from 93 RLS policies and 109 other functions; it is the hottest thing
+-- in the schema. Written as
+--
+--     select coalesce((select … from profiles …), (select … from operator_sessions …))
+--
+-- Postgres may evaluate BOTH subqueries, so every school user would pay an extra
+-- index probe on a table that concerns only the operator. plpgsql guarantees the
+-- short circuit: a school user has a profiles row, returns on the first
+-- statement, and never touches operator_sessions at all.
+--
+-- Nothing is lost by leaving SQL behind: the function is SECURITY DEFINER, and
+-- Postgres does not inline those, so it was already a real call in every plan.
+-- ---------------------------------------------------------------------------
+create or replace function public.current_school_id()
+returns uuid language plpgsql stable security definer set search_path = public as $$
+declare v uuid;
+begin
+  select school_id into v from public.profiles where id = auth.uid() and active;
+  if v is not null then
+    return v;
+  end if;
+
+  -- No profile: either nobody, or an operator who has entered a school.
+  select os.school_id into v
+    from public.operator_sessions os
+    join public.platform_admins pa on pa.user_id = os.admin_id
+   where os.admin_id = auth.uid()
+     and os.ended_at is null
+     and os.expires_at > now()
+   order by os.started_at desc
+   limit 1;
+  return v;
+end;
+$$;
+
+grant execute on function public.current_school_id() to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 4. The two READ predicates, and only those
+--
+-- is_staff() carries 25 read policies, may_view() carries 20. has_role() carries
+-- all 43 write policies and is deliberately not touched here — that is what
+-- makes every operator write fail without a line of new code.
+-- ---------------------------------------------------------------------------
+create or replace function public.is_staff()
+returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(
+    (select p.active and p.role <> 'parent' from public.profiles p where p.id = auth.uid()),
+    false)
+  or public.is_operator_session();
+$$;
+
+create or replace function public.may_view(variadic p_roles public.user_role[])
+returns boolean language sql stable security definer set search_path = public as $$
+  select public.has_role(variadic p_roles)
+      or public.has_role('readonly')
+      or public.is_operator_session();
+$$;
+
+grant execute on function public.is_staff() to authenticated;
+grant execute on function public.may_view(public.user_role[]) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 5. Entering and leaving
+-- ---------------------------------------------------------------------------
+create or replace function public.fn_operator_enter(
+  p_school_id uuid, p_reason text, p_minutes integer default 60
+) returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_id uuid;
+  v_name text;
+  v_mins integer := greatest(5, least(coalesce(p_minutes, 60), 480));
+begin
+  if not public.is_platform_admin() then
+    raise exception 'Not permitted' using errcode = '42501';
+  end if;
+  if nullif(btrim(coalesce(p_reason, '')), '') is null then
+    raise exception 'A reason is required to enter a school';
+  end if;
+
+  select name into v_name from public.schools where id = p_school_id;
+  if v_name is null then
+    raise exception 'School not found';
+  end if;
+
+  -- One session at a time. Two open sessions would make current_school_id()
+  -- depend on started_at ordering, which is a coin toss dressed up as a rule.
+  update public.operator_sessions
+     set ended_at = now()
+   where admin_id = auth.uid() and ended_at is null;
+
+  insert into public.operator_sessions (admin_id, school_id, reason, expires_at)
+  values (auth.uid(), p_school_id, btrim(p_reason),
+          now() + make_interval(mins => v_mins))
+  returning id into v_id;
+
+  perform public.fn__log_operator_action('school_entered', p_school_id,
+    jsonb_build_object('session_id', v_id, 'reason', btrim(p_reason),
+                       'minutes', v_mins));
+
+  return jsonb_build_object(
+    'session_id', v_id, 'school_id', p_school_id, 'school_name', v_name,
+    'expires_at', now() + make_interval(mins => v_mins), 'read_only', true);
+end;
+$$;
+
+create or replace function public.fn_operator_leave()
+returns integer language plpgsql security definer set search_path = public as $$
+declare v_n integer; r record;
+begin
+  if not public.is_platform_admin() then
+    raise exception 'Not permitted' using errcode = '42501';
+  end if;
+
+  for r in
+    select id, school_id from public.operator_sessions
+     where admin_id = auth.uid() and ended_at is null
+  loop
+    perform public.fn__log_operator_action('school_left', r.school_id,
+      jsonb_build_object('session_id', r.id));
+  end loop;
+
+  update public.operator_sessions set ended_at = now()
+   where admin_id = auth.uid() and ended_at is null;
+  get diagnostics v_n = row_count;
+  return v_n;
+end;
+$$;
+
+-- What the banner reads. Safe for anyone to call: it returns the CALLER's own
+-- session or nothing, so it cannot be used to discover that somebody else is in
+-- a school.
+create or replace function public.fn_operator_current()
+returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(
+    (select jsonb_build_object(
+       'session_id', os.id, 'school_id', os.school_id,
+       'school_name', s.name, 'reason', os.reason,
+       'started_at', os.started_at, 'expires_at', os.expires_at,
+       'read_only', true)
+       from public.operator_sessions os
+       join public.schools s on s.id = os.school_id
+       join public.platform_admins pa on pa.user_id = os.admin_id
+      where os.admin_id = auth.uid() and os.ended_at is null and os.expires_at > now()
+      order by os.started_at desc limit 1),
+    'null'::jsonb);
+$$;
+
+-- Granted to `authenticated` for the operator's browser, and revoked from
+-- public and anon because Postgres gives PUBLIC EXECUTE on every new function.
+-- 0071 explains why ALTER DEFAULT PRIVILEGES cannot do this for us, and
+-- check-definer-idor.py fails CI if any of these lines goes missing.
+grant  execute on function public.fn_operator_enter(uuid, text, integer) to authenticated;
+grant  execute on function public.fn_operator_leave() to authenticated;
+grant  execute on function public.fn_operator_current() to authenticated;
+revoke execute on function public.fn_operator_enter(uuid, text, integer) from public, anon;
+revoke execute on function public.fn_operator_leave() from public, anon;
+revoke execute on function public.fn_operator_current() from public, anon;
+
+-- ---------------------------------------------------------------------------
+-- 6. What the SCHOOL sees
+--
+-- The mitigation §2.1 argues for, and the reason it is worth having: it
+-- restricts the operator in no way at all — they still enter any school at any
+-- time without asking — it only means they cannot do it invisibly. "If you call
+-- us with a problem we can enter your account to see what you are seeing, and
+-- every single time we do it is recorded and you can read that record yourself"
+-- is a stronger thing to say in a sales meeting than silence.
+--
+-- Deliberately does NOT name the individual operator. The school needs to know
+-- that the vendor looked, when, and why. Which employee of the vendor is not
+-- their business and publishing it invites a different argument.
+-- ---------------------------------------------------------------------------
+create or replace function public.fn_support_visits(p_limit integer default 50)
+returns table (
+  started_at timestamptz, ended_at timestamptz, reason text, minutes integer
+) language plpgsql stable security definer set search_path = public as $$
+declare v_school uuid := public.current_school_id();
+begin
+  if v_school is null then
+    raise exception 'No school context for this user' using errcode = '42501';
+  end if;
+  -- has_role, not may_view: see the policy comment in section 1.
+  if not public.has_role('owner', 'principal') then
+    raise exception 'Only the owner or principal may see support visits'
+      using errcode = '42501';
+  end if;
+  return query
+    select os.started_at,
+           os.ended_at,
+           os.reason,
+           (extract(epoch from (coalesce(os.ended_at, least(now(), os.expires_at))
+                                - os.started_at)) / 60)::integer
+      from public.operator_sessions os
+     where os.school_id = v_school
+     order by os.started_at desc
+     limit greatest(1, least(coalesce(p_limit, 50), 200));
+end;
+$$;
+
+grant  execute on function public.fn_support_visits(integer) to authenticated;
+revoke execute on function public.fn_support_visits(integer) from public, anon;
+
+-- ─────────────────────────────────────────────────────────────────────────
 -- Record what this bundle applied (no-op before 0069 creates the ledger)
 -- ─────────────────────────────────────────────────────────────────────────
 do $ledger$
@@ -1242,4 +1912,6 @@ begin
   perform public.fn_record_migration('0070_queue_message_scoping.sql', '7_ledger_and_limits.sql');
   perform public.fn_record_migration('0071_function_grants.sql', '7_ledger_and_limits.sql');
   perform public.fn_record_migration('0072_name_lookups_scoped.sql', '7_ledger_and_limits.sql');
+  perform public.fn_record_migration('0073_operator_actions.sql', '7_ledger_and_limits.sql');
+  perform public.fn_record_migration('0074_operator_support_sessions.sql', '7_ledger_and_limits.sql');
 end $ledger$;

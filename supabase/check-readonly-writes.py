@@ -47,6 +47,11 @@ import sys
 
 # Named exemptions only. Each one is a decision, not a category.
 ALLOWED_VOLATILE = {
+    'fn_operator_enter':
+        "creates the support session itself, so it necessarily names it; it "
+        "writes only operator_sessions and gates on is_platform_admin()",
+    'fn_operator_leave':
+        "ends the caller's own support session; same category as enter",
     'handle_new_user':
         "chooses 'readonly' as the fallback role for an invited account — "
         "that is what the function is for",
@@ -84,9 +89,14 @@ def main() -> int:
           join pg_namespace n on n.oid = c.relnamespace
          where n.nspname = 'public'
            and pol.polcmd <> 'r'
+           -- is_operator_session joined this pattern in 0074. Impersonation
+           -- rides on may_view, so the operator inherits the observer's read
+           -- reach — and must inherit its write refusal too. A write policy that
+           -- consulted the operator predicate directly would route around that
+           -- and hand the vendor write access to every school at once.
            and (coalesce(pg_get_expr(pol.polqual, pol.polrelid), '')
              || coalesce(pg_get_expr(pol.polwithcheck, pol.polrelid), ''))
-               ~ '(may_view|readonly)'
+               ~ '(may_view|readonly|is_operator_session)'
          order by 1
     """)
     for r in rows:
@@ -97,7 +107,7 @@ def main() -> int:
         select p.proname
           from pg_proc p join pg_namespace n on n.oid = p.pronamespace
          where n.nspname = 'public' and p.provolatile = 'v'
-           and p.prosrc ~ '(may_view|readonly)'
+           and p.prosrc ~ '(may_view|readonly|is_operator_session)'
          order by 1
     """)
     for name in rows:
@@ -130,6 +140,15 @@ def main() -> int:
            -- it. 0065 added it deliberately on has_role.
            and p.proname not in ('fn_may_manage_class', 'fn_may_write_school_file',
                                  'fn_checkin_display', 'fn_pending_invites',
+                                 -- fn_support_visits is the same category again:
+                                 -- 0074 shows a school which support visits the
+                                 -- VENDOR made to it, and that is accountability
+                                 -- to whoever signed the contract, not a read of
+                                 -- the school's records. An observer has no
+                                 -- business in it, and may_view is true during an
+                                 -- operator session anyway, which would make the
+                                 -- gate circular.
+                                 'fn_support_visits',
                                  'may_view')
          order by 1
     """)
@@ -165,6 +184,39 @@ def main() -> int:
               'above found nothing. `readonly` now reads nothing at all.',
               file=sys.stderr)
         return 1
+
+    # ---- 3b. has_role() must stay pure --------------------------------------
+    # The gap that negative-testing operator_support.sql found. Adding
+    # `or is_operator_session()` to has_role() opens EVERY ONE of the 43 write
+    # policies and every definer write gate in the product, to the vendor, for
+    # every school at once — and it slips past both checks above, because
+    # has_role is STABLE (so the VOLATILE check ignores it) and is not a policy
+    # (so the policy check ignores it). It is a one-line change that looks
+    # exactly like the two correct ones 0074 made a few lines away.
+    #
+    # The whole read/write split rests on has_role being the one predicate that
+    # is NOT widened, so it is asserted directly, by name.
+    # JOINED, not role_src[0]. q() splits psql output on newlines and a function
+    # body has plenty, so the first element is only the first LINE of has_role —
+    # and `or public.is_operator_session()` sits on the last one. The first
+    # version of this check read role_src[0] and reported healthy against a
+    # has_role that had been opened. Caught by printing what q() returned rather
+    # than by trusting that it returned a body.
+    role_src = ' '.join(q(
+        "select p.prosrc from pg_proc p "
+        "join pg_namespace n on n.oid = p.pronamespace "
+        "where n.nspname = 'public' and p.proname = 'has_role'"))
+    if not role_src.strip():
+        print('\nhas_role does not exist. Run migrations/0001_core_schema.sql.',
+              file=sys.stderr)
+        return 1
+    for bad_ref in ('may_view', 'readonly', 'is_operator_session'):
+        if bad_ref in role_src:
+            problems.append(
+                f'has_role() mentions {bad_ref}. has_role gates all 43 write '
+                'policies and every definer write gate; widening it grants write '
+                'access to every school at once. The READ predicates are '
+                'is_staff() and may_view() — widen those instead.')
 
     # ---- 4. The helper itself must be STABLE --------------------------------
     vol = q("""
