@@ -189,7 +189,42 @@ principal deletes a class of 40 pupils and phones you in tears, the difference
 between "we have backups" and "we restore to 6am, here is the ninety minutes it
 takes" is your entire reputation.
 
-### 2.6 What I am deliberately NOT building, and why
+### 2.6 Mapping the tenant boundary turned up two live cross-tenant defects
+
+Not part of the super admin, but found while establishing what actually gates
+tenant access — and both fixed in `0070_queue_message_scoping.sql` before
+anything else was built on top.
+
+1. **`fn_queue_message` handed one school another school's family.** It is
+   `SECURITY DEFINER`, so RLS does not apply inside it, and it looked up the
+   family with `where id = p_family_id` and nothing else. School A's owner passed
+   School B's family id and School A's own outbox received School B's family head
+   name, phone number, child's name and exact outstanding balance. Enumerable one
+   uuid at a time.
+
+2. **`fn__apply_discount_lines` let one school edit another school's fees.**
+   Worse, because it is a write. It took an invoice id and an enrolment id
+   straight from the caller and checked neither, and despite the `fn__` prefix —
+   which in this schema means "revoked from the browser" — it had been granted to
+   `authenticated`. School A cut what School B charges a parent from Rs 5,000 to
+   Rs 4,000.
+
+Both are the same shape: a definer function looking up a tenant row by a
+caller-supplied id with no school filter. The plainest IDOR there is. Two
+existing CI guards passed both — one hunts a deliberately different shape, the
+other asks only whether a function *mentions* scoping somewhere, and
+`fn_queue_message` mentions it twice. `check-definer-idor.py` now judges the
+shape per statement.
+
+**What I cannot claim.** I ran a broad sweep for other instances of this shape
+and it died on a spend limit before any agent finished, so its "nothing found"
+result is worthless. What I have is: the two above, proven and fixed; the new
+guard reporting clean across 155 functions and 337 statements; and hand checks
+of the near neighbours. That is not the same as a clean bill of health for the
+whole schema, and I am not going to present it as one. Re-running that sweep is
+on the list.
+
+### 2.7 What I am deliberately NOT building, and why
 
 You said "every feature a big company super admin has". A big company's super
 admin exists because a big company has staff, auditors and regulators. You have
@@ -290,17 +325,53 @@ screen, everything:
 
 - `operator_sessions (id, admin_id, school_id, reason, started_at, ended_at,
   expires_at)`.
-- `fn_operator_enter(p_school_id, p_reason)` — writes the row, sets the session
-  claim. Requires `is_platform_admin()`. **Requires a reason**, free text, one
-  line, because a log with no reason is a log nobody can use, including you in
-  six months.
-- `current_school_id()` returns the impersonated school. This is the whole
-  trick: every one of the ~40 tenant policies and every definer function
-  already routes through it, so **one function** grants reach where 40 new
-  policies would have been needed. No policy is loosened.
-- **Writes refused at the database.** A `fn__refuse_operator_write()` trigger on
-  every tenant table raises if `current_setting('app.operator_session')` is set.
-  Not a UI check — a UI check is a suggestion.
+- `fn_operator_enter(p_school_id, p_reason)` — writes the row. Requires
+  `is_platform_admin()`. **Requires a reason**, free text, one line, because a
+  log with no reason is a log nobody can use, including you in six months.
+
+**Correction to an earlier draft of this document.** It said overriding
+`current_school_id()` was "the whole trick — **one function** grants reach where
+40 new policies would have been needed". That was wrong, and measuring it is
+what showed why. Every read policy on a tenant table has the shape
+
+```
+school_id = current_school_id()  AND  is_staff()          -- 25 tables
+school_id = current_school_id()  AND  may_view(…roles…)   -- 20 tables
+```
+
+and `is_staff()`, `may_view()` and `has_role()` all read `public.profiles` by
+`auth.uid()`. An operator has **no profiles row in the target school**, so all
+three return false and the override alone would have shown them an empty
+console. The real mechanism is three functions, not one:
+
+| function | change | why |
+|---|---|---|
+| `current_school_id()` | falls back to the active session's school when there is no profiles row | a school user has a profiles row, so pays no extra lookup |
+| `is_staff()` | `or is_operator_session()` | carries 25 read policies |
+| `may_view(…)` | `or is_operator_session()` | carries 20 read policies |
+| `has_role(…)` | **untouched** | this is the whole write refusal |
+
+That last row is the good news, and it fell out of the census rather than being
+designed: **all 43 write policies gate on `has_role()`.** Not one relies on
+`current_school_id()` alone. So leaving `has_role()` untouched refuses every
+operator write through RLS with no new code and no new trigger.
+
+The definer-function write path is covered too, and already by CI:
+`check-readonly-writes.py` fails if any write policy or any VOLATILE function
+mentions `may_view` or `readonly`. Its pattern gains `is_operator_session`, and
+then the operator inherits the `readonly` guarantee that 0059 built and that
+suite already defends. Impersonation is therefore not a new security boundary —
+it is the existing observer boundary, pointed at a school the operator has no
+profile in. That is a much smaller thing to get right than forty policies.
+
+- **No session GUC.** The active session is read from the `operator_sessions`
+  table, not from `set_config`. Supabase pools connections, so a session-level
+  GUC can outlive the request that set it and be read by the next person on that
+  connection — a cross-tenant leak with no attacker required. The safe design
+  and the auditable one coincide here.
+- Belt and braces on top of the above: writes are additionally verified refused
+  on every tenant table by test, because "no write policy passes" is a claim
+  worth checking rather than reasoning about.
 - A red, non-dismissable banner: *"You are viewing Al Qalam School as the
   operator. Read only. Leave →"*. Non-dismissable because the failure mode is
   forgetting you're in someone else's data.
