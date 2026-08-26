@@ -24,6 +24,26 @@ jobs:
         run: npm run build
       - name: Unit tests
         run: npm test
+      - name: Rendering harnesses still render
+        # The harnesses in web/tools/ render a challan and a balance sheet to
+        # HTML so a human can LOOK at the printed layout. They assert nothing, so
+        # they were excluded from `npm test` — and then nothing ran them at all.
+        #
+        # The challan harness sat broken. 0057 added a school logo to every print
+        # surface, ChallanPrint began calling useSchoolLogo() → useQuery(), and
+        # the harness — which called the component as a plain function — died on
+        # `Cannot read properties of null (reading 'useContext')`. Found by
+        # running it by hand, months later.
+        #
+        # This is the same shape as bundles stopping at 0039 and
+        # fn_reverse_other_income shipping with no caller: the artefact exists
+        # and nothing opens it. They run here, after the build, because they read
+        # the REAL compiled Tailwind — a layout checked against different CSS
+        # than the app ships is not checked at all.
+        #
+        # It asserts only that they render. Whether the layout is RIGHT still
+        # needs eyes, which is the whole point of the output.
+        run: npm run harness
 
   migrations:
     name: Migrations apply on Postgres 16

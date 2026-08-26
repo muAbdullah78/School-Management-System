@@ -15,10 +15,9 @@
  * Excluded from `npm test` by vitest's test.include; run on demand.
  */
 import { it } from 'vitest'
-import { renderToStaticMarkup } from 'react-dom/server'
-import { writeFileSync, readdirSync, mkdirSync } from 'node:fs'
 import { BalanceSheetView } from '../src/pages/reports/FinanceReports'
 import type { BalanceSheet } from '../src/lib/db'
+import { writePage } from './harness'
 
 const BASIS =
   'Cumulative from the first record up to the as-at date. Receivable counts ' +
@@ -85,7 +84,10 @@ const empty: BalanceSheet = {
 }
 
 it('writes a balance sheet preview', () => {
-  const css = readdirSync('dist/assets').find((f) => f.endsWith('.css'))
+  // Real JSX through the shared harness, not a bare function call. BalanceSheetView
+  // happens to use no hooks today, so the old form worked — but that is a
+  // property of the component, not of the harness, and ChallanPrint proved how
+  // quietly it stops being true.
   const cases: [string, BalanceSheet][] = [
     ['As the test fixture actually returns it — advance fees held, one leaver owing',
       real],
@@ -93,17 +95,9 @@ it('writes a balance sheet preview', () => {
     ['Overdrawn, and holding advance fees it may have to give back', overdrawn],
     ['A brand-new school, before anything has happened', empty],
   ]
-  const body = cases.map(([label, b]) => `
-    <section style="margin:0 0 3rem">
-      <p style="font:600 13px/1.5 system-ui;color:#64748b;border-bottom:1px solid #e2e8f0;padding-bottom:.4rem;margin-bottom:1rem">
-        ${label}
-      </p>
-      ${renderToStaticMarkup(BalanceSheetView({ b }) as never)}
-    </section>`).join('')
-
-  mkdirSync('../scratch', { recursive: true })
-  writeFileSync('../scratch/balance-sheet.html',
-    `<!doctype html><html><head><meta charset="utf-8">
-     <link rel="stylesheet" href="../web/dist/assets/${css}">
-     </head><body style="background:#fff;padding:2rem;max-width:1100px;margin:auto">${body}</body></html>`)
+  writePage(
+    '../scratch/balance-sheet.html',
+    cases.map(([caption, b]) => ({ caption, node: <BalanceSheetView b={b} /> })),
+    { bodyStyle: 'background:#fff;padding:2rem;max-width:1100px;margin:auto' },
+  )
 })
