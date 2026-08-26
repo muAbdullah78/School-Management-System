@@ -13,6 +13,7 @@
  */
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { AnnouncementBanner } from '@/components/AnnouncementBanner'
 import { useAuth } from '@/auth/AuthProvider'
 import {
   getPortalMe,
@@ -135,6 +136,10 @@ export function PortalPage() {
       </header>
 
       <main className="mx-auto -mt-12 max-w-3xl px-4 pb-12">
+        {/* Vendor notices reach parents too, when one is aimed at them. A
+            maintenance window that stops a parent checking a fee is something
+            they should be able to read in the portal rather than discover. */}
+        <AnnouncementBanner />
         {children.length === 0 ? (
           <Card>
             <EmptyState

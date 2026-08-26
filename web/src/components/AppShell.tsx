@@ -8,6 +8,7 @@ import { useSchoolName } from '@/hooks/useSchoolName'
 import { OfflineIndicator } from '@/components/OfflineIndicator'
 import { LicenceBanner } from '@/components/LicenceBanner'
 import { OperatorBanner } from './OperatorBanner'
+import { AnnouncementBanner } from './AnnouncementBanner'
 import { NAV_ICONS, IconLogout, IconAlert } from '@/components/icons'
 import { EmptyState } from '@/components/ui'
 import { GlobalSearch } from '@/components/GlobalSearch'
@@ -119,6 +120,10 @@ export function AppShell() {
             is about what you are looking at right now. */}
         <OperatorBanner />
         <LicenceBanner />
+        {/* BELOW both. "Somebody from the vendor is in your data" and "your
+            licence expires Friday" are both about this school; a maintenance
+            notice is about everybody, and it is the one that can wait. */}
+        <AnnouncementBanner />
         <OfflineIndicator />
 
         {/* Top bar: where you are, and the one search box.

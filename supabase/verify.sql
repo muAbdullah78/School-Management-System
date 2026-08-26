@@ -781,6 +781,40 @@ select 'the business can say what it is worth (0081)',
          else 'PASS' end
 
 union all
+-- 0082. The three surfaces, joined up: the installer registry the website's
+-- download button reads, notices to every school, and a price list a visitor with
+-- no login can read so the site cannot quote a figure you do not charge.
+select 'the website can read prices and offer the installer (0082)',
+       case
+         when to_regclass('public.app_releases') is null
+           then 'FAIL — re-run bundle 7'
+         when not has_table_privilege('anon', 'public.plans', 'select')
+           -- Silent: the site keeps showing whatever is typed into its HTML.
+           then 'FAIL — a visitor cannot read your prices, so the website will show '
+                || 'its own hardcoded ones; re-run bundle 7'
+         when not has_table_privilege('anon', 'public.app_releases', 'select')
+           then 'FAIL — the download button has nothing to read; re-run bundle 7'
+         when to_regclass('public.platform_announcements') is null
+           then 'FAIL — there is no way to tell every school anything; re-run bundle 7'
+         else 'PASS' end
+
+union all
+-- Not pass/fail: publishing a release is something only you can do. But a school
+-- asking for the desktop installer is the commonest request there is, and until
+-- this is done the website tells them it is being prepared.
+select 'a desktop installer is published',
+       case
+         when to_regclass('public.app_releases') is null then 'n/a'
+         when exists (select 1 from public.app_releases
+                       where platform = 'windows' and is_current)
+           then 'PASS — ' || (select version from public.app_releases
+                               where platform = 'windows' and is_current limit 1)
+         else 'ACTION NEEDED — no Windows release is published, so the website says '
+              || 'the installer is being prepared. Build it, put the file somewhere '
+              || 'schools can reach, and record it under "Downloads & notices" in '
+              || 'the console with its SHA-256.' end
+
+union all
 -- The row that answers "how far has this database actually got?" (0069)
 --
 -- Until bundle 7 nothing recorded it, and the two times it mattered the answer

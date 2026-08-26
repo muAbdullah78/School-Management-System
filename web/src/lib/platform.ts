@@ -1225,3 +1225,110 @@ export async function platformGrowth(months = 12): Promise<GrowthPoint[]> {
   if (error) throw new Error(error.message)
   return (data ?? []) as GrowthPoint[]
 }
+
+// ===========================================================================
+// Phase 6 — joining the website, the app and the console. Migration 0082.
+// ===========================================================================
+
+export interface AppRelease {
+  id: string
+  platform: 'windows' | 'mac' | 'linux' | 'web'
+  channel: 'stable' | 'beta'
+  version: string
+  url: string
+  /** Not optional in the database. An installer downloaded over a slow line and
+   *  run on the school's front-desk computer is exactly the file somebody would
+   *  want to swap, and the hash is the only thing that makes "is this the real
+   *  installer?" answerable. */
+  sha256: string
+  size_bytes: number | null
+  notes: string | null
+  published_at: string
+  is_current: boolean
+}
+
+export async function listReleases(limit = 50): Promise<AppRelease[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_releases', { p_limit: limit })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as AppRelease[]
+}
+
+export async function publishRelease(input: {
+  platform?: string; channel?: string; version: string
+  url: string; sha256: string; sizeBytes?: number | null; notes?: string | null
+}): Promise<{ release_id: string; version: string }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_publish_release', {
+    p: {
+      platform: input.platform ?? 'windows',
+      channel: input.channel ?? 'stable',
+      version: input.version,
+      url: input.url,
+      sha256: input.sha256,
+      size_bytes: input.sizeBytes ?? null,
+      notes: input.notes ?? null,
+    },
+  })
+  if (error) throw new Error(error.message)
+  return data as { release_id: string; version: string }
+}
+
+export async function unpublishRelease(
+  releaseId: string, reason: string,
+): Promise<{ is_current: boolean; note: string }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_unpublish_release', {
+    p_release_id: releaseId, p_reason: reason,
+  })
+  if (error) throw new Error(error.message)
+  return data as { is_current: boolean; note: string }
+}
+
+export type Audience = 'staff' | 'parents' | 'owners' | 'everyone'
+export type Severity = 'info' | 'warning' | 'critical'
+
+export interface Announcement {
+  id: string
+  audience: Audience
+  severity: Severity
+  title: string
+  message: string
+  starts_at: string
+  /** NOT NULL in the database. A banner with no end date is still telling schools
+   *  about last March's maintenance window, and a banner nobody believes takes
+   *  the one that matters down with it. */
+  ends_at: string
+  live_now: boolean
+}
+
+export async function listAnnouncements(limit = 50): Promise<Announcement[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_announcements', { p_limit: limit })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as Announcement[]
+}
+
+export async function announce(input: {
+  audience: Audience; severity: Severity; title: string; message: string
+  startsAt?: string | null; endsAt: string
+}): Promise<{ announcement_id: string; live_now: boolean }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_announce', {
+    p: {
+      audience: input.audience, severity: input.severity,
+      title: input.title, message: input.message,
+      starts_at: input.startsAt ?? null, ends_at: input.endsAt,
+    },
+  })
+  if (error) throw new Error(error.message)
+  return data as { announcement_id: string; live_now: boolean }
+}
+
+export async function endAnnouncement(id: string, reason?: string | null): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_platform_end_announcement', {
+    p_id: id, p_reason: reason ?? null,
+  })
+  if (error) throw new Error(error.message)
+}

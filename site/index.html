@@ -56,9 +56,13 @@
       <a href="#features">Features</a>
       <a href="#money">Fee control</a>
       <a href="#pricing">Pricing</a>
+      <a href="#download">Download</a>
       <a href="#faq">FAQ</a>
     </div>
-    <a class="btn btn--primary" href="#pricing">Start free trial</a>
+    <div style="display:flex;gap:10px;align-items:center">
+      <a href="#" data-app="signin">Sign in</a>
+      <a class="btn btn--primary" href="#" data-app="signup">Start free trial</a>
+    </div>
   </div>
 </nav>
 
@@ -75,13 +79,27 @@
         in and how much actually did.
       </p>
       <div class="hero__cta">
-        <a class="btn btn--primary btn--lg" href="#pricing">Start 14-day free trial</a>
+        <a class="btn btn--primary btn--lg" href="#" data-app="signup">Start 14-day free trial</a>
         <a class="btn btn--ghost btn--lg" href="#how">See how it works</a>
       </div>
+
+      <!-- Shown only when APP_URL is unset in config.js. A button that silently
+           does nothing sends the visitor away; one that says the address has not
+           been filled in gets somebody to fill it in. -->
+      <p id="wire-warning" hidden
+         style="margin-top:12px;padding:10px 12px;border:1px solid #f59e0b;background:#fffbeb;color:#7c2d12;border-radius:8px;font-size:14px">
+        <b>Not connected yet.</b> Set <code>APP_URL</code> in <code>site/config.js</code>
+        to the address of the deployed software, or these buttons go nowhere.
+      </p>
+      <p id="signup-closed" hidden
+         style="margin-top:12px;padding:10px 12px;border:1px solid #cbd5e1;background:#f8fafc;color:#334155;border-radius:8px;font-size:14px">
+        We have paused new signups while we look after the schools already with us.
+        Get in touch and we will let you know as soon as we reopen.
+      </p>
       <p class="hero__note">No card required · Set up in an afternoon · Your data stays yours</p>
 
       <div class="trustline">
-        <span><b>Rs 950</b>/month to start</span>
+        <span><b id="lead-price">Rs 950</b>/month to start</span>
         <span><b>Urdu-medium and English-medium</b> schools</span>
         <span><b>Windows</b> desktop + browser</span>
       </div>
@@ -323,44 +341,49 @@
     </p>
 
     <div class="prices" style="margin-top:38px">
-      <div class="price">
+      <!-- The figures below are the fallback, not the source. wire.js replaces
+           them from `plans` so the site can never quote a price the console does
+           not charge, and supabase/check-site-prices.sh fails CI if these
+           literals and the seed drift apart — because the fallback has to be
+           true on the day the fetch fails. -->
+      <div class="price" data-plan="starter">
         <h3>Starter</h3>
-        <div class="price__amt">Rs 950<small>/month</small></div>
-        <p class="price__cap">Up to 100 students</p>
+        <div class="price__amt"><span data-price-monthly>Rs 950</span><small>/month</small></div>
+        <p class="price__cap" data-price-cap>Up to 100 students</p>
         <ul>
           <li>Every module included</li>
           <li>Unlimited staff logins</li>
           <li>Parent portal</li>
-          <li>Rs 9,500 a year</li>
+          <li data-price-yearly>Rs 9,500 a year</li>
         </ul>
-        <a class="btn btn--ghost" href="#trial">Start free trial</a>
+        <a class="btn btn--ghost" href="#" data-app="signup">Start free trial</a>
       </div>
 
-      <div class="price price--hot">
+      <div class="price price--hot" data-plan="growth">
         <span class="price__tag">Most schools</span>
         <h3>Growth</h3>
-        <div class="price__amt">Rs 2,000<small>/month</small></div>
-        <p class="price__cap">Up to 300 students</p>
+        <div class="price__amt"><span data-price-monthly>Rs 2,000</span><small>/month</small></div>
+        <p class="price__cap" data-price-cap>Up to 300 students</p>
         <ul>
           <li>Every module included</li>
           <li>Unlimited staff logins</li>
           <li>Parent portal</li>
-          <li>Rs 20,000 a year</li>
+          <li data-price-yearly>Rs 20,000 a year</li>
         </ul>
-        <a class="btn btn--primary" href="#trial">Start free trial</a>
+        <a class="btn btn--primary" href="#" data-app="signup">Start free trial</a>
       </div>
 
-      <div class="price">
+      <div class="price" data-plan="institution">
         <h3>Institution</h3>
-        <div class="price__amt">Rs 3,500<small>/month</small></div>
-        <p class="price__cap">Up to 1,000 students</p>
+        <div class="price__amt"><span data-price-monthly>Rs 3,500</span><small>/month</small></div>
+        <p class="price__cap" data-price-cap>Up to 1,000 students</p>
         <ul>
           <li>Every module included</li>
           <li>Unlimited staff logins</li>
           <li>Parent portal</li>
-          <li>Rs 35,000 a year</li>
+          <li data-price-yearly>Rs 35,000 a year</li>
         </ul>
-        <a class="btn btn--ghost" href="#trial">Start free trial</a>
+        <a class="btn btn--ghost" href="#" data-app="signup">Start free trial</a>
       </div>
 
       <div class="price">
@@ -463,6 +486,40 @@
   </div>
 </section>
 
+<!-- ========================================================= download --- -->
+<!-- The section that did not exist. desktop/ has produced a Windows .msi in CI
+     since it was written, and it went into a workflow artifact — behind a GitHub
+     login, expiring after 90 days. So the one thing a school office actually asks
+     for could not be given to them. wire.js fills this in from app_releases;
+     until a release is published it says so, which is true and better than a
+     button that 404s. -->
+<section class="section" id="download">
+  <div class="wrap">
+    <h2>Install it on the office computer</h2>
+    <p class="lede" style="margin-top:14px;max-width:70ch">
+      The software runs in a browser and works the same either way. The desktop
+      version is for the front desk: it opens on its own, remembers the printer,
+      and keeps working on the days the internet does not.
+    </p>
+
+    <div id="download-box" style="margin-top:26px;padding:22px;border:1px solid #e2e8f0;border-radius:12px;background:#fff;max-width:60ch">
+      <a class="btn btn--ghost btn--lg" id="download-btn" href="#contact" aria-disabled="true">
+        Windows installer — being prepared
+      </a>
+      <p class="small muted" id="download-meta" style="margin-top:10px"></p>
+      <p class="small muted" id="download-notes" hidden style="margin-top:6px"></p>
+      <p class="small muted" hidden style="margin-top:10px;word-break:break-all">
+        Check the file before you install it — SHA-256:<br>
+        <code id="download-sha" style="font-size:12px"></code>
+      </p>
+      <p class="small muted" style="margin-top:14px">
+        Prefer the browser? Nothing to install —
+        <a href="#" data-app="signin">sign in here</a>.
+      </p>
+    </div>
+  </div>
+</section>
+
 <!-- ============================================================== CTA --- -->
 <section class="section" id="trial">
   <div class="wrap">
@@ -472,7 +529,8 @@
         Fourteen days, no card, no commitment. Put one class in, run a month's
         challans, and see whether the numbers agree with your register.
       </p>
-      <a class="btn btn--primary btn--lg" href="#contact" style="background:#fff;color:var(--brand-900)">
+      <a class="btn btn--primary btn--lg" href="#" data-app="signup"
+         style="background:#fff;color:var(--brand-900)">
         Start your free trial
       </a>
     </div>
@@ -497,11 +555,24 @@
       <div>
         <h4>Support</h4>
         <a href="#faq">FAQ</a>
-        <a href="#trial">Start a trial</a>
+        <a href="#download">Download</a>
+        <a href="#" data-app="signin">Sign in</a>
+        <!-- Where a school goes to see its own invoices, get a copy with our NTN
+             on it, and tell us about a transfer. It used to be a phone call. -->
+        <a href="#" data-app="billing">Manage your subscription</a>
+        <a href="#" data-app="portal">Parent portal</a>
       </div>
       <div>
         <h4>Contact</h4>
-        <p class="small">Add your phone, WhatsApp and email here before the site goes live.</p>
+        <!-- Filled in from site/config.js, so a number changes in one place
+             instead of being hunted through the markup. Hidden until set. -->
+        <a id="contact-phone" href="#" hidden></a>
+        <a id="contact-whatsapp" href="#" hidden></a>
+        <a id="contact-email" href="#" hidden></a>
+        <p class="small" id="contact-todo">
+          Set CONTACT_PHONE, CONTACT_WHATSAPP and CONTACT_EMAIL in
+          <code>site/config.js</code>.
+        </p>
       </div>
     </div>
     <div class="foot__bottom">
@@ -511,6 +582,7 @@
   </div>
 </footer>
 
-<script>document.getElementById('yr').textContent = new Date().getFullYear()</script>
+<script src="/config.js"></script>
+<script src="/wire.js"></script>
 </body>
 </html>

@@ -497,7 +497,19 @@ with sig(migration, object, present) as (values
          and exists (select 1 from pg_proc where proname = 'fn__school_mrr'
                       and pronamespace = 'public'::regnamespace)
          and exists (select 1 from pg_proc where proname = 'fn_platform_growth'
-                      and pronamespace = 'public'::regnamespace)))
+                      and pronamespace = 'public'::regnamespace))),
+  -- 0082. The download registry, notices, and the public price list. The anon
+  -- GRANT on plans is part of the signature: without it the website silently
+  -- falls back to whatever prices are typed into its HTML, which is the drift
+  -- this migration exists to stop.
+  ('0082_releases_and_announcements', 'installer registry, notices, public prices',
+     (select exists (select 1 from information_schema.tables
+                      where table_schema = 'public' and table_name = 'app_releases')
+         and exists (select 1 from information_schema.tables
+                      where table_schema = 'public'
+                        and table_name = 'platform_announcements')
+         and has_table_privilege('anon', 'public.plans', 'select')
+         and has_table_privilege('anon', 'public.app_releases', 'select')))
 )
 select migration,
        object                                   as looked_for,

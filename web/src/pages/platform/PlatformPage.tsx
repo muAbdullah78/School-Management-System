@@ -19,6 +19,7 @@ import { LifecycleDialog } from './Lifecycle'
 import { OffboardDialog } from './Offboard'
 import { NewSchoolDialog } from './NewSchool'
 import { Business } from './Business'
+import { Publishing } from './Publishing'
 import { paymentClaims, dueSoon, platformSettings } from '@/lib/platform'
 
 const STATUS_STYLE: Record<PlatformSchool['status'], string> = {
@@ -31,13 +32,14 @@ const STATUS_STYLE: Record<PlatformSchool['status'], string> = {
 
 const FIELD = 'rounded border border-slate-300 px-2 py-1.5 text-sm'
 
-type Tab = 'schools' | 'renewals' | 'claims' | 'business' | 'billing'
+type Tab = 'schools' | 'renewals' | 'claims' | 'business' | 'publishing' | 'billing'
 
 const TAB_TITLE: Record<Tab, string> = {
   schools: 'Schools',
   renewals: 'Renewals',
   claims: 'Payments reported',
   business: 'The business',
+  publishing: 'Downloads and notices',
   billing: 'Our billing details',
 }
 
@@ -207,6 +209,7 @@ export function PlatformPage() {
           <TabButton now={tab} me="claims" set={setTab} label="Payments reported"
             badge={claimCount.data?.length} />
           <TabButton now={tab} me="business" set={setTab} label="The business" />
+          <TabButton now={tab} me="publishing" set={setTab} label="Downloads & notices" />
           <TabButton now={tab} me="billing" set={setTab} label="Our billing details"
             warn={settingsIncomplete} />
         </nav>
@@ -219,6 +222,7 @@ export function PlatformPage() {
         )}
         {tab === 'claims' && <Claims />}
         {tab === 'business' && <Business />}
+        {tab === 'publishing' && <Publishing />}
         {tab === 'billing' && <BillingSettings />}
 
         {tab === 'schools' && <>

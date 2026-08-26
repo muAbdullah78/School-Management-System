@@ -534,6 +534,54 @@ subject-teacher assignment screen; `fn_fee_increment`, `fn_head_wise_dues` and
 `fn_link_students` are unreachable from any UI; `campuses`/`shifts` are dead
 tables; no expense-category management.
 
+#### Phases 4, 5 and 6 as built — and three places the design was wrong
+
+**Phase 4** (`0079`, `0080`, 75 assertions in `supabase/tests/school_lifecycle.sql`).
+Suspend, cancel, per-school grace, archive, export, purge. Two corrections to
+§4b/§4c:
+
+* No new enum value for suspension. `ALTER TYPE ... ADD VALUE` cannot be used in
+  the transaction that adds it and every bundle applies as one transaction, so
+  the migration would fail on its own next statement. And `locked` already means
+  the right thing — reads and exports never stop, new entries do. A suspended
+  school needs identical *behaviour* and a different *explanation*, and an
+  explanation is a text column.
+* §4c said the purge keeps our own invoices. It would not have: 0064 gave
+  `platform_invoices` and `platform_payments` `ON DELETE CASCADE`, so purging a
+  school would have destroyed our own sales ledger — wrong twice over, because a
+  business keeps its ledger and the Income Tax Ordinance requires retention.
+  Both now carry a nullable `school_id` with `ON DELETE SET NULL` and the
+  school's name denormalised. The school's own `audit_log` does go with them: it
+  is their record of their own staff, and deleting their data means it too.
+
+**Phase 5** (`0081`, 49 assertions). MRR is computed from what each school was
+*actually charged*, not from the price list — §5a said "from active
+subscriptions", which would have counted a discounted school, a school given a
+free year, and a school paying full price at the same number, reintroducing
+exactly the blindness 0064 exists to remove. Churn and trial conversion can both
+answer "we do not know": before 0073 and 0079 there is no dated history, and a
+confident 0% churn would be the most misleading figure in the console.
+`student_count_snapshots` is read for the first time since 0026 wrote it.
+
+**Phase 6** (`0082`, 30 assertions plus a new anon sweep). Release registry,
+notices, and `plans` readable with no login so the website cannot quote a price
+the console does not charge. §6c's `platform_announcements` shipped as designed
+except for its window: it is half-open, `[starts_at, ends_at)`, because `now()`
+is transaction-stable and a notice retracted the moment it was posted — which is
+when you retract one — could otherwise not be expressed at all.
+
+The most valuable thing to come out of phase 6 is not a feature. It is
+`tenant_isolation.sql` TEST 10: with `anon` now able to read two tables, every
+table in `public` is swept as an unauthenticated visitor, and the two that are
+allowed are checked ROW BY ROW. That second half was added after widening the
+release policy to `using (true)` passed the first version of the sweep — a
+superseded installer, pulled *because it was broken*, would have stayed publicly
+downloadable.
+
+Still not built from §6d: the portal and app gaps. They are task #31 and are
+tracked separately, because they are defects in the school-facing product rather
+than in the operator platform.
+
 ---
 
 ## 5. Order of work, and why

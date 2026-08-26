@@ -398,7 +398,17 @@ declare
     -- whole point of it: if a school ever says "you deleted our records", this
     -- is the dated row saying what was given to them first. current_school_id()
     -- would be the wrong gate and its presence would be the bug.
-    'platform_exports'
+    'platform_exports',
+    -- 0082. The desktop installer registry, and vendor notices. Neither has a
+    -- school_id because neither is about one school: the current Windows build is
+    -- the same file for everybody, and "maintenance on Sunday" is the same
+    -- sentence. Both are readable WITHOUT a login by design — the website's
+    -- download button and its price list have no session — and both are exempted
+    -- from 4b-ii below for that reason. The exemption is paid for in 4b-iii: no
+    -- write policy, so world-readable cannot become world-writable. A visitor who
+    -- could insert an app_releases row could point the download button at their
+    -- own installer.
+    'app_releases', 'platform_announcements'
   ];
 begin
   -- 4a. Every tenant table must carry school_id.
@@ -462,7 +472,14 @@ begin
     -- which requires it to have no write policy — world-readable must not
     -- become world-writable, or any parent with a login could reprice the
     -- product.
-    and tablename not in ('platform_admins', 'plans')
+    -- app_releases and platform_announcements (0082) join it for the same
+    -- reason: a download link and a maintenance notice are not tenant data and
+    -- are not gated on a school. Their policies gate on `is_current`, on the
+    -- live date window, and on the caller's ROLE — which is correct, because the
+    -- notice is the same for every school. Same bargain: 4b-iii forbids a write
+    -- policy on all three.
+    and tablename not in ('platform_admins', 'plans',
+                          'app_releases', 'platform_announcements')
     and coalesce(qual, '') || coalesce(with_check, '') not like '%is_platform_admin%'
     and coalesce(qual, '') || coalesce(with_check, '') not like '%current_school_id%';
   if bad <> '' then
@@ -500,7 +517,13 @@ begin
     -- the thing that must never appear on it is a write path. A parent with a
     -- login repricing Institution to Rs 0 would be a policy away.
     and tablename in ('platform_invoices', 'platform_payments', 'schema_migrations',
-                      'plans', 'operator_actions', 'operator_sessions')
+                      'plans', 'operator_actions', 'operator_sessions',
+                      -- 0082, and this is where their 4b-ii exemption is paid
+                      -- for. Both are readable with no login at all, so a write
+                      -- policy on either would let a visitor point the download
+                      -- button at their own installer or put a notice in front
+                      -- of every school.
+                      'app_releases', 'platform_announcements')
     and cmd <> 'SELECT';
   if bad <> '' then
     raise exception E'A platform table has a write policy; writes must go through a definer function:\n%', bad;
@@ -1109,6 +1132,109 @@ begin
   end if;
   raise notice 'ok: school detail gives the operator counts and dates, and no pupil, family or guardian';
 end $detail$;
+
+-- =============================================================================
+-- TEST 10 — A VISITOR WITH NO LOGIN AT ALL READS EXACTLY TWO TABLES.
+--
+-- 0082 gave `anon` SELECT on the active price list and the current release, so
+-- the marketing website can show a real price and a real download link without a
+-- session. That is a deliberate widening of the only boundary in this schema that
+-- needs no credentials to cross, and it is the one worth sweeping hardest:
+-- everything else in this file is about one school reaching another, which at
+-- least requires a login somewhere.
+--
+-- Swept from the CATALOGUE, both directions:
+--
+--   * every table in public is read as `anon`, and anything that answers and is
+--     not on the two-item allow-list is a leak;
+--   * the two that ARE allowed must actually answer, or the website silently
+--     falls back to hardcoded prices and nobody notices for months.
+--
+-- A missing GRANT and a missing POLICY produce different failures — "permission
+-- denied" versus zero rows — and both count as sealed here, because either one
+-- means a visitor gets nothing.
+-- =============================================================================
+do $anonsweep$
+declare
+  t text;
+  n bigint;
+  allowed text[] := array['plans', 'app_releases'];
+  leaked   text := '';
+  silent   text := '';
+  swept    int := 0;
+begin
+  set local role anon;
+  for t in
+    select c.relname
+      from pg_class c
+      join pg_namespace n2 on n2.oid = c.relnamespace
+     where n2.nspname = 'public' and c.relkind = 'r'
+       and c.relname <> '_test_ids'
+     order by c.relname
+  loop
+    swept := swept + 1;
+    begin
+      execute format('select count(*) from public.%I', t) into n;
+      -- It ANSWERED. Fine only if it is on the list.
+      if not (t = any(allowed)) and n > 0 then
+        leaked := leaked || '  ' || t || ' — ' || n::text
+                  || ' row(s) readable with no login' || chr(10);
+      end if;
+    exception when insufficient_privilege then
+      -- Sealed by the grant, which is the outer of the two locks.
+      if t = any(allowed) then
+        silent := silent || '  ' || t || ' — no GRANT to anon' || chr(10);
+      end if;
+    end;
+  end loop;
+  reset role;
+
+  -- The floor. A sweep that matched nothing would report a clean run over an
+  -- empty check, which is the failure mode this project has already had twice.
+  if swept < 50 then
+    raise exception 'REFUSING TO REPORT SUCCESS: swept only % tables as anon', swept;
+  end if;
+
+  if leaked <> '' then
+    raise exception E'READABLE WITH NO LOGIN AT ALL:\n%', leaked;
+  end if;
+  if silent <> '' then
+    raise exception E'The website cannot read what 0082 published:\n%', silent;
+  end if;
+
+  -- And the two that must work, positively. `plans` filtered to active, and
+  -- app_releases filtered to the current one — a policy that returned
+  -- everything would publish retired prices and superseded installers.
+  set local role anon;
+  select count(*) into n from public.plans;
+  if n = 0 then
+    reset role;
+    raise exception 'A visitor sees no prices at all — the website will show only its fallback';
+  end if;
+  select count(*) into n from public.plans where not active;
+  if n > 0 then
+    reset role;
+    raise exception 'A visitor can read a RETIRED price (% row(s)) and quote it back at us', n;
+  end if;
+
+  -- And the same question for releases, which the allow-list above cannot ask:
+  -- being on the list excuses app_releases from "readable with no login", not
+  -- from "readable ROW BY ROW".
+  --
+  -- This was found by breaking it. Widening the policy to `using (true)` passed
+  -- the sweep, because the sweep only asked whether the table answered at all —
+  -- and a superseded release is exactly the one that was PULLED, usually because
+  -- it was broken. Its download URL becoming public again is the defect.
+  select count(*) into n from public.app_releases where not is_current;
+  reset role;
+  if n > 0 then
+    raise exception
+      'A visitor can read % superseded release(s). A release is pulled because it '
+      'was wrong, and its download link must go with it.', n;
+  end if;
+
+  raise notice 'ok: with no login, exactly the price list and the current release are readable (% tables swept)', swept;
+end $anonsweep$;
 
 drop table if exists public._test_ids;
 select 'TENANT ISOLATION: ALL TESTS PASSED' as result;

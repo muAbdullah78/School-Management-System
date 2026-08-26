@@ -45,6 +45,21 @@ jobs:
         # needs eyes, which is the whole point of the output.
         run: npm run harness
 
+      - name: The website's buttons lead somewhere
+        # Needs no database, so it lives in this job. Every call to action on the
+        # marketing site used to be an anchor on the page the visitor was already
+        # reading: "Start free trial" scrolled them down, there was no way to sign
+        # in, and there was no download at all.
+        #
+        # That is invisible to a browser and to a unit test — the page renders and
+        # every link works. It is only wrong if you know where the buttons were
+        # supposed to go, which is what this encodes. It also refuses a Supabase
+        # key committed into site/, matched on the shape of a JWT rather than on
+        # the word service_role, because the first version of that check failed on
+        # config.js's own comment telling you never to paste one.
+        working-directory: .
+        run: bash supabase/check-site-links.sh
+
   migrations:
     name: Migrations apply on Postgres 16
     runs-on: ubuntu-latest
@@ -1326,6 +1341,37 @@ jobs:
         # explanation phones in a panic, and the person answering is the person
         # who suspended it.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/school_lifecycle.sql
+
+      - name: The installer registry and notices to every school
+        # 0082. Two things that had never been joined up.
+        #
+        # desktop/ has produced a Windows .msi in CI since it was written and it
+        # went into a workflow artifact — behind a GitHub login, expiring after 90
+        # days. So the one thing a Pakistani school office actually asks for
+        # ("give me the file for the front-desk computer") could not be given to
+        # them, and the website had no download button because there was nothing
+        # to point at.
+        #
+        # The rules asserted here are the ones that decide whether the wrong file
+        # ends up on that computer: exactly ONE current release per platform, an
+        # https link only, and a checksum that is not optional. An installer
+        # fetched over plain HTTP on a café connection is the easiest thing in
+        # this product to tamper with.
+        #
+        # And notices: an end date is mandatory. A banner with no end is still
+        # telling schools about last March's maintenance window, and one nobody
+        # believes takes the next one down with it. Assertion 26 is the one that
+        # found a real bug — retracting a notice violated `ends_at > starts_at`,
+        # because now() is transaction-stable and "ends now" means ends_at equals
+        # starts_at. The window is half-open because of that.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/publishing.sql
+
+      - name: The website's prices match what the console charges
+        # site/index.html reads `plans` at load, so the LIVE page is right. These
+        # literals are the FALLBACK — what a visitor sees when Supabase is slow —
+        # and a stale fallback is a price you will be held to. A price rise now
+        # fails CI until the HTML is updated too.
+        run: bash supabase/check-site-prices.sh
 
       - name: Every suite on disk has a step above
         # The gap this closes has already happened twice in this repo, in two

@@ -4272,3 +4272,37 @@ export async function reportSubscriptionPayment(input: {
   if (error) throw new Error(error.message)
   return data as { claim_id: string; amount: number; paid_on: string; status: string; message: string }
 }
+
+/**
+ * Vendor notices for THIS user, from platform_announcements (0082).
+ *
+ * Read straight from the table rather than through a function: the policy already
+ * says which rows — live window, and audience matching the caller's role — and a
+ * definer function would only restate it in a second place that could disagree.
+ *
+ * Not in message_outbox, deliberately. That table is the school's own outbox to
+ * its parents, and putting vendor notices in it would mean a clerk seeing our
+ * maintenance window in a list of fee reminders they are about to send.
+ */
+export interface LiveAnnouncement {
+  id: string
+  audience: string
+  severity: 'info' | 'warning' | 'critical'
+  title: string
+  message: string
+  ends_at: string
+}
+
+export async function myAnnouncements(): Promise<LiveAnnouncement[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb
+    .from('platform_announcements')
+    .select('id, audience, severity, title, message, ends_at')
+    .order('severity', { ascending: false })
+    .order('starts_at', { ascending: false })
+    .limit(5)
+  // A notice board that fails must not take the screen with it. Silence is the
+  // right failure here: the app works perfectly well without one.
+  if (error) return []
+  return (data ?? []) as LiveAnnouncement[]
+}
