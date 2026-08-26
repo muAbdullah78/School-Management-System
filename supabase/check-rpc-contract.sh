@@ -38,9 +38,25 @@ DB_FILE=web/src/lib/db.ts
 
 # --- what the database offers -------------------------------------------------
 # name<TAB>comma-separated parameter names
+# name<TAB>params<TAB>can `authenticated` execute it
+#
+# The third column exists because of fn_exam_marksheet. The app has called it
+# from db.ts:1388 since 0015 and it never had a grant to `authenticated` — it
+# worked only because Postgres grants EXECUTE to PUBLIC on every new function by
+# default. So the app's whole RPC surface was resting partly on a default nobody
+# had decided on, and the day that default is tightened the marksheet screen
+# breaks at runtime on the first school that opens it. Exactly the seam this
+# script exists for.
 psql -tAF$'\t' -c "
   select p.proname,
-         coalesce(string_agg(a.name, ',' order by a.ord), '')
+         coalesce(string_agg(a.name, ',' order by a.ord), ''),
+         -- NO ::text here. psql renders a boolean as t/f, but ::text renders
+         -- it as true/false, and the comparison below is against 't'. The first
+         -- version had the cast and therefore reported all 137 RPCs as
+         -- unexecutable — a guard that cries wolf gets ignored, and then it
+         -- protects nothing. Caught by looking at /tmp/rpc_db.tsv, not at the
+         -- output.
+         bool_or(has_function_privilege('authenticated', p.oid, 'execute'))
   from pg_proc p
   join pg_namespace n on n.oid = p.pronamespace
   left join lateral (
@@ -111,6 +127,7 @@ fail=0
 checked=0
 missing_fns=()
 bad_params=()
+not_executable=()
 
 while IFS=$'\t' read -r -a parts; do
   fn="${parts[0]}"
@@ -124,6 +141,16 @@ while IFS=$'\t' read -r -a parts; do
   fi
 
   db_params=$(printf '%s' "$db_line" | cut -f2)
+
+  # Can a signed-in user actually CALL it? A function that exists with the right
+  # parameters but no grant fails at runtime with "permission denied for
+  # function", which looks nothing like a missing function and sends whoever
+  # debugs it looking in the wrong place.
+  if [ "$(printf '%s' "$db_line" | cut -f3)" != "t" ]; then
+    not_executable+=("$fn")
+    fail=1
+  fi
+
   for ((i = 1; i < ${#parts[@]}; i++)); do
     p="${parts[$i]}"
     [ -z "$p" ] && continue
@@ -146,6 +173,16 @@ if [ ${#bad_params[@]} -gt 0 ]; then
   echo
   echo "PARAMETERS THE APP PASSES THAT THE FUNCTION DOES NOT ACCEPT:"
   printf '  %s\n' "${bad_params[@]}"
+fi
+
+if [ ${#not_executable[@]} -gt 0 ]; then
+  echo
+  echo "FUNCTIONS THE APP CALLS THAT \`authenticated\` CANNOT EXECUTE:"
+  printf '  %s\n' "${not_executable[@]}"
+  echo
+  echo "Add: grant execute on function public.<name>(<arg types>) to authenticated;"
+  echo "Do NOT rely on the PUBLIC default — 0071 revokes it, because it also"
+  echo "handed every function to the unauthenticated anon role."
 fi
 
 if [ $fail -eq 0 ]; then

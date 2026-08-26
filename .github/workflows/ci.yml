@@ -1349,6 +1349,56 @@ jobs:
         # its own fixtures, it stops testing anything.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/family_linkage.sql
 
+      - name: The suites do not depend on the query planner
+        # A whole class of flake this repo had one live instance of, and it cost
+        # an hour of blaming the wrong migration.
+        #
+        # challan.sql asserted an arithmetic identity with
+        #
+        #   select count(*) from invoices i join students s on s.id = i.student_id
+        #    where s.family_id = v_fam and fn_challan(i.id)->>'total_payable' ...
+        #
+        # fn_challan RAISES on an invoice outside the caller's school — assertion
+        # 24 of that same file tests exactly that — and the fixture contains
+        # another school's child. Under a hash join the family filter runs first
+        # and all is well. Under a nested loop the function is evaluated before
+        # the filter excludes the foreign invoice, and the suite dies with
+        # "ERROR: invoices not found in this school", which reads like a product
+        # defect and is not one.
+        #
+        # It appeared only in the second pass of a both-orders run, because the
+        # first pass changes the statistics enough to change the plan. I first
+        # concluded the migration I was writing had caused it; a same-database
+        # before/after test exonerated it. The real cause was the shape.
+        #
+        # Disabling hash and merge joins forces the nested-loop plans and makes
+        # every instance of this shape fail deterministically instead of once a
+        # fortnight. Run once, forward order — the point is plan coverage, not
+        # order coverage, which the step above already provides.
+        run: |
+          psql -v ON_ERROR_STOP=1 -c "alter database $PGDATABASE set enable_hashjoin = off;"
+          psql -v ON_ERROR_STOP=1 -c "alter database $PGDATABASE set enable_mergejoin = off;"
+          bad=0
+          for f in supabase/tests/*.sql; do
+            if ! out=$(psql -v ON_ERROR_STOP=1 -f "$f" 2>&1); then
+              echo "::error::$(basename "$f") depends on the query planner"
+              printf '%s\n' "$out" | grep -E "ERROR:|FATAL:" | head -3
+              bad=1
+            fi
+          done
+          psql -v ON_ERROR_STOP=1 -c "alter database $PGDATABASE reset enable_hashjoin;"
+          psql -v ON_ERROR_STOP=1 -c "alter database $PGDATABASE reset enable_mergejoin;"
+          if [ "$bad" = 1 ]; then
+            echo
+            echo "A suite passed with the default plans and failed with nested loops."
+            echo "The usual cause is a function that RAISES, called in a WHERE clause"
+            echo "beside the filter meant to exclude the rows it raises on. Wrap the"
+            echo "filter in a MATERIALIZED cte so it completes before the function"
+            echo "sees a row — see supabase/tests/challan.sql assertion 15."
+            exit 1
+          fi
+          echo "every suite passes with hash and merge joins disabled"
+
       - name: Every suite again, in reverse order
         # Suites are supposed to be independent. They are not, automatically:
         # counter.sql passed alone and failed after fee_ops.sql, because

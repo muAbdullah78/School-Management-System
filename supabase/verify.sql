@@ -584,6 +584,24 @@ select 'one school cannot reach another''s families or fees (0070)',
        then 'PASS' else 'FAIL — re-run bundle 7 (cross-tenant leak is OPEN)' end
 
 union all
+-- 0071. Every function in public used to be callable by an unauthenticated
+-- request, because Postgres grants EXECUTE to PUBLIC by default and 0001 gives
+-- `anon` usage on the schema. Each function refused on its own gate, so nothing
+-- leaked — but the next one to forget its gate would have been open to the
+-- internet rather than to this school's staff.
+select 'unauthenticated callers can run nothing (0071)',
+       case when not exists (select 1 from pg_proc p
+                              join pg_namespace n on n.oid = p.pronamespace
+                              where n.nspname = 'public'
+                                and has_function_privilege('anon', p.oid, 'execute'))
+       then 'PASS' else 'FAIL — re-run bundle 7 ('
+            || (select count(*)::text from pg_proc p
+                 join pg_namespace n on n.oid = p.pronamespace
+                where n.nspname = 'public'
+                  and has_function_privilege('anon', p.oid, 'execute'))
+            || ' functions still open)' end
+
+union all
 -- The row that answers "how far has this database actually got?" (0069)
 --
 -- Until bundle 7 nothing recorded it, and the two times it mattered the answer

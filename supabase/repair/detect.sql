@@ -342,7 +342,27 @@ with sig(migration, object, present) as (values
          and not exists (select 1 from pg_proc p
                           join pg_namespace n on n.oid = p.pronamespace
                           where n.nspname = 'public' and p.proname like 'fn\_\_%'
-                            and has_function_privilege('authenticated', p.oid, 'execute'))))
+                            and has_function_privilege('authenticated', p.oid, 'execute')))),
+  -- 0071 closed the PUBLIC grant. Postgres hands EXECUTE to PUBLIC on every new
+  -- function, and 0001:702 gives `anon` usage on the schema, so all 212
+  -- functions were callable by an unauthenticated request. Every one refused on
+  -- its own gate, so this was inert — but it meant a future function that forgot
+  -- its gate would be exposed to the internet rather than to signed-in staff.
+  --
+  -- The signature is the outcome, not the statement: anon can execute nothing in
+  -- public, AND the signup Edge Function's entry point is reachable by
+  -- service_role (0071 grants that explicitly; before it, signup worked only
+  -- because Supabase's project bootstrap had granted routines to service_role by
+  -- accident).
+  ('0071_function_grants',      'anon can execute nothing in public',
+     (select not exists (select 1 from pg_proc p
+                          join pg_namespace n on n.oid = p.pronamespace
+                          where n.nspname = 'public'
+                            and has_function_privilege('anon', p.oid, 'execute'))
+         and exists (select 1 from pg_proc p
+                      join pg_namespace n on n.oid = p.pronamespace
+                      where n.nspname = 'public' and p.proname = 'fn_signup_school'
+                        and has_function_privilege('service_role', p.oid, 'execute'))))
 )
 select migration,
        object                                   as looked_for,
