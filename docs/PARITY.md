@@ -11,8 +11,24 @@ or has no UI · `missing` not built · `excluded` deliberately out of scope
 Every `have` here means *checked*, not *remembered*: the file exists and
 something routes to it. Three items were first written down as `missing` and
 turned out to be built and reachable — the tabulation sheet, the date sheet and
-admit cards. Assume any status not yet re-checked could be wrong in either
-direction, and check before building on it.
+admit cards.
+
+## The statuses were re-verified once, and here is exactly how far that went
+
+This file was written early and then went stale in the WORST direction: it listed
+as `missing` several things that had since been built, including the printable
+challan and bulk fee payment. A checklist that is wrong that way is worse than no
+checklist — it sends the next person to rebuild what exists.
+
+Twelve rows were re-checked by looking, not remembering, and corrected: the four
+counter rows, advance fee, fee increment, bulk payment, print vouchers, head-wise
+dues, print marksheets, every-list-is-a-table, and multi-campus. Each was
+confirmed by finding the component file and a route or caller for it.
+
+**Every other row still carries its original status and has NOT been
+re-checked.** Assume any of them could now be wrong in either direction. Check
+before building on one — the check is usually one `grep` for the function name
+followed by one for a caller in `web/src`.
 
 > A note on why we are copying them at all. Not for feature-count parity. Their
 > workflows have been run by real schools for years, so the ORDER of steps, what
@@ -112,10 +128,10 @@ Their busiest screen, and the one ours gets most wrong. Theirs opens with:
 | Item | Status |
 |---|---|
 | Family collection by father's CNIC | `have` (migration 0036) |
-| Two-mode search, side by side | `missing` |
-| Today's tiles on the counter screen | `missing` |
-| Latest Payments always visible | `missing` — ours opens as an empty search box |
-| Scan a fee slip to pull up the payment | `missing` — `fn_find_by_voucher` exists with no caller |
+| Two-mode search, side by side | `have` | `FamilyCollect.tsx` — by father's CNIC, and by child. |
+| Today's tiles on the counter screen | `have` | Four figures, before anybody types. |
+| Latest Payments always visible | `have` — the day's receipts are on the landing view |
+| Scan a fee slip to pull up the payment | `have` — `fn_find_by_voucher`, called from `FamilyCollect.tsx` |
 
 ## 6. Accounting
 
@@ -126,17 +142,17 @@ Their busiest screen, and the one ours gets most wrong. Theirs opens with:
 | Fee Types / Fee Heads | `have` | |
 | Fee Structure | `have` | |
 | Family Fee Calculator | `have` | Migration 0036. |
-| Manage Advance Fee | `partial` | `family_credit` exists; no screen shows or applies it. |
+| Manage Advance Fee | `have` | Shown on the family sheet, the counter and the parent portal, and applied automatically to the next challan. There is deliberately no screen to apply it by hand — a clerk choosing when an advance is used is how an advance goes missing. |
 | Direct Payment | `missing` | Payment without an invoice — walk-in, non-student. |
 | Fee Installments | `missing` | Designed in docs, never built. |
 | Print Balance Sheet | `have` (0045) | As at a date, not a range. Prints. |
 | Deleted Fees | `missing` | An audit list of reversed/removed charges. |
-| Generate Fee Increment | `partial` | `fn_fee_increment` exists, no UI. |
+| Generate Fee Increment | `have` | `settings/FeeIncrement.tsx`. Preview is mandatory: Apply is disabled until one has been run, and any edit throws it away. |
 | Generate Fee **Decrement** | `missing` | We only ever built increment. |
-| **Bulk Fee Payment** | `missing` | Take payment from many students in one pass. The single biggest gap: 100–400 collections a month currently means 100–400 searches. |
+| **Bulk Fee Payment** | `have` | `fees/BulkCollect.tsx`. A bad batch is all-or-nothing — asserted in `supabase/tests/bulk_fees.sql`. |
 | Discounted Students | `partial` | We have a discount register. |
 | Accounts Settlement | `partial` | Our till covers the per-collector half. |
-| **Print Fee Vouchers** | `missing` | No printable challan exists anywhere. `docs/03-FEATURES.md` promises a 3-part bank-payable format; nothing implements it. For a Pakistani school the challan **is** the product — the parent takes it to the bank. |
+| **Print Fee Vouchers** | `have` | `fees/ChallanPrint.tsx` — the 3-part bank-payable format, one per child or a batch per class, with a voucher code the counter can scan back. |
 
 ## 7. Expense Management
 
@@ -151,7 +167,7 @@ Their busiest screen, and the one ours gets most wrong. Theirs opens with:
 |---|---|
 | Class Wise Basic Reports | `have` |
 | Fee Defaulters Report | `have` |
-| Head Wise Dues Summary | `partial` — `fn_head_wise_dues` has no UI |
+| Head Wise Dues Summary | `have` — Reports → Dues by Fee Head, with the apportionment basis printed |
 | Income & Expense Report | `have` |
 | Debit & Credit Statement | `have` (0044) |
 | List Of Unpaid Invoices | `have` (0044) — per challan, with overdue age |
@@ -178,7 +194,7 @@ them into one, and that is probably wrong.
 | **Tabulation Sheet** | `have` | `TabulationSheet.tsx`, reached from Result Cards. Corrected — first drafted as `missing`, then found and confirmed reachable. |
 | **Position Holders** | `have` (0049) | Top N per class, ties preserved as on the card (two firsts means no second), withheld results flagged before an announcement. |
 | **Print Admit Cards / Slips** | `have` | `AdmitCards.tsx`, reached from Exam Setup. Corrected as above. |
-| Print Marksheets | `partial` | Result cards exist and print; the `published_at` gate that releases them to parents has no UI. |
+| Print Marksheets | `have` | `exams/ResultsTab.tsx` prints them and holds the release gate: Publish and Withdraw are both there. Generating is not releasing — parents see nothing until somebody presses publish, because a mark a parent saw and then saw change turns every correction into an accusation. |
 | Send Marks / Marksheets to parents | `missing` | Becomes WhatsApp. |
 | Test / Exam Reports | `missing` | |
 
@@ -221,10 +237,10 @@ ours does not.
 
 | Pattern | Status | Notes |
 |---|---|---|
-| **Every list is a real table** | `missing` | Theirs: page-size selector, search box, **Excel / CSV / PDF / Print** buttons, pagination. Ours: 33 hand-rolled `<table>`s, no shared component, zero sortable columns, students silently capped at 50 rows. |
+| **Every list is a real table** | `partial` | `components/DataTable.tsx` exists — sortable columns, page-size selector, search, CSV, Print — and five screens use it, including the student roster, which now pages properly and reports the real total. The rest are still hand-rolled `<table>`s. The 50-row cap is gone from the roster; `listStudents()` keeps it deliberately, and says so, because it feeds type-ahead pickers rather than a roster. |
 | **Global search in the header** | `have` (0050) | Children, staff, families, challans by voucher, receipts by number, enquiries. Role-aware in SQL. "/" focuses it. |
 | Module search in the sidebar | `have` (0050) | Filters the nav this role can already see, so it cannot surface a module they lack. |
-| **Multi-campus** | `missing` | Campus selector in the header, campus column on every list, transfer between campuses. We have an unused `campuses` table. Architecturally significant — decide before building more reports. |
+| **Multi-campus** | `missing` | Campus selector in the header, campus column on every list, transfer between campuses. The unused `campuses` and `shifts` tables were DROPPED in migration 0083: empty in every install, read by no function, written by no screen, and they suggested a feature that did not exist. Still architecturally significant, and when it returns it needs designing properly — a campus that owns sections, staff, a fee structure and its own receipt series is not two nullable columns on `classes`. |
 | Print-first reports | `partial` | Every report screen of theirs is a grid of named reports each with a Print button. |
 | Dashboard tiles that link to a report | `partial` | Their tiles all say "View Report". |
 | Running session shown in the footer | `missing` | Small, but it is always visible and prevents entering marks into last year. |
