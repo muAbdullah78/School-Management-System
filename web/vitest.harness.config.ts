@@ -25,6 +25,26 @@ const merged = mergeConfig(base, defineConfig({}))
 // Assigned AFTER the merge, not inside it: mergeConfig CONCATENATES arrays, so
 // merging an include would append to src/** rather than replace it and the
 // whole unit suite would run again on every render.
-merged.test = { ...merged.test, include: ['tools/**/*.test.{ts,tsx}'] }
+merged.test = {
+  ...merged.test,
+  include: ['tools/**/*.test.{ts,tsx}'],
+  /**
+   * A PLACEHOLDER Supabase URL and key, so the app believes it is configured.
+   *
+   * Without these, `isConfigured` is false and Dashboard renders "Not connected
+   * yet — Supabase isn't configured" instead of the screen. Every seeded figure
+   * is ignored and the screenshot shows the setup warning, which is not the state
+   * anybody wants in a user guide.
+   *
+   * Nothing is ever fetched from this host: renderToStaticMarkup fires no
+   * effects, and every query the harness renders is seeded, so no queryFn runs.
+   * The value is deliberately unroutable rather than plausible — a real-looking
+   * project URL in a config file is how one ends up committed.
+   */
+  env: {
+    VITE_SUPABASE_URL: 'https://harness.invalid',
+    VITE_SUPABASE_ANON_KEY: 'harness-placeholder-not-a-real-key',
+  },
+}
 
 export default merged

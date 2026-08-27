@@ -1,0 +1,1013 @@
+<title>School Manager Handbook</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Figtree:wght@400;500;600;700&display=swap">
+
+<style>
+/* ===========================================================================
+   The handbook inherits the SOFTWARE's palette, on purpose.
+   Indigo is the app's brand; green means money in; amber means attention;
+   red means wrong. A reader learns the colour language of the screens while
+   reading about them, which is one less thing to explain.
+   =========================================================================== */
+:root {
+  --ground:   #f6f7fb;
+  --paper:    #ffffff;
+  --ink:      #131725;
+  --ink-soft: #4c5468;
+  --ink-faint:#7a8296;
+  --rule:     #e2e5ee;
+  --rule-firm:#c9cddd;
+  --brand:    #4338ca;
+  --brand-ink:#312e81;
+  --brand-wash:#eef2ff;
+  --money:    #047857;
+  --money-wash:#ecfdf5;
+  --due:      #b45309;
+  --due-wash: #fffbeb;
+  --danger:   #b91c1c;
+  --danger-wash:#fef2f2;
+  --shadow:   0 1px 2px rgb(16 24 40 / .05), 0 8px 24px -12px rgb(16 24 40 / .18);
+  --step-max: 68ch;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:   #101219;
+    --paper:    #181b25;
+    --ink:      #e9ebf3;
+    --ink-soft: #a8aec2;
+    --ink-faint:#7e8598;
+    --rule:     #2a2e3c;
+    --rule-firm:#3b4152;
+    --brand:    #a5b4fc;
+    --brand-ink:#c7d2fe;
+    --brand-wash:#1e2136;
+    --money:    #6ee7b7;
+    --money-wash:#10241d;
+    --due:      #fcd34d;
+    --due-wash: #251d0e;
+    --danger:   #fca5a5;
+    --danger-wash:#2a1416;
+    --shadow:   0 1px 2px rgb(0 0 0 / .4), 0 8px 24px -12px rgb(0 0 0 / .6);
+  }
+}
+:root[data-theme="dark"] {
+  --ground:   #101219;
+  --paper:    #181b25;
+  --ink:      #e9ebf3;
+  --ink-soft: #a8aec2;
+  --ink-faint:#7e8598;
+  --rule:     #2a2e3c;
+  --rule-firm:#3b4152;
+  --brand:    #a5b4fc;
+  --brand-ink:#c7d2fe;
+  --brand-wash:#1e2136;
+  --money:    #6ee7b7;
+  --money-wash:#10241d;
+  --due:      #fcd34d;
+  --due-wash: #251d0e;
+  --danger:   #fca5a5;
+  --danger-wash:#2a1416;
+  --shadow:   0 1px 2px rgb(0 0 0 / .4), 0 8px 24px -12px rgb(0 0 0 / .6);
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: Figtree, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* Deliberately large. Half the people who open this read slowly, and a manual
+     set at 15px is a manual they give up on. */
+  font-size: 18px;
+  line-height: 1.62;
+  -webkit-text-size-adjust: 100%;
+}
+
+.wrap { max-width: 78rem; margin: 0 auto; padding: 0 1.25rem 6rem; }
+.col  { max-width: var(--step-max); }
+
+/* --- masthead ------------------------------------------------------------ */
+.mast {
+  padding: 4.5rem 0 2.5rem;
+  border-bottom: 2px solid var(--ink);
+  margin-bottom: 3rem;
+}
+.mast .kicker {
+  font-size: .72rem; font-weight: 600; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--brand); margin-bottom: 1rem;
+}
+.mast h1 {
+  font-family: Newsreader, ui-serif, Georgia, serif;
+  font-weight: 500; font-size: clamp(2.6rem, 7vw, 4.4rem); line-height: 1.02;
+  margin: 0 0 1rem; letter-spacing: -.02em; text-wrap: balance;
+}
+.mast .sub { max-width: 46ch; font-size: 1.15rem; color: var(--ink-soft); margin: 0; }
+
+/* --- contents ------------------------------------------------------------ */
+.toc {
+  background: var(--paper); border: 1px solid var(--rule); border-radius: 14px;
+  padding: 1.5rem 1.75rem; margin: 0 0 4rem; box-shadow: var(--shadow);
+  max-width: 52rem;
+}
+.toc h2 {
+  font-family: Figtree, sans-serif; font-size: .72rem; font-weight: 600;
+  letter-spacing: .16em; text-transform: uppercase; color: var(--ink-faint);
+  margin: 0 0 1rem;
+}
+.toc ol { margin: 0; padding: 0; list-style: none; display: grid; gap: .1rem; }
+.toc li { display: flex; gap: .9rem; align-items: baseline; padding: .35rem 0; border-top: 1px solid var(--rule); }
+.toc li:first-child { border-top: 0; }
+.toc .n { font-variant-numeric: tabular-nums; color: var(--ink-faint); font-size: .9rem; min-width: 1.6rem; }
+.toc a { color: var(--ink); text-decoration: none; font-weight: 500; }
+.toc a:hover, .toc a:focus-visible { color: var(--brand); text-decoration: underline; }
+.toc .who { margin-left: auto; font-size: .82rem; color: var(--ink-faint); text-align: right; }
+
+/* --- chapters ------------------------------------------------------------ */
+section.ch { padding-top: 2.5rem; margin-bottom: 4.5rem; }
+section.ch > .head { border-top: 2px solid var(--ink); padding-top: 1.25rem; margin-bottom: 1.75rem; }
+section.ch .num {
+  font-family: Newsreader, serif; font-size: .95rem; font-weight: 600;
+  letter-spacing: .1em; color: var(--brand); display: block; margin-bottom: .35rem;
+}
+section.ch h2 {
+  font-family: Newsreader, ui-serif, Georgia, serif; font-weight: 500;
+  font-size: clamp(1.8rem, 4vw, 2.5rem); line-height: 1.12; margin: 0 0 .6rem;
+  letter-spacing: -.015em; text-wrap: balance;
+}
+section.ch .lede { font-size: 1.08rem; color: var(--ink-soft); margin: 0; max-width: 58ch; }
+
+h3 {
+  font-family: Figtree, sans-serif; font-size: 1.15rem; font-weight: 600;
+  margin: 2.5rem 0 .75rem; letter-spacing: -.01em;
+}
+p { margin: 0 0 1rem; max-width: var(--step-max); }
+strong { font-weight: 600; }
+
+/* --- steps ---------------------------------------------------------------
+   Numbered because the content genuinely is a sequence: a school cannot set a
+   fee before the charge exists, and cannot bill before either. The numerals are
+   load-bearing, not decoration. */
+ol.steps { list-style: none; margin: 1.25rem 0 1.75rem; padding: 0; max-width: var(--step-max); counter-reset: s; }
+ol.steps > li {
+  counter-increment: s; position: relative; padding: 0 0 1.1rem 3.1rem; margin: 0;
+}
+ol.steps > li::before {
+  content: counter(s);
+  position: absolute; left: 0; top: -.1rem;
+  width: 2.1rem; height: 2.1rem; border-radius: 999px;
+  background: var(--brand-wash); color: var(--brand-ink);
+  border: 1px solid var(--brand);
+  display: grid; place-items: center;
+  font-size: .95rem; font-weight: 600; font-variant-numeric: tabular-nums;
+}
+ol.steps > li > :first-child { margin-top: 0; }
+ol.steps p { margin-bottom: .4rem; }
+ol.steps .after { color: var(--ink-soft); font-size: .95rem; }
+
+ul.plain { max-width: var(--step-max); padding-left: 1.2rem; margin: 0 0 1.25rem; }
+ul.plain li { margin-bottom: .45rem; }
+
+/* Where to click. Written the way it appears on screen. */
+.where {
+  display: inline-block; font-weight: 600; color: var(--brand-ink);
+  background: var(--brand-wash); border: 1px solid var(--rule-firm);
+  border-radius: 6px; padding: .05em .4em; white-space: nowrap;
+}
+.val {
+  font-variant-numeric: tabular-nums; font-weight: 600;
+  background: var(--paper); border: 1px solid var(--rule-firm);
+  border-radius: 6px; padding: .05em .4em;
+}
+
+/* --- callouts, in the app's own colour language ------------------------- */
+.note {
+  border-left: 4px solid var(--brand); background: var(--brand-wash);
+  padding: 1rem 1.25rem; border-radius: 0 10px 10px 0; margin: 1.5rem 0;
+  max-width: var(--step-max);
+}
+.note.care  { border-color: var(--due);    background: var(--due-wash); }
+.note.wrong { border-color: var(--danger); background: var(--danger-wash); }
+.note.good  { border-color: var(--money);  background: var(--money-wash); }
+.note .lbl {
+  display: block; font-size: .7rem; font-weight: 700; letter-spacing: .14em;
+  text-transform: uppercase; margin-bottom: .45rem; color: var(--brand-ink);
+}
+.note.care .lbl  { color: var(--due); }
+.note.wrong .lbl { color: var(--danger); }
+.note.good .lbl  { color: var(--money); }
+.note p:last-child { margin-bottom: 0; }
+
+/* --- screenshots --------------------------------------------------------
+   Breaking wider than the prose column: these are the reason the guide exists,
+   and a screen shrunk to fit a text measure is a screen nobody can read. */
+figure.shot { margin: 2rem 0 2.5rem; max-width: 62rem; }
+figure.shot .frame {
+  background: var(--paper); border: 1px solid var(--rule-firm); border-radius: 12px;
+  padding: .5rem; box-shadow: var(--shadow); overflow: hidden;
+}
+figure.shot.phone .frame { max-width: 24rem; }
+figure.shot img { display: block; width: 100%; height: auto; border-radius: 7px; }
+figure.shot figcaption {
+  font-size: .92rem; color: var(--ink-soft); margin-top: .75rem; max-width: 56ch;
+}
+figure.shot figcaption b { color: var(--ink); font-weight: 600; }
+
+/* --- tables ------------------------------------------------------------- */
+.tablewrap { overflow-x: auto; margin: 1.5rem 0 2rem; max-width: 62rem; }
+table { border-collapse: collapse; width: 100%; min-width: 34rem; font-size: .95rem; }
+th, td { text-align: left; padding: .6rem .75rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th {
+  font-size: .7rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--ink-faint); border-bottom: 1px solid var(--rule-firm);
+}
+td.yes { color: var(--money); font-weight: 600; }
+td.no  { color: var(--ink-faint); }
+
+/* --- the three parts diagram -------------------------------------------- */
+.parts { display: grid; gap: 1rem; margin: 2rem 0 2.5rem; max-width: 62rem; }
+@media (min-width: 46rem) { .parts { grid-template-columns: repeat(3, 1fr); } }
+.part {
+  background: var(--paper); border: 1px solid var(--rule); border-radius: 12px;
+  padding: 1.25rem; box-shadow: var(--shadow);
+}
+.part .tag {
+  font-size: .68rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--brand); display: block; margin-bottom: .5rem;
+}
+.part h4 { font-size: 1.05rem; font-weight: 600; margin: 0 0 .4rem; }
+.part p { font-size: .95rem; color: var(--ink-soft); margin: 0; max-width: none; }
+
+/* --- footer ------------------------------------------------------------- */
+footer.end {
+  border-top: 2px solid var(--ink); padding-top: 1.5rem; margin-top: 5rem;
+  font-size: .95rem; color: var(--ink-soft); max-width: 62rem;
+}
+
+a { color: var(--brand); }
+:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 4px; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* Printing this is how most offices will actually use it. */
+@media print {
+  body { background: #fff; color: #000; font-size: 11pt; }
+  .toc { box-shadow: none; }
+  figure.shot .frame { box-shadow: none; }
+  section.ch { page-break-inside: auto; }
+  section.ch > .head { page-break-after: avoid; }
+  figure.shot, .note, ol.steps > li, table { page-break-inside: avoid; }
+  .mast { padding-top: 0; }
+}
+</style>
+
+<div class="wrap">
+
+<header class="mast">
+  <div class="kicker">Handbook for school staff</div>
+  <h1>How to run your school on this software</h1>
+  <p class="sub">Everything in order, from the first day to exam results. Short steps.
+  Real pictures of every screen. Nothing you do here can be lost.</p>
+</header>
+
+<nav class="toc" aria-label="Contents">
+  <h2>What is in this book</h2>
+  <ol>
+    <li><span class="n">1</span><a href="#ch1">The three parts, and how they fit</a><span class="who">everyone</span></li>
+    <li><span class="n">2</span><a href="#ch2">Getting in</a><span class="who">everyone</span></li>
+    <li><span class="n">3</span><a href="#ch3">The first day: setting up</a><span class="who">owner, principal</span></li>
+    <li><span class="n">4</span><a href="#ch4">Adding your children</a><span class="who">office</span></li>
+    <li><span class="n">5</span><a href="#ch5">Your staff, and who teaches what</a><span class="who">owner, principal</span></li>
+    <li><span class="n">6</span><a href="#ch6">Every morning: attendance</a><span class="who">teachers</span></li>
+    <li><span class="n">7</span><a href="#ch7">Every day: taking fees</a><span class="who">office, accountant</span></li>
+    <li><span class="n">8</span><a href="#ch8">Every month: challans and chasing dues</a><span class="who">office</span></li>
+    <li><span class="n">9</span><a href="#ch9">Money going out</a><span class="who">accountant</span></li>
+    <li><span class="n">10</span><a href="#ch10">Exam time</a><span class="who">teachers, principal</span></li>
+    <li><span class="n">11</span><a href="#ch11">Certificates and leaving</a><span class="who">office</span></li>
+    <li><span class="n">12</span><a href="#ch12">Parents: the portal</a><span class="who">office</span></li>
+    <li><span class="n">13</span><a href="#ch13">Reports: answering questions</a><span class="who">principal, owner</span></li>
+    <li><span class="n">14</span><a href="#ch14">Your own bill for the software</a><span class="who">owner</span></li>
+    <li><span class="n">15</span><a href="#ch15">When something goes wrong</a><span class="who">everyone</span></li>
+    <li><span class="n">16</span><a href="#ch16">Who is allowed to do what</a><span class="who">owner</span></li>
+  </ol>
+</nav>
+
+<!-- ==================================================================== -->
+<section class="ch" id="ch1">
+  <div class="head">
+    <span class="num">Chapter 1</span>
+    <h2>The three parts, and how they fit</h2>
+    <p class="lede">There are three things, not one. Knowing which is which saves
+    most of the confusion.</p>
+  </div>
+
+  <div class="parts">
+    <div class="part">
+      <span class="tag">Part one</span>
+      <h4>The office software</h4>
+      <p>Where your staff work. Admissions, attendance, fees, exams, reports.
+      Opens in a web browser. Also available to install on a Windows computer.</p>
+    </div>
+    <div class="part">
+      <span class="tag">Part two</span>
+      <h4>The parent portal</h4>
+      <p>The same software, but a parent signing in sees only their own children:
+      what they owe, whether they came to school, and their result.</p>
+    </div>
+    <div class="part">
+      <span class="tag">Part three</span>
+      <h4>The public website</h4>
+      <p>Where a new school reads the prices, starts a free trial, and downloads
+      the Windows installer.</p>
+    </div>
+  </div>
+
+  <p>All three read the same records. When your clerk takes a fee at the counter,
+  the parent's portal shows it paid straight away. There is no copying between
+  them and no "syncing" to remember.</p>
+
+  <div class="note">
+    <span class="lbl">Worth knowing</span>
+    <p>Your school's records are yours alone. Another school using this same
+    software cannot see one line of them, and neither can a parent from another
+    family. That is enforced by the database itself, not by being careful.</p>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section class="ch" id="ch2">
+  <div class="head">
+    <span class="num">Chapter 2</span>
+    <h2>Getting in</h2>
+    <p class="lede">One email address and one password for each person. Never share
+    a login: every entry is stamped with who made it, and a shared login makes that
+    stamp worthless.</p>
+  </div>
+
+  <ol class="steps">
+    <li><p>Open the address your school was given. It looks like
+      <span class="val">app.yourschool.pk</span>.</p></li>
+    <li><p>Type your <strong>email</strong> and your <strong>password</strong>.</p></li>
+    <li><p>Press <span class="where">Sign in</span>.</p>
+      <p class="after">You land on the dashboard, or on your own class if you are a teacher.</p></li>
+  </ol>
+
+  <figure class="shot phone">
+    <div class="frame"><img src="{{IMG:login}}" alt="The sign-in screen: email, password, a Sign in button, and a link reading Forgotten your password?"></div>
+    <figcaption>The sign-in screen. <b>Forgotten your password?</b> is underneath the
+    button — you never need to telephone anybody to get back in.</figcaption>
+  </figure>
+
+  <h3>If you have forgotten your password</h3>
+  <ol class="steps">
+    <li><p>Press <span class="where">Forgotten your password?</span></p></li>
+    <li><p>Type the email address you sign in with. Press <span class="where">Send the link</span>.</p></li>
+    <li><p>Open your email. Look in the spam or junk folder as well — reset emails
+      often land there.</p></li>
+    <li><p>Press the link in the email. Choose a new password and type it twice.</p>
+      <p class="after">The link works once and lasts one hour. After that, ask for a new one.</p></li>
+  </ol>
+
+  <figure class="shot phone">
+    <div class="frame"><img src="{{IMG:forgot}}" alt="The forgotten-password screen with a single email box and a Send the link button"></div>
+    <figcaption>It says the same thing whether or not that address has an account.
+    That is deliberate: it stops a stranger finding out who works at your school.</figcaption>
+  </figure>
+
+  <h3>Changing your own password</h3>
+  <p>At the bottom of the parent portal, or on the left in the office software,
+  press <span class="where">Password</span> or <span class="where">Change your password</span>.
+  You must type your <strong>current</strong> password first. That is what stops
+  somebody walking past an unattended computer and locking you out.</p>
+
+  <div class="note care">
+    <span class="lbl">Careful</span>
+    <p>You will be signed out after changing it, and asked to sign in again with the
+    new one. That is on purpose — it proves the new password works before you walk
+    away from the computer.</p>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section class="ch" id="ch3">
+  <div class="head">
+    <span class="num">Chapter 3</span>
+    <h2>The first day: setting up</h2>
+    <p class="lede">Do these in order. Each one needs the one before it. Skipping
+    ahead is the single commonest reason a new school gets stuck.</p>
+  </div>
+
+  <ol class="steps">
+    <li><p><strong>Your school's details.</strong>
+      <span class="where">Settings</span> → <span class="where">School Profile</span>.
+      Name, address, phone. Upload your logo here too — it then prints on every
+      receipt, challan, result card and certificate.</p></li>
+
+    <li><p><strong>The academic session.</strong>
+      <span class="where">Settings</span> → <span class="where">Sessions</span>.
+      Add this year, for example <span class="val">2026-2027</span>, and mark it
+      <strong>current</strong>.</p>
+      <p class="after">Nothing else works until one session is current. Every child,
+      fee and exam belongs to a session.</p></li>
+
+    <li><p><strong>Classes and sections.</strong>
+      <span class="where">Settings</span> → <span class="where">Classes &amp; Sections</span>.
+      Add each class in order, lowest first. Add sections only if you have them.</p></li>
+
+    <li><p><strong>Fee heads.</strong>
+      <span class="where">Settings</span> → <span class="where">Fee Heads</span>.
+      A fee head is a <em>kind</em> of charge: Tuition, Admission, Transport,
+      Security deposit. Mark the ones that repeat every month as
+      <strong>recurring</strong>.</p></li>
+
+    <li><p><strong>Fee structure.</strong>
+      <span class="where">Settings</span> → <span class="where">Fee Structure</span>.
+      Now put an amount against each class and each head. This is the grid that
+      decides what a challan says.</p></li>
+
+    <li><p><strong>Your staff.</strong>
+      <span class="where">Staff</span> → <span class="where">Staff</span>.
+      Add each person. Give a login only to those who need one.</p></li>
+  </ol>
+
+  <div class="note care">
+    <span class="lbl">The mistake to avoid</span>
+    <p>If a class has children but no fee amounts, generating challans produces
+    <strong>Rs 0</strong> slips and reports success. The school looks billed when it
+    is not. The dashboard warns you about this by name — do not ignore that
+    yellow strip.</p>
+  </div>
+
+  <figure class="shot">
+    <div class="frame"><img src="{{IMG:dashboard}}" alt="The dashboard: a yellow warning that one class has students but no fee set, four coloured tiles for attendance, students, collected today and outstanding, then shortcut links and an at-a-glance list"></div>
+    <figcaption>The dashboard. The yellow strip at the top is the warning above:
+    <b>one class has students but no fee set</b>. Below it, today in four numbers.
+    Note <b>Outstanding Rs 386,000 · 23 students with dues</b> — that is the figure
+    Chapter 8 is about.</figcaption>
+  </figure>
+</section>
+
+<!-- ==================================================================== -->
+<section class="ch" id="ch4">
+  <div class="head">
+    <span class="num">Chapter 4</span>
+    <h2>Adding your children</h2>
+    <p class="lede">One at a time for a new admission. In bulk when you are moving
+    from paper or from another system.</p>
+  </div>
+
+  <h3>One new admission</h3>
+  <ol class="steps">
+    <li><p><span class="where">Admissions</span> → fill the form. Name, father's name,
+      father's CNIC, class, and a GR number.</p></li>
+    <li><p>If the child has a brother or sister already in the school, search for
+      them in <strong>Siblings</strong> and add the link.</p></li>
+    <li><p>Press <span class="where">Admit</span>.</p>
+      <p class="after">The child gets a GR number, an enrolment in the class, and a
+      family. From now on the software knows who to bill.</p></li>
+  </ol>
+
+  <div class="note good">
+    <span class="lbl">Why the sibling link matters</span>
+    <p>Linking brothers and sisters into <strong>one family</strong> means the father
+    pays <strong>once</strong> for all his children — one amount, one receipt, one
+    entry in the day book. Without it he queues three times.</p>
+    <p>Missed it at admission? Open the child's profile and press
+    <span class="where">+ Link a sibling or relative</span>, then
+    <span class="where">Put in one family</span> on the row it adds.</p>
+  </div>
+
+  <h3>Many children at once</h3>
+  <ol class="steps">
+    <li><p><span class="where">Settings</span> → <span class="where">Import</span>.
+      Download the sample file first.</p></li>
+    <li><p>Fill your children into that file, keeping the column headings exactly
+      as they are.</p></li>
+    <li><p>Upload it. The software shows you what it <em>would</em> do before it does
+      anything.</p></li>
+    <li><p>Read that list. If it is right, press the button to import.</p>
+      <p class="after">Rows with a problem are named with the reason. Fix them in the
+      file and upload again — nothing is half-done.</p></li>
+  </ol>
+</section>
+
+<!-- ==================================================================== -->
+<section class="ch" id="ch5">
+  <div class="head">
+    <span class="num">Chapter 5</span>
+    <h2>Your staff, and who teaches what</h2>
+    <p class="lede">Two separate things, and both matter for exams.</p>
+  </div>
+
+  <h3>Class teachers</h3>
+  <p><span class="where">Staff</span> → <span class="where">Class Teachers</span>.
+  Pick a class, then choose the teacher for each section. A class teacher can mark
+  attendance for their class and enter marks for <strong>any</strong> subject in it.</p>
+
+  <h3>Subject teachers</h3>
+  <p><span class="where">Staff</span> → <span class="where">Subject Teachers</span>.
+  Pick a class, then tap the teachers who teach each subject.</p>
+
+  <div class="note care">
+    <span class="lbl">This decides who can change a result</span>
+    <p>A teacher may enter marks only for a class they are class teacher of, or a
+    class and subject listed here. Everybody else is refused — including for the
+    exam marks that go on the result card.</p>
+    <p>A subject with <strong>nobody assigned</strong> can only be marked by the
+    office. The screen counts those for you, so fill them in before exam week and
+    not during it.</p>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section class="ch" id="ch6">
+  <div class="head">
+    <span class="num">Chapter 6</span>
+    <h2>Every morning: attendance</h2>
+    <p class="lede">A minute per class. It feeds the parent portal, the monthly
+    register, and the attendance line on every result card.</p>
+  </div>
+
+  <ol class="steps">
+    <li><p><span class="where">Attendance</span>. Choose your class and section.
+      Today's date is already filled in.</p></li>
+    <li><p>Everybody starts as <strong>present</strong>. Change only the children who
+      are not.</p></li>
+    <li><p>Press <span class="where">Save</span>.</p></li>
+  </ol>
+
+  <p>The five marks are <strong>present</strong>, <strong>absent</strong>,
+  <strong>late</strong>, <strong>half day</strong> and <strong>leave</strong>.
+  Late and half day still count as attending; leave and absent do not.</p>
+
+  <div class="note">
+    <span class="lbl">Correcting a mistake</span>
+    <p>You can change today's marks. Changing an <em>older</em> day is recorded, and
+    the principal can see every such change under
+    <span class="where">Reports</span> → <span class="where">Attendance Changes</span>.
+    That is protection for you as much as oversight of you: it proves what you
+    entered and when.</p>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section class="ch" id="ch7">
+  <div class="head">
+    <span class="num">Chapter 7</span>
+    <h2>Every day: taking fees</h2>
+    <p class="lede">The busiest screen in the building. Designed for fifteen seconds
+    per parent.</p>
+  </div>
+
+  <ol class="steps">
+    <li><p><span class="where">Fees</span> → <span class="where">Collect a fee</span>.</p></li>
+    <li><p>Find the payer. Any of these work: the <strong>father's CNIC</strong>, his
+      <strong>phone number</strong>, the <strong>child's name</strong>, the
+      <strong>GR number</strong>, or the code on a printed challan.</p></li>
+    <li><p>Look at the family sheet. Every child is listed with what each owes.</p></li>
+    <li><p>Type the <strong>amount received</strong> and choose how it was paid.</p></li>
+    <li><p>Press <span class="where">Receive</span>.</p>
+      <p class="after">One receipt number, for the whole family.</p></li>
+    <li><p>Press <span class="where">Print receipt</span> and hand it over.</p></li>
+  </ol>
+
+  <figure class="shot">
+    <div class="frame"><img src="{{IMG:receipt-family}}" alt="A fee receipt showing the school name, receipt number, received from Muhammad Aslam, Rs 14,100 paid, family balance after, and an Applied for list naming three children with the amount against each"></div>
+    <figcaption>A family receipt. The <b>Applied for</b> list is the important part:
+    it names which child and which month each rupee went to. Without it a father
+    paying for three children cannot tell whose dues moved, and that is what starts
+    an argument at the counter.</figcaption>
+  </figure>
+
+  <h3>How the money is split</h3>
+  <p>Oldest month first, across all the children in the family. So a father paying
+  part of what he owes clears the oldest challans, not the newest. If he pays
+  <strong>more</strong> than he owes, the extra is held as
+  <strong>advance</strong> and comes off next month's challan automatically.</p>
+
+  <div class="note care">
+    <span class="lbl">Cheques and bank transfers</span>
+    <p>Choose <strong>pending</strong> for money that has not cleared yet. A pending
+    payment does <em>not</em> reduce what the family owes and does
+    <strong>not</strong> print a receipt. When the money appears in the bank, mark
+    it verified under <span class="where">Fees</span> →
+    <span class="where">Pending clearances</span>, and the receipt is issued then.</p>
+    <p>This is why: a receipt for a cheque that later bounces is a piece of paper
+    you cannot take back.</p>
+  </div>
+
+  <h3>Cash at the end of the day</h3>
+  <p><span class="where">Fees</span> → <span class="where">Till</span>. Count the cash
+  drawer and enter what is actually in it. The software shows what it expected. Any
+  difference is recorded with your name against it — which protects the honest
+  clerk, because the day it balances is on record too.</p>
+</section>
+
+<!-- ==================================================================== -->
+<section class="ch" id="ch8">
+  <div class="head">
+    <span class="num">Chapter 8</span>
+    <h2>Every month: challans and chasing dues</h2>
+    <p class="lede">Bill everybody once, then work a list instead of guessing.</p>
+  </div>
+
+  <h3>Raising the month's challans</h3>
+  <ol class="steps">
+    <li><p><span class="where">Fees</span> → <span class="where">Generate challans</span>.
+      Choose the month and the classes.</p></li>
+    <li><p>Read the summary it shows you before anything is created.</p></li>
+    <li><p>Confirm. Every child now has a challan for that month.</p></li>
+    <li><p>Print them class by class and send them home.</p></li>
+  </ol>
+
+  <div class="note wrong">
+    <span class="lbl">Stop if you see Rs 0</span>
+    <p>A challan for <strong>Rs 0</strong> means that class has no fee amounts set.
+    Do not send it. Go to
+    <span class="where">Settings</span> → <span class="where">Fee Structure</span>,
+    fill the amounts in, then generate again.</p>
+  </div>
+
+  <h3>Who has not paid</h3>
+  <p><span class="where">Reports</span> → <span class="where">Defaulters</span> gives
+  you the list, with how many days overdue and a phone number for each.
+  <span class="where">Reports</span> → <span class="where">Dues by Fee Head</span>
+  answers a different question: <em>which charge</em> is not being paid. If almost
+  all of your Rs 386,000 is the transport fee, that is a different problem from
+  eighty families behind on tuition.</p>
+
+  <h3>Reminding parents on WhatsApp</h3>
+  <ol class="steps">
+    <li><p><span class="where">Messages</span>. The list is already written for you,
+      one row per family.</p></li>
+    <li><p>Press the WhatsApp button on a row. WhatsApp opens with the message
+      typed out.</p></li>
+    <li><p>Read it, then send it yourself.</p></li>
+  </ol>
+  <p>Nothing is ever sent without you pressing send. You can edit the wording of
+  every message under <span class="where">Settings</span> →
+  <span class="where">Messages</span>, and switch any of them off.</p>
+
+  <h3>Raising fees for next year</h3>
+  <p><span class="where">Settings</span> → <span class="where">Fee Increase</span>.
+  Choose the session, a percentage or a flat amount, and the date it starts.
+  Press <span class="where">Preview the change</span> and <strong>read the
+  list</strong> — it shows every fee going from what to what. Only then press Apply.</p>
+  <div class="note good">
+    <span class="lbl">Challans already sent are safe</span>
+    <p>An increase dated 1 April does not change a challan raised in March. The old
+    challan keeps the old amount. Nothing you have already given a parent is
+    rewritten.</p>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section class="ch" id="ch9">
+  <div class="head">
+    <span class="num">Chapter 9</span>
+    <h2>Money going out</h2>
+    <p class="lede">Record what you spend and the software can tell you what the
+    school actually kept.</p>
+  </div>
+
+  <ol class="steps">
+    <li><p><span class="where">Accounts</span>. Type the amount and choose a
+      <strong>category</strong> — Salaries, Rent, Utilities, and so on.</p></li>
+    <li><p>Fill in who it was paid to, and how.</p></li>
+    <li><p>Press <span class="where">Record expense</span>. You get a voucher number.</p></li>
+  </ol>
+
+  <p>Salaries go here too. That is what keeps the profit figure honest without a
+  separate payroll system.</p>
+
+  <div class="note">
+    <span class="lbl">Your own categories</span>
+    <p>Eight are provided. If your real costs include generator diesel or a security
+    guard, press <span class="where">Manage categories</span> and add them. Filing
+    everything under "Other" makes the expense report answer nothing.</p>
+    <p>You can <strong>retire</strong> a category but never delete one — old
+    vouchers keep it, so last year's reports still add up.</p>
+  </div>
+
+  <h3>The day book</h3>
+  <p><span class="where">Reports</span> → <span class="where">Day Book / Cash</span>.
+  Everything in and out for a day, in order, with who recorded it. This is the page
+  a proprietor asks for.</p>
+</section>
+
+<!-- ==================================================================== -->
+<section class="ch" id="ch10">
+  <div class="head">
+    <span class="num">Chapter 10</span>
+    <h2>Exam time</h2>
+    <p class="lede">Set up the papers, enter the marks, then release the results
+    deliberately.</p>
+  </div>
+
+  <ol class="steps">
+    <li><p><strong>The term.</strong> <span class="where">Exams</span> →
+      <span class="where">Terms</span>. Add "First Term" or "Annual".</p></li>
+    <li><p><strong>The papers.</strong> For each class, add each subject with its
+      total marks, its pass marks, and the practical total if it has one.</p></li>
+    <li><p><strong>The marks.</strong> Each teacher opens their own class and subject
+      and types the marks. Absent is a tick, not a zero.</p></li>
+    <li><p><strong>Generate the cards.</strong> The software works out totals,
+      percentage, grade, position and pass or fail.</p></li>
+    <li><p><strong>Check them.</strong> Read a few before anybody else sees them.</p></li>
+    <li><p><strong>Release.</strong> Only now do parents see anything.</p></li>
+  </ol>
+
+  <div class="note care">
+    <span class="lbl">Generating is not releasing</span>
+    <p>You can generate cards as often as you like — to check them, or after a
+    correction. Parents see <strong>nothing</strong> until you press release. That
+    is deliberate: a mark a parent saw and then saw change turns every correction
+    into an accusation.</p>
+  </div>
+
+  <h3>Marks that are not final</h3>
+  <p>A card generated while some papers are unmarked is <strong>provisional</strong>,
+  and says so on its face and in the portal. Its percentage covers only the papers
+  that have been marked.</p>
+
+  <figure class="shot phone">
+    <div class="frame"><img src="{{IMG:portal-results}}" alt="The parent portal results tab: a Not passed badge, a warning that one paper is still being marked, marks 383 of 500, 76.6 percent, position 6, the pass mark line, and a subject list where Physics shows written and practical separately, Islamiat is below the pass mark and Computer is not marked"></div>
+    <figcaption>What the parent sees. Read it with them:
+    <b>Not passed</b> because Islamiat is below the pass mark of 40, even though the
+    overall grade is A. <b>Not final</b> because Computer is still being marked.
+    Physics shows <b>66 / 100</b> with the written and practical marks underneath.</figcaption>
+  </figure>
+
+  <div class="note wrong">
+    <span class="lbl">Explain this before a parent phones</span>
+    <p>A child can have a good percentage and still read <strong>Not passed</strong>,
+    because one paper is below the pass mark. That is how most Pakistani schools
+    grade, and the card is doing what your own rules say. The failed subject is
+    marked in red in the list, so you can point at it.</p>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section class="ch" id="ch11">
+  <div class="head">
+    <span class="num">Chapter 11</span>
+    <h2>Certificates and leaving</h2>
+    <p class="lede">A school leaving certificate is a legal document. The software
+    numbers them so you can answer for every one.</p>
+  </div>
+
+  <ol class="steps">
+    <li><p>Open the child's profile. Press <span class="where">School Leaving Certificate</span>
+      or <span class="where">Character Certificate</span>.</p></li>
+    <li><p>Check the details and print it. It takes the next serial number in your
+      register.</p></li>
+    <li><p>Record the leaving with a date and a reason.</p></li>
+  </ol>
+
+  <p>Every certificate ever issued is listed under
+  <span class="where">Reports</span> → <span class="where">Certificates</span>: which
+  serial, to whom, on what date, whether it was a duplicate, and whether it was
+  released while fees were still owed.</p>
+
+  <div class="note">
+    <span class="lbl">A child who has left</span>
+    <p>They stop counting in your student numbers and stop being billed, but their
+    whole history stays — fees, attendance, results. You can still print their
+    certificate next year when they come back asking for it.</p>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section class="ch" id="ch12">
+  <div class="head">
+    <span class="num">Chapter 12</span>
+    <h2>Parents: the portal</h2>
+    <p class="lede">Give a family a login and they stop telephoning the office to
+    ask what they owe.</p>
+  </div>
+
+  <ol class="steps">
+    <li><p>Open any child of the family. Find <span class="where">Parent access</span>.</p></li>
+    <li><p>Type the father's or mother's email address and create the login.</p></li>
+    <li><p>Tell them the address of the software and that they can sign in.</p>
+      <p class="after">One login covers <strong>every</strong> child in that family.</p></li>
+  </ol>
+
+  <figure class="shot phone">
+    <div class="frame"><img src="{{IMG:portal-fees}}" alt="The parent portal fees tab on a phone: three children to switch between, this child owes Rs 4,500, family total Rs 14,100, a list of monthly challans, and the receipts already issued"></div>
+    <figcaption>The portal on a phone, which is how nearly every parent will see it.
+    Three children across the top. <b>This child owes</b> and <b>Family total</b> are
+    different questions, and both are answered.</figcaption>
+  </figure>
+
+  <p>A parent can see, for each of their children, what is owed and what has been
+  paid; whether the child came to school each day; and the result, once you have
+  released it. They can also print a statement of their own account.</p>
+
+  <figure class="shot">
+    <div class="frame"><img src="{{IMG:portal-statement}}" alt="A printed fee statement showing the school name, the student, three balance boxes, a table of challans with billed, paid and unpaid columns, the payments received from the family, and a box explaining that this is a statement and not a payment voucher"></div>
+    <figcaption>The statement a parent can print. It says plainly, in the box at the
+    bottom, that <b>a bank will not accept it</b> — it is a statement of the account,
+    not a challan. Without that line a parent queues at a bank counter and is turned
+    away.</figcaption>
+  </figure>
+
+  <div class="note care">
+    <span class="lbl">What a parent can never see</span>
+    <p>Another family's children. Any list of your staff. Any of your money records
+    beyond their own bill. This is not a setting you can get wrong — the database
+    refuses those reads for a parent account.</p>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section class="ch" id="ch13">
+  <div class="head">
+    <span class="num">Chapter 13</span>
+    <h2>Reports: answering questions</h2>
+    <p class="lede">Every report prints, and every one downloads as a spreadsheet
+    file you can open in Excel.</p>
+  </div>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>The question</th><th>The report</th></tr></thead>
+      <tbody>
+        <tr><td>How much did we collect this month?</td><td>Fee Collection</td></tr>
+        <tr><td>Who has not paid?</td><td>Defaulters</td></tr>
+        <tr><td>Which charge is not being paid?</td><td>Dues by Fee Head</td></tr>
+        <tr><td>What came in and went out today?</td><td>Day Book / Cash</td></tr>
+        <tr><td>What does the school own and owe?</td><td>Balance Sheet</td></tr>
+        <tr><td>How many children in each class?</td><td>Class Strength</td></tr>
+        <tr><td>Who was absent, all month?</td><td>Attendance Register</td></tr>
+        <tr><td>How many joined, and how many left?</td><td>Admissions · Children Who Left</td></tr>
+        <tr><td>Did anybody change a mark?</td><td>Mark Changes</td></tr>
+        <tr><td>Everything about one child</td><td>Student Ledger</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note">
+    <span class="lbl">Two figures that look wrong and are not</span>
+    <p><strong>Outstanding</strong> is what families owe. A family holding an
+    advance shows as owing less than the sum of their challans, because the advance
+    has not been used yet.</p>
+    <p><strong>Collected</strong> counts only money that has cleared. A pending
+    cheque is not in it.</p>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section class="ch" id="ch14">
+  <div class="head">
+    <span class="num">Chapter 14</span>
+    <h2>Your own bill for the software</h2>
+    <p class="lede">What you owe us, where to pay it, and how to prove you paid.
+    Owner and principal only.</p>
+  </div>
+
+  <p><span class="where">Settings</span> → <span class="where">Subscription</span>.
+  It shows your plan, the date it runs to, how many students you have against your
+  limit, and every invoice we have issued you.</p>
+
+  <ol class="steps">
+    <li><p>Open the invoice and print it. It carries our NTN, so your accountant can
+      claim it.</p></li>
+    <li><p>Pay to the bank account printed on it.</p></li>
+    <li><p>Come back and press <span class="where">I have paid</span>. Enter the
+      amount, the date and the transaction reference.</p></li>
+    <li><p>We confirm it, and your dates extend.</p></li>
+  </ol>
+
+  <div class="note care">
+    <span class="lbl">If the subscription lapses</span>
+    <p>You get a grace period first, with a warning in the software. After that the
+    software locks: you can still <strong>read and print everything</strong>, but
+    nothing new can be entered. Your records are never deleted for non-payment.</p>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section class="ch" id="ch15">
+  <div class="head">
+    <span class="num">Chapter 15</span>
+    <h2>When something goes wrong</h2>
+    <p class="lede">Read the message. It names the problem and usually the screen
+    that fixes it.</p>
+  </div>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>What you see</th><th>What it means, and what to do</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Challans come out <strong>Rs 0</strong></td>
+          <td>That class has no fee amounts. Settings → Fee Structure.</td>
+        </tr>
+        <tr>
+          <td>"You can only enter marks for a class and subject you teach"</td>
+          <td>You are not listed for it. Ask the office: Staff → Subject Teachers.</td>
+        </tr>
+        <tr>
+          <td>A parent signs in and sees "No children linked yet"</td>
+          <td>The login was made but not attached to a family. Redo Parent access
+          from the child's profile.</td>
+        </tr>
+        <tr>
+          <td>A father pays once but two children still show dues</td>
+          <td>They are not in one family. Open a profile → link the sibling →
+          <strong>Put in one family</strong>.</td>
+        </tr>
+        <tr>
+          <td>The printed page comes out blank</td>
+          <td>Print from the button on the document itself, not your browser's
+          menu.</td>
+        </tr>
+        <tr>
+          <td>"Your subscription has expired"</td>
+          <td>Settings → Subscription. Reading and printing still work.</td>
+        </tr>
+        <tr>
+          <td>A number looks wrong</td>
+          <td>Do not correct it by re-entering. Find the entry — Reports → Student
+          Ledger or Day Book — and reverse it, so both the mistake and the fix are
+          on record.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note good">
+    <span class="lbl">Nothing you do is unrecoverable</span>
+    <p>Payments are reversed, not deleted. Certificates are cancelled, not removed.
+    Marks keep what they were before a change. Every one of those leaves a record
+    with your name and the reason, which is exactly what you want when somebody
+    asks a question six months later.</p>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section class="ch" id="ch16">
+  <div class="head">
+    <span class="num">Chapter 16</span>
+    <h2>Who is allowed to do what</h2>
+    <p class="lede">Give each person the smallest role that lets them do their job.
+    You can change it any time.</p>
+  </div>
+
+  <div class="tablewrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Can they…</th>
+          <th>Owner</th><th>Principal</th><th>Clerk</th>
+          <th>Accountant</th><th>Teacher</th><th>Observer</th><th>Parent</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Admit a child</td>
+          <td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td>
+          <td class="no">No</td><td class="no">No</td><td class="no">No</td><td class="no">No</td></tr>
+        <tr><td>Take a fee</td>
+          <td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td>
+          <td class="yes">Yes</td><td class="no">No</td><td class="no">No</td><td class="no">No</td></tr>
+        <tr><td>Mark attendance</td>
+          <td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td>
+          <td class="no">No</td><td class="yes">Own class</td><td class="no">No</td><td class="no">No</td></tr>
+        <tr><td>Enter marks</td>
+          <td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td>
+          <td class="no">No</td><td class="yes">Own subjects</td><td class="no">No</td><td class="no">No</td></tr>
+        <tr><td>Release results</td>
+          <td class="yes">Yes</td><td class="yes">Yes</td><td class="no">No</td>
+          <td class="no">No</td><td class="no">No</td><td class="no">No</td><td class="no">No</td></tr>
+        <tr><td>Change fee amounts</td>
+          <td class="yes">Yes</td><td class="yes">Yes</td><td class="no">No</td>
+          <td class="no">No</td><td class="no">No</td><td class="no">No</td><td class="no">No</td></tr>
+        <tr><td>See the money reports</td>
+          <td class="yes">Yes</td><td class="yes">Yes</td><td class="no">No</td>
+          <td class="yes">Yes</td><td class="no">No</td><td class="yes">Yes</td><td class="no">No</td></tr>
+        <tr><td>Add or remove a login</td>
+          <td class="yes">Yes</td><td class="yes">Yes</td><td class="no">No</td>
+          <td class="no">No</td><td class="no">No</td><td class="no">No</td><td class="no">No</td></tr>
+        <tr><td>See their own children only</td>
+          <td class="no">—</td><td class="no">—</td><td class="no">—</td>
+          <td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="yes">Yes</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note">
+    <span class="lbl">The observer role</span>
+    <p>An <strong>observer</strong> can read everything and change nothing. Use it
+    for an auditor, a board member, or a new member of staff still learning. They
+    cannot break anything, and the software will not pretend otherwise by showing
+    them empty screens.</p>
+  </div>
+</section>
+
+<footer class="end">
+  <p>This handbook shows real screens from the software, generated from the software
+  itself — not drawings. If a screen in front of you looks different from a picture
+  here, you have a newer version, and the software is right.</p>
+</footer>
+
+</div>

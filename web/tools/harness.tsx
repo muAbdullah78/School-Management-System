@@ -128,7 +128,7 @@ export function renderPageToHtml(
 }
 
 /** The built stylesheet, so the harness output looks like the real thing. */
-export function builtCss(): string {
+export function builtCss(outPath = '../scratch/x.html'): string {
   const css = readdirSync('dist/assets').find((f) => f.endsWith('.css'))
   if (!css) {
     throw new Error(
@@ -137,7 +137,17 @@ export function builtCss(): string {
       'against different CSS than the app ships is not checked at all.',
     )
   }
-  return `../web/dist/assets/${css}`
+  // RELATIVE TO THE OUTPUT FILE, computed rather than hardcoded.
+  //
+  // The old version always returned '../web/dist/...', which is right for
+  // scratch/foo.html and silently wrong for scratch/guide/foo.html — it resolves
+  // to scratch/web/dist and the page renders with NO CSS AT ALL. It fails
+  // exactly like a working page: giant unstyled SVG icons and serif text, no
+  // error anywhere. Found by looking at a screenshot, not by reading this.
+  //   scratch/x.html        -> 2 parts, 1 directory deep -> ../web/dist
+  //   scratch/guide/x.html  -> 3 parts, 2 directories     -> ../../web/dist
+  const dirs = outPath.replace(/^\.\.\//, '').split('/').length - 1
+  return `${'../'.repeat(dirs)}web/dist/assets/${css}`
 }
 
 /**
@@ -179,7 +189,7 @@ export function writePage(
   writeFileSync(
     outPath,
     `<!doctype html><html><head><meta charset="utf-8">
-     <link rel="stylesheet" href="${builtCss()}">
+     <link rel="stylesheet" href="${builtCss(outPath)}">
      </head><body style="${opts.bodyStyle ?? 'background:#fff'}">${body}</body></html>`,
   )
 }
