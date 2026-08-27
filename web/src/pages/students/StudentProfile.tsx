@@ -7,7 +7,7 @@ import {
   linkStudents, searchStudentsForLink,
   listFamilyParents, createParentLogin, unlinkParent, getChallan, type Challan,
   getStudentMonthlyFee, getEnrollmentDiscounts, addDiscount, setDiscountStatus,
-  recordPayment, billStudentMonth, deferInvoice, undoDefer, addAdjustment,
+  recordPayment, billStudentMonth, deferInvoice, undoDefer, addAdjustment, voidInvoice,
   getStudentMonthTests, getStudentMonthAttendance,
   type StudentProfile as Student, type EnrollmentInfo, type InvoiceBalance, type MonthTestRow,
 } from '@/lib/db'
@@ -844,6 +844,8 @@ function FeesTab({
   const [showDiscount, setShowDiscount] = useState(false)
   const [showActivity, setShowActivity] = useState(false)
   const [defer, setDefer] = useState<null | { invoiceId?: string; billMonthISO?: string; label: string }>(null)
+  const [cancelCharge, setCancelCharge] =
+    useState<null | { invoiceId: string; label: string; amount: number }>(null)
 
   function refresh() {
     qc.invalidateQueries({ queryKey: ['balance', studentId] })
@@ -967,6 +969,15 @@ function FeesTab({
               onUndoDefer={r.invoice ? () => { undoDefer(r.invoice!.invoice_id).then(refresh) } : undefined}
               canCollect={canCollect}
               onPrint={r.invoice ? () => { void printOne(r.invoice!.invoice_id) } : undefined}
+              /* Cancelling is owner/principal only, and only while NOTHING has
+                 been paid against the challan. The database refuses a paid one
+                 and says to reverse the payment first, but offering a button
+                 that always fails is not a boundary, it is a trap. */
+              onCancel={canApprove && r.invoice && r.due === r.charge && r.charge > 0
+                ? () => setCancelCharge({
+                    invoiceId: r.invoice!.invoice_id, label: r.label, amount: r.charge,
+                  })
+                : undefined}
             />
           ))}
         </div>
@@ -1033,19 +1044,28 @@ function FeesTab({
           invoiceId={defer.invoiceId} billMonthISO={defer.billMonthISO}
           onClose={() => setDefer(null)} onDone={() => { setDefer(null); refresh() }} />
       )}
+      {cancelCharge && (
+        <CancelChargeModal label={cancelCharge.label} invoiceId={cancelCharge.invoiceId}
+          amount={cancelCharge.amount}
+          onClose={() => setCancelCharge(null)}
+          onDone={() => { setCancelCharge(null); refresh() }} />
+      )}
       {receipt && <Receipt data={receipt} onClose={() => setReceipt(null)} />}
     </div>
   )
 }
 
 function MonthLine({
-  row, enrollment, onPay, onDelay, onUndoDefer, onPrint, canCollect = true,
+  row, enrollment, onPay, onDelay, onUndoDefer, onPrint, onCancel, canCollect = true,
 }: {
   row: MonthRow; enrollment: EnrollmentInfo
   onPay: () => void; onDelay: () => void; onUndoDefer?: () => void
   /** Present only for a month that has actually been billed — there is no
    *  challan to reprint for a month the school has not issued one for. */
   onPrint?: () => void
+  /** Present only for an owner or principal, and only while nothing has been
+   *  paid against this challan. */
+  onCancel?: () => void
   /** False for an observer. Printing a challan stays: it reads a frozen row
    *  and writes nothing, and a trustee checking what a parent was billed is
    *  exactly what the role is for. */
@@ -1084,6 +1104,16 @@ function MonthLine({
             the payment against it. */}
         {onPrint && (
           <button onClick={onPrint} className="rounded border border-slate-300 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50">Print challan</button>
+        )}
+        {/* Last, and the only one in red. "Delay" and "Cancel" sit two buttons
+            apart and mean opposite things — one keeps the debt, the other says
+            it never existed — so the destructive one is the one that looks
+            destructive and asks for a reason before it does anything. */}
+        {onCancel && (
+          <button onClick={onCancel}
+            className="rounded border border-red-200 px-2.5 py-1 text-xs text-red-700 hover:bg-red-50">
+            Cancel charge
+          </button>
         )}
       </div>
     </div>
@@ -1318,6 +1348,65 @@ function DeferModal({
           {m.isPending ? 'Saving…' : 'Mark as delayed'}
         </button>
         <button onClick={onClose} className="rounded border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">Cancel</button>
+      </div>
+    </Modal>
+  )
+}
+
+/**
+ * Cancel a charge (0087).
+ *
+ * DELAY AND CANCEL ARE DIFFERENT THINGS and the wording works hard to keep them
+ * apart, because a clerk reaching for the wrong one has either left a debt
+ * uncollected or chased a family for money they never owed. Delay says "you
+ * still owe this, later". Cancel says "you never owed it".
+ *
+ * The reason box is not optional and the database refuses anything under four
+ * characters. It is also the only place the amount appears again after the
+ * cancellation, so the confirmation repeats it back.
+ */
+function CancelChargeModal({
+  label, invoiceId, amount, onClose, onDone,
+}: {
+  label: string; invoiceId: string; amount: number
+  onClose: () => void; onDone: () => void
+}) {
+  const [reason, setReason] = useState('')
+  const m = useMutation({
+    mutationFn: () => voidInvoice(invoiceId, reason.trim()),
+    onSuccess: onDone,
+  })
+  const tooShort = reason.trim().length < 4
+  return (
+    <Modal title={`Cancel the ${label} charge`} onClose={onClose}>
+      <div className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+        <p className="font-medium">This says the family never owed {fmtPKR(amount)}.</p>
+        <p className="mt-1">
+          Use it for a challan raised by mistake — the wrong month, the wrong class, a
+          child who had already left. If the family <em>does</em> owe it and simply
+          cannot pay yet, close this and use <strong>Delay</strong> instead.
+        </p>
+      </div>
+      <p className="mt-3 text-sm text-slate-600">
+        The challan stays on the record, stops counting towards anything, and will no
+        longer print. It appears in Reports → Cancelled charges with your name and this
+        reason.
+      </p>
+      <label className="mt-3 block">
+        <span className="text-sm text-slate-600">Why is it being cancelled?</span>
+        <input value={reason} onChange={(e) => setReason(e.target.value)} className={FIELD}
+          placeholder="e.g. generated for Class 5 by mistake" />
+      </label>
+      {tooShort && reason.length > 0 && (
+        <p className="mt-1 text-xs text-slate-500">A few words at least — somebody reads this months later.</p>
+      )}
+      {m.isError && <p className="mt-2 text-sm text-red-600">{(m.error as Error).message}</p>}
+      <div className="mt-4 flex gap-2">
+        <button onClick={() => m.mutate()} disabled={tooShort || m.isPending}
+          className="flex-1 rounded bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60">
+          {m.isPending ? 'Cancelling…' : `Cancel ${fmtPKR(amount)}`}
+        </button>
+        <button onClick={onClose} className="rounded border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">Keep it</button>
       </div>
     </Modal>
   )

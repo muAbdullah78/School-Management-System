@@ -548,7 +548,63 @@ with sig(migration, object, present) as (values
                       and prosrc like '%fn_may_mark_subject%')
          and exists (select 1 from pg_proc where proname = 'fn_enter_assessment_marks'
                       and pronamespace = 'public'::regnamespace
-                      and prosrc like '%fn_may_mark_subject%')))
+                      and prosrc like '%fn_may_mark_subject%'))),
+  -- 0086. A clerk could rewrite the books over REST, bypassing every audited
+  -- function. The signature is a PRIVILEGE, not an object: 0086 creates nothing,
+  -- it takes something away, and the only evidence it ran is that the taking
+  -- away is still in force. Two of the fourteen tables are enough to detect it —
+  -- payment_allocations, where deleting a row made a paid challan unpaid again,
+  -- and result_cards, where an UPDATE rewrote a published card.
+  ('0086_write_boundary',        'the books are not writable from a session',
+     (select not has_table_privilege('authenticated', 'public.payment_allocations', 'delete')
+         and not has_table_privilege('authenticated', 'public.payment_allocations', 'insert')
+         and not has_table_privilege('authenticated', 'public.result_cards', 'update')
+         and not has_table_privilege('authenticated', 'public.invoices', 'update')
+         and not has_column_privilege('authenticated', 'public.students', 'status', 'update')
+         -- And the other half: the profile editor must still be able to save,
+         -- so a database where the revoke went too far is NOT reported as
+         -- healthy.
+         and has_column_privilege('authenticated', 'public.students', 'full_name', 'update'))),
+  -- 0087. A challan raised by mistake could never be cancelled. The signature is
+  -- fn_challan REFUSING a cancelled one, not fn_void_invoice existing: a writer
+  -- without that refusal leaves the bank-payable slip printable for a charge the
+  -- school has withdrawn, which is the loophole reopened from the other end.
+  ('0087_cancel_a_charge',       'a mis-raised challan can be cancelled, and then does not print',
+     (select exists (select 1 from pg_proc where proname = 'fn_void_invoice'
+                      and pronamespace = 'public'::regnamespace)
+         and exists (select 1 from pg_proc where proname = 'fn_voided_invoices'
+                      and pronamespace = 'public'::regnamespace)
+         and exists (select 1 from information_schema.columns
+                      where table_schema = 'public' and table_name = 'invoices'
+                        and column_name = 'void_reason')
+         and exists (select 1 from pg_proc where proname = 'fn_challan'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%status = ''void''%'))),
+  -- 0088. Two WhatsApp templates a school could switch on that nothing sent.
+  -- The signature is the two HOOKS, because the queue functions existing on
+  -- their own would leave both messages exactly as decorative as they were.
+  ('0088_wire_the_dead_templates', 'absence and result messages actually get queued',
+     (select exists (select 1 from pg_indexes where schemaname = 'public'
+                      and indexname = 'uq_outbox_ref')
+         and exists (select 1 from pg_proc where proname = 'fn_finalize_attendance'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%fn_queue_absent_today%')
+         and exists (select 1 from pg_proc where proname = 'fn_publish_results'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%fn_queue_result_published%'))),
+  -- 0089. Settings offered a GPA scale that nothing implemented. The signature
+  -- is the AVERAGING inside fn_generate_result_cards as well as fn_grade_for
+  -- reading the setting: with only the first, every card's overall figure would
+  -- be the band of the aggregate wearing a GPA's clothes.
+  ('0089_gpa_scale',             'the GPA scale a school can choose actually works',
+     (select exists (select 1 from pg_proc where proname = 'fn_grade_for'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%gpa10%')
+         and exists (select 1 from pg_proc where proname = 'fn_generate_result_cards'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%jsonb_set(v_frozen, ''{grade}''%')
+         and exists (select 1 from pg_constraint
+                      where conname = 'school_settings_grade_scale_known')))
 )
 select migration,
        object                                   as looked_for,

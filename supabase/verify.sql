@@ -941,6 +941,108 @@ select 'only the right teacher can mark a paper (0085)',
          else 'PASS' end
 
 union all
+-- 0086. Every audited function in this project was optional.
+--
+-- Checked as a PRIVILEGE, because that is what 0086 changed and because a
+-- Supabase project grants `all on tables` to `authenticated` and `anon` by
+-- default — so this row is the only thing standing between a future table and
+-- the same hole. Reads the same fourteen tables the migration names.
+select 'the books are not writable from a session (0086)',
+       case
+         when (select count(*)
+                 from unnest(array[
+                        'invoices', 'invoice_lines', 'payments', 'payment_allocations',
+                        'adjustments', 'discounts', 'result_cards', 'certificates',
+                        'certificate_cancellations', 'deposit_refunds',
+                        'student_fee_items', 'fee_heads', 'fee_structures', 'families'
+                      ]) t,
+                      unnest(array['authenticated', 'anon']) r,
+                      unnest(array['insert', 'update', 'delete']) v
+                where to_regclass('public.' || t) is not null
+                  and has_table_privilege(r, 'public.' || t, v)) > 0
+           then 'FAIL — a signed-in clerk can rewrite the books directly over REST: '
+                || 'delete a paid challan''s allocation, invent one, rewrite a '
+                || 'published result card. Re-run bundle 7.'
+         when has_column_privilege('authenticated', 'public.students', 'status', 'update')
+           then 'FAIL — a clerk can set a pupil''s status directly, bypassing '
+                || 'fn_set_student_status and its audit row. Re-run bundle 7.'
+         when not has_column_privilege('authenticated', 'public.students', 'full_name', 'update')
+           then 'FAIL — the student profile editor cannot save bio-data. The 0086 '
+                || 'revoke went too far on this database.'
+         else 'PASS' end
+
+union all
+-- 0087. A challan raised by mistake could never be cancelled.
+--
+-- The signature is fn_challan refusing a cancelled challan, not fn_void_invoice
+-- existing. A writer without that refusal leaves the bank-payable slip
+-- printable for a charge the school has withdrawn.
+select 'a mis-raised challan can be cancelled, and then will not print (0087)',
+       case
+         when not exists (select 1 from pg_proc where proname = 'fn_void_invoice'
+                           and pronamespace = 'public'::regnamespace)
+           then 'FAIL — no way to cancel a wrongly generated challan; re-run bundle 7'
+         when not exists (select 1 from pg_proc where proname = 'fn_challan'
+                           and pronamespace = 'public'::regnamespace
+                           and prosrc like '%status = ''void''%')
+           then 'FAIL — a cancelled challan still prints its bank-payable slip; '
+                || 're-run bundle 7'
+         when not exists (select 1 from pg_proc where proname = 'fn_voided_invoices'
+                           and pronamespace = 'public'::regnamespace)
+           then 'FAIL — nothing shows what was cancelled and why; re-run bundle 7'
+         else 'PASS' end
+
+union all
+-- 0088. Two WhatsApp messages a school could switch on that nothing would send.
+--
+-- Written as a SWEEP over the template list rather than as two named checks, so
+-- a sixth template added later with no caller shows up here too.
+select 'every WhatsApp template a school can switch on has something that sends it (0088)',
+       case
+         when not exists (select 1 from pg_proc
+                           where proname = 'fn__default_message_templates'
+                             and pronamespace = 'public'::regnamespace)
+           then 'n/a — 0043 not applied yet'
+         when (select string_agg(d.template_key, ', ')
+                 from public.fn__default_message_templates() d
+                where not exists (
+                        select 1 from pg_proc p
+                        join pg_namespace n on n.oid = p.pronamespace
+                        where n.nspname = 'public'
+                          and p.proname <> 'fn__default_message_templates'
+                          and p.prosrc like '%' || d.template_key || '%')) is not null
+           then 'FAIL — these are seeded, editable and switchable and NOTHING queues '
+                || 'them: '
+                || (select string_agg(d.template_key, ', ')
+                      from public.fn__default_message_templates() d
+                     where not exists (
+                             select 1 from pg_proc p
+                             join pg_namespace n on n.oid = p.pronamespace
+                             where n.nspname = 'public'
+                               and p.proname <> 'fn__default_message_templates'
+                               and p.prosrc like '%' || d.template_key || '%'))
+                || '. Re-run bundle 7.'
+         else 'PASS' end
+
+union all
+-- 0089. Settings offered a GPA scale that nothing implemented.
+select 'the grade scale a school chooses is the one it gets (0089)',
+       case
+         when not exists (select 1 from pg_proc where proname = 'fn_grade_for'
+                           and pronamespace = 'public'::regnamespace
+                           and prosrc like '%gpa10%')
+           then 'FAIL — a school that picks "GPA (10-point)" in Settings still gets '
+                || 'A+/A/B letters on every card, with no warning. Re-run bundle 7.'
+         when not exists (select 1 from pg_proc where proname = 'fn_generate_result_cards'
+                           and pronamespace = 'public'::regnamespace
+                           and prosrc like '%jsonb_set(v_frozen, ''{grade}''%')
+           then 'FAIL — the card''s overall figure is the band of the aggregate '
+                || 'rather than the mean of the papers'' grade points, so two pupils '
+                || 'with the same total and different distributions get the same GPA. '
+                || 'Re-run bundle 7.'
+         else 'PASS' end
+
+union all
 -- Not pass/fail: publishing a release is something only you can do. But a school
 -- asking for the desktop installer is the commonest request there is, and until
 -- this is done the website tells them it is being prepared.

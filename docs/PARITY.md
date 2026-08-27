@@ -13,22 +13,42 @@ something routes to it. Three items were first written down as `missing` and
 turned out to be built and reachable — the tabulation sheet, the date sheet and
 admit cards.
 
-## The statuses were re-verified once, and here is exactly how far that went
+## Every row is now checked by the build, not by memory
 
 This file was written early and then went stale in the WORST direction: it listed
 as `missing` several things that had since been built, including the printable
 challan and bulk fee payment. A checklist that is wrong that way is worse than no
 checklist — it sends the next person to rebuild what exists.
 
-Twelve rows were re-checked by looking, not remembering, and corrected: the four
-counter rows, advance fee, fee increment, bulk payment, print vouchers, head-wise
-dues, print marksheets, every-list-is-a-table, and multi-campus. Each was
-confirmed by finding the component file and a route or caller for it.
+It went stale a second time in the other direction. An earlier pass re-checked
+twelve rows and said plainly that the rest had not been checked; the honest note
+stayed, and the unchecked rows stayed wrong. Eight of them were:
 
-**Every other row still carries its original status and has NOT been
-re-checked.** Assume any of them could now be wrong in either direction. Check
-before building on one — the check is usually one `grep` for the function name
-followed by one for a caller in `web/src`.
+| Row | Said | Actually |
+|---|---|---|
+| Absent SMS | said `missing` | the template shipped in 0034 and nothing queued it — decorative, now wired (0088) |
+| Exam Marks | said `missing` | same — `result_published` existed with no caller, now wired (0088) |
+| Send marksheets to parents | said `missing` | the same template |
+| Deleted Fees | said `missing` | now built (0087), and the deeper finding was that `void` had twenty readers and no writer |
+| Direct Payment | said `missing` | a payment beyond outstanding has always become family credit at the same counter |
+| Manage Accounts | said `partial`, "being built now" | shipped in 0037; the note outlived the work by nine migrations |
+| Student Information | said `partial`, "a list of 50 with no columns" | a paged, sortable, filtered table since 0041 — the note contradicted row 11 of section 11 |
+| Running session in the footer | said `missing` | now in the top bar, and it warns when the session has ENDED |
+
+So the answer is no longer a promise. **Every status row in sections 1-11 now
+carries machine-checked evidence**, listed in the block at the foot of this file
+and verified on every CI run by `scripts/check-parity.py`:
+
+* a `have`/`done` row must name a file that exists and a caller that reaches it;
+* a `missing` row must name what would exist if it were built, and that thing
+  must be ABSENT — which is the check that would have caught all eight rows
+  above;
+* a row with no evidence entry at all fails the build, so a row cannot be added
+  without one.
+
+Wording is part of the key, so rewording a row fails the guard until its evidence
+is revisited. That is deliberate: the cost of the guard is having to look again,
+and looking again is the thing that was skipped twice.
 
 > A note on why we are copying them at all. Not for feature-count parity. Their
 > workflows have been run by real schools for years, so the ORDER of steps, what
@@ -85,13 +105,13 @@ is listed.
 | Admit Bulk Student | `partial` | We have CSV import. Theirs is an on-screen grid for typing several siblings at once, with a class/section header applied to the whole batch. |
 | Admission Requests | `missing` | Online applications awaiting approve/reject. |
 | Admission Inquiries | `have` (0046) | Worklist-first: opens on who is overdue a call. Append-only follow-up log, one-action conversion through `fn_admit_student`, and a source breakdown. |
-| Admission Reports | `missing` | Admissions Today / This Month / This Year / Admission Forms / **Blank Admission Form**, all printable. |
+| Admission Reports | `partial` | Theirs: Admissions Today / This Month / This Year / Admission Forms / **Blank Admission Form**, all printable. Ours: Reports → Admissions answers the first three from one date range and prints, and `AdmissionSlip.tsx` prints the form for a child just admitted. The **blank** form — the sheet a school hands a walk-in parent to fill in by hand — does not exist, and it is the one they will ask for. |
 
 ## 2. Student Management
 
 | Their screen | Status | Notes |
 |---|---|---|
-| Student Information | `partial` | Ours opens as a list of 50 with no columns. Theirs is a filtered table (campus, class, section, type) with export and pagination. |
+| Student Information | `partial` | The note here said "a list of 50 with no columns" long after 0041 replaced it, and contradicted the cross-cutting row below that said the opposite. What is actually there: a paged table with class, section, roll and balance, sortable columns, search, CSV, print, an include-inactive toggle, and a true total. What is still missing against theirs: a **student-type** filter (free / discounted / hostel), and the campus filter, which needs multi-campus to exist at all. |
 | Student Attendance | `have` | Ours is genuinely good — mark-all, keyboard entry, offline, print. |
 | Student Promotion | `have` | Year Rollover. |
 | Student Transfer | `missing` | Between **campuses**. Needs multi-campus first. |
@@ -102,7 +122,7 @@ is listed.
 
 | Their screen | Status | Notes |
 |---|---|---|
-| Manage Accounts | `partial` | **Being built now.** The portal exists and was unreachable — nothing could link a parent to a family. |
+| Manage Accounts | `have` (0037) | On the pupil's profile: create a parent login, see who is already linked to the family, and unlink one. This row said "being built now" for nine migrations after it was built, which is its own lesson about notes written in the present tense. What is genuinely absent is a parent registering *themselves* and the school approving it — that is the next row, and it is still missing. |
 | Account Requests | `missing` | A parent self-registers, the school approves. Their approve/reject each fire a message. |
 | Parent Info Reports | `missing` | All Parents · Parent Credit Report · **Family Tree Report** · Defaulter Parents Report. Family Tree is the one to copy — one page per family showing every child and the combined balance. |
 
@@ -138,15 +158,15 @@ Their busiest screen, and the one ours gets most wrong. Theirs opens with:
 | Their screen | Status | Notes |
 |---|---|---|
 | Generate Monthly Fee | `have` | |
-| Generate Custom Fee | `missing` | A one-off charge to a chosen set of students. |
+| Generate Custom Fee | `partial` | One child at a time is there twice over: **Bill this month** on the pupil's Fees tab raises a challan on demand, and an **adjustment** with a reason puts an arbitrary amount on their ledger. What is missing is theirs — picking a SET of pupils and charging them all for the same thing (a trip, a uniform, an exam fee), which is a real request and a batch screen rather than a new concept. |
 | Fee Types / Fee Heads | `have` | |
 | Fee Structure | `have` | |
 | Family Fee Calculator | `have` | Migration 0036. |
 | Manage Advance Fee | `have` | Shown on the family sheet, the counter and the parent portal, and applied automatically to the next challan. There is deliberately no screen to apply it by hand — a clerk choosing when an advance is used is how an advance goes missing. |
-| Direct Payment | `missing` | Payment without an invoice — walk-in, non-student. |
+| Direct Payment | `have` | Not a separate screen, which is why this row read `missing` for so long. Money from a family with no challan to settle is taken at the same counter and held as **family credit** — it shows on the family sheet and the portal, and it is applied automatically to the next challan. Money that is not a pupil's at all (hall rent, a book sale, a van hire) is **Accounts → Other income**. Both were built; neither was on this list. |
 | Fee Installments | `missing` | Designed in docs, never built. |
 | Print Balance Sheet | `have` (0045) | As at a date, not a range. Prints. |
-| Deleted Fees | `missing` | An audit list of reversed/removed charges. |
+| **Deleted Fees** | `have` (0087) | Reports → **Cancelled charges**. Their name is the giveaway: a register whose entries can be deleted is not a register, so nothing here is deleted — a cancelled challan keeps its row, its lines and its voucher code, stops counting towards every figure, and will not print. Owner or principal only, reason required. The deeper finding is in 0087's header: `invoice_status` has had the value `void` since the first migration, TWENTY functions honoured it, and **nothing had ever written it** — so a challan raised for the wrong month could not be withdrawn at all. |
 | Generate Fee Increment | `have` | `settings/FeeIncrement.tsx`. Preview is mandatory: Apply is disabled until one has been run, and any edit throws it away. |
 | Generate Fee **Decrement** | `missing` | We only ever built increment. |
 | **Bulk Fee Payment** | `have` | `fees/BulkCollect.tsx`. A bad batch is all-or-nothing — asserted in `supabase/tests/bulk_fees.sql`. |
@@ -187,7 +207,7 @@ them into one, and that is probably wrong.
 | Their screen | Status | Notes |
 |---|---|---|
 | Test / Exam List | `have` | |
-| Assign Grades | `have` | Grade scale in settings. |
+| Assign Grades | `have` | Grade scale in Settings, and since 0089 **both** options actually work. Before that the dropdown offered "GPA (10-point)" and `fn_grade_for` never read the setting, so a school picked GPA, the form said "Saved.", and every card kept printing A+/A/B. The GPA is the mean of the papers' grade points, not the band of the aggregate — two pupils on the same total with different distributions get different figures, which is the only thing a GPA carries. |
 | Marks Entry | `have` | |
 | Teacher Remarks | `have` (0049) | Kept per exam term, not per printed card, so regenerating result cards cannot lose one. Class teacher writes it; a subject teacher on the same class cannot. |
 | Test Schedule / Exam Timetable | `have` | `DateSheet.tsx`, reached from Exam Setup. |
@@ -195,7 +215,7 @@ them into one, and that is probably wrong.
 | **Position Holders** | `have` (0049) | Top N per class, ties preserved as on the card (two firsts means no second), withheld results flagged before an announcement. |
 | **Print Admit Cards / Slips** | `have` | `AdmitCards.tsx`, reached from Exam Setup. Corrected as above. |
 | Print Marksheets | `have` | `exams/ResultsTab.tsx` prints them and holds the release gate: Publish and Withdraw are both there. Generating is not releasing — parents see nothing until somebody presses publish, because a mark a parent saw and then saw change turns every correction into an accusation. |
-| Send Marks / Marksheets to parents | `missing` | Becomes WhatsApp. |
+| Send Marks / Marksheets to parents | `have` (0088) | WhatsApp, queued by **publishing**, not by generating — one message per child per term, ever. A **withheld** result is never announced, because the portal shows those families "Result withheld until outstanding fees are cleared" and telling them to go and look would be false for exactly the families most likely to. |
 | Test / Exam Reports | `missing` | |
 
 ## 10. Notifications — their SMS, our WhatsApp
@@ -215,9 +235,9 @@ Their events, mapped to ours (excluded ones dropped):
 |---|---|
 | Admission SMS | `missing` |
 | Inquiry Add / Inquiry Admit | `have` (0046) — WhatsApp, with the same triggers |
-| Exam Marks / Final Exam Marks | `missing` |
-| First / Second / Third Fee Reminder | `have` — two templates, escalating; sent from Bulk collect (0040) |
-| Absent SMS | `missing` |
+| Exam Marks / Final Exam Marks | `have` (0088) — `result_published`, queued on publish |
+| First / Second / Third Fee Reminder | `partial` — **two** templates, escalating, sent from Bulk collect (0040). Theirs has three, and the note at the foot of this section says the third is the one to keep |
+| Absent SMS | `have` (0088) — `absent_today`, queued when the register is finalised |
 | Transfer Student | `missing` (needs campuses) |
 | Fee Payment / Direct Student Payment | `have` — receipt on payment |
 | Leave Approval / Leave Reject | `missing` (needs a leave flow) |
@@ -228,7 +248,19 @@ Their events, mapped to ours (excluded ones dropped):
 | Diary, Salary Issue | `excluded` |
 
 Three fee reminders rather than one is the detail to keep: escalating wording,
-the third warning that the child will not be allowed to attend.
+the third warning that the child will not be allowed to attend. We have two, and
+the row above says so rather than claiming the pattern is finished.
+
+**And a whole class of defect this section produced.** `absent_today` and
+`result_published` were seeded into every school from 0034, listed in Settings →
+Messages with their merge tags and an Enabled toggle, and queued by NOTHING —
+asked directly, the function that DEFINES them was the only function in the
+database that mentioned either. A school could write the wording it wanted,
+switch it on, and no parent would ever receive one; no error, no empty state,
+nothing to notice. 0043's own header states the principle it broke: "the tag list
+is a FACT ABOUT THE CALL SITE, not decoration". Both are wired now, and
+`verify.sql` sweeps the template list on every deployment so a sixth template
+with no caller cannot ship decorative.
 
 ## 11. Cross-cutting — the things on every screen
 
@@ -241,11 +273,11 @@ ours does not.
 | **Global search in the header** | `have` (0050) | Children, staff, families, challans by voucher, receipts by number, enquiries. Role-aware in SQL. "/" focuses it. |
 | Module search in the sidebar | `have` (0050) | Filters the nav this role can already see, so it cannot surface a module they lack. |
 | **Multi-campus** | `missing` | Campus selector in the header, campus column on every list, transfer between campuses. The unused `campuses` and `shifts` tables were DROPPED in migration 0083: empty in every install, read by no function, written by no screen, and they suggested a feature that did not exist. Still architecturally significant, and when it returns it needs designing properly — a campus that owns sections, staff, a fee structure and its own receipt series is not two nullable columns on `classes`. |
-| Print-first reports | `partial` | Every report screen of theirs is a grid of named reports each with a Print button. |
-| Dashboard tiles that link to a report | `partial` | Their tiles all say "View Report". |
-| Running session shown in the footer | `missing` | Small, but it is always visible and prevents entering marks into last year. |
+| Print-first reports | `partial` | Every report here prints — the Reports shell carries a Print button that applies to whichever report is open, and the eight table reports each declare a print region. The difference is presentation, not capability: theirs is a GRID of named reports, each its own card with its own button, which is easier to scan than eighteen tabs. |
+| Dashboard tiles that link to a report | `partial` | Every tile already navigates — attendance, students and both fee tiles are links. They go to the MODULE, though, where theirs go to a named report, so a proprietor who taps "collected this month" lands on Fees rather than on the collection report for this month. |
+| Running session shown in the footer | `have` | In the **top bar** rather than the footer, next to where-you-are, because "which year am I entering this into" is the same kind of fact as "which screen am I on". Worth more than their version: there is no session picker anywhere in this app — every screen works on whichever session is `is_current` — so the failure it prevents is real and silent. A school rolls over in April, nobody moves `is_current`, and attendance, marks and challans all go into last year while every screen looks normal. The chip turns **amber and says "ended"** when the running session's last day has passed, and says "No session set" when there is none. |
 | Student photo | `done` | Upload from file or phone camera (0057). No webcam-capture screen: on a phone or tablet the file picker already offers the camera, and on a desktop a clerk photographing 800 children uses a phone. The class photo sheet is the part their product does not have. |
-| Admin role management | `partial` | Theirs toggles web login and app login per admin. |
+| Admin role management | `have` | Settings → Users: invite by email with the role attached to the invitation, change a role, deactivate and reactivate a login. Theirs also toggles **app** login per admin, which cannot apply here — mobile apps are on the exclusion list, so there is no second login to toggle. `partial` implied a gap that has nowhere to exist. |
 | School's own public website | `excluded` for now | They generate a full public site per school — gallery, principal's message, facilities, colours. A separate product; our marketing site is not the same thing. |
 
 ---
@@ -366,9 +398,29 @@ a label on it.
 
 51 assertions in `supabase/tests/exam_computation.sql`. The design and the
 argument against each decision are in `docs/EXAM-COMPUTATION-DESIGN.md`,
-including what is deliberately not built (per-pupil electives, a configurable
-promotion rule, and GPA — `school_settings.grade_scale` still offers `gpa10` and
-`fn_grade_for` still always returns letters, which is its own piece of work).
+including what is deliberately not built: per-pupil electives, and a configurable
+promotion rule.
+
+**The GPA scale was on that list, and leaving it there was the mistake.** This
+paragraph used to end "`school_settings.grade_scale` still offers `gpa10` and
+`fn_grade_for` still always returns letters, which is its own piece of work" —
+an accurate note, kept for four migrations, while the Settings dropdown went on
+offering the option. A school could select "GPA (10-point)", the form saved,
+"Saved." appeared, and every result card, every per-subject grade, the tabulation
+sheet and the portal carried on printing A+/A/B with no warning anywhere.
+Recording a defect honestly is not the same as fixing it: a setting a school can
+choose must do what it says or must not be offered.
+
+Built in 0089. Grade points per paper on the same cut points as the letter scale,
+so switching is a translation rather than a re-grading; the card's overall figure
+is the **mean of the marked papers' points**, because banding the aggregate would
+give two pupils on 280/400 the same GPA whether their papers were 70/70/70/70 or
+95/95/45/45, and that difference is the whole of what a GPA carries; the scale is
+frozen onto the card, so a card issued under letters still prints "Grade A" after
+the school switches; and the setting now has a CHECK constraint, so a third
+dropdown option cannot be added without a branch to implement it. 16 assertions in
+`supabase/tests/grade_scale.sql`. Credit-weighted GPA is still not built and is
+named as not built — every paper counts as one credit.
 
 ### Staff QR check-in was decorative — done (0062), and nobody could admit a student — done (0063)
 
@@ -1097,3 +1149,135 @@ happened to have — both counters produce 0001 — so the "duplicate" it object
 was a real one in the importing school and the assertion tested nothing. The
 fixture now runs school B's counter ahead of school A's so that B holds a number A
 genuinely does not.
+
+---
+
+## Machine-checked evidence
+
+`scripts/check-parity.py` reads this block on every CI run and checks each line
+against the repository. It is not documentation — it is the reason the statuses
+above can be trusted, and it is why this file cannot rot in either direction
+again.
+
+**Why a `missing` row needs evidence too, and why that is the important half.**
+Every time this file has been wrong it has been wrong the same way: something
+was built and the row still said `missing`. Eight rows were wrong that way at
+once. A guard that only verified the `have` rows would have passed all eight. So
+a `missing` row must name the thing that would exist if it were built, and that
+thing must be **absent**.
+
+**And why `partial` needs both.** `partial` means half built. A `partial` row has
+to name the half that exists AND the half that does not, or the word is a place
+to hide.
+
+    file:PATH     that file exists
+    sql:SYMBOL    that symbol appears in supabase/migrations/
+    app:SYMBOL    that symbol appears in web/src/  (a route, a caller, a screen)
+
+The search is a fixed string, not a pattern, so a target may carry punctuation
+and several deliberately do: `app:result_published:` looks for the entry in the
+WhatsApp screen's label map rather than for the word anywhere, because the app
+never names a template key except there.
+    nofile:PATH   that file does NOT exist
+    nosql:SYMBOL  that symbol does NOT appear in supabase/migrations/
+    noapp:SYMBOL  that symbol does NOT appear in web/src/
+    why:TEXT      free text; checked for being non-empty, nothing more
+
+    have / done  need at least one of file/sql/app
+    missing      needs at least one of nofile/nosql/noapp
+    partial      needs at least one of each
+    excluded     needs a why:, and at least one negative
+
+The key is the row's first cell with `*` and backticks stripped. Rewording a row
+fails this guard until its evidence is revisited, which is the point: the cost of
+the guard is having to look again.
+
+```parity-evidence
+Admit Student | file:web/src/pages/admissions/AdmissionsPage.tsx | sql:fn_admit_student | app:admitStudent
+Admit Bulk Student | file:web/src/pages/settings/ImportStudents.tsx | sql:fn_import_students | noapp:BulkAdmitGrid | why:CSV import exists; their on-screen grid for typing several siblings at once does not
+Admission Requests | nosql:admission_requests | noapp:AdmissionRequests
+Admission Inquiries | file:web/src/pages/admissions/EnquiriesPage.tsx | sql:fn_enquiry_list | app:listEnquiries
+Admission Reports | file:web/src/pages/admissions/AdmissionSlip.tsx | sql:fn_report_admissions | noapp:BlankAdmissionForm | why:the blank form a school hands a walk-in parent is not built
+Student Information | file:web/src/pages/students/StudentsPage.tsx | sql:fn_student_list | noapp:studentTypeFilter | why:no student-type filter, and no campus filter because multi-campus does not exist
+Student Attendance | file:web/src/pages/attendance/AttendancePage.tsx | sql:fn_mark_attendance | app:markAttendance
+Student Promotion | file:web/src/pages/settings/Rollover.tsx | sql:fn_rollover | app:runRollover
+Student Transfer | nosql:fn_transfer_student | noapp:StudentTransfer
+Student Birthdays | file:web/src/pages/people/BirthdaysPage.tsx | sql:fn_birthdays | app:getBirthdays
+Student Info Reports | sql:fn_students_left | app:StrengthReport | noapp:GenderWiseReport | why:no gender-wise and no free-students report
+Manage Accounts | sql:fn_link_parent | app:createParentLogin | app:unlinkParent
+Account Requests | nosql:parent_account_requests | noapp:AccountRequests
+Parent Info Reports | nosql:fn_family_tree_report | noapp:FamilyTreeReport
+Staff Management | file:web/src/pages/staff/StaffPage.tsx | sql:fn_staff_roster | app:getStaffRoster
+Departments | nosql:staff_departments | noapp:DepartmentsTab
+Staff Birthdays | file:web/src/pages/people/BirthdaysPage.tsx | sql:fn_birthdays | app:getBirthdays
+Job Inquiries / CV Bank | nosql:job_applications | noapp:JobInquiries
+Family collection by father's CNIC | file:web/src/pages/fees/FamilyCollect.tsx | sql:fn_find_family | app:findFamily
+Two-mode search, side by side | file:web/src/pages/fees/FamilyCollect.tsx | sql:fn_find_family | app:findFamily
+Today's tiles on the counter screen | sql:fn_counter_summary | app:getCounterSummary
+Latest Payments always visible | sql:fn_recent_payments | app:listRecentPayments
+Scan a fee slip to pull up the payment | sql:fn_find_by_voucher | app:findByVoucher
+Generate Monthly Fee | file:web/src/pages/fees/GenerateChallans.tsx | sql:fn_generate_class_invoices | app:generateClassInvoices
+Generate Custom Fee | sql:fn_bill_student_month | sql:fn_add_adjustment | app:addAdjustment | noapp:CustomFeeBatch | why:one child at a time only; no batch charge to a chosen set
+Fee Types / Fee Heads | file:web/src/pages/settings/FeeHeads.tsx | sql:fn_upsert_fee_head | app:upsertFeeHead
+Fee Structure | file:web/src/pages/settings/FeeStructure.tsx | sql:fn_set_fee_amount | app:setFeeAmount
+Family Fee Calculator | sql:fn_family_sheet | app:getFamilySheet
+Manage Advance Fee | sql:family_credit | sql:fn_apply_family_credit | app:family_credit
+Direct Payment | sql:fn_record_family_payment | sql:fn_record_other_income | app:recordOtherIncome
+Fee Installments | nosql:fee_installments | noapp:Installments
+Print Balance Sheet | sql:fn_report_balance_sheet | app:BalanceSheetReport
+Deleted Fees | sql:fn_void_invoice | sql:fn_voided_invoices | app:VoidedChargesReport | app:voidInvoice
+Generate Fee Increment | file:web/src/pages/settings/FeeIncrement.tsx | sql:fn_fee_increment | app:feeIncrement
+Generate Fee Decrement | nosql:fn_fee_decrement | noapp:FeeDecrement
+Bulk Fee Payment | file:web/src/pages/fees/BulkCollect.tsx | sql:fn_record_bulk_payments | app:recordBulkPayments
+Discounted Students | file:web/src/pages/fees/Discounts.tsx | sql:fn_add_discount | noapp:DiscountedStudentsRoster | why:a discount register, not a roster filtered to discounted pupils
+Accounts Settlement | file:web/src/pages/till/TillPage.tsx | sql:fn_close_till | noapp:AccountsSettlement | why:the per-collector half only; no whole-school settlement screen
+Print Fee Vouchers | file:web/src/pages/fees/ChallanPrint.tsx | sql:fn_challan | app:getChallan
+Add / Manage Expense | file:web/src/pages/accounts/AccountsPage.tsx | sql:fn_record_expense | app:recordExpense
+Expense Categories | sql:expense_categories | app:expense_categories
+Class Wise Basic Reports | sql:fn_count_students | app:StrengthReport
+Fee Defaulters Report | file:web/src/pages/fees/Defaulters.tsx | sql:fn_defaulters | app:getDefaulters
+Head Wise Dues Summary | sql:fn_head_wise_dues | app:HeadWiseDuesReport
+Income & Expense Report | sql:fn_finance_summary | app:getFinanceSummary
+Debit & Credit Statement | sql:fn_report_ledger | app:LedgerReport
+List Of Unpaid Invoices | sql:fn_report_unpaid_invoices | app:UnpaidInvoicesReport
+Fee Discount Report | sql:fn_report_discounts | app:DiscountsReport
+Accounts Summary Report | sql:fn_finance_summary | noapp:AccountsSummaryReport | why:the statement's head totals cover it; no separate screen
+Detailed Income Report | sql:fn_report_ledger | app:LedgerReport
+Detailed Expense Report | sql:fn_report_ledger | app:LedgerReport
+Find A Balance Sheet | sql:fn_report_balance_sheet | app:BalanceSheetReport
+Admission Date Report | sql:fn_report_admissions | app:AdmissionsReport
+Test / Exam List | file:web/src/pages/exams/ExamSetup.tsx | sql:fn_upsert_exam_subject | app:upsertExamSubject
+Assign Grades | sql:fn_grade_for | sql:gpa10 | app:gradeLabel
+Marks Entry | file:web/src/pages/exams/MarksEntry.tsx | sql:fn_enter_marks | app:enterMarks
+Teacher Remarks | file:web/src/pages/exams/RemarksTab.tsx | sql:fn_set_exam_remark | app:setExamRemark
+Test Schedule / Exam Timetable | file:web/src/pages/exams/DateSheet.tsx | app:DateSheet
+Tabulation Sheet | file:web/src/pages/exams/TabulationSheet.tsx | app:TabulationSheet
+Position Holders | sql:fn_position_holders | app:getPositionHolders
+Print Admit Cards / Slips | file:web/src/pages/exams/AdmitCards.tsx | app:AdmitCards
+Print Marksheets | file:web/src/pages/exams/ResultCardPrint.tsx | sql:fn_publish_results | app:publishResults
+Send Marks / Marksheets to parents | sql:fn_queue_result_published | sql:result_published | app:result_published:
+Test / Exam Reports | nosql:fn_exam_report | noapp:ExamReports
+Admission SMS | nosql:admission_confirmed | noapp:admission_confirmed
+Inquiry Add / Inquiry Admit | sql:enquiry_received | sql:fn_queue_enquiry_message | app:listEnquiries
+Exam Marks / Final Exam Marks | sql:result_published | sql:fn_queue_result_published | app:result_published:
+First / Second / Third Fee Reminder | sql:fee_reminder_final | app:fee_reminder: | nosql:fee_reminder_third | why:two escalating templates, not their three
+Absent SMS | sql:absent_today | sql:fn_queue_absent_today | app:absent_today:
+Transfer Student | nosql:transfer_student | noapp:transfer_student
+Fee Payment / Direct Student Payment | sql:payment_received | sql:fn__queue_payment_receipt | app:payment_received:
+Leave Approval / Leave Reject | nosql:leave_approved | noapp:leave_approved
+Student / Staff Birthday Wish | sql:fn_birthdays | app:waLink
+Parent Account Approve / Reject | nosql:parent_account_approved | noapp:parent_account_approved
+Admission Approved / Rejected | nosql:admission_approved | noapp:admission_approved
+Staff Absent / Staff Late | nosql:staff_absent_notice | noapp:staff_absent_notice
+Diary, Salary Issue | nosql:student_diary | nosql:salary_slips | why:both on the exclusion list; no diary and no payroll anywhere in the product
+Every list is a real table | file:web/src/components/DataTable.tsx | app:DataTable | noapp:DataTableEverywhere | why:five screens use it; the rest are still hand-rolled tables
+Global search in the header | file:web/src/components/GlobalSearch.tsx | sql:fn_global_search | app:globalSearch
+Module search in the sidebar | file:web/src/components/ModuleSearch.tsx | app:ModuleSearch
+Multi-campus | noapp:campus | noapp:CampusSelector
+Print-first reports | file:web/src/pages/reports/ReportsPage.tsx | app:printId | noapp:ReportGrid | why:tabs with one print button, not a grid of named reports each with its own
+Dashboard tiles that link to a report | file:web/src/pages/Dashboard.tsx | app:LinkTile | noapp:ViewReportTile | why:every tile navigates, to the module rather than to a named report
+Running session shown in the footer | sql:academic_sessions | app:sessionEnded | app:No session set
+Student photo | file:web/src/components/PhotoUpload.tsx | sql:fn_set_student_photo | app:uploadStudentPhoto
+Admin role management | file:web/src/pages/settings/Users.tsx | sql:fn_invite_user | app:setProfileActive
+School's own public website | nosql:school_public_sites | noapp:SchoolSiteBuilder | why:they generate a full public site per school; a separate product, and our marketing site is not the same thing
+```

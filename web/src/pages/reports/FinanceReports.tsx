@@ -20,10 +20,10 @@ import { useQuery } from '@tanstack/react-query'
 import {
   getLedger, getUnpaidInvoices, getDiscountReport, getAdmissionReport,
   getBalanceSheet, getMarkCorrections, getAttendanceCorrections, getCurrentSession,
-  getStudentsLeft,
+  getStudentsLeft, getVoidedInvoices,
   type LedgerRow, type UnpaidInvoiceRow, type DiscountReportRow, type AdmissionReportRow,
   type BalanceSheet, type MarkCorrection, type AttendanceCorrection,
-  type StudentLeftRow,
+  type StudentLeftRow, type VoidedInvoice,
 } from '@/lib/db'
 import { DataTable, type Column } from '@/components/DataTable'
 import { fmtPKR, fmtDate } from '@/lib/format'
@@ -997,6 +997,108 @@ export function StudentsLeftReport() {
         Children who left before this feature existed have no date on record and are
         not listed: the upgrade deliberately did not invent one, because a made-up
         leaving date is worse than a missing one.
+      </p>
+    </div>
+  )
+}
+
+/* ======================================================== cancelled charges */
+
+/**
+ * The register of challans the school withdrew (0087).
+ *
+ * OurSchoolSoftware calls this "Deleted Fees" and the name is the giveaway: a
+ * register whose entries can be deleted is not a register. Nothing here is
+ * deleted — the challan keeps its row, its lines and its voucher code, and stops
+ * counting towards any figure.
+ *
+ * Defaults to the last ninety days rather than to everything. A school looking
+ * at this screen is nearly always asking about something recent, and "show me
+ * every cancellation since the school opened" reads as an accusation rather than
+ * as a report.
+ *
+ * A clerk may READ this and may not cancel anything. That is deliberate: seeing
+ * a control you cannot operate is how a boundary gets understood rather than
+ * worked around.
+ */
+export function VoidedChargesReport() {
+  const [from, setFrom] = useState(() => {
+    const d = new Date()
+    d.setDate(d.getDate() - 90)
+    return d.toISOString().slice(0, 10)
+  })
+  const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10))
+  const q = useQuery({
+    queryKey: ['voidedInvoices', from, to],
+    queryFn: () => getVoidedInvoices(from, to),
+    enabled: !!from && !!to,
+  })
+  const rows = q.data ?? []
+  const total = rows.reduce((s, r) => s + r.amount, 0)
+
+  const columns: Column<VoidedInvoice>[] = [
+    {
+      key: 'voided_at', header: 'Cancelled', sortable: true, value: (r) => r.voided_at,
+      render: (r) => <span className="whitespace-nowrap text-slate-600">{fmtDate(r.voided_at)}</span>,
+    },
+    {
+      key: 'student_name', header: 'Student', sortable: true, value: (r) => r.student_name,
+      render: (r) => (
+        <div>
+          <div className="text-slate-800">{r.student_name}</div>
+          <div className="text-xs text-slate-400">
+            {r.gr_no ?? '—'}
+            {r.class_name ? ` · ${r.class_name}${r.section_name ? `-${r.section_name}` : ''}` : ''}
+          </div>
+        </div>
+      ),
+    },
+    { key: 'period_label', header: 'Charge for', sortable: true, value: (r) => r.period_label },
+    {
+      key: 'amount', header: 'Amount', align: 'right', sortable: true, value: (r) => r.amount,
+      render: (r) => <span className="whitespace-nowrap text-slate-800">{fmtPKR(r.amount)}</span>,
+    },
+    { key: 'voided_by', header: 'Cancelled by', sortable: true, value: (r) => r.voided_by },
+    { key: 'reason', header: 'Reason', value: (r) => r.reason },
+    {
+      key: 'voucher_code', header: 'Voucher', secondary: true, value: (r) => r.voucher_code ?? '',
+      render: (r) => <span className="font-mono text-xs text-slate-400">{r.voucher_code ?? '—'}</span>,
+    },
+  ]
+
+  return (
+    <div>
+      <div className="mb-3 flex flex-wrap items-end gap-3">
+        <label className="block text-sm">
+          <span className="text-slate-600">From</span>
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={`mt-1 block ${FIELD}`} />
+        </label>
+        <label className="block text-sm">
+          <span className="text-slate-600">To</span>
+          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={`mt-1 block ${FIELD}`} />
+        </label>
+        <span className="ml-auto rounded bg-slate-100 px-2 py-1 text-sm text-slate-700">
+          {rows.length} cancelled · {fmtPKR(total)}
+        </span>
+      </div>
+
+      <DataTable
+        rows={rows}
+        columns={columns}
+        rowKey={(r) => r.invoice_id}
+        loading={q.isLoading}
+        error={q.isError ? (q.error as Error).message : null}
+        emptyTitle="Nothing cancelled in this period"
+        emptyMessage="A challan raised by mistake can be cancelled from the pupil's Fees tab, by the owner or principal."
+        exportName="cancelled-charges"
+        printId="report"
+      />
+
+      <p className="mt-3 text-xs text-slate-500">
+        Cancelling says the family never owed the money, so every entry carries a
+        reason and the name of whoever decided. A challan with a payment against it
+        cannot be cancelled at all &mdash; the payment is reversed first, which leaves
+        its own contra receipt, and only then can the charge be withdrawn.
       </p>
     </div>
   )

@@ -1,7 +1,7 @@
 import { useSchoolName } from '@/hooks/useSchoolName'
 import { useSchoolLogo } from '@/hooks/useSchoolLogo'
 import { fmtDate } from '@/lib/format'
-import type { ResultCardRow } from '@/lib/db'
+import { gradeLabel, type ResultCardRow } from '@/lib/db'
 
 /** A printable result card, rendered from the card's frozen snapshot so a
  *  reprint is byte-identical. Print with the browser (Ctrl+P); the print CSS
@@ -78,7 +78,10 @@ export function ResultCardPrint({
               <th className="py-1.5 pr-2 w-20 text-right">Obtained</th>
               {anyPractical && <th className="py-1.5 pr-2 w-20 text-right">Practical</th>}
               {anyPractical && <th className="py-1.5 pr-2 w-20 text-right">Total</th>}
-              <th className="py-1.5 pr-2 w-20 text-right">Grade</th>
+              {/* "Grade" or "GPA", from the scale FROZEN onto this card (0089)
+                  rather than from the school's current setting — a card issued
+                  under letters must still say Grade after the school switches. */}
+              <th className="py-1.5 pr-2 w-20 text-right">{gradeLabel(f)}</th>
               <th className="py-1.5 w-16 text-right">Result</th>
             </tr>
           </thead>
@@ -150,7 +153,7 @@ export function ResultCardPrint({
 
         <div className="mt-4 flex flex-wrap justify-between gap-2 text-sm text-slate-700">
           <span><span className="text-slate-500">Percentage:</span> {f.percentage == null ? '—' : `${f.percentage}%`}</span>
-          <span><span className="text-slate-500">Grade:</span> {f.grade ?? '—'}</span>
+          <span><span className="text-slate-500">{gradeLabel(f)}:</span> {f.grade ?? '—'}</span>
           <span><span className="text-slate-500">Position:</span> {f.position ?? '—'}</span>
           <span><span className="text-slate-500">Attendance:</span> {f.attendance_pct == null ? '—' : `${f.attendance_pct}%`}</span>
         </div>

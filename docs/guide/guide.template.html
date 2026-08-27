@@ -437,6 +437,21 @@ a { color: var(--brand); }
     yellow strip.</p>
   </div>
 
+  <div class="note">
+    <span class="lbl">Which year am I working in?</span>
+    <p>Look at the grey chip on the bar across the top of every screen, just to
+    the left of where it names the page you are on — it says
+    <span class="val">2026-2027</span> or whatever your current session is called.
+    Everything you type is recorded against that session, and there is no year
+    selector anywhere: the software always uses the one marked
+    <strong>current</strong>.</p>
+    <p>If that chip turns <strong>amber and says "ended"</strong>, the session's last
+    day has passed and you are still entering into it. That is the moment to go to
+    <span class="where">Settings</span> → <span class="where">Sessions</span> and
+    mark the new year current. A whole term of attendance and marks has been filed
+    under the wrong year in schools that missed this.</p>
+  </div>
+
   <figure class="shot">
     <div class="frame"><img src="{{IMG:dashboard}}" alt="The dashboard: a yellow warning that one class has students but no fee set, four coloured tiles for attendance, students, collected today and outstanding, then shortcut links and an at-a-glance list"></div>
     <figcaption>The dashboard. The yellow strip at the top is the warning above:
@@ -547,6 +562,25 @@ a { color: var(--brand); }
     That is protection for you as much as oversight of you: it proves what you
     entered and when.</p>
   </div>
+
+  <h3>Finalising, and telling the parents</h3>
+  <p>When you are sure, press <span class="where">Finalise</span>. Two things
+  happen. The day is locked, so nobody can change it quietly. And a WhatsApp
+  message is prepared <strong>for each absent child</strong> — waiting under
+  <span class="where">Messages</span>, naming that one child and that one date.</p>
+  <div class="note good">
+    <span class="lbl">Nothing is sent without you</span>
+    <p>The messages sit in a list. You press the WhatsApp button on each one and
+    send it yourself. Children marked <strong>leave</strong> or
+    <strong>half day</strong> get nothing: a parent who told you their child would
+    be away does not need telling back.</p>
+    <p>Finalise the same day twice and you do not get two messages. If you
+    corrected the register and finalised again, only the children you had not
+    already messaged are added.</p>
+  </div>
+  <p>If you do not want absence messages at all, switch them off:
+  <span class="where">Settings</span> → <span class="where">Messages</span> →
+  <em>Absent today</em>. The register still finalises.</p>
 </section>
 
 <!-- ==================================================================== -->
@@ -647,6 +681,40 @@ a { color: var(--brand); }
   every message under <span class="where">Settings</span> →
   <span class="where">Messages</span>, and switch any of them off.</p>
 
+  <h3>A challan you should not have raised</h3>
+  <p>It happens: the wrong month, the wrong class, or a child who had already
+  left. The fix is <strong>Cancel charge</strong>, and only the owner or principal
+  can do it.</p>
+  <ol class="steps">
+    <li><p>Open the child's profile → <span class="where">Fees</span>.</p></li>
+    <li><p>Find the month. Press <span class="where">Cancel charge</span>.</p></li>
+    <li><p>Type <strong>why</strong>. A few words at least — somebody reads this
+      months later.</p></li>
+  </ol>
+  <p>The challan stops counting: it leaves the family's balance, the defaulters
+  list, the unpaid-challan report and the parent portal, and it will no longer
+  print. It is not deleted. Every cancellation is listed under
+  <span class="where">Reports</span> → <span class="where">Cancelled charges</span>
+  with the amount, your name and your reason — and a clerk can read that list even
+  though they cannot cancel anything.</p>
+
+  <div class="note wrong">
+    <span class="lbl">Cancel and Delay are opposites</span>
+    <p><strong>Delay</strong> says <em>you still owe this, later</em> — the reminder
+    pauses, the money is still due. <strong>Cancel</strong> says <em>you never owed
+    it</em>. Reaching for the wrong one either leaves money uncollected or chases a
+    family for something they never owed.</p>
+  </div>
+
+  <div class="note care">
+    <span class="lbl">If the family has already paid</span>
+    <p>You cannot cancel a challan with money against it, and the software will
+    tell you the amount. Reverse the <em>payment</em> first — that writes a
+    matching reversal receipt, so the cash movement stays visible — and then
+    cancel the charge. Doing it the other way round would leave a receipt pointing
+    at a charge that no longer exists.</p>
+  </div>
+
   <h3>Raising fees for next year</h3>
   <p><span class="where">Settings</span> → <span class="where">Fee Increase</span>.
   Choose the session, a percentage or a flat amount, and the date it starts.
@@ -722,6 +790,30 @@ a { color: var(--brand); }
     correction. Parents see <strong>nothing</strong> until you press release. That
     is deliberate: a mark a parent saw and then saw change turns every correction
     into an accusation.</p>
+  </div>
+
+  <p>Releasing also prepares a WhatsApp message for each family, waiting under
+  <span class="where">Messages</span>, telling them the result can be viewed. One
+  message per child per term — release again after a correction and nobody is
+  messaged twice. A result you are <strong>withholding</strong> over unpaid fees is
+  never announced, because that family cannot see it yet.</p>
+
+  <h3>Letters or a GPA</h3>
+  <p><span class="where">Settings</span> → <span class="where">School profile</span>
+  → <span class="where">Grade scale</span> chooses between
+  <strong>Letter</strong> (A+, A, B, C, D, E, F) and <strong>GPA (10-point)</strong>.
+  Set it before you generate a term's cards.</p>
+  <p>On the GPA scale each paper gets a grade point out of 10, and the figure at the
+  top of the card is the <strong>average of those points</strong>, shown as
+  <em>GPA</em> rather than <em>Grade</em>. That is not the same as banding the
+  overall percentage, and the difference is the point: two children can both total
+  280 out of 400 and get 8.0 and 7.5, because one was steady across four papers and
+  the other was brilliant in two and weak in two.</p>
+  <div class="note good">
+    <span class="lbl">Cards already printed do not change</span>
+    <p>A card carries the scale it was made with. Switch to GPA in March and the
+    cards you printed in December still say Grade A when you reprint them, so a
+    reprint always matches the paper the family is holding.</p>
   </div>
 
   <h3>Marks that are not final</h3>

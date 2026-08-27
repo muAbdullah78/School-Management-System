@@ -439,7 +439,13 @@ export function PortalPage() {
                             {r.result === 'PASS' && <Badge tone="money">Passed</Badge>}
                             {r.result === 'FAIL' && <Badge tone="due">Not passed</Badge>}
                             {r.result === 'PENDING' && <Badge tone="info">Not marked yet</Badge>}
-                            <Badge tone="money">{r.grade ?? '—'}</Badge>
+                            {/* Labelled, because "8.5" on its own means nothing
+                                to a parent. Under letters the label is dropped:
+                                "A+" needs no explaining and "Grade A+" on a
+                                phone badge is two words of noise. */}
+                            <Badge tone="money">
+                              {r.grade_scale === 'gpa10' ? `GPA ${r.grade ?? '—'}` : (r.grade ?? '—')}
+                            </Badge>
                           </>
                         )}
                       </div>

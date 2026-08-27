@@ -27,6 +27,10 @@ const TABS = [
   // agreed to.
   { key: 'headwise', label: 'Dues by Fee Head' },
   { key: 'discounts', label: 'Discounts' },
+  // 0087. The competitor calls this "Deleted Fees". Nothing is deleted: a
+  // cancelled challan keeps its row and stops counting, and this is the register
+  // that says who withdrew it and why. A clerk may read it and may not cancel.
+  { key: 'voided', label: 'Cancelled Charges' },
   { key: 'admissions', label: 'Admissions' },
   // The counterpart of Admissions, and impossible before 0054 gave a leaving a
   // date. "How many left this term" is the number a proprietor watches hardest.
@@ -53,7 +57,7 @@ const TABS = [
 import {
   LedgerReport, UnpaidInvoicesReport, DiscountsReport, AdmissionsReport,
   BalanceSheetReport, MarkCorrectionsReport, AttendanceCorrectionsReport,
-  StudentsLeftReport,
+  StudentsLeftReport, VoidedChargesReport,
 } from './FinanceReports'
 import { ClassPhotoSheet } from './ClassPhotoSheet'
 
@@ -80,6 +84,7 @@ export function ReportsPage() {
         {tab === 'statement' && <LedgerReport />}
         {tab === 'unpaid' && <UnpaidInvoicesReport />}
         {tab === 'discounts' && <DiscountsReport />}
+        {tab === 'voided' && <VoidedChargesReport />}
         {tab === 'admissions' && <AdmissionsReport />}
         {tab === 'left' && <StudentsLeftReport />}
         {tab === 'balancesheet' && <BalanceSheetReport />}

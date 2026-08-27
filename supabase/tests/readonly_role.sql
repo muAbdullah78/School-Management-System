@@ -210,12 +210,19 @@ select pg_temp.ok(
     'row-level security'),
   '12. INSERT on students is refused with an error');
 
+-- Since 0086 this one is refused a step EARLIER than it used to be: no role but
+-- the table owner holds INSERT on public.payments at all, so the request never
+-- reaches the policy. The needle therefore matches the privilege error rather
+-- than 'row-level security', and the assertion says which — a test whose
+-- message describes the wrong mechanism is a test that will mislead the next
+-- person reading a failure.
 select pg_temp.ok(
   pg_temp.raises(
     'insert into public.payments(school_id, student_id, amount, method) '
     || 'select public.current_school_id(), id, 1, ''cash'' from public.students limit 1',
-    'row-level security'),
-  '13. INSERT on payments is refused — an observer cannot invent a receipt');
+    'permission denied'),
+  '13. INSERT on payments is refused by PRIVILEGE, before RLS is consulted — '
+  || 'no signed-in role can invent a receipt, observer or not');
 
 -- UPDATE and DELETE do NOT raise. They affect zero rows, silently, which is why
 -- these assertions count rows instead of catching an exception. This is the
@@ -225,13 +232,20 @@ select pg_temp.ok(
   '14. UPDATE on students affects ZERO rows — and raises nothing, which is why '
   || 'the app said "Saved." over an unchanged record until mustWrite() was added');
 
+-- -1 is pg_temp.affected's code for "it raised". Asserted as -1 rather than
+-- "<= 0" on purpose: 0086 revoked DELETE on students from every signed-in role,
+-- so this stopped being a silent no-op and became a loud refusal, and pinning
+-- the assertion to the loud form means a future migration that hands the
+-- privilege back fails this suite instead of passing it quietly.
 select pg_temp.ok(
-  pg_temp.affected('delete from public.students where true') = 0,
-  '15. DELETE on students affects zero rows, equally silently');
+  pg_temp.affected('delete from public.students where true') = -1,
+  '15. DELETE on students RAISES — since 0086 no signed-in role holds the '
+  || 'privilege, so a pupil cannot be removed at all, only marked as left');
 
 select pg_temp.ok(
-  pg_temp.affected('update public.payments set amount = 1 where true') = 0,
-  '16. a receipt cannot be altered');
+  pg_temp.affected('update public.payments set amount = 1 where true') = -1,
+  '16. a receipt cannot be altered — and the refusal is a privilege error, so '
+  || 'it holds for an owner exactly as it holds for an observer');
 
 select pg_temp.ok(
   pg_temp.affected('update public.staff set full_name = ''Renamed'' where true') = 0,

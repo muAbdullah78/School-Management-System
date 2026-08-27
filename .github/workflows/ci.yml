@@ -68,6 +68,29 @@ jobs:
         working-directory: .
         run: python3 supabase/check-print-ids.py
 
+      - name: docs/PARITY.md still tells the truth
+        # PARITY.md is the 87-row competitor-feature inventory, and it has gone
+        # stale twice — both times in the direction that costs the most.
+        #
+        # The second time is the instructive one. A pass re-checked twelve rows
+        # and wrote down, honestly, that the other seventy-five had not been
+        # checked. The honest note stayed for months; the unchecked rows stayed
+        # wrong. Eight of them were, including two WhatsApp templates seeded into
+        # every school and queued by nothing, a parent-account screen that had
+        # shipped nine migrations earlier, and a student roster the file called
+        # "a list of 50 with no columns" while another row of the SAME FILE said
+        # it was a paged sortable table.
+        #
+        # Nobody was careless. A status is a claim about the code, and a claim
+        # about the code in a Markdown file is checked by nothing.
+        #
+        # THE NEGATIVE CHECKS ARE WHY THIS WORKS. Every row now carries evidence,
+        # and a `missing` row must name what would EXIST if it were built, with
+        # that thing proved absent. A guard that only verified the `have` rows
+        # would have passed all eight stale rows.
+        working-directory: .
+        run: python3 scripts/check-parity.py
+
       - name: The website's buttons lead somewhere
         # Needs no database, so it lives in this job. Every call to action on the
         # marketing site used to be an anchor on the page the visitor was already
@@ -1426,6 +1449,57 @@ jobs:
         # halves matter — the grant is one ALTER away from existing and nobody
         # would think to re-check the policy when adding it.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/subject_teachers.sql
+
+      - name: A clerk cannot rewrite the books directly (0086, 0087)
+        # THE DEFECT THIS EXISTS FOR, proved on a real database as an ordinary
+        # signed-in admin_clerk with plain table writes and ZERO audit rows:
+        #
+        #   delete from payment_allocations  → a fully paid challan became unpaid
+        #                                      again while its receipt stayed
+        #   insert into payment_allocations  → an unpaid challan showed settled
+        #                                      with no money received
+        #   update result_cards              → a PUBLISHED card, 88% → 12%/F
+        #   update invoice_lines             → Rs 4,500 → Rs 1
+        #   delete from invoices             → no trace the charge existed
+        #
+        # Thirteen tables carried tenant-correct, role-correct `FOR ALL` write
+        # policies, which is exactly what made them read as finished. Every
+        # audited SECURITY DEFINER function in the project was therefore optional.
+        #
+        # 0086 revoked the PRIVILEGES rather than tightening the policies, because
+        # a policy cannot say "this table is not writable from a session" and a
+        # missing grant cannot be worked around by adding another policy. Section
+        # 1 of this suite is those seven writes, one assertion each.
+        #
+        # 0087 is the other half: the only honest way out of a mis-raised challan
+        # was one of the paths 0086 closes, so cancelling had to become a real,
+        # audited, owner-only action — and a cancelled challan must not print.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/write_boundary.sql
+
+      - name: The two WhatsApp messages nothing used to send (0088)
+        # absent_today and result_published were seeded into every school, listed
+        # in Settings -> Messages with their merge tags and an Enabled toggle, and
+        # queued by NOTHING — the function that DEFINES them was the only function
+        # in the database that mentioned either. A school would write the wording,
+        # switch it on, and no parent would ever receive one.
+        #
+        # The two assertions worth keeping are the ones the obvious wiring gets
+        # wrong: {children} is filled with the WHOLE FAMILY by fn_queue_message,
+        # so a family of four would be told "Ali, Fatima, Hassan and Zainab was
+        # marked absent today"; and {date} is today, so a register finalised on
+        # Monday for Friday would name the wrong day.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/queued_messages.sql
+
+      - name: The grade scale a school chooses is the one it gets (0089)
+        # Settings offered "GPA (10-point)" and fn_grade_for never read
+        # school_settings.grade_scale at all, so every card kept printing letters
+        # with no warning anywhere.
+        #
+        # Assertion 7 is the one this suite exists for: two pupils with the SAME
+        # 280/400 aggregate, distributed 70/70/70/70 and 95/95/45/45, must get
+        # 8.0 and 7.5. Banding the aggregate would return 8.0 for both and discard
+        # the only thing a GPA carries.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/grade_scale.sql
 
       - name: The website's prices match what the console charges
         # site/index.html reads `plans` at load, so the LIVE page is right. These
