@@ -43,7 +43,15 @@ jobs:
         #
         # It asserts only that they render. Whether the layout is RIGHT still
         # needs eyes, which is the whole point of the output.
-        run: npm run harness
+        #
+        # `harness:node20` and not `harness`: this runner is on Node 20, which has
+        # no native WebSocket, and supabase-js throws from createClient when it
+        # cannot find one. That made the harness pass on a Node 22 laptop and fail
+        # every one of its files here. The script deletes globalThis.WebSocket
+        # first, so the same failure reproduces on any Node — and once the runner
+        # moves to Node 22 this step keeps testing the case rather than quietly
+        # stopping.
+        run: npm run harness:node20
 
       - name: Every Print button puts something on the paper
         # index.css prints by hiding `body *` and revealing a NAMED LIST of ids.

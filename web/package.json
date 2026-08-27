@@ -9,7 +9,8 @@
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "harness": "vitest run --config vitest.harness.config.ts"
+    "harness": "vitest run --config vitest.harness.config.ts",
+    "harness:node20": "node -e \"require('fs').writeFileSync('/tmp/no-ws.mjs','delete globalThis.WebSocket')\" && NODE_OPTIONS=\"--import file:///tmp/no-ws.mjs\" npm run harness"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",

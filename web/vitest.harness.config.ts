@@ -18,6 +18,7 @@
  *   npm run harness -- balance-sheet      # just one
  */
 import { defineConfig, mergeConfig } from 'vitest/config'
+import { fileURLToPath } from 'node:url'
 import base from './vite.config'
 
 const merged = mergeConfig(base, defineConfig({}))
@@ -45,6 +46,41 @@ merged.test = {
     VITE_SUPABASE_URL: 'https://harness.invalid',
     VITE_SUPABASE_ANON_KEY: 'harness-placeholder-not-a-real-key',
   },
+}
+
+/**
+ * And with `isConfigured` true, `lib/supabase.ts` calls createClient() at import
+ * time — which builds a RealtimeClient, which looks for a native WebSocket and
+ * THROWS when there is none. Node 22 has one; Node 20 does not. So the two
+ * changes together passed locally and failed every harness file on the CI runner.
+ *
+ * The module is aliased away rather than shimmed. See tools/supabase-stub.ts for
+ * why that is the right layer to fix it at.
+ *
+ * Assigned after the merge for the same reason as `test` above: mergeConfig
+ * concatenates, and an alias appended to vite.config's list would not take
+ * precedence over the `@` path alias it has to override.
+ */
+merged.resolve = {
+  ...merged.resolve,
+  alias: [
+    // BOTH specifier forms, because a Vite alias matches the SPECIFIER and not
+    // the resolved file. The first version aliased only '@/lib/supabase' and did
+    // nothing at all: src/lib/db.ts, platform.ts, licence.ts and photos.ts all
+    // import './supabase', so the real module still loaded and the WebSocket
+    // throw came back. Proved by deleting globalThis.WebSocket to reproduce
+    // Node 20 — see the npm script `harness:node20`.
+    {
+      find: /^(@\/lib|\.)\/supabase$/,
+      replacement: fileURLToPath(new URL('./tools/supabase-stub.ts', import.meta.url)),
+    },
+    ...(Array.isArray(merged.resolve?.alias) ? merged.resolve.alias : []),
+    ...(merged.resolve?.alias && !Array.isArray(merged.resolve.alias)
+      ? Object.entries(merged.resolve.alias).map(([find, replacement]) => ({
+          find, replacement: replacement as string,
+        }))
+      : []),
+  ],
 }
 
 export default merged
