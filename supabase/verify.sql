@@ -245,6 +245,16 @@ select 'the observer role (0059)',
                      -- login is access management, not a school record.
                      and p.proname not in ('fn_may_manage_class',
                                            'fn_may_write_school_file',
+                                           -- 0085: fn_may_mark_subject is
+                                           -- fn_may_manage_class's subject-aware
+                                           -- sibling and the same category — it
+                                           -- authorises a WRITE. may_view is true
+                                           -- for an observer and during an
+                                           -- operator support visit, so gating it
+                                           -- on may_view would hand both of them
+                                           -- the ability to change a child's exam
+                                           -- result.
+                                           'fn_may_mark_subject',
                                            'fn_checkin_display',
                                            'fn_pending_invites',
                                            -- 0074: which support visits the
@@ -858,6 +868,30 @@ select 'a fee receipt names the child and the month (0084)',
                            and prosrc like '%fn__payment_applied%')
            then 'FAIL — single-student receipts cannot name the months they '
                 || 'cleared; re-run bundle 7'
+         else 'PASS' end
+
+union all
+-- 0085. Who may write a mark.
+--
+-- fn_enter_marks — the function that writes the marks printed on the result
+-- card, the certificate and the tabulation sheet — had NO class scope at all,
+-- while its sibling fn_enter_assessment_marks (weekly tests) has been
+-- class-scoped since 0048. So the guarded path was the one whose marks nobody
+-- keeps, and any teacher could rewrite any class's exam result.
+select 'only the right teacher can mark a paper (0085)',
+       case
+         when to_regclass('public.subject_teachers') is null
+           then 'FAIL — re-run bundle 7'
+         when not exists (select 1 from pg_proc where proname='fn_enter_marks'
+                           and pronamespace='public'::regnamespace
+                           and prosrc like '%fn_may_mark_subject%')
+           -- Silent: marks still save. They save for the wrong people.
+           then 'FAIL — ANY teacher can still enter ANY class''s exam marks; '
+                || 're-run bundle 7'
+         when not exists (select 1 from pg_proc where proname='fn_enter_assessment_marks'
+                           and pronamespace='public'::regnamespace
+                           and prosrc like '%fn_may_mark_subject%')
+           then 'FAIL — class-test marks are still not subject-scoped; re-run bundle 7'
          else 'PASS' end
 
 union all

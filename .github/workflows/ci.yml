@@ -1381,6 +1381,24 @@ jobs:
         # starts_at. The window is half-open because of that.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/publishing.sql
 
+      - name: Only the right teacher can mark a paper
+        # THE DEFECT: fn_enter_marks — the function that writes the marks printed
+        # on the result card, the certificate and the tabulation sheet — had NO
+        # class scope at all, while fn_enter_assessment_marks (weekly tests) has
+        # been class-scoped since 0048. So the guarded path was the one whose
+        # marks nobody keeps, and any class_teacher or subject_teacher in the
+        # school could enter or overwrite ANY class's exam result.
+        #
+        # Found by comparing the two functions, not by reading either.
+        #
+        # Assertion 8 is the one worth keeping: it proves `authenticated` has no
+        # INSERT grant on mark_entries at all (so the REST write path is closed by
+        # PRIVILEGE, and the policies have never actually fired), then GRANTS it
+        # inside the transaction and proves the policy would hold anyway. Both
+        # halves matter — the grant is one ALTER away from existing and nobody
+        # would think to re-check the policy when adding it.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/subject_teachers.sql
+
       - name: The website's prices match what the console charges
         # site/index.html reads `plans` at load, so the LIVE page is right. These
         # literals are the FALLBACK — what a visitor sees when Supabase is slow —

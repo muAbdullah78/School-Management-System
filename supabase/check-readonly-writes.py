@@ -155,6 +155,16 @@ def main() -> int:
            -- a read of the school's records, and an observer has no business in
            -- it. 0065 added it deliberately on has_role.
            and p.proname not in ('fn_may_manage_class', 'fn_may_write_school_file',
+                                 -- fn_may_mark_subject is fn_may_manage_class's
+                                 -- subject-aware sibling, added by 0085, and sits
+                                 -- in the same category: it does not read the
+                                 -- school's records, it answers "may this caller
+                                 -- WRITE a mark". may_view is true for an
+                                 -- observer and for an operator in a read-only
+                                 -- support session, so gating it on may_view
+                                 -- would hand both of them the ability to change
+                                 -- a child's exam result.
+                                 'fn_may_mark_subject',
                                  'fn_checkin_display', 'fn_pending_invites',
                                  -- fn_support_visits is the same category again:
                                  -- 0074 shows a school which support visits the

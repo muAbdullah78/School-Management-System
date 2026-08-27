@@ -4,6 +4,7 @@ import { Sessions } from './settings/Sessions'
 import { ClassesSections } from './settings/ClassesSections'
 import { FeeStructure } from './settings/FeeStructure'
 import { FeeHeads } from './settings/FeeHeads'
+import { FeeIncrement } from './settings/FeeIncrement'
 import { Users } from './settings/Users'
 import { Backup } from './settings/Backup'
 import { ImportData } from './settings/ImportData'
@@ -24,6 +25,10 @@ const SECTIONS = [
   // found the Fee Structure grid empty with no way forward.
   { key: 'feeheads', label: 'Fee Heads' },
   { key: 'fees', label: 'Fee Structure' },
+  // Right after the grid it operates on. fn_fee_increment shipped with a wrapper
+  // in db.ts and no caller, so the one bulk fee operation every school performs
+  // — "everything up 10% from April" — meant sixty hand edits in that grid.
+  { key: 'increase', label: 'Fee Increase' },
   { key: 'checkin', label: 'Staff Check-in' },
   { key: 'import', label: 'Import' },
   { key: 'rollover', label: 'Year Rollover' },
@@ -65,6 +70,7 @@ export function SettingsPage() {
         {section === 'classes' && <ClassesSections />}
         {section === 'feeheads' && <FeeHeads />}
         {section === 'fees' && <FeeStructure onSetUpHeads={() => setSection('feeheads')} />}
+        {section === 'increase' && <FeeIncrement />}
         {section === 'checkin' && <StaffCheckin />}
         {section === 'import' && <ImportData />}
         {section === 'rollover' && <Rollover />}

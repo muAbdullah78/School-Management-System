@@ -533,7 +533,22 @@ with sig(migration, object, present) as (values
                       and prosrc like '%fn__payment_applied%')
          and exists (select 1 from pg_proc where proname = 'fn_record_payment'
                       and pronamespace = 'public'::regnamespace
-                      and prosrc like '%fn__payment_applied%')))
+                      and prosrc like '%fn__payment_applied%'))),
+  -- 0085. Any teacher could write any class's EXAM marks — the ones on the
+  -- result card. The signature is the GATE inside fn_enter_marks, not the table:
+  -- subject_teachers standing on its own is a register nothing consults, which
+  -- would leave the hole open while looking closed.
+  ('0085_subject_teachers',      'only the right teacher can mark a paper',
+     (select exists (select 1 from information_schema.tables
+                      where table_schema = 'public' and table_name = 'subject_teachers')
+         and exists (select 1 from pg_proc where proname = 'fn_may_mark_subject'
+                      and pronamespace = 'public'::regnamespace)
+         and exists (select 1 from pg_proc where proname = 'fn_enter_marks'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%fn_may_mark_subject%')
+         and exists (select 1 from pg_proc where proname = 'fn_enter_assessment_marks'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%fn_may_mark_subject%')))
 )
 select migration,
        object                                   as looked_for,

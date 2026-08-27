@@ -2073,6 +2073,59 @@ export async function setClassTeacher(
   if (error) throw new Error(error.message)
 }
 
+/**
+ * Who teaches which subject, this session — 0085.
+ *
+ * The register exists because `subject_teacher` has been a role since 0001 and
+ * nothing recorded WHICH subjects, so the Physics teacher of Class 9 could enter
+ * Class 9's Islamiat marks. It also closed a bigger hole in the same place:
+ * fn_enter_marks, which writes the marks printed on the result card, had no class
+ * scope at all.
+ */
+export interface SubjectTeacherRow {
+  class_id: string
+  class_name: string
+  level_order: number
+  subject_id: string
+  subject_name: string
+  sort_order: number
+  /** Empty for a subject nobody teaches yet. Those rows are the WORK LIST, which
+   *  is why the function returns them rather than only the filled ones. */
+  teachers: {
+    assignment_id: string
+    staff_id: string
+    staff_name: string
+    section_id: string | null
+    section_name: string | null
+  }[]
+}
+
+export async function getSubjectTeachers(sessionId: string): Promise<SubjectTeacherRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_subject_teachers', { p_session_id: sessionId })
+  if (error) throw new Error(error.message)
+  return ((data as { rows?: SubjectTeacherRow[] })?.rows ?? [])
+}
+
+/**
+ * REPLACE the teachers of one class+subject. An empty array clears it.
+ *
+ * Replace rather than add, so the screen can remove a teacher — an add-only
+ * function would make the list one-way, and a school would be stuck with a
+ * teacher who left still holding the subject.
+ */
+export async function setSubjectTeachers(
+  sessionId: string, classId: string, sectionId: string | null,
+  subjectId: string, staffIds: string[],
+): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_set_subject_teachers', {
+    p_session_id: sessionId, p_class_id: classId, p_section_id: sectionId,
+    p_subject_id: subjectId, p_staff_ids: staffIds,
+  })
+  if (error) throw new Error(error.message)
+}
+
 export interface CheckinCode {
   id: string; code: string; label: string | null
   valid_from: string | null; valid_to: string | null; active: boolean
@@ -3028,12 +3081,58 @@ export interface FinanceSummary {
 }
 export interface ProfitSnapshot { today: FinanceSummary; month: FinanceSummary; year: FinanceSummary }
 
-export async function listExpenseCategories(): Promise<ExpenseCategory[]> {
+/**
+ * The expense categories.
+ *
+ * `includeInactive` matters more than it looks. The picker on the expense form
+ * must offer only live categories — otherwise a school keeps filing costs under
+ * a head it retired. But NAMING a past expense needs the retired ones too: with
+ * the active-only list, an expense recorded last year under a category since
+ * retired renders as "Uncategorised", which is a silent misreport of the
+ * school's own books. Same shape as the class-teacher <select> that showed
+ * "unassigned" for a teacher who had left.
+ */
+export async function listExpenseCategories(includeInactive = false): Promise<ExpenseCategory[]> {
   const sb = requireSupabase()
-  return unwrap(
-    await sb.from('expense_categories').select('id, name, sort_order, active')
-      .eq('active', true).order('sort_order'),
-  )
+  let q = sb.from('expense_categories').select('id, name, sort_order, active')
+  if (!includeInactive) q = q.eq('active', true)
+  return unwrap(await q.order('sort_order'))
+}
+
+/**
+ * Add, rename and retire — the three things a school needs and could not do.
+ *
+ * 0030 seeds eight categories and there has never been a way to change them, so
+ * a school whose real costs include generator diesel, van fuel or a security
+ * guard had to file all three under "Other" — which makes the by-category
+ * expense report answer nothing. The table has carried `active` and `sort_order`
+ * since 0030 and an ALL policy for owner/principal/accountant, so only the
+ * screen was missing.
+ *
+ * There is NO delete, deliberately. expenses.category_id references these rows;
+ * removing one would either fail on the foreign key or rewrite what a past
+ * voucher was filed under. Retiring hides it from the picker and leaves history
+ * intact — the same rule as a fee head that has been charged.
+ */
+export async function createExpenseCategory(name: string, sortOrder = 50): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.from('expense_categories')
+    .insert({ name: name.trim(), sort_order: sortOrder })
+  if (error) throw new Error(error.message)
+}
+
+export async function renameExpenseCategory(id: string, name: string): Promise<void> {
+  const sb = requireSupabase()
+  await mustWrite(
+    await sb.from('expense_categories').update({ name: name.trim() }).eq('id', id).select('id'),
+    'That category')
+}
+
+export async function setExpenseCategoryActive(id: string, active: boolean): Promise<void> {
+  const sb = requireSupabase()
+  await mustWrite(
+    await sb.from('expense_categories').update({ active }).eq('id', id).select('id'),
+    'That category')
 }
 
 export async function recordExpense(

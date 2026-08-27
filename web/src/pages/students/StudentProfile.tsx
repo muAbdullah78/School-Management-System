@@ -4,6 +4,7 @@ import {
   getStudent, getStudentEnrollments, getGuardians, updateStudent, setStudentStatus,
   getStudentBalance, getStudentInvoices, getStudentPayments, attendanceSummary,
   getSiblings, getStudentLinks, removeStudentLink, studentJoinFamily, getStudentFamilyId,
+  linkStudents, searchStudentsForLink,
   listFamilyParents, createParentLogin, unlinkParent, getChallan, type Challan,
   getStudentMonthlyFee, getEnrollmentDiscounts, addDiscount, setDiscountStatus,
   recordPayment, billStudentMonth, deferInvoice, undoDefer, addAdjustment,
@@ -12,7 +13,7 @@ import {
 } from '@/lib/db'
 import {
   GENDERS, STUDENT_STATUS_LABELS, PAYMENT_METHODS, PAYMENT_STATUS_LABELS,
-  ATTENDANCE_STATUSES, ATTENDANCE_SHORT, DISCOUNT_TYPES,
+  ATTENDANCE_STATUSES, ATTENDANCE_SHORT, DISCOUNT_TYPES, RELATIONS,
 } from '@/lib/constants'
 import { fmtPKR, fmtDate, waLink, todayISO } from '@/lib/format'
 import { useAuth } from '@/auth/AuthProvider'
@@ -507,6 +508,13 @@ function Overview({
           {join.isError && (
             <p className="mt-2 text-xs text-red-600">{(join.error as Error).message}</p>
           )}
+          {/* The card said "Add siblings/relatives during admission" and meant
+              it literally: fn_link_students had a wrapper in db.ts that nothing
+              called after the admission form, so a sibling admitted a year later
+              could never be linked to the child already here. The school could
+              UNLINK from this card and not link — which is the wrong half of the
+              pair to have shipped. */}
+          {canEdit && <AddSibling studentId={student.id} />}
         </div>
 
         <ParentAccess familyId={myFamily.data ?? null} canEdit={canEdit} />
@@ -526,6 +534,160 @@ function Overview({
  * the school is already standing when a father asks for access — looking at his
  * child. Access is granted to the FAMILY, so it covers every sibling at once.
  */
+/**
+ * Link a sibling or relative to this child, after admission.
+ *
+ * WHY THIS WAS MISSING AND WHY IT MATTERS. The admission form can record links,
+ * and this card could REMOVE one — so the only half of the pair that shipped was
+ * the destructive one. A second child admitted next year, or a link the clerk
+ * skipped in the rush of admission day, could never be added. And the links are
+ * not decoration: the family sheet, the sibling discount and the "possible
+ * siblings" list all read them.
+ *
+ * LINKING IS NOT THE SAME AS SHARING A BILL, and the note says so. A link records
+ * a relationship; joining a FAMILY is what makes one payment cover both children.
+ * Conflating them is how a school links two brothers, expects one challan, and
+ * gets two — so the button that does the other thing is right there on the same
+ * row, which is where it was already.
+ */
+function AddSibling({ studentId }: { studentId: string }) {
+  const qc = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+  const [relation, setRelation] = useState('')
+  const [picked, setPicked] = useState<{ id: string; label: string } | null>(null)
+
+  const hits = useQuery({
+    queryKey: ['linkSearch', q],
+    queryFn: () => searchStudentsForLink(q),
+    enabled: open && q.trim().length >= 2 && !picked,
+  })
+
+  const link = useMutation({
+    mutationFn: () => linkStudents(studentId, picked!.id, relation.trim()),
+    onSuccess: () => {
+      // All three: the link list, the inferred-sibling list it filters, and the
+      // family sheet a clerk may already have open at the counter.
+      void qc.invalidateQueries({ queryKey: ['studentLinks', studentId] })
+      void qc.invalidateQueries({ queryKey: ['siblings', studentId] })
+      void qc.invalidateQueries({ queryKey: ['familySheet'] })
+      setPicked(null); setQ(''); setRelation(''); setOpen(false)
+    },
+  })
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="mt-3 text-sm font-medium text-brand-700 hover:underline"
+      >
+        + Link a sibling or relative
+      </button>
+    )
+  }
+
+  return (
+    <div className="mt-3 rounded-lg border border-slate-200 p-3">
+      {picked ? (
+        <>
+          <div className="flex items-center justify-between gap-2">
+            <span className="min-w-0 truncate text-sm font-medium text-slate-800">
+              {picked.label}
+            </span>
+            <button
+              onClick={() => setPicked(null)}
+              className="shrink-0 text-xs text-slate-400 hover:text-slate-700"
+            >
+              change
+            </button>
+          </div>
+          <label className="mt-2 block">
+            <span className="text-xs text-slate-600">Relation (optional)</span>
+            <input
+              list="relations-link"
+              value={relation}
+              onChange={(e) => setRelation(e.target.value)}
+              placeholder="brother, sister, cousin…"
+              className={FIELD}
+            />
+          </label>
+          <datalist id="relations-link">
+            {RELATIONS.map((r) => <option key={r} value={r} />)}
+          </datalist>
+          {link.isError && (
+            <p className="mt-2 text-xs text-red-600">{(link.error as Error).message}</p>
+          )}
+          <div className="mt-2 flex gap-2">
+            <button
+              onClick={() => link.mutate()}
+              disabled={link.isPending}
+              className="rounded bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60"
+            >
+              {link.isPending ? 'Linking…' : 'Link'}
+            </button>
+            <button
+              onClick={() => { setOpen(false); setPicked(null); setQ('') }}
+              className="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-slate-500">
+            This records the relationship. To make ONE payment cover both children, use
+            "Put in one family" on the row it adds — a link on its own does not
+            merge the bills.
+          </p>
+        </>
+      ) : (
+        <>
+          <label className="block">
+            <span className="text-xs text-slate-600">Search by name, GR or roll number</span>
+            <input
+              autoFocus
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              className={FIELD}
+            />
+          </label>
+          <div className="mt-2 max-h-44 space-y-1 overflow-y-auto">
+            {q.trim().length < 2 && (
+              <p className="text-xs text-slate-400">Type at least two letters.</p>
+            )}
+            {hits.isLoading && <p className="text-xs text-slate-400">Searching…</p>}
+            {hits.data?.length === 0 && q.trim().length >= 2 && (
+              <p className="text-xs text-slate-400">No student found.</p>
+            )}
+            {(hits.data ?? [])
+              // Never offer this child. fn_link_students refuses it anyway, but
+              // an option that always errors is a bug the user has to discover.
+              .filter((h) => h.id !== studentId)
+              .map((h) => {
+                const label = [h.full_name, h.gr_no ? `GR ${h.gr_no}` : null,
+                               h.class_name, h.father_name ? `s/o ${h.father_name}` : null]
+                  .filter(Boolean).join(' · ')
+                return (
+                  <button
+                    key={h.id}
+                    onClick={() => setPicked({ id: h.id, label })}
+                    className="block w-full truncate rounded px-2 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-50"
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+          </div>
+          <button
+            onClick={() => { setOpen(false); setQ('') }}
+            className="mt-2 text-xs text-slate-500 hover:text-slate-700"
+          >
+            Cancel
+          </button>
+        </>
+      )}
+    </div>
+  )
+}
+
 function ParentAccess({ familyId, canEdit }: { familyId: string | null; canEdit: boolean }) {
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)

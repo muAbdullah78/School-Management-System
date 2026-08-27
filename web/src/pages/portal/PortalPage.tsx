@@ -12,6 +12,7 @@
  * passing another family's id gets refused by the database, not by this file.
  */
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { AnnouncementBanner } from '@/components/AnnouncementBanner'
 import { PortalStatement } from '@/components/PortalStatement'
@@ -131,13 +132,25 @@ export function PortalPage() {
             </p>
             <h1 className="mt-0.5 truncate text-lg font-semibold">{me.data?.full_name}</h1>
           </div>
-          <button
-            onClick={() => void signOut()}
-            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-medium transition hover:bg-white/20"
-          >
-            <IconLogout />
-            Sign out
-          </button>
+          {/* A parent had no way to change their own password. The office set
+              it when the account was created, and parents share addresses and
+              devices with relatives — so "the school knows my password" was
+              permanent. */}
+          <div className="flex shrink-0 items-center gap-2">
+            <Link
+              to="/password"
+              className="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-medium transition hover:bg-white/20"
+            >
+              Password
+            </Link>
+            <button
+              onClick={() => void signOut()}
+              className="flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-medium transition hover:bg-white/20"
+            >
+              <IconLogout />
+              Sign out
+            </button>
+          </div>
         </div>
       </header>
 

@@ -63,6 +63,11 @@ export function Login() {
             {busy ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
+        <p className="mt-3 text-center text-sm">
+          <Link to="/forgot" className="text-slate-500 hover:text-brand-700 hover:underline">
+            Forgotten your password?
+          </Link>
+        </p>
         <p className="mt-4 text-center text-sm text-slate-500">
           New school?{' '}
           <Link to="/signup" className="font-medium text-brand-700 hover:underline">

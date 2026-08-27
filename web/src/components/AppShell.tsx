@@ -104,13 +104,24 @@ export function AppShell() {
               </div>
             </div>
           </div>
-          <button
-            onClick={() => void signOut()}
-            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-medium text-brand-50 transition hover:bg-white/20"
-          >
-            <IconLogout />
-            Sign out
-          </button>
+          {/* A staff member could not change their own password anywhere in the
+              software. The only remedy was to ask the vendor to set one by hand
+              and send it over WhatsApp. */}
+          <div className="mt-2 flex gap-2">
+            <NavLink
+              to="/password"
+              className="flex flex-1 items-center justify-center rounded-lg bg-white/10 px-2 py-1.5 text-xs font-medium text-brand-50 transition hover:bg-white/20"
+            >
+              Password
+            </NavLink>
+            <button
+              onClick={() => void signOut()}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-white/10 px-2 py-1.5 text-xs font-medium text-brand-50 transition hover:bg-white/20"
+            >
+              <IconLogout />
+              Sign out
+            </button>
+          </div>
         </div>
       </aside>
 
