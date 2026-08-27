@@ -24,7 +24,20 @@ interface AuthState {
   setPassword: (password: string) => Promise<{ error: string | null }>
 }
 
-const AuthContext = createContext<AuthState | undefined>(undefined)
+/**
+ * Exported so the rendering harnesses in web/tools/ can supply a signed-in
+ * profile without a Supabase client.
+ *
+ * They render real PAGES — not just printables — to check layout and to capture
+ * the screenshots that go in the user guide, and every page calls useAuth(),
+ * which throws outside a provider. Rendering the real <AuthProvider> is not an
+ * option: with no client it settles on profile = null, so every page would
+ * render its signed-out state.
+ *
+ * Exporting the context rather than adding a test-only provider keeps exactly one
+ * implementation of the real thing.
+ */
+export const AuthContext = createContext<AuthState | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)

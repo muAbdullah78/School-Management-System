@@ -12,7 +12,7 @@
  * passing another family's id gets refused by the database, not by this file.
  */
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { AnnouncementBanner } from '@/components/AnnouncementBanner'
 import { PortalStatement } from '@/components/PortalStatement'
@@ -63,7 +63,25 @@ type Tab = 'fees' | 'attendance' | 'results'
 export function PortalPage() {
   const { signOut } = useAuth()
   const [childId, setChildId] = useState<string | null>(null)
-  const [tab, setTab] = useState<Tab>('fees')
+  /* The tab lives in the URL.
+   *
+   * Two reasons, neither of them about testing. A parent who reloads the page —
+   * which happens constantly on a patchy connection — was thrown back to Fees
+   * from wherever they were. And a school can now send "open this link to see
+   * the result" pointing at /portal?tab=results, which is the difference between
+   * a parent finding the marks and phoning the office to ask where they are.
+   *
+   * Validated against the three known values rather than cast: ?tab=anything
+   * would otherwise render no tab content at all and look like a broken page. */
+  const [params, setParams] = useSearchParams()
+  const urlTab = params.get('tab')
+  const tab: Tab = urlTab === 'attendance' || urlTab === 'results' ? urlTab : 'fees'
+  const setTab = (t: Tab) => {
+    const next = new URLSearchParams(params)
+    if (t === 'fees') next.delete('tab')
+    else next.set('tab', t)
+    setParams(next, { replace: true })
+  }
   /* The old Print button called window.print() straight from this page. The
      global print rule hides `body *` and reveals only named ids, and the portal
      had none — so it printed a blank sheet, silently, every time. It now opens a
@@ -132,25 +150,20 @@ export function PortalPage() {
             </p>
             <h1 className="mt-0.5 truncate text-lg font-semibold">{me.data?.full_name}</h1>
           </div>
-          {/* A parent had no way to change their own password. The office set
-              it when the account was created, and parents share addresses and
-              devices with relatives — so "the school knows my password" was
-              permanent. */}
-          <div className="flex shrink-0 items-center gap-2">
-            <Link
-              to="/password"
-              className="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-medium transition hover:bg-white/20"
-            >
-              Password
-            </Link>
-            <button
-              onClick={() => void signOut()}
-              className="flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-medium transition hover:bg-white/20"
-            >
-              <IconLogout />
-              Sign out
-            </button>
-          </div>
+          {/* Sign out ONLY. The password link lives at the foot of the page
+              instead: putting both here squeezed the school name to
+              "AL QALAM PUBLIC SCH…" and the parent's own name to
+              "Muhammad A…" on a 390px phone, which is the width most parents
+              have. Identity is what the header is for, and changing a password
+              is a once-a-year action. Found by screenshotting the real page at
+              phone width, not by reading this file. */}
+          <button
+            onClick={() => void signOut()}
+            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-medium transition hover:bg-white/20"
+          >
+            <IconLogout />
+            Sign out
+          </button>
         </div>
       </header>
 
@@ -521,6 +534,15 @@ export function PortalPage() {
           </>
         )}
       </main>
+
+      {/* At the foot, in words rather than behind an icon: the audience for this
+          page includes parents who read slowly, and an unlabelled key symbol
+          tells them nothing. */}
+      <div className="mx-auto max-w-3xl px-4 pb-10 text-center">
+        <Link to="/password" className="text-xs font-medium text-brand-700 hover:underline">
+          Change your password
+        </Link>
+      </div>
 
       {/* Rendered outside <main> so the print rule's absolute positioning starts
           at the top of the sheet rather than inside the page's layout.

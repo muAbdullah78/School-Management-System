@@ -33,7 +33,9 @@
 import { createElement, type ReactElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { QueryClient, QueryClientProvider, type QueryKey } from '@tanstack/react-query'
+import { MemoryRouter } from 'react-router-dom'
 import { mkdirSync, writeFileSync, readdirSync } from 'node:fs'
+import { AuthContext, type Profile } from '../src/auth/AuthProvider'
 
 /**
  * A query result to put in the cache before rendering.
@@ -68,6 +70,63 @@ export function renderToHtml(node: ReactElement, seeds: Seed[] = []): string {
   )
 }
 
+/**
+ * A signed-in session for the harness, with no Supabase client behind it.
+ *
+ * Every page calls useAuth(), which throws outside a provider — so a page
+ * harness needs one. Rendering the real <AuthProvider> does not work: with no
+ * client it settles on profile = null and every page renders its signed-out
+ * state, which is not the state anybody wants a screenshot of.
+ *
+ * The four functions are no-ops that resolve. renderToStaticMarkup never fires an
+ * event, so they are never called; they exist to satisfy the type rather than to
+ * pretend anything works.
+ */
+function authValue(profile: Profile | null) {
+  return {
+    session: profile ? ({ user: { id: profile.id, email: 'demo@example.test' } } as never) : null,
+    profile,
+    loading: false,
+    signIn: async () => ({ error: null }),
+    signOut: async () => {},
+    sendReset: async () => ({ error: null }),
+    setPassword: async () => ({ error: null }),
+  }
+}
+
+/**
+ * Render a whole PAGE, not just a printable.
+ *
+ * Pages need three things the printables did not: a router (every one of them
+ * uses Link or NavLink), a signed-in profile, and their queries seeded. All three
+ * are here rather than repeated in each harness file.
+ *
+ * MemoryRouter, not BrowserRouter: there is no document.location worth speaking
+ * of in renderToStaticMarkup, and `initialEntries` is how a page that reads the
+ * current route renders the tab the screenshot is meant to show.
+ */
+export function renderPageToHtml(
+  node: ReactElement,
+  opts: { seeds?: Seed[]; profile?: Profile | null; route?: string } = {},
+): string {
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity, gcTime: Infinity } },
+  })
+  for (const [key, value] of opts.seeds ?? []) qc.setQueryData(key, value)
+
+  return renderToStaticMarkup(
+    createElement(
+      MemoryRouter,
+      { initialEntries: [opts.route ?? '/'] },
+      createElement(
+        AuthContext.Provider,
+        { value: authValue(opts.profile ?? null) },
+        createElement(QueryClientProvider, { client: qc }, node),
+      ),
+    ),
+  )
+}
+
 /** The built stylesheet, so the harness output looks like the real thing. */
 export function builtCss(): string {
   const css = readdirSync('dist/assets').find((f) => f.endsWith('.css'))
@@ -90,12 +149,21 @@ export function builtCss(): string {
  */
 export function writePage(
   outPath: string,
-  cases: { caption?: string; node: ReactElement; seeds?: Seed[] }[],
+  cases: {
+    caption?: string
+    node: ReactElement
+    seeds?: Seed[]
+    /** Set to render as a signed-in PAGE: adds a router and an auth context. */
+    profile?: Profile | null
+    route?: string
+  }[],
   opts: { bodyStyle?: string } = {},
 ): void {
   const body = cases
-    .map(({ caption, node, seeds }) => {
-      const html = renderToHtml(node, seeds ?? [])
+    .map(({ caption, node, seeds, profile, route }) => {
+      const html = profile !== undefined || route !== undefined
+        ? renderPageToHtml(node, { seeds, profile, route })
+        : renderToHtml(node, seeds ?? [])
       if (!caption) return html
       return `
     <section style="margin:0 0 3rem">
