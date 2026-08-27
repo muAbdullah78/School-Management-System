@@ -6622,16 +6622,45 @@ revoke execute on function public.fn_platform_announcements(integer) from public
 --    practical, practical_max — so the portal had them all along and rendered
 --    only the total. That half is a UI fix; this makes the verdict available.
 --
--- 2. A POLICY THAT COULD NEVER FIRE
+-- 2. AN UNLOGGED DIRECT-WRITE PATH FOR THE OPERATOR
 --
---    `schools_update_platform` grants UPDATE on public.schools to the operator.
---    `authenticated` has no UPDATE privilege on that table at all, so the policy
---    has never been reachable — every operator write goes through a SECURITY
---    DEFINER function, which is the design.
+--    `schools_update_platform` lets a platform admin UPDATE public.schools
+--    straight over the REST API. Every operator write is supposed to go through a
+--    SECURITY DEFINER function, because that is where the reason is demanded and
+--    the row is written to operator_actions. A direct UPDATE writes no audit row
+--    at all. Dropped.
 --
---    Left alone it is worse than useless: it reads as an intended write path, so
---    one day somebody grants the privilege "to make the policy work" and opens a
---    direct write to the schools table. Dropped, with the reason recorded here.
+--    Dropping it takes nothing away. The definer functions bypass RLS by
+--    definition, so fn_platform_suspend_school and the rest are unaffected, and
+--    no code anywhere issues a direct update to that table.
+--
+--    THIS SECTION FIRST SHIPPED WITH A GUARD BUILT ON A FALSE PREMISE, and the
+--    premise was false on every real deployment. It read:
+--
+--        `authenticated` has no UPDATE privilege on that table at all, so the
+--        policy has never been reachable
+--
+--        if has_table_privilege('authenticated', 'public.schools', 'update') then
+--          raise exception '... Do not drop it blind ...'
+--
+--    That is true of a bare Postgres and FALSE of Supabase. A Supabase project is
+--    created with
+--
+--        alter default privileges in schema public
+--          grant all on tables to postgres, anon, authenticated, service_role;
+--
+--    so every table our migrations create there is granted to `authenticated`
+--    automatically — `schools` included. The guard therefore fired on the real
+--    thing and aborted the whole bundle, while passing in CI and on every local
+--    stub, because neither has that default ACL.
+--
+--    Two lessons, both worth more than the fix:
+--
+--      * A guard whose condition is a PRIVILEGE is a guard that behaves
+--        differently on Supabase than in CI. The question worth asking was never
+--        "does the grant exist" but "is there a caller" — and there is none.
+--      * The local harness must carry Supabase's default privileges or it is not
+--        a faithful stub. It does now, and that is how this was reproduced.
 --
 -- 3. TWO TABLES AND TWO COLUMNS NOTHING HAS EVER USED
 --
@@ -6727,20 +6756,32 @@ begin
   if exists (select 1 from pg_policies
               where schemaname = 'public' and tablename = 'schools'
                 and policyname = 'schools_update_platform') then
-    -- Asserted before dropping. If somebody HAS granted the privilege since,
-    -- then this policy is live and load-bearing, and dropping it would silently
-    -- take away a working path.
-    if has_table_privilege('authenticated', 'public.schools', 'update') then
-      raise exception
-        '0083: authenticated now has UPDATE on public.schools, so '
-        'schools_update_platform is live. Do not drop it blind — decide whether '
-        'that grant should exist at all, because every operator write is supposed '
-        'to go through a definer function.';
-    end if;
     drop policy schools_update_platform on public.schools;
-    raise notice '0083: dropped schools_update_platform — it could never fire';
+    raise notice
+      '0083: dropped schools_update_platform — an operator UPDATE over REST '
+      'writes no audit row; the definer functions bypass RLS and still work';
   end if;
 end $deadpolicy$;
+
+-- The END STATE, asserted rather than assumed.
+--
+-- Not "did my DROP run" but "is there any UPDATE policy on this table now" —
+-- which is the property that actually matters and catches a second policy added
+-- under another name. With none, an UPDATE over REST matches nothing and is
+-- refused, whatever privileges the role happens to hold.
+do $assert$
+declare v_left text;
+begin
+  select string_agg(policyname, ', ') into v_left
+    from pg_policies
+   where schemaname = 'public' and tablename = 'schools' and cmd = 'UPDATE';
+  if v_left is not null then
+    raise exception
+      '0083: public.schools still has an UPDATE policy (%). Every operator write '
+      'must go through a SECURITY DEFINER function so the reason and the actor '
+      'are recorded in operator_actions.', v_left;
+  end if;
+end $assert$;
 
 -- ---------------------------------------------------------------------------
 -- 3. campuses and shifts

@@ -135,7 +135,21 @@ jobs:
           do $$ begin
             if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
             if not exists (select 1 from pg_roles where rolname='authenticated') then create role authenticated nologin; end if;
+            if not exists (select 1 from pg_roles where rolname='service_role') then create role service_role nologin; end if;
           end $$;
+          -- SUPABASE'S OWN DEFAULT PRIVILEGES. Not decoration — without this line
+          -- the stub disagrees with every real project about who may write what,
+          -- and a migration can pass here and fail on a school's database.
+          --
+          -- That happened. 0083 guarded a policy drop on
+          -- `has_table_privilege('authenticated','public.schools','update')`,
+          -- reasoning that the privilege did not exist. It does not, on a bare
+          -- Postgres. A Supabase project is CREATED with this ALTER, so every
+          -- table our migrations make there is granted to authenticated — and the
+          -- guard fired on the real thing and aborted the whole bundle while CI
+          -- stayed green.
+          alter default privileges in schema public
+            grant all on tables to postgres, anon, authenticated, service_role;
           SQL
       - name: Apply all migrations in order
         # --single-transaction is not a nicety, it is the point.
@@ -188,6 +202,9 @@ jobs:
             if not exists (select 1 from pg_roles where rolname='authenticated') then create role authenticated nologin; end if;
             if not exists (select 1 from pg_roles where rolname='service_role') then create role service_role nologin; end if;
           end $$;
+          -- Supabase's own default privileges — see the note in the first stub.
+          alter default privileges in schema public
+            grant all on tables to postgres, anon, authenticated, service_role;
           SQL
           for b in supabase/bundles/*.sql; do
             echo "── $b"
@@ -285,6 +302,9 @@ jobs:
             if not exists (select 1 from pg_roles where rolname='authenticated') then create role authenticated nologin; end if;
             if not exists (select 1 from pg_roles where rolname='service_role') then create role service_role nologin; end if;
           end $$;
+          -- Supabase's own default privileges — see the note in the first stub.
+          alter default privileges in schema public
+            grant all on tables to postgres, anon, authenticated, service_role;
           SQL
 
           echo "── the school as it was: migrations 0001-0037 (the real cutoff)"
