@@ -1,97 +1,76 @@
-# Build status — where the application stands
+# Status — and why this file no longer holds the numbers
 
-The honest picture of what is built, what is left, and which steps are **yours**
-(manual, outside the code) versus **mine** (in the code).
+This file used to be a snapshot: how many migrations, how many tests, what was
+built. It went stale the way every such file does, and it went stale in the
+damaging direction. At the point it was rewritten it still said:
 
-Authoritative product decisions live in [`09-DECISIONS-LOCKED.md`](09-DECISIONS-LOCKED.md).
-The money engine's design and reasoning are in [`10-MONEY-ENGINE-V2.md`](10-MONEY-ENGINE-V2.md).
-
----
-
-## ✅ Built and tested
-
-**Database — `supabase/migrations/` (35 migrations, each applied in a single transaction exactly as the Supabase SQL Editor does)**
-
-| Area | What it does |
+| It claimed | The truth then |
 |---|---|
-| Core | 30+ tables, append-only money/marks/attendance, soft delete, audit triggers, gapless counters |
-| Multi-tenancy | One Supabase project serves every school. Every tenant row carries `school_id`; every policy is (tenant) AND (role) |
-| Subscriptions | Trial → active → grace → locked → reactivated. Over the student limit **flags** a school, never blocks an admission |
-| Platform | Operator console identity. The platform role **cannot read tenant data** — managing schools never requires reading a child's records |
-| **Family billing** | Payments belong to a family and allocate oldest-month-first across siblings. Unallocated money becomes explicit family credit, consumed by the next challan |
-| Fees | Heads, per-class structures with **effective dating**, challans, arrears, partial payments, fines, approved discounts, reversal, deferral, pending-vs-verified |
-| **Annual raise** | `fn_fee_increment` — preview → commit, writes a new dated amount, never edits the old one |
-| **Vouchers** | Every challan carries a unique scannable code that resolves to the family |
-| **Accounts** | Append-only expenses and non-fee income with gapless vouchers; profit today/month/year. Fee income is derived from receipts and **cannot be hand-entered** |
-| **Cash drawer** | Per-collector till, auto-opened on first cash payment, closed against counted cash with a frozen variance and owner sign-off |
-| **Portal** | Parent and teacher. A parent account has **zero direct table access**; everything comes through scoped functions |
-| **Results release** | `published_at` + publish/withdraw, so parents see only what the school has released, newest version only |
-| **Messages** | Outbox recording every intended message; free WhatsApp click-to-chat; payments-vs-receipts-sent report |
-| Attendance | Daily register, finalise and lock, summaries, staff check-in codes |
-| Exams | Terms, papers, marks, grading, positions, result cards, tabulation, date sheets, admit cards |
-| Imports | Students, opening fee balances, staff |
-| Rollover | Promote/retain/graduate with preview → commit → **undo** |
+| 35 migrations | 85 |
+| 98 web unit tests | 136 |
+| 7 SQL suites | 41 files, 82 invocations, 2,532 assertions |
+| "load `0001` → `0035`" | seven bundles |
+| "the platform role **cannot read tenant data**" | **reversed by an explicit decision** — support can read across all schools, through a logged read-only session |
+| "Nobody has run this against a live Supabase yet" | it was deployed and running |
 
-**Application — `web/`** — Dashboard, Admissions, Students, Attendance, Tests, Exams,
-Fees (family collection), **Accounts**, **Cash drawer**, **WhatsApp**, Staff,
-Certificates, Reports, Settings, **Parent portal**, operator console. Installable
-PWA with offline attendance. Design system with semantic colour.
+The last two are the reason this file was replaced rather than corrected. A stale
+count is embarrassing. A stale sentence about **who can read a child's records**
+is a document that misinforms whoever reads it about the security posture of the
+product, and the person most likely to read it is the person deciding whether to
+trust it.
 
-**Marketing site — `site/`** — static, 35KB, no build step, SEO metadata and
-schema.org. See [`site/README.md`](../site/README.md) for what to replace before launch.
+## Where the live answers are
 
-**Quality gates — all green**
-- **98 web unit tests**, typecheck + build
-- **7 SQL suites**: `tenant_isolation`, `subscription_rules`, `family_money`,
-  `finance`, `portal`, `outbox`, `fee_ops`
-- CI applies all 35 migrations to a real Postgres 16, each in ONE transaction so it matches how a school actually pastes them into the SQL Editor and runs every suite plus an
-  end-to-end sanity pass (import → rollover → fee ops → reconciliation)
+Every one of those questions has a source that cannot go stale, because it asks
+the software instead of remembering:
 
----
+| Question | Ask this |
+|---|---|
+| What has this database actually got? | `psql -f supabase/verify.sql` — one row per guarantee, each PASS or a named failure |
+| Which migrations is it missing? | `psql -f supabase/repair/detect.sql` |
+| How many migrations are there? | `ls supabase/migrations/*.sql \| wc -l` |
+| Do the tests pass? | `.github/workflows/ci.yml` runs every suite and all 13 guards on every push |
+| Which of the competitor's features exist? | [`PARITY.md`](PARITY.md), which states exactly which of its rows have been re-verified and which have not |
+| How does a school actually use it? | [`GUIDE.html`](GUIDE.html) — the handbook, with real screenshots |
 
-## 🧑‍💻 Your manual steps
+`verify.sql` is the one to run. It also reports the two things that need a human
+and cannot be done in code: the vendor's own billing details, and publishing a
+Windows installer.
 
-Everything below needs a human. Nothing in the code is waiting on them.
+## What is deliberately NOT built
 
-1. **Supabase project** — reset the existing one (its data is disposable) and load
-   `0001` → `0035`. Full walkthrough in [`SETUP.md`](SETUP.md).
-2. **Deploy the two Edge Functions** — `SETUP.md` step 4.
-3. **Make yourself the operator** — one SQL snippet, `SETUP.md` step 5.
-4. **Marketing site** — register the domain, then replace the placeholders listed
-   in [`site/README.md`](../site/README.md): domain, contact details, trial links.
-5. **Windows installer** — the Tauri shell in `desktop/` builds a `.msi` on a
-   Windows runner. A *signed* build needs your code-signing certificate.
+Excluded by decision, not oversight. Recorded here because an exclusion is the
+one kind of status that does not rot:
 
----
+SMS alerts · native mobile apps (the parent portal is the answer) · parent
+complaints · online classes · holiday calendar · salary and loan management ·
+stock and inventory · student behaviour tracking · daily diary · study-material
+LMS · email alerts · school noticeboard · transport · biometric devices.
 
-## ⬜ Deliberately not built
+Two items came back off that list on a later decision and **are** built:
+certificates and ID cards, and QR check-in for staff (still no biometric).
 
-Excluded by decision, not oversight: SMS alerts, native mobile apps (the portal is
-the answer), parent complaints, online classes, holiday calendar, salary & loan
-management, stock & inventory, student behaviour tracking, daily diary, LMS, email
-alerts, noticeboard, transport, biometric devices.
+## Known gaps, stated plainly
 
-**Known gaps, stated plainly:**
-- **Urdu interface.** The UI is English. Data you type in accepts and prints Urdu.
-- **Online fee payment** (JazzCash/EasyPaisa gateways) — cash, bank and wallet
-  payments are recorded, but the parent cannot pay *through* the app.
-- **Fee installments** — a schedule that drives due dates was designed
-  (`10-MONEY-ENGINE-V2.md`) but is not built.
-- **Per-period attendance** — the register is once-daily. Fine for primary, a
-  ceiling for classes 9–12.
+These are real, current, and none of them is a bug:
+
+- **Urdu interface.** The screens are English. Data you type in accepts and prints
+  Urdu.
+- **Online fee payment.** Cash, bank and wallet payments are recorded, but a
+  parent cannot pay *through* the app. The subscription side is gateway-ready
+  behind a switch; the school-fee side is not.
+- **Fee installments.** A schedule that drives due dates was designed in
+  [`10-MONEY-ENGINE-V2.md`](10-MONEY-ENGINE-V2.md) and never built.
+- **Per-period attendance.** The register is once-daily. Fine for primary, a
+  ceiling for classes 9 to 12.
+- **Multi-campus.** Not built, and the two empty tables that hinted at it were
+  dropped in migration 0083. See PARITY.md for why it needs designing rather than
+  restoring.
 - **The desktop app is a native window on cloud data**, not an offline system.
-  Attendance works offline; fee collection does not. Say this to schools.
+  Attendance works offline; fee collection does not. Say that to schools plainly.
+- **No exhaustive audit of every join in every definer function.** The tenant
+  scoping is enforced by three CI guards and a cross-tenant suite, and those
+  found real defects. That is not the same as having read all ~250 of them.
 
----
-
-## What only you can test
-
-Nobody has run this against a live Supabase yet. The build is clean and the SQL is
-proven against real Postgres, but no human has clicked these screens. Worth doing
-first, in this order:
-
-1. Family fee collection with **two children on one father's CNIC**
-2. A month's challans, then the reconciliation report
-3. Close a cash drawer with a deliberate Rs 50 shortfall and check it demands a reason
-4. Sign in as a parent and confirm you can see **only** that family
-5. Record an expense and check the profit figure moves
+Product decisions live in [`09-DECISIONS-LOCKED.md`](09-DECISIONS-LOCKED.md).
+The money engine's reasoning is in [`10-MONEY-ENGINE-V2.md`](10-MONEY-ENGINE-V2.md).

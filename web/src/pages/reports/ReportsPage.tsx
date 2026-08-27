@@ -4,7 +4,7 @@ import {
   getCurrentSession, getDefaulters, listCollections, getClassStrength,
   listClasses, listSections, getAttendanceRegister,
   listStudents, getStudentInvoices, getStudentPayments, getStudentBalance,
-  getFeeReconciliation,
+  getFeeReconciliation, getHeadWiseDues,
   type StudentRow,
 } from '@/lib/db'
 import { useSchoolName } from '@/hooks/useSchoolName'
@@ -20,6 +20,12 @@ const TABS = [
   // own filter, which is why there are four tabs and not six.
   { key: 'statement', label: 'Debit & Credit' },
   { key: 'unpaid', label: 'Unpaid Challans' },
+  // Which CHARGE is not being paid, as opposed to which family is not paying.
+  // fn_head_wise_dues shipped in the fee-operations work and had a wrapper in
+  // db.ts with no caller anywhere — so a school could see that Rs 400,000 was
+  // outstanding and never that Rs 380,000 of it was the transport charge nobody
+  // agreed to.
+  { key: 'headwise', label: 'Dues by Fee Head' },
   { key: 'discounts', label: 'Discounts' },
   { key: 'admissions', label: 'Admissions' },
   // The counterpart of Admissions, and impossible before 0054 gave a leaving a
@@ -86,6 +92,7 @@ export function ReportsPage() {
         {tab === 'strength' && <StrengthReport />}
         {tab === 'register' && <AttendanceRegisterReport />}
         {tab === 'ledger' && <StudentLedgerReport />}
+        {tab === 'headwise' && <HeadWiseDuesReport />}
       </div>
     </div>
   )
@@ -586,6 +593,117 @@ function StudentLedgerReport() {
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * Charged and collected, per fee head.
+ *
+ * The question this answers is not "who owes us" — Defaulters does that — but
+ * "WHICH CHARGE is not being paid". A school with Rs 400,000 outstanding needs
+ * to know whether it is spread across the tuition of eighty families or is
+ * almost entirely the transport fee that thirty parents never agreed to, because
+ * those are different problems with different remedies.
+ *
+ * THE APPORTIONMENT IS STATED ON THE PAGE. A payment is made against an invoice,
+ * not against a line of it, so "collected per head" cannot be read off the
+ * ledger — it is each head's share of the invoice multiplied by how much of that
+ * invoice has been paid. That is a reasonable convention and it is not the only
+ * one, so the basis sentence the function returns is printed rather than
+ * dropped. A figure whose derivation is invisible is a figure somebody will
+ * eventually dispute with an accountant.
+ *
+ * Discount lines come back NEGATIVE and are already netted into `charged`, which
+ * is why a head can show less charged than the fee structure would suggest.
+ */
+function HeadWiseDuesReport() {
+  const session = useQuery({ queryKey: ['currentSession'], queryFn: getCurrentSession })
+  const sessionId = session.data?.id
+  const q = useQuery({
+    queryKey: ['rptHeadWise', sessionId],
+    queryFn: () => getHeadWiseDues(sessionId!),
+    enabled: !!sessionId,
+  })
+  const heads = q.data?.heads ?? []
+  const tot = heads.reduce(
+    (a, h) => ({ charged: a.charged + Number(h.charged), collected: a.collected + Number(h.collected) }),
+    { charged: 0, collected: 0 },
+  )
+
+  const csv = () => downloadCSV('dues-by-fee-head.csv',
+    toCSV(['Fee Head', 'Charged', 'Collected', 'Outstanding'],
+      heads.map((h) => [h.fee_head, h.charged, h.collected,
+                        Number(h.charged) - Number(h.collected)])))
+
+  return (
+    <ReportShell title="Dues by Fee Head" subtitle={session.data?.name} onCSV={csv}>
+      {q.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {q.isError && <p className="text-sm text-red-600">{(q.error as Error).message}</p>}
+      {!q.isLoading && !q.isError && (
+        <>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className={TH}>Fee Head</th>
+                  <th className={`${TH} text-right`}>Charged</th>
+                  <th className={`${TH} text-right`}>Collected</th>
+                  <th className={`${TH} text-right`}>Outstanding</th>
+                  <th className={`${TH} text-right`}>Collected %</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {heads.length === 0 && (
+                  <tr><td colSpan={5} className={`${TD} text-slate-500`}>
+                    Nothing has been billed in this session yet.
+                  </td></tr>
+                )}
+                {heads.map((h, i) => {
+                  const charged = Number(h.charged)
+                  const collected = Number(h.collected)
+                  const pct = charged > 0 ? Math.round((collected / charged) * 100) : null
+                  return (
+                    <tr key={i}>
+                      <td className={TD}>{h.fee_head}</td>
+                      <td className={`${TD} text-right tabular-nums`}>{fmtPKR(charged)}</td>
+                      <td className={`${TD} text-right tabular-nums`}>{fmtPKR(collected)}</td>
+                      <td className={`${TD} text-right font-medium tabular-nums`}>
+                        {fmtPKR(charged - collected)}
+                      </td>
+                      {/* No percentage rather than "0%" when nothing was charged:
+                          a head with no billing has not been collected badly. */}
+                      <td className={`${TD} text-right tabular-nums ${
+                        pct !== null && pct < 60 ? 'text-red-600' : 'text-slate-600'
+                      }`}>
+                        {pct === null ? '—' : `${pct}%`}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+              {heads.length > 0 && (
+                <tfoot className="border-t-2 border-slate-300 font-semibold text-slate-800">
+                  <tr>
+                    <td className={TD}>Total</td>
+                    <td className={`${TD} text-right tabular-nums`}>{fmtPKR(tot.charged)}</td>
+                    <td className={`${TD} text-right tabular-nums`}>{fmtPKR(tot.collected)}</td>
+                    <td className={`${TD} text-right tabular-nums`}>
+                      {fmtPKR(tot.charged - tot.collected)}
+                    </td>
+                    <td className={`${TD} text-right tabular-nums`}>
+                      {tot.charged > 0 ? `${Math.round((tot.collected / tot.charged) * 100)}%` : '—'}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+          {q.data?.basis && (
+            <p className="mt-3 text-xs text-slate-500">{q.data.basis}</p>
+          )}
+        </>
+      )}
+    </ReportShell>
   )
 }
 

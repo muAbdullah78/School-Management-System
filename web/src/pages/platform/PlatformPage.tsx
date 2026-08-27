@@ -2,12 +2,25 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/auth/AuthProvider'
 import {
-  activateSubscription, actionNeeded, amPlatformAdmin, extendTrial, listPlans,
-  listPlatformSchools, platformLedger, platformRevenue, recordPlatformPayment,
-  refreshAllCounts, sortByAction,
-  type PlatformSchool,
+  activateSubscription, actionNeeded, amPlatformAdmin, describeAction, extendTrial,
+  listPlans, listPlatformSchools, operatorEnter, platformRevenue,
+  platformSchemaState, recordPlatformPayment, refreshAllCounts, schoolActions,
+  sortByAction,
+  type PlatformSchool, type SchemaState,
 } from '@/lib/platform'
 import { formatPkr } from '@/lib/licence'
+import { fmtDateTime } from '@/lib/format'
+import { SchoolDetailPanel } from './SchoolDetail'
+import { LedgerDialog } from './SchoolLedger'
+import { Renewals } from './Renewals'
+import { Claims } from './Claims'
+import { BillingSettings } from './BillingSettings'
+import { LifecycleDialog } from './Lifecycle'
+import { OffboardDialog } from './Offboard'
+import { NewSchoolDialog } from './NewSchool'
+import { Business } from './Business'
+import { Publishing } from './Publishing'
+import { paymentClaims, dueSoon, platformSettings } from '@/lib/platform'
 
 const STATUS_STYLE: Record<PlatformSchool['status'], string> = {
   trialing: 'bg-sky-100 text-sky-800',
@@ -18,6 +31,17 @@ const STATUS_STYLE: Record<PlatformSchool['status'], string> = {
 }
 
 const FIELD = 'rounded border border-slate-300 px-2 py-1.5 text-sm'
+
+type Tab = 'schools' | 'renewals' | 'claims' | 'business' | 'publishing' | 'billing'
+
+const TAB_TITLE: Record<Tab, string> = {
+  schools: 'Schools',
+  renewals: 'Renewals',
+  claims: 'Payments reported',
+  business: 'The business',
+  publishing: 'Downloads and notices',
+  billing: 'Our billing details',
+}
 
 function monthStart(): string {
   const d = new Date()
@@ -43,16 +67,51 @@ export function PlatformPage() {
   const [to, setTo] = useState(today())
   const [paying, setPaying] = useState<PlatformSchool | null>(null)
   const [ledgerFor, setLedgerFor] = useState<PlatformSchool | null>(null)
+  const [historyFor, setHistoryFor] = useState<PlatformSchool | null>(null)
+  const [visiting, setVisiting] = useState<PlatformSchool | null>(null)
+  const [openSchool, setOpenSchool] = useState<PlatformSchool | null>(null)
+  const [tab, setTab] = useState<Tab>('schools')
+  const [showArchived, setShowArchived] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [lifecycleFor, setLifecycleFor] = useState<PlatformSchool | null>(null)
+  const [offboarding, setOffboarding] = useState<PlatformSchool | null>(null)
 
   const isAdmin = useQuery({ queryKey: ['amPlatformAdmin', session?.user?.id], queryFn: amPlatformAdmin })
+  // Counts for the tab badges. Loaded whatever tab is showing, because the whole
+  // point of a badge is to be seen from the tab you are already on — a queue you
+  // have to open in order to discover is a queue nobody works.
+  const claimCount = useQuery({
+    queryKey: ['paymentClaims', 'pending'], queryFn: () => paymentClaims('pending'),
+    enabled: isAdmin.data === true,
+  })
+  const renewalCount = useQuery({
+    queryKey: ['dueSoon', 45], queryFn: () => dueSoon(45),
+    enabled: isAdmin.data === true,
+  })
+  // A warning dot on the tab rather than a banner on every screen. An invoice
+  // printed without an NTN is useless to the school receiving it and they will
+  // not tell us — so the console has to keep asking until it is filled in.
+  const settings = useQuery({
+    queryKey: ['platformSettings'], queryFn: platformSettings,
+    enabled: isAdmin.data === true,
+  })
+  const settingsIncomplete = (settings.data?.missing.length ?? 0) > 0
   const schools = useQuery({
-    queryKey: ['platformSchools'], queryFn: listPlatformSchools, enabled: isAdmin.data === true,
+    // Keyed on the flag: an archived school appearing in a cache the console
+    // filled while the toggle was off is how a departed customer shows up in
+    // this month's totals.
+    queryKey: ['platformSchools', showArchived],
+    queryFn: () => listPlatformSchools(showArchived),
+    enabled: isAdmin.data === true,
   })
   const plans = useQuery({ queryKey: ['plans'], queryFn: listPlans, enabled: isAdmin.data === true })
   const revenue = useQuery({
     queryKey: ['platformRevenue', from, to],
     queryFn: () => platformRevenue(from, to),
     enabled: isAdmin.data === true,
+  })
+  const schema = useQuery({
+    queryKey: ['platformSchemaState'], queryFn: platformSchemaState, enabled: isAdmin.data === true,
   })
 
   const rows = useMemo(() => sortByAction(schools.data ?? []), [schools.data])
@@ -101,7 +160,7 @@ export function PlatformPage() {
       <div className="mx-auto max-w-6xl space-y-4">
         <header className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-lg font-semibold text-slate-800">Schools</h1>
+            <h1 className="text-lg font-semibold text-slate-800">{TAB_TITLE[tab]}</h1>
             <p className="text-sm text-slate-500">
               {counts.total} total · {counts.paying} paying · {counts.trial} on trial ·{' '}
               <span className={counts.attention ? 'font-medium text-amber-700' : ''}>
@@ -109,7 +168,23 @@ export function PlatformPage() {
               </span>
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {tab === 'schools' && (
+              <>
+                <button onClick={() => setCreating(true)}
+                  className="rounded bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700">
+                  Add a school
+                </button>
+                {/* Archived schools are off by default. A console that shows last
+                    year's departed customers next to this year's is a console
+                    whose totals nobody trusts. */}
+                <label className="flex items-center gap-1.5 rounded border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-600">
+                  <input type="checkbox" checked={showArchived}
+                    onChange={(e) => setShowArchived(e.target.checked)} />
+                  Show archived
+                </label>
+              </>
+            )}
             <button
               onClick={() => run('Student counts refreshed.', refreshAllCounts)}
               disabled={act.isPending}
@@ -122,6 +197,35 @@ export function PlatformPage() {
             </button>
           </div>
         </header>
+
+        {/* Tabs rather than routes: the console is one page behind one gate, and
+            a router here would mean four more ProtectedRoute wrappers guarding the
+            same thing. The badges are the reason the nav exists at all — a queue
+            you have to open in order to discover is a queue nobody works. */}
+        <nav className="flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-1">
+          <TabButton now={tab} me="schools" set={setTab} label="Schools" />
+          <TabButton now={tab} me="renewals" set={setTab} label="Renewals"
+            badge={renewalCount.data?.length} />
+          <TabButton now={tab} me="claims" set={setTab} label="Payments reported"
+            badge={claimCount.data?.length} />
+          <TabButton now={tab} me="business" set={setTab} label="The business" />
+          <TabButton now={tab} me="publishing" set={setTab} label="Downloads & notices" />
+          <TabButton now={tab} me="billing" set={setTab} label="Our billing details"
+            warn={settingsIncomplete} />
+        </nav>
+
+        {tab === 'renewals' && (
+          <Renewals onOpenSchool={(id) => {
+            const s = rows.find((r) => r.school_id === id)
+            if (s) { setTab('schools'); setOpenSchool(s) }
+          }} />
+        )}
+        {tab === 'claims' && <Claims />}
+        {tab === 'business' && <Business />}
+        {tab === 'publishing' && <Publishing />}
+        {tab === 'billing' && <BillingSettings />}
+
+        {tab === 'schools' && <>
 
         {/* The books. `Outstanding` is deliberately NOT period-scoped — a
             receivable does not belong to the month it was raised in — and the
@@ -138,10 +242,19 @@ export function PlatformPage() {
           </div>
           {revenue.error && <p className="mt-2 text-sm text-red-600">{(revenue.error as Error).message}</p>}
           <div className="mt-3 grid gap-3 sm:grid-cols-4">
-            <Tile label="Invoiced" value={rev ? formatPkr(rev.invoiced) : '—'}
-              hint="in the dates above" />
-            <Tile label="Collected" value={rev ? formatPkr(rev.collected) : '—'}
-              hint="money that actually arrived" />
+            <Tile label="Invoiced" value={rev ? formatPkr(rev.net_invoiced) : '—'}
+              hint={rev && rev.credited > 0
+                ? `after ${formatPkr(rev.credited)} credited back`
+                : 'in the dates above'} />
+            {/* Two different questions, and 0077 stopped them sharing an answer.
+                "Settled" includes the income tax a school withheld and paid to
+                the FBR in our name: that money IS paid, and counting it as
+                outstanding is how a paid school shows as owing. "In the bank" is
+                the cash-flow figure, and it is smaller. */}
+            <Tile label="Settled" value={rev ? formatPkr(rev.collected) : '—'}
+              hint={rev && rev.tax_withheld > 0
+                ? `${formatPkr(rev.cash_received)} in the bank + ${formatPkr(rev.tax_withheld)} tax withheld`
+                : 'money that actually arrived'} />
             <Tile label="Given away" value={rev ? formatPkr(rev.discounted) : '—'}
               hint="list price minus what we charged"
               tone={rev && rev.discounted > 0 ? 'warn' : undefined} />
@@ -149,6 +262,24 @@ export function PlatformPage() {
               hint="all time, not just these dates"
               tone={rev && rev.outstanding_total > 0 ? 'warn' : undefined} />
           </div>
+          {/* Both of these are money, and neither had anywhere to be seen before.
+              A month with three voided invoices is a month somebody should look
+              at; withheld tax with no CPR is a deduction we cannot claim. */}
+          {rev && (rev.voided > 0 || rev.tax_certificates_awaited > 0) && (
+            <div className="mt-2 flex flex-wrap gap-3 text-xs">
+              {rev.voided > 0 && (
+                <span className="rounded bg-slate-100 px-2 py-0.5 text-slate-600">
+                  {formatPkr(rev.voided)} of invoices voided in this period
+                </span>
+              )}
+              {rev.tax_certificates_awaited > 0 && (
+                <span className="rounded bg-amber-50 px-2 py-0.5 text-amber-900">
+                  {formatPkr(rev.tax_certificates_awaited)} of withheld tax with no CPR on
+                  record — we cannot claim it until the certificate arrives
+                </span>
+              )}
+            </div>
+          )}
           {rev && rev.schools_owing.length > 0 && (
             <div className="mt-3 border-t border-slate-100 pt-2">
               <div className="text-xs text-slate-500">Who to chase</div>
@@ -162,6 +293,8 @@ export function PlatformPage() {
             </div>
           )}
         </div>
+
+        <SchemaStrip state={schema.data} error={schema.error as Error | null} />
 
         {msg && <div className="rounded border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-800">{msg}</div>}
         {err && <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">{err}</div>}
@@ -183,13 +316,31 @@ export function PlatformPage() {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-slate-800">{s.school_name}</span>
+                      <button onClick={() => setOpenSchool(s)}
+                        className="font-medium text-slate-800 hover:text-brand-700 hover:underline">
+                        {s.school_name}
+                      </button>
                       <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${STATUS_STYLE[s.status]}`}>
                         {s.status}
                       </span>
                       {s.outstanding > 0 && (
                         <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">
                           owes {formatPkr(s.outstanding)}
+                        </span>
+                      )}
+                      {/* `status` reads 'locked' for a school we suspended AND
+                          for one whose licence simply ran out. Without this badge
+                          the two are indistinguishable, and the operator cannot
+                          tell "they did not pay" from "we switched them off". */}
+                      {s.suspended && (
+                        <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-800"
+                          title={s.suspend_reason ?? undefined}>
+                          we suspended them
+                        </span>
+                      )}
+                      {s.archived && (
+                        <span className="rounded bg-slate-200 px-1.5 py-0.5 text-xs text-slate-600">
+                          archived
                         </span>
                       )}
                     </div>
@@ -225,6 +376,31 @@ export function PlatformPage() {
                       <button onClick={() => { setErr(null); setMsg(null); setPaying(s) }} className="text-brand-700 hover:underline">
                         Record payment
                       </button>
+                      <button onClick={() => setHistoryFor(s)} className="text-brand-700 hover:underline">
+                        History
+                      </button>
+                      {/* The support tool. Read-only, refused at the database,
+                          logged, and shown to the school in its own settings —
+                          so this button is not a back door, it is the front one
+                          with a bell on it. */}
+                      <button onClick={() => { setErr(null); setMsg(null); setVisiting(s) }}
+                        className="font-medium text-red-700 hover:underline">
+                        View as school
+                      </button>
+                      <button onClick={() => { setErr(null); setMsg(null); setLifecycleFor(s) }}
+                        className="text-slate-500 hover:underline">
+                        Manage
+                      </button>
+                      {/* Only offered on an archived school, because that is the
+                          only school the database will export or delete — and a
+                          button that always refuses teaches people to ignore
+                          buttons. */}
+                      {s.archived && (
+                        <button onClick={() => { setErr(null); setMsg(null); setOffboarding(s) }}
+                          className="text-slate-500 hover:underline">
+                          Offboard
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -246,6 +422,8 @@ export function PlatformPage() {
             )
           })}
         </div>
+
+        </>}
       </div>
 
       {paying && (
@@ -262,6 +440,108 @@ export function PlatformPage() {
       )}
 
       {ledgerFor && <LedgerDialog school={ledgerFor} onClose={() => setLedgerFor(null)} />}
+
+      {creating && (
+        <NewSchoolDialog
+          onClose={() => setCreating(false)}
+          onCreated={(id) => {
+            setCreating(false)
+            const s = rows.find((r) => r.school_id === id)
+            if (s) setOpenSchool(s)
+            else setMsg('School added. It will appear in the list on the next refresh.')
+          }}
+        />
+      )}
+
+      {lifecycleFor && (
+        <LifecycleDialog
+          school={lifecycleFor}
+          onClose={() => setLifecycleFor(null)}
+          onDone={(m) => { setErr(null); setMsg(m); setLifecycleFor(null) }}
+        />
+      )}
+
+      {offboarding && (
+        <OffboardDialog school={offboarding} onClose={() => setOffboarding(null)} />
+      )}
+
+      {historyFor && <HistoryDialog school={historyFor} onClose={() => setHistoryFor(null)} />}
+
+      {openSchool && (
+        <SchoolDetailPanel
+          schoolId={openSchool.school_id}
+          onClose={() => setOpenSchool(null)}
+          onVisit={() => { const s = openSchool; setOpenSchool(null); setErr(null); setMsg(null); setVisiting(s) }}
+        />
+      )}
+
+      {visiting && (
+        <VisitDialog
+          school={visiting}
+          onClose={() => setVisiting(null)}
+          onError={(m) => { setVisiting(null); setErr(m) }}
+        />
+      )}
+    </div>
+  )
+}
+
+/**
+ * What schema this database is actually running.
+ *
+ * One line, because on a healthy day it is one fact and should not take up
+ * space. It goes loud in exactly two cases, and both of them are the reason the
+ * ledger was added:
+ *
+ *  - A GAP. A bundle applies as ONE transaction, so a bundle that dies halfway
+ *    rolls back entirely and its migrations never arrive. That has already
+ *    happened to a live school: fifteen migrations went missing and nobody
+ *    learned until screens started failing at runtime.
+ *
+ *  - AN EMPTY LEDGER on a database that has the table. 0069 refuses to seed
+ *    unless it can prove all six shipped bundles are present, so empty means
+ *    "this database is incomplete and I would be lying if I gave you a number".
+ */
+function SchemaStrip({ state, error }: { state?: SchemaState; error: Error | null }) {
+  // Before bundle 7 is pasted, fn_platform_schema_state does not exist and this
+  // errors. Saying so plainly beats a blank space, because the fix is one paste.
+  if (error) {
+    return (
+      <div className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+        <span className="font-medium">This database has no migration ledger.</span>{' '}
+        Paste <code className="rounded bg-amber-100 px-1">supabase/bundles/7_ledger_and_limits.sql</code>{' '}
+        into the Supabase SQL editor. Until then nothing records which migrations production has.
+      </div>
+    )
+  }
+  if (!state) return null
+
+  if (state.applied_count === 0) {
+    return (
+      <div className="rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900">
+        <span className="font-medium">The migration ledger is empty.</span>{' '}
+        0069 refused to record this database because it could not prove every shipped bundle is
+        present. Run <code className="rounded bg-red-100 px-1">supabase/repair/detect.sql</code> and
+        apply what it names.
+      </div>
+    )
+  }
+
+  const gaps = state.gaps_total > 0
+  return (
+    <div className={`rounded border px-3 py-2 text-sm ${
+      gaps ? 'border-red-300 bg-red-50 text-red-900' : 'border-slate-200 bg-white text-slate-600'
+    }`}>
+      <span className="font-medium">Schema</span>{' '}
+      {state.applied_count} migration{state.applied_count === 1 ? '' : 's'} applied
+      {state.latest && <span className="text-slate-400"> · latest {state.latest.replace(/\.sql$/, '')}</span>}
+      {gaps && (
+        <div className="mt-1 font-medium">
+          {state.gaps_total} missing in the middle: {state.gaps.join(', ')}
+          {state.gaps_total > state.gaps.length && ` … and ${state.gaps_total - state.gaps.length} more`}.
+          {' '}A bundle rolled back halfway — apply those migrations before anything else.
+        </div>
+      )}
     </div>
   )
 }
@@ -306,7 +586,10 @@ function SchoolActions({
     && school.student_count > Math.ceil(chosen.student_limit * 1.1)
 
   return (
-    <div className="flex shrink-0 flex-col items-end gap-2">
+    // Full width and left-aligned on a phone, right-aligned beside the school
+    // row from `sm` up. Fifty schools means calls made in a car park, and the
+    // controls that renew a licence cannot be the ones that fall off the screen.
+    <div className="flex w-full shrink-0 flex-col items-start gap-2 sm:w-auto sm:items-end">
       <div className="flex flex-wrap items-center gap-2">
         <select value={plan} onChange={(e) => setPlan(e.target.value)} className={FIELD}>
           {plans.map((p) => <option key={p.code} value={p.code}>{p.code}</option>)}
@@ -368,7 +651,11 @@ function PaymentDialog({ school, busy, onClose, onSave }: {
   school: PlatformSchool
   busy: boolean
   onClose: () => void
-  onSave: (v: { amount: number; paidOn: string; method: string; reference: string | null; note: string | null }) => void
+  onSave: (v: {
+    amount: number; paidOn: string; method: string
+    reference: string | null; note: string | null
+    taxWithheld: number; taxCertificate: string | null
+  }) => void
 }) {
   // Pre-filled with what they owe, which is the amount in almost every case.
   const [amount, setAmount] = useState(school.outstanding > 0 ? String(school.outstanding) : '')
@@ -376,11 +663,18 @@ function PaymentDialog({ school, busy, onClose, onSave }: {
   const [method, setMethod] = useState('bank')
   const [reference, setReference] = useState('')
   const [note, setNote] = useState('')
+  const [wht, setWht] = useState('')
+  const [cert, setCert] = useState('')
   const n = Number(amount)
+  const t = Number(wht || 0)
   const valid = amount.trim() !== '' && Number.isFinite(n) && n > 0
+    && Number.isFinite(t) && t >= 0
+  // What the invoice is actually settled by. The gap between this and the
+  // outstanding figure is what the operator is deciding about.
+  const settles = n + t
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center">
       <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-lg">
         <h2 className="text-base font-semibold text-slate-800">Record a payment</h2>
         <p className="mt-1 text-sm text-slate-600">
@@ -417,14 +711,44 @@ function PaymentDialog({ school, busy, onClose, onSave }: {
             <input value={reference} onChange={(e) => setReference(e.target.value)}
               placeholder="e.g. HBL-77123" className={`${FIELD} mt-1 w-full`} />
           </label>
+          {/* THE FIELD THAT KEEPS THE RECEIVABLE HONEST.
+              Under section 153(1)(b) a school buying services must deduct income
+              tax at source and pay it to the FBR on our behalf. So a school
+              invoiced Rs 38,000 transfers Rs 34,960 and sends a CPR for the
+              Rs 3,040 it deducted. Record only the transfer and Rs 3,040 sits as
+              outstanding forever, and we chase a school for money it has already
+              paid — in our name. */}
+          <label className="block">
+            <span className="text-sm text-slate-600">Tax they withheld</span>
+            <input value={wht} onChange={(e) => setWht(e.target.value)} inputMode="decimal"
+              placeholder="0" className={`${FIELD} mt-1 w-full`} />
+          </label>
+          <label className="block">
+            <span className="text-sm text-slate-600">CPR / certificate no.</span>
+            <input value={cert} onChange={(e) => setCert(e.target.value)}
+              disabled={t <= 0}
+              placeholder={t > 0 ? 'blank if not received yet' : '—'}
+              className={`${FIELD} mt-1 w-full disabled:bg-slate-50`} />
+          </label>
           <label className="block sm:col-span-2">
             <span className="text-sm text-slate-600">Note (optional)</span>
             <input value={note} onChange={(e) => setNote(e.target.value)} className={`${FIELD} mt-1 w-full`} />
           </label>
         </div>
+        {t > 0 && (
+          <p className="mt-2 rounded bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            {formatPkr(n)} received plus {formatPkr(t)} paid to the FBR on our behalf —
+            this settles <span className="font-medium">{formatPkr(settles)}</span>.
+            {cert.trim() === '' && ' The CPR can be attached from the statement when it arrives.'}
+          </p>
+        )}
         <div className="mt-4 flex gap-2">
           <button
-            onClick={() => onSave({ amount: n, paidOn, method, reference: reference.trim() || null, note: note.trim() || null })}
+            onClick={() => onSave({
+              amount: n, paidOn, method,
+              reference: reference.trim() || null, note: note.trim() || null,
+              taxWithheld: t, taxCertificate: cert.trim() || null,
+            })}
             disabled={busy || !valid}
             className="flex-1 rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
             Record
@@ -438,14 +762,28 @@ function PaymentDialog({ school, busy, onClose, onSave }: {
   )
 }
 
-function LedgerDialog({ school, onClose }: { school: PlatformSchool; onClose: () => void }) {
+/**
+ * Everything we have ever done to this school.
+ *
+ * The billing rows say what was charged. This says who chose it, that a trial was
+ * extended three times, that a year was given away for a reason somebody typed at
+ * the time, and every support visit. Before 0073 none of it was recorded, which
+ * with one customer is recoverable from memory and with fifty is not.
+ */
+function HistoryDialog({ school, onClose }: { school: PlatformSchool; onClose: () => void }) {
   const q = useQuery({
-    queryKey: ['platformLedger', school.school_id],
-    queryFn: () => platformLedger(school.school_id),
+    queryKey: ['schoolActions', school.school_id],
+    queryFn: () => schoolActions(school.school_id),
   })
-  // A running balance, computed here rather than stored, so it can never
-  // disagree with the rows above it.
-  let bal = 0
+
+  const TONE: Record<string, string> = {
+    school_entered: 'bg-red-50 text-red-800',
+    school_left: 'bg-slate-100 text-slate-600',
+    payment_recorded: 'bg-emerald-50 text-emerald-800',
+    invoice_raised: 'bg-sky-50 text-sky-800',
+    licence_changed: 'bg-amber-50 text-amber-900',
+    school_created: 'bg-slate-100 text-slate-700',
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4">
@@ -453,58 +791,151 @@ function LedgerDialog({ school, onClose }: { school: PlatformSchool; onClose: ()
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold text-slate-800">{school.school_name}</h2>
-            <p className="text-sm text-slate-600">
-              Statement · {school.outstanding > 0
-                ? <span className="font-medium text-amber-800">{formatPkr(school.outstanding)} outstanding</span>
-                : 'nothing outstanding'}
-            </p>
+            <p className="text-sm text-slate-600">What we have done to this school</p>
           </div>
           <button onClick={onClose} className="text-sm text-slate-500 hover:underline">Close</button>
         </div>
 
         {q.isLoading && <p className="mt-3 text-sm text-slate-500">Loading…</p>}
         {q.error && <p className="mt-3 text-sm text-red-600">{(q.error as Error).message}</p>}
-
         {q.data && q.data.length === 0 && (
           <p className="mt-3 text-sm text-slate-500">
-            Nothing invoiced yet. A charge is written when you activate or renew them.
+            Nothing recorded yet. Activating them, taking a payment or opening their
+            account all appear here.
           </p>
         )}
 
         {q.data && q.data.length > 0 && (
-          <div className="mt-3 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-2 py-2 w-28">Date</th>
-                  <th className="px-2 py-2">What</th>
-                  <th className="px-2 py-2 w-28 text-right">Charged</th>
-                  <th className="px-2 py-2 w-28 text-right">Paid</th>
-                  <th className="px-2 py-2 w-28 text-right">Balance</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {q.data.map((e, i) => {
-                  bal += Number(e.charged ?? 0) - Number(e.paid ?? 0)
-                  return (
-                    <tr key={i}>
-                      <td className="px-2 py-2 text-slate-500">{e.entry_date}</td>
-                      <td className="px-2 py-2 text-slate-700">
-                        {e.description}
-                        {e.reference && <span className="text-slate-400"> · {e.reference}</span>}
-                        {e.note && <div className="text-xs text-slate-500">{e.note}</div>}
-                      </td>
-                      <td className="px-2 py-2 text-right text-slate-700">{e.charged ? formatPkr(Number(e.charged)) : ''}</td>
-                      <td className="px-2 py-2 text-right text-emerald-700">{e.paid ? formatPkr(Number(e.paid)) : ''}</td>
-                      <td className="px-2 py-2 text-right font-medium text-slate-800">{formatPkr(bal)}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+          <ul className="mt-3 divide-y divide-slate-100">
+            {q.data.map((a, i) => (
+              <li key={i} className="flex items-start gap-3 py-2">
+                <span className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium ${
+                  TONE[a.action] ?? 'bg-slate-100 text-slate-600'}`}>
+                  {a.action.replace(/_/g, ' ')}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm text-slate-800">{describeAction(a)}</div>
+                  <div className="text-xs text-slate-400">
+                    {fmtDateTime(a.at)}
+                    {a.actor_email && <> · {a.actor_email}</>}
+                    {a.detail?.backfilled === true && <> · reconstructed from the billing rows</>}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
         )}
       </div>
     </div>
+  )
+}
+
+/**
+ * Entering a school, with the reason the database insists on.
+ *
+ * Deliberately a dialog with a required field rather than a one-click button. The
+ * reason is not paperwork: it is what the SCHOOL reads in its own settings, and
+ * "no reason given" appearing there would undo the whole point of showing them.
+ *
+ * The warnings are stated plainly because both are true and neither is obvious:
+ * nothing can be changed from inside, and the school will see this.
+ */
+function VisitDialog({ school, onClose, onError }: {
+  school: PlatformSchool
+  onClose: () => void
+  onError: (message: string) => void
+}) {
+  const [reason, setReason] = useState('')
+  const [minutes, setMinutes] = useState(60)
+  const qc = useQueryClient()
+
+  const enter = useMutation({
+    mutationFn: () => operatorEnter(school.school_id, reason.trim(), minutes),
+    onSuccess: () => {
+      // Nothing cached was read as this school, so nothing cached is right any
+      // more. Clear, then land on the school's own dashboard.
+      qc.clear()
+      window.location.assign('/')
+    },
+    onError: (e) => onError((e as Error).message),
+  })
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center">
+      <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-lg">
+        <h2 className="text-base font-semibold text-slate-800">
+          Open {school.school_name}
+        </h2>
+
+        <div className="mt-3 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+          <div className="font-medium">Read only, and they will see it.</div>
+          <ul className="mt-1 list-disc space-y-0.5 pl-4 text-red-800">
+            <li>You cannot change anything — the database refuses every write.</li>
+            <li>
+              This visit and your reason appear in the school&rsquo;s own Settings →
+              Support Visits.
+            </li>
+          </ul>
+        </div>
+
+        <label className="mt-3 block">
+          <span className="text-sm text-slate-600">Why are you opening it?</span>
+          <input
+            autoFocus value={reason} onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. principal called: the fee will not save"
+            className={`${FIELD} mt-1 w-full`}
+          />
+          <span className="mt-1 block text-xs text-slate-500">
+            The school reads this. Write it for them, not for you.
+          </span>
+        </label>
+
+        <label className="mt-3 block max-w-[10rem]">
+          <span className="text-sm text-slate-600">Ends after</span>
+          <select value={minutes} onChange={(e) => setMinutes(Number(e.target.value))}
+            className={`${FIELD} mt-1 w-full`}>
+            <option value={15}>15 minutes</option>
+            <option value={60}>1 hour</option>
+            <option value={240}>4 hours</option>
+          </select>
+        </label>
+
+        <div className="mt-4 flex gap-2">
+          <button
+            onClick={() => enter.mutate()}
+            disabled={enter.isPending || reason.trim().length < 4}
+            className="flex-1 rounded bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
+          >
+            {enter.isPending ? 'Opening…' : 'Open, read only'}
+          </button>
+          <button onClick={onClose}
+            className="flex-1 rounded border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function TabButton({ now, me, set, label, badge, warn }: {
+  now: Tab; me: Tab; set: (t: Tab) => void; label: string
+  badge?: number; warn?: boolean
+}) {
+  const on = now === me
+  return (
+    <button onClick={() => set(me)}
+      className={`flex items-center gap-1.5 rounded px-3 py-1.5 text-sm ${
+        on ? 'bg-brand-600 font-medium text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
+      {label}
+      {badge !== undefined && badge > 0 && (
+        <span className={`rounded-full px-1.5 text-xs ${
+          on ? 'bg-white/25' : 'bg-amber-100 text-amber-900'}`}>{badge}</span>
+      )}
+      {warn && (
+        <span title="Something required is missing"
+          className={`h-1.5 w-1.5 rounded-full ${on ? 'bg-white' : 'bg-amber-500'}`} />
+      )}
+    </button>
   )
 }

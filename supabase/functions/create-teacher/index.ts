@@ -74,7 +74,12 @@ Deno.serve(async (req) => {
       // school_id is what handle_new_user reads to attach the profile. Without
       // it the trigger creates no profile at all and the new login would be
       // able to sign in but see nothing.
-      user_metadata: { full_name: fullName || email.split('@')[0], school_id: prof.school_id },
+      user_metadata: { full_name: fullName || email.split('@')[0] },
+      // APP metadata, not user metadata. Only the service role can write this,
+      // which is exactly why handle_new_user trusts it (0065). The caller was
+      // verified as owner/principal above and `role` was whitelisted, so both
+      // values here are authorised facts rather than client claims.
+      app_metadata: { school_id: prof.school_id, role },
     })
     if (createErr || !created.user) return json({ error: createErr?.message ?? 'Could not create user' }, 400)
 

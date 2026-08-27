@@ -1,6 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
 import { requireSupabase } from './supabase'
-import { config } from './config'
 
 // ---- Types (hand-written; kept in sync with supabase/migrations) ----
 export interface SessionRow { id: string; name: string; is_current: boolean }
@@ -28,8 +26,27 @@ export interface Defaulter {
   student_id: string; gr_no: string | null; full_name: string
   class_name: string; section_name: string | null; roll_no: string | null; balance: number
 }
+/**
+ * One entry per invoice a payment cleared — 0084.
+ *
+ * The receipt has to be able to say where the money went. Family allocation is
+ * oldest-month-first ACROSS SIBLINGS, so a father paying Rs 9,000 for three
+ * children cannot work out from the amount which child's dues moved. This comes
+ * from the database rather than being recomputed here on purpose: a second
+ * implementation of the allocator's order would agree with it right up until the
+ * day it did not, and that day would be visible only on paper in a parent's hand.
+ */
+export interface PaymentApplied {
+  student_id: string
+  student_name: string
+  gr_no: string | null
+  period_month: string | null
+  amount: number
+}
+
 export interface RecordPaymentResult {
   payment_id: string; receipt_no: number; allocated: number; unallocated: number
+  applied?: PaymentApplied[]
 }
 export type AttendanceStatus = 'present' | 'absent' | 'leave' | 'late' | 'half_day'
 export interface SectionRow { id: string; name: string; class_id: string }
@@ -117,27 +134,114 @@ export async function listFeeHeads(): Promise<FeeHead[]> {
   )
 }
 
-// ---- Fee structure (amount per class per head) ----
-export async function getFeeStructure(sessionId: string, classId: string): Promise<Record<string, number>> {
-  const sb = requireSupabase()
-  const rows = unwrap<{ fee_head_id: string; amount: number }[]>(
-    await sb.from('fee_structures').select('fee_head_id, amount').eq('session_id', sessionId).eq('class_id', classId),
-  )
-  const map: Record<string, number> = {}
-  for (const r of rows) map[r.fee_head_id] = Number(r.amount)
-  return map
+// ---- Fee heads ----
+//
+// Nothing in the app could create one until 0066, so a fresh school had no
+// 'Tuition' to put an amount against: the Fee Structure grid showed an empty
+// list with a Save button and nothing to fill in.
+
+export interface FeeHeadRow {
+  id: string
+  name: string
+  type: string
+  is_recurring: boolean
+  is_refundable: boolean
+  sort_order: number
+  active: boolean
+  /** Already referenced by a fee structure or an invoice line. Such a head can
+   *  be switched off but never deleted — a past challan names it, and removing
+   *  it would rewrite what a parent was charged for. */
+  in_use: boolean
 }
 
-export async function upsertFeeStructure(
-  sessionId: string, classId: string, feeHeadId: string, amount: number,
-): Promise<void> {
+export async function listFeeHeadsFull(includeInactive = false): Promise<FeeHeadRow[]> {
   const sb = requireSupabase()
-  const { error } = await sb
-    .from('fee_structures')
-    .upsert({ session_id: sessionId, class_id: classId, fee_head_id: feeHeadId, amount }, {
-      onConflict: 'session_id,class_id,fee_head_id',
-    })
+  const { data, error } = await sb.rpc('fn_fee_heads', { p_include_inactive: includeInactive })
   if (error) throw new Error(error.message)
+  return (data ?? []) as FeeHeadRow[]
+}
+
+export async function upsertFeeHead(input: {
+  id?: string | null
+  name: string
+  type: string
+  is_recurring: boolean
+  is_refundable: boolean
+  sort_order?: number
+}): Promise<string> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_upsert_fee_head', {
+    p_name: input.name, p_type: input.type,
+    p_is_recurring: input.is_recurring, p_is_refundable: input.is_refundable,
+    p_sort_order: input.sort_order ?? 0, p_id: input.id ?? null,
+  })
+  if (error) throw new Error(error.message)
+  return data as string
+}
+
+export async function setFeeHeadActive(id: string, active: boolean): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_set_fee_head_active', { p_id: id, p_active: active })
+  if (error) throw new Error(error.message)
+}
+
+// ---- Fee structure (amount per class per head) ----
+
+export interface FeeStructureRow {
+  fee_head_id: string
+  fee_head: string
+  is_recurring: boolean
+  /** The amount in force TODAY — what will actually be billed. Null means no
+   *  price has been set for this head and class. */
+  amount: number | null
+  effective_from: string | null
+  /** A change already scheduled. Shown on the grid so a school is never
+   *  surprised by its own increase. */
+  next_amount: number | null
+  next_from: string | null
+}
+
+/**
+ * Read through fn_fee_structure rather than the table.
+ *
+ * Selecting fee_structures directly returns EVERY dated row for a head, so once
+ * a school had used the fee-increment tool the grid showed whichever row came
+ * back last — an arbitrary price. The function returns the one in force today
+ * plus whatever is scheduled next.
+ */
+export async function getFeeStructure(
+  sessionId: string, classId: string,
+): Promise<FeeStructureRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_fee_structure', {
+    p_session_id: sessionId, p_class_id: classId,
+  })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as FeeStructureRow[]
+}
+
+/**
+ * Set what a class pays for one head.
+ *
+ * Goes through fn_set_fee_amount because fee_structures' unique key gained
+ * `effective_from` in 0035 and the direct upsert still named the old three
+ * columns — so every save raised 42P10 ("no unique or exclusion constraint
+ * matching the ON CONFLICT specification") and no school could set a fee at all.
+ *
+ * `effectiveFrom` null means "from today", and the first amount for a head is
+ * written at the base date so a month billed in arrears is still covered.
+ */
+export async function setFeeAmount(
+  sessionId: string, classId: string, feeHeadId: string, amount: number,
+  effectiveFrom?: string | null,
+): Promise<string> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_set_fee_amount', {
+    p_session_id: sessionId, p_class_id: classId, p_fee_head_id: feeHeadId,
+    p_amount: amount, p_effective_from: effectiveFrom ?? null,
+  })
+  if (error) throw new Error(error.message)
+  return data as string
 }
 
 // ---- Students ----
@@ -1969,6 +2073,59 @@ export async function setClassTeacher(
   if (error) throw new Error(error.message)
 }
 
+/**
+ * Who teaches which subject, this session — 0085.
+ *
+ * The register exists because `subject_teacher` has been a role since 0001 and
+ * nothing recorded WHICH subjects, so the Physics teacher of Class 9 could enter
+ * Class 9's Islamiat marks. It also closed a bigger hole in the same place:
+ * fn_enter_marks, which writes the marks printed on the result card, had no class
+ * scope at all.
+ */
+export interface SubjectTeacherRow {
+  class_id: string
+  class_name: string
+  level_order: number
+  subject_id: string
+  subject_name: string
+  sort_order: number
+  /** Empty for a subject nobody teaches yet. Those rows are the WORK LIST, which
+   *  is why the function returns them rather than only the filled ones. */
+  teachers: {
+    assignment_id: string
+    staff_id: string
+    staff_name: string
+    section_id: string | null
+    section_name: string | null
+  }[]
+}
+
+export async function getSubjectTeachers(sessionId: string): Promise<SubjectTeacherRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_subject_teachers', { p_session_id: sessionId })
+  if (error) throw new Error(error.message)
+  return ((data as { rows?: SubjectTeacherRow[] })?.rows ?? [])
+}
+
+/**
+ * REPLACE the teachers of one class+subject. An empty array clears it.
+ *
+ * Replace rather than add, so the screen can remove a teacher — an add-only
+ * function would make the list one-way, and a school would be stuck with a
+ * teacher who left still holding the subject.
+ */
+export async function setSubjectTeachers(
+  sessionId: string, classId: string, sectionId: string | null,
+  subjectId: string, staffIds: string[],
+): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_set_subject_teachers', {
+    p_session_id: sessionId, p_class_id: classId, p_section_id: sectionId,
+    p_subject_id: subjectId, p_staff_ids: staffIds,
+  })
+  if (error) throw new Error(error.message)
+}
+
 export interface CheckinCode {
   id: string; code: string; label: string | null
   valid_from: string | null; valid_to: string | null; active: boolean
@@ -2182,50 +2339,72 @@ export async function createTeacherLogin(input: CreateTeacherInput): Promise<{ i
     throw new Error(msg)
   }
 
-  // Function not deployed / unreachable → create the login directly with a
-  // throwaway client (a separate storageKey + no session persistence means the
-  // principal stays logged in). The handle_new_user trigger makes the profile;
-  // we then set the role as the principal (who passes the role guard).
-  const tmp = createClient(config.supabaseUrl!, config.supabaseAnonKey!, {
-    auth: { persistSession: false, autoRefreshToken: false, storageKey: 'provision-teacher' },
-  })
-  // school_id AND role in the metadata. Without school_id, handle_new_user
-  // returns early and creates NO profile row at all — so the updateProfileRole
-  // below matched nothing, raised nothing (RLS makes a blocked or missing-row
-  // UPDATE affect zero rows silently), and this function reported success on a
-  // login that could then sign in and be told "This login is not attached to a
-  // school." With the role there too, the profile is created ACTIVE and correct
-  // in one step rather than patched afterwards.
-  const schoolId = await mySchoolId()
-  const { data: su, error: suErr } = await tmp.auth.signUp({
-    email,
-    password: input.password,
-    options: {
-      data: {
-        full_name: fullName || email.split('@')[0],
-        school_id: schoolId,
-        role,
-      },
-    },
-  })
-  if (suErr) throw new Error(suErr.message)
-  const newId = su.user?.id
-  if (!newId) throw new Error('Could not create the login.')
+  // Function not deployed / unreachable.
+  //
+  // This used to create the login here with a throwaway client, passing
+  // school_id AND role in signUp's user_metadata. That was the hole 0065
+  // closed: user_metadata is written by the browser, so handle_new_user
+  // believing a role in it meant ANY signed-in user — a parent — could sign up
+  // again asking for 'principal' and get it, active. The trigger no longer reads
+  // that field for authorisation, so this path cannot work and must not pretend
+  // to.
+  //
+  // The invitation is the replacement and it is strictly better: creating one is
+  // an authorised act by an owner or principal, checked by RLS, and the person
+  // chooses their own password instead of a clerk inventing one and reading it
+  // out over the phone.
+  throw new Error(
+    'The create-teacher function is not deployed, so a login cannot be made here. '
+    + `Invite ${email} instead — they set their own password, and the role you choose is `
+    + 'applied when they sign up. (Deploy the create-teacher function once if you would '
+    + 'rather create logins directly.)',
+  )
+}
 
-  // Still set explicitly: handle_new_user only honours a role it recognises, and
-  // mustWrite now makes a failure here loud instead of silent.
-  await updateProfileRole(newId, role)
+export interface PendingInvite {
+  id: string
+  email: string
+  role: string
+  full_name: string | null
+  invited_by: string | null
+  created_at: string
+  expires_at: string
+  expired: boolean
+}
 
-  // If the project still requires email confirmation, the teacher can't sign in
-  // with just the password — tell the principal exactly what to switch off.
-  if (!su.session && !su.user?.email_confirmed_at) {
-    throw new Error(
-      'Login created, but this Supabase project requires email confirmation, so the teacher can’t sign in yet. ' +
-      'In Supabase → Authentication → Providers → Email, turn OFF “Confirm email” (one-time), then this login will work. ' +
-      '(Or deploy the create-teacher function once and it’s handled automatically.)',
-    )
-  }
-  return { id: newId, email, role }
+/**
+ * Invite somebody to this school with a role of your choosing.
+ *
+ * The role is stored on the invitation, not sent by the browser at signup — that
+ * is the whole point. When they sign up with this address the trigger reads the
+ * role from the invitation row an owner or principal created.
+ *
+ * An owner cannot be invited: the school's top privilege must not sit behind an
+ * email address. Promote an existing account on this screen instead.
+ */
+export async function inviteUser(
+  email: string, role: string, fullName?: string,
+): Promise<{ id: string; email: string; role: string; expires_at: string }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_invite_user', {
+    p_email: email.trim(), p_role: role,
+    p_full_name: fullName?.trim() || null,
+  })
+  if (error) throw new Error(error.message)
+  return data as { id: string; email: string; role: string; expires_at: string }
+}
+
+export async function listPendingInvites(): Promise<PendingInvite[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_pending_invites')
+  if (error) throw new Error(error.message)
+  return (data ?? []) as PendingInvite[]
+}
+
+export async function revokeInvite(id: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_revoke_invite', { p_id: id })
+  if (error) throw new Error(error.message)
 }
 
 /**
@@ -2409,7 +2588,7 @@ export async function listAuditLog(limit = 200): Promise<AuditRow[]> {
 // ---- Full data export (backup) ----
 /** Every domain table, in dependency-ish order, for a complete backup. */
 export const EXPORT_TABLES = [
-  'school_settings', 'academic_sessions', 'campuses', 'shifts', 'classes', 'sections', 'subjects',
+  'school_settings', 'academic_sessions', 'classes', 'sections', 'subjects',
   'profiles', 'staff', 'students', 'guardians', 'enrollments',
   'fee_heads', 'fee_structures', 'student_fee_items', 'discounts',
   'invoices', 'invoice_lines', 'payments', 'payment_allocations', 'adjustments',
@@ -2684,6 +2863,9 @@ export interface FamilyPaymentResult {
   credit: number
   family_outstanding?: number
   pending: boolean
+  /** Which child, which month, how much — 0084. Absent on a pending payment,
+   *  because nothing has been allocated yet. */
+  applied?: PaymentApplied[]
 }
 
 /** One search box: CNIC, phone, parent name, student name or GR number. */
@@ -2799,7 +2981,41 @@ export interface PortalResult {
   grade?: string | null
   position?: number | null
   attendance_pct?: number | null
-  subjects?: { subject: string; max: number; marks: number | null; is_absent: boolean; grade: string | null }[]
+  /** PASS / FAIL / PENDING, read out of the frozen card rather than recomputed —
+   *  0083. Before that the portal showed a percentage and a grade and left the
+   *  parent to work out whether 41% passes at a school whose threshold is 40 or
+   *  50, which is the one thing they opened it for. */
+  result?: 'PASS' | 'FAIL' | 'PENDING'
+  failed_subjects?: number
+  pass_percent?: number
+  /** A card generated while some papers were unmarked. Its percentage is over
+   *  the MARKED papers only, so a parent shown 78% with no warning has been told
+   *  something that is not the final figure. The printed card says so on its
+   *  face; the portal did not. */
+  provisional?: boolean
+  unmarked_subjects?: number
+  stream?: string | null
+  /** On a board class this is the field a parent checks hardest — a wrong one is
+   *  a real problem in March. */
+  bise_reg_no?: string | null
+  /** The exact shape 0058 freezes onto the card. `marks` is the THEORY mark and
+   *  `obtained` is theory + practical, which is the distinction the portal was
+   *  losing: a pupil with 40/75 theory and 20/25 practical was shown one number
+   *  and no practical column at all. */
+  subjects?: {
+    subject: string
+    max: number
+    practical_max: number
+    pass: number
+    marks: number | null
+    practical: number | null
+    obtained: number | null
+    out_of: number
+    is_absent: boolean
+    marked: boolean
+    passed: boolean | null
+    grade: string | null
+  }[]
   issued_at: string | null
 }
 
@@ -2865,12 +3081,58 @@ export interface FinanceSummary {
 }
 export interface ProfitSnapshot { today: FinanceSummary; month: FinanceSummary; year: FinanceSummary }
 
-export async function listExpenseCategories(): Promise<ExpenseCategory[]> {
+/**
+ * The expense categories.
+ *
+ * `includeInactive` matters more than it looks. The picker on the expense form
+ * must offer only live categories — otherwise a school keeps filing costs under
+ * a head it retired. But NAMING a past expense needs the retired ones too: with
+ * the active-only list, an expense recorded last year under a category since
+ * retired renders as "Uncategorised", which is a silent misreport of the
+ * school's own books. Same shape as the class-teacher <select> that showed
+ * "unassigned" for a teacher who had left.
+ */
+export async function listExpenseCategories(includeInactive = false): Promise<ExpenseCategory[]> {
   const sb = requireSupabase()
-  return unwrap(
-    await sb.from('expense_categories').select('id, name, sort_order, active')
-      .eq('active', true).order('sort_order'),
-  )
+  let q = sb.from('expense_categories').select('id, name, sort_order, active')
+  if (!includeInactive) q = q.eq('active', true)
+  return unwrap(await q.order('sort_order'))
+}
+
+/**
+ * Add, rename and retire — the three things a school needs and could not do.
+ *
+ * 0030 seeds eight categories and there has never been a way to change them, so
+ * a school whose real costs include generator diesel, van fuel or a security
+ * guard had to file all three under "Other" — which makes the by-category
+ * expense report answer nothing. The table has carried `active` and `sort_order`
+ * since 0030 and an ALL policy for owner/principal/accountant, so only the
+ * screen was missing.
+ *
+ * There is NO delete, deliberately. expenses.category_id references these rows;
+ * removing one would either fail on the foreign key or rewrite what a past
+ * voucher was filed under. Retiring hides it from the picker and leaves history
+ * intact — the same rule as a fee head that has been charged.
+ */
+export async function createExpenseCategory(name: string, sortOrder = 50): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.from('expense_categories')
+    .insert({ name: name.trim(), sort_order: sortOrder })
+  if (error) throw new Error(error.message)
+}
+
+export async function renameExpenseCategory(id: string, name: string): Promise<void> {
+  const sb = requireSupabase()
+  await mustWrite(
+    await sb.from('expense_categories').update({ name: name.trim() }).eq('id', id).select('id'),
+    'That category')
+}
+
+export async function setExpenseCategoryActive(id: string, active: boolean): Promise<void> {
+  const sb = requireSupabase()
+  await mustWrite(
+    await sb.from('expense_categories').update({ active }).eq('id', id).select('id'),
+    'That category')
 }
 
 export async function recordExpense(
@@ -4036,4 +4298,166 @@ export async function getHeadWiseDues(sessionId: string) {
   if (error) throw new Error(error.message)
   return data as { session_id: string; basis: string
                    heads: { fee_head: string; charged: number; collected: number }[] }
+}
+
+/** One row per time our support team opened this school's account. */
+export interface SupportVisit {
+  started_at: string
+  ended_at: string | null
+  reason: string
+  minutes: number
+}
+
+/**
+ * The visits our support team made to THIS school.
+ *
+ * Owner and principal only, enforced by the database (fn_support_visits gates on
+ * has_role, not may_view — a readonly observer has no business in it, and
+ * may_view is true during a support visit anyway, which would make the gate
+ * circular).
+ */
+export async function listSupportVisits(limit = 50): Promise<SupportVisit[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_support_visits', { p_limit: limit })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as SupportVisit[]
+}
+
+import type { InvoiceDocument } from './platform'
+
+// ===========================================================================
+// The school's own subscription bill — migration 0078.
+//
+// Every one of these calls is about THIS school's relationship with the vendor,
+// and every one is gated at the database on owner/principal. They exist because
+// a school that cannot see what it was invoiced, cannot get a copy for its own
+// accounts, does not know which bank account to pay into, and has no way to say
+// "transferred, reference 4471" has exactly one option: phone.
+// ===========================================================================
+
+export interface MyBillingDocument {
+  id: string
+  doc_no: string
+  kind: 'invoice' | 'credit_note'
+  issued_on: string
+  due_on: string | null
+  plan_code: string
+  period_start: string
+  period_end: string
+  months: number
+  amount: number
+  tax_amount: number
+  total: number
+  voided: boolean
+  /** Cash plus any tax withheld — what actually settled this document. */
+  paid: number
+  note: string | null
+}
+
+export interface MyBilling {
+  ok: boolean
+  reason?: string
+  /** Whatever fn_my_licence says, reused rather than restated so this screen and
+   *  the licence banner cannot disagree about whether a licence is expiring. */
+  licence: Record<string, unknown>
+  balance: { billed: number; paid: number; outstanding: number }
+  documents: MyBillingDocument[]
+  payments: {
+    paid_on: string; amount: number; method: string; reference: string | null
+    tax_withheld: number; tax_certificate: string | null
+  }[]
+  /** What this school has told us, and what came of it — including WHY a report
+   *  was rejected. A school that cannot see the reason is a school that phones. */
+  reports: {
+    id: string; amount: number; paid_on: string; method: string
+    reference: string | null; claimed_at: string
+    status: 'pending' | 'confirmed' | 'rejected'
+    decided_at: string | null; decision_note: string | null
+  }[]
+  /** An allow-list of the vendor's settings: the bank block, a support contact,
+   *  and whether online payment exists. Nothing else from that table travels. */
+  pay_to: {
+    business_name: string | null
+    bank_name: string | null; title: string | null
+    account: string | null; iban: string | null
+    support_phone: string | null; support_email: string | null
+    online_available: boolean
+  }
+  how_to_pay: string
+}
+
+export async function myBilling(): Promise<MyBilling> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_my_billing')
+  if (error) throw new Error(error.message)
+  return data as MyBilling
+}
+
+/**
+ * A printable copy of one of this school's own subscription invoices.
+ *
+ * Their accountant needs it with our NTN on it: without that they cannot claim
+ * the expense and cannot file the tax they are obliged to withhold. The shape is
+ * identical to the operator's copy — one document, rendered by one component.
+ */
+export async function myPlatformInvoice(invoiceId: string): Promise<InvoiceDocument> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_my_platform_invoice', { p_invoice_id: invoiceId })
+  if (error) throw new Error(error.message)
+  return data as InvoiceDocument
+}
+
+/**
+ * Tell the vendor a transfer has been made.
+ *
+ * This does NOT reduce the balance. It creates a report the operator checks
+ * against the bank statement — and the screen says so, because a form that looks
+ * like it settled the bill and did not is worse than no form.
+ */
+export async function reportSubscriptionPayment(input: {
+  amount: number; paidOn?: string | null; method?: string
+  reference?: string | null; fromBank?: string | null; note?: string | null
+}): Promise<{ claim_id: string; amount: number; paid_on: string; status: string; message: string }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_my_report_payment', {
+    p_amount: input.amount, p_paid_on: input.paidOn ?? null,
+    p_method: input.method ?? 'bank', p_reference: input.reference ?? null,
+    p_from_bank: input.fromBank ?? null, p_note: input.note ?? null,
+  })
+  if (error) throw new Error(error.message)
+  return data as { claim_id: string; amount: number; paid_on: string; status: string; message: string }
+}
+
+/**
+ * Vendor notices for THIS user, from platform_announcements (0082).
+ *
+ * Read straight from the table rather than through a function: the policy already
+ * says which rows — live window, and audience matching the caller's role — and a
+ * definer function would only restate it in a second place that could disagree.
+ *
+ * Not in message_outbox, deliberately. That table is the school's own outbox to
+ * its parents, and putting vendor notices in it would mean a clerk seeing our
+ * maintenance window in a list of fee reminders they are about to send.
+ */
+export interface LiveAnnouncement {
+  id: string
+  audience: string
+  severity: 'info' | 'warning' | 'critical'
+  title: string
+  message: string
+  ends_at: string
+}
+
+export async function myAnnouncements(): Promise<LiveAnnouncement[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb
+    .from('platform_announcements')
+    .select('id, audience, severity, title, message, ends_at')
+    .order('severity', { ascending: false })
+    .order('starts_at', { ascending: false })
+    .limit(5)
+  // A notice board that fails must not take the screen with it. Silence is the
+  // right failure here: the app works perfectly well without one.
+  if (error) return []
+  return (data ?? []) as LiveAnnouncement[]
 }

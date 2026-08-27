@@ -179,7 +179,9 @@ with sig(migration, object, present) as (values
               and prosrc like '%has_role(%'
               -- fn_checkin_display gates on has_role on purpose: a live
               -- check-in token is a key to the gate, not a read of the records.
+              -- fn_pending_invites: access management, not a school record.
               and proname not in ('fn_may_manage_class', 'fn_may_write_school_file',
+                                  'fn_pending_invites',
                                   'fn_checkin_display', 'may_view')))),
   -- 0061 REWROTE fn_issue_certificate, which has existed since 0021. Its
   -- presence proves nothing at all, and neither does the new table: the
@@ -255,7 +257,298 @@ with sig(migration, object, present) as (values
                       and pg_get_function_result(oid) like '%outstanding%')
          and exists (select 1 from information_schema.tables
                       where table_schema = 'public'
-                        and table_name = 'platform_payments')))
+                        and table_name = 'platform_payments'))),
+  -- 0065's signature is a NEGATIVE plus two positives. handle_new_user dates
+  -- from 0011, so "does it exist" proves nothing; what must be true is that it
+  -- no longer reads a ROLE or a SCHOOL from the field the browser writes, and
+  -- that both trusted channels are wired. A database missing 0065 lets any
+  -- parent sign up again as 'principal'.
+  ('0065_invite_only_provisioning', 'signup cannot choose its own role',
+     (select exists (select 1 from pg_proc where proname = 'handle_new_user'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%raw_app_meta_data%'
+                      and prosrc like '%user_invites%'
+                      and strpos(prosrc, 'raw_user_meta_data->>''role''') = 0)
+         and exists (select 1 from information_schema.tables
+                      where table_schema = 'public' and table_name = 'user_invites'))),
+  -- 0066 REWROTE two billers that date from 0017 and 0020, so presence proves
+  -- nothing. The signature is that both honour effective_from: without it, a
+  -- scheduled fee rise bills the old price AND the new one on the same challan.
+  ('0066_fee_setup',            'both billers honour effective_from',
+     (select exists (select 1 from pg_proc where proname = 'fn_bill_student_month'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%effective_from <=%')
+         and exists (select 1 from pg_proc where proname = 'fn_student_monthly_fee'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%effective_from <=%')
+         and exists (select 1 from pg_proc where proname = 'fn_set_fee_amount'
+                      and pronamespace = 'public'::regnamespace))),
+  -- 0067's signature is the SIX triggers, counted exactly. A partial set leaves
+  -- the count stale through whichever verb is missing, which is the same
+  -- invisible-revenue defect in a narrower window.
+  ('0067_live_student_count',   'six count triggers on students and enrollments',
+     -- By NAME, never ::regproc. That cast raises on a missing function, and
+     -- detect.sql must survive being run against a database missing anything —
+     -- the first version aborted the entire file with 'function
+     -- public.fn__refresh_counts_touched does not exist', taking every other
+     -- row's answer with it.
+     (select (select count(*) from pg_trigger t
+               join pg_proc pr on pr.oid = t.tgfoid
+               join pg_namespace nr on nr.oid = pr.pronamespace
+               where not t.tgisinternal
+                 and nr.nspname = 'public'
+                 and pr.proname = 'fn__refresh_counts_touched'
+                 and t.tgrelid in ('public.students'::regclass,
+                                   'public.enrollments'::regclass)) = 6)),
+  -- 0068 gated fn_my_licence's limit_notice on the renewal being close. The
+  -- function has existed since 0026, so the signature is the gate variable.
+  -- Without it, 0067's live count means a principal is told they have outgrown
+  -- their plan the same afternoon they admit the 101st child.
+  ('0068_limit_notice_timing',  'the over-limit banner is timed, not immediate',
+     (select exists (select 1 from pg_proc where proname = 'fn_my_licence'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%v_tell%'))),
+  -- 0069 is the migration ledger — the thing whose absence is the reason this
+  -- whole file exists. Its own header says it: "There is no migration ledger in
+  -- this project, so nothing recorded what a given database had already
+  -- applied."
+  --
+  -- The signature is the table AND the recording function, not just the table: a
+  -- ledger nothing writes to is no better than no ledger, and the generated
+  -- block at the end of every bundle calls fn_record_migration by name.
+  ('0069_migration_ledger',     'schema_migrations + fn_record_migration',
+     (select exists (select 1 from information_schema.tables
+                      where table_schema = 'public' and table_name = 'schema_migrations')
+         and exists (select 1 from pg_proc where proname = 'fn_record_migration'
+                      and pronamespace = 'public'::regnamespace))),
+  -- 0070 closed TWO cross-tenant defects, so the signature is all three of its
+  -- parts. A database missing it lets one school read another school's family
+  -- head name, phone, child's name and debt through fn_queue_message, AND write
+  -- a discount line onto another school's invoice through
+  -- fn__apply_discount_lines. Both functions predate it, so presence proves
+  -- nothing — the tells are the school predicates inside them and the revoked
+  -- grant that made the second one reachable.
+  --
+  -- has_function_privilege() is called through a pg_proc JOIN, never with a text
+  -- signature: the text form RAISES on a missing function, and this file must
+  -- survive being run against a database missing anything.
+  ('0070_queue_message_scoping', 'family and invoice lookups are scoped',
+     (select exists (select 1 from pg_proc where proname = 'fn_queue_message'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%id = p_family_id and school_id = v_school%')
+         and exists (select 1 from pg_proc where proname = 'fn__apply_discount_lines'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%d.school_id = v_school%')
+         and not exists (select 1 from pg_proc p
+                          join pg_namespace n on n.oid = p.pronamespace
+                          where n.nspname = 'public' and p.proname like 'fn\_\_%'
+                            and has_function_privilege('authenticated', p.oid, 'execute')))),
+  -- 0071 closed the PUBLIC grant. Postgres hands EXECUTE to PUBLIC on every new
+  -- function, and 0001:702 gives `anon` usage on the schema, so all 212
+  -- functions were callable by an unauthenticated request. Every one refused on
+  -- its own gate, so this was inert — but it meant a future function that forgot
+  -- its gate would be exposed to the internet rather than to signed-in staff.
+  --
+  -- The signature is the outcome, not the statement: anon can execute nothing in
+  -- public, AND the signup Edge Function's entry point is reachable by
+  -- service_role (0071 grants that explicitly; before it, signup worked only
+  -- because Supabase's project bootstrap had granted routines to service_role by
+  -- accident).
+  ('0071_function_grants',      'anon can execute nothing in public',
+     (select not exists (select 1 from pg_proc p
+                          join pg_namespace n on n.oid = p.pronamespace
+                          where n.nspname = 'public'
+                            and has_function_privilege('anon', p.oid, 'execute'))
+         and exists (select 1 from pg_proc p
+                      join pg_namespace n on n.oid = p.pronamespace
+                      where n.nspname = 'public' and p.proname = 'fn_signup_school'
+                        and has_function_privilege('service_role', p.oid, 'execute')))),
+  -- 0072 scoped two lookups that searched every school. Both functions long
+  -- predate it — fn_admit_student from 0004, fn_import_students from 0012 — so
+  -- presence proves nothing and the signature has to be the predicate inside.
+  -- Without it, the first admission at any new school attaches another school's
+  -- fee head to the invoice, and the go-live importer refuses rows for a class
+  -- the school owns because another school registered the same name first.
+  ('0072_name_lookups_scoped',  'class names and fee-head types are per-school',
+     (select exists (select 1 from pg_proc where proname = 'fn_admit_student'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%type = ''admission'' and active and school_id = public.current_school_id()%')
+         and exists (select 1 from pg_proc where proname = 'fn_import_students'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%active and school_id = public.current_school_id() and lower(btrim(name))%'))),
+  -- 0073. The operator's own audit trail. Captured by trigger on the tables only
+  -- the operator writes, rather than by a call in each function, because a log a
+  -- future function forgets to call is worse than none — its gaps look like
+  -- inactivity. The signature is the table AND one of the triggers, since a
+  -- table nothing writes to is the failure mode.
+  ('0073_operator_actions',     'operator_actions + its capture triggers',
+     (select exists (select 1 from information_schema.tables
+                      where table_schema = 'public' and table_name = 'operator_actions')
+         and (select count(*) from pg_trigger t
+                join pg_proc pr on pr.oid = t.tgfoid
+                join pg_namespace nr on nr.oid = pr.pronamespace
+               where not t.tgisinternal and nr.nspname = 'public'
+                 and pr.proname in ('fn__log_platform_invoice', 'fn__log_platform_payment',
+                                    'fn__log_subscription_change', 'fn__log_school_created')) = 4)),
+  -- 0074. Read-only support access. Three predicates had to change and one had to
+  -- NOT change, so the signature is all four: is_staff and may_view must consult
+  -- the session, current_school_id must fall back to it, and has_role must be
+  -- untouched — that last one is what refuses all 43 write policies, and a
+  -- database where has_role mentions it is a database where the vendor can write
+  -- to every school.
+  ('0074_operator_support_sessions', 'read-only support sessions, has_role untouched',
+     (select exists (select 1 from information_schema.tables
+                      where table_schema = 'public' and table_name = 'operator_sessions')
+         and exists (select 1 from pg_proc where proname = 'is_staff'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%is_operator_session%')
+         and exists (select 1 from pg_proc where proname = 'may_view'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%is_operator_session%')
+         and exists (select 1 from pg_proc where proname = 'current_school_id'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%operator_sessions%')
+         and not exists (select 1 from pg_proc where proname = 'has_role'
+                          and pronamespace = 'public'::regnamespace
+                          and prosrc like '%is_operator_session%'))),
+  -- 0075. The school-detail screen. It reads tenant tables as the operator with
+  -- no support session open, which is a deliberate narrow exception — counts and
+  -- dates, never a child, guardian or family. tenant_isolation.sql TEST 9 sweeps
+  -- the rendered payload for pupil names to keep it that way.
+  ('0075_school_detail',        'fn_platform_school_detail',
+     (select exists (select 1 from pg_proc where proname = 'fn_platform_school_detail'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%readiness%'))),
+  -- 0076. The seller half of every invoice. The signature is the single-row
+  -- table AND fn__amount_in_words, because a settings row with no way to render
+  -- an amount in words still cannot produce a document a bank counter accepts.
+  ('0076_platform_settings',    'platform_settings + amount in words',
+     (select exists (select 1 from information_schema.tables
+                      where table_schema = 'public' and table_name = 'platform_settings')
+         and exists (select 1 from pg_proc where proname = 'fn__amount_in_words'
+                      and pronamespace = 'public'::regnamespace))),
+  -- 0077. Document numbers and the two corrections. Four predicates, because
+  -- each one is a defect on its own: no doc_no means an accountant cannot pay
+  -- against anything; no net_total means every total is computed by hand in six
+  -- places; no tax_withheld means the receivable is permanently wrong for any
+  -- school that withholds tax at source; and no numbering trigger means the
+  -- series breaks the moment anything inserts an invoice by another path.
+  ('0077_invoice_documents',    'doc numbers, void, credit notes, withholding tax',
+     (select (select count(*) from information_schema.columns
+               where table_schema = 'public' and table_name = 'platform_invoices'
+                 and column_name in ('doc_no', 'kind', 'net_total', 'voided_at')) = 4
+         and exists (select 1 from information_schema.columns
+                      where table_schema = 'public' and table_name = 'platform_payments'
+                        and column_name = 'tax_withheld')
+         and exists (select 1 from pg_proc where proname = 'fn_platform_credit_note'
+                      and pronamespace = 'public'::regnamespace)
+         and exists (select 1 from pg_trigger t
+                       join pg_proc pr on pr.oid = t.tgfoid
+                      where not t.tgisinternal and pr.proname = 'fn__assign_doc_no'))),
+  -- 0078. Renewals and the school's own view. The duplicate-invoice trigger is
+  -- part of the signature: without it a double-clicked renewal bills a school
+  -- twice for one year, and the worklist cannot detect that afterwards — see the
+  -- header of 0078 on why the screen-side check that was tried first could never
+  -- work.
+  ('0078_renewals_self_serve',  'renewal worklist, payment reports, duplicate guard',
+     (select exists (select 1 from pg_proc where proname = 'fn_platform_due_soon'
+                      and pronamespace = 'public'::regnamespace)
+         and exists (select 1 from information_schema.tables
+                      where table_schema = 'public'
+                        and table_name = 'platform_payment_claims')
+         and exists (select 1 from pg_proc where proname = 'fn_my_billing'
+                      and pronamespace = 'public'::regnamespace)
+         and exists (select 1 from pg_trigger t
+                       join pg_proc pr on pr.oid = t.tgfoid
+                      where not t.tgisinternal
+                        and pr.proname = 'fn__refuse_duplicate_invoice'))),
+  -- 0079. A school could be started and never stopped. The signature includes
+  -- fn_effective_status honouring the suspension, because the columns without
+  -- that are decoration: a suspended_at nothing reads is a school still running.
+  ('0079_school_lifecycle',     'suspend, cancel, archive, per-school grace',
+     (select exists (select 1 from information_schema.columns
+                      where table_schema = 'public' and table_name = 'subscriptions'
+                        and column_name = 'suspended_at')
+         and exists (select 1 from information_schema.columns
+                      where table_schema = 'public' and table_name = 'schools'
+                        and column_name = 'archived_at')
+         and exists (select 1 from pg_proc where proname = 'fn_effective_status'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%suspended_at%')
+         and exists (select 1 from pg_proc where proname = 'fn_my_licence'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%suspend_reason%'))),
+  -- 0080. A school could never leave. The FK rule is part of the signature: with
+  -- the old ON DELETE CASCADE still in place, purging a school would destroy our
+  -- own invoices to it, which tax retention does not permit.
+  ('0080_offboarding',          'export and purge, with the sales ledger kept',
+     (select exists (select 1 from information_schema.tables
+                      where table_schema = 'public' and table_name = 'platform_exports')
+         and exists (select 1 from pg_proc where proname = 'fn_platform_purge_school'
+                      and pronamespace = 'public'::regnamespace)
+         and (select confdeltype from pg_constraint
+               where conname = 'platform_invoices_school_id_fkey') = 'n')),
+  -- 0081. What the business is worth. fn__school_mrr is in the signature rather
+  -- than fn_platform_metrics alone, because without it MRR falls back to nothing
+  -- and the screen shows a confident zero.
+  ('0081_platform_metrics',     'MRR, churn, and the growth chart',
+     (select exists (select 1 from pg_proc where proname = 'fn_platform_metrics'
+                      and pronamespace = 'public'::regnamespace)
+         and exists (select 1 from pg_proc where proname = 'fn__school_mrr'
+                      and pronamespace = 'public'::regnamespace)
+         and exists (select 1 from pg_proc where proname = 'fn_platform_growth'
+                      and pronamespace = 'public'::regnamespace))),
+  -- 0082. The download registry, notices, and the public price list. The anon
+  -- GRANT on plans is part of the signature: without it the website silently
+  -- falls back to whatever prices are typed into its HTML, which is the drift
+  -- this migration exists to stop.
+  ('0082_releases_and_announcements', 'installer registry, notices, public prices',
+     (select exists (select 1 from information_schema.tables
+                      where table_schema = 'public' and table_name = 'app_releases')
+         and exists (select 1 from information_schema.tables
+                      where table_schema = 'public'
+                        and table_name = 'platform_announcements')
+         and has_table_privilege('anon', 'public.plans', 'select')
+         and has_table_privilege('anon', 'public.app_releases', 'select'))),
+  -- 0083. The parent could see the marks and not whether their child passed.
+  -- The DROPS are part of the signature deliberately: `campuses` still standing
+  -- means the migration did not finish, and an install that legitimately has
+  -- campus rows would have been told so by the guard rather than reported here.
+  ('0083_portal_verdict_and_dead_tables', 'the pass/fail verdict reaches the portal',
+     (select exists (select 1 from pg_proc where proname = 'fn_portal_child_results'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%failed_subjects%')
+         and to_regclass('public.campuses') is null
+         and not exists (select 1 from pg_policies
+                          where schemaname = 'public' and tablename = 'schools'
+                            and policyname = 'schools_update_platform'))),
+  -- 0084. A family receipt that could not say which child it paid for. The
+  -- signature is both payment functions returning the detail, because the
+  -- internal reader existing on its own prints nothing on any receipt.
+  ('0084_receipt_allocation_detail', 'receipts name the child and the month',
+     (select exists (select 1 from pg_proc where proname = 'fn__payment_applied'
+                      and pronamespace = 'public'::regnamespace)
+         and exists (select 1 from pg_proc where proname = 'fn_record_family_payment'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%fn__payment_applied%')
+         and exists (select 1 from pg_proc where proname = 'fn_record_payment'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%fn__payment_applied%'))),
+  -- 0085. Any teacher could write any class's EXAM marks — the ones on the
+  -- result card. The signature is the GATE inside fn_enter_marks, not the table:
+  -- subject_teachers standing on its own is a register nothing consults, which
+  -- would leave the hole open while looking closed.
+  ('0085_subject_teachers',      'only the right teacher can mark a paper',
+     (select exists (select 1 from information_schema.tables
+                      where table_schema = 'public' and table_name = 'subject_teachers')
+         and exists (select 1 from pg_proc where proname = 'fn_may_mark_subject'
+                      and pronamespace = 'public'::regnamespace)
+         and exists (select 1 from pg_proc where proname = 'fn_enter_marks'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%fn_may_mark_subject%')
+         and exists (select 1 from pg_proc where proname = 'fn_enter_assessment_marks'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%fn_may_mark_subject%')))
 )
 select migration,
        object                                   as looked_for,

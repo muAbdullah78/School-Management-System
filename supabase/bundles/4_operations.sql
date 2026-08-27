@@ -3139,3 +3139,24 @@ grant execute on function public.fn_position_holders(uuid, int) to authenticated
 revoke all on function public.fn_set_exam_remark(uuid, uuid, text) from anon;
 revoke all on function public.fn_exam_remarks(uuid, uuid) from anon;
 revoke all on function public.fn_position_holders(uuid, int) from anon;
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Record what this bundle applied (no-op before 0069 creates the ledger)
+-- ─────────────────────────────────────────────────────────────────────────
+do $ledger$
+begin
+  if to_regprocedure('public.fn_record_migration(text,text,text)') is null then
+    raise notice 'migration ledger not present yet — nothing recorded';
+    return;
+  end if;
+  perform public.fn_record_migration('0040_bulk_fees.sql', '4_operations.sql');
+  perform public.fn_record_migration('0041_student_list.sql', '4_operations.sql');
+  perform public.fn_record_migration('0042_dashboard_truth.sql', '4_operations.sql');
+  perform public.fn_record_migration('0043_message_settings.sql', '4_operations.sql');
+  perform public.fn_record_migration('0044_reports.sql', '4_operations.sql');
+  perform public.fn_record_migration('0045_balance_sheet.sql', '4_operations.sql');
+  perform public.fn_record_migration('0046_enquiries.sql', '4_operations.sql');
+  perform public.fn_record_migration('0047_reachability.sql', '4_operations.sql');
+  perform public.fn_record_migration('0048_corrections.sql', '4_operations.sql');
+  perform public.fn_record_migration('0049_remarks_and_positions.sql', '4_operations.sql');
+end $ledger$;

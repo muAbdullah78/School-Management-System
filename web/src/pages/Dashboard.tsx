@@ -133,7 +133,7 @@ export function Dashboard() {
               <span className="mt-0.5 text-due-600"><IconAlert /></span>
               <div>
                 <p className="font-medium">
-                  {d.classes_without_fee} class{d.classes_without_fee === 1 ? '' : 'es'} have students but no fee set
+                  {d.classes_without_fee} class{d.classes_without_fee === 1 ? ' has' : 'es have'} students but no fee set
                 </p>
                 <p className="mt-0.5 text-due-700">
                   Generating challans for them produces Rs 0 slips and reports success, so the school

@@ -18,10 +18,46 @@ export function fmtPKR(n: number | null | undefined): string {
   return (v < 0 ? '−' : '') + 'Rs ' + abs
 }
 
+/**
+ * The same number WITHOUT the unit, for a table that states the unit once in its
+ * heading.
+ *
+ * Not a nicety. On a 360px phone — most of the parents using the portal — four
+ * money columns each carrying "Rs " either wrap "Rs" onto its own line or push
+ * the rightmost column off the edge, and the rightmost column is Outstanding:
+ * the one number the page exists to show. Dropping the repeated unit buys back
+ * about 25px per column, which is the difference.
+ *
+ * Sign handling is fmtPKR's, deliberately: rounded once, minus in front, so a
+ * credit reads −4,500 and never "4,500" or "-0".
+ */
+export function fmtAmount(n: number | null | undefined): string {
+  const v = Math.round(Number(n ?? 0))
+  return (v < 0 ? '−' : '') + Math.abs(v).toLocaleString('en-PK', { maximumFractionDigits: 0 })
+}
+
 export function fmtDate(s?: string | null): string {
   if (!s) return '—'
   const d = new Date(s)
   return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })
+}
+
+/**
+ * Date AND time, for the few places where the hour matters.
+ *
+ * Support visits are the reason this exists: "26 Aug 2026" tells a principal
+ * nothing useful about a visit they want to ask about, and two visits on the same
+ * day would be indistinguishable.
+ */
+export function fmtDateTime(s?: string | null): string {
+  if (!s) return '—'
+  const d = new Date(s)
+  return isNaN(d.getTime())
+    ? '—'
+    : d.toLocaleString('en-PK', {
+        year: 'numeric', month: 'short', day: 'numeric',
+        hour: 'numeric', minute: '2-digit',
+      })
 }
 
 /** First day of a month as YYYY-MM-DD from a <input type="month"> value (YYYY-MM). */

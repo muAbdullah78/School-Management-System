@@ -1,0 +1,13 @@
+{
+  "name": "school-manager-docs-tools",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Playwright lives HERE and not in web/, deliberately. It is needed only to photograph screens for docs/GUIDE.html, and adding a browser download to the app's package would make every CI install pull ~100MB it never uses. Run: npm install --prefix scripts",
+  "scripts": {
+    "shots": "node shot-guide.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.47.0"
+  }
+}

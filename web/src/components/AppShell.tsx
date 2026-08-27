@@ -7,6 +7,8 @@ import { appTitle } from '@/lib/config'
 import { useSchoolName } from '@/hooks/useSchoolName'
 import { OfflineIndicator } from '@/components/OfflineIndicator'
 import { LicenceBanner } from '@/components/LicenceBanner'
+import { OperatorBanner } from './OperatorBanner'
+import { AnnouncementBanner } from './AnnouncementBanner'
 import { NAV_ICONS, IconLogout, IconAlert } from '@/components/icons'
 import { EmptyState } from '@/components/ui'
 import { GlobalSearch } from '@/components/GlobalSearch'
@@ -102,18 +104,37 @@ export function AppShell() {
               </div>
             </div>
           </div>
-          <button
-            onClick={() => void signOut()}
-            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-medium text-brand-50 transition hover:bg-white/20"
-          >
-            <IconLogout />
-            Sign out
-          </button>
+          {/* A staff member could not change their own password anywhere in the
+              software. The only remedy was to ask the vendor to set one by hand
+              and send it over WhatsApp. */}
+          <div className="mt-2 flex gap-2">
+            <NavLink
+              to="/password"
+              className="flex flex-1 items-center justify-center rounded-lg bg-white/10 px-2 py-1.5 text-xs font-medium text-brand-50 transition hover:bg-white/20"
+            >
+              Password
+            </NavLink>
+            <button
+              onClick={() => void signOut()}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-white/10 px-2 py-1.5 text-xs font-medium text-brand-50 transition hover:bg-white/20"
+            >
+              <IconLogout />
+              Sign out
+            </button>
+          </div>
         </div>
       </aside>
 
       <main className="flex flex-1 flex-col overflow-hidden">
+        {/* ABOVE the licence banner, deliberately. "You are in somebody
+            else's data" outranks "your subscription expires on Friday": one
+            is about what you are looking at right now. */}
+        <OperatorBanner />
         <LicenceBanner />
+        {/* BELOW both. "Somebody from the vendor is in your data" and "your
+            licence expires Friday" are both about this school; a maintenance
+            notice is about everybody, and it is the one that can wait. */}
+        <AnnouncementBanner />
         <OfflineIndicator />
 
         {/* Top bar: where you are, and the one search box.

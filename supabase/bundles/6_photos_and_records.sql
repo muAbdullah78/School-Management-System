@@ -3780,3 +3780,879 @@ grant execute on function
 grant execute on function
   public.fn_platform_record_payment(uuid, numeric, date, text, text, uuid, text)
   to authenticated;
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- 0065_invite_only_provisioning.sql
+-- ─────────────────────────────────────────────────────────────────────────
+-- =============================================================================
+-- 0065 — A parent could make themselves principal
+--
+-- handle_new_user() decided a new login's SCHOOL and ROLE from
+-- new.raw_user_meta_data. That field is whatever the browser passes to
+-- auth.signUp({options:{data:{...}}}) using the PUBLIC anon key. 'principal' and
+-- 'accountant' were both on its recognised-role whitelist, and a recognised role
+-- was created ACTIVE.
+--
+-- Proven on a real database. Two strangers signed up naming a victim school:
+--
+--        full_name       |    role    | active
+--   ---------------------+------------+--------
+--    Real Owner          | owner      | t
+--    Totally Normal Pare | accountant | t     <-- self-assigned
+--    Also Normal         | principal  | t     <-- self-assigned
+--
+-- Both then passed has_role() and may_view(), so both could read that school's
+-- fees, payments and children.
+--
+-- Every signed-in user already knows their own school_id, so the floor on this
+-- was: ANY parent, teacher or clerk could create a second login and make
+-- themselves PRINCIPAL of their own school. Reaching another school needed only
+-- its UUID, which leaks through a screenshot or a support chat.
+--
+-- The whitelist was not the bug. 0059 added it, and it correctly stopped an
+-- UNRECOGNISED role landing active. The bug is that a RECOGNISED role was
+-- believed at all, because the thing supplying it is the attacker.
+--
+-- THE RULE THIS ESTABLISHES: authorisation never comes from a field the client
+-- can write. Two trusted sources replace it.
+--
+--   1. raw_app_meta_data — settable only by the service role (the Edge
+--      Functions). A browser signUp cannot write it. This is Supabase's own
+--      documented split: user_metadata is user-controlled, app_metadata is not.
+--   2. public.user_invites — a row an owner or principal created for a specific
+--      email, which is an authorised act checked by RLS.
+--
+-- raw_user_meta_data is still read for ONE thing: the display name. A forged
+-- full_name is a cosmetic nuisance, not a privilege.
+--
+-- DEPLOYMENT ORDER MATTERS. Both Edge Functions must be redeployed with this
+-- migration, because they are what supply app_metadata. If the SQL lands first,
+-- a brand-new school signup creates a login with NO profile and the app says
+-- "this login is not attached to a school" — visible and recoverable. That is
+-- the safe direction to fail; the reverse would leave the hole open.
+--
+-- Re-runnable.
+-- =============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 1. Invitations
+--
+-- The path that lets a school add a teacher WITHOUT the create-teacher Edge
+-- Function being deployed. Creating the invite is the authorised act; the
+-- signup that follows merely redeems it.
+-- ---------------------------------------------------------------------------
+create table if not exists public.user_invites (
+  id          uuid primary key default gen_random_uuid(),
+  school_id   uuid not null references public.schools(id) on delete cascade,
+  -- Stored folded and trimmed, and matched the same way. An invite for
+  -- "Ayesha@School.pk" must be redeemable by a login typed "ayesha@school.pk",
+  -- or the school raises a support ticket about a working feature.
+  email       text not null,
+  role        public.user_role not null,
+  full_name   text,
+  created_by  uuid references public.profiles(id),
+  created_at  timestamptz not null default now(),
+  expires_at  timestamptz not null default now() + interval '7 days',
+  accepted_at timestamptz,
+  accepted_by uuid,
+  -- An owner is never invited. The first account of a school becomes owner
+  -- through provisioning, and later owners are promoted on the Users screen by
+  -- an existing owner. Allowing 'owner' here would put the school's top
+  -- privilege behind an email address.
+  constraint user_invites_not_owner check (role <> 'owner'),
+  constraint user_invites_email_folded check (email = lower(btrim(email)))
+);
+
+-- One LIVE invite per email per school. Partial, so a redeemed or revoked
+-- invite does not block issuing a fresh one.
+create unique index if not exists user_invites_pending_key
+  on public.user_invites (school_id, email) where accepted_at is null;
+
+create index if not exists idx_user_invites_email
+  on public.user_invites (email) where accepted_at is null;
+
+alter table public.user_invites enable row level security;
+
+-- The school's owner or principal manages its own invites. Deliberately NOT
+-- may_view(): an observer must not read a list of pending logins, and 'readonly'
+-- has no business here at all.
+drop policy if exists user_invites_select on public.user_invites;
+create policy user_invites_select on public.user_invites
+  for select to authenticated
+  using (school_id = public.current_school_id() and public.has_role('owner','principal'));
+
+-- No INSERT/UPDATE/DELETE policy on purpose. Every write goes through the
+-- definer functions below, so one place decides what a valid invite is — the
+-- same rule 0064's platform tables follow.
+
+-- ---------------------------------------------------------------------------
+-- 2. The trigger, rewritten
+-- ---------------------------------------------------------------------------
+create or replace function public.handle_new_user()
+returns trigger language plpgsql security definer set search_path = public, auth as $$
+declare
+  -- TRUSTED. app_metadata can only be written by the service role, so these
+  -- came from an Edge Function and not from a browser.
+  v_school   uuid := nullif(new.raw_app_meta_data->>'school_id', '')::uuid;
+  v_asked    text := nullif(new.raw_app_meta_data->>'role', '');
+  -- UNTRUSTED, and used only for the display name.
+  v_name     text := coalesce(
+                       nullif(new.raw_user_meta_data->>'full_name', ''),
+                       split_part(coalesce(new.email, ''), '@', 1));
+  v_email    text := lower(btrim(coalesce(new.email, '')));
+  v_inv      public.user_invites;
+  v_matches  integer;
+  v_is_first boolean;
+  v_role     public.user_role;
+  -- Still a whitelist even though the source is trusted: a typo in an Edge
+  -- Function must not crash a signup on an enum cast, and defence in depth here
+  -- costs one expression.
+  v_known    boolean := coalesce(v_asked in ('principal','admin_clerk','accountant',
+                                             'class_teacher','subject_teacher',
+                                             'readonly','parent'), false);
+begin
+  -- ---- path A: an invitation, redeemed by email --------------------------
+  -- Checked FIRST, so a school that invited someone gets the role it chose even
+  -- if a stale client also sent metadata.
+  if v_school is null and v_email <> '' then
+    -- Deliberately NOT "order by created_at desc limit 1". Two schools can
+    -- invite the same address — a teacher moonlighting at both is ordinary in
+    -- Pakistan — and there is no honest way to choose between them: a profile
+    -- carries ONE school_id, so picking either silently puts that person inside
+    -- one school's children's records while the other school believes they are
+    -- in. Ordering by created_at also ties when both invites are written in one
+    -- transaction, where now() is identical, making the choice arbitrary rather
+    -- than merely debatable. Caught by assertion 23 of tests/provisioning.sql.
+    --
+    -- So: exactly one live invitation is redeemed. More than one creates
+    -- NOTHING and leaves them all pending, which is a state a human can see and
+    -- resolve — the schools revoke one, or issue a second address.
+    select count(*) into v_matches
+      from public.user_invites
+     where email = v_email and accepted_at is null and expires_at > now();
+
+    if v_matches = 1 then
+      select * into v_inv
+        from public.user_invites
+       where email = v_email and accepted_at is null and expires_at > now();
+
+      insert into public.profiles (id, full_name, role, school_id, active)
+      values (new.id, coalesce(nullif(btrim(coalesce(v_inv.full_name,'')),''), v_name),
+              v_inv.role, v_inv.school_id, true)
+      on conflict (id) do nothing;
+
+      update public.user_invites
+         set accepted_at = now(), accepted_by = new.id
+       where id = v_inv.id;
+
+      return new;
+    elsif v_matches > 1 then
+      -- Ambiguous. Create nothing and leave every invitation pending.
+      return new;
+    end if;
+  end if;
+
+  -- ---- path B: provisioned by an Edge Function ---------------------------
+  -- No trusted school means we create NOTHING. A login with no profile is
+  -- inert: the app tells the person their login is not attached to a school,
+  -- and an owner can attach it on the Users screen. That is the correct
+  -- outcome for an uninvited stranger, and it is what closes the hole.
+  if v_school is null then
+    return new;
+  end if;
+
+  select count(*) = 0 into v_is_first
+  from public.profiles where school_id = v_school;
+
+  -- First account of a school is its owner. Safe now in a way it was not
+  -- before: v_school came from app_metadata, so only the signup Edge Function
+  -- that just created this school can name it.
+  v_role := (case when v_is_first then 'owner'
+                  when v_known   then v_asked
+                  else 'readonly' end)::public.user_role;
+
+  insert into public.profiles (id, full_name, role, school_id, active)
+  values (new.id, v_name, v_role, v_school,
+          -- Active only when we know who this is. An Edge Function that names a
+          -- school but no recognised role lands the account INERT rather than
+          -- quietly giving it sight of the whole school — the defect 0059 fixed
+          -- and this keeps fixed.
+          (v_is_first or v_known))
+  on conflict (id) do nothing;
+
+  return new;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 3. Managing invitations
+-- ---------------------------------------------------------------------------
+create or replace function public.fn_invite_user(
+  p_email text,
+  p_role public.user_role,
+  p_full_name text default null
+) returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_school uuid := public.current_school_id();
+  v_email  text := lower(btrim(coalesce(p_email, '')));
+  v_id     uuid;
+begin
+  if not public.has_role('owner','principal') then
+    raise exception 'Only an owner or principal may invite a user'
+      using errcode = '42501';
+  end if;
+  if v_email = '' or position('@' in v_email) = 0 then
+    raise exception 'A valid email address is required';
+  end if;
+  if p_role = 'owner' then
+    raise exception 'An owner cannot be invited. Create the account with '
+                    'another role, then promote it on the Users screen.';
+  end if;
+
+  -- Somebody already signed in with this address. Inviting them again would
+  -- create a second profile for one person, which is how a school ends up with
+  -- two logins for the same teacher and no idea which is live.
+  if exists (select 1 from auth.users u
+              join public.profiles p on p.id = u.id
+             where lower(btrim(u.email)) = v_email and p.school_id = v_school) then
+    raise exception '% already has a login at this school', v_email;
+  end if;
+
+  insert into public.user_invites (school_id, email, role, full_name, created_by)
+  values (v_school, v_email, p_role,
+          nullif(btrim(coalesce(p_full_name, '')), ''), auth.uid())
+  on conflict (school_id, email) where accepted_at is null
+    do update set role       = excluded.role,
+                  full_name  = excluded.full_name,
+                  created_by = excluded.created_by,
+                  created_at = now(),
+                  expires_at = now() + interval '7 days'
+  returning id into v_id;
+
+  insert into public.audit_log(school_id, actor, action, entity, entity_id, after)
+  values (v_school, auth.uid(), 'user_invited', 'user_invites', v_id::text,
+          jsonb_build_object('email', v_email, 'role', p_role));
+
+  return jsonb_build_object('id', v_id, 'email', v_email, 'role', p_role,
+                            'expires_at', now() + interval '7 days');
+end;
+$$;
+
+create or replace function public.fn_revoke_invite(p_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_school uuid := public.current_school_id(); v_email text;
+begin
+  if not public.has_role('owner','principal') then
+    raise exception 'Only an owner or principal may revoke an invitation'
+      using errcode = '42501';
+  end if;
+  delete from public.user_invites
+   where id = p_id and school_id = v_school and accepted_at is null
+   returning email into v_email;
+  if v_email is null then
+    raise exception 'That invitation was not found, or it has already been used';
+  end if;
+  insert into public.audit_log(school_id, actor, action, entity, entity_id, after)
+  values (v_school, auth.uid(), 'invite_revoked', 'user_invites', p_id::text,
+          jsonb_build_object('email', v_email));
+end;
+$$;
+
+drop function if exists public.fn_pending_invites();
+create function public.fn_pending_invites()
+returns table (id uuid, email text, role text, full_name text,
+               invited_by text, created_at timestamptz, expires_at timestamptz,
+               expired boolean)
+language plpgsql stable security definer set search_path = public as $$
+declare v_school uuid := public.current_school_id();
+begin
+  if not public.has_role('owner','principal') then
+    raise exception 'Not permitted' using errcode = '42501';
+  end if;
+  return query
+  select i.id, i.email, i.role::text, i.full_name, p.full_name,
+         i.created_at, i.expires_at, i.expires_at <= now()
+    from public.user_invites i
+    left join public.profiles p on p.id = i.created_by and p.school_id = v_school
+   where i.school_id = v_school and i.accepted_at is null
+   order by i.created_at desc;
+end;
+$$;
+
+grant execute on function public.fn_invite_user(text, public.user_role, text) to authenticated;
+grant execute on function public.fn_revoke_invite(uuid) to authenticated;
+grant execute on function public.fn_pending_invites() to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 4. Forensics for a database that was already exposed
+--
+-- The hole leaves a fingerprint: a login whose raw_user_meta_data carries a
+-- 'role' key was created by the client path, because neither Edge Function ever
+-- put a role there. Not proof of abuse — the old createTeacherLogin fallback did
+-- exactly this legitimately — but it is the list worth reading by eye.
+--
+-- Run it, and check every row against the staff you actually hired:
+--
+--   select u.email, p.role, p.active, p.created_at, s.name
+--     from auth.users u
+--     join public.profiles p on p.id = u.id
+--     join public.schools s on s.id = p.school_id
+--    where u.raw_user_meta_data ? 'role'
+--    order by p.created_at desc;
+--
+-- Deactivate anything you do not recognise:
+--   update public.profiles set active = false where id = '<uuid>';
+-- ---------------------------------------------------------------------------
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- 0066_fee_setup.sql
+-- ─────────────────────────────────────────────────────────────────────────
+-- =============================================================================
+-- 0066 — A school could not set a fee, and a scheduled rise double-billed
+--
+-- Three defects, all proven on a real database, all in the module the whole
+-- product exists for.
+--
+-- 1. SAVING A FEE AMOUNT ALWAYS FAILED. 0035 replaced the 3-column unique key on
+--    fee_structures with a 4-column one including effective_from. The app still
+--    sent the old 3-column ON CONFLICT, so every save raised
+--
+--      ERROR:  there is no unique or exclusion constraint matching the
+--              ON CONFLICT specification            (42P10)
+--
+--    A 100% failure rate since 0035, on Settings -> Fee Structure.
+--
+-- 2. NOTHING COULD CREATE A FEE HEAD. Fifteen Settings screens exist and none of
+--    them manages fee_heads, so a new school had no 'Tuition' to put an amount
+--    against: the Fee Structure grid showed an empty list with a Save button and
+--    nothing to fill in. (The table has had a write policy all along — this was
+--    a missing screen, not a missing permission.)
+--
+--    Together, 1 and 2 mean a fresh Pakistani school could not bill a monthly
+--    fee at all. Challans printed Rs 0, Deposits stayed empty, and Year Rollover
+--    dropped amounts. The dashboard's "N classes have students but no fee set"
+--    warning was honest and the school had no way to act on it.
+--
+-- 3. A SCHEDULED FEE RISE DOUBLE-BILLED EVERY PARENT. effective_from arrived in
+--    0035 and only ONE of four readers was taught about it:
+--
+--      fn_generate_class_invoices  correct — latest row on or before the month
+--      fn_bill_student_month       NO date filter — joins EVERY dated row
+--      fn_student_monthly_fee      NO date filter — SUMS every dated row
+--      getFeeStructure (the grid)  NO date filter — arbitrary row wins
+--
+--    Proven: tuition 1500, a rise to 1800 scheduled from 2027-01-01, then bill
+--    the pupil for MAY 2026:
+--
+--      description | amount
+--      ------------+---------
+--      Tuition     | 1500.00
+--      Tuition     | 1800.00      <-- not in effect for another eight months
+--
+--    and fn_student_monthly_fee reported the monthly fee as 3300. The two
+--    billing paths in the product disagreed with each other, and the wrong one
+--    is the per-student path the fee counter uses.
+--
+-- Re-runnable.
+-- =============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 1. Fee heads: a real management surface
+--
+-- Through functions rather than the existing table policy, because there are
+-- rules worth keeping in one place: two heads called 'Tuition' make the fee grid
+-- ambiguous, and a head that has already been billed must never be deleted out
+-- from under an invoice line that names it.
+-- ---------------------------------------------------------------------------
+create or replace function public.fn_upsert_fee_head(
+  p_name text,
+  p_type public.fee_head_type default 'monthly',
+  p_is_recurring boolean default true,
+  p_is_refundable boolean default false,
+  p_sort_order integer default 0,
+  p_id uuid default null
+) returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  v_school uuid := public.current_school_id();
+  v_name   text := nullif(btrim(coalesce(p_name, '')), '');
+  v_id     uuid;
+begin
+  if not public.has_role('owner','principal','admin_clerk') then
+    raise exception 'Not permitted to change fee heads' using errcode = '42501';
+  end if;
+  if v_name is null then
+    raise exception 'A fee head needs a name';
+  end if;
+  if p_id is not null then
+    perform public.assert_own('fee_heads', p_id);
+  end if;
+
+  -- Case-insensitive, because "Tuition" and "tuition" in one grid is a support
+  -- call about a duplicate row nobody can tell apart.
+  if exists (select 1 from public.fee_heads
+              where school_id = v_school
+                and lower(btrim(name)) = lower(v_name)
+                and (p_id is null or id <> p_id)) then
+    raise exception 'This school already has a fee head called %', v_name;
+  end if;
+
+  -- A refundable head is money the school HOLDS and must give back (0060), so
+  -- it cannot also be a recurring monthly charge — that combination would bill a
+  -- deposit every month and report each one as a liability.
+  if coalesce(p_is_refundable, false) and coalesce(p_is_recurring, false) then
+    raise exception 'A refundable head cannot be recurring: a deposit is taken '
+                    'once and given back, not charged every month';
+  end if;
+
+  if p_id is null then
+    insert into public.fee_heads
+      (school_id, name, type, is_recurring, is_refundable, sort_order, active)
+    values (v_school, v_name, p_type, coalesce(p_is_recurring, true),
+            coalesce(p_is_refundable, false), coalesce(p_sort_order, 0), true)
+    returning id into v_id;
+  else
+    update public.fee_heads
+       set name = v_name, type = p_type,
+           is_recurring = coalesce(p_is_recurring, true),
+           is_refundable = coalesce(p_is_refundable, false),
+           sort_order = coalesce(p_sort_order, 0)
+     where id = p_id and school_id = v_school
+     returning id into v_id;
+    if v_id is null then
+      raise exception 'That fee head was not found in this school';
+    end if;
+  end if;
+
+  return v_id;
+end;
+$$;
+
+create or replace function public.fn_set_fee_head_active(p_id uuid, p_active boolean)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_school uuid := public.current_school_id(); v_n integer;
+begin
+  if not public.has_role('owner','principal','admin_clerk') then
+    raise exception 'Not permitted to change fee heads' using errcode = '42501';
+  end if;
+  perform public.assert_own('fee_heads', p_id);
+
+  update public.fee_heads set active = coalesce(p_active, true)
+   where id = p_id and school_id = v_school;
+  get diagnostics v_n = row_count;
+  if v_n = 0 then
+    raise exception 'That fee head was not found in this school';
+  end if;
+end;
+$$;
+
+-- Deleting is deliberately NOT offered. An invoice line names its head, so
+-- removing one would either break history or silently rewrite what a parent was
+-- charged for. Deactivating stops it being billed and keeps every past challan
+-- readable — the same choice 0053 made for staff and 0054 for pupils.
+drop function if exists public.fn_fee_heads(boolean);
+create function public.fn_fee_heads(p_include_inactive boolean default false)
+returns table (id uuid, name text, type text, is_recurring boolean,
+               is_refundable boolean, sort_order integer, active boolean,
+               in_use boolean)
+language plpgsql stable security definer set search_path = public as $$
+declare v_school uuid := public.current_school_id();
+begin
+  if not public.may_view('owner','principal','admin_clerk','accountant') then
+    raise exception 'Not permitted' using errcode = '42501';
+  end if;
+  return query
+  select h.id, h.name, h.type::text, h.is_recurring, h.is_refundable,
+         h.sort_order, h.active,
+         -- Whether anything already depends on it. The management screen greys
+         -- out "delete" reasoning and explains why a head can only be switched
+         -- off, rather than offering an action that would fail.
+         exists (select 1 from public.fee_structures fs
+                  where fs.fee_head_id = h.id and fs.school_id = v_school)
+         or exists (select 1 from public.invoice_lines il
+                     where il.fee_head_id = h.id and il.school_id = v_school)
+    from public.fee_heads h
+   where h.school_id = v_school
+     and (coalesce(p_include_inactive, false) or h.active)
+   order by h.sort_order, h.name;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 2. Setting an amount, with the dated history it was designed for
+--
+-- The grid means "what this class pays now". So this sets the amount effective
+-- FROM TODAY and leaves earlier months alone — which is the whole point of
+-- effective_from, and what makes a challan re-read for March still say March's
+-- price.
+--
+-- The exception is a fee that has no history yet: there, the row is written at
+-- the base date so it also covers a month billed retrospectively. A school
+-- setting up in August and back-billing April must not find April empty.
+-- ---------------------------------------------------------------------------
+create or replace function public.fn_set_fee_amount(
+  p_session_id uuid,
+  p_class_id uuid,
+  p_fee_head_id uuid,
+  p_amount numeric,
+  -- Explicit date for the scheduled-rise case. Null means "from today".
+  p_effective_from date default null
+) returns date language plpgsql security definer set search_path = public as $$
+declare
+  v_school uuid := public.current_school_id();
+  v_base   date := '1900-01-01';
+  v_when   date;
+  v_rows   integer;
+  v_dated  integer;
+begin
+  if not public.has_role('owner','principal','admin_clerk') then
+    raise exception 'Not permitted to set fee amounts' using errcode = '42501';
+  end if;
+  if p_amount is null or p_amount < 0 then
+    raise exception 'A fee amount cannot be negative';
+  end if;
+  perform public.assert_own('academic_sessions', p_session_id);
+  perform public.assert_own('classes', p_class_id);
+  perform public.assert_own('fee_heads', p_fee_head_id);
+
+  select count(*), count(*) filter (where effective_from > v_base)
+    into v_rows, v_dated
+    from public.fee_structures
+   where school_id = v_school and session_id = p_session_id
+     and class_id = p_class_id and fee_head_id = p_fee_head_id;
+
+  v_when := coalesce(
+    p_effective_from,
+    -- No price on record at all, or only the base one: write the base, so the
+    -- amount covers every month including one billed in arrears. Once a dated
+    -- change exists, history is in play and a new amount starts today.
+    case when v_dated = 0 then v_base else current_date end);
+
+  insert into public.fee_structures
+    (school_id, session_id, class_id, fee_head_id, amount, effective_from)
+  values (v_school, p_session_id, p_class_id, p_fee_head_id, p_amount, v_when)
+  on conflict (session_id, class_id, fee_head_id, effective_from)
+    do update set amount = excluded.amount;
+
+  return v_when;
+end;
+$$;
+
+-- What the grid reads: the amount in force today, plus any change already
+-- scheduled. Reading the raw table is what made the grid show an arbitrary row
+-- once a school had used the increment tool.
+drop function if exists public.fn_fee_structure(uuid, uuid);
+create function public.fn_fee_structure(p_session_id uuid, p_class_id uuid)
+returns table (fee_head_id uuid, fee_head text, is_recurring boolean,
+               amount numeric, effective_from date,
+               next_amount numeric, next_from date)
+language plpgsql stable security definer set search_path = public as $$
+declare v_school uuid := public.current_school_id();
+begin
+  if not public.may_view('owner','principal','admin_clerk','accountant') then
+    raise exception 'Not permitted' using errcode = '42501';
+  end if;
+  perform public.assert_own('academic_sessions', p_session_id);
+  perform public.assert_own('classes', p_class_id);
+
+  return query
+  select h.id, h.name, h.is_recurring,
+         now_row.amount, now_row.effective_from,
+         nxt.amount, nxt.effective_from
+    from public.fee_heads h
+    left join lateral (
+      select fs.amount, fs.effective_from
+        from public.fee_structures fs
+       where fs.school_id = v_school and fs.session_id = p_session_id
+         and fs.class_id = p_class_id and fs.fee_head_id = h.id
+         and fs.effective_from <= current_date
+       order by fs.effective_from desc limit 1
+    ) now_row on true
+    left join lateral (
+      select fs.amount, fs.effective_from
+        from public.fee_structures fs
+       where fs.school_id = v_school and fs.session_id = p_session_id
+         and fs.class_id = p_class_id and fs.fee_head_id = h.id
+         and fs.effective_from > current_date
+       order by fs.effective_from asc limit 1
+    ) nxt on true
+   where h.school_id = v_school and h.active
+   order by h.sort_order, h.name;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 3. The two date-blind billers
+--
+-- Both now do exactly what fn_generate_class_invoices already did: take the
+-- latest price on or before the month being billed. Without this, a school that
+-- schedules a rise starts charging every parent the old price PLUS the new one.
+-- ---------------------------------------------------------------------------
+do $rewrite$
+declare
+  v_def text;
+  -- The date-blind join, and its dated replacement. Written as a programmatic
+  -- rewrite rather than a hand-copied function body so the surrounding logic —
+  -- discounts, student_fee_items overrides, the invoice header — cannot drift
+  -- from whatever the current migration left there.
+  v_old_bill text := 'from public.fee_structures fs
+  join public.fee_heads fh on fh.id = fs.fee_head_id
+  left join public.student_fee_items sfi
+    on sfi.enrollment_id = v_enr.id and sfi.fee_head_id = fh.id and sfi.active
+  where fs.session_id = v_enr.session_id and fs.class_id = v_enr.class_id
+    and fh.is_recurring and fh.active';
+  v_new_bill text := 'from public.fee_heads fh
+  join lateral (
+    select fs.amount
+      from public.fee_structures fs
+     where fs.school_id = public.current_school_id()
+       and fs.session_id = v_enr.session_id and fs.class_id = v_enr.class_id
+       and fs.fee_head_id = fh.id
+       and fs.effective_from <= coalesce(p_period_month, current_date)
+     order by fs.effective_from desc limit 1
+  ) fs on true
+  left join public.student_fee_items sfi
+    on sfi.enrollment_id = v_enr.id and sfi.fee_head_id = fh.id and sfi.active
+  where fh.school_id = public.current_school_id() and fh.is_recurring and fh.active';
+begin
+  select pg_get_functiondef(p.oid) into v_def
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'fn_bill_student_month';
+
+  if v_def is not null and strpos(v_def, v_old_bill) > 0 then
+    execute replace(v_def, v_old_bill, v_new_bill) || ';';
+    raise notice '0066: fn_bill_student_month now honours effective_from';
+  end if;
+end;
+$rewrite$;
+
+do $rewrite2$
+declare
+  v_def text;
+  v_old text := 'from public.fee_structures fs
+  join public.fee_heads fh on fh.id = fs.fee_head_id
+  left join public.student_fee_items sfi
+    on sfi.enrollment_id = v_enr.id and sfi.fee_head_id = fh.id and sfi.active
+  where fs.session_id = v_enr.session_id and fs.class_id = v_enr.class_id
+    and fh.is_recurring and fh.active';
+  -- No date parameter here, and adding one would change the signature every
+  -- caller depends on. current_date is the honest reading of "the monthly fee":
+  -- what this pupil is charged now.
+  v_new text := 'from public.fee_heads fh
+  join lateral (
+    select fs.amount
+      from public.fee_structures fs
+     where fs.school_id = public.current_school_id()
+       and fs.session_id = v_enr.session_id and fs.class_id = v_enr.class_id
+       and fs.fee_head_id = fh.id
+       and fs.effective_from <= current_date
+     order by fs.effective_from desc limit 1
+  ) fs on true
+  left join public.student_fee_items sfi
+    on sfi.enrollment_id = v_enr.id and sfi.fee_head_id = fh.id and sfi.active
+  where fh.school_id = public.current_school_id() and fh.is_recurring and fh.active';
+begin
+  select pg_get_functiondef(p.oid) into v_def
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'fn_student_monthly_fee';
+
+  if v_def is not null and strpos(v_def, v_old) > 0 then
+    execute replace(v_def, v_old, v_new) || ';';
+    raise notice '0066: fn_student_monthly_fee now honours effective_from';
+  end if;
+end;
+$rewrite2$;
+
+-- ---------------------------------------------------------------------------
+-- 4. Grants
+-- ---------------------------------------------------------------------------
+grant execute on function public.fn_upsert_fee_head(
+  text, public.fee_head_type, boolean, boolean, integer, uuid) to authenticated;
+grant execute on function public.fn_set_fee_head_active(uuid, boolean) to authenticated;
+grant execute on function public.fn_fee_heads(boolean) to authenticated;
+grant execute on function public.fn_set_fee_amount(uuid, uuid, uuid, numeric, date) to authenticated;
+grant execute on function public.fn_fee_structure(uuid, uuid) to authenticated;
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- 0067_live_student_count.sql
+-- ─────────────────────────────────────────────────────────────────────────
+-- =============================================================================
+-- 0067 — A school could outgrow its plan and nobody would ever find out
+--
+-- subscriptions.student_count is a STORED number, and it drives everything the
+-- operator uses to price a school: the console's "N students / limit",
+-- limit_state, over_limit_flagged_at, suggested_plan, needs_upgrade, and the
+-- licence banner the SCHOOL itself sees.
+--
+-- Before this migration it was refreshed from exactly two places:
+-- fn_activate_subscription (0064) and the manual "Refresh counts" button. No
+-- trigger on students, none on enrollments. So the number was whatever it had
+-- been the last time a human clicked.
+--
+-- Proven on a real database — 400 children actually enrolled, Starter plan:
+--
+--   actually_enrolled | console_shows | plan_allows | flagged_over_limit
+--   ------------------+---------------+-------------+--------------------
+--                 400 |             0 |         100 | f
+--
+-- and the school's own licence banner also read 0 of 100, so neither side ever
+-- learned. A school on Starter (Rs 9,500) that should be on Institution
+-- (Rs 35,000) is Rs 25,500 a year of invisible revenue, per school. It is also
+-- what made the owner's console show "0 students" for a school with two.
+--
+-- 0064 fixed the RENEWAL path — it re-counts before deciding, so it cannot price
+-- a school onto a plan it has outgrown. This fixes the DETECTION path, which was
+-- the half that tells anybody to act.
+--
+-- WHY A STATEMENT-LEVEL TRIGGER
+--
+-- Row-level would call fn_refresh_student_count once per row. That function
+-- counts the whole school, updates subscriptions and upserts a snapshot — so
+-- importing 400 pupils would do that 400 times, and every one of them takes a
+-- row lock on the same subscriptions row, serialising the import against itself.
+--
+-- REFERENCING NEW TABLE (Postgres 10+) lets one statement see every row it
+-- touched, so a 400-row insert refreshes once. The transition table also carries
+-- school_id, which is what makes a statement trigger able to scope the work at
+-- all — without it a statement-level trigger has no idea which school changed.
+--
+-- Re-runnable.
+-- =============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 1. The trigger function
+--
+-- One function for both tables and all three verbs. Which transition tables
+-- exist depends on the verb — an INSERT has no OLD, a DELETE has no NEW — so it
+-- branches on TG_OP and refreshes each affected school exactly once.
+-- ---------------------------------------------------------------------------
+create or replace function public.fn__refresh_counts_touched()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  v_schools uuid[];
+  v_school  uuid;
+begin
+  -- Branch on TG_OP rather than declaring both transition tables everywhere:
+  -- Postgres refuses OLD TABLE on an INSERT trigger and NEW TABLE on a DELETE
+  -- one ("OLD TABLE can only be specified for a DELETE or UPDATE trigger"), so
+  -- only the pair that exists for this verb may be named. plpgsql plans a
+  -- statement the first time it is reached, so the unreachable branches never
+  -- try to resolve a table that is not there.
+  if tg_op = 'INSERT' then
+    select array_agg(distinct school_id) into v_schools
+      from touched_new where school_id is not null;
+  elsif tg_op = 'DELETE' then
+    select array_agg(distinct school_id) into v_schools
+      from touched_old where school_id is not null;
+  else
+    select array_agg(distinct s) into v_schools
+      from (select school_id as s from touched_new
+            union
+            select school_id as s from touched_old) x
+     where s is not null;
+  end if;
+
+  foreach v_school in array coalesce(v_schools, '{}'::uuid[])
+  loop
+    -- Guard, not laziness: a school row can exist before its subscription does
+    -- (the signup Edge Function creates the school, then the subscription), and
+    -- fn_refresh_student_count raises 'No subscription for school %'. A pupil
+    -- import must never fail because of a counter.
+    if exists (select 1 from public.subscriptions where school_id = v_school) then
+      perform public.fn_refresh_student_count(v_school);
+    end if;
+  end loop;
+  return null;
+end;
+$$;
+
+revoke all on function public.fn__refresh_counts_touched() from public;
+
+-- ---------------------------------------------------------------------------
+-- 2. The triggers
+--
+-- On enrollments AND students, because fn_count_students joins both: an
+-- enrolment appearing or its status changing moves the count, and so does a
+-- pupil being marked withdrawn or soft-deleted while their enrolment row sits
+-- untouched.
+--
+-- Statement-level AFTER, so a bulk import refreshes once. DEFERRABLE is
+-- deliberately NOT used — 0060 learned that a deferred constraint trigger fires
+-- at COMMIT, detached from the statement that caused it and impossible to catch.
+-- ---------------------------------------------------------------------------
+drop trigger if exists trg_enrollments_count_ins on public.enrollments;
+create trigger trg_enrollments_count_ins
+  after insert on public.enrollments
+  referencing new table as touched_new
+  for each statement execute function public.fn__refresh_counts_touched();
+
+drop trigger if exists trg_enrollments_count_upd on public.enrollments;
+create trigger trg_enrollments_count_upd
+  after update on public.enrollments
+  referencing new table as touched_new old table as touched_old
+  for each statement execute function public.fn__refresh_counts_touched();
+
+drop trigger if exists trg_enrollments_count_del on public.enrollments;
+create trigger trg_enrollments_count_del
+  after delete on public.enrollments
+  referencing old table as touched_old
+  for each statement execute function public.fn__refresh_counts_touched();
+
+drop trigger if exists trg_students_count_ins on public.students;
+create trigger trg_students_count_ins
+  after insert on public.students
+  referencing new table as touched_new
+  for each statement execute function public.fn__refresh_counts_touched();
+
+drop trigger if exists trg_students_count_upd on public.students;
+create trigger trg_students_count_upd
+  after update on public.students
+  referencing new table as touched_new old table as touched_old
+  for each statement execute function public.fn__refresh_counts_touched();
+
+drop trigger if exists trg_students_count_del on public.students;
+create trigger trg_students_count_del
+  after delete on public.students
+  referencing old table as touched_old
+  for each statement execute function public.fn__refresh_counts_touched();
+
+-- ---------------------------------------------------------------------------
+-- 3. Bring every existing school's count up to date
+--
+-- Without this, a database that already has the stale number keeps it until
+-- somebody edits a pupil. The owner's console showing "0 students / 100" for a
+-- school with pupils is exactly that state, and a migration that fixes the
+-- mechanism while leaving the wrong number on screen has not fixed the
+-- complaint.
+-- ---------------------------------------------------------------------------
+do $backfill$
+declare v_school uuid; v_n integer := 0;
+begin
+  for v_school in select school_id from public.subscriptions loop
+    perform public.fn_refresh_student_count(v_school);
+    v_n := v_n + 1;
+  end loop;
+  raise notice '0067: recounted % school(s)', v_n;
+end;
+$backfill$;
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Record what this bundle applied (no-op before 0069 creates the ledger)
+-- ─────────────────────────────────────────────────────────────────────────
+do $ledger$
+begin
+  if to_regprocedure('public.fn_record_migration(text,text,text)') is null then
+    raise notice 'migration ledger not present yet — nothing recorded';
+    return;
+  end if;
+  perform public.fn_record_migration('0057_photos_and_logo.sql', '6_photos_and_records.sql');
+  perform public.fn_record_migration('0058_exam_computation.sql', '6_photos_and_records.sql');
+  perform public.fn_record_migration('0059_readonly_boundary.sql', '6_photos_and_records.sql');
+  perform public.fn_record_migration('0060_refundable_deposits.sql', '6_photos_and_records.sql');
+  perform public.fn_record_migration('0061_certificates.sql', '6_photos_and_records.sql');
+  perform public.fn_record_migration('0062_staff_checkin.sql', '6_photos_and_records.sql');
+  perform public.fn_record_migration('0063_constraint_function_grants.sql', '6_photos_and_records.sql');
+  perform public.fn_record_migration('0064_operator_billing.sql', '6_photos_and_records.sql');
+  perform public.fn_record_migration('0065_invite_only_provisioning.sql', '6_photos_and_records.sql');
+  perform public.fn_record_migration('0066_fee_setup.sql', '6_photos_and_records.sql');
+  perform public.fn_record_migration('0067_live_student_count.sql', '6_photos_and_records.sql');
+end $ledger$;

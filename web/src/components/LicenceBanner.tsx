@@ -22,6 +22,14 @@ const STYLES: Record<Exclude<Urgency, 'none'>, string> = {
  *    "you are over your limit" warning while they admit students reads as "stop
  *    admitting students" — the exact behaviour the soft-limit rule exists to
  *    avoid.
+ *
+ * WHEN the limit notice appears is decided by the server, not here. 0068 nulls
+ * `limit_notice` unless the renewal is within 30 days or the licence is already
+ * in grace/locked/cancelled: 0067 made the student count live, so before that
+ * change a principal was told they had outgrown their plan the same afternoon
+ * they admitted the 101st child. The rule sits in fn_my_licence because a rule
+ * living in one screen is a rule the next screen will not have — so this
+ * component simply renders whatever the server was willing to say.
  */
 export function LicenceBanner() {
   const { profile } = useAuth()

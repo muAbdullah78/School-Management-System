@@ -316,7 +316,18 @@ begin
       -- Delegates every write to fn_record_payment, which asserts ownership of
       -- each student itself. Proved by bulk_fees.sql assertion 22, which shows a
       -- foreign student being refused through this function.
-      'fn_record_bulk_payments'
+      'fn_record_bulk_payments',
+      -- 0077. Numbers a platform invoice, in a BEFORE INSERT trigger, by taking
+      -- max(serial)+1 across ALL invoices. Deliberately unscoped: the document
+      -- series belongs to the VENDOR, not to a school. A per-school series would
+      -- mean two invoices numbered INV-0004 in the same set of books, and the
+      -- reason an unbroken series matters is a tax audit.
+      --
+      -- Not a leak: it reads one integer column, returns nothing to any caller,
+      -- and platform_invoices is unreadable by a school through RLS —
+      -- platform_billing.sql assertion 87b proves that. It is also a trigger
+      -- function, revoked from every app role, so nothing can call it directly.
+      'fn__assign_doc_no'
     );
 
   if v_bad is not null then

@@ -257,14 +257,39 @@ begin
     '14. next month''s slip carries their unpaid month as previous dues (' || v_prev || ')');
 
   -- And the identity has to hold for EVERY slip of both months, not just this one.
+  --
+  -- The CTE is MATERIALIZED, and that is load-bearing rather than tidy.
+  --
+  -- Written as one flat query — fn_challan() called in the WHERE clause next to
+  -- `s.family_id = v_fam` — this assertion passes or fails on the planner's whim.
+  -- fn_challan RAISES on an invoice outside the caller's school (assertion 24
+  -- below tests exactly that), and this suite's own fixture contains another
+  -- school's child. Under a hash join the family filter is applied first and all
+  -- is well; under a nested loop the function is evaluated before the filter
+  -- excludes the foreign invoice, and the whole suite dies with
+  --
+  --     ERROR:  invoices not found in this school
+  --
+  -- which reads like a product defect and is not one. It surfaced as an
+  -- intermittent failure in the second pass of the both-orders run, and I first
+  -- blamed the migration I happened to be writing; the migration was innocent.
+  -- Proved by forcing it: `set local enable_hashjoin = off; enable_mergejoin =
+  -- off` makes the flat shape raise every time and this shape never raise.
+  --
+  -- MATERIALIZED forces the filtering to complete before any row reaches the
+  -- function, so the assertion tests the arithmetic rather than the planner.
+  with mine as materialized (
+    select i.id
+    from public.invoices i
+    join public.students s on s.id = i.student_id
+    where s.family_id = v_fam
+      and i.status <> 'void'
+  )
   select count(*) into v_n
-  from public.invoices i
-  join public.students s on s.id = i.student_id
-  where s.family_id = v_fam
-    and i.status <> 'void'
-    and (public.fn_challan(i.id)->>'this_month_due')::numeric
-      + (public.fn_challan(i.id)->>'previous_dues')::numeric
-      = (public.fn_challan(i.id)->>'total_payable')::numeric;
+  from mine
+  where (public.fn_challan(mine.id)->>'this_month_due')::numeric
+      + (public.fn_challan(mine.id)->>'previous_dues')::numeric
+      = (public.fn_challan(mine.id)->>'total_payable')::numeric;
   perform pg_temp.ok(v_n = 6,
     '15. the halves add up on all six slips across both months (' || v_n || ')');
 end $t$;

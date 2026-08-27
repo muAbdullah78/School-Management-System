@@ -18,9 +18,26 @@ interface AuthState {
   loading: boolean
   signIn: (email: string, password: string) => Promise<{ error: string | null }>
   signOut: () => Promise<void>
+  /** Send a reset link. See the note on sendReset below for why it never says
+   *  whether the address exists. */
+  sendReset: (email: string) => Promise<{ error: string | null }>
+  setPassword: (password: string) => Promise<{ error: string | null }>
 }
 
-const AuthContext = createContext<AuthState | undefined>(undefined)
+/**
+ * Exported so the rendering harnesses in web/tools/ can supply a signed-in
+ * profile without a Supabase client.
+ *
+ * They render real PAGES — not just printables — to check layout and to capture
+ * the screenshots that go in the user guide, and every page calls useAuth(),
+ * which throws outside a provider. Rendering the real <AuthProvider> is not an
+ * option: with no client it settles on profile = null, so every page would
+ * render its signed-out state.
+ *
+ * Exporting the context rather than adding a test-only provider keeps exactly one
+ * implementation of the real thing.
+ */
+export const AuthContext = createContext<AuthState | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
@@ -89,8 +106,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(null)
   }
 
+  /**
+   * Send a password reset link.
+   *
+   * WHY THIS EXISTS AT ALL. There was no way back into this software for anyone
+   * who forgot a password — not a principal, not a clerk, not a parent. The only
+   * remedy was to ask the vendor to reset it by hand, which means the vendor
+   * setting a password for a school's owner and telling it to them over
+   * WhatsApp. For a product sold to fifty schools that is not a support burden,
+   * it is a security posture.
+   *
+   * IT NEVER SAYS WHETHER THE ADDRESS EXISTS. The screen shows the same sentence
+   * for a real account, a typo and a stranger fishing for whether a particular
+   * teacher works at a particular school. Supabase behaves this way too, so all
+   * this does is refuse to leak what the API already refuses to leak.
+   *
+   * redirectTo must ALSO be listed under Authentication → URL Configuration in
+   * Supabase, or the link in the email lands on the site root with the token
+   * stripped and the parent sees a login screen and no explanation.
+   */
+  async function sendReset(email: string) {
+    if (!supabase) return { error: 'App is not configured.' }
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset`,
+    })
+    // Reported only when the request itself failed — no network, or the address
+    // is rate-limited. Not "no such user", which this must not disclose.
+    return { error: error?.message ?? null }
+  }
+
+  /**
+   * Set a new password for whoever is signed in.
+   *
+   * Used from two places: the recovery link, and (later) a change-password
+   * screen. Supabase enforces its own minimum length server-side; the caller
+   * checks the two boxes match, because "your passwords do not match" told after
+   * a round trip is a worse experience than told immediately.
+   */
+  async function setPassword(password: string) {
+    if (!supabase) return { error: 'App is not configured.' }
+    const { error } = await supabase.auth.updateUser({ password })
+    return { error: error?.message ?? null }
+  }
+
   return (
-    <AuthContext.Provider value={{ session, profile, loading, signIn, signOut }}>
+    <AuthContext.Provider
+      value={{ session, profile, loading, signIn, signOut, sendReset, setPassword }}
+    >
       {children}
     </AuthContext.Provider>
   )

@@ -19,7 +19,8 @@
 #
 # WHAT IT DOES
 #
-# Extracts every `.rpc('name', { p_x: ..., p_y: ... })` from web/src/lib/db.ts,
+# Extracts every `.rpc('name', { p_x: ..., p_y: ... })` from the app's data-layer
+# files (web/src/lib/db.ts and web/src/lib/platform.ts),
 # then for each one asks the database whether a function of that name exists and
 # whether every parameter passed is one the function actually accepts.
 #
@@ -33,14 +34,37 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-DB_FILE=web/src/lib/db.ts
-[ -f "$DB_FILE" ] || { echo "cannot find $DB_FILE"; exit 1; }
+# EVERY file that calls an RPC, not just db.ts.
+#
+# This scanned db.ts alone until the operator console grew its own data layer in
+# web/src/lib/platform.ts — twelve RPC calls with hand-typed parameter names,
+# none of them checked, in exactly the seam this script exists for. A renamed
+# parameter there would have compiled, deployed, and failed the first time the
+# operator opened the console.
+RPC_FILES=$(ls web/src/lib/db.ts web/src/lib/platform.ts 2>/dev/null)
+[ -n "$RPC_FILES" ] || { echo "cannot find any RPC caller under web/src/lib"; exit 1; }
 
 # --- what the database offers -------------------------------------------------
 # name<TAB>comma-separated parameter names
+# name<TAB>params<TAB>can `authenticated` execute it
+#
+# The third column exists because of fn_exam_marksheet. The app has called it
+# from db.ts:1388 since 0015 and it never had a grant to `authenticated` — it
+# worked only because Postgres grants EXECUTE to PUBLIC on every new function by
+# default. So the app's whole RPC surface was resting partly on a default nobody
+# had decided on, and the day that default is tightened the marksheet screen
+# breaks at runtime on the first school that opens it. Exactly the seam this
+# script exists for.
 psql -tAF$'\t' -c "
   select p.proname,
-         coalesce(string_agg(a.name, ',' order by a.ord), '')
+         coalesce(string_agg(a.name, ',' order by a.ord), ''),
+         -- NO ::text here. psql renders a boolean as t/f, but ::text renders
+         -- it as true/false, and the comparison below is against 't'. The first
+         -- version had the cast and therefore reported all 137 RPCs as
+         -- unexecutable — a guard that cries wolf gets ignored, and then it
+         -- protects nothing. Caught by looking at /tmp/rpc_db.tsv, not at the
+         -- output.
+         bool_or(has_function_privilege('authenticated', p.oid, 'execute'))
   from pg_proc p
   join pg_namespace n on n.oid = p.pronamespace
   left join lateral (
@@ -53,10 +77,10 @@ psql -tAF$'\t' -c "
 
 # --- what the app calls -------------------------------------------------------
 # One line per call: name<TAB>param<TAB>param...
-python3 - "$DB_FILE" > /tmp/rpc_app.tsv <<'PY'
+python3 - $RPC_FILES > /tmp/rpc_app.tsv <<'PY'
 import re, sys
 
-src = open(sys.argv[1]).read()
+src = '\n'.join(open(f).read() for f in sys.argv[1:])
 out = []
 
 for m in re.finditer(r"\.rpc\(\s*'([a-z0-9_]+)'\s*(,)?", src):
@@ -111,6 +135,7 @@ fail=0
 checked=0
 missing_fns=()
 bad_params=()
+not_executable=()
 
 while IFS=$'\t' read -r -a parts; do
   fn="${parts[0]}"
@@ -124,6 +149,16 @@ while IFS=$'\t' read -r -a parts; do
   fi
 
   db_params=$(printf '%s' "$db_line" | cut -f2)
+
+  # Can a signed-in user actually CALL it? A function that exists with the right
+  # parameters but no grant fails at runtime with "permission denied for
+  # function", which looks nothing like a missing function and sends whoever
+  # debugs it looking in the wrong place.
+  if [ "$(printf '%s' "$db_line" | cut -f3)" != "t" ]; then
+    not_executable+=("$fn")
+    fail=1
+  fi
+
   for ((i = 1; i < ${#parts[@]}; i++)); do
     p="${parts[$i]}"
     [ -z "$p" ] && continue
@@ -134,7 +169,7 @@ while IFS=$'\t' read -r -a parts; do
   done
 done < /tmp/rpc_app.tsv
 
-echo "checked $checked RPC call sites in $DB_FILE"
+echo "checked $checked RPC call sites in $(echo $RPC_FILES | tr '\n' ' ')"
 
 if [ ${#missing_fns[@]} -gt 0 ]; then
   echo
@@ -146,6 +181,16 @@ if [ ${#bad_params[@]} -gt 0 ]; then
   echo
   echo "PARAMETERS THE APP PASSES THAT THE FUNCTION DOES NOT ACCEPT:"
   printf '  %s\n' "${bad_params[@]}"
+fi
+
+if [ ${#not_executable[@]} -gt 0 ]; then
+  echo
+  echo "FUNCTIONS THE APP CALLS THAT \`authenticated\` CANNOT EXECUTE:"
+  printf '  %s\n' "${not_executable[@]}"
+  echo
+  echo "Add: grant execute on function public.<name>(<arg types>) to authenticated;"
+  echo "Do NOT rely on the PUBLIC default — 0071 revokes it, because it also"
+  echo "handed every function to the unauthenticated anon role."
 fi
 
 if [ $fail -eq 0 ]; then

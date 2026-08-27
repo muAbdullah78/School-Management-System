@@ -10,7 +10,8 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  listExpenseCategories,
+  listExpenseCategories, createExpenseCategory, renameExpenseCategory,
+  setExpenseCategoryActive,
   recordExpense,
   recordOtherIncome,
   reverseExpense,
@@ -80,7 +81,21 @@ export function AccountsPage() {
   const [flash, setFlash] = useState<string | null>(null)
 
   const snap = useQuery({ queryKey: ['profitSnapshot'], queryFn: getProfitSnapshot })
-  const cats = useQuery({ queryKey: ['expenseCategories'], queryFn: listExpenseCategories })
+  /* Wrapped in an arrow, not passed by reference. React Query calls queryFn with
+     a context object, so `queryFn: listExpenseCategories` would hand that object
+     to the includeInactive parameter — truthy — and quietly list retired
+     categories in the picker. */
+  const cats = useQuery({
+    queryKey: ['expenseCategories'],
+    queryFn: () => listExpenseCategories(),
+  })
+  /* Including the retired ones, for NAMING past expenses. An expense filed under
+     a category since retired would otherwise render as "Uncategorised", which
+     misreports the school's own books. */
+  const allCats = useQuery({
+    queryKey: ['expenseCategoriesAll'],
+    queryFn: () => listExpenseCategories(true),
+  })
   const range = useQuery({
     queryKey: ['financeSummary', from, to],
     queryFn: () => getFinanceSummary(from, to),
@@ -135,7 +150,8 @@ export function AccountsPage() {
     onSuccess: () => { setFlash('Income reversed'); refresh() },
   })
 
-  const catName = (id: string | null) => cats.data?.find((c) => c.id === id)?.name ?? 'Uncategorised'
+  const catName = (id: string | null) =>
+    allCats.data?.find((c) => c.id === id)?.name ?? 'Uncategorised'
 
   return (
     <div>
@@ -402,6 +418,12 @@ export function AccountsPage() {
                 <option value="">Uncategorised</option>
                 {cats.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
+              {/* Right here, not in Settings. The moment a school needs a new
+                  category is the moment it is typing an expense that does not fit
+                  one — and a screen that makes them abandon the entry, navigate
+                  away and come back is a screen that trains them to pick
+                  "Other". Which is how the by-category report became useless. */}
+              <ManageCategories />
             </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Date">
@@ -479,6 +501,158 @@ export function AccountsPage() {
           </div>
         </Card>
       )}
+    </div>
+  )
+}
+
+/**
+ * Add, rename and retire expense categories.
+ *
+ * 0030 seeded eight and there was NO WAY to change them. A school whose real
+ * costs include generator diesel, van fuel or a security guard filed all three
+ * under "Other", and the by-category expense report — the one a proprietor opens
+ * to ask where the money went — answered "Other: Rs 380,000".
+ *
+ * NOTHING IS DELETED. expenses.category_id points at these rows, so removing one
+ * would either fail on the foreign key or rewrite what a past voucher was filed
+ * under. Retired categories leave the picker and stay on old vouchers, the same
+ * rule as a fee head that has already been charged.
+ *
+ * Collapsed by default: this is a five-times-a-year job sitting next to a screen
+ * used every day.
+ */
+function ManageCategories() {
+  const qc = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const [name, setName] = useState('')
+  const [editing, setEditing] = useState<string | null>(null)
+  const [editName, setEditName] = useState('')
+
+  const all = useQuery({
+    queryKey: ['expenseCategoriesAll'],
+    queryFn: () => listExpenseCategories(true),
+    enabled: open,
+  })
+
+  function refresh() {
+    void qc.invalidateQueries({ queryKey: ['expenseCategories'] })
+    void qc.invalidateQueries({ queryKey: ['expenseCategoriesAll'] })
+    // The expense report groups BY CATEGORY, so a rename that did not reach it
+    // would show the old name until the page was reloaded.
+    void qc.invalidateQueries({ queryKey: ['financeSummary'] })
+    void qc.invalidateQueries({ queryKey: ['profitSnapshot'] })
+  }
+
+  const add = useMutation({
+    mutationFn: () => createExpenseCategory(name),
+    onSuccess: () => { setName(''); refresh() },
+  })
+  const rename = useMutation({
+    mutationFn: (v: { id: string; name: string }) => renameExpenseCategory(v.id, v.name),
+    onSuccess: () => { setEditing(null); refresh() },
+  })
+  const retire = useMutation({
+    mutationFn: (v: { id: string; active: boolean }) => setExpenseCategoryActive(v.id, v.active),
+    onSuccess: refresh,
+  })
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="mt-1 text-xs font-medium text-brand-600 hover:underline"
+      >
+        Manage categories
+      </button>
+    )
+  }
+
+  const err = (add.error ?? rename.error ?? retire.error) as Error | undefined
+
+  return (
+    <div className="mt-2 rounded-lg border border-slate-200 p-2.5">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-slate-700">Expense categories</span>
+        <button onClick={() => setOpen(false)} className="text-xs text-slate-400 hover:text-slate-700">
+          done
+        </button>
+      </div>
+
+      <div className="mt-2 flex gap-2">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="New category, e.g. Generator diesel"
+          className="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1 text-sm focus:border-brand-500 focus:outline-none"
+        />
+        <button
+          onClick={() => add.mutate()}
+          disabled={!name.trim() || add.isPending}
+          className="shrink-0 rounded bg-brand-600 px-2.5 py-1 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+        >
+          Add
+        </button>
+      </div>
+      {err && <p className="mt-1.5 text-xs text-red-600">{err.message}</p>}
+
+      <ul className="mt-2 max-h-52 divide-y divide-slate-100 overflow-y-auto">
+        {all.isLoading && <li className="py-1.5 text-xs text-slate-400">Loading…</li>}
+        {(all.data ?? []).map((c) => (
+          <li key={c.id} className="flex items-center gap-2 py-1.5">
+            {editing === c.id ? (
+              <>
+                <input
+                  autoFocus
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="min-w-0 flex-1 rounded border border-slate-300 px-2 py-0.5 text-sm focus:border-brand-500 focus:outline-none"
+                />
+                <button
+                  onClick={() => rename.mutate({ id: c.id, name: editName })}
+                  disabled={!editName.trim() || rename.isPending}
+                  className="shrink-0 text-xs font-medium text-brand-600 hover:underline disabled:opacity-50"
+                >
+                  save
+                </button>
+                <button
+                  onClick={() => setEditing(null)}
+                  className="shrink-0 text-xs text-slate-400 hover:text-slate-700"
+                >
+                  cancel
+                </button>
+              </>
+            ) : (
+              <>
+                <span className={`min-w-0 flex-1 truncate text-sm ${
+                  c.active ? 'text-slate-700' : 'text-slate-400 line-through'
+                }`}>
+                  {c.name}
+                </span>
+                <button
+                  onClick={() => { setEditing(c.id); setEditName(c.name) }}
+                  className="shrink-0 text-xs text-slate-500 hover:text-brand-700"
+                >
+                  rename
+                </button>
+                {/* "Retire", never "delete" — and the label says which, because a
+                    button labelled Delete that does not delete is worse than
+                    either. */}
+                <button
+                  onClick={() => retire.mutate({ id: c.id, active: !c.active })}
+                  disabled={retire.isPending}
+                  className="shrink-0 text-xs text-slate-500 hover:text-brand-700 disabled:opacity-50"
+                >
+                  {c.active ? 'retire' : 'restore'}
+                </button>
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1.5 text-xs text-slate-500">
+        Retiring hides a category from this form. Past expenses keep it, so old reports
+        still add up.
+      </p>
     </div>
   )
 }

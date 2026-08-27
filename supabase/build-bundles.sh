@@ -56,6 +56,37 @@ emit() {                       # emit <output> <first-file-glob-index> <files...
       echo "-- ─────────────────────────────────────────────────────────────────────────"
       cat "$f"
     done
+
+    # --- The bundle records itself -------------------------------------------
+    # 0069 added public.schema_migrations because nothing recorded what a given
+    # database had actually had applied — see that file's header for the two
+    # times guessing went wrong. A ledger nobody writes to is no better, so
+    # every bundle stamps its own contents on the way out.
+    #
+    # GENERATED, not hand-written, for the reason the coverage check below
+    # exists: a list maintained by hand drifts from the list of files, and then
+    # the ledger lies about the very thing it was added to make true.
+    #
+    # to_regprocedure(), never ::regproc. It returns NULL for a missing function
+    # where the cast RAISES — and this block MUST be a no-op on a database that
+    # has not reached 0069 yet. Bundle 1 is pasted into an empty database where
+    # fn_record_migration cannot exist, and a cast there would abort the paste
+    # that creates the entire schema.
+    echo
+    echo "-- ─────────────────────────────────────────────────────────────────────────"
+    echo "-- Record what this bundle applied (no-op before 0069 creates the ledger)"
+    echo "-- ─────────────────────────────────────────────────────────────────────────"
+    echo "do \$ledger\$"
+    echo "begin"
+    echo "  if to_regprocedure('public.fn_record_migration(text,text,text)') is null then"
+    echo "    raise notice 'migration ledger not present yet — nothing recorded';"
+    echo "    return;"
+    echo "  end if;"
+    for f in "$@"; do
+      case "$f" in *'*'*) continue ;; esac
+      echo "  perform public.fn_record_migration('$(basename "$f")', '$(basename "$out")');"
+    done
+    echo "end \$ledger\$;"
   } > "$out"
   echo "  wrote $out ($(wc -l < "$out") lines)"
 }
@@ -115,13 +146,31 @@ emit supabase/bundles/5_search.sql        supabase/migrations/005[0-6]*.sql
 # would have silently swallowed 0057 and broken that school's upgrade path for
 # the third time.
 #
-# NOT YET IN THE MANIFEST, deliberately. The manifest records bundles that have
-# SHIPPED; a bundle nobody has pasted is still free to change, and this one is
-# still gaining migrations as the remaining features land. Its line goes into the
-# manifest at the moment it is handed to a school, and from then on it is frozen
-# like the other five.
+# NOW FROZEN, AND LATE.
+#
+# The paragraph that used to sit here said "its line goes into the manifest at
+# the moment it is handed to a school, and from then on it is frozen". Bundle 6
+# was handed to a school and the line was never added, so between then and now
+# the glob 006* silently absorbed 0064, 0065, 0066 and 0067 — the third time a
+# shipped bundle has changed underneath somebody, and the exact failure the
+# MANIFEST was written to stop.
+#
+# It is frozen here at 005[7-9] + 006[0-7], which is what the file contains as
+# handed over, and its line is in the MANIFEST from this commit. The glob is
+# narrowed to a closed range rather than left open, because "remember to freeze
+# it later" is what failed twice.
 emit supabase/bundles/6_photos_and_records.sql \
-     supabase/migrations/005[7-9]*.sql supabase/migrations/006*.sql
+     supabase/migrations/005[7-9]*.sql supabase/migrations/006[0-7]*.sql
+
+# A SEVENTH bundle, because bundle 6 is frozen above. 0068 (the licence-nag
+# timing fix) and 0069 (the migration ledger) go here.
+#
+# From this bundle onward the ledger exists, so a paste records itself and the
+# question "what does production have?" stops being archaeology. This is the
+# bundle that has to be pasted for that to start being true.
+emit supabase/bundles/7_ledger_and_limits.sql \
+     supabase/migrations/006[89]*.sql supabase/migrations/007*.sql \
+     supabase/migrations/008*.sql
 
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen

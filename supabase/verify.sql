@@ -241,9 +241,32 @@ select 'the observer role (0059)',
                      and p.prosrc like '%has_role(%'
                      -- fn_checkin_display gates on has_role on purpose: a live
                      -- check-in token is a key to the gate, not a read.
+                     -- fn_pending_invites likewise: who is about to get a
+                     -- login is access management, not a school record.
                      and p.proname not in ('fn_may_manage_class',
                                            'fn_may_write_school_file',
-                                           'fn_checkin_display', 'may_view'))
+                                           -- 0085: fn_may_mark_subject is
+                                           -- fn_may_manage_class's subject-aware
+                                           -- sibling and the same category — it
+                                           -- authorises a WRITE. may_view is true
+                                           -- for an observer and during an
+                                           -- operator support visit, so gating it
+                                           -- on may_view would hand both of them
+                                           -- the ability to change a child's exam
+                                           -- result.
+                                           'fn_may_mark_subject',
+                                           'fn_checkin_display',
+                                           'fn_pending_invites',
+                                           -- 0074: which support visits the
+                                           -- VENDOR made to this school is
+                                           -- accountability to whoever signed
+                                           -- the contract, not a read of the
+                                           -- school's records. An observer has
+                                           -- no business in it — and may_view is
+                                           -- true DURING a support visit, which
+                                           -- would make the gate circular.
+                                           'fn_support_visits',
+                                           'may_view'))
                  -- THE ONE THAT MATTERS. An observer must not be able to write.
                  -- A write policy consulting may_view would let one change a
                  -- child's record, and RLS would let it through with nothing
@@ -436,6 +459,75 @@ select 'operator billing (0064)',
        then 'PASS' else 'FAIL — run migrations/0064_operator_billing.sql' end
 
 union all
+select 'invite-only provisioning (0065)',
+       case when exists (select 1 from information_schema.tables
+                          where table_schema='public' and table_name='user_invites')
+                 and (select count(*) from pg_proc p
+                       join pg_namespace n on n.oid = p.pronamespace
+                       where n.nspname='public' and p.proname in
+                         ('fn_invite_user','fn_revoke_invite','fn_pending_invites')) = 3
+                 -- THE ONE THAT MATTERS, and it is a NEGATIVE. handle_new_user
+                 -- has existed since 0011; its presence proves nothing. What
+                 -- 0065 changed is that it no longer believes a role the BROWSER
+                 -- sent — which is what let any parent sign up again as
+                 -- 'principal' and get it, active.
+                 and exists (select 1 from pg_proc p
+                              join pg_namespace n on n.oid = p.pronamespace
+                              where n.nspname='public' and p.proname='handle_new_user'
+                                and p.prosrc like '%raw_app_meta_data%'
+                                and p.prosrc like '%user_invites%'
+                                and strpos(p.prosrc, 'raw_user_meta_data->>''role''') = 0
+                                and strpos(p.prosrc, 'raw_user_meta_data->>''school_id''') = 0)
+       then 'PASS' else 'FAIL — run migrations/0065_invite_only_provisioning.sql' end
+
+union all
+select 'fee setup (0066)',
+       case when (select count(*) from pg_proc p
+                   join pg_namespace n on n.oid = p.pronamespace
+                   where n.nspname='public' and p.proname in
+                     ('fn_upsert_fee_head','fn_set_fee_head_active','fn_fee_heads',
+                      'fn_set_fee_amount','fn_fee_structure')) = 5
+                 -- THE ONES THAT MATTER, and they are facts about BODIES. Both
+                 -- billers have existed since 0017/0020; what 0066 changed is
+                 -- that they honour effective_from. Without it a school that
+                 -- schedules a fee rise bills every parent the old price PLUS
+                 -- the new one, and the "monthly fee" figure is the sum of every
+                 -- price ever set.
+                 and exists (select 1 from pg_proc p
+                              join pg_namespace n on n.oid = p.pronamespace
+                              where n.nspname='public' and p.proname='fn_bill_student_month'
+                                and p.prosrc like '%effective_from <=%')
+                 and exists (select 1 from pg_proc p
+                              join pg_namespace n on n.oid = p.pronamespace
+                              where n.nspname='public' and p.proname='fn_student_monthly_fee'
+                                and p.prosrc like '%effective_from <=%')
+       then 'PASS' else 'FAIL — run migrations/0066_fee_setup.sql' end
+
+union all
+select 'live student count (0067)',
+       case when exists (select 1 from pg_proc p
+                          join pg_namespace n on n.oid = p.pronamespace
+                          where n.nspname='public'
+                            and p.proname='fn__refresh_counts_touched')
+                 -- Six statement-level triggers: insert/update/delete on both
+                 -- students and enrollments. A subset means a school still
+                 -- outgrows its plan invisibly through whichever verb is missing.
+                 -- Joined to pg_proc by NAME, not cast with ::regproc. The
+                 -- cast RAISES when the function is absent, and the database
+                 -- this row exists to diagnose is exactly the one where it is
+                 -- absent — so the first version aborted the whole file on a
+                 -- database missing 0067.
+                 and (select count(*) from pg_trigger t
+                       join pg_proc pr on pr.oid = t.tgfoid
+                       join pg_namespace nr on nr.oid = pr.pronamespace
+                       where not t.tgisinternal
+                         and nr.nspname = 'public'
+                         and pr.proname = 'fn__refresh_counts_touched'
+                         and t.tgrelid in ('public.students'::regclass,
+                                           'public.enrollments'::regclass)) = 6
+       then 'PASS' else 'FAIL — run migrations/0067_live_student_count.sql' end
+
+union all
 select 'price plans loaded',
        case when (select count(*) from public.plans) = 4
        then 'PASS' else 'FAIL — re-run bundle 1' end
@@ -445,19 +537,32 @@ union all
 -- Every table a parent must never read has to have exactly one SELECT policy,
 -- and it must consult is_staff(). Policies OR together, so a second policy
 -- without that check silently re-opens the table.
+-- `campuses` and `shifts` were on this list until 0083 dropped them: two tables
+-- created in 0001 that no function read and no screen ever wrote to. Their
+-- removal turned this row into "FAIL — campuses, shifts — re-run bundle 3",
+-- which is a lie in the most damaging direction available: it names the parent
+-- lockout, the check that protects children, and sends the reader off to re-run
+-- a bundle that will not help. A missing table is now reported AS a missing
+-- table, with its own reason, so the two cases can never be confused again.
 select 'parent lockout',
        coalesce(
-         'FAIL — ' || string_agg(t, ', ') || ' — re-run bundle 3',
+         'FAIL — ' || string_agg(t || ' (' || why || ')', ', '),
          'PASS')
   from (
-    select t from unnest(array[
-      'academic_sessions','assessments','attendance_daily','campuses','classes',
+    select t,
+           case when to_regclass('public.' || t) is null
+                  then 'table does not exist — re-run bundle 1'
+                else 'SELECT policy does not consult is_staff() — re-run bundle 3'
+           end as why
+    from unnest(array[
+      'academic_sessions','assessments','attendance_daily','classes',
       'enrollments','exam_subjects','exam_terms','families','fee_heads',
       'fee_structures','guardians','mark_entries','result_cards','sections',
-      'shifts','staff','student_links','students','subjects',
+      'staff','student_links','students','subjects',
       'teacher_assignments','school_settings'
     ]) as t
-    where (select count(*) from pg_policies p
+    where to_regclass('public.' || t) is null
+       or (select count(*) from pg_policies p
             where p.schemaname='public' and p.tablename=t and p.cmd='SELECT') <> 1
        or not exists (select 1 from pg_policies p
             where p.schemaname='public' and p.tablename=t and p.cmd='SELECT'
@@ -468,6 +573,364 @@ union all
 select 'signup trigger on auth.users',
        case when exists (select 1 from pg_trigger where tgname = 'on_auth_user_created')
        then 'PASS' else 'FAIL — re-run bundle 1' end
+
+union all
+-- 0068. The school's over-limit banner must be silent until the renewal is
+-- actually being discussed.
+--
+-- 0067 made subscriptions.student_count live, and fn_my_licence's limit_notice
+-- is rendered to the owner and principal — so without 0068 a principal is told
+-- they have outgrown their plan the same afternoon they admit the 101st child,
+-- on the admissions screen, while the school is earning money. The operator
+-- still learns immediately; only the school's copy is timed.
+--
+-- The signature is the gate variable, because fn_my_licence has existed since
+-- 0026 and its presence proves nothing.
+select 'licence banner does not nag mid-term (0068)',
+       case when exists (select 1 from pg_proc where proname = 'fn_my_licence'
+                          and pronamespace = 'public'::regnamespace
+                          and prosrc like '%v_tell%')
+       then 'PASS' else 'FAIL — re-run bundle 7' end
+
+union all
+-- 0070. Two cross-tenant defects, both proven on live fixtures.
+--
+-- fn_queue_message handed one school another school's family head name, phone
+-- number, child's name and exact debt. fn__apply_discount_lines let one school
+-- write a discount line onto another school's invoice, cutting Rs 5,000 to
+-- Rs 4,000 — and it was reachable from a browser at all only because an fn__
+-- helper had been granted to `authenticated`.
+--
+-- Both functions predate 0070, so the signature is the school predicates inside
+-- them plus the absence of that grant.
+select 'one school cannot reach another''s families or fees (0070)',
+       case when exists (select 1 from pg_proc where proname = 'fn_queue_message'
+                          and pronamespace = 'public'::regnamespace
+                          and prosrc like '%id = p_family_id and school_id = v_school%')
+             and exists (select 1 from pg_proc where proname = 'fn__apply_discount_lines'
+                          and pronamespace = 'public'::regnamespace
+                          and prosrc like '%d.school_id = v_school%')
+             and not exists (select 1 from pg_proc p
+                              join pg_namespace n on n.oid = p.pronamespace
+                              where n.nspname = 'public' and p.proname like 'fn\_\_%'
+                                and has_function_privilege('authenticated', p.oid, 'execute'))
+       then 'PASS' else 'FAIL — re-run bundle 7 (cross-tenant leak is OPEN)' end
+
+union all
+-- 0071. Every function in public used to be callable by an unauthenticated
+-- request, because Postgres grants EXECUTE to PUBLIC by default and 0001 gives
+-- `anon` usage on the schema. Each function refused on its own gate, so nothing
+-- leaked — but the next one to forget its gate would have been open to the
+-- internet rather than to this school's staff.
+select 'unauthenticated callers can run nothing (0071)',
+       case when not exists (select 1 from pg_proc p
+                              join pg_namespace n on n.oid = p.pronamespace
+                              where n.nspname = 'public'
+                                and has_function_privilege('anon', p.oid, 'execute'))
+       then 'PASS' else 'FAIL — re-run bundle 7 ('
+            || (select count(*)::text from pg_proc p
+                 join pg_namespace n on n.oid = p.pronamespace
+                where n.nspname = 'public'
+                  and has_function_privilege('anon', p.oid, 'execute'))
+            || ' functions still open)' end
+
+union all
+-- 0072. Two lookups resolved a row by NAME or TYPE across every school: the
+-- admission fee head, and the importer's class-by-name. The first attached
+-- another school's fee head to a new school's very first admission invoice; the
+-- second made the go-live importer refuse rows for a class the school owns,
+-- because another school had registered the same name first. Every Pakistani
+-- school calls its classes the same things, so that bites at any real number of
+-- customers.
+select 'class names and fee heads are per-school (0072)',
+       case when exists (select 1 from pg_proc where proname = 'fn_admit_student'
+                          and pronamespace = 'public'::regnamespace
+                          and prosrc like '%type = ''admission'' and active and school_id = public.current_school_id()%')
+             and exists (select 1 from pg_proc where proname = 'fn_import_students'
+                          and pronamespace = 'public'::regnamespace
+                          and prosrc like '%active and school_id = public.current_school_id() and lower(btrim(name))%')
+       then 'PASS' else 'FAIL — re-run bundle 7' end
+
+union all
+-- 0073 and 0074. The operator's audit trail, and read-only support access.
+--
+-- The last clause is the important one: has_role() must NOT mention
+-- is_operator_session. All 43 write policies and every definer write gate go
+-- through has_role, so a database where it consults the support session is a
+-- database where the software vendor can write to every school in it. That is
+-- the difference between "we can look when you call us" and something no school
+-- should agree to.
+select 'support access is read-only (0073, 0074)',
+       case when exists (select 1 from information_schema.tables
+                          where table_schema='public' and table_name='operator_actions')
+             and exists (select 1 from information_schema.tables
+                          where table_schema='public' and table_name='operator_sessions')
+             and exists (select 1 from pg_proc where proname='is_staff'
+                          and pronamespace='public'::regnamespace
+                          and prosrc like '%is_operator_session%')
+             and exists (select 1 from pg_proc where proname='may_view'
+                          and pronamespace='public'::regnamespace
+                          and prosrc like '%is_operator_session%')
+             and not exists (select 1 from pg_proc where proname='has_role'
+                              and pronamespace='public'::regnamespace
+                              and prosrc like '%is_operator_session%')
+       then 'PASS'
+       when exists (select 1 from pg_proc where proname='has_role'
+                     and pronamespace='public'::regnamespace
+                     and prosrc like '%is_operator_session%')
+       then 'FAIL — has_role() consults the support session; support access is NOT read-only'
+       else 'FAIL — re-run bundle 7' end
+
+union all
+-- 0075. The operator can open a school: the getting-started checklist, when each
+-- module was last used, the logins and whether each has ever signed in. Before
+-- it, a school that paid and never used the software looked identical in the
+-- console to one that runs on it daily.
+select 'the operator can open a school (0075)',
+       case when exists (select 1 from pg_proc where proname='fn_platform_school_detail'
+                          and pronamespace='public'::regnamespace
+                          and prosrc like '%readiness%')
+       then 'PASS' else 'FAIL — re-run bundle 7' end
+
+union all
+-- Whether this database can produce an INVOICE, correct a wrong one, and record
+-- the income tax a school withheld at source. Three migrations, one row, and
+-- each named separately below because the CI drift check reads this file for the
+-- migration numbers — 0033 to 0038 once jumped a gap here and verify.sql
+-- certified a database on which sibling billing did not work.
+--
+--   0076  the seller: business name, NTN, address, bank account, amount in words
+--   0077  document numbers, void, credit notes, WITHHOLDING TAX
+--   0078  the renewal worklist, payment reports, the duplicate-invoice guard
+--
+-- The withholding column is the one to check first if a school insists it has
+-- paid and the software says otherwise: without it, a school that deducts tax
+-- under section 153(1)(b) transfers less than the invoice and the difference sits
+-- as outstanding forever.
+select 'invoices, corrections and withholding tax (0076, 0077, 0078)',
+       case
+         when to_regclass('public.platform_settings') is null
+           then 'FAIL — re-run bundle 7 (no seller details, so no invoice can be printed)'
+         when not exists (select 1 from information_schema.columns
+                           where table_schema='public' and table_name='platform_invoices'
+                             and column_name='doc_no')
+           then 'FAIL — invoices have no document number; re-run bundle 7'
+         when not exists (select 1 from information_schema.columns
+                           where table_schema='public' and table_name='platform_payments'
+                             and column_name='tax_withheld')
+           then 'FAIL — withheld tax cannot be recorded, so every balance for a '
+                || 'withholding school will be wrong; re-run bundle 7'
+         when not exists (select 1 from pg_trigger t join pg_proc pr on pr.oid=t.tgfoid
+                           where not t.tgisinternal and pr.proname='fn__assign_doc_no')
+           then 'FAIL — the numbering trigger is missing; re-run bundle 7'
+         when not exists (select 1 from pg_trigger t join pg_proc pr on pr.oid=t.tgfoid
+                           where not t.tgisinternal
+                             and pr.proname='fn__refuse_duplicate_invoice')
+           then 'FAIL — a double-clicked renewal would bill twice; re-run bundle 7'
+         when to_regclass('public.platform_payment_claims') is null
+           then 'FAIL — schools cannot report a payment; re-run bundle 7'
+         else 'PASS' end
+
+union all
+-- Not a pass/fail: it is a business decision, and only the owner can make it.
+-- But an operator who has not filled this in will print invoices no school can
+-- claim as an expense, and will find out weeks later when nobody has paid.
+select 'our own invoice details are filled in',
+       case
+         when to_regclass('public.platform_settings') is null then 'n/a'
+         when not exists (select 1 from public.platform_settings where id) then 'n/a'
+         when (select btrim(coalesce(business_name,'')) = ''
+                   or btrim(coalesce(ntn,'')) = ''
+                   or btrim(coalesce(bank_account,'')) = ''
+                 from public.platform_settings where id)
+           then 'ACTION NEEDED — set your business name, NTN and bank account in the '
+                || 'console under "Our billing details". Until then every invoice prints '
+                || 'incomplete and a school cannot claim it or file the tax it must withhold.'
+         else 'PASS' end
+
+union all
+-- 0079 and 0080. Can a school be stopped, and can it leave?
+--
+-- Both were impossible. Locking was purely calendar-driven, so a school that had
+-- stopped paying and stopped answering stayed live until its renewal date; and 37
+-- tables reference public.schools with ON DELETE NO ACTION, so a delete failed on
+-- the first foreign key and no function in the schema even tried.
+select 'a school can be suspended, archived and deleted (0079, 0080)',
+       case
+         when not exists (select 1 from information_schema.columns
+                           where table_schema='public' and table_name='subscriptions'
+                             and column_name='suspended_at')
+           then 'FAIL — a school cannot be stopped before its renewal date; re-run bundle 7'
+         when not exists (select 1 from pg_proc where proname='fn_effective_status'
+                           and pronamespace='public'::regnamespace
+                           and prosrc like '%suspended_at%')
+           then 'FAIL — suspension is recorded but nothing reads it, so a suspended '
+                || 'school keeps working; re-run bundle 7'
+         when not exists (select 1 from pg_proc where proname='fn_my_licence'
+                           and pronamespace='public'::regnamespace
+                           and prosrc like '%suspend_reason%')
+           then 'FAIL — a suspended school would not be told why; re-run bundle 7'
+         when to_regclass('public.platform_exports') is null
+           then 'FAIL — no record of what was handed to a school before deletion; re-run bundle 7'
+         when not exists (select 1 from pg_proc where proname='fn_platform_purge_school'
+                           and pronamespace='public'::regnamespace)
+           then 'FAIL — a school still cannot be deleted; re-run bundle 7'
+         when (select confdeltype from pg_constraint
+                where conname='platform_invoices_school_id_fkey') <> 'n'
+           -- The one that would be silent: everything else works and deleting a
+           -- school takes your own sales invoices with it.
+           then 'FAIL — deleting a school would destroy your own invoices to it, '
+                || 'which tax retention does not permit; re-run bundle 7'
+         else 'PASS' end
+
+union all
+-- 0081. MRR, churn, trial conversion, and the growth chart.
+--
+-- The one worth noting is student_count_snapshots: 0026 has written a row per
+-- school per recount since it shipped, 0067 made that automatic on every
+-- admission, and until 0081 nothing had ever read the table.
+select 'the business can say what it is worth (0081)',
+       case
+         when not exists (select 1 from pg_proc where proname='fn_platform_metrics'
+                           and pronamespace='public'::regnamespace)
+           then 'FAIL — re-run bundle 7'
+         when not exists (select 1 from pg_proc where proname='fn__school_mrr'
+                           and pronamespace='public'::regnamespace)
+           -- Without it MRR reads zero on a screen that looks like it is working.
+           then 'FAIL — MRR would report zero for every school; re-run bundle 7'
+         when not exists (select 1 from pg_proc where proname='fn_platform_growth'
+                           and pronamespace='public'::regnamespace)
+           then 'FAIL — the growth chart has nothing to read; re-run bundle 7'
+         else 'PASS' end
+
+union all
+-- 0082. The three surfaces, joined up: the installer registry the website's
+-- download button reads, notices to every school, and a price list a visitor with
+-- no login can read so the site cannot quote a figure you do not charge.
+select 'the website can read prices and offer the installer (0082)',
+       case
+         when to_regclass('public.app_releases') is null
+           then 'FAIL — re-run bundle 7'
+         when not has_table_privilege('anon', 'public.plans', 'select')
+           -- Silent: the site keeps showing whatever is typed into its HTML.
+           then 'FAIL — a visitor cannot read your prices, so the website will show '
+                || 'its own hardcoded ones; re-run bundle 7'
+         when not has_table_privilege('anon', 'public.app_releases', 'select')
+           then 'FAIL — the download button has nothing to read; re-run bundle 7'
+         when to_regclass('public.platform_announcements') is null
+           then 'FAIL — there is no way to tell every school anything; re-run bundle 7'
+         else 'PASS' end
+
+union all
+-- 0083. The one thing a parent opens the portal for.
+--
+-- fn_generate_result_cards has frozen a PASS/FAIL verdict onto every card since
+-- 0058 and the portal returned none of it, so a parent saw a percentage and a
+-- grade and had to work out for themselves whether 41% passes at a school whose
+-- threshold is 40 or 50. Provisional cards were the worse half: a percentage
+-- computed over the marked papers only, shown with no warning that it was not
+-- the final figure.
+select 'a parent can see whether their child passed (0083)',
+       case
+         when not exists (select 1 from pg_proc where proname='fn_portal_child_results'
+                           and pronamespace='public'::regnamespace
+                           and prosrc like '%failed_subjects%')
+           then 'FAIL — the portal shows marks but not the verdict; re-run bundle 7'
+         when to_regclass('public.campuses') is not null
+           -- Not a failure if the guard found rows: it says so in a NOTICE and
+           -- leaves them alone. Reported here so the difference is visible.
+           then 'note — campuses/shifts still exist. Either bundle 7 has not been '
+                || 're-run, or the guard found rows in them and refused to drop them.'
+         else 'PASS' end
+
+union all
+-- 0084. A family receipt that could not say which child it paid for.
+--
+-- Family allocation is oldest-month-first ACROSS SIBLINGS, and the payment
+-- function returned four numbers and no detail — so a father paying Rs 9,000 for
+-- three children got a receipt saying "Rs 9,000" and nothing about whose dues
+-- moved. The allocations were in payment_allocations the whole time; nothing
+-- read them.
+select 'a fee receipt names the child and the month (0084)',
+       case
+         when not exists (select 1 from pg_proc where proname='fn__payment_applied'
+                           and pronamespace='public'::regnamespace)
+           then 'FAIL — re-run bundle 7'
+         when not exists (select 1 from pg_proc where proname='fn_record_family_payment'
+                           and pronamespace='public'::regnamespace
+                           and prosrc like '%fn__payment_applied%')
+           -- Silent: the counter still works and the receipt still prints. It
+           -- just cannot say what the money paid for.
+           then 'FAIL — family receipts cannot name the children they paid for; '
+                || 're-run bundle 7'
+         when not exists (select 1 from pg_proc where proname='fn_record_payment'
+                           and pronamespace='public'::regnamespace
+                           and prosrc like '%fn__payment_applied%')
+           then 'FAIL — single-student receipts cannot name the months they '
+                || 'cleared; re-run bundle 7'
+         else 'PASS' end
+
+union all
+-- 0085. Who may write a mark.
+--
+-- fn_enter_marks — the function that writes the marks printed on the result
+-- card, the certificate and the tabulation sheet — had NO class scope at all,
+-- while its sibling fn_enter_assessment_marks (weekly tests) has been
+-- class-scoped since 0048. So the guarded path was the one whose marks nobody
+-- keeps, and any teacher could rewrite any class's exam result.
+select 'only the right teacher can mark a paper (0085)',
+       case
+         when to_regclass('public.subject_teachers') is null
+           then 'FAIL — re-run bundle 7'
+         when not exists (select 1 from pg_proc where proname='fn_enter_marks'
+                           and pronamespace='public'::regnamespace
+                           and prosrc like '%fn_may_mark_subject%')
+           -- Silent: marks still save. They save for the wrong people.
+           then 'FAIL — ANY teacher can still enter ANY class''s exam marks; '
+                || 're-run bundle 7'
+         when not exists (select 1 from pg_proc where proname='fn_enter_assessment_marks'
+                           and pronamespace='public'::regnamespace
+                           and prosrc like '%fn_may_mark_subject%')
+           then 'FAIL — class-test marks are still not subject-scoped; re-run bundle 7'
+         else 'PASS' end
+
+union all
+-- Not pass/fail: publishing a release is something only you can do. But a school
+-- asking for the desktop installer is the commonest request there is, and until
+-- this is done the website tells them it is being prepared.
+select 'a desktop installer is published',
+       case
+         when to_regclass('public.app_releases') is null then 'n/a'
+         when exists (select 1 from public.app_releases
+                       where platform = 'windows' and is_current)
+           then 'PASS — ' || (select version from public.app_releases
+                               where platform = 'windows' and is_current limit 1)
+         else 'ACTION NEEDED — no Windows release is published, so the website says '
+              || 'the installer is being prepared. Build it, put the file somewhere '
+              || 'schools can reach, and record it under "Downloads & notices" in '
+              || 'the console with its SHA-256.' end
+
+union all
+-- The row that answers "how far has this database actually got?" (0069)
+--
+-- Until bundle 7 nothing recorded it, and the two times it mattered the answer
+-- had to be guessed from an error message. Once — wrongly, and the repair built
+-- on that guess failed on its own first statement.
+--
+-- Reported as a count rather than PASS/FAIL because there is no fixed right
+-- number: it grows with every release. What matters is that it is not zero and
+-- that the number matches what was pasted.
+select 'migrations recorded',
+       case when to_regclass('public.schema_migrations') is null
+              then 'FAIL — re-run bundle 7 (the migration ledger)'
+            when (select count(*) from public.schema_migrations) = 0
+              -- The ledger exists but 0069 refused to seed it, which happens
+              -- only when its bundle probes found the chain incomplete. The
+              -- NOTICEs it raised name which bundle is missing.
+              then 'FAIL — ledger is empty; run supabase/repair/detect.sql and apply what it names'
+            else 'PASS — ' || (select count(*) from public.schema_migrations)::text
+                 || ' applied, latest ' || (select max(filename) from public.schema_migrations)
+       end
 
 union all
 select 'ready for first signup',

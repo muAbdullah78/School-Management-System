@@ -119,12 +119,29 @@ Written explicitly rather than by `audit_trigger()`, because that trigger reads
 `current_school_id()` and an operator belongs to no school — it would fail the
 `NOT NULL`.
 
-### D5 — The operator still cannot read tenant data, and these tables do not change that
+### D5 — These tables do not widen the operator's reach
 
 `platform_invoices` and `platform_payments` are keyed on `school_id` and readable
 only by `is_platform_admin()`. No policy on either mentions `current_school_id()`.
-The operator's reach stays exactly what it was: schools, subscriptions, plans,
-counts — never a child, a parent, a mark or a fee.
+Adding the billing books did not give the operator one extra tenant row.
+
+> **Superseded in part, and it matters.** This section originally read *"the
+> operator still cannot read tenant data"*, and at the time that was true: the
+> platform role could see schools, subscriptions, plans and counts, and never a
+> child, a parent, a mark or a fee.
+>
+> That boundary was later **removed by an explicit decision** — support needs to
+> see what a school is describing on the phone. Migrations 0073 and 0074 give the
+> operator full permanent READ across every school, and the design is in
+> [`SUPER-ADMIN-DESIGN.md`](SUPER-ADMIN-DESIGN.md): it goes through a session the
+> operator must open with a reason, every read is inside it, the school sees a
+> banner while it is open and a list of every visit afterwards, and the session is
+> read-only — `check-readonly-writes.py` asserts in CI that no write path consults
+> it.
+>
+> The claim about these two tables is still exactly true. The broader sentence is
+> not, and a design document that keeps a superseded security claim is worse than
+> one that never made it.
 
 The student count these decisions turn on is already a denormalised integer on
 `subscriptions`, maintained by `fn_refresh_student_count`. A count is not data

@@ -24,6 +24,64 @@ jobs:
         run: npm run build
       - name: Unit tests
         run: npm test
+      - name: Rendering harnesses still render
+        # The harnesses in web/tools/ render a challan and a balance sheet to
+        # HTML so a human can LOOK at the printed layout. They assert nothing, so
+        # they were excluded from `npm test` — and then nothing ran them at all.
+        #
+        # The challan harness sat broken. 0057 added a school logo to every print
+        # surface, ChallanPrint began calling useSchoolLogo() → useQuery(), and
+        # the harness — which called the component as a plain function — died on
+        # `Cannot read properties of null (reading 'useContext')`. Found by
+        # running it by hand, months later.
+        #
+        # This is the same shape as bundles stopping at 0039 and
+        # fn_reverse_other_income shipping with no caller: the artefact exists
+        # and nothing opens it. They run here, after the build, because they read
+        # the REAL compiled Tailwind — a layout checked against different CSS
+        # than the app ships is not checked at all.
+        #
+        # It asserts only that they render. Whether the layout is RIGHT still
+        # needs eyes, which is the whole point of the output.
+        #
+        # `harness:node20` and not `harness`: this runner is on Node 20, which has
+        # no native WebSocket, and supabase-js throws from createClient when it
+        # cannot find one. That made the harness pass on a Node 22 laptop and fail
+        # every one of its files here. The script deletes globalThis.WebSocket
+        # first, so the same failure reproduces on any Node — and once the runner
+        # moves to Node 22 this step keeps testing the case rather than quietly
+        # stopping.
+        run: npm run harness:node20
+
+      - name: Every Print button puts something on the paper
+        # index.css prints by hiding `body *` and revealing a NAMED LIST of ids.
+        # Good pattern, one failure mode, and it shipped twice: the parent
+        # portal's Print button and the fee counter's "Print receipt" both called
+        # window.print() on a page with no allow-listed id on it, so both
+        # produced a BLANK SHEET — every time, on every browser, with nothing
+        # thrown and nothing logged.
+        #
+        # No unit test can see that: the defect is not in the component and not
+        # in the stylesheet, it is in the fact that they were never introduced.
+        # This checks both directions, plus every printId the shared table is
+        # handed, and needs neither a database nor a browser.
+        working-directory: .
+        run: python3 supabase/check-print-ids.py
+
+      - name: The website's buttons lead somewhere
+        # Needs no database, so it lives in this job. Every call to action on the
+        # marketing site used to be an anchor on the page the visitor was already
+        # reading: "Start free trial" scrolled them down, there was no way to sign
+        # in, and there was no download at all.
+        #
+        # That is invisible to a browser and to a unit test — the page renders and
+        # every link works. It is only wrong if you know where the buttons were
+        # supposed to go, which is what this encodes. It also refuses a Supabase
+        # key committed into site/, matched on the shape of a JWT rather than on
+        # the word service_role, because the first version of that check failed on
+        # config.js's own comment telling you never to paste one.
+        working-directory: .
+        run: bash supabase/check-site-links.sh
 
   migrations:
     name: Migrations apply on Postgres 16
@@ -58,7 +116,20 @@ jobs:
           create table if not exists auth.users (
             id uuid primary key,
             email text,
-            raw_user_meta_data jsonb default '{}'::jsonb
+            raw_user_meta_data jsonb default '{}'::jsonb,
+            -- app_metadata. Real GoTrue has always had this column; the stub
+            -- did not, and 0065 moved every authorisation decision onto it
+            -- (only the service role can write it, so a browser signUp cannot
+            -- forge a role). Without it here, handle_new_user raises
+            -- "record new has no field raw_app_meta_data" on every signup.
+            raw_app_meta_data jsonb default '{}'::jsonb,
+            -- Same story, one migration later. 0075 reads last_sign_in_at for
+            -- the operator's school-detail screen: a school with one login that
+            -- nobody has used in three weeks is churning, and nothing in this
+            -- product could see that before. The rule the two of them make is
+            -- that this stub must carry every auth column the schema touches.
+            last_sign_in_at timestamptz,
+            created_at timestamptz default now()
           );
           create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
           do $$ begin
@@ -103,7 +174,14 @@ jobs:
           PGDATABASE=bundlecheck psql -v ON_ERROR_STOP=1 -q <<'SQL'
           create schema if not exists auth;
           create table if not exists auth.users (
-            id uuid primary key, email text, raw_user_meta_data jsonb default '{}'::jsonb);
+            id uuid primary key, email text, raw_user_meta_data jsonb default '{}'::jsonb,
+            raw_app_meta_data jsonb default '{}'::jsonb,
+            -- last_sign_in_at is real in Supabase and 0075 reads it: a school
+            -- with one login nobody has used in three weeks is churning, and
+            -- nothing in this product could see that before. The stub has to
+            -- carry every auth column the schema actually touches, the same
+            -- reason raw_app_meta_data was added here for 0065.
+            last_sign_in_at timestamptz, created_at timestamptz default now());
           create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
           do $$ begin
             if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
@@ -193,7 +271,14 @@ jobs:
           psql -v ON_ERROR_STOP=1 -q <<'SQL'
           create schema if not exists auth;
           create table if not exists auth.users (
-            id uuid primary key, email text, raw_user_meta_data jsonb default '{}'::jsonb);
+            id uuid primary key, email text, raw_user_meta_data jsonb default '{}'::jsonb,
+            raw_app_meta_data jsonb default '{}'::jsonb,
+            -- last_sign_in_at is real in Supabase and 0075 reads it: a school
+            -- with one login nobody has used in three weeks is churning, and
+            -- nothing in this product could see that before. The stub has to
+            -- carry every auth column the schema actually touches, the same
+            -- reason raw_app_meta_data was added here for 0065.
+            last_sign_in_at timestamptz, created_at timestamptz default now());
           create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
           do $$ begin
             if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
@@ -262,6 +347,11 @@ jobs:
           # put the has_role read gates back and quietly undo the observer role.
           psql -v ON_ERROR_STOP=1 -q --single-transaction -f supabase/bundles/5_search.sql
           psql -v ON_ERROR_STOP=1 -q --single-transaction -f supabase/bundles/6_photos_and_records.sql
+          # Bundle 7 carries the migration ledger. Applied last, in ascending
+          # order, for the same reason bundle 6 goes after 5: newest definitions
+          # win. Getting the order wrong here is silent — it puts superseded
+          # function bodies back and nothing fails.
+          psql -v ON_ERROR_STOP=1 -q --single-transaction -f supabase/bundles/7_ledger_and_limits.sql
 
           echo "── verify.sql, as the school runs it"
           psql -v ON_ERROR_STOP=1 -f supabase/verify.sql | tee /tmp/upgrade.out
@@ -270,6 +360,31 @@ jobs:
             exit 1
           fi
           echo "an existing school upgrades to all PASS"
+
+          # And the ledger it ends up with must be ACCURATE, which is the whole
+          # point of adding it. This database took the ugliest possible route to
+          # here — stuck at 0037, refused bundles, a detect-driven repair, then
+          # bundles 5, 6 and 7 — and 0069's adoption block has to look at the
+          # result and decide whether the chain is really complete.
+          #
+          # A count check alone would pass over a half-seeded ledger, so this
+          # asserts the exact number of migration files on disk AND zero gaps.
+          # If the six bundle probes in 0069 were wrong, the ledger here would be
+          # empty and this is the step that says so.
+          echo "── and the ledger it ends up with is accurate"
+          want=$(ls supabase/migrations/*.sql | wc -l | tr -d ' ')
+          got=$(psql -tA -c "select count(*) from public.schema_migrations")
+          gaps=$(psql -tA -c "select count(*) from generate_series(
+                   (select min(left(filename,4)::int) from public.schema_migrations),
+                   (select max(left(filename,4)::int) from public.schema_migrations)) n
+                 where not exists (select 1 from public.schema_migrations m
+                   where left(m.filename,4) = lpad(n::text,4,'0'))")
+          echo "   ledger holds $got of $want migrations, $gaps gap(s)"
+          if [ "$got" != "$want" ] || [ "$gaps" != "0" ]; then
+            echo "::error::the upgrade path leaves an inaccurate ledger ($got/$want, $gaps gaps)"
+            psql -c "select filename, bundle, applied_at from public.schema_migrations order by filename"
+            exit 1
+          fi
 
       - name: Sanity checks
         run: |
@@ -280,10 +395,20 @@ jobs:
             values ('99999999-9999-9999-9999-999999999999', 'CI School');
           insert into public.subscriptions(school_id, plan_code, status, trial_ends_on)
             values ('99999999-9999-9999-9999-999999999999', 'starter', 'active', current_date + 14);
-          -- new auth user is auto-provisioned as owner (first user IN THIS SCHOOL)
-          insert into auth.users(id, email, raw_user_meta_data)
+          -- New auth user is auto-provisioned as owner (first user IN THIS SCHOOL).
+          --
+          -- school_id goes in raw_app_meta_data, which is what the signup Edge
+          -- Function writes and the only channel handle_new_user trusts since
+          -- 0065. It used to be in raw_user_meta_data — the field a BROWSER
+          -- fills in at auth.signUp — and believing that let any parent sign up
+          -- again asking for 'principal' and get it. This fixture is the shape a
+          -- real service-role provisioning call has, so it exercises the path
+          -- schools actually use; putting it back in user metadata would make
+          -- every check below fail with "no school context for this user".
+          insert into auth.users(id, email, raw_user_meta_data, raw_app_meta_data)
             values ('11111111-1111-1111-1111-111111111111', 'owner@ci.test',
-                    '{"full_name":"CI Owner","school_id":"99999999-9999-9999-9999-999999999999"}');
+                    '{"full_name":"CI Owner"}',
+                    '{"school_id":"99999999-9999-9999-9999-999999999999"}');
           select case when (select role::text from public.profiles
                             where id='11111111-1111-1111-1111-111111111111') = 'owner'
                   then 'provisioning ok' else 'PROVISIONING FAIL' end;
@@ -584,6 +709,36 @@ jobs:
         # Verified by restoring the pre-0055 fn_rollover and confirming this
         # names the exact line and exits 1.
         run: python3 ./supabase/check-definer-queries.py
+
+      - name: Does a definer function look up a tenant row by a caller's id?
+        # The plainest IDOR, and it had shipped twice.
+        #
+        # fn_queue_message did `select * from public.families where id =
+        # p_family_id` inside a SECURITY DEFINER function, where RLS does not
+        # apply. School A's owner passed School B's family id and got School B's
+        # family head name, phone number, child's name and exact outstanding
+        # balance, written into School A's own readable outbox. Enumerable one
+        # uuid at a time.
+        #
+        # fn__apply_discount_lines was worse — a WRITE. It took an invoice id and
+        # an enrolment id straight from the caller, and despite the fn__ prefix
+        # (which in this schema means "revoked from the browser") 0021:286 had
+        # granted it to `authenticated`. School A cut what School B charges a
+        # parent from Rs 5,000 to Rs 4,000.
+        #
+        # Two existing guards passed both. check-definer-queries.py hunts a
+        # different shape on purpose (inequality between two table columns — the
+        # fn_rollover bug). dashboard.sql assertion 20 asks only whether a
+        # function MENTIONS scoping somewhere: fn_queue_message mentions
+        # current_school_id() twice, so one correct mention exempted three
+        # incorrect queries.
+        #
+        # So this judges PER STATEMENT, and only that one shape — a tenant table
+        # filtered on a caller-supplied parameter, with no school_id predicate
+        # and no assert_own / fn__assert_my_child / fn_may_manage_class call on
+        # THAT parameter. It also fails if any fn__ helper becomes callable from
+        # a browser session, which is what pays for skipping internal helpers.
+        run: python3 supabase/check-definer-idor.py
 
       - name: Are per-school key lookups scoped?
         # gr_no, admission_no, employee_no, roll_no, receipt_no and voucher_no
@@ -1007,6 +1162,258 @@ jobs:
         # operator's books must not widen the operator's reach.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/operator_billing.sql
 
+      - name: Provisioning — could a parent make themselves principal?
+        # They could. handle_new_user() read a new login's SCHOOL and ROLE from
+        # new.raw_user_meta_data, which is whatever the browser passes to
+        # auth.signUp({options:{data:{...}}}) with the PUBLIC anon key.
+        # 'principal' and 'accountant' were both on its accepted-role list, and
+        # an accepted role was created ACTIVE. Two strangers signed up naming a
+        # victim school and became an active accountant and an active principal
+        # in it, both passing has_role() and may_view().
+        #
+        # Every signed-in user already knows their own school_id, so the floor on
+        # this was: any parent, teacher or clerk could create a second login and
+        # become PRINCIPAL of their own school. Reaching another school needed
+        # only its UUID, which leaks through a screenshot or a support chat.
+        #
+        # The whitelist was not the bug. 0059 added it and it correctly stopped
+        # an UNRECOGNISED role landing active. The bug was that a RECOGNISED role
+        # was believed at all, because the thing supplying it is the attacker.
+        #
+        # Assertion 3 tries EVERY role on that old list, not just 'principal' —
+        # the defect was found on 'accountant' first, and a gate that holds for
+        # one and leaks for another is not a gate. Assertion 5 is the distinction
+        # that matters: the LOGIN is still created, because refusing signups is
+        # not the fix; what is refused is the login deciding what it may do.
+        #
+        # Assertions 22-24 are a flaw found in the FIX rather than the original
+        # code. The first trigger took "order by created_at desc limit 1" among
+        # matching invitations, which is arbitrary when two rows share a
+        # timestamp — and both do when written in one transaction, since now() is
+        # the transaction's start. Two schools inviting one address is ordinary
+        # in Pakistan (a teacher at both), and a profile carries ONE school_id,
+        # so guessing puts that person inside one school's pupil records while
+        # the other believes they are in. It now refuses and leaves both pending.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/provisioning.sql
+
+      - name: No authorisation is decided from client-controlled metadata
+        # The structural half of the fix above. `raw_user_meta_data->>'role'`
+        # reads exactly like `raw_app_meta_data->>'role'`, so the fix is one
+        # plausible-looking line away from being undone.
+        #
+        # Checks three things, because the obvious check alone is not enough: no
+        # function reads a non-display key from the untrusted field; AND
+        # handle_new_user still reads the trusted field; AND it still consults
+        # user_invites. Without the last two, deleting the function body
+        # entirely would report healthy.
+        run: python3 supabase/check-metadata-trust.py
+
+      - name: Fee setup — could a school set a fee at all?
+        # No. Three defects, all in the module the product exists for.
+        #
+        # Saving an amount raised 42P10 every time: 0035 replaced the 3-column
+        # unique key on fee_structures with a 4-column one including
+        # effective_from, and the app still sent the old 3-column ON CONFLICT.
+        # A 100% failure rate for thirty-one migrations.
+        #
+        # And there was no fee-heads screen at all, so there was nothing to put
+        # an amount against — the grid showed an empty list with a Save button.
+        # Together that means a fresh Pakistani school could not bill a monthly
+        # fee, which is the whole product. The dashboard's "N classes have
+        # students but no fee set" warning was honest and unactionable.
+        #
+        # The third is worse because it is silent and live. effective_from
+        # arrived in 0035 and only ONE of four readers learned about it:
+        # fn_generate_class_invoices took the latest price on or before the
+        # month; fn_bill_student_month and fn_student_monthly_fee had no date
+        # filter at all. Tuition 1500 with a rise to 1800 scheduled from
+        # 2027-01-01, billing MAY 2026, produced TWO lines — 1500 and 1800 — and
+        # the monthly-fee figure read 3300. The two billing paths in the product
+        # disagreed with each other, and the wrong one is the per-student path
+        # the fee counter uses. Any school that used Fee Increment started
+        # double-billing every parent.
+        #
+        # Assertion 8 is the one that is easy to get wrong in the fix: the FIRST
+        # amount for a head is written at the base date, not today, because a
+        # school setting up in August must still be able to bill April.
+        # Assertion 18 checks the schedule is honoured in both directions — it
+        # would be easy to make May correct by ignoring dates again.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/fee_setup.sql
+
+      - name: Live student count — does a school outgrowing its plan get noticed?
+        # It did not. subscriptions.student_count is a stored number driving the
+        # console's count, limit_state, over_limit_flagged_at, suggested_plan and
+        # the school's own licence banner — and it was refreshed only by
+        # fn_activate_subscription and a manual button. 400 pupils enrolled, the
+        # console read 0 of 100, over_limit_flagged_at null, and the school's
+        # banner also read 0 of 100. A Starter school (Rs 9,500) that belonged on
+        # Institution (Rs 35,000) is Rs 25,500 a year invisible, per school.
+        #
+        # 0064 fixed the renewal path so it cannot misprice; this is the
+        # detection path that tells anybody to act.
+        #
+        # The suite asserts the count moves on all six paths, and that a bulk
+        # import refreshes ONCE — statement-level with a transition table, not
+        # row-level, or a 400-row import would recount the school 400 times and
+        # serialise against its own lock on the subscriptions row.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/student_count.sql
+
+      - name: Does 0069's baseline list still match the migrations on disk?
+        # 0069 seeds public.schema_migrations for a database that already has the
+        # schema but no ledger. It cannot derive the filenames — a database
+        # cannot see the repo — so they are written out in full inside the
+        # migration, and a hand-written list of 69 filenames drifts.
+        #
+        # If it drifts, the ledger reports a database as complete while omitting
+        # migrations, which makes it lie about the exact thing it exists to make
+        # true: an operator reading "69 of 69 applied" would skip a repair the
+        # database needs. Confidently wrong is worse than absent.
+        #
+        # Also checks that every bundle records exactly the migrations it
+        # carries. build-bundles.sh generates that block, so it cannot drift by
+        # hand — but it can if the generator is edited, and the failure is
+        # silent: the bundle applies perfectly and the ledger is simply missing
+        # rows. Nothing else in CI would notice.
+        run: bash supabase/check-ledger-baseline.sh
+
+      - name: The migration ledger — can it be trusted, and can it be forged?
+        # There was no ledger, and it had already cost a live school fifteen
+        # migrations: bundle 3 shipped matching {0033, 0034}, its glob kept
+        # absorbing new files, and a school that had already pasted it could not
+        # re-paste it — a bundle is ONE transaction, so the whole thing rolled
+        # back and 0035-0039 never arrived. When that school reported it, the
+        # state had to be GUESSED from the error message. The guess was wrong.
+        #
+        # A ledger is only worth having if it cannot lie, and this schema makes
+        # that non-obvious: 0001:704 grants all four verbs on every table in
+        # public to `authenticated`, and 0025:768 makes it the default for new
+        # tables — including this one. So the suite proves no signed-in session
+        # can write a row, NOT EVEN THE OPERATOR'S, and that UPDATE and DELETE
+        # affect zero rows rather than merely not raising, which is the only
+        # form of that assertion that means anything under RLS.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/migration_ledger.sql
+
+      - name: Support access — can the operator see, and can the operator write?
+        # 0074 gives the operator a read-only way into any school. The owner chose
+        # full permanent read over consented, time-boxed access; what is not
+        # negotiable is the read-only half, because a writable operator session
+        # would make every row in every school "possibly the vendor" and the
+        # school's own audit trail is the only reason this software can be
+        # trusted with money.
+        #
+        # The mechanism is three functions: current_school_id(), is_staff() and
+        # may_view() learn about support sessions, and has_role() deliberately
+        # does NOT. All 43 write policies gate on has_role, so the write refusal
+        # is not code — it is the absence of a change. That makes this suite a
+        # test that a whole CLASS of policy was left alone, which no code review
+        # reliably catches: adding `or is_operator_session()` to has_role() looks
+        # exactly like the two correct edits 0074 made a few lines away, and it
+        # would hand the vendor write access to every school at once.
+        #
+        # Sweeps EVERY tenant table from the catalogue, all three verbs, and
+        # treats a privilege refusal as a pass but an incidental stop (a foreign
+        # key, a constraint) as a failure — because that means RLS let the write
+        # through and only luck stopped it.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/operator_support.sql
+
+      - name: Invoices, corrections, withholding tax and the school's own bill
+        # 0076-0078. Four defects, and the one to read first if this ever fails is
+        # WITHHOLDING TAX.
+        #
+        # Under section 153(1)(b) a Pakistani buyer of services must deduct income
+        # tax at source and pay it to the FBR on the seller's behalf. So a school
+        # invoiced Rs 38,000 transfers Rs 34,960 and sends a CPR for the Rs 3,040
+        # it deducted. Before 0077 the software recorded Rs 34,960 and reported
+        # Rs 3,040 outstanding — forever, for every withholding school — and the
+        # operator would chase a customer for money it had already paid in our
+        # name. Assertion 42 is that figure being zero.
+        #
+        # The other rule this suite defends is the one that makes the school-facing
+        # "I have paid" form safe: A SCHOOL CANNOT MOVE ITS OWN BALANCE. The form
+        # writes to platform_payment_claims, which is a REQUEST and changes no
+        # total. Assertions 77-79 sweep every route from a request to money —
+        # insert a payment, insert an invoice, update a claim to 'confirmed', call
+        # the operator's confirm function, credit its own invoice, read the whole
+        # queue — and every one is refused. Note 78 checks by READING THE ROW
+        # BACK, because an UPDATE with no matching policy affects zero rows
+        # silently rather than raising.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/platform_billing.sql
+
+      - name: Suspending, cancelling, archiving and PURGING a school
+        # 0079-0080, and the only irreversible thing in this product.
+        #
+        # Before 0080 a school could not be deleted at all: 37 tables reference
+        # public.schools with ON DELETE NO ACTION, so the delete failed on the
+        # first foreign key it met. A demo school was permanent. A customer who
+        # left and asked for their records to be deleted got "we cannot".
+        #
+        # This suite builds a school with the dependency chains that made it
+        # impossible — payment_allocations over payments over invoices,
+        # mark_entries over assessments — purges it, and then asserts the
+        # remaining row count is zero across EVERY table in the catalogue rather
+        # than a list somebody maintained. It also asserts the OTHER school lost
+        # nothing, which is the failure nothing else here would notice.
+        #
+        # And it proves all five refusals in front of the purge. A destructive
+        # action reachable by a mis-click is worse than no destructive action, and
+        # the refusals are the feature.
+        #
+        # The other assertion worth reading is 23: a suspended school is told WHY
+        # by the software, because suspend_reason is returned by fn_my_licence and
+        # not kept as an operator note. A school whose software stops with no
+        # explanation phones in a panic, and the person answering is the person
+        # who suspended it.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/school_lifecycle.sql
+
+      - name: The installer registry and notices to every school
+        # 0082. Two things that had never been joined up.
+        #
+        # desktop/ has produced a Windows .msi in CI since it was written and it
+        # went into a workflow artifact — behind a GitHub login, expiring after 90
+        # days. So the one thing a Pakistani school office actually asks for
+        # ("give me the file for the front-desk computer") could not be given to
+        # them, and the website had no download button because there was nothing
+        # to point at.
+        #
+        # The rules asserted here are the ones that decide whether the wrong file
+        # ends up on that computer: exactly ONE current release per platform, an
+        # https link only, and a checksum that is not optional. An installer
+        # fetched over plain HTTP on a café connection is the easiest thing in
+        # this product to tamper with.
+        #
+        # And notices: an end date is mandatory. A banner with no end is still
+        # telling schools about last March's maintenance window, and one nobody
+        # believes takes the next one down with it. Assertion 26 is the one that
+        # found a real bug — retracting a notice violated `ends_at > starts_at`,
+        # because now() is transaction-stable and "ends now" means ends_at equals
+        # starts_at. The window is half-open because of that.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/publishing.sql
+
+      - name: Only the right teacher can mark a paper
+        # THE DEFECT: fn_enter_marks — the function that writes the marks printed
+        # on the result card, the certificate and the tabulation sheet — had NO
+        # class scope at all, while fn_enter_assessment_marks (weekly tests) has
+        # been class-scoped since 0048. So the guarded path was the one whose
+        # marks nobody keeps, and any class_teacher or subject_teacher in the
+        # school could enter or overwrite ANY class's exam result.
+        #
+        # Found by comparing the two functions, not by reading either.
+        #
+        # Assertion 8 is the one worth keeping: it proves `authenticated` has no
+        # INSERT grant on mark_entries at all (so the REST write path is closed by
+        # PRIVILEGE, and the policies have never actually fired), then GRANTS it
+        # inside the transaction and proves the policy would hold anyway. Both
+        # halves matter — the grant is one ALTER away from existing and nobody
+        # would think to re-check the policy when adding it.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/subject_teachers.sql
+
+      - name: The website's prices match what the console charges
+        # site/index.html reads `plans` at load, so the LIVE page is right. These
+        # literals are the FALLBACK — what a visitor sees when Supabase is slow —
+        # and a stale fallback is a price you will be held to. A price rise now
+        # fails CI until the HTML is updated too.
+        run: bash supabase/check-site-prices.sh
+
       - name: Every suite on disk has a step above
         # The gap this closes has already happened twice in this repo, in two
         # different places: supabase/bundles/ stopped at 0039 while CI stayed
@@ -1119,6 +1526,56 @@ jobs:
         # family or a student directly. If it is ever "simplified" into building
         # its own fixtures, it stops testing anything.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/family_linkage.sql
+
+      - name: The suites do not depend on the query planner
+        # A whole class of flake this repo had one live instance of, and it cost
+        # an hour of blaming the wrong migration.
+        #
+        # challan.sql asserted an arithmetic identity with
+        #
+        #   select count(*) from invoices i join students s on s.id = i.student_id
+        #    where s.family_id = v_fam and fn_challan(i.id)->>'total_payable' ...
+        #
+        # fn_challan RAISES on an invoice outside the caller's school — assertion
+        # 24 of that same file tests exactly that — and the fixture contains
+        # another school's child. Under a hash join the family filter runs first
+        # and all is well. Under a nested loop the function is evaluated before
+        # the filter excludes the foreign invoice, and the suite dies with
+        # "ERROR: invoices not found in this school", which reads like a product
+        # defect and is not one.
+        #
+        # It appeared only in the second pass of a both-orders run, because the
+        # first pass changes the statistics enough to change the plan. I first
+        # concluded the migration I was writing had caused it; a same-database
+        # before/after test exonerated it. The real cause was the shape.
+        #
+        # Disabling hash and merge joins forces the nested-loop plans and makes
+        # every instance of this shape fail deterministically instead of once a
+        # fortnight. Run once, forward order — the point is plan coverage, not
+        # order coverage, which the step above already provides.
+        run: |
+          psql -v ON_ERROR_STOP=1 -c "alter database $PGDATABASE set enable_hashjoin = off;"
+          psql -v ON_ERROR_STOP=1 -c "alter database $PGDATABASE set enable_mergejoin = off;"
+          bad=0
+          for f in supabase/tests/*.sql; do
+            if ! out=$(psql -v ON_ERROR_STOP=1 -f "$f" 2>&1); then
+              echo "::error::$(basename "$f") depends on the query planner"
+              printf '%s\n' "$out" | grep -E "ERROR:|FATAL:" | head -3
+              bad=1
+            fi
+          done
+          psql -v ON_ERROR_STOP=1 -c "alter database $PGDATABASE reset enable_hashjoin;"
+          psql -v ON_ERROR_STOP=1 -c "alter database $PGDATABASE reset enable_mergejoin;"
+          if [ "$bad" = 1 ]; then
+            echo
+            echo "A suite passed with the default plans and failed with nested loops."
+            echo "The usual cause is a function that RAISES, called in a WHERE clause"
+            echo "beside the filter meant to exclude the rows it raises on. Wrap the"
+            echo "filter in a MATERIALIZED cte so it completes before the function"
+            echo "sees a row — see supabase/tests/challan.sql assertion 15."
+            exit 1
+          fi
+          echo "every suite passes with hash and merge joins disabled"
 
       - name: Every suite again, in reverse order
         # Suites are supposed to be independent. They are not, automatically:

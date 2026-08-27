@@ -7,6 +7,7 @@ const base: PlatformSchool = {
   student_count: 100, student_limit: 200, limit_state: 'ok',
   suggested_plan: 'starter', needs_upgrade: false,
   outstanding: 0, last_paid_on: null,
+  suspended: false, suspend_reason: null, archived: false,
 }
 const s = (p: Partial<PlatformSchool>): PlatformSchool => ({ ...base, ...p })
 

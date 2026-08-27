@@ -8,6 +8,9 @@ import { LicenceGate } from '@/components/LicenceGate'
 import { SetupGate } from '@/components/SetupGate'
 import { Login } from '@/pages/Login'
 import { Signup } from '@/pages/Signup'
+import { ForgotPassword } from '@/pages/ForgotPassword'
+import { ResetPassword } from '@/pages/ResetPassword'
+import { Account } from '@/pages/Account'
 import { PlatformPage } from '@/pages/platform/PlatformPage'
 import { CheckIn } from '@/pages/CheckIn'
 import { Dashboard } from '@/pages/Dashboard'
@@ -64,7 +67,27 @@ export default function App() {
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
+            {/* Both OUTSIDE ProtectedRoute, and they have to be. Somebody who
+                has forgotten their password is signed out by definition, and the
+                recovery link lands on /reset before the user has any credentials
+                to offer. Putting either behind the guard would redirect them to
+                the login screen they came from — with the recovery token stripped
+                out of the URL on the way. */}
+            <Route path="/forgot" element={<ForgotPassword />} />
+            <Route path="/reset" element={<ResetPassword />} />
             <Route path="/checkin" element={<CheckIn />} />
+            {/* Signed in, but outside both the staff shell and the portal: every
+                role reaches this page, and a parent has no shell to render. It
+                also stays reachable when the licence has lapsed — locking a
+                school out of its own password change would be indefensible. */}
+            <Route
+              path="/password"
+              element={
+                <ProtectedRoute>
+                  <Account />
+                </ProtectedRoute>
+              }
+            />
             {/* The operator console sits OUTSIDE the school app: a platform
                 admin belongs to no school, so the shell and licence gate below
                 have nothing to render for them. The page guards itself. */}

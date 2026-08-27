@@ -2434,3 +2434,21 @@ grant execute on function public.fn_challan_months(uuid, uuid)                to
 revoke all on function public.fn_challan(uuid)                             from anon;
 revoke all on function public.fn_challans_for_class(uuid, uuid, uuid, date) from anon;
 revoke all on function public.fn_challan_months(uuid, uuid)                from anon;
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Record what this bundle applied (no-op before 0069 creates the ledger)
+-- ─────────────────────────────────────────────────────────────────────────
+do $ledger$
+begin
+  if to_regprocedure('public.fn_record_migration(text,text,text)') is null then
+    raise notice 'migration ledger not present yet — nothing recorded';
+    return;
+  end if;
+  perform public.fn_record_migration('0033_portal.sql', '3_portal.sql');
+  perform public.fn_record_migration('0034_outbox.sql', '3_portal.sql');
+  perform public.fn_record_migration('0035_fee_ops.sql', '3_portal.sql');
+  perform public.fn_record_migration('0036_family_linkage.sql', '3_portal.sql');
+  perform public.fn_record_migration('0037_parent_access.sql', '3_portal.sql');
+  perform public.fn_record_migration('0038_counter.sql', '3_portal.sql');
+  perform public.fn_record_migration('0039_challan.sql', '3_portal.sql');
+end $ledger$;

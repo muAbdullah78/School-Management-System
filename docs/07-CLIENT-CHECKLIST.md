@@ -1,5 +1,17 @@
 # 07 — What We Need From You (the Owner)
 
+> ## ⚠️ Historical — a pre-build pilot checklist
+>
+> Written before anything existed, to line up one pilot school. Several items are
+> now settled or gone: the product name, the SMS decisions, and the per-school
+> hosting setup. The **data-gathering** items are still exactly right, and are the
+> fastest way to onboard any school — the fee structure, the class ladder, and
+> blank samples of the school's own challan and result card.
+>
+> For what a school does once it has the software, see
+> [`GUIDE.html`](GUIDE.html). For what YOU still have to do, run
+> `psql -f supabase/verify.sql`.
+
 These are the concrete, manual things **only you** can provide or do so we can build and launch. Treat it as a checklist. **The pilot cannot start until items 1–10 are done.** Nothing here is technical — it's information about your school and a few business decisions.
 
 > Good news on the hardest one: **you do *not* have to type in hundreds of students yourself.** For the pilot, assisted data entry is included (see item 8). And we import your data in **stages** — students + classes first (so attendance goes live fast), fees and arrears next.

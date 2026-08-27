@@ -1,5 +1,20 @@
 # 06 — Commercial Model
 
+> ## ⚠️ Superseded on the deployment and commercial model
+>
+> This document describes the **per-school self-hosted** model: a separate
+> Supabase project per school, owned and run by the school, with the vendor
+> hosting nothing and charging a one-time licence.
+>
+> **That is not how the product works.** All schools now share ONE Supabase
+> project; the vendor runs it and bills a **subscription**, with an operator
+> console for renewals, invoices and support. See
+> [`09-DECISIONS-LOCKED.md`](09-DECISIONS-LOCKED.md) and
+> [`SUPER-ADMIN-DESIGN.md`](SUPER-ADMIN-DESIGN.md).
+>
+> Kept for the reasoning, which is still worth reading. Do not build from the
+> architecture or the pricing.
+
 > **Note:** [`09-DECISIONS-LOCKED.md`](09-DECISIONS-LOCKED.md) changes the cost structure: each school hosts its **own** Supabase/hosting, so the seller carries **no per-school running cost** and there is **no messaging-wallet economics**. Pricing can be a simpler **one-time license per school + a setup fee** (plus optional paid support), since there is no ongoing infrastructure for the seller to fund. The go-to-market advice below (pilot first, go deep in one city, referral engine) still holds.
 
 All figures are 2026 PKR and illustrative — validate against your own costs and 3–4 real schools before locking a price sheet.

@@ -131,6 +131,8 @@ declare
   v_class  uuid := (select v from public._sub_ids where k='class');
   v_stu    uuid;
   lic jsonb;
+  v_op_state   text;
+  v_op_upgrade boolean;
 begin
   perform set_config('test.uid', (select v::text from public._sub_ids where k='owner'), false);
 
@@ -144,6 +146,14 @@ begin
   end loop;
 
   perform public.fn_refresh_student_count(v_school);
+
+  -- Put the renewal a long way off. The fixture's trial ends in 14 days, which
+  -- is inside the 30-day window 0068 introduced — so the old version of this
+  -- block asserted "a notice is shown" and would have passed either side of that
+  -- change, testing nothing about it. 90 days is squarely mid-term: the school
+  -- is over its limit and its renewal is months away.
+  update public.subscriptions set trial_ends_on = current_date + 90
+   where school_id = v_school;
 
   set local role authenticated;
   lic := public.fn_my_licence();
@@ -164,8 +174,53 @@ begin
   if (lic->>'locked')::boolean is true then
     raise exception 'FAIL: an over-limit school was locked';
   end if;
+
+  -- 0068. Mid-term, the SCHOOL is told nothing.
+  --
+  -- 0067 made student_count live, so without this the banner appears the same
+  -- afternoon the 101st child is admitted — on the admissions screen, while the
+  -- school is earning money. limit_state stays truthful; only the sentence
+  -- meant to be rendered is withheld.
+  if lic->>'limit_notice' is not null then
+    raise exception
+      'FAIL: an over-limit school 90 days from renewal was nagged: %',
+      lic->>'limit_notice';
+  end if;
+
+  -- ...and in the same breath, the OPERATOR is told everything. This pair of
+  -- assertions is the whole of 0068: same fact, two audiences, different
+  -- timing. If a future change gates the operator's copy too, the growth that
+  -- 0067 exists to catch becomes invisible again and this fails.
+  --
+  -- fn_platform_schools raises 42501 for anyone who is not a platform admin, so
+  -- the identity has to change and change back — the assertions after this are
+  -- about the school again.
+  perform public._act_as('ops');
+  select ps.limit_state, ps.needs_upgrade into v_op_state, v_op_upgrade
+    from public.fn_platform_schools() ps where ps.school_id = v_school;
+  perform public._act_as('owner');
+
+  if v_op_state <> 'over' then
+    raise exception 'FAIL: the operator console lost sight of an over-limit school (%)',
+      coalesce(v_op_state, '<no row>');
+  end if;
+  if v_op_upgrade is not true then
+    raise exception 'FAIL: the operator was not told this school needs a bigger plan';
+  end if;
+
+  -- Bring the renewal inside 30 days: now the conversation is live, and the
+  -- number is a fact about a decision being taken this week.
+  update public.subscriptions set trial_ends_on = current_date + 20
+   where school_id = v_school;
+  set local role authenticated;
+  lic := public.fn_my_licence();
+  reset role;
   if lic->>'limit_notice' is null then
-    raise exception 'FAIL: no notice shown to the owner';
+    raise exception 'FAIL: no notice with the renewal 20 days away';
+  end if;
+  if lic->>'limit_notice' not like '%' || (lic->>'student_count') || '%' then
+    raise exception 'FAIL: the notice does not name the real count (%): %',
+      lic->>'student_count', lic->>'limit_notice';
   end if;
 
   -- And one more admission still goes through while over the limit.
@@ -217,6 +272,23 @@ begin
   if (select over_limit_flagged_at from public.subscriptions where school_id = v_school) is not null then
     raise exception 'FAIL: a school inside its margin was flagged';
   end if;
+
+  -- 0068: 'within_margin' produces no sentence at all, EVEN NOW — the block
+  -- above left the renewal 20 days out, so the timing gate is open and the only
+  -- thing keeping this silent is the state itself. Its old text read "You are
+  -- still inside the allowance — nothing to do today", which is a banner whose
+  -- content is that there is nothing to read. Noise like that is how the banner
+  -- that will one day matter gets ignored.
+  if (lic->>'days_left')::int > 30 then
+    -- RAISE takes a literal format string, not an expression, so this stays on
+    -- one line rather than being concatenated.
+    raise exception 'FAIL: premise broken — this assertion only means something with the renewal inside 30 days, and it is % away', lic->>'days_left';
+  end if;
+  if lic->>'limit_notice' is not null then
+    raise exception 'FAIL: a school inside its margin was shown a banner: %',
+      lic->>'limit_notice';
+  end if;
+
   raise notice 'ok: inside the margin is silent (% students)', lic->>'student_count';
 end $$;
 
@@ -298,6 +370,27 @@ begin
   -- path must stay open in every state, or a locked school could never be
   -- switched back on.
   perform public._act_as('ops');
+
+  -- 0078 refuses an invoice that duplicates a live one exactly — same school,
+  -- same plan, same period — because that is the signature of a double-submitted
+  -- renewal, which bills a school twice for one year.
+  --
+  -- This block trips it, and the reason is worth stating rather than working
+  -- around silently: the licence was dragged BACKWARDS in time above, by direct
+  -- UPDATE, to simulate expiry. No function in this schema moves a period_end
+  -- into the past, so in production the second activation would compute a
+  -- different period_start and there would be no collision. Here it computes
+  -- current_date again and matches the invoice raised at the top of the block.
+  --
+  -- Voiding that invoice is what an operator would actually do — it covers a
+  -- period the school turns out never to have had — so the test does the same
+  -- rather than disabling the guard.
+  perform public.fn_platform_void_invoice(
+    (select id from public.platform_invoices
+      where school_id = v_school and voided_at is null
+      order by created_at desc limit 1),
+    'test: licence was rolled back to simulate expiry');
+
   perform public.fn_activate_subscription(v_school, 'growth', 12);
   perform public._act_as('owner');
   if public.fn_effective_status(v_school) <> 'active' then

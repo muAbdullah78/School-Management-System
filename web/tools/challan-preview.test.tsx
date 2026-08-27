@@ -6,13 +6,16 @@
  * holds and argues with, and no assertion about markup tells you whether three
  * copies actually fit across a page.
  *
- * Named with a leading underscore and excluded from CI; run on demand.
+ * Excluded from `npm test` by vitest's test.include; run with `npm run harness`.
+ * A CI step runs it after the build, because the previous arrangement — nothing
+ * ran it at all — let it sit broken: 0057 added a logo to every print surface,
+ * ChallanPrint started calling useSchoolLogo(), and calling the component as a
+ * plain function died on React context with nobody watching.
  */
 import { it } from 'vitest'
-import { renderToStaticMarkup } from 'react-dom/server'
-import { writeFileSync, readdirSync } from 'node:fs'
 import { ChallanPrint } from '../src/pages/fees/ChallanPrint'
 import type { Challan } from '../src/lib/db'
+import { writePage } from './harness'
 
 const base: Challan = {
   invoice_id: 'i1', voucher_code: 'MB26KRZP', status: 'issued',
@@ -30,19 +33,33 @@ const base: Challan = {
   previous_dues: 1200, total_payable: 4850, arrears_snapshot_at_generation: 1200,
 }
 
+const SCHOOL = {
+  name: 'Al Qalam Public School',
+  address: 'Ghauri Town Phase 5B, Islamabad',
+  phone: '0332-9157079',
+}
+
+/** Fully paid: this_month_due and total_payable both zero. The case the harness
+ *  earned its keep on — a paid slip must not read as a demand. */
+const paid: Challan = {
+  ...base, invoice_id: 'i2', student_name: 'Bilal Aslam', roll_no: '7',
+  previous_dues: 0, already_paid: 3650, this_month_due: 0, total_payable: 0,
+  voucher_code: 'MB26QQ7T',
+}
+
 it('writes a challan preview', () => {
-  const css = readdirSync('dist/assets').find((f) => f.endsWith('.css'))
-  const html = renderToStaticMarkup(
-    ChallanPrint({
-      challans: [base, { ...base, invoice_id: 'i2', student_name: 'Bilal Aslam', roll_no: '7',
-        previous_dues: 0, already_paid: 3650, this_month_due: 0, total_payable: 0,
-        voucher_code: 'MB26QQ7T' }],
-      school: { name: 'Al Qalam Public School', address: 'Ghauri Town Phase 5B, Islamabad', phone: '0332-9157079' },
-      onClose: () => {},
-    }) as never,
-  )
-  writeFileSync('../scratch/challan.html',
-    `<!doctype html><html><head><meta charset="utf-8">
-     <link rel="stylesheet" href="../web/dist/assets/${css}">
-     </head><body style="background:#fff">${html}</body></html>`)
+  // Rendered as real JSX inside the app's providers, not by calling the
+  // component as a function. ChallanPrint calls useSchoolLogo() → useQuery(),
+  // and a bare function call has no React context at all.
+  //
+  // The logo query is left UNSEEDED deliberately: useSchoolLogo returns null and
+  // SchoolMark sets the school's name in type instead, which is both the
+  // fallback worth looking at and what most schools will actually print.
+  writePage('../scratch/challan.html', [
+    {
+      caption: 'Two children in one family — one owing arrears, one fully paid. '
+        + 'No logo uploaded, so the letterhead is the name set in type.',
+      node: <ChallanPrint challans={[base, paid]} school={SCHOOL} onClose={() => {}} />,
+    },
+  ])
 })

@@ -1951,3 +1951,21 @@ begin
   end if;
 end
 $check$;
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Record what this bundle applied (no-op before 0069 creates the ledger)
+-- ─────────────────────────────────────────────────────────────────────────
+do $ledger$
+begin
+  if to_regprocedure('public.fn_record_migration(text,text,text)') is null then
+    raise notice 'migration ledger not present yet — nothing recorded';
+    return;
+  end if;
+  perform public.fn_record_migration('0050_search_and_birthdays.sql', '5_search.sql');
+  perform public.fn_record_migration('0051_like_escaping.sql', '5_search.sql');
+  perform public.fn_record_migration('0052_recent_payments_order.sql', '5_search.sql');
+  perform public.fn_record_migration('0053_staff_leaving.sql', '5_search.sql');
+  perform public.fn_record_migration('0054_student_leaving.sql', '5_search.sql');
+  perform public.fn_record_migration('0055_rollover_scoping.sql', '5_search.sql');
+  perform public.fn_record_migration('0056_importer_scoping.sql', '5_search.sql');
+end $ledger$;

@@ -4,6 +4,7 @@ import {
   getStaffRoster, createStaff, updateStaff, linkStaffProfile, listProfiles,
   staffLeave, staffRejoin, staffSetLoginActive,
   listClasses, listSectionTeachers, getCurrentSession, listTeacherAssignments, setClassTeacher,
+  getSubjectTeachers, setSubjectTeachers, type SubjectTeacherRow,
   getStaffAttendanceSummary, getStaffMonthAttendance, createTeacherLogin,
   type StaffRow, type StaffInput, type StaffRosterRow, type StaffLeaveResult,
 } from '@/lib/db'
@@ -21,7 +22,11 @@ import { removeStaffPhoto, signPaths, uploadStaffPhoto } from '@/lib/photos'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 const TABS = [{ key: 'staff', label: 'Staff' }, { key: 'attendance', label: 'Attendance' },
-              { key: 'teachers', label: 'Class Teachers' }] as const
+              { key: 'teachers', label: 'Class Teachers' },
+              // 0085. Who teaches WHAT — and it is not paperwork: until this
+              // register existed, fn_enter_marks had no class scope at all, so
+              // any teacher could rewrite any class's exam marks.
+              { key: 'subjects', label: 'Subject Teachers' }] as const
 
 function ymNow(): string { return todayISO().slice(0, 7) }
 function monthLabel(y: string): string {
@@ -37,7 +42,7 @@ function lastSixMonths(): string[] {
 }
 
 export function StaffPage() {
-  const [tab, setTab] = useState<'staff' | 'attendance' | 'teachers'>('staff')
+  const [tab, setTab] = useState<'staff' | 'attendance' | 'teachers' | 'subjects'>('staff')
   return (
     <div>
       <h1 className="text-xl font-semibold text-slate-800">Staff</h1>
@@ -52,7 +57,8 @@ export function StaffPage() {
       <div className="mt-5">
         {tab === 'staff' ? <StaffTab />
           : tab === 'attendance' ? <StaffDayRegister />
-          : <ClassTeachersTab />}
+          : tab === 'teachers' ? <ClassTeachersTab />
+          : <SubjectTeachersTab />}
       </div>
     </div>
   )
@@ -569,6 +575,161 @@ function AddLogin({ onDone }: { onDone: () => void }) {
       </button>
       <p className="mt-2 text-xs text-slate-400">Share the email &amp; password with the teacher; they can sign in and check in immediately.</p>
     </form>
+  )
+}
+
+/**
+ * Who teaches which subject.
+ *
+ * WHY THIS SCREEN IS NOT PAPERWORK. Until 0085, fn_enter_marks — the function
+ * that writes the marks printed on the result card, the certificate and the
+ * tabulation sheet — had NO class scope at all. Any class_teacher or
+ * subject_teacher could enter or overwrite any class's exam marks in any
+ * subject. Its sibling fn_enter_assessment_marks, which writes the weekly test
+ * marks nobody keeps, had been class-scoped since 0048. The guarded path was the
+ * one that did not matter.
+ *
+ * So what is filled in here decides who can touch a child's result. The panel at
+ * the top says that out loud, because a screen that looks like a directory gets
+ * treated like one.
+ *
+ * ONE CLASS AT A TIME, deliberately. A school has twelve classes and five to
+ * eight subjects each, and a single grid of sixty-plus rows is a screen nobody
+ * finishes. Picking a class turns it into five decisions.
+ *
+ * SUBJECTS WITH NOBODY ASSIGNED ARE SHOWN AND MARKED. fn_subject_teachers returns
+ * them for exactly that reason: the empty rows are the work list, and a screen
+ * that listed only the filled ones would hide the thing the office opened it to
+ * do — then teachers would hit "you can only enter marks for a class and subject
+ * you teach" during exam week with no idea why.
+ */
+function SubjectTeachersTab() {
+  const qc = useQueryClient()
+  const session = useQuery({ queryKey: ['currentSession'], queryFn: getCurrentSession })
+  const sessionId = session.data?.id
+  const staff = useQuery({ queryKey: ['staff'], queryFn: getStaffRoster })
+  const [classId, setClassId] = useState('')
+
+  const register = useQuery({
+    queryKey: ['subjectTeachers', sessionId],
+    queryFn: () => getSubjectTeachers(sessionId!),
+    enabled: !!sessionId,
+  })
+
+  const save = useMutation({
+    mutationFn: (v: { subjectId: string; staffIds: string[] }) =>
+      // Section null: a subject is taught to the class here. Per-section split
+      // teaching is supported by the database and is not offered on this screen,
+      // because it is rare and adding it would double the width of every row.
+      setSubjectTeachers(sessionId!, classId, null, v.subjectId, v.staffIds),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['subjectTeachers', sessionId] }),
+  })
+
+  const activeStaff = (staff.data ?? []).filter((s) => s.status === 'active')
+  const rows: SubjectTeacherRow[] = (register.data ?? []).filter((r) => r.class_id === classId)
+  const classes = Array.from(
+    new Map((register.data ?? []).map((r) => [r.class_id, { id: r.class_id, name: r.class_name, order: r.level_order }])).values(),
+  ).sort((a, b) => a.order - b.order)
+  const unassigned = (register.data ?? []).filter((r) => r.teachers.length === 0).length
+
+  function toggle(row: SubjectTeacherRow, staffId: string) {
+    const has = row.teachers.some((t) => t.staff_id === staffId)
+    const next = has
+      ? row.teachers.filter((t) => t.staff_id !== staffId).map((t) => t.staff_id)
+      : [...row.teachers.map((t) => t.staff_id), staffId]
+    save.mutate({ subjectId: row.subject_id, staffIds: next })
+  }
+
+  return (
+    <div className="max-w-3xl space-y-4">
+      {!sessionId && !session.isLoading && (
+        <p className="rounded bg-amber-50 p-3 text-sm text-amber-700">
+          No current session set — set one in Settings → Sessions first.
+        </p>
+      )}
+
+      <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-600">
+        <span className="font-medium text-slate-800">This decides who can enter marks.</span>{' '}
+        A teacher may enter marks for a class they are the class teacher of, or for a
+        class and subject listed here. Everyone else is refused — including for the exam
+        marks that go on the result card.
+        {unassigned > 0 && (
+          <span className="mt-1 block text-amber-700">
+            {unassigned} subject{unassigned === 1 ? ' has' : 's have'} nobody assigned across
+            all classes. Only the office can enter their marks until somebody is.
+          </span>
+        )}
+      </div>
+
+      <label className="block max-w-xs">
+        <span className="text-sm text-slate-600">Class</span>
+        <select value={classId} onChange={(e) => setClassId(e.target.value)} className={FIELD}>
+          <option value="">Select class…</option>
+          {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </label>
+
+      {register.isLoading && <p className="text-sm text-slate-400">Loading…</p>}
+      {register.isError && (
+        <p className="text-sm text-red-600">{(register.error as Error).message}</p>
+      )}
+      {save.isError && (
+        <p className="rounded bg-red-50 p-3 text-sm text-red-700">{(save.error as Error).message}</p>
+      )}
+
+      {classId && rows.length === 0 && !register.isLoading && (
+        <p className="rounded bg-amber-50 p-3 text-sm text-amber-700">
+          That class has no subjects yet. Add them under Exams → Subjects before assigning
+          teachers.
+        </p>
+      )}
+
+      {classId && rows.length > 0 && (
+        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+          <ul className="divide-y divide-slate-100">
+            {rows.map((row) => (
+              <li key={row.subject_id} className="px-3 py-2.5">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="text-sm font-medium text-slate-800">{row.subject_name}</span>
+                  {row.teachers.length === 0 ? (
+                    <span className="text-xs text-amber-700">nobody assigned</span>
+                  ) : (
+                    <span className="text-xs text-slate-500">
+                      {row.teachers.map((t) => t.staff_name).join(', ')}
+                    </span>
+                  )}
+                </div>
+                {activeStaff.length === 0 ? (
+                  <p className="mt-1 text-xs text-slate-400">
+                    No active staff to assign — add them on the Staff tab first.
+                  </p>
+                ) : (
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {activeStaff.map((st) => {
+                      const on = row.teachers.some((t) => t.staff_id === st.id)
+                      return (
+                        <button
+                          key={st.id}
+                          onClick={() => toggle(row, st.id)}
+                          disabled={save.isPending || !sessionId}
+                          className={`rounded-full px-2.5 py-1 text-xs font-medium transition disabled:opacity-50 ${
+                            on
+                              ? 'bg-brand-600 text-white'
+                              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                          }`}
+                        >
+                          {st.full_name}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
   )
 }
 

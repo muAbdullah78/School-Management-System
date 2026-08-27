@@ -1,5 +1,20 @@
 # 01 — Architecture & Tech Stack
 
+> ## ⚠️ Superseded on the deployment and commercial model
+>
+> This document describes the **per-school self-hosted** model: a separate
+> Supabase project per school, owned and run by the school, with the vendor
+> hosting nothing and charging a one-time licence.
+>
+> **That is not how the product works.** All schools now share ONE Supabase
+> project; the vendor runs it and bills a **subscription**, with an operator
+> console for renewals, invoices and support. See
+> [`09-DECISIONS-LOCKED.md`](09-DECISIONS-LOCKED.md) and
+> [`SUPER-ADMIN-DESIGN.md`](SUPER-ADMIN-DESIGN.md).
+>
+> Kept for the reasoning, which is still worth reading. Do not build from the
+> architecture or the pricing.
+
 > **This document was rewritten to match the finalized deployment model** (each school self-hosts on its own Supabase). See [`09-DECISIONS-LOCKED.md`](09-DECISIONS-LOCKED.md) for the decisions that drove it.
 
 ## The model in one line

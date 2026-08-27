@@ -499,10 +499,10 @@ do $t$
 declare t text; v_n integer; v_bad text := ''; v_quals text;
 begin
   foreach t in array array[
-    'academic_sessions', 'assessments', 'attendance_daily', 'campuses',
+    'academic_sessions', 'assessments', 'attendance_daily',
     'classes', 'enrollments', 'exam_subjects', 'exam_terms', 'families',
     'fee_heads', 'fee_structures', 'guardians', 'mark_entries',
-    'result_cards', 'sections', 'shifts', 'staff', 'student_links',
+    'result_cards', 'sections', 'staff', 'student_links',
     'students', 'subjects', 'teacher_assignments', 'school_settings'
   ] loop
     select count(*), string_agg(coalesce(qual, ''), ' ~ ')
