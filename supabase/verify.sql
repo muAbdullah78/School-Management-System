@@ -17,6 +17,47 @@
 -- repairing by hand.
 -- =============================================================================
 
+-- ---------------------------------------------------------------------------
+-- READING A TABLE THAT MAY NOT EXIST YET
+--
+-- This file's whole job is to run on ANY database and say what is missing. It
+-- could not: on a database that had reached 0064 and no further, it died with
+--
+--     ERROR:  relation "public.platform_settings" does not exist
+--
+-- and printed NOTHING — the one moment a diagnostic has to work is the moment
+-- something is missing.
+--
+-- The rows below looked guarded:
+--
+--     when to_regclass('public.platform_settings') is null then 'n/a'
+--     when not exists (select 1 from public.platform_settings ...) then 'n/a'
+--
+-- and the guard was never going to work. Postgres RESOLVES EVERY TABLE
+-- REFERENCE AT PARSE TIME, before a single CASE branch is evaluated. A missing
+-- relation anywhere in the statement fails planning, and this whole file is one
+-- `union all`, so one absent table took all forty rows down with it.
+--
+-- So a read of a not-yet-created table has to be DYNAMIC. This helper is created
+-- in pg_temp: session-local, gone when you disconnect, and it does not touch the
+-- schema — which matters, because verify.sql is documented as safe to run on a
+-- live school's database at any time.
+--
+-- It swallows `undefined_table` ONLY. Anything else is re-raised: a diagnostic
+-- that answers "n/a" to a real fault is worse than one that crashes, because you
+-- would believe it.
+-- ---------------------------------------------------------------------------
+create or replace function pg_temp.ask(p_sql text) returns text
+language plpgsql as $ask$
+declare v_out text;
+begin
+  execute p_sql into v_out;
+  return v_out;
+exception
+  when undefined_table then return null;
+end
+$ask$;
+
 -- 1. Key tables from each bundle are present.
 with expected(t, bundle) as (values
     ('students','1'), ('invoices','1'), ('payments','1'), ('attendance_daily','1'),
@@ -737,12 +778,17 @@ union all
 -- claim as an expense, and will find out weeks later when nobody has paid.
 select 'our own invoice details are filled in',
        case
-         when to_regclass('public.platform_settings') is null then 'n/a'
-         when not exists (select 1 from public.platform_settings where id) then 'n/a'
-         when (select btrim(coalesce(business_name,'')) = ''
-                   or btrim(coalesce(ntn,'')) = ''
-                   or btrim(coalesce(bank_account,'')) = ''
-                 from public.platform_settings where id)
+         when pg_temp.ask($q$select case when btrim(coalesce(business_name,'')) = ''
+                                          or btrim(coalesce(ntn,'')) = ''
+                                          or btrim(coalesce(bank_account,'')) = ''
+                                     then 'incomplete' else 'ok' end
+                                from public.platform_settings where id$q$) is null
+           then 'n/a — 0076 not applied yet, so there is nowhere to put them'
+         when pg_temp.ask($q$select case when btrim(coalesce(business_name,'')) = ''
+                                          or btrim(coalesce(ntn,'')) = ''
+                                          or btrim(coalesce(bank_account,'')) = ''
+                                     then 'incomplete' else 'ok' end
+                                from public.platform_settings where id$q$) = 'incomplete'
            then 'ACTION NEEDED — set your business name, NTN and bank account in the '
                 || 'console under "Our billing details". Until then every invoice prints '
                 || 'incomplete and a school cannot claim it or file the tax it must withhold.'
@@ -900,11 +946,12 @@ union all
 -- this is done the website tells them it is being prepared.
 select 'a desktop installer is published',
        case
-         when to_regclass('public.app_releases') is null then 'n/a'
-         when exists (select 1 from public.app_releases
-                       where platform = 'windows' and is_current)
-           then 'PASS — ' || (select version from public.app_releases
-                               where platform = 'windows' and is_current limit 1)
+         when to_regclass('public.app_releases') is null
+           then 'n/a — 0082 not applied yet'
+         when pg_temp.ask($q$select version from public.app_releases
+                                where platform = 'windows' and is_current limit 1$q$) is not null
+           then 'PASS — ' || pg_temp.ask($q$select version from public.app_releases
+                                               where platform = 'windows' and is_current limit 1$q$)
          else 'ACTION NEEDED — no Windows release is published, so the website says '
               || 'the installer is being prepared. Build it, put the file somewhere '
               || 'schools can reach, and record it under "Downloads & notices" in '
@@ -923,13 +970,14 @@ union all
 select 'migrations recorded',
        case when to_regclass('public.schema_migrations') is null
               then 'FAIL — re-run bundle 7 (the migration ledger)'
-            when (select count(*) from public.schema_migrations) = 0
+            when coalesce(pg_temp.ask('select count(*) from public.schema_migrations'), '0') = '0'
               -- The ledger exists but 0069 refused to seed it, which happens
               -- only when its bundle probes found the chain incomplete. The
               -- NOTICEs it raised name which bundle is missing.
               then 'FAIL — ledger is empty; run supabase/repair/detect.sql and apply what it names'
-            else 'PASS — ' || (select count(*) from public.schema_migrations)::text
-                 || ' applied, latest ' || (select max(filename) from public.schema_migrations)
+            else 'PASS — ' || pg_temp.ask('select count(*) from public.schema_migrations')
+                 || ' applied, latest '
+                 || pg_temp.ask('select max(filename) from public.schema_migrations')
        end
 
 union all

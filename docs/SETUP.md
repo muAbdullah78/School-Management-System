@@ -14,7 +14,8 @@ You need:
 
 - A computer with internet
 - An email address you control
-- About 45 minutes the first time
+- About an hour the first time. Steps 1 to 7 get it running; steps 8 to 11
+  are the settings that make it safe to hand to a real school.
 
 You do **not** need to understand any of the code.
 
@@ -76,9 +77,11 @@ Supabase is where all the data lives. One project holds every school.
 
 This creates all the tables, rules and safety checks.
 
-1. In Supabase, click **SQL Editor** in the left sidebar.
-2. Open the folder `supabase/migrations/` from this project.
-### The easy way — five pastes
+In Supabase, click **SQL Editor** in the left sidebar. Then choose one of the two
+ways below — the bundles are the fast way, and the numbered files are the same SQL
+in smaller pieces.
+
+### Load the seven bundles
 
 Use the ready-made bundles in **`supabase/bundles/`**. They contain exactly the
 same SQL as the numbered migration files, just joined up, and CI checks that
@@ -92,51 +95,65 @@ Run them **in this order, one at a time**, waiting for each to say Success:
 | 2 | `2_parent_role.sql` | One line. It has to be on its own — see below |
 | 3 | `3_portal.sql` | Parent portal, WhatsApp outbox, fee operations |
 | 4 | `4_operations.sql` | Fee counter, printable challan, bulk collection, student roster, WhatsApp settings, money reports, balance sheet, admission enquiries |
-| 5 | `5_search.sql` | The header search box, birthdays, and a LIKE-escaping fix for the student roster |
+| 5 | `5_search.sql` | The header search box, birthdays, staff and student leaving |
+| 6 | `6_photos_and_records.sql` | Photographs and the school logo, exam computation with practicals and streams, refundable deposits, certificates, staff QR check-in, the observer role, the live student count |
+| 7 | `7_ledger_and_limits.sql` | The whole operator side: subscriptions and invoices, renewals, read-only support visits, suspend and archive, business metrics, the installer registry, and the school-facing Subscription screen |
 
-> **If you installed before these bundles existed,** your database stops
-> wherever you left off and the newer screens will error when opened, because
-> the functions they call are not there. Run the ones you have not run yet, in
-> order, on their own — each is additive and does not touch what the earlier
-> ones created. `verify.sql` names exactly which are missing.
-
-**When all five say Success, check the install:** open a new query, paste
+**When all seven say Success, check the install:** open a new query, paste
 [`supabase/verify.sql`](../supabase/verify.sql) and Run. Every row should say
-**PASS**. If one does not, it names the bundle to re-run.
+**PASS**, except two saying **ACTION NEEDED** — those are your billing details
+(Step 9) and publishing a Windows installer (Step 11).
 
-> **Why three and not one?** The SQL Editor runs each paste as a single
-> transaction, and Postgres refuses to let a new value be *used* in the same
-> transaction that added it. Bundle 2 adds the `parent` role and bundle 3 uses
-> it, so the split has to fall exactly there. Do not merge them.
+> ### Upgrading a database that stopped part-way
+>
+> This is the normal case, not the exception: bundles 6 and 7 did not exist when
+> the first databases were loaded, so a project set up earlier stops wherever it
+> stopped, and the newer screens error when opened because the functions they
+> call are not there.
+>
+> **Do not guess where you are.** Open a new query and paste
+> [`supabase/repair/detect.sql`](../supabase/repair/detect.sql). It lists every
+> migration and says `present` or `MISSING` for each, and it names the file to
+> run for the missing ones. Then run the bundles you have not run yet, in order.
+>
+> `verify.sql` answers the same question in plainer words, and both are read-only
+> and safe to run on a live school's database at any time.
+
+> **Why bundle 2 is one line on its own.** The SQL Editor runs each paste as a
+> single transaction, and Postgres refuses to let a new enum value be *used* in
+> the same transaction that added it. Bundle 2 adds the `parent` role and bundle 3
+> uses it, so the split has to fall exactly there. Do not merge them.
 
 **If a bundle reports an error, nothing from it was applied** — the whole paste
-rolls back together. Fix the cause and run that same bundle again.
+rolls back together. Fix the cause and run that same bundle again. That is why a
+failure is safe: you are never left half-way through one.
 
-**Do not re-run a bundle that succeeded.** Migrations are once-only. Running one
-twice gives errors like `policy "…" already exists`, which means "this already
-ran", not that anything is broken. If you lose track of where you are, the safe
-move is to run `supabase/reset.sql` and start again from bundle 1.
+**Re-running a bundle that already succeeded is safe too, but not free of noise.**
+Every migration is written to be re-runnable, so a re-run generally reports
+Success again. Where it does not, the error is of the form
+`policy "…" already exists`, which means "this already ran", not that anything is
+broken. If you lose track of where you are, run `detect.sql` rather than
+guessing.
 
 ### The manual way — every numbered file
 
-If you would rather see each step, load the numbered files instead.
+If you would rather see each step, load the numbered files from
+`supabase/migrations/` instead.
 
-3. Open the files **in number order** — `0001_...` first, then `0002_...`, and
-   so on to the last one (currently `0035_fee_ops.sql`). Run them **one file at
-   a time**, and follow the same rules as above: a failed file applied nothing,
-   and a succeeded file must never be run again. For each file:
-   - Copy everything in it
-   - Paste into the SQL Editor
-   - Click **Run**
-   - Wait for "Success"
-   - Move to the next file
+Open them **in number order** — `0001_…` first, then `0002_…`, and so on to the
+highest-numbered file in the folder. Do not rely on a number written here: the
+folder grows with every release, and a number in a document goes stale. Run them
+**one file at a time**, and follow the same rules as above: a failed file applied
+nothing, and each file is written to be re-runnable.
 
-**Order matters.** Each file builds on the one before. If you run them out of
-order you will get errors.
+For each file: copy everything in it, paste into the SQL Editor, click **Run**,
+wait for "Success", move to the next.
 
-If a file gives an error, stop and send me the error message — do not skip it
-and carry on, or the ones after it will fail too in ways that are harder to
-diagnose.
+**Order matters.** Each file builds on the one before. Out of order, you get
+errors.
+
+If a file gives an error, stop and send me the error message — do not skip it and
+carry on, or the ones after it will fail too, in ways that are harder to diagnose.
 
 ---
 
@@ -166,11 +183,16 @@ a school is identified by **who logs in**, not by which copy of the app they run
 
 ---
 
-## Step 4 — Install the two server functions — **YOU DO THIS**
+## Step 4 — Install the three server functions — **YOU DO THIS**
 
-Two things must happen on the server rather than in the browser, because they
-need the powerful key you were told never to expose: creating a school at signup,
-and creating a teacher login.
+Three things must happen on the server rather than in the browser, because they
+need the powerful key you were told never to expose:
+
+| Function | What it does |
+|---|---|
+| `signup-school` | creates a school and its owner when somebody signs up on your website |
+| `create-teacher` | creates a staff login from inside a school |
+| `create-school-owner` | creates the owner login for a school **you** added yourself from the operator console |
 
 ### The easy way — paste them into the dashboard
 
@@ -178,7 +200,7 @@ No command line needed. Each function is under 90 lines and needs no
 configuration: the three values they use (`SUPABASE_URL`, `SUPABASE_ANON_KEY`,
 `SUPABASE_SERVICE_ROLE_KEY`) are supplied to Edge Functions automatically.
 
-For **each** of the two functions:
+For **each** of the three functions:
 
 1. Supabase dashboard → **Edge Functions** → **Deploy a new function** →
    **Via Editor**.
@@ -291,6 +313,86 @@ delete from public.schools where name = 'Test School';
 ```
 
 Everything belonging to it is removed with it.
+
+---
+
+## Step 8 — Two switches in Supabase you must not skip — **YOU DO THIS**
+
+Both are one click each, both are in the Supabase dashboard, and the product is
+not safe to give a real school until they are done.
+
+### 8a. Turn email confirmation ON
+
+**Authentication → Sign In / Providers → Email → enable *Confirm email*.**
+
+It may be off from testing. Left off, anybody can register with an email address
+they do not own — including a parent's address, or yours.
+
+### 8b. Allow the password-reset link to come back
+
+**Authentication → URL Configuration → Redirect URLs → Add:**
+
+```
+https://YOUR-APP-ADDRESS/reset
+```
+
+Use the real address of your deployed app. Without this the "forgotten password"
+email lands on your site's home page with the token stripped out, and the person
+sees a login screen and no explanation — which for a parent means a phone call to
+the school office.
+
+---
+
+## Step 9 — Your own billing details — **YOU DO THIS**
+
+Sign in as yourself, open `/platform`, go to the **Billing** tab, and fill in
+**Our billing details**:
+
+- registered business name
+- **NTN**
+- address
+- bank account or IBAN
+
+Until this is done, every subscription invoice you send a school prints
+incomplete. Their accountant cannot claim it as an expense, and cannot file the
+income tax that section 153(1)(b) obliges them to withhold from you. `verify.sql`
+reports **ACTION NEEDED** on this row until it is filled in.
+
+Nothing you type here goes anywhere near the repository.
+
+---
+
+## Step 10 — The public website's settings — **YOU DO THIS**
+
+The marketing site in `site/` is plain static files with no build step, so it
+cannot read the app's environment. Edit **`site/config.js`** on the deployment —
+**not** in the repository — and fill in:
+
+- `APP_URL` — your deployed app, with no trailing slash
+- `SUPABASE_URL` and `SUPABASE_ANON_KEY` — the same two values as the app
+- `CONTACT_PHONE`, `CONTACT_WHATSAPP`, `CONTACT_EMAIL`
+
+A CI check refuses these values if they are committed, on purpose: a real project
+URL and a real phone number in a public git history cannot be taken back.
+
+`SIGNUP_OPEN: false` takes the trial buttons down without touching anything else —
+useful when you are at capacity and do not want twenty new schools in one week.
+
+---
+
+## Step 11 — Publish the Windows installer — **when you want it**
+
+Optional, and it can wait. Until it is done the website tells visitors the
+installer is "being prepared", which is true rather than broken.
+
+1. Build the `.msi` from `desktop/`.
+2. Put the file somewhere schools can download it over **https**.
+3. `/platform` → **Publishing** → record the version, the URL and its
+   **SHA-256**.
+
+The checksum is mandatory and the link must be https. An installer fetched over
+plain HTTP on a café connection is the easiest thing in this product to tamper
+with.
 
 ---
 
