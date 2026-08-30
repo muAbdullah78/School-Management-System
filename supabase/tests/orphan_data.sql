@@ -317,6 +317,16 @@ begin
       where action = 'orphan_data_purged' and detail->>'school_id' = d::text),
     '55 the record lists the tables, so it can be read years later');
 
+  -- An unlinked audit row with the id stripped and nothing put in its place is
+  -- a record of something having been done to somebody, which is not a record.
+  -- 0080 stamps the school NAME before unlinking; here there is no name left, so
+  -- the id is what goes in.
+  perform pg_temp.ok(
+    not exists (select 1 from public.operator_actions where school_id = d)
+    and exists (select 1 from public.operator_actions
+                 where detail->>'orphaned_school_id' = d::text),
+    '55b the operator history was unlinked, and still says which school it was');
+
   select count(*) into v_live_after from public.subscriptions where school_id = l;
   perform pg_temp.ok(v_live_before = 1 and v_live_after = 1
     and (select count(*) from public.schools where id = l) = 1,

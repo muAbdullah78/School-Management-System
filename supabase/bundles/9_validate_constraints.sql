@@ -673,25 +673,36 @@ begin
     exit when not v_progress or v_pass >= 12;
   end loop;
 
-  -- Our own ledger and audit trail: unlinked, never deleted. Same rule as
-  -- fn_platform_purge_school. The id goes into the detail so an unlinked row is
-  -- still readable afterwards.
+  -- The operator's own history goes FIRST, and keeps the id.
+  --
+  -- 0080 stamps the school's name into `detail` before unlinking, because an
+  -- operator_actions row with school_id set to null and nothing else is a record
+  -- of something having been done to somebody, which is not a record at all. The
+  -- same applies here and there is no name to stamp — the schools row is already
+  -- gone — so the id is what goes in. Done before the generic loop below, which
+  -- would otherwise null the column and leave nothing to write the id from.
+  if to_regclass('public.operator_actions') is not null then
+    update public.operator_actions
+       set detail = coalesce(detail, '{}'::jsonb)
+                    || jsonb_build_object('orphaned_school_id', p_school_id),
+           school_id = null
+     where school_id = p_school_id;
+    get diagnostics v_n = row_count;
+    v_unlinked := v_unlinked + v_n;
+  end if;
+
+  -- Everything else of ours that referred to it: unlinked, never deleted. Same
+  -- rule as fn_platform_purge_school — a business keeps its sales ledger after a
+  -- customer leaves, and tax records have to be retained for years. These tables
+  -- carry the school's name on the row already (0080 denormalised it for exactly
+  -- this reason), so nulling the id loses nothing.
   for r in select t.table_name from public.fn__school_id_tables() t
-            where t.treatment = 'unlink' loop
+            where t.treatment = 'unlink' and t.table_name <> 'operator_actions' loop
     execute format('update public.%I set school_id = null where school_id = $1', r.table_name)
       using p_school_id;
     get diagnostics v_n = row_count;
     v_unlinked := v_unlinked + v_n;
   end loop;
-
-  if to_regclass('public.operator_actions') is not null then
-    update public.operator_actions
-       set detail = coalesce(detail, '{}'::jsonb)
-                    || jsonb_build_object('orphaned_school_id', p_school_id)
-     where school_id is null
-       and detail ? 'school_id'
-       and detail->>'school_id' = p_school_id::text;
-  end if;
 
   -- Anything still holding rows is a table this function cannot reach, and the
   -- honest thing is to stop and name it. The whole call is one transaction, so
