@@ -633,7 +633,25 @@ with sig(migration, object, present) as (values
   ('0090_counter_backfill_repair', 'the student counter cannot be stopped by one bad row',
      (select exists (select 1 from pg_proc where proname = 'fn__refresh_counts_touched'
                       and pronamespace = 'public'::regnamespace
-                      and prosrc like '%join public.schools sc%')))
+                      and prosrc like '%join public.schools sc%'))),
+  -- 0091. NOT a check that the constraint is validated — a database still
+  -- holding an orphan is one this migration deliberately left alone, and
+  -- reporting it MISSING would send somebody to re-run a file that will
+  -- correctly refuse again. What IS checkable is the DISAGREEMENT the whole
+  -- incident turned on: a constraint reporting itself validated while orphan
+  -- rows exist. Those cannot both be true, and nothing was looking.
+  ('0091_validate_the_subscription_fk', 'the subscription foreign key and the rows agree',
+     (select not (
+        coalesce((select bool_or(c.convalidated)
+                    from pg_constraint c
+                    join pg_class t on t.oid = c.conrelid
+                    join pg_namespace n on n.oid = t.relnamespace
+                   where n.nspname = 'public' and t.relname = 'subscriptions'
+                     and c.contype = 'f'
+                     and pg_get_constraintdef(c.oid) ilike '%references%schools(id)%'), false)
+        and exists (select 1 from public.subscriptions s
+                     where not exists (select 1 from public.schools sc
+                                        where sc.id = s.school_id)))))
 )
 select migration,
        object                                   as looked_for,

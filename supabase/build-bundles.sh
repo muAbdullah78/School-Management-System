@@ -186,8 +186,23 @@ emit supabase/bundles/7_ledger_and_limits.sql \
 # This bundle restates 0067's machinery so a database that hit that gets it, puts
 # back the foreign key that should have made the orphan impossible, and sweeps
 # the internal-helper grants.
+#
+# NOW FROZEN, on the day it was pasted. Its glob was `009*`, which would have
+# swallowed 0091 and changed a file that had already been run — the fifth time.
+# Freezing it the moment it ships is the only version of this rule that has ever
+# worked; "remember to freeze it later" has failed every time it was tried.
 emit supabase/bundles/8_counter_repair.sql \
-     supabase/migrations/009*.sql
+     supabase/migrations/0090*.sql
+
+# A NINTH bundle, because bundle 8 is frozen above.
+#
+# 0091 finishes what 0090 could not see. The subscriptions -> schools foreign key
+# was present the whole time and NOT VALID: it refused every new orphan and had
+# never checked the rows already there, so the diagnostic reported an orphan and
+# "ok, the constraint is there" in the same output — two answers that cannot both
+# be true of an enforced constraint.
+emit supabase/bundles/9_validate_constraints.sql \
+     supabase/migrations/0091*.sql supabase/migrations/009[2-9]*.sql
 
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen

@@ -84,6 +84,7 @@ supabase/
   verify.sql             what does this database actually have?
   repair/detect.sql      what is it missing?
   repair/why.sql         and WHY does it say that? — names objects, not migrations
+  repair/inspect-orphans.sql   what IS that row, before you delete it?
 site/                    the public website (static)
 desktop/                 Tauri shell that wraps the web app as a Windows .msi
 docs/                    design records and the school handbook
@@ -113,7 +114,7 @@ npm test                  # unit tests
 npm run harness           # render printables and pages to scratch/ for a look
 
 # The database, against a throwaway Postgres
-psql -f supabase/bundles/1_core.sql        # ... through 8, in order
+psql -f supabase/bundles/1_core.sql        # ... through 9, in order
 psql -f supabase/verify.sql                # every row should say PASS
 psql -f supabase/tests/tenant_isolation.sql
 
