@@ -191,8 +191,20 @@ select pg_temp.raises(
   || 'snapshot row it would write has nowhere to point');
 
 -- The loop 0090 ships, run against exactly the database that broke bundle 6.
+--
+-- The assertion names THIS FIXTURE'S two schools rather than counting rows.
+-- Its first version required the total to be exactly 2, which passed against a
+-- fresh database and failed in CI, where every suite runs in sequence against
+-- one database and an earlier fixture had left a third school behind. A test
+-- that asserts a global count is a test that depends on every other test —
+-- and it fails for a reason that has nothing to do with what it is checking.
 do $loop$
-declare v_school uuid; v_done int := 0; v_fail int := 0;
+declare
+  v_school uuid;
+  v_done   uuid[] := '{}';
+  v_fail   int := 0;
+  v_a uuid := (select v from public._cr where k = 'a');
+  v_b uuid := (select v from public._cr where k = 'b');
 begin
   for v_school in
     select sub.school_id
@@ -202,19 +214,25 @@ begin
   loop
     begin
       perform public.fn_refresh_student_count(v_school);
-      v_done := v_done + 1;
+      v_done := v_done || v_school;
     exception when others then
       v_fail := v_fail + 1;
     end;
   end loop;
 
-  if v_done <> 2 or v_fail <> 0 then
-    raise exception 'FAIL  7. the recount did % school(s) with % failure(s)',
-      v_done, v_fail;
+  if v_fail > 0 then
+    raise exception
+      'FAIL  7. % school(s) could not be recounted. With the fix in place the '
+      'orphan is never reached, so nothing should fail at all.', v_fail;
+  end if;
+  if not (v_a = any(v_done)) or not (v_b = any(v_done)) then
+    raise exception
+      'FAIL  7. the recount skipped one of this fixture''s schools (A in list: %, '
+      'B in list: %)', v_a = any(v_done), v_b = any(v_done);
   end if;
   raise notice 'PASS  7. THE ONE THAT MATTERS: with an orphan present the recount '
-    'still completes for both real schools. The shipped loop raised here and '
-    'discarded eleven migrations.';
+    'reaches every real school and fails on none. The shipped loop raised here '
+    'and discarded eleven migrations.';
 end $loop$;
 
 -- And the trigger path, which is what a clerk touches.
