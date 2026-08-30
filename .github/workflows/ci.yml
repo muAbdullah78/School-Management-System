@@ -402,13 +402,22 @@ jobs:
           # migrations superseded, and bundle 5 carries 0050-0056 — several of
           # whose function bodies 0059 rewrites. Re-running bundle 5 LAST would
           # put the has_role read gates back and quietly undo the observer role.
-          psql -v ON_ERROR_STOP=1 -q --single-transaction -f supabase/bundles/5_search.sql
-          psql -v ON_ERROR_STOP=1 -q --single-transaction -f supabase/bundles/6_photos_and_records.sql
-          # Bundle 7 carries the migration ledger. Applied last, in ascending
-          # order, for the same reason bundle 6 goes after 5: newest definitions
-          # win. Getting the order wrong here is silent — it puts superseded
-          # function bodies back and nothing fails.
-          psql -v ON_ERROR_STOP=1 -q --single-transaction -f supabase/bundles/7_ledger_and_limits.sql
+          # A LOOP, not three named files. This used to name bundles 5, 6 and 7
+          # one by one, and adding bundle 8 broke it — verify.sql grew two rows
+          # that only 0090 can satisfy, the upgraded database did not have it,
+          # and the step failed. The guard was right and the maintenance was the
+          # hazard: every new bundle needed a line here and nothing said so.
+          #
+          # Ascending order is load-bearing and getting it wrong is SILENT. The
+          # repair files for 0035-0049 restore definitions that later migrations
+          # superseded, and bundle 5 carries 0050-0056 — several of whose
+          # function bodies 0059 rewrites. Re-running bundle 5 after 6 would put
+          # the has_role read gates back and quietly undo the observer role, with
+          # nothing failing. `sort -V` keeps 10 after 9 when there is a tenth.
+          for b in $(ls supabase/bundles/[5-9]_*.sql | sort -V); do
+            echo "   applying $b"
+            psql -v ON_ERROR_STOP=1 -q --single-transaction -f "$b"
+          done
 
           echo "── verify.sql, as the school runs it"
           psql -v ON_ERROR_STOP=1 -f supabase/verify.sql | tee /tmp/upgrade.out
