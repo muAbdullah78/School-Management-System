@@ -68,6 +68,24 @@ select 1 as sort, 'orphan subscription' as finding,
                  where not exists (select 1 from public.schools sc where sc.id = s.school_id)
               $q$), '0') = '0'
            then 'ok — every subscription has its school'
+         -- THE CONSTRAINT OUTRANKS THIS QUERY. A validated foreign key means
+         -- Postgres has already scanned every row, so a SELECT that still sees
+         -- orphans cannot SEE the schools rows rather than proving them absent —
+         -- public.schools carries RLS, and a session that is neither its owner
+         -- nor BYPASSRLS reads an empty answer. Reproduced. Reporting this as an
+         -- orphan sent two rounds of repair after a row that was never wrong.
+         when exists (select 1 from pg_constraint c
+                      join pg_class t on t.oid = c.conrelid
+                      join pg_namespace n on n.oid = t.relnamespace
+                      where n.nspname = 'public' and t.relname = 'subscriptions'
+                        and c.contype = 'f' and c.convalidated
+                        and pg_get_constraintdef(c.oid) ilike '%references%schools(id)%')
+           then 'PROBABLY NOT AN ORPHAN. The foreign key on the next line is '
+                || 'VALIDATED, which is Postgres''s own statement that it has '
+                || 'scanned every row — so the constraint is the one to believe '
+                || 'and this query is the one that is wrong. Why it is wrong is '
+                || 'not established. Run supabase/repair/facts.sql and send the '
+                || 'output rather than deleting anything.'
          else 'These rows cannot be viewed, billed or renewed, and they are what '
               || 'stopped bundle 6. Nothing has deleted them and nothing will — a '
               || 'customer record is the operator''s to decide about. Run '
