@@ -1332,3 +1332,63 @@ export async function endAnnouncement(id: string, reason?: string | null): Promi
   })
   if (error) throw new Error(error.message)
 }
+
+// ---------------------------------------------------------------------------
+// Records left behind by a school that was deleted without its children
+//
+// This should never happen through the product: fn_platform_purge_school walks
+// every table before it removes the school row. It happens when a school row is
+// deleted by some other route with foreign keys not being enforced — a restore,
+// a point-in-time recovery, or `set session_replication_role = 'replica'`, which
+// is the standard advice people find when a foreign key will not let them delete
+// a row.
+//
+// The result is not a tidy-up job. Until 0092 those rows could not be deleted at
+// all: the audit trigger files an entry against the school of the row being
+// written, audit_log.school_id is NOT NULL pointing at schools, and the refusal
+// takes the caller's whole statement down. Seventeen tables carry that trigger.
+// ---------------------------------------------------------------------------
+
+export type OrphanRow = {
+  school_id: string
+  table_name: string
+  row_count: number
+  /** 'delete' — the school's own records. 'unlink' — our ledger, which is kept. */
+  treatment: 'delete' | 'unlink'
+}
+
+export async function orphanReport(): Promise<OrphanRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_orphan_report')
+  if (error) throw new Error(error.message)
+  return (data ?? []) as OrphanRow[]
+}
+
+/**
+ * Clear what one deleted school left behind.
+ *
+ * Four refusals: not the operator; the id typed back wrongly; an id that still
+ * has a row in `schools` (that is a live customer, and the answer is the Purge
+ * button with its five checks); and referential integrity not currently switched
+ * on, because deleting across a dependency graph with foreign keys off is how
+ * this state was reached in the first place.
+ */
+export async function purgeOrphanData(schoolId: string): Promise<{
+  purged: boolean
+  school_id: string
+  why?: string
+  rows_deleted?: number
+  rows_unlinked?: number
+  passes?: number
+  by_table?: Record<string, number>
+  orphan_logins?: string[]
+  logins_note?: string
+  kept?: string
+}> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_purge_orphan_data', {
+    p_school_id: schoolId, p_confirm_id: schoolId,
+  })
+  if (error) throw new Error(error.message)
+  return data as Awaited<ReturnType<typeof purgeOrphanData>>
+}

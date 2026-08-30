@@ -58,6 +58,70 @@ exception
 end
 $ask$;
 
+-- Counts rows pointing at a school that is not there, with row-level security
+-- stood down: SECURITY DEFINER runs as this function's owner, and RLS does not
+-- apply to a table's owner unless FORCE is set.
+--
+-- WHY IT IS DEFINER, AND WHY THAT IS THE WHOLE ARGUMENT
+--
+-- This check was inverted once to believe a VALIDATED foreign key over a query,
+-- on the reasoning that Postgres had scanned the table and a SELECT had not.
+-- That is wrong, and the way it is wrong matters: `convalidated` is a statement
+-- about the PAST. It means the table was checked at some earlier moment. Rows
+-- orphaned afterwards by a path that did not run the enforcement triggers — a
+-- restore, a point-in-time recovery, `session_replication_role = 'replica'` —
+-- leave the flag standing, and `ALTER TABLE … VALIDATE CONSTRAINT` on an
+-- already-validated constraint returns success WITHOUT RE-SCANNING, so it cannot
+-- even be used to find out. Both reproduced; supabase/tests/orphan_data.sql
+-- assertions 22-23 hold them in place.
+--
+-- On a live project that inversion reported PASS over a real orphan. A checker
+-- that says PASS on a broken database is worse than one that cries wolf: the
+-- previous version at least made somebody look.
+--
+-- The concern that motivated it was real, though — a reader that cannot SEE
+-- `schools` reports every row as an orphan — and this is the answer to it.
+-- Standing RLS down removes the doubt without ever pretending a row is fine
+-- because a flag from last month says so.
+create or replace function pg_temp.orphans(p_table text) returns bigint
+language plpgsql security definer as $orph$
+declare v_n bigint;
+begin
+  execute format(
+    'select count(*) from public.%I t
+      where t.school_id is not null
+        and not exists (select 1 from public.schools sc where sc.id = t.school_id)',
+    p_table) into v_n;
+  return v_n;
+exception when others then
+  return 0;                          -- table absent or unreadable; other rows say so
+end
+$orph$;
+
+-- The same question asked of every table that has a school_id, because asking
+-- five tables by name is how the first count of this came back as three tables
+-- when it was six. Returns 'n table(s), m row(s)'.
+create or replace function pg_temp.orphan_sweep() returns text
+language plpgsql as $sweep$
+declare r record; v_t int := 0; v_rows bigint := 0; v_n bigint;
+begin
+  for r in
+    select c.relname::text as t
+      from pg_class c
+      join pg_namespace ns on ns.oid = c.relnamespace
+      join pg_attribute a on a.attrelid = c.oid
+                         and a.attname = 'school_id' and not a.attisdropped
+     where ns.nspname = 'public' and c.relkind = 'r'
+  loop
+    v_n := pg_temp.orphans(r.t);
+    if v_n > 0 then v_t := v_t + 1; v_rows := v_rows + v_n; end if;
+  end loop;
+  return v_t::text || ' table(s), ' || v_rows::text || ' row(s)';
+exception when others then
+  return '0 table(s), 0 row(s)';
+end
+$sweep$;
+
 -- 1. Key tables from each bundle are present.
 with expected(t, bundle) as (values
     ('students','1'), ('invoices','1'), ('payments','1'), ('attendance_daily','1'),
@@ -972,6 +1036,32 @@ select 'the books are not writable from a session (0086)',
          else 'PASS' end
 
 union all
+-- 0092. A school deleted without its children left records that could not be
+-- read, billed, or even removed.
+--
+-- The signature is the guard inside audit_trigger, not the cleanup functions
+-- existing. Without it, every write to any of the seventeen audited tables
+-- belonging to a school whose row is missing fails with an error naming
+-- audit_log, and no amount of operator tooling can delete a single row.
+select 'records of a deleted school can be found and cleared (0092)',
+       case
+         when not exists (select 1 from pg_proc where proname = 'audit_trigger'
+                           and pronamespace = 'public'::regnamespace
+                           and prosrc like '%not exists (select 1 from public.schools s where s.id = v_school)%')
+           then 'FAIL — the audit trigger still refuses every write belonging to a '
+                || 'school whose row is missing, so those records cannot be deleted '
+                || 'at all. Run bundle 9.'
+         when not exists (select 1 from pg_proc where proname = 'fn_platform_orphan_report'
+                           and pronamespace = 'public'::regnamespace)
+           then 'FAIL — nothing lists what a deleted school left behind; run bundle 9'
+         when not exists (select 1 from pg_proc where proname = 'fn_platform_purge_orphan_data'
+                           and pronamespace = 'public'::regnamespace)
+           then 'FAIL — no way to clear it once found; run bundle 9'
+         when has_function_privilege('anon', 'public.fn_platform_purge_orphan_data(uuid, text)', 'execute')
+           then 'FAIL — a signed-out visitor can call the cleanup; re-run bundle 9'
+         else 'PASS' end
+
+union all
 -- 0087. A challan raised by mistake could never be cancelled.
 --
 -- The signature is fn_challan refusing a cancelled challan, not fn_void_invoice
@@ -1074,46 +1164,18 @@ union all
 select 'every subscription belongs to a school that exists',
        case
          when to_regclass('public.subscriptions') is null then 'n/a — bundle 1 not applied'
-         -- THE CONSTRAINT IS THE AUTHORITY, THE QUERY IS A HINT.
-         --
-         -- A VALIDATED foreign key is Postgres's own statement that it has
-         -- scanned every existing row and found no orphan. That outranks a
-         -- SELECT, and the conclusion does not depend on knowing why the two
-         -- disagree — which is what makes it safe to act on.
-         --
-         -- Checking the query first is how this row reported ACTION NEEDED on a
-         -- database where the constraint had already proved the opposite, and
-         -- sent two rounds of repair after a row that may never have been
-         -- wrong.
-         when exists (select 1 from pg_constraint c
-                      join pg_class t on t.oid = c.conrelid
-                      join pg_namespace n on n.oid = t.relnamespace
-                      where n.nspname = 'public' and t.relname = 'subscriptions'
-                        and c.contype = 'f' and c.convalidated
-                        and pg_get_constraintdef(c.oid) ilike '%references%schools(id)%')
-           then case
-                  when coalesce(pg_temp.ask($q$
-                         select count(*)::text from public.subscriptions s
-                          where not exists (select 1 from public.schools sc
-                                             where sc.id = s.school_id)
-                       $q$), '0') <> '0'
-                    then 'PASS — the foreign key is validated, so Postgres has '
-                         || 'already checked every row. (A query here still sees '
-                         || 'some, which makes the QUERY the thing that is wrong; '
-                         || 'run supabase/repair/facts.sql to find out how.)'
-                  else 'PASS' end
-         when coalesce(pg_temp.ask($q$
-                select count(*)::text from public.subscriptions s
-                 where not exists (select 1 from public.schools sc where sc.id = s.school_id)
-              $q$), '0') <> '0'
-           then 'ACTION NEEDED — ' || pg_temp.ask($q$
-                  select count(*)::text from public.subscriptions s
-                   where not exists (select 1 from public.schools sc where sc.id = s.school_id)
-                $q$) || ' subscription(s) name a school that is not there, and the '
-                || 'foreign key has not been validated, so nothing has proved '
-                || 'otherwise. Run supabase/repair/inspect-orphans.sql to see what '
-                || 'they are, remove the ones you have looked at BY ID, then run '
-                || 'bundle 9.'
+         -- COUNT THE ROWS. The constraint's flag is not consulted here at all,
+         -- and the reasoning is in the comment on pg_temp.orphans above: a
+         -- validated foreign key is a statement about the past, and this row is
+         -- a question about now.
+         when pg_temp.orphans('subscriptions') > 0
+           then 'ACTION NEEDED — ' || pg_temp.orphans('subscriptions')::text
+                || ' subscription(s) name a school that is not there. Read as the '
+                || 'table owner, so this is not row-level security hiding the '
+                || 'school: those rows are real. Run supabase/repair/enforcement.sql '
+                || '— it says whether foreign keys are still switched off, which is '
+                || 'the part that would keep happening — then clear them from the '
+                || 'platform console under Danger zone.'
          when not exists (select 1 from pg_constraint c
                           join pg_class t on t.oid = c.conrelid
                           join pg_namespace n on n.oid = t.relnamespace
@@ -1123,9 +1185,39 @@ select 'every subscription belongs to a school that exists',
            then 'ACTION NEEDED — subscriptions has no foreign key to schools, so a '
                 || 'school deleted from now on will leave its subscription behind. '
                 || 'Run bundle 8, which restores it.'
-         else 'ACTION NEEDED — the foreign key exists but is NOT VALID: it refuses '
-              || 'every new orphan and has never checked the rows already there. '
-              || 'Run bundle 9 (0091) to validate it.' end
+         when exists (select 1 from pg_constraint c
+                      join pg_class t on t.oid = c.conrelid
+                      join pg_namespace n on n.oid = t.relnamespace
+                      where n.nspname = 'public' and t.relname = 'subscriptions'
+                        and c.contype = 'f' and not c.convalidated
+                        and pg_get_constraintdef(c.oid) ilike '%references%schools(id)%')
+           then 'ACTION NEEDED — the foreign key exists but is NOT VALID: it refuses '
+                || 'every new orphan and has never checked the rows already there. '
+                || 'There are none right now, so run bundle 9 (0091) to validate it.'
+         else 'PASS' end
+
+union all
+
+-- ---------------------------------------------------------------------------
+-- The same question of the whole database, not of one table.
+--
+-- The first count of a real orphan asked five tables by name and found three.
+-- Sweeping the catalogue found six: creating a school provisions its settings,
+-- its expense categories and its message templates, and every write leaves audit
+-- rows, so a school that goes without its children leaves debris in every one of
+-- them. A cleanup sized against the first number would have left most of it.
+-- ---------------------------------------------------------------------------
+select 'no records are left behind by a school that was deleted',
+       case
+         when to_regclass('public.schools') is null then 'n/a — bundle 1 not applied'
+         when pg_temp.orphan_sweep() = '0 table(s), 0 row(s)' then 'PASS'
+         else 'ACTION NEEDED — ' || pg_temp.orphan_sweep()
+              || ' belong to a school that is no longer in `schools`. Until 0092 is '
+              || 'applied those rows cannot even be deleted: the audit trigger tries '
+              || 'to file an audit entry against the missing school and the foreign '
+              || 'key refuses it, which fails the whole statement. Run bundle 9, then '
+              || 'the platform console -> Danger zone -> Left-behind records.'
+       end
 
 union all
 -- Not pass/fail: publishing a release is something only you can do. But a school

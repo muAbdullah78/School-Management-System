@@ -42,35 +42,48 @@
 --
 -- This header first said the constraint "was almost certainly NOT VALID from the
 -- start". It is not: on that database it reports itself VALIDATED, and this
--- file's own end-state check said so by aborting the bundle. That is the second
--- confident explanation of one row, after "the foreign key is missing", and both
--- were inferences dressed as findings.
+-- file's own end-state check said so by aborting the bundle.
+--
+-- The version after that drew the opposite conclusion — TRUST THE CONSTRAINT
+-- OVER THE QUERY, everywhere — on the reasoning that Postgres has scanned the
+-- table and a SELECT has not. THAT WAS WRONG TOO, and it was the worst of the
+-- three, because the first two made somebody look and this one said PASS over a
+-- real orphan.
+--
+-- WHY IT IS WRONG, PRECISELY. `convalidated` is a statement about the PAST: this
+-- table was scanned at some earlier moment and nothing was amiss. It is not a
+-- live guarantee. Rows orphaned AFTERWARDS by a path that did not run the
+-- enforcement triggers leave the flag standing. Reproduced on a build of this
+-- schema:
+--
+--   set session_replication_role = 'replica';
+--   delete from schools where id = '…';        -- succeeds
+--   orphan subscriptions  1        FK reports validated  true
+--
+-- And the flag cannot be re-checked from inside SQL, which is the part that
+-- makes it genuinely dangerous rather than merely stale: ALTER TABLE … VALIDATE
+-- CONSTRAINT on an already-validated constraint returns success WITHOUT
+-- RE-SCANNING. So a stale flag stays stale, silently, and this file's own
+-- validate branch can never repair one. supabase/tests/orphan_data.sql
+-- assertions 22-23 hold both facts in place.
+--
+-- The worry that produced the inversion was real — a reader that cannot SEE
+-- `schools` reports every row as an orphan — and it has a proper answer, which
+-- is to count the rows AS THE TABLE'S OWNER with row-level security stood down.
+-- verify.sql and repair/why.sql now do that. It removes the doubt without ever
+-- calling a database clean because a flag from last month says so.
 --
 -- What IS established, rather than inferred:
 --
 --   * a NOT VALID constraint produces exactly the reported symptoms, and the
 --     old check could not see it. That hole was real and is closed.
---   * a VALIDATED constraint is Postgres's own statement that it has scanned
---     every row. When a SELECT disagrees with one, the SELECT is what is wrong.
---   * a reader that cannot SEE the referenced table produces a false orphan.
---     Demonstrated on a two-table model: with RLS hiding `schools`, the same
---     query reports one orphan and zero schools while the constraint is
---     validated and correct.
+--   * an ordinary DELETE cannot produce the live state at all: `profiles` and
+--     `school_settings` are ON DELETE NO ACTION, so either one refuses the
+--     delete before a row moves. Reproduced.
+--   * `session_replication_role = 'replica'` produces it exactly. Reproduced.
 --
---     THAT IS A MECHANISM, NOT THIS PROJECT'S DIAGNOSIS, and the difference is
---     the point. On the real schema `subscriptions` carries RLS too, so a
---     session that cannot see a school cannot see its subscription either and
---     both rows disappear together — which is NOT the live shape (one school
---     visible, one subscription apparently orphaned). So the mechanism is real
---     and it does not explain that project. What explains it is not yet known,
---     and this file no longer pretends otherwise.
---
--- So this file now TRUSTS THE CONSTRAINT over the query, everywhere. That
--- conclusion does not depend on knowing WHY they disagree, which is what makes
--- it the right one to act on: Postgres has scanned the table and a SELECT has
--- not. supabase/repair/facts.sql prints raw readings, with no interpretation,
--- for working out the rest. Three confident explanations of one row is enough to
--- stop summarising and start measuring.
+-- So the answer was never in this file. 0092 carries it, along with the reason
+-- those rows could not be deleted even deliberately.
 --
 -- WHAT THIS FILE DOES
 --
@@ -128,11 +141,13 @@ begin
     return;
   end if;
 
-  -- Checked BEFORE the orphan count is used for anything. A validated
-  -- constraint is Postgres's own statement that it has scanned every row, and
-  -- it outranks a SELECT that may be reading through RLS.
+  -- Present and already scanned. Nothing for this file to do either way: a
+  -- VALIDATE on an already-validated constraint is a no-op that returns success
+  -- without re-reading a single row, so it could not repair a stale flag even if
+  -- one were the problem. Whether the table is clean RIGHT NOW is a different
+  -- question, and it belongs to verify.sql and 0092, which count rows.
   if v_valid then
-    return;                                   -- present and checked; nothing to do
+    return;
   end if;
 
   -- THE CASE THIS FILE EXISTS FOR.
@@ -174,18 +189,21 @@ end $validate$;
 -- refuse to APPLY over one. The disagreement is reported here and carried by
 -- verify.sql, where it can be read without blocking an upgrade.
 --
--- AND THE CHECK ITSELF IS NOW THE RIGHT WAY ROUND. A VALIDATED foreign key
--- means Postgres has already scanned every row and found no orphan — that is
--- what validation IS. So when a SELECT disagrees with a validated constraint,
--- the SELECT is what is wrong, and the likeliest reason is that it cannot SEE
--- the row: `public.schools` carries RLS, and a session that is neither the
--- table's owner nor BYPASSRLS gets an empty answer rather than a wrong one.
--- Reproduced: under RLS the same query reports one orphan and zero schools
--- while the constraint is validated and correct.
+-- AND THE CHECK ITSELF WAS THEN PUT THE WRONG WAY ROUND.
 --
--- Trusting the constraint over the query removes that entire class of
--- confusion. supabase/repair/facts.sql prints the readings, with no
--- interpretation, when the two still disagree.
+-- The version after the abort said: a VALIDATED foreign key means Postgres has
+-- scanned every row, so when a SELECT disagrees the SELECT is what is wrong.
+-- That is false, and it turned this notice into a reassurance printed over a
+-- real fault. `convalidated` is a past-tense fact. Rows orphaned afterwards by a
+-- path that skipped the enforcement triggers leave it standing, and VALIDATE
+-- CONSTRAINT on an already-validated constraint returns success without
+-- re-scanning, so nothing here can even re-establish it. Both reproduced; see
+-- this file's header and supabase/tests/orphan_data.sql.
+--
+-- The RLS worry behind that inversion was real and has a proper answer: count
+-- the rows as the table's OWNER, with row-level security stood down. verify.sql
+-- and repair/why.sql do that now. This notice states the disagreement and names
+-- the mechanism that produces it, and still decides nothing.
 -- ---------------------------------------------------------------------------
 do $report$
 declare v_valid boolean; v_orphans bigint;
@@ -203,13 +221,13 @@ begin
 
   if coalesce(v_valid, false) and v_orphans > 0 then
     raise notice
-      '0091: the foreign key reports itself VALIDATED and a query still sees % '
-      'subscription row(s) with no school. Postgres has already scanned this '
-      'table, so the constraint is the one to believe and the query is the one '
-      'that is wrong. WHY it is wrong is not known — nothing has been changed, '
-      'and nothing here will guess again. Run supabase/repair/facts.sql and send '
-      'the output: it prints the same counts with RLS stood down, every foreign '
-      'key on the table with its validated flag, and the row itself.',
+      '0091: the foreign key reports itself VALIDATED and % subscription row(s) '
+      'still name a school that is not there. Both are true. Validation is a past '
+      'event — it says this table was scanned once, not that it is clean now — and '
+      'rows orphaned since by a delete that ran with foreign keys switched off '
+      'leave the flag exactly as it was. Nothing has been changed. Run '
+      'supabase/repair/enforcement.sql: it says whether they are STILL switched '
+      'off, and sweeps every table rather than this one.',
       v_orphans;
   end if;
 end $report$;
