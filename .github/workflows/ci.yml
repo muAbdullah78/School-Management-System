@@ -105,6 +105,27 @@ jobs:
         working-directory: .
         run: python3 supabase/check-exemption-lists.py
 
+      - name: Orphan sweeps exclude NULL school_id
+        # `not exists (select 1 from schools sc where sc.id = t.school_id)` reads
+        # as "rows whose school is missing". It is not: when school_id is NULL,
+        # `sc.id = NULL` is never true, so not exists is TRUE and the row counts
+        # as an orphan.
+        #
+        # A NULL school_id is the designed state for several tables here — a
+        # platform operator's profile has no school, and 0080 made
+        # platform_invoices, platform_payments, platform_exports and
+        # operator_actions nullable precisely so our ledger and audit trail
+        # SURVIVE a customer being purged. So an unguarded sweep reports the
+        # operator's own account and the whole retained ledger as damage.
+        #
+        # It did. repair/facts.sql reported "profiles rows on such an id: 1" on a
+        # live project — the operator's account — and that number went into a
+        # written claim that the orphan spanned three tables when it spanned two.
+        # repair/inspect-orphans.sql carried the same shape for three ledger
+        # tables.
+        working-directory: .
+        run: python3 supabase/check-orphan-queries.py
+
       - name: The website's buttons lead somewhere
         # Needs no database, so it lives in this job. Every call to action on the
         # marketing site used to be an anchor on the page the visitor was already

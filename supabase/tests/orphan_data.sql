@@ -152,10 +152,12 @@ begin
     '22 and the foreign key STILL reports itself validated, over a real orphan');
 
   select count(*) into v_before from public.subscriptions s
-   where not exists (select 1 from public.schools sc where sc.id = s.school_id);
+   where s.school_id is not null
+     and not exists (select 1 from public.schools sc where sc.id = s.school_id);
   alter table public.subscriptions validate constraint subscriptions_school_id_fkey;
   select count(*) into v_after from public.subscriptions s
-   where not exists (select 1 from public.schools sc where sc.id = s.school_id);
+   where s.school_id is not null
+     and not exists (select 1 from public.schools sc where sc.id = s.school_id);
   perform pg_temp.ok(v_before = 1 and v_after = 1,
     '23 VALIDATE CONSTRAINT succeeds and re-scans nothing — it cannot find this');
 

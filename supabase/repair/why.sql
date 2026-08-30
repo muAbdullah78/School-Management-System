@@ -79,7 +79,8 @@ select 1 as sort, 'orphan subscription' as finding,
        coalesce(pg_temp.ask($q$
          select string_agg(s.school_id::text, ', ')
            from public.subscriptions s
-          where not exists (select 1 from public.schools sc where sc.id = s.school_id)
+          where s.school_id is not null
+            and not exists (select 1 from public.schools sc where sc.id = s.school_id)
        $q$), '') as object,
        case
          when to_regclass('public.subscriptions') is null then 'n/a — no subscriptions table yet'

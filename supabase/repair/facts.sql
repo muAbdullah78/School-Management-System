@@ -34,6 +34,25 @@
 -- sevenths of it would have been invisible in the one place it is meant to be
 -- pasted. A diagnostic that cannot be read where it is used is not a diagnostic.
 --
+-- AND THEN SECTION 6 GOT ITS OWN QUESTION WRONG, WHICH IS WORTH LEAVING HERE.
+--
+-- Its five counts originally read `where not exists (select 1 from schools ...)`
+-- with no NULL guard. That does not mean "rows whose school is missing". When
+-- school_id is NULL, `sc.id = NULL` is never true, so `not exists` is TRUE and
+-- the row is counted as an orphan — and a NULL school_id is the DESIGNED state
+-- for several of the tables asked about: a platform operator's `profiles` row
+-- has no school, and 0080 made the platform ledger nullable on purpose so it
+-- survives a customer being purged.
+--
+-- So on the live project this file reported `profiles rows on such an id: 1`,
+-- which was the operator's own account, and that number went straight into a
+-- written claim that the orphan spanned three tables. It spanned two. A file
+-- whose entire purpose is to print facts instead of inferences printed a wrong
+-- fact, and the inference built on it was mine.
+--
+-- Guarded now, everywhere, and supabase/check-orphan-queries.py fails CI on any
+-- sweep that leaves the guard out.
+--
 -- Nothing here writes, locks or creates anything outside the connection.
 -- =============================================================================
 
@@ -56,7 +75,8 @@ returns text language sql security definer as $$
   select (select count(*) from public.schools)::text || ' school(s), '
       || (select count(*) from public.subscriptions)::text || ' subscription(s), '
       || (select count(*) from public.subscriptions x
-           where not exists (select 1 from public.schools sc
+           where x.school_id is not null
+             and not exists (select 1 from public.schools sc
                               where sc.id = x.school_id))::text
       || ' with no school'
 $$;
@@ -82,7 +102,8 @@ select * from (
   union all select 11, 'subscription rows visible',  pg_temp.ask('select count(*) from public.subscriptions')
   union all select 12, 'subscriptions whose school is NOT visible',
                        pg_temp.ask('select count(*) from public.subscriptions s
-                                     where not exists (select 1 from public.schools sc
+                                     where s.school_id is not null
+                                       and not exists (select 1 from public.schools sc
                                                         where sc.id = s.school_id)')
 
   -- 3. the same counts with RLS stood down
@@ -96,7 +117,8 @@ select * from (
   union all select 32, 'ids in subscriptions that are not in schools',
                        coalesce(pg_temp.ask('select string_agg(s.school_id::text, '', '')
                                                from public.subscriptions s
-                                              where not exists (select 1 from public.schools sc
+                                              where s.school_id is not null
+                                                and not exists (select 1 from public.schools sc
                                                                  where sc.id = s.school_id)'), '(none)')
 
   -- 5. every foreign key on subscriptions, with the flag that matters
@@ -114,23 +136,28 @@ select * from (
   -- 6. anything else pointing at an id that is not in schools
   union all select 60, 'profiles rows on such an id',
                        pg_temp.ask('select count(*) from public.profiles p
-                                     where not exists (select 1 from public.schools sc
+                                     where p.school_id is not null
+                                       and not exists (select 1 from public.schools sc
                                                         where sc.id = p.school_id)')
   union all select 61, 'students rows on such an id',
                        pg_temp.ask('select count(*) from public.students p
-                                     where not exists (select 1 from public.schools sc
+                                     where p.school_id is not null
+                                       and not exists (select 1 from public.schools sc
                                                         where sc.id = p.school_id)')
   union all select 62, 'school_settings rows on such an id',
                        pg_temp.ask('select count(*) from public.school_settings p
-                                     where not exists (select 1 from public.schools sc
+                                     where p.school_id is not null
+                                       and not exists (select 1 from public.schools sc
                                                         where sc.id = p.school_id)')
   union all select 63, 'platform_invoices rows on such an id',
                        pg_temp.ask('select count(*) from public.platform_invoices p
-                                     where not exists (select 1 from public.schools sc
+                                     where p.school_id is not null
+                                       and not exists (select 1 from public.schools sc
                                                         where sc.id = p.school_id)')
   union all select 64, 'operator_actions rows on such an id',
                        pg_temp.ask('select count(*) from public.operator_actions p
-                                     where not exists (select 1 from public.schools sc
+                                     where p.school_id is not null
+                                       and not exists (select 1 from public.schools sc
                                                         where sc.id = p.school_id)')
 
 ) x order by n;

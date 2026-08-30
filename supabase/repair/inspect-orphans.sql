@@ -32,16 +32,20 @@
 
 select 'subscription'   as record, to_jsonb(s) as detail
   from public.subscriptions s
- where not exists (select 1 from public.schools sc where sc.id = s.school_id)
+ where s.school_id is not null
+   and not exists (select 1 from public.schools sc where sc.id = s.school_id)
 union all
 select 'platform invoice', to_jsonb(i)
   from public.platform_invoices i
- where not exists (select 1 from public.schools sc where sc.id = i.school_id)
+ where i.school_id is not null
+   and not exists (select 1 from public.schools sc where sc.id = i.school_id)
 union all
 select 'platform payment', to_jsonb(p)
   from public.platform_payments p
- where not exists (select 1 from public.schools sc where sc.id = p.school_id)
+ where p.school_id is not null
+   and not exists (select 1 from public.schools sc where sc.id = p.school_id)
 union all
 select 'operator action', to_jsonb(a)
   from public.operator_actions a
- where not exists (select 1 from public.schools sc where sc.id = a.school_id);
+ where a.school_id is not null
+   and not exists (select 1 from public.schools sc where sc.id = a.school_id);

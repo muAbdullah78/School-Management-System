@@ -322,7 +322,8 @@ begin
 
   select count(*) into v_orphans
   from public.subscriptions s
-  where not exists (select 1 from public.schools sc where sc.id = s.school_id);
+  where s.school_id is not null
+    and not exists (select 1 from public.schools sc where sc.id = s.school_id);
   select bool_and(c.convalidated) into v_valid
     from pg_constraint c join pg_class t on t.oid = c.conrelid
     join pg_namespace n on n.oid = t.relnamespace
