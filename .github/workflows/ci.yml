@@ -1537,6 +1537,15 @@ jobs:
         # complete for both real schools anyway. Assertion 8 is the other half —
         # a clerk can still admit a pupil while the orphan exists, because a
         # counter must never be able to refuse an admission.
+        #
+        # Assertions 11-14 were added after the diagnostic contradicted itself on
+        # a live project: it reported an orphan subscription AND "the foreign key
+        # is there" in the same output. Both readings were accurate and one was
+        # meaningless — the constraint was NOT VALID, so it refused every new
+        # orphan and had never looked at the rows already present. Checking a
+        # constraint by what it REFERENCES rather than by its name was the right
+        # instinct one step short: what it does is REFERENCES schools(id) AND
+        # convalidated.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/counter_repair.sql
 
       - name: The website's prices match what the console charges

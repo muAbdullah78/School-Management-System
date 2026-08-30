@@ -99,8 +99,9 @@ Run them **in this order, one at a time**, waiting for each to say Success:
 | 6 | `6_photos_and_records.sql` | Photographs and the school logo, exam computation with practicals and streams, refundable deposits, certificates, staff QR check-in, the observer role, the live student count |
 | 7 | `7_ledger_and_limits.sql` | The whole operator side: subscriptions and invoices, renewals, read-only support visits, suspend and archive, business metrics, the installer registry, and the school-facing Subscription screen. Also, added later to the same bundle because it had not been pasted anywhere yet: **the write boundary** — the money and the issued documents stop being writable from a browser session, so every change goes through the function that records who and why — cancelling a challan raised by mistake, absence and result messages on WhatsApp, and the GPA grade scale |
 | 8 | `8_counter_repair.sql` | A repair. 0067's closing step recounted every school's pupils by walking `subscriptions`, and one subscription naming a school that no longer existed made the whole of bundle 6 fail — so a project that hit that error has none of bundle 6. This restates the counter's machinery, puts back the foreign key that should have made the bad row impossible, and cannot be stopped by one school |
+| 9 | `9_validate_constraints.sql` | The other half of the same repair. The `subscriptions -> schools` foreign key turned out to be **NOT VALID** — it refused every new bad row and had never checked the rows already there, which is how the orphan that stopped bundle 6 came to exist. This validates it, once no orphans remain |
 
-**When all eight say Success, check the install:** open a new query, paste
+**When all nine say Success, check the install:** open a new query, paste
 [`supabase/verify.sql`](../supabase/verify.sql) and Run. Every row should say
 **PASS**, except two saying **ACTION NEEDED** — those are your billing details
 (Step 9) and publishing a Windows installer (Step 11).

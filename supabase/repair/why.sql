@@ -69,9 +69,13 @@ select 1 as sort, 'orphan subscription' as finding,
               $q$), '0') = '0'
            then 'ok — every subscription has its school'
          else 'These rows cannot be viewed, billed or renewed, and they are what '
-              || 'stopped bundle 6. Migration 0090 skips them and will not delete '
-              || 'them. Decide what they are, remove them, then re-run 0090 so the '
-              || 'missing foreign key can go back.'
+              || 'stopped bundle 6. Nothing has deleted them and nothing will — a '
+              || 'customer record is the operator''s to decide about. Run '
+              || 'supabase/repair/inspect-orphans.sql to see what each one IS '
+              || '(an abandoned signup, or a school somebody was actually billed '
+              || 'for), delete the ones you have looked at BY ID, then run bundle 9 '
+              || '(0091), which puts the foreign key into the state line 2 will '
+              || 'tell you it is not in yet.'
        end as what_to_do
 
 union all
@@ -80,7 +84,8 @@ union all
 -- 2. The foreign key that should have made rule 1 impossible
 -- ---------------------------------------------------------------------------
 select 2, 'subscriptions -> schools foreign key',
-       coalesce((select string_agg(c.conname, ', ')
+       coalesce((select string_agg(c.conname || case when c.convalidated then ''
+                                                     else ' (NOT VALID)' end, ', ')
                    from pg_constraint c
                    join pg_class t on t.oid = c.conrelid
                    join pg_namespace n on n.oid = t.relnamespace
@@ -89,13 +94,31 @@ select 2, 'subscriptions -> schools foreign key',
                     and pg_get_constraintdef(c.oid) ilike '%references%schools(id)%'), ''),
        case
          when to_regclass('public.subscriptions') is null then 'n/a'
+         -- THREE states, not two. This row used to say "ok" for a NOT VALID
+         -- constraint and printed that beside row 1 reporting an orphan — two
+         -- answers that cannot both be true, which is how the real state was
+         -- finally noticed. A NOT VALID foreign key exists, matches a
+         -- definition test, and guards every FUTURE row, while never having
+         -- looked at the rows already there.
          when exists (select 1 from pg_constraint c
                       join pg_class t on t.oid = c.conrelid
                       join pg_namespace n on n.oid = t.relnamespace
                       where n.nspname = 'public' and t.relname = 'subscriptions'
-                        and c.contype = 'f'
+                        and c.contype = 'f' and c.convalidated
                         and pg_get_constraintdef(c.oid) ilike '%references%schools(id)%')
-           then 'ok — deleting a school takes its subscription with it'
+           then 'ok — checked against every existing row, so deleting a school '
+                || 'takes its subscription with it and the orphan above cannot recur'
+         when exists (select 1 from pg_constraint c
+                      join pg_class t on t.oid = c.conrelid
+                      join pg_namespace n on n.oid = t.relnamespace
+                      where n.nspname = 'public' and t.relname = 'subscriptions'
+                        and c.contype = 'f' and not c.convalidated
+                        and pg_get_constraintdef(c.oid) ilike '%references%schools(id)%')
+           then 'NOT VALID. It refuses every NEW orphan and has never checked the '
+                || 'rows that were already there — which is exactly how the row in '
+                || 'line 1 survives. Remove that row, then run bundle 9 (0091), '
+                || 'which validates the constraint so the state becomes impossible '
+                || 'rather than merely absent.'
          else 'MISSING. 0025 declares it, so it has been dropped since — a '
               || 'recreated or restored `schools` does that. Until it is back, '
               || 'every school deleted from now on leaves its subscription '

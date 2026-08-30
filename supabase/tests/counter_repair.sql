@@ -286,4 +286,89 @@ select pg_temp.ok(
   || 'grants EXECUTE to PUBLIC on every function it creates, so this is one '
   || 'forgotten revoke away from being false');
 
+-- =============================================================================
+-- 5. NOT VALID — the state that made the diagnostic contradict itself
+--
+-- The live project reported an orphan AND "the foreign key is there" in the same
+-- output. Both were accurate readings and one of them was meaningless: a NOT
+-- VALID foreign key exists, satisfies a definition test, refuses every new
+-- orphan, and has never looked at the rows already present.
+--
+-- Checking a constraint by what it REFERENCES rather than by its name was the
+-- right instinct one step short. What it does is `REFERENCES schools(id)` AND
+-- `convalidated`.
+-- =============================================================================
+select pg_temp.ok(
+  (select bool_and(c.convalidated)
+     from pg_constraint c
+     join pg_class t on t.oid = c.conrelid
+     join pg_namespace n on n.oid = t.relnamespace
+    where n.nspname = 'public' and t.relname = 'subscriptions' and c.contype = 'f'
+      and pg_get_constraintdef(c.oid) ilike '%references%schools(id)%'),
+  '11. and it is VALIDATED, not merely declared — so it has been checked against '
+  || 'every row already in the table, and "the constraint exists" and "an orphan '
+  || 'exists" can no longer both be true');
+
+do $notvalid$
+declare v_orphans bigint; v_valid boolean;
+begin
+  -- Build the exact live state inside the transaction: drop the constraint, add
+  -- the orphan, put the constraint back NOT VALID.
+  alter table public.subscriptions drop constraint subscriptions_school_id_fkey;
+  insert into public.subscriptions (school_id, plan_code, status, trial_ends_on)
+    values ('a0bf0f0c-56b0-4e83-af44-96869c07f542', 'starter', 'active', current_date + 30);
+  alter table public.subscriptions add constraint subscriptions_school_id_fkey
+    foreign key (school_id) references public.schools(id) on delete cascade not valid;
+
+  select count(*) into v_orphans
+  from public.subscriptions s
+  where not exists (select 1 from public.schools sc where sc.id = s.school_id);
+  select bool_and(c.convalidated) into v_valid
+    from pg_constraint c join pg_class t on t.oid = c.conrelid
+    join pg_namespace n on n.oid = t.relnamespace
+   where n.nspname = 'public' and t.relname = 'subscriptions' and c.contype = 'f'
+     and pg_get_constraintdef(c.oid) ilike '%references%schools(id)%';
+
+  if v_orphans <> 1 or v_valid then
+    raise exception 'FAIL  12. could not build the NOT VALID state (orphans %, valid %)',
+      v_orphans, v_valid;
+  end if;
+  raise notice 'PASS  12. a NOT VALID constraint holds an orphan and a foreign key '
+    'at the same time — the state the definition test could not see';
+end $notvalid$;
+
+do $stillrefuses$
+begin
+  begin
+    insert into public.subscriptions (school_id, plan_code, status, trial_ends_on)
+      values ('c0bf0f0c-56b0-4e83-af44-96869c07f542', 'starter', 'active', current_date + 30);
+  exception when foreign_key_violation then
+    raise notice 'PASS  13. and it still refuses a NEW orphan, which is why nothing '
+      'ever noticed: it is doing most of its job';
+    return;
+  end;
+  raise exception 'FAIL  13. a NOT VALID constraint let a new orphan in';
+end $stillrefuses$;
+
+do $validate$
+declare v_valid boolean;
+begin
+  -- 0091 refuses to validate while the orphan is there, correctly. Remove it and
+  -- the validation is what closes the state for good.
+  delete from public.subscriptions
+   where school_id = 'a0bf0f0c-56b0-4e83-af44-96869c07f542';
+  alter table public.subscriptions validate constraint subscriptions_school_id_fkey;
+
+  select bool_and(c.convalidated) into v_valid
+    from pg_constraint c join pg_class t on t.oid = c.conrelid
+    join pg_namespace n on n.oid = t.relnamespace
+   where n.nspname = 'public' and t.relname = 'subscriptions' and c.contype = 'f'
+     and pg_get_constraintdef(c.oid) ilike '%references%schools(id)%';
+  if not v_valid then
+    raise exception 'FAIL  14. the constraint is still not validated';
+  end if;
+  raise notice 'PASS  14. once the orphan is gone the constraint validates, and '
+    'from then on the two answers cannot disagree';
+end $validate$;
+
 rollback;

@@ -1083,9 +1083,10 @@ select 'every subscription belongs to a school that exists',
                    where not exists (select 1 from public.schools sc where sc.id = s.school_id)
                 $q$) || ' subscription(s) name a school that is not there. Nothing '
                 || 'is broken and nothing has been deleted, but the foreign key '
-                || 'that should make this impossible cannot be restored while they '
-                || 'exist. Run supabase/repair/why.sql to see which, decide what '
-                || 'they are, remove them, then re-run bundle 8.'
+                || 'cannot be put beyond doubt while they exist. Run '
+                || 'supabase/repair/why.sql — it prints the ids and says whether '
+                || 'the constraint is absent or merely NOT VALID — decide what '
+                || 'they are, remove them, then run bundle 9.'
          when not exists (select 1 from pg_constraint c
                           join pg_class t on t.oid = c.conrelid
                           join pg_namespace n on n.oid = t.relnamespace
@@ -1095,6 +1096,18 @@ select 'every subscription belongs to a school that exists',
            then 'ACTION NEEDED — subscriptions has no foreign key to schools, so a '
                 || 'school deleted from now on will leave its subscription behind. '
                 || 'Run bundle 8, which restores it.'
+         -- A NOT VALID constraint used to pass this row while an orphan sat in
+         -- the table, because the check read the definition and never asked
+         -- whether it had been enforced against the rows already there.
+         when not exists (select 1 from pg_constraint c
+                          join pg_class t on t.oid = c.conrelid
+                          join pg_namespace n on n.oid = t.relnamespace
+                          where n.nspname = 'public' and t.relname = 'subscriptions'
+                            and c.contype = 'f' and c.convalidated
+                            and pg_get_constraintdef(c.oid) ilike '%references%schools(id)%')
+           then 'ACTION NEEDED — the foreign key is NOT VALID: it refuses every new '
+                || 'orphan and has never checked the rows that were already there. '
+                || 'Run bundle 9 (0091) to validate it.'
          else 'PASS' end
 
 union all
