@@ -7491,6 +7491,1618 @@ grant  execute on function public.fn_subject_teachers(uuid) to authenticated;
 revoke execute on function public.fn_subject_teachers(uuid) from public, anon;
 
 -- ─────────────────────────────────────────────────────────────────────────
+-- 0086_write_boundary.sql
+-- ─────────────────────────────────────────────────────────────────────────
+-- =============================================================================
+-- 0086 — Every audited function in this project was optional
+--
+-- WHAT WAS PROVED, ON A REAL DATABASE, BEFORE ANYTHING HERE WAS WRITTEN
+--
+-- One school, one child, Rs 4,500 charged and paid in full through the counter,
+-- one exam paper marked 88 and the result card published. Then a signed-in
+-- `admin_clerk` — an ordinary front-office login, not an owner, not a platform
+-- admin — issued PLAIN TABLE WRITES. No SECURITY DEFINER function is involved
+-- in any line below; these are exactly the requests supabase-js sends for
+-- `sb.from('x').update(...)` and `.delete()`, which means any clerk with the
+-- anon key and their own password can send them from a browser console:
+--
+--   delete from payment_allocations where invoice_id = …
+--     → ALLOWED. Balance went from 0 back to Rs 4,500 while the receipt for
+--       Rs 4,500 still sat in the payments table. The family can now be made to
+--       pay twice for money the school has already taken.
+--
+--   insert into payment_allocations (payment_id, invoice_id, amount) values (…)
+--     → ALLOWED. An unpaid challan shows settled with no money received. This
+--       is the cash-theft path in full: pocket the notes, record no payment,
+--       point an allocation at the challan, and the ledger balances.
+--
+--   update result_cards set percentage = 12, grade = 'F', frozen = …
+--     → ALLOWED. A PUBLISHED card, already visible to the parent, rewritten
+--       from 88% to 12% / FAIL.
+--
+--   delete from result_cards where id = …            → ALLOWED.
+--   update invoice_lines set amount = 1              → ALLOWED (from Rs 4,500).
+--   update invoices set status = 'void'              → ALLOWED. Balance to 0.
+--   delete from invoices where id = …                → ALLOWED. No trace left.
+--
+--   select count(*) from audit_log                   → 0.
+--
+-- Not one of those wrote an audit row, demanded a reason, or touched a serial.
+--
+-- WHY IT WAS INVISIBLE
+--
+-- Because everything above it was built correctly. `fn_record_payment` takes a
+-- till session. `fn_reverse_payment` writes a contra receipt rather than editing
+-- one. `fn_issue_certificate` freezes a snapshot and burns a gapless serial.
+-- `fn_add_discount` records who approved it. `fn_generate_result_cards` refuses
+-- to print a plausible wrong card. Every one of those is real work and every one
+-- of them was a formality, because the tables underneath carried
+--
+--   POLICY invoices_write FOR ALL USING (school_id = current_school_id()
+--                                        AND has_role('owner','principal',
+--                                                     'admin_clerk','accountant'))
+--
+-- and twelve more like it. The policies are tenant-correct and role-correct —
+-- that is exactly why they read as finished. What they never asked is whether
+-- the WRITE ITSELF should be possible outside the one function that owns it.
+--
+-- The project already had the right answer written down for the operator side.
+-- 0083 dropped `schools_update_platform` for this precise reason: "an operator
+-- UPDATE over REST writes no audit row". The same sentence was true of thirteen
+-- tenant tables holding the school's money, and nobody applied it there.
+--
+-- THE FIX IS A PRIVILEGE, NOT A POLICY
+--
+-- A policy decides which rows a permitted write may touch. It cannot say "this
+-- table is not writable from a session". A missing GRANT can, and it cannot be
+-- worked around by adding another policy later, which is the failure mode worth
+-- designing against — the next person to add a table write adds a policy, not a
+-- grant.
+--
+-- SECURITY DEFINER functions are unaffected. Every one of them is owned by
+-- `postgres`, which owns the tables too, so they keep writing exactly as before.
+-- That is the whole shape of the fix: the only way in is the door that asks for
+-- a reason and signs the register.
+--
+-- SUPABASE MAKES THIS NECESSARY AND EASY TO MISS. A Supabase project is created
+-- with
+--
+--     alter default privileges in schema public
+--       grant all on tables to postgres, anon, authenticated, service_role;
+--
+-- so every table these migrations create is handed to `anon` and
+-- `authenticated` automatically. Nothing in this repository asked for that and
+-- nothing was checking it — the lesson 0083 recorded, now applied rather than
+-- noted. The assertions at the foot of this file are therefore about
+-- PRIVILEGES, which is where the truth is, and they run on every deployment.
+--
+-- WHAT DOES NOT CHANGE
+--
+--   * The app. Every direct table write `web/src/lib/db.ts` performs was
+--     enumerated first: academic_sessions, assessments, classes, exam_subjects,
+--     exam_terms, expense_categories, message_templates, profiles,
+--     school_settings, sections, staff, student_links, students, subjects,
+--     teacher_assignments. NOT ONE table in the list below is among them. The
+--     money already went through functions; the tables were just left open.
+--   * Reading. Every SELECT policy is untouched, so no screen loses a figure.
+--   * The Edge Functions, which authenticate as `service_role`.
+--
+-- WHAT A SCHOOL LOSES: nothing it could reach. What it gains is that the audit
+-- trail is now the only trail.
+--
+-- Re-runnable.
+-- =============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 1. The tables only a definer function may write
+--
+-- One list, used by the revoke, by the policy drop and by the assertions, so
+-- the three cannot drift apart. Each entry names the function that owns writes
+-- to it — a table with no such function does not belong here, because then the
+-- revoke would make it unwritable rather than protected.
+--
+--   invoices, invoice_lines      fn_generate_class_invoices, fn_bill_student_month,
+--                                fn_admit_student, fn_charge_deposit,
+--                                fn_apply_fine, fn_waive_fine, fn_defer_invoice
+--   payments, payment_allocations fn_record_payment, fn_record_family_payment,
+--                                fn_record_bulk_payments, fn_verify_payment,
+--                                fn_reverse_payment, fn_cancel_pending_payment
+--   adjustments                  fn_add_adjustment
+--   discounts                    fn_add_discount, fn_set_discount_status
+--   result_cards                 fn_generate_result_cards, fn_publish_results,
+--                                fn_unpublish_results
+--   certificates,                fn_issue_certificate, fn_cancel_certificate
+--     certificate_cancellations
+--   deposit_refunds              fn_refund_deposit
+--   student_fee_items            fn_generate_class_invoices, fn_bill_student_month
+--   fee_heads                    fn_upsert_fee_head, fn_set_fee_head_active
+--   fee_structures               fn_set_fee_amount, fn_fee_increment
+--   families                     fn_admit_student, fn_merge_families,
+--                                fn_student_join_family
+--
+-- `families` is here for a different reason from the rest: its UPDATE policy
+-- was already unreachable — no screen and no function in the app writes it — so
+-- it was a door with nothing behind it. When a school needs to correct a
+-- payer's name or CNIC, that wants a function that records the change, not a
+-- policy that does not.
+--
+-- DELIBERATELY NOT HERE, with the reason:
+--
+--   * students, staff, classes, sections, subjects, exam_terms, exam_subjects,
+--     assessments, academic_sessions, expense_categories, message_templates,
+--     profiles, school_settings, student_links, teacher_assignments — the app
+--     writes every one of these directly. Closing them is a separate piece of
+--     work that has to build the function first. Column-level cover for the
+--     dangerous columns on `students` is in section 3.
+--   * expenses, other_income, till_sessions, audit_log — already SELECT-only.
+--     Somebody got this right and it is worth saying so.
+--   * attendance_daily, mark_entries — a mark or a mark of attendance is not
+--     money, both are gated per class and per subject (0085), and both record
+--     the previous value for the corrections report. Left as they are on
+--     purpose: a class teacher writing her own class's register is the feature.
+--   * guardians — PII, not money, and its ALL policy is currently the only way
+--     a guardian's phone number could ever be corrected. Closing it would
+--     remove a capability rather than a loophole.
+-- ---------------------------------------------------------------------------
+do $boundary$
+declare
+  v_t   text;
+  v_p   record;
+  v_tables text[] := array[
+    'invoices', 'invoice_lines',
+    'payments', 'payment_allocations',
+    'adjustments', 'discounts',
+    'result_cards',
+    'certificates', 'certificate_cancellations',
+    'deposit_refunds',
+    'student_fee_items',
+    'fee_heads', 'fee_structures',
+    'families'
+  ];
+begin
+  foreach v_t in array v_tables loop
+    if to_regclass('public.' || v_t) is null then
+      raise exception '0086: public.% does not exist. This migration is naming a '
+        'table that has been renamed or dropped, and a silent skip would leave '
+        'the real table wide open.', v_t;
+    end if;
+
+    -- The privilege. `anon` as well as `authenticated`: an unauthenticated
+    -- request carries the anon role, and Supabase grants it the same defaults.
+    execute format(
+      'revoke insert, update, delete, truncate on public.%I from authenticated, anon', v_t);
+
+    -- The policies those privileges made reachable. A policy that can never
+    -- fire is dead weight that reads as a live control — 0083's finding, and
+    -- the reason for dropping rather than keeping them "for documentation".
+    for v_p in
+      select policyname from pg_policies
+       where schemaname = 'public' and tablename = v_t
+         and cmd in ('ALL', 'INSERT', 'UPDATE', 'DELETE')
+    loop
+      execute format('drop policy %I on public.%I', v_p.policyname, v_t);
+      raise notice '0086: dropped write policy %.% — the privilege behind it is gone',
+        v_t, v_p.policyname;
+    end loop;
+  end loop;
+end $boundary$;
+
+-- ---------------------------------------------------------------------------
+-- 2. The end state, asserted by privilege
+--
+-- Not "did my revoke run" but "can a signed-in session write this table now",
+-- which is the property that matters and the one that catches a future
+-- migration creating a table and picking up Supabase's default grant again.
+-- ---------------------------------------------------------------------------
+do $assert$
+declare
+  v_t text;
+  v_bad text[] := '{}';
+  v_pol text[] := '{}';
+  v_tables text[] := array[
+    'invoices', 'invoice_lines', 'payments', 'payment_allocations',
+    'adjustments', 'discounts', 'result_cards', 'certificates',
+    'certificate_cancellations', 'deposit_refunds', 'student_fee_items',
+    'fee_heads', 'fee_structures', 'families'
+  ];
+  v_role text;
+begin
+  foreach v_t in array v_tables loop
+    foreach v_role in array array['authenticated', 'anon'] loop
+      if has_table_privilege(v_role, 'public.' || v_t, 'insert')
+         or has_table_privilege(v_role, 'public.' || v_t, 'update')
+         or has_table_privilege(v_role, 'public.' || v_t, 'delete') then
+        v_bad := v_bad || (v_t || ' (' || v_role || ')');
+      end if;
+    end loop;
+    if exists (select 1 from pg_policies
+                where schemaname = 'public' and tablename = v_t
+                  and cmd in ('ALL', 'INSERT', 'UPDATE', 'DELETE')) then
+      v_pol := v_pol || v_t;
+    end if;
+  end loop;
+
+  if array_length(v_bad, 1) is not null then
+    raise exception
+      '0086: these tables can still be written from a signed-in session: %. '
+      'A direct write to any of them forges money or an issued document and '
+      'leaves no audit row.', array_to_string(v_bad, ', ');
+  end if;
+  if array_length(v_pol, 1) is not null then
+    raise exception
+      '0086: write policies survive on %. They cannot fire without the '
+      'privilege, and a control that cannot fire reads as one that can.',
+      array_to_string(v_pol, ', ');
+  end if;
+
+  -- And the other half: the definer functions must still be able to write, or
+  -- this migration has locked the school out of its own books. Checked by
+  -- asking about the OWNER of the functions rather than by trusting the theory.
+  if not has_table_privilege('postgres', 'public.invoices', 'insert') then
+    raise exception
+      '0086: postgres cannot insert invoices. Every SECURITY DEFINER function '
+      'runs as the owner, so the school can no longer be billed at all.';
+  end if;
+end $assert$;
+
+-- ---------------------------------------------------------------------------
+-- 3. students — the columns a function owns
+--
+-- `students` keeps its write policy, because the profile editor updates it
+-- directly and closing that needs a function built first. But three groups of
+-- columns on it are owned by functions that enforce rules the editor does not:
+--
+--   status, left_on, leaving_reason  fn_set_student_status — 0054's transition
+--                                    rules and the audit row. A clerk could set
+--                                    status = 'left' with a PATCH and the child
+--                                    would vanish from the class strength with
+--                                    no date, no reason and no audit.
+--   family_id                        fn_student_join_family / fn_merge_families.
+--                                    Moving a child between families moves the
+--                                    money; 0036 exists because this was wrong.
+--   photo_path                       fn_set_student_photo.
+--   school_id                        the tenant key. Nothing should ever update
+--                                    it; enforce_school_id() stamps it.
+--   deleted_at                       the soft delete, which no code writes yet.
+--                                    Left unwritable rather than half-open.
+--
+-- Column-level privilege is the exact tool: RLS cannot restrict WHICH COLUMNS
+-- an update touches, and that is the same reason 0061 made certificate
+-- cancellation a separate table rather than an edit.
+--
+-- IT HAS TO BE DONE THE OTHER WAY ROUND, and the assertion below is what
+-- taught me. `revoke update (status, …)` on top of a table-wide UPDATE grant
+-- changes NOTHING: a table-level privilege subsumes every column, so
+-- has_column_privilege still answered true for all seven columns and the
+-- assertion failed on its first run. The table grant has to go first, and then
+-- the columns the editor genuinely sends are granted back by name. That is also
+-- the safer shape — a column added to `students` in a later migration is
+-- withheld by default rather than granted by default.
+--
+-- The identity columns gr_no, admission_no and admission_date ARE granted.
+-- Nothing owns them and a school must be able to fix a typed GR number; a
+-- certificate already issued carries its own frozen copy, so a later correction
+-- cannot rewrite a document that has been handed over.
+--
+-- INSERT stays. A direct insert is reachable only by the same roles
+-- `fn_admit_student` already serves, and — checked rather than assumed —
+-- fn_admit_student enforces no subscription limit either, so closing this would
+-- remove no control. It also keeps the one test in this project that writes
+-- `students` as a signed-in user, which is how 0063's CHECK-constraint grant is
+-- proved from the position a school actually occupies.
+--
+-- DELETE goes. There is a soft delete for a reason: a child with fee history
+-- cannot be removed without taking the school's own accounts with them, and
+-- Postgres would refuse on the foreign key anyway — but a child admitted this
+-- morning by mistake would delete clean, and "it worked that once" is how a
+-- school learns to do it that way.
+-- ---------------------------------------------------------------------------
+revoke update on public.students from authenticated, anon;
+revoke delete on public.students from authenticated, anon;
+
+grant update (gr_no, admission_no, full_name, father_name, mother_name, b_form,
+              dob, gender, address, phone, whatsapp, admission_date, notes)
+  on public.students to authenticated;
+
+do $assert$
+declare v_bad text[] := '{}'; v_c text; v_role text;
+begin
+  foreach v_role in array array['authenticated', 'anon'] loop
+    foreach v_c in array array['status', 'left_on', 'leaving_reason', 'family_id',
+                               'photo_path', 'school_id', 'deleted_at'] loop
+      if has_column_privilege(v_role, 'public.students', v_c, 'update') then
+        v_bad := v_bad || (v_c || ' (' || v_role || ')');
+      end if;
+    end loop;
+    if has_table_privilege(v_role, 'public.students', 'delete') then
+      v_bad := v_bad || ('DELETE (' || v_role || ')');
+    end if;
+  end loop;
+  if array_length(v_bad, 1) is not null then
+    raise exception '0086: students is still writable where a function owns it: %',
+      array_to_string(v_bad, ', ');
+  end if;
+
+  -- The editor must still work. Asserted, because a revoke with one column name
+  -- wrong would take a column the Save button needs and nothing else would say
+  -- so until a clerk pressed it.
+  foreach v_c in array array['full_name', 'father_name', 'mother_name', 'gender',
+                             'dob', 'b_form', 'phone', 'whatsapp', 'address', 'notes'] loop
+    if not has_column_privilege('authenticated', 'public.students', v_c, 'update') then
+      raise exception
+        '0086: authenticated can no longer update students.% — the profile editor '
+        'sends that column and Save would fail for every school.', v_c;
+    end if;
+  end loop;
+end $assert$;
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- 0087_cancel_a_charge.sql
+-- ─────────────────────────────────────────────────────────────────────────
+-- =============================================================================
+-- 0087 — A challan raised by mistake could never be cancelled
+--
+-- WHAT WAS THERE
+--
+-- `invoice_status` has had the value `void` since the first migration, and
+-- TWENTY functions honour it — student_balance, the dashboard, the defaulters
+-- list, head-wise dues, the balance sheet, the unpaid-challan report, the
+-- voucher scan, every one of them excludes a void invoice, and
+-- `invoice_balances` filters it out at the view. The read side is complete and
+-- consistent.
+--
+-- Nothing has ever written it. Asked directly:
+--
+--     select proname from pg_proc
+--      where prosrc ~* 'status\s*=\s*''void''' and prosrc ~* 'update';
+--     → 0 rows
+--
+-- So a clerk who generated April's challans for Class 5 with the wrong due date,
+-- or billed a child who had already left, or ran the generator twice against two
+-- different fee structures, had no way to undo it. The workarounds are all
+-- worse than the problem:
+--
+--   * A negative adjustment cancels the money but leaves the wrong challan
+--     sitting in Unpaid Challans, in Dues by Fee Head and in the defaulters
+--     list for ever, and the parent portal keeps showing it. The books balance
+--     and every screen still accuses the family.
+--   * Deleting the row over the REST API worked until 0086 closed it, and left
+--     no trace that the charge had ever existed.
+--
+-- WHY THE READ SIDE BEING RIGHT IS NOT ENOUGH
+--
+-- Twenty readers excluding void was never tested against a void invoice,
+-- because none could exist. Introducing the writer means auditing every reader
+-- that does NOT exclude it. Six were found by asking which function bodies name
+-- `public.invoices` without naming `'void'`, and each was judged rather than
+-- patched:
+--
+--   fn_challan            THE ONE THAT MATTERS. It prints the bank-payable
+--                         voucher. A cancelled challan that still prints is the
+--                         whole loophole reopened from the other end: cancel the
+--                         charge, print the slip, collect the cash off-book.
+--                         Now refuses, by name.
+--   fn_undo_defer         updated any invoice regardless of status, while its
+--                         twin fn_defer_invoice already refused a void one.
+--                         Made symmetric.
+--   fn_global_search      showed `initcap(status)` — a clerk searching a
+--                         voucher code saw "Void", which is database jargon, not
+--                         an answer. Now says "Cancelled".
+--   fn_report_ledger      touches invoices only to label which months a RECEIPT
+--                         covered. A cancelled month can appear there and
+--                         should: the receipt is a historical fact. Left alone.
+--   fn__payment_applied   same reasoning — it describes a payment that happened.
+--   fn_rollover_undo      LEFT ALONE DELIBERATELY, and this one is worth the
+--                         paragraph. It refuses to undo a rollover when the
+--                         target session already has invoices, and excluding
+--                         void there looks like an obvious improvement. It is
+--                         not: the undo then proceeds to DELETE the enrolments,
+--                         and a void invoice still references enrollment_id, so
+--                         the delete fails on the foreign key and the school
+--                         gets a constraint error instead of a clear refusal. A
+--                         cancelled challan is evidence that somebody billed in
+--                         that session; refusing is right.
+--   fn_platform_school_detail  LEFT ALONE, and checked rather than waved
+--                         through. It touches invoices twice, and both are
+--                         USAGE signals rather than receivables: "has this
+--                         school ever billed anybody" and "when did they last
+--                         raise a challan". A school that raised a challan and
+--                         cancelled it has still used the billing module, so
+--                         counting the cancelled one is the right answer to
+--                         both questions. The first draft of this migration
+--                         carried a do-block that printed a notice about it on
+--                         every deployment; a control that only complains is
+--                         noise, and the finding belongs here instead.
+--
+-- THE RULES, AND THE ARGUMENT AGAINST EACH
+--
+--   1. OWNER OR PRINCIPAL ONLY. The objection is practical: the clerk generates
+--      the challans, so the clerk makes the mistakes, and making them fetch the
+--      principal is friction on a busy morning. It stands anyway. A front-office
+--      login that can cancel a charge can make a family's dues disappear and
+--      take the cash informally, and that is the oldest fraud in a Pakistani
+--      school office. A clerk can already SEE the register, and asking for the
+--      cancellation takes a minute.
+--
+--   2. A REASON IS REQUIRED, and a one-character reason is not a reason. Four
+--      characters minimum. The register is read months later by somebody who was
+--      not there.
+--
+--   3. AN INVOICE WITH MONEY ON IT IS REFUSED, naming the amount. Cancelling a
+--      charge that has been paid would orphan the payment: the receipt stays,
+--      the allocation points at a charge that no longer counts, and the family's
+--      balance moves by the paid amount with no receipt reversed. The correct
+--      order is to reverse the payment first — fn_reverse_payment writes a
+--      contra receipt, so the money movement stays visible — and then cancel.
+--      A payment that has ALREADY been reversed nets to zero and does not block,
+--      which is why the check sums the allocations instead of counting them.
+--
+--   4. IT IS A STATUS CHANGE, NOT A DELETE. The row, its lines, its voucher code
+--      and its serial history all stay. "Deleted Fees" in the competitor's
+--      product is a register of exactly this, and a register whose entries can be
+--      erased is not one.
+--
+--   5. NOTHING IS ALLOCATED TO IT AFTERWARDS. Already true and worth stating:
+--      fn__allocate_payment only considers invoices with status `issued` or
+--      `partial`, so a payment arriving later becomes family credit rather than
+--      settling a cancelled charge. A pending payment verified after the
+--      cancellation behaves the same way.
+--
+-- Re-runnable.
+-- =============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 1. Who cancelled it, when, and why
+--
+-- On the invoice rather than in a side table, because unlike a certificate an
+-- invoice is not an issued document — it is a live position, and `status`
+-- already lives here. The three columns are read by fn_voided_invoices below,
+-- which is what keeps check-columns-used.sh satisfied that they are not
+-- decoration.
+-- ---------------------------------------------------------------------------
+alter table public.invoices add column if not exists voided_at  timestamptz;
+alter table public.invoices add column if not exists voided_by  uuid references public.profiles(id);
+alter table public.invoices add column if not exists void_reason text;
+
+-- 0086 revoked every direct write on public.invoices, so no column-level grant
+-- is needed or wanted here: the only writer is the definer function below.
+
+-- ---------------------------------------------------------------------------
+-- 2. Cancelling one
+-- ---------------------------------------------------------------------------
+create or replace function public.fn_void_invoice(p_invoice_id uuid, p_reason text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_school uuid := public.current_school_id();
+  v_actor  uuid := auth.uid();
+  v_inv    record;
+  v_alloc  numeric;
+  v_charge numeric;
+  v_reason text := nullif(btrim(coalesce(p_reason, '')), '');
+begin
+  if not public.has_role('owner', 'principal') then
+    raise exception
+      'Only the owner or principal may cancel a charge. A clerk who can cancel '
+      'a challan can make a family''s dues disappear.'
+      using errcode = '42501';
+  end if;
+  if v_reason is null or length(v_reason) < 4 then
+    raise exception
+      'A reason is required, and it is read months later by somebody who was '
+      'not there — say what was wrong with the challan.';
+  end if;
+  perform public.assert_own('invoices', p_invoice_id);
+
+  select i.id, i.status, i.period_month, i.notes, i.student_id, s.full_name
+    into v_inv
+  from public.invoices i
+  join public.students s on s.id = i.student_id
+  where i.id = p_invoice_id and i.school_id = v_school;
+  if not found then
+    raise exception 'No such challan' using errcode = '42704';
+  end if;
+  if v_inv.status = 'void' then
+    raise exception 'That challan is already cancelled.';
+  end if;
+
+  -- Sum, not count: a payment that has been reversed leaves its original and
+  -- its contra allocation behind, and those net to zero. Counting rows would
+  -- refuse for ever after any reversal.
+  select coalesce(sum(a.amount), 0) into v_alloc
+  from public.payment_allocations a
+  where a.invoice_id = p_invoice_id;
+
+  if v_alloc <> 0 then
+    raise exception
+      'Rs % has been paid against this challan. Reverse the payment first — '
+      'Fees → the receipt → Reverse — so the money movement stays on the '
+      'record, then cancel the charge.', trim(to_char(v_alloc, 'FM999,999,990'));
+  end if;
+
+  select coalesce(sum(case when l.is_discount then -l.amount else l.amount end), 0)
+         + coalesce((select fine from public.invoices where id = p_invoice_id), 0)
+    into v_charge
+  from public.invoice_lines l where l.invoice_id = p_invoice_id;
+
+  update public.invoices
+     set status = 'void',
+         voided_at = now(),
+         voided_by = v_actor,
+         void_reason = v_reason
+   where id = p_invoice_id;
+
+  insert into public.audit_log (
+    school_id, actor, actor_role, action, entity, entity_id, before, after, reason)
+  values (
+    v_school, v_actor,
+    (select role from public.profiles where id = v_actor),
+    'INVOICE_VOID', 'invoices', p_invoice_id::text,
+    jsonb_build_object('status', v_inv.status, 'charge', v_charge),
+    jsonb_build_object('status', 'void'),
+    v_reason);
+
+  return jsonb_build_object(
+    'invoice_id', p_invoice_id,
+    'student_name', v_inv.full_name,
+    'cancelled', v_charge,
+    'period', coalesce(to_char(v_inv.period_month, 'FMMonth YYYY'),
+                       coalesce(v_inv.notes, 'One-off charge')));
+end;
+$$;
+
+grant  execute on function public.fn_void_invoice(uuid, text) to authenticated;
+revoke execute on function public.fn_void_invoice(uuid, text) from public, anon;
+
+-- ---------------------------------------------------------------------------
+-- 3. The register — the competitor's "Deleted Fees", which is the right screen
+--
+-- A clerk may READ it even though they may not cancel. Same reasoning as
+-- fn_message_settings: somebody working the counter should be able to see why
+-- the challan they are looking for is not there, and being able to see a
+-- control you cannot operate is how a boundary gets understood rather than
+-- worked around.
+-- ---------------------------------------------------------------------------
+create or replace function public.fn_voided_invoices(p_from date, p_to date)
+returns table (
+  invoice_id    uuid,
+  voided_at     timestamptz,
+  student_id    uuid,
+  student_name  text,
+  gr_no         text,
+  class_name    text,
+  section_name  text,
+  period_label  text,
+  voucher_code  text,
+  amount        numeric,
+  voided_by     text,
+  reason        text
+) language plpgsql stable security definer set search_path = public as $$
+declare v_school uuid := public.current_school_id();
+begin
+  if not public.may_view('owner', 'principal', 'admin_clerk', 'accountant') then
+    raise exception 'Not permitted' using errcode = '42501';
+  end if;
+  if p_from is null or p_to is null then
+    raise exception 'A date range is required';
+  end if;
+  if p_to < p_from then
+    raise exception 'The end date is before the start date';
+  end if;
+
+  return query
+  select i.id,
+         i.voided_at,
+         i.student_id,
+         s.full_name,
+         s.gr_no,
+         c.name,
+         sec.name,
+         coalesce(to_char(i.period_month, 'FMMonth YYYY'),
+                  coalesce(i.notes, 'One-off charge')),
+         i.voucher_code,
+         coalesce((select sum(case when l.is_discount then -l.amount else l.amount end)
+                     from public.invoice_lines l where l.invoice_id = i.id), 0)
+           + coalesce(i.fine, 0),
+         coalesce(pr.full_name, '—'),
+         coalesce(i.void_reason, '—')
+    from public.invoices i
+    join public.students s on s.id = i.student_id and s.school_id = v_school
+    left join public.enrollments e on e.id = i.enrollment_id
+    left join public.classes c   on c.id = e.class_id
+    left join public.sections sec on sec.id = e.section_id
+    left join public.profiles pr on pr.id = i.voided_by
+   where i.school_id = v_school
+     and i.status = 'void'
+     -- A challan voided before this migration existed has no voided_at. Those
+     -- are impossible today (nothing could write `void`) but a database
+     -- restored from elsewhere might carry one, and dropping it silently would
+     -- make the register lie about what it contains.
+     and coalesce(i.voided_at::date, i.created_at::date) between p_from and p_to
+   order by i.voided_at desc nulls last, s.full_name;
+end;
+$$;
+
+grant  execute on function public.fn_voided_invoices(date, date) to authenticated;
+revoke execute on function public.fn_voided_invoices(date, date) from public, anon;
+
+-- ---------------------------------------------------------------------------
+-- 4. A cancelled challan does not print
+--
+-- Rewritten programmatically from pg_get_functiondef rather than restated: the
+-- body is sixty lines that have nothing to do with this change, and retyping
+-- them is how an unrelated fix gets silently reverted.
+-- ---------------------------------------------------------------------------
+do $rewrite$
+declare
+  v_src    text;
+  v_anchor text := '  perform public.assert_own(''invoices'', p_invoice_id);';
+  v_guard  text :=
+    '  perform public.assert_own(''invoices'', p_invoice_id);' || E'\n' ||
+    '  -- 0087. A cancelled challan must not print: the slip is bank-payable, so' || E'\n' ||
+    '  -- printing one after the charge was cancelled is a way to collect cash' || E'\n' ||
+    '  -- that the books will never expect.' || E'\n' ||
+    '  if exists (select 1 from public.invoices' || E'\n' ||
+    '              where id = p_invoice_id and status = ''void'') then' || E'\n' ||
+    '    raise exception ''This challan was cancelled and cannot be printed. See ''' || E'\n' ||
+    '      ''Fees → Cancelled charges for who cancelled it and why.''' || E'\n' ||
+    '      using errcode = ''42501'';' || E'\n' ||
+    '  end if;';
+begin
+  select pg_get_functiondef(p.oid) into v_src
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'fn_challan';
+
+  if v_src is null then
+    raise exception '0087: public.fn_challan does not exist';
+  end if;
+
+  if position('status = ''void''' in v_src) > 0 then
+    raise notice '0087: fn_challan already refuses a cancelled challan';
+  else
+    if position(v_anchor in v_src) = 0 then
+      raise exception
+        '0087: cannot find the assert_own line in fn_challan. The body has '
+        'changed; insert the void guard by hand rather than guessing.';
+    end if;
+    execute replace(v_src, v_anchor, v_guard);
+    -- create or replace preserves the ACL, so no re-grant is needed. Stated
+    -- because the opposite was assumed once and cost an afternoon.
+  end if;
+end $rewrite$;
+
+-- ---------------------------------------------------------------------------
+-- 5. "Cancelled", not "Void", in the global search
+-- ---------------------------------------------------------------------------
+do $rewrite$
+declare
+  v_src text;
+  v_old text := 'initcap(i.status::text)';
+  v_new text := 'case when i.status = ''void'' then ''Cancelled'' else initcap(i.status::text) end';
+begin
+  select pg_get_functiondef(p.oid) into v_src
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'fn_global_search';
+
+  if v_src is null then
+    raise exception '0087: public.fn_global_search does not exist';
+  end if;
+
+  if position('''Cancelled''' in v_src) > 0 then
+    raise notice '0087: fn_global_search already says Cancelled';
+  elsif position(v_old in v_src) = 0 then
+    raise exception
+      '0087: cannot find initcap(i.status::text) in fn_global_search — the '
+      'challan branch has changed.';
+  else
+    execute replace(v_src, v_old, v_new);
+  end if;
+end $rewrite$;
+
+-- ---------------------------------------------------------------------------
+-- 6. fn_undo_defer, made symmetric with fn_defer_invoice
+--
+-- Short enough to restate in full, so it is.
+-- ---------------------------------------------------------------------------
+create or replace function public.fn_undo_defer(p_invoice_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.has_role('owner','principal','admin_clerk','accountant') then
+    raise exception 'Not permitted';
+  end if;
+  perform public.assert_own('invoices', p_invoice_id);
+  update public.invoices set deferred_until = null, defer_reason = null
+   where id = p_invoice_id and status <> 'void';
+  if not found then
+    -- One message covering both, because the caller cannot tell them apart from
+    -- the outside and either way there is nothing to undo.
+    raise exception 'Invoice not found, or it was cancelled';
+  end if;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 7. The end state, asserted
+-- ---------------------------------------------------------------------------
+do $assert$
+declare v_src text;
+begin
+  if to_regclass('public.invoices') is null then
+    raise exception '0087: public.invoices is missing';
+  end if;
+  if not exists (select 1 from information_schema.columns
+                  where table_schema = 'public' and table_name = 'invoices'
+                    and column_name = 'void_reason') then
+    raise exception '0087: invoices.void_reason was not added';
+  end if;
+
+  if not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                  where n.nspname = 'public' and p.proname = 'fn_void_invoice') then
+    raise exception '0087: fn_void_invoice was not created';
+  end if;
+  if not has_function_privilege('authenticated',
+        'public.fn_void_invoice(uuid, text)', 'execute') then
+    raise exception '0087: authenticated cannot execute fn_void_invoice';
+  end if;
+  if not has_function_privilege('authenticated',
+        'public.fn_voided_invoices(date, date)', 'execute') then
+    raise exception '0087: authenticated cannot execute fn_voided_invoices';
+  end if;
+
+  -- The rewrite, checked by what the body now SAYS rather than by whether the
+  -- statement ran. This is the fourth time in this project that a signature
+  -- based on a function merely EXISTING proved nothing.
+  select pg_get_functiondef(p.oid) into v_src
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'fn_challan';
+  if position('status = ''void''' in v_src) = 0 then
+    raise exception
+      '0087: fn_challan does not refuse a cancelled challan. The bank-payable '
+      'slip would still print for a charge the school has withdrawn.';
+  end if;
+
+  select pg_get_functiondef(p.oid) into v_src
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'fn_global_search';
+  if position('''Cancelled''' in v_src) = 0 then
+    raise exception '0087: fn_global_search still shows raw status text';
+  end if;
+
+  select pg_get_functiondef(p.oid) into v_src
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'fn_undo_defer';
+  if position('status <> ''void''' in v_src) = 0 then
+    raise exception '0087: fn_undo_defer still touches a cancelled invoice';
+  end if;
+end $assert$;
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- 0088_wire_the_dead_templates.sql
+-- ─────────────────────────────────────────────────────────────────────────
+-- =============================================================================
+-- 0088 — Two WhatsApp messages a school could switch on that nothing would send
+--
+-- WHAT WAS THERE
+--
+-- `fn__default_message_templates` seeds five templates into every school, and
+-- Settings → Messages lets the school edit the wording, see the merge tags it
+-- may use, preview it with sample values and switch it on or off. The screen is
+-- good. Two of its five entries were decorative:
+--
+--     select proname from pg_proc
+--      where prosrc like '%absent_today%' or prosrc like '%result_published%';
+--     → fn__default_message_templates
+--
+-- The function that DEFINES them was the only function that mentioned them. No
+-- trigger, no policy, no screen, nothing in web/src. A school would find
+-- "Absent today" in its settings, write the wording it wanted, switch it on, and
+-- no parent would ever receive one. No error, no empty state, nothing to
+-- notice — the message simply did not exist.
+--
+-- 0043's own header states the principle this broke: "The tag list is a FACT
+-- ABOUT THE CALL SITE, not decoration ... Showing a school a tag that will never
+-- resolve means they put it in a message and a parent receives the literal
+-- {receipt}." Two of the five entries had no call site at all.
+--
+-- The WhatsApp screen was already finished for both: `listOutbox` reads the
+-- table without filtering by template, and MessagesPage already carries the
+-- labels "Absent today" and "Result published". So this migration is the whole
+-- feature — nothing in the app changes.
+--
+-- THREE THINGS THE OBVIOUS WIRING WOULD HAVE GOT WRONG
+--
+--   1. {children} IS THE WHOLE FAMILY. fn_queue_message fills it with every
+--      child in the family, which is right for a fee reminder to a payer and
+--      wrong for an absence: a family of three would be told "Ali, Fatima and
+--      Hassan was marked absent today". Both new callers override it with the
+--      one child concerned.
+--
+--   2. {date} IS TODAY. A register finalised on Monday morning for Friday would
+--      have told the parent their child was absent today. The absence caller
+--      passes the ATTENDANCE date.
+--
+--   3. A WITHHELD RESULT MUST NOT BE ANNOUNCED. fn_generate_result_cards
+--      freezes `withheld: true` on a card when the family owes fees, and the
+--      portal shows "Result withheld until outstanding fees are cleared." A
+--      message saying the result "can be viewed in the parent portal" would be
+--      false for exactly the families most likely to check.
+--
+-- IDEMPOTENCE, STRUCTURALLY
+--
+-- Finalising a register twice, or unpublishing and republishing a term, must not
+-- message a family twice. Doing that with a heuristic — "was anything sent to
+-- this student today" — breaks on a register finalised three days late, so
+-- `message_outbox` gains a `ref` column and a unique index. The caller says what
+-- the message is ABOUT ('absent:2026-08-27', 'result:<term_id>') and the
+-- database refuses the second one. Any future template gets it for nothing.
+--
+-- A DELIBERATE DECISION ON REPUBLISHING: a corrected result is not announced
+-- again. One message per child per term, ever. A parent who has already been
+-- told to look, and then gets a second identical message, has been given a
+-- reason to think something is wrong; a correction is a conversation the school
+-- should have, and the office can still send a message by hand.
+--
+-- Re-runnable.
+-- =============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 1. What a queued message is ABOUT
+--
+-- Nullable, so every existing row and every existing caller is unaffected: a
+-- fee receipt has no natural idempotency key and does not need one, because it
+-- is queued by a trigger on the payment that is itself the unique event.
+-- ---------------------------------------------------------------------------
+alter table public.message_outbox add column if not exists ref text;
+
+-- Partial, so the fee receipts and reminders that carry no ref are not forced
+-- to be unique against each other.
+create unique index if not exists uq_outbox_ref
+  on public.message_outbox (school_id, template_key, student_id, ref)
+  where ref is not null;
+
+-- ---------------------------------------------------------------------------
+-- 2. fn_queue_message learns the key
+--
+-- DROP then CREATE rather than `create or replace`, because adding a parameter
+-- with a default makes a NEW function rather than replacing the old one — and
+-- then every five-argument call becomes ambiguous and fails with "function is
+-- not unique". Checked first: nothing in web/src or supabase/functions calls
+-- this over RPC, and its three in-database callers are plpgsql, which resolves
+-- the name at run time.
+-- ---------------------------------------------------------------------------
+drop function if exists public.fn_queue_message(text, uuid, jsonb, uuid, uuid);
+
+create or replace function public.fn_queue_message(
+  p_template_key text,
+  p_family_id    uuid,
+  p_vars         jsonb default '{}'::jsonb,
+  p_payment_id   uuid  default null,
+  p_student_id   uuid  default null,
+  p_ref          text  default null)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  v_t record; v_f record; v_id uuid; v_vars jsonb; v_kids text;
+  v_school uuid := public.current_school_id();
+begin
+  -- No school context, no message. Reached when a service-role job calls this
+  -- with no session; queuing a message to a family we cannot attribute is worse
+  -- than queuing none.
+  if v_school is null then return null; end if;
+
+  select * into v_t from public.message_templates
+  where school_id = v_school and template_key = p_template_key;
+  -- Not an error. A school that has switched this message off gets no message,
+  -- and the action that triggered it still succeeds.
+  if not found or not v_t.enabled then return null; end if;
+
+  -- THE LEAK (0079). Was `where id = p_family_id` with no school filter, inside
+  -- a SECURITY DEFINER function where RLS does not apply — so any signed-in
+  -- user at any school could name any family in the database.
+  select * into v_f from public.families
+  where id = p_family_id and school_id = v_school;
+  if not found then return null; end if;
+
+  -- Same fix, same reason: this is where the victim child's NAME came from.
+  select string_agg(s.full_name, ', ' order by s.full_name) into v_kids
+  from public.students s
+  where s.family_id = p_family_id and s.school_id = v_school
+    and s.deleted_at is null;
+
+  -- The two optional foreign keys were written into the outbox row without ever
+  -- being checked. enforce_school_id stamps the ROW's school_id, so the row
+  -- looked native to the caller's school while pointing at another school's
+  -- payment or pupil — and the portal and receipt screens join through them.
+  -- Silently dropped rather than raised, for the same reason as above: a
+  -- mis-supplied reference must not fail the payment that triggered the message.
+  if p_payment_id is not null and not exists (
+       select 1 from public.payments where id = p_payment_id and school_id = v_school) then
+    p_payment_id := null;
+  end if;
+  if p_student_id is not null and not exists (
+       select 1 from public.students where id = p_student_id and school_id = v_school) then
+    p_student_id := null;
+  end if;
+
+  v_vars := jsonb_build_object(
+    'parent',   coalesce(v_f.head_name, 'Parent'),
+    'children', coalesce(v_kids, 'your child'),
+    'school',   coalesce((select name from public.school_settings
+                          where school_id = v_school), 'the school'),
+    'date',     to_char(current_date, 'DD Mon YYYY'),
+    'balance',  trim(to_char(public.family_outstanding(p_family_id), 'FM999,999,990'))
+  ) || coalesce(p_vars, '{}'::jsonb);
+
+  -- 0088. `ref` is the idempotency key, enforced by uq_outbox_ref. A caller
+  -- that supplies one is saying "there is at most one of these" and gets null
+  -- back on the second attempt rather than an error, because the ACTION that
+  -- triggered the message — finalising a register, publishing a term — must
+  -- still succeed on a re-run.
+  begin
+    insert into public.message_outbox (
+      template_key, to_name, to_phone, family_id, student_id, payment_id,
+      rendered_text, ref)
+    values (
+      p_template_key, v_f.head_name,
+      coalesce(nullif(btrim(coalesce(v_f.whatsapp, '')), ''), v_f.phone),
+      p_family_id, p_student_id, p_payment_id,
+      public.fn__render_template(v_t.body, v_vars), p_ref)
+    returning id into v_id;
+  exception when unique_violation then
+    return null;
+  end;
+
+  return v_id;
+end;
+$$;
+
+grant  execute on function public.fn_queue_message(text, uuid, jsonb, uuid, uuid, text) to authenticated;
+revoke execute on function public.fn_queue_message(text, uuid, jsonb, uuid, uuid, text) from public, anon;
+
+-- ---------------------------------------------------------------------------
+-- 3. Absence
+--
+-- Exposed as its own function as well as being called on finalise, because a
+-- register gets corrected: a child marked absent who turns out to have been on
+-- leave is fixed, the register is finalised again, and the office can re-run
+-- this to catch the ones it missed the first time. The ref stops the ones
+-- already messaged going out twice.
+--
+-- `leave` and `half_day` are NOT messaged. A parent who told the school their
+-- child would be away does not need telling back, and half a day present is not
+-- an absence. Only `absent`.
+-- ---------------------------------------------------------------------------
+create or replace function public.fn_queue_absent_today(
+  p_session_id uuid, p_class_id uuid, p_section_id uuid, p_date date)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_school uuid := public.current_school_id();
+  v_row    record;
+  v_id     uuid;
+  v_queued int := 0;
+  v_already int := 0;
+  v_nophone int := 0;
+begin
+  if not public.has_role('owner','principal','admin_clerk','class_teacher','subject_teacher') then
+    raise exception 'Not permitted' using errcode = '42501';
+  end if;
+  if not public.fn_may_manage_class(p_session_id, p_class_id, p_section_id) then
+    raise exception 'You can only message your assigned class';
+  end if;
+  if p_date is null then raise exception 'A date is required'; end if;
+
+  for v_row in
+    select s.id as student_id, s.family_id, s.full_name
+    from public.attendance_daily ad
+    join public.enrollments e on e.id = ad.enrollment_id
+    join public.students s    on s.id = e.student_id
+    where ad.school_id = v_school
+      and ad.attendance_date = p_date
+      and ad.status = 'absent'
+      and e.session_id = p_session_id
+      and e.class_id = p_class_id
+      and (p_section_id is null or e.section_id = p_section_id)
+      and e.status = 'active'
+      and s.deleted_at is null
+      and s.family_id is not null
+    order by s.full_name
+  loop
+    -- `children` is the ONE child, not the family. `date` is the attendance
+    -- date, not today. Both are the point of this function.
+    v_id := public.fn_queue_message(
+      'absent_today',
+      v_row.family_id,
+      jsonb_build_object(
+        'children', v_row.full_name,
+        'date',     to_char(p_date, 'DD Mon YYYY')),
+      null,
+      v_row.student_id,
+      'absent:' || p_date::text);
+
+    if v_id is null then v_already := v_already + 1;
+    else v_queued := v_queued + 1;
+    end if;
+  end loop;
+
+  -- Counted separately and reported, because "we queued 18 of 20" is actionable
+  -- and "we queued 18" is not: the two families with no number on file are the
+  -- ones the office has to phone.
+  select count(*) into v_nophone
+  from public.attendance_daily ad
+  join public.enrollments e on e.id = ad.enrollment_id
+  join public.students s    on s.id = e.student_id
+  left join public.families f on f.id = s.family_id
+  where ad.school_id = v_school
+    and ad.attendance_date = p_date
+    and ad.status = 'absent'
+    and e.session_id = p_session_id
+    and e.class_id = p_class_id
+    and (p_section_id is null or e.section_id = p_section_id)
+    and e.status = 'active'
+    and s.deleted_at is null
+    and (s.family_id is null
+         or coalesce(nullif(btrim(coalesce(f.whatsapp, '')), ''), f.phone) is null);
+
+  return jsonb_build_object(
+    'queued', v_queued,
+    'already_queued', v_already,
+    'no_number', v_nophone);
+end;
+$$;
+
+grant  execute on function public.fn_queue_absent_today(uuid, uuid, uuid, date) to authenticated;
+revoke execute on function public.fn_queue_absent_today(uuid, uuid, uuid, date) from public, anon;
+
+-- Finalising the register is the moment the school commits to who was absent,
+-- so it is the moment the messages belong. Restated in full rather than
+-- rewritten programmatically because the body is eleven lines.
+--
+-- Wrapped, and deliberately so: a failure in the messaging must never roll back
+-- the lock. A register that would not finalise because one family's row was
+-- odd would be a far worse defect than a message that did not go out, and the
+-- office can re-run fn_queue_absent_today for the day.
+create or replace function public.fn_finalize_attendance(
+  p_session_id uuid, p_class_id uuid, p_section_id uuid, p_date date)
+returns integer language plpgsql security definer set search_path = public as $$
+declare v_count integer;
+begin
+  if not public.has_role('owner','principal','admin_clerk','class_teacher','subject_teacher') then
+    raise exception 'Not permitted to finalize attendance';
+  end if;
+  if not public.fn_may_manage_class(p_session_id, p_class_id, p_section_id) then
+    raise exception 'You can only finalize your assigned class';
+  end if;
+  update public.attendance_daily ad
+    set is_locked = true
+    from public.enrollments e
+    where ad.enrollment_id = e.id
+      and ad.attendance_date = p_date
+      and e.session_id = p_session_id
+      and e.class_id = p_class_id
+      and e.section_id is not distinct from p_section_id;
+  get diagnostics v_count = row_count;
+
+  begin
+    perform public.fn_queue_absent_today(p_session_id, p_class_id, p_section_id, p_date);
+  exception when others then
+    raise notice 'attendance finalised; absence messages could not be queued: %', sqlerrm;
+  end;
+
+  return v_count;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 4. Results published
+-- ---------------------------------------------------------------------------
+create or replace function public.fn_queue_result_published(
+  p_exam_term_id uuid, p_class_id uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_school uuid := public.current_school_id();
+  v_row    record;
+  v_id     uuid;
+  v_queued int := 0;
+  v_already int := 0;
+  v_withheld int := 0;
+begin
+  if not public.has_role('owner', 'principal') then
+    raise exception 'Not permitted' using errcode = '42501';
+  end if;
+  perform public.assert_own('exam_terms', p_exam_term_id);
+  perform public.assert_own('classes', p_class_id);
+
+  for v_row in
+    select distinct on (rc.enrollment_id)
+           s.id as student_id, s.family_id, s.full_name,
+           coalesce((rc.frozen->>'withheld')::boolean, false) as withheld
+    from public.result_cards rc
+    join public.enrollments e on e.id = rc.enrollment_id
+    join public.students s    on s.id = rc.student_id
+    where rc.school_id = v_school
+      and rc.exam_term_id = p_exam_term_id
+      and e.class_id = p_class_id
+      and rc.published_at is not null
+      and s.deleted_at is null
+      and s.family_id is not null
+    order by rc.enrollment_id, rc.version desc
+  loop
+    -- A withheld card shows the parent "Result withheld until outstanding fees
+    -- are cleared", so telling them the result can be viewed would be false for
+    -- exactly the families most likely to go and look.
+    if v_row.withheld then
+      v_withheld := v_withheld + 1;
+      continue;
+    end if;
+
+    v_id := public.fn_queue_message(
+      'result_published',
+      v_row.family_id,
+      jsonb_build_object('children', v_row.full_name),
+      null,
+      v_row.student_id,
+      'result:' || p_exam_term_id::text);
+
+    if v_id is null then v_already := v_already + 1;
+    else v_queued := v_queued + 1;
+    end if;
+  end loop;
+
+  return jsonb_build_object(
+    'queued', v_queued,
+    'already_queued', v_already,
+    'withheld', v_withheld);
+end;
+$$;
+
+grant  execute on function public.fn_queue_result_published(uuid, uuid) to authenticated;
+revoke execute on function public.fn_queue_result_published(uuid, uuid) from public, anon;
+
+create or replace function public.fn_publish_results(p_exam_term_id uuid, p_class_id uuid)
+returns integer language plpgsql security definer set search_path = public as $$
+declare v_n integer;
+begin
+  if not public.has_role('owner', 'principal') then
+    raise exception 'Only owner/principal may release results to parents';
+  end if;
+  perform public.assert_own('exam_terms', p_exam_term_id);
+  perform public.assert_own('classes', p_class_id);
+
+  with latest as (
+    select distinct on (rc.enrollment_id) rc.id
+    from public.result_cards rc
+    join public.enrollments e on e.id = rc.enrollment_id
+    where rc.exam_term_id = p_exam_term_id and e.class_id = p_class_id
+    order by rc.enrollment_id, rc.version desc
+  )
+  update public.result_cards rc
+     set published_at = now()
+    from latest l
+   where rc.id = l.id and rc.published_at is null;
+
+  get diagnostics v_n = row_count;
+
+  -- Same reasoning as the attendance hook: the release must not fail because a
+  -- message could not be built.
+  begin
+    perform public.fn_queue_result_published(p_exam_term_id, p_class_id);
+  exception when others then
+    raise notice 'results published; parent messages could not be queued: %', sqlerrm;
+  end;
+
+  return v_n;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 5. The end state, asserted
+--
+-- The assertion that matters is not "do the functions exist" but "does every
+-- template a school can switch on have something that sends it". Written as a
+-- sweep over the template list rather than as two named checks, so a SIXTH
+-- template added later without a caller fails here instead of shipping
+-- decorative.
+-- ---------------------------------------------------------------------------
+do $assert$
+declare
+  v_key   text;
+  v_dead  text[] := '{}';
+  v_n     int;
+begin
+  for v_key in select template_key from public.fn__default_message_templates() loop
+    select count(*) into v_n
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname <> 'fn__default_message_templates'
+      and p.prosrc like '%' || v_key || '%';
+    if v_n = 0 then
+      v_dead := v_dead || v_key;
+    end if;
+  end loop;
+
+  if array_length(v_dead, 1) is not null then
+    raise exception
+      '0088: these templates are seeded into every school, editable in Settings '
+      '→ Messages and switched on by a toggle, and NOTHING queues them: %. A '
+      'school will write the wording, enable it, and no parent will ever '
+      'receive one.', array_to_string(v_dead, ', ');
+  end if;
+end $assert$;
+
+do $assert$
+declare v_src text;
+begin
+  if not exists (select 1 from pg_indexes
+                  where schemaname = 'public' and indexname = 'uq_outbox_ref') then
+    raise exception '0088: uq_outbox_ref is missing, so a re-finalise would message twice';
+  end if;
+
+  -- fn_queue_message must be exactly ONE function. Two overloads would make
+  -- every five-argument call ambiguous at run time, which is a failure the
+  -- migration would not show.
+  if (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'fn_queue_message') <> 1 then
+    raise exception
+      '0088: there is more than one fn_queue_message. Adding a defaulted '
+      'parameter creates an overload rather than replacing the function, and '
+      'the old five-argument calls then fail with "function is not unique".';
+  end if;
+
+  select pg_get_functiondef(p.oid) into v_src
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'fn_finalize_attendance';
+  if position('fn_queue_absent_today' in v_src) = 0 then
+    raise exception '0088: finalising a register no longer queues the absences';
+  end if;
+
+  select pg_get_functiondef(p.oid) into v_src
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'fn_publish_results';
+  if position('fn_queue_result_published' in v_src) = 0 then
+    raise exception '0088: publishing results no longer tells the parents';
+  end if;
+end $assert$;
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- 0089_gpa_scale.sql
+-- ─────────────────────────────────────────────────────────────────────────
+-- =============================================================================
+-- 0089 — A school could choose a GPA scale and keep getting letters
+--
+-- WHAT WAS THERE
+--
+-- Settings → School profile offers a "Grade scale" dropdown with two options:
+--
+--     <option value="letter">Letter (A+, A, B…)</option>
+--     <option value="gpa10">GPA (10-point)</option>
+--
+-- `fn_grade_for` is the only grade function in the database, it is the only
+-- caller of the setting's own idea, and it never reads `grade_scale` at all:
+--
+--     select coalesce(pass_percent, 33) into v_pass from public.school_settings …
+--     if p_percent < v_pass then return 'F'; end if;
+--     return case when p_percent >= 90 then 'A+' … else 'E' end;
+--
+-- So a school selects GPA, the form saves, "Saved." appears, and every result
+-- card, every per-subject grade, the tabulation sheet and the parent portal keep
+-- printing A+ / A / B / C / D / E / F. Nothing warns anybody. The school finds
+-- out when a parent asks why the card does not say what the office said it would.
+--
+-- This was a KNOWN gap — docs/PARITY.md recorded it in the exam-computation
+-- section, in as many words: "`school_settings.grade_scale` still offers `gpa10`
+-- and `fn_grade_for` still always returns letters, which is its own piece of
+-- work." Recording a defect honestly is not the same as fixing it, and the UI
+-- went on offering the option the whole time. That is the part worth naming: a
+-- setting a school can choose must do what it says, or it must not be offered.
+--
+-- WHAT A 10-POINT SCALE ACTUALLY MEANS, AND THE ONE DECISION THAT MATTERS
+--
+-- A grade point is per PAPER. A GPA is the MEAN of a pupil's grade points. Those
+-- are different numbers, and the difference is the whole reason for the feature:
+--
+--   Two pupils, four papers each, both aggregating 70%.
+--     Aisha:  70, 70, 70, 70   → points 8, 8, 8, 8   → GPA 8.0
+--     Bilal:  95, 95, 45, 45   → points 10, 10, 5, 5 → GPA 7.5
+--
+--   Banding the AGGREGATE gives them both 8.0 and throws away exactly the
+--   information a GPA exists to carry. So the card's overall figure is computed
+--   as the mean of the marked papers' points, to one decimal.
+--
+-- The bands are the same cut points the letter scale already uses — 90 / 80 / 70
+-- / 60 / 50 / 40 — so the two scales agree about which band a mark falls into and
+-- a school switching between them sees a translation rather than a re-grading.
+-- Below the school's own pass mark is 0, matching the letter scale returning F.
+--
+--   90+ → 10    80+ → 9    70+ → 8    60+ → 7    50+ → 6    40+ → 5
+--   at or above the pass mark but under 40 → 4        below the pass mark → 0
+--
+-- WHY THE SCALE IS FROZEN ONTO THE CARD
+--
+-- `fn_generate_result_cards` freezes everything the print needs, for the reason
+-- 0083 set out: a portal or a print that recomputed could disagree with the paper
+-- the family is holding. The scale is now part of that snapshot, so a card
+-- generated under `letter` still prints "Grade A" after the school switches to
+-- GPA, and a card generated under `gpa10` still prints "GPA 8.5" if they switch
+-- back. Without it the printed label would flip on every card ever issued the
+-- moment somebody changed a dropdown.
+--
+-- UNMARKED PAPERS ARE EXCLUDED FROM THE MEAN, not counted as zero. This is the
+-- same rule 0058 established for the percentage, and for the same reason: one
+-- `coalesce(sum(…), 0)` there had made "no mark exists" and "a mark of zero" the
+-- same thing, and printed two A+ pupils as a C and a D. A provisional card's GPA
+-- is the mean of what has been marked, and the card says PROVISIONAL on its face.
+--
+-- WHAT IS STILL NOT BUILT, said plainly rather than left to be discovered:
+-- credit-weighted GPA. A real 10-point system often weights each paper by credit
+-- hours; ours treats every paper as one credit, because `exam_subjects` has no
+-- credit column and inventing one would be a schema change nobody has asked for.
+-- A school running unequal credits gets an unweighted mean, which is what a
+-- Pakistani school marking out of different totals per paper generally wants
+-- anyway.
+--
+-- Re-runnable.
+-- =============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 1. fn_grade_for reads the setting it was always supposed to read
+--
+-- Returns text either way, because `result_cards.grade` and the per-subject
+-- `grade` in the frozen snapshot are both text — '9' is a grade point, not a
+-- number to do arithmetic on downstream, and the one place that DOES average
+-- them casts explicitly.
+-- ---------------------------------------------------------------------------
+create or replace function public.fn_grade_for(p_percent numeric)
+returns text language plpgsql stable security definer set search_path = public as $$
+declare v_pass numeric; v_scale text;
+begin
+  if p_percent is null then return null; end if;
+
+  select coalesce(pass_percent, 33), coalesce(nullif(btrim(grade_scale), ''), 'letter')
+    into v_pass, v_scale
+  from public.school_settings where school_id = public.current_school_id();
+  v_pass  := coalesce(v_pass, 33);
+  v_scale := coalesce(v_scale, 'letter');
+
+  if v_scale = 'gpa10' then
+    -- Same cut points as the letter scale, so the two agree about the band.
+    if p_percent < v_pass then return '0'; end if;
+    return case
+      when p_percent >= 90 then '10'
+      when p_percent >= 80 then '9'
+      when p_percent >= 70 then '8'
+      when p_percent >= 60 then '7'
+      when p_percent >= 50 then '6'
+      when p_percent >= 40 then '5'
+      else '4' end;
+  end if;
+
+  if p_percent < v_pass then return 'F'; end if;
+  return case
+    when p_percent >= 90 then 'A+'
+    when p_percent >= 80 then 'A'
+    when p_percent >= 70 then 'B'
+    when p_percent >= 60 then 'C'
+    when p_percent >= 50 then 'D'
+    else 'E' end;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 2. The card's overall figure becomes a real GPA
+--
+-- Four surgical edits to fn_generate_result_cards, applied programmatically from
+-- pg_get_functiondef. The body is 250 lines of exam computation that has nothing
+-- to do with this change, and retyping it is how the 0058 fixes get silently
+-- reverted — which is the reason 0084 and 0085 did the same thing.
+--
+-- Every edit asserts its own anchor first and the whole set is verified by what
+-- the body SAYS at the end of the file.
+-- ---------------------------------------------------------------------------
+do $rewrite$
+declare
+  v_src text;
+  v_new text;
+
+  -- (a) two more locals
+  a_old text := '  v_ver integer; v_att numeric; v_grade text; v_frozen jsonb;';
+  a_new text := '  v_ver integer; v_att numeric; v_grade text; v_frozen jsonb;'
+             || E'\n' || '  v_scale text; v_gpa numeric;   -- 0089';
+
+  -- (b) read the scale once, next to the pass mark it belongs with
+  b_old text := '  v_pass_pct := coalesce(v_pass_pct, 33);';
+  b_new text := '  v_pass_pct := coalesce(v_pass_pct, 33);'
+             || E'\n' || E'\n'
+             || '  -- 0089. Read once for the whole class, not per pupil: a school that'   || E'\n'
+             || '  -- changed the dropdown halfway through a generation run would otherwise' || E'\n'
+             || '  -- produce two kinds of card in one class.'                              || E'\n'
+             || '  select coalesce(nullif(btrim(grade_scale), ''''), ''letter'') into v_scale' || E'\n'
+             || '    from public.school_settings where school_id = v_school;'               || E'\n'
+             || '  v_scale := coalesce(v_scale, ''letter'');';
+
+  -- (c) the scale travels WITH the card
+  c_old text := '      ''pass_percent'', v_pass_pct,';
+  c_new text := '      ''pass_percent'', v_pass_pct,'
+             || E'\n'
+             || '      -- 0089. Frozen, so a card printed after the school switches scale'  || E'\n'
+             || '      -- still says what it said when it was issued. Without this the'      || E'\n'
+             || '      -- printed label on every card ever generated would flip the moment'  || E'\n'
+             || '      -- somebody changed a dropdown.'                                      || E'\n'
+             || '      ''grade_scale'', v_scale,';
+
+  -- (d) the mean of the marked papers' points, replacing the banded aggregate
+  d_old text := '    insert into public.result_cards(school_id, student_id, enrollment_id, exam_term_id,';
+  d_new text :=
+        '    -- 0089. A GPA is the MEAN of the grade points, not the band of the'      || E'\n'
+     || '    -- aggregate. Two pupils both on 70% — one with four 70s, one with two'   || E'\n'
+     || '    -- 95s and two 45s — have GPAs of 8.0 and 7.5, and banding the'           || E'\n'
+     || '    -- aggregate would give them both 8.0 and discard exactly what a GPA'     || E'\n'
+     || '    -- is for. Unmarked papers are excluded rather than counted as zero,'     || E'\n'
+     || '    -- which is the rule 0058 established for the percentage.'                || E'\n'
+     || '    if v_scale = ''gpa10'' then'                                             || E'\n'
+     || '      select round(avg((s->>''grade'')::numeric), 1) into v_gpa'             || E'\n'
+     || '      from jsonb_array_elements(v_frozen->''subjects'') s'                    || E'\n'
+     || '      where coalesce((s->>''marked'')::boolean, false)'                       || E'\n'
+     || '        and s->>''grade'' is not null;'                                       || E'\n'
+     || '      if v_gpa is not null then'                                              || E'\n'
+     || '        v_grade := trim(to_char(v_gpa, ''FM990.0''));'                        || E'\n'
+     || '        v_frozen := jsonb_set(v_frozen, ''{grade}'', to_jsonb(v_grade));'     || E'\n'
+     || '      end if;'                                                                || E'\n'
+     || '    end if;'                                                                  || E'\n'
+     || E'\n'
+     || '    insert into public.result_cards(school_id, student_id, enrollment_id, exam_term_id,';
+begin
+  select pg_get_functiondef(p.oid) into v_src
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'fn_generate_result_cards';
+
+  if v_src is null then
+    raise exception '0089: public.fn_generate_result_cards does not exist';
+  end if;
+
+  if position('v_scale' in v_src) > 0 then
+    raise notice '0089: fn_generate_result_cards already honours the grade scale';
+    return;
+  end if;
+
+  if position(a_old in v_src) = 0 then
+    raise exception '0089: cannot find the local declarations in fn_generate_result_cards';
+  end if;
+  if position(b_old in v_src) = 0 then
+    raise exception '0089: cannot find the pass-mark default in fn_generate_result_cards';
+  end if;
+  if position(c_old in v_src) = 0 then
+    raise exception '0089: cannot find pass_percent in the frozen snapshot';
+  end if;
+  if position(d_old in v_src) = 0 then
+    raise exception '0089: cannot find the result_cards insert in fn_generate_result_cards';
+  end if;
+
+  v_new := replace(v_src, a_old, a_new);
+  v_new := replace(v_new, b_old, b_new);
+  v_new := replace(v_new, c_old, c_new);
+  v_new := replace(v_new, d_old, d_new);
+  execute v_new;
+  -- create or replace preserves the ACL, so no re-grant is needed.
+end $rewrite$;
+
+-- ---------------------------------------------------------------------------
+-- 3. The parent portal has to know which scale it is showing
+--
+-- fn_portal_child_results (0083) returns `grade` and nothing about the scale, so
+-- a portal under gpa10 would show a parent a bare badge reading "8.5" with no
+-- indication of what it was out of. Read from the FROZEN snapshot for the same
+-- reason as everything else on that function: the portal and the printed card
+-- must not be able to disagree.
+-- ---------------------------------------------------------------------------
+do $rewrite$
+declare
+  v_src text;
+  v_old text := '               ''percentage'', x.percentage, ''grade'', x.grade,';
+  v_new text := '               ''percentage'', x.percentage, ''grade'', x.grade,' || E'\n'
+             || '               -- 0089. Which scale that grade is on, frozen onto the card.' || E'\n'
+             || '               -- Older cards carry none, and older cards are letters.' || E'\n'
+             || '               ''grade_scale'', coalesce(x.frozen->>''grade_scale'', ''letter''),';
+begin
+  select pg_get_functiondef(p.oid) into v_src
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'fn_portal_child_results';
+
+  if v_src is null then
+    raise exception '0089: public.fn_portal_child_results does not exist';
+  end if;
+
+  if position('''grade_scale''' in v_src) > 0 then
+    raise notice '0089: the portal already reports the grade scale';
+  elsif position(v_old in v_src) = 0 then
+    raise exception
+      '0089: cannot find the percentage/grade line in fn_portal_child_results';
+  else
+    execute replace(v_src, v_old, v_new);
+  end if;
+end $rewrite$;
+
+-- ---------------------------------------------------------------------------
+-- 4. The setting can only hold a scale that exists
+--
+-- Not a cosmetic tidy. `grade_scale` is plain text with no constraint, so a
+-- typo or a third option added to the dropdown and not to fn_grade_for would
+-- silently fall through to letters — the exact defect this migration exists to
+-- fix, arriving again by a different route. A constraint makes the next person
+-- add the branch before they can add the option.
+-- ---------------------------------------------------------------------------
+do $constraint$
+declare v_bad text;
+begin
+  select string_agg(distinct coalesce(grade_scale, '(null)'), ', ') into v_bad
+    from public.school_settings
+   where coalesce(nullif(btrim(grade_scale), ''), 'letter') not in ('letter', 'gpa10');
+  if v_bad is not null then
+    -- Never rewrite a school's setting silently. Say what is there and stop.
+    raise exception
+      '0089: school_settings.grade_scale holds a value no grade scale implements '
+      '(%). Set it to letter or gpa10 before applying this.', v_bad;
+  end if;
+
+  if not exists (select 1 from pg_constraint
+                  where conname = 'school_settings_grade_scale_known') then
+    alter table public.school_settings
+      add constraint school_settings_grade_scale_known
+      check (grade_scale is null
+             or btrim(grade_scale) = ''
+             or btrim(grade_scale) in ('letter', 'gpa10'));
+  end if;
+end $constraint$;
+
+-- ---------------------------------------------------------------------------
+-- 5. The end state, asserted
+-- ---------------------------------------------------------------------------
+do $assert$
+declare v_src text;
+begin
+  select pg_get_functiondef(p.oid) into v_src
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'fn_grade_for';
+  if position('gpa10' in v_src) = 0 then
+    raise exception
+      '0089: fn_grade_for still ignores school_settings.grade_scale, so a school '
+      'that selects GPA still gets letters on every card.';
+  end if;
+
+  select pg_get_functiondef(p.oid) into v_src
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'fn_generate_result_cards';
+
+  -- Each of the four edits, checked by what the body says. "The statement ran"
+  -- is not evidence; this project has been caught by that four times.
+  if position('''grade_scale'', v_scale' in v_src) = 0 then
+    raise exception '0089: the grade scale is not frozen onto the card, so a '
+      'printed card would change its label when the setting changes';
+  end if;
+  if position('jsonb_set(v_frozen, ''{grade}''' in v_src) = 0 then
+    raise exception '0089: the card''s overall grade is still the band of the '
+      'aggregate rather than the mean of the papers'' grade points';
+  end if;
+  if position('''{subjects}''' in v_src) > 0 then
+    raise exception '0089: unexpected rewrite of the subjects array';
+  end if;
+  if position('marked' in v_src) = 0 then
+    raise exception '0089: the GPA mean is not restricted to marked papers';
+  end if;
+
+  if not exists (select 1 from pg_constraint
+                  where conname = 'school_settings_grade_scale_known') then
+    raise exception '0089: grade_scale can still be set to a scale nothing implements';
+  end if;
+
+  select pg_get_functiondef(p.oid) into v_src
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'fn_portal_child_results';
+  if position('''grade_scale''' in v_src) = 0 then
+    raise exception
+      '0089: the portal does not say which scale a grade is on, so a parent '
+      'under gpa10 sees a bare "8.5" with nothing to read it against.';
+  end if;
+end $assert$;
+
+-- ─────────────────────────────────────────────────────────────────────────
 -- Record what this bundle applied (no-op before 0069 creates the ledger)
 -- ─────────────────────────────────────────────────────────────────────────
 do $ledger$
@@ -7517,4 +9129,8 @@ begin
   perform public.fn_record_migration('0083_portal_verdict_and_dead_tables.sql', '7_ledger_and_limits.sql');
   perform public.fn_record_migration('0084_receipt_allocation_detail.sql', '7_ledger_and_limits.sql');
   perform public.fn_record_migration('0085_subject_teachers.sql', '7_ledger_and_limits.sql');
+  perform public.fn_record_migration('0086_write_boundary.sql', '7_ledger_and_limits.sql');
+  perform public.fn_record_migration('0087_cancel_a_charge.sql', '7_ledger_and_limits.sql');
+  perform public.fn_record_migration('0088_wire_the_dead_templates.sql', '7_ledger_and_limits.sql');
+  perform public.fn_record_migration('0089_gpa_scale.sql', '7_ledger_and_limits.sql');
 end $ledger$;

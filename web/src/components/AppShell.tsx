@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/auth/AuthProvider'
 import { ROLE_LABELS } from '@/auth/roles'
 import { canAccess, visibleNav } from '@/navigation'
@@ -13,6 +14,9 @@ import { NAV_ICONS, IconLogout, IconAlert } from '@/components/icons'
 import { EmptyState } from '@/components/ui'
 import { GlobalSearch } from '@/components/GlobalSearch'
 import { ModuleSearch } from '@/components/ModuleSearch'
+import { getCurrentSession } from '@/lib/db'
+import { todayISO } from '@/lib/format'
+import { ADMIN_ROLES } from '@/auth/roles'
 
 export function AppShell() {
   const { profile, signOut } = useAuth()
@@ -25,6 +29,33 @@ export function AppShell() {
   useEffect(() => setShownNav(visibleNav(profile?.role)), [profile?.role])
   const permitted = canAccess(location.pathname, profile?.role)
   const current = nav.find((n) => n.path === location.pathname)
+
+  // The running academic session, shown in the top bar on every screen.
+  //
+  // WHY IT IS WORTH A QUERY ON EVERY SCREEN. There is no session picker
+  // anywhere in this app: every screen calls getCurrentSession() and works on
+  // whichever row has is_current. That is a good design and it has one failure
+  // it cannot show — a school rolls over in April, nobody moves is_current, and
+  // from then on attendance, marks and challans all go into LAST YEAR while
+  // every screen looks completely normal. Nothing anywhere says which year you
+  // are in.
+  //
+  // Staff only. A parent has no session to be in the wrong one of, and the
+  // portal header is already tight on a 390px phone.
+  const isStaff = !!profile && (ADMIN_ROLES as string[]).concat(
+    ['class_teacher', 'subject_teacher'],
+  ).includes(profile.role)
+  const session = useQuery({
+    queryKey: ['currentSession'],
+    queryFn: getCurrentSession,
+    enabled: isStaff,
+    staleTime: 5 * 60 * 1000,
+  })
+  const sess = session.data
+  // Ended, not "ending". A session whose last day has passed is the one a school
+  // has usually already rolled out of, and the one where a mark entered today is
+  // certainly in the wrong year.
+  const sessionEnded = !!sess?.ends_on && sess.ends_on < todayISO()
 
   const initials = (profile?.full_name ?? 'U')
     .split(' ')
@@ -142,6 +173,32 @@ export function AppShell() {
             not, because "reachable from anywhere" is the whole point of it. */}
         <div className="border-b border-slate-200 bg-white/80 px-6 py-2.5 backdrop-blur print:hidden">
           <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3">
+            {/* The running session, first thing on the bar. Their product keeps
+                it in the footer; here it sits next to where-you-are, because
+                "which year am I entering this into" is the same kind of fact as
+                "which screen am I on". */}
+            {isStaff && (
+              sess ? (
+                <span
+                  className={`shrink-0 rounded px-2 py-0.5 text-xs font-medium ${
+                    sessionEnded
+                      ? 'bg-amber-100 text-amber-900 ring-1 ring-amber-300'
+                      : 'bg-slate-100 text-slate-600'
+                  }`}
+                  title={sessionEnded
+                    ? `Session ${sess.name} ended on ${sess.ends_on}. Everything entered now is recorded against it. Settings → Sessions to move on.`
+                    : `Everything you enter is recorded against ${sess.name}`}
+                >
+                  {sess.name}
+                  {sessionEnded ? ' · ended' : ''}
+                </span>
+              ) : session.isFetched ? (
+                <span className="shrink-0 rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 ring-1 ring-amber-300"
+                  title="No academic session is marked as current, so most screens have nothing to work on. Settings → Sessions.">
+                  No session set
+                </span>
+              ) : null
+            )}
             <div className="flex min-w-0 items-center gap-2 text-xs text-slate-500">
               {current ? (
                 <>

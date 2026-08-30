@@ -61,6 +61,14 @@ These are real, current, and none of them is a bug:
   behind a switch; the school-fee side is not.
 - **Fee installments.** A schedule that drives due dates was designed in
   [`10-MONEY-ENGINE-V2.md`](10-MONEY-ENGINE-V2.md) and never built.
+- **A one-off charge to a chosen SET of pupils.** One child at a time works two
+  ways over (bill this month on demand, or an adjustment with a reason). Charging
+  forty children for the same trip in one pass does not exist.
+- **The blank admission form.** Reports → Admissions answers today / this month /
+  this year and prints, and a slip prints for a child just admitted. The empty
+  sheet a school hands a walk-in parent to fill in by hand is not built.
+- **Credit-weighted GPA.** The 10-point scale is built and every paper counts as
+  one credit. A school running unequal credit hours gets an unweighted mean.
 - **Per-period attendance.** The register is once-daily. Fine for primary, a
   ceiling for classes 9 to 12.
 - **Multi-campus.** Not built, and the two empty tables that hinted at it were
@@ -71,6 +79,16 @@ These are real, current, and none of them is a bug:
 - **No exhaustive audit of every join in every definer function.** The tenant
   scoping is enforced by three CI guards and a cross-tenant suite, and those
   found real defects. That is not the same as having read all ~250 of them.
+- **Direct table writes outside the money tables.** 0086 closed the fourteen
+  tables holding money and issued documents: no signed-in session can insert,
+  update or delete an invoice, a receipt, an allocation, a discount, a result
+  card or a certificate, so every change goes through the function that demands a
+  reason and writes the audit row. Fifteen tables the app *does* write directly —
+  students, staff, classes, sections, subjects, exam terms, settings and the rest
+  — are still gated by RLS policies only. On `students` the columns a function
+  owns (status, leaving date, family, photo, tenant key) are withheld at the
+  column level and DELETE is gone. The others are configuration rather than
+  money, and closing them means building the function first.
 
 Product decisions live in [`09-DECISIONS-LOCKED.md`](09-DECISIONS-LOCKED.md).
 The money engine's reasoning is in [`10-MONEY-ENGINE-V2.md`](10-MONEY-ENGINE-V2.md).

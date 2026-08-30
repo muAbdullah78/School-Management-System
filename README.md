@@ -80,7 +80,15 @@ site/                    the public website (static)
 desktop/                 Tauri shell that wraps the web app as a Windows .msi
 docs/                    design records and the school handbook
 scripts/                 builds docs/GUIDE.html from the template plus screenshots
+  check-parity.py        does docs/PARITY.md still match the code?
 ```
+
+Every guard in that list exists because the thing it guards went wrong once. The
+newest is `scripts/check-parity.py`: PARITY.md's 87 statuses are claims about the
+code, a claim in a Markdown file is checked by nothing, and eight of them were
+wrong at the same time. Each row now carries evidence, and a `missing` row has to
+name what would EXIST if it were built — which is the half a guard that only
+verified the `have` rows would have let through.
 
 ---
 

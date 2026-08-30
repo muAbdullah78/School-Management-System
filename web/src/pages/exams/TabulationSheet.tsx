@@ -1,6 +1,6 @@
 import { useSchoolName } from '@/hooks/useSchoolName'
 import { fmtDate } from '@/lib/format'
-import type { ResultCardRow } from '@/lib/db'
+import { gradeLabel, type ResultCardRow } from '@/lib/db'
 
 /** A printable tabulation / consolidation sheet: every student in a class for a
  *  term on one grid — subjects across, students down, with totals, %, grade,
@@ -15,6 +15,12 @@ export function TabulationSheet({
   onClose: () => void
 }) {
   const schoolName = useSchoolName()
+
+  // "Grade" or "GPA" (0089), taken from the FIRST card's frozen scale rather
+  // than from the school's current setting. fn_generate_result_cards reads the
+  // scale once per run, so a class cannot hold two, and reading it from the
+  // cards means the heading always describes the figures underneath it.
+  const sheetGradeLabel = gradeLabel(cards[0]?.frozen ?? {})
 
   // Column subjects, in first-seen order across all cards. In a streamed class
   // this is the UNION — Physics and Civics both get a column — because a
@@ -88,7 +94,13 @@ export function TabulationSheet({
                 ))}
                 <th className="px-1.5 py-1 text-right">Total</th>
                 <th className="px-1.5 py-1 text-right">%</th>
-                <th className="px-1.5 py-1">Grade</th>
+                {/* One column heading for a whole class, so it follows the
+                    scale the CARDS were generated under rather than the school's
+                    current setting (0089). Mixed scales in one class cannot
+                    happen — fn_generate_result_cards reads the scale once per
+                    run — but a class regenerated after a switch would otherwise
+                    print the old heading over new figures. */}
+                <th className="px-1.5 py-1">{sheetGradeLabel}</th>
                 <th className="px-1.5 py-1 text-right">Pos</th>
                 <th className="px-1.5 py-1">Result</th>
               </tr>

@@ -207,9 +207,19 @@ begin
     raise exception 'FAIL: Alpha updated % Beta student row(s)', n;
   end if;
 
-  -- 2c. Delete of a Beta row must affect nothing.
-  delete from public.students where id = b_stu;
-  get diagnostics n = row_count;
+  -- 2c. Delete of a Beta row must not remove it.
+  --
+  -- Since 0086 `authenticated` holds no DELETE on public.students, so this is
+  -- refused by privilege before RLS is consulted rather than silently affecting
+  -- zero rows. Both are passes and the suite must not care which: the guarantee
+  -- is about Beta's row, not about which layer said no. Written this way so the
+  -- assertion survives the boundary moving again.
+  begin
+    delete from public.students where id = b_stu;
+    get diagnostics n = row_count;
+  exception when insufficient_privilege then
+    n := 0;
+  end;
   if n > 0 then
     reset role;
     raise exception 'FAIL: Alpha deleted % Beta student row(s)', n;
@@ -229,6 +239,18 @@ begin
   end if;
 
   reset role;
+
+  -- Belt and braces, from a position that can actually SEE Beta. A row count of
+  -- zero proves a statement did nothing; this proves the data. Worth having
+  -- because 2b and 2c both pass trivially if the row was never there.
+  if not exists (select 1 from public.students where id = b_stu) then
+    raise exception 'FAIL: Beta''s student row is gone';
+  end if;
+  if exists (select 1 from public.students
+              where id = b_stu and full_name = 'Overwritten') then
+    raise exception 'FAIL: Beta''s student row was renamed by Alpha';
+  end if;
+
   raise notice 'ok: no cross-tenant writes';
 end $writes$;
 
@@ -548,12 +570,21 @@ begin
   -- afterwards. Verified: `authenticated` holds all four verbs on certificates,
   -- audit_log, platform_invoices and user_invites right now.
   --
-  -- Those grants are inert today only because RLS denies a verb with no matching
-  -- policy — every table has RLS on, and no write policy is unconditionally
-  -- permissive. So the blanket grant is not the exposure; a table arriving
-  -- WITHOUT RLS is, and it would be readable and writable by every signed-in
+  -- Those grants are inert only where RLS denies a verb with no matching policy.
+  -- A table arriving WITHOUT RLS is readable and writable by every signed-in
   -- user of every school from the moment it is created, with no policy needed
   -- and nothing in the app looking different.
+  --
+  -- THE SENTENCE THAT USED TO FOLLOW HERE WAS WRONG, and it argued against the
+  -- fix that was eventually needed. It read: "So the blanket grant is not the
+  -- exposure; a table arriving WITHOUT RLS is." The blanket grant WAS the
+  -- exposure on thirteen tables. RLS was enabled on every one of them and each
+  -- carried a tenant-correct, role-correct `FOR ALL` write policy — which is
+  -- precisely what made the grant live. A signed-in admin_clerk could delete a
+  -- paid challan's allocation, invent one, rewrite a published result card and
+  -- edit an invoice line, all with no audit row. 0086 revoked the privileges;
+  -- 4e below is the guard, and this paragraph stays as the reason 4d alone was
+  -- never enough.
   --
   -- 4c cannot catch that: a new platform or reference table with no school_id
   -- column passes it silently. This closes the gap by making RLS the rule for
@@ -564,6 +595,62 @@ begin
     and c.relname <> '_test_ids';
   if bad <> '' then
     raise exception E'Tables in public with RLS DISABLED — the blanket grant in 0001:704 makes these fully readable and writable by every signed-in user:\n%', bad;
+  end if;
+
+  -- 4e. The money and the issued documents are not writable from a session at
+  -- all — no INSERT, no UPDATE, no DELETE, for `authenticated` or `anon`.
+  --
+  -- This is the guard for 0086. A named list rather than a computed rule,
+  -- because "which tables may only be written by a definer function" is a
+  -- judgement about what the rows MEAN and cannot be derived from the schema:
+  -- `attendance_daily` is written directly on purpose and `payments` must never
+  -- be. The cost of a list is that a new money table has to be added to it, and
+  -- the note in the migration says so.
+  --
+  -- Checked by PRIVILEGE, which is where the truth is. A Supabase project is
+  -- created with `alter default privileges in schema public grant all on tables
+  -- to postgres, anon, authenticated, service_role`, so a table created by a
+  -- future migration is handed to both browser roles automatically and nothing
+  -- else in this repository would notice.
+  select coalesce(string_agg('  ' || t || ' (' || r || ': ' || v || ')', chr(10)
+                             order by t, r, v), '') into bad
+  from unnest(array[
+         'invoices', 'invoice_lines', 'payments', 'payment_allocations',
+         'adjustments', 'discounts', 'result_cards', 'certificates',
+         'certificate_cancellations', 'deposit_refunds', 'student_fee_items',
+         'fee_heads', 'fee_structures', 'families'
+       ]) t,
+       unnest(array['authenticated', 'anon']) r,
+       unnest(array['insert', 'update', 'delete']) v
+  where has_table_privilege(r, 'public.' || t, v);
+  if bad <> '' then
+    raise exception E'A signed-in session can write the books directly. Every one of these must go through a SECURITY DEFINER function that records a reason and an actor (0086):\n%', bad;
+  end if;
+
+  -- 4f. And on `students`, the columns a function owns. The profile editor still
+  -- writes bio-data directly, so the table keeps its write policy; `status`,
+  -- `left_on`, `leaving_reason`, `family_id`, `photo_path`, `school_id` and
+  -- `deleted_at` are owned by fn_set_student_status, fn_student_join_family,
+  -- fn_set_student_photo and the enforce_school_id trigger respectively.
+  select coalesce(string_agg('  students.' || c || ' (' || r || ')', chr(10)
+                             order by c, r), '') into bad
+  from unnest(array['status', 'left_on', 'leaving_reason', 'family_id',
+                    'photo_path', 'school_id', 'deleted_at']) c,
+       unnest(array['authenticated', 'anon']) r
+  where has_column_privilege(r, 'public.students', c, 'update');
+  if bad <> '' then
+    raise exception E'A signed-in session can set these student columns directly, bypassing the function that owns them (0086):\n%', bad;
+  end if;
+
+  -- The other half of 4f, because a revoke with one column name wrong would
+  -- break the Save button on every school's student profile and nothing else
+  -- here would say so.
+  select coalesce(string_agg('  students.' || c, chr(10) order by c), '') into bad
+  from unnest(array['full_name', 'father_name', 'mother_name', 'gender', 'dob',
+                    'b_form', 'phone', 'whatsapp', 'address', 'notes']) c
+  where not has_column_privilege('authenticated', 'public.students', c, 'update');
+  if bad <> '' then
+    raise exception E'The student profile editor can no longer save these columns:\n%', bad;
   end if;
 
   raise notice 'ok: structural guards hold';
