@@ -177,12 +177,32 @@ with sig(migration, object, present) as (values
             where pronamespace = 'public'::regnamespace
               and prosecdef and provolatile in ('s','i')
               and prosrc like '%has_role(%'
-              -- fn_checkin_display gates on has_role on purpose: a live
-              -- check-in token is a key to the gate, not a read of the records.
-              -- fn_pending_invites: access management, not a school record.
+              -- THIS LIST MUST MATCH verify.sql's, ITEM FOR ITEM. It did not,
+              -- for two migrations, and this row reported MISSING on a database
+              -- that was correct — fn_may_mark_subject (0085) and
+              -- fn_support_visits (0074) were exempted in verify.sql and in
+              -- check-readonly-writes.py and not here. One rule, three files,
+              -- two of them updated. supabase/check-exemption-lists.py now
+              -- compares the two copies on every CI run.
+              --
+              -- fn_may_manage_class, fn_may_write_school_file and
+              --   fn_may_mark_subject AUTHORISE A WRITE. may_view is true for an
+              --   observer and during an operator support visit, so gating them
+              --   on it would hand both the ability to change a child's marks.
+              -- fn_checkin_display: a live check-in token is a key to the gate,
+              --   not a read of the records.
+              -- fn_pending_invites: who is about to get a login is access
+              --   management, not a school record.
+              -- fn_support_visits: which visits the VENDOR made is
+              --   accountability to whoever signed the contract. may_view is
+              --   true DURING a support visit, which would make the gate
+              --   circular — and Settings is outside the observer's navigation
+              --   anyway, so there is no screen to open.
               and proname not in ('fn_may_manage_class', 'fn_may_write_school_file',
+                                  'fn_may_mark_subject',
                                   'fn_pending_invites',
-                                  'fn_checkin_display', 'may_view')))),
+                                  'fn_checkin_display',
+                                  'fn_support_visits', 'may_view')))),
   -- 0061 REWROTE fn_issue_certificate, which has existed since 0021. Its
   -- presence proves nothing at all, and neither does the new table: the
   -- signature has to be a fact about the body. Two facts, because the two
@@ -604,7 +624,16 @@ with sig(migration, object, present) as (values
                       and pronamespace = 'public'::regnamespace
                       and prosrc like '%jsonb_set(v_frozen, ''{grade}''%')
          and exists (select 1 from pg_constraint
-                      where conname = 'school_settings_grade_scale_known')))
+                      where conname = 'school_settings_grade_scale_known'))),
+  -- 0090. One subscription naming a school that no longer existed took the
+  -- whole of bundle 6 down. The signature is the GUARD inside the trigger
+  -- function, not the six triggers — 0067's own row already counts those, and a
+  -- database can have all six and still carry the loop that cannot survive a
+  -- bad row.
+  ('0090_counter_backfill_repair', 'the student counter cannot be stopped by one bad row',
+     (select exists (select 1 from pg_proc where proname = 'fn__refresh_counts_touched'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%join public.schools sc%')))
 )
 select migration,
        object                                   as looked_for,

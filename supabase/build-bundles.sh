@@ -168,9 +168,26 @@ emit supabase/bundles/6_photos_and_records.sql \
 # From this bundle onward the ledger exists, so a paste records itself and the
 # question "what does production have?" stops being archaeology. This is the
 # bundle that has to be pasted for that to start being true.
+#
+# NOW FROZEN. Bundle 7 has been pasted into a live project, so from this commit
+# its glob is a CLOSED range and its line is in the MANIFEST. The open `008*`
+# that used to sit here would have swallowed 0090 and changed a file a school
+# had already run — the fourth time that would have happened, and the exact
+# failure the MANIFEST exists to stop.
 emit supabase/bundles/7_ledger_and_limits.sql \
      supabase/migrations/006[89]*.sql supabase/migrations/007*.sql \
-     supabase/migrations/008*.sql
+     supabase/migrations/008[0-9]*.sql
+
+# An EIGHTH bundle, because bundle 7 is frozen above.
+#
+# 0090 is a repair: 0067's backfill walked `subscriptions` and wrote a row keyed
+# to `schools`, so one subscription whose school no longer existed took the whole
+# of bundle 6 down with it — eleven migrations discarded to recount a number.
+# This bundle restates 0067's machinery so a database that hit that gets it, puts
+# back the foreign key that should have made the orphan impossible, and sweeps
+# the internal-helper grants.
+emit supabase/bundles/8_counter_repair.sql \
+     supabase/migrations/009*.sql
 
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen

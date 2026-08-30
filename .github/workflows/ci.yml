@@ -91,6 +91,20 @@ jobs:
         working-directory: .
         run: python3 scripts/check-parity.py
 
+      - name: verify.sql and detect.sql agree about who is exempt
+        # 0059's rule — no STABLE definer function may gate a READ on has_role —
+        # is checked in three files, and its exemption list drifted. 0074 added
+        # fn_support_visits and 0085 added fn_may_mark_subject; both went into
+        # verify.sql and neither into detect.sql.
+        #
+        # The result was detect.sql reporting 0059 MISSING on a database where it
+        # was correctly applied, and a school re-running a migration twice,
+        # changing nothing, before anybody thought to doubt the checker. A
+        # checker that cries wolf teaches the reader to ignore it, and the next
+        # time it is right.
+        working-directory: .
+        run: python3 supabase/check-exemption-lists.py
+
       - name: The website's buttons lead somewhere
         # Needs no database, so it lives in this job. Every call to action on the
         # marketing site used to be an anchor on the page the visitor was already
@@ -388,13 +402,22 @@ jobs:
           # migrations superseded, and bundle 5 carries 0050-0056 — several of
           # whose function bodies 0059 rewrites. Re-running bundle 5 LAST would
           # put the has_role read gates back and quietly undo the observer role.
-          psql -v ON_ERROR_STOP=1 -q --single-transaction -f supabase/bundles/5_search.sql
-          psql -v ON_ERROR_STOP=1 -q --single-transaction -f supabase/bundles/6_photos_and_records.sql
-          # Bundle 7 carries the migration ledger. Applied last, in ascending
-          # order, for the same reason bundle 6 goes after 5: newest definitions
-          # win. Getting the order wrong here is silent — it puts superseded
-          # function bodies back and nothing fails.
-          psql -v ON_ERROR_STOP=1 -q --single-transaction -f supabase/bundles/7_ledger_and_limits.sql
+          # A LOOP, not three named files. This used to name bundles 5, 6 and 7
+          # one by one, and adding bundle 8 broke it — verify.sql grew two rows
+          # that only 0090 can satisfy, the upgraded database did not have it,
+          # and the step failed. The guard was right and the maintenance was the
+          # hazard: every new bundle needed a line here and nothing said so.
+          #
+          # Ascending order is load-bearing and getting it wrong is SILENT. The
+          # repair files for 0035-0049 restore definitions that later migrations
+          # superseded, and bundle 5 carries 0050-0056 — several of whose
+          # function bodies 0059 rewrites. Re-running bundle 5 after 6 would put
+          # the has_role read gates back and quietly undo the observer role, with
+          # nothing failing. `sort -V` keeps 10 after 9 when there is a tenth.
+          for b in $(ls supabase/bundles/[5-9]_*.sql | sort -V); do
+            echo "   applying $b"
+            psql -v ON_ERROR_STOP=1 -q --single-transaction -f "$b"
+          done
 
           echo "── verify.sql, as the school runs it"
           psql -v ON_ERROR_STOP=1 -f supabase/verify.sql | tee /tmp/upgrade.out
@@ -1500,6 +1523,21 @@ jobs:
         # 8.0 and 7.5. Banding the aggregate would return 8.0 for both and discard
         # the only thing a GPA carries.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/grade_scale.sql
+
+      - name: One bad row cannot stop the student counter (0090)
+        # 0067 ended with a loop that read `subscriptions` and wrote a row keyed
+        # to `schools`. On a live project one subscription named a school that
+        # was not there, the snapshot insert violated its foreign key, and the
+        # WHOLE OF BUNDLE 6 rolled back — photographs, exam computation, the
+        # observer role, deposits, certificates, staff check-in and operator
+        # billing, eleven migrations discarded to recount a number.
+        #
+        # Assertion 7 is the file's reason to exist: it drops the foreign key
+        # inside a transaction, inserts the orphan, and requires the recount to
+        # complete for both real schools anyway. Assertion 8 is the other half —
+        # a clerk can still admit a pupil while the orphan exists, because a
+        # counter must never be able to refuse an admission.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/counter_repair.sql
 
       - name: The website's prices match what the console charges
         # site/index.html reads `plans` at load, so the LIVE page is right. These

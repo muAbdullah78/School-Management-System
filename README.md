@@ -59,7 +59,14 @@ software:
 ls supabase/migrations/*.sql | wc -l        # how many migrations
 psql -f supabase/verify.sql                # what this database actually has
 psql -f supabase/repair/detect.sql          # which migrations it is missing
+psql -f supabase/repair/why.sql             # and WHY it says so, object by object
 ```
+
+`why.sql` exists because `detect.sql` answers present-or-missing and each answer
+is an AND of up to four conditions, so a MISSING row never says which one failed
+— and its advice ("run that migration again") is wrong whenever the checker is
+what is broken. That has happened: 0059 reported MISSING on a database where it
+was correctly applied, because two exemption lists had drifted apart.
 
 ---
 
@@ -76,6 +83,7 @@ supabase/
   check-*.py|sh          CI guards — tenant scoping, print wiring, readonly boundary, ...
   verify.sql             what does this database actually have?
   repair/detect.sql      what is it missing?
+  repair/why.sql         and WHY does it say that? — names objects, not migrations
 site/                    the public website (static)
 desktop/                 Tauri shell that wraps the web app as a Windows .msi
 docs/                    design records and the school handbook
@@ -105,7 +113,7 @@ npm test                  # unit tests
 npm run harness           # render printables and pages to scratch/ for a look
 
 # The database, against a throwaway Postgres
-psql -f supabase/bundles/1_core.sql        # ... through 7, in order
+psql -f supabase/bundles/1_core.sql        # ... through 8, in order
 psql -f supabase/verify.sql                # every row should say PASS
 psql -f supabase/tests/tenant_isolation.sql
 
