@@ -91,6 +91,20 @@ jobs:
         working-directory: .
         run: python3 scripts/check-parity.py
 
+      - name: verify.sql and detect.sql agree about who is exempt
+        # 0059's rule — no STABLE definer function may gate a READ on has_role —
+        # is checked in three files, and its exemption list drifted. 0074 added
+        # fn_support_visits and 0085 added fn_may_mark_subject; both went into
+        # verify.sql and neither into detect.sql.
+        #
+        # The result was detect.sql reporting 0059 MISSING on a database where it
+        # was correctly applied, and a school re-running a migration twice,
+        # changing nothing, before anybody thought to doubt the checker. A
+        # checker that cries wolf teaches the reader to ignore it, and the next
+        # time it is right.
+        working-directory: .
+        run: python3 supabase/check-exemption-lists.py
+
       - name: The website's buttons lead somewhere
         # Needs no database, so it lives in this job. Every call to action on the
         # marketing site used to be an anchor on the page the visitor was already
@@ -1500,6 +1514,21 @@ jobs:
         # 8.0 and 7.5. Banding the aggregate would return 8.0 for both and discard
         # the only thing a GPA carries.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/grade_scale.sql
+
+      - name: One bad row cannot stop the student counter (0090)
+        # 0067 ended with a loop that read `subscriptions` and wrote a row keyed
+        # to `schools`. On a live project one subscription named a school that
+        # was not there, the snapshot insert violated its foreign key, and the
+        # WHOLE OF BUNDLE 6 rolled back — photographs, exam computation, the
+        # observer role, deposits, certificates, staff check-in and operator
+        # billing, eleven migrations discarded to recount a number.
+        #
+        # Assertion 7 is the file's reason to exist: it drops the foreign key
+        # inside a transaction, inserts the orphan, and requires the recount to
+        # complete for both real schools anyway. Assertion 8 is the other half —
+        # a clerk can still admit a pupil while the orphan exists, because a
+        # counter must never be able to refuse an admission.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/counter_repair.sql
 
       - name: The website's prices match what the console charges
         # site/index.html reads `plans` at load, so the LIVE page is right. These

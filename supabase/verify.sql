@@ -1043,6 +1043,61 @@ select 'the grade scale a school chooses is the one it gets (0089)',
          else 'PASS' end
 
 union all
+-- 0090. One subscription row naming a school that did not exist stopped an
+-- entire bundle.
+--
+-- Two rows, because they are two different kinds of fact: whether the CODE can
+-- survive a bad row, and whether this database HAS one. The second is not a
+-- FAIL — nothing is broken by it and nothing has been deleted — but it is the
+-- reason the foreign key cannot go back, so it has to be visible.
+select 'the student counter cannot be stopped by one bad row (0090)',
+       case
+         when not exists (select 1 from pg_proc where proname = 'fn__refresh_counts_touched'
+                           and pronamespace = 'public'::regnamespace)
+           then 'FAIL — the live student count has no triggers at all; run bundle 8'
+         when not exists (select 1 from pg_proc where proname = 'fn__refresh_counts_touched'
+                           and pronamespace = 'public'::regnamespace
+                           and prosrc like '%join public.schools sc%')
+           then 'FAIL — the recount still trusts subscriptions alone, so one school '
+                || 'with no row in `schools` can abort a whole bundle. Run bundle 8.'
+         when (select count(*) from pg_trigger t
+                 join pg_proc p on p.oid = t.tgfoid
+                where not t.tgisinternal
+                  and p.pronamespace = 'public'::regnamespace
+                  and p.proname = 'fn__refresh_counts_touched') <> 6
+           then 'FAIL — not all six student-count triggers are installed, so the '
+                || 'console shows whatever the roll was when somebody last pressed '
+                || 'Refresh. Run bundle 8.'
+         else 'PASS' end
+
+union all
+select 'every subscription belongs to a school that exists',
+       case
+         when to_regclass('public.subscriptions') is null then 'n/a — bundle 1 not applied'
+         when coalesce(pg_temp.ask($q$
+                select count(*)::text from public.subscriptions s
+                 where not exists (select 1 from public.schools sc where sc.id = s.school_id)
+              $q$), '0') <> '0'
+           then 'ACTION NEEDED — ' || pg_temp.ask($q$
+                  select count(*)::text from public.subscriptions s
+                   where not exists (select 1 from public.schools sc where sc.id = s.school_id)
+                $q$) || ' subscription(s) name a school that is not there. Nothing '
+                || 'is broken and nothing has been deleted, but the foreign key '
+                || 'that should make this impossible cannot be restored while they '
+                || 'exist. Run supabase/repair/why.sql to see which, decide what '
+                || 'they are, remove them, then re-run bundle 8.'
+         when not exists (select 1 from pg_constraint c
+                          join pg_class t on t.oid = c.conrelid
+                          join pg_namespace n on n.oid = t.relnamespace
+                          where n.nspname = 'public' and t.relname = 'subscriptions'
+                            and c.contype = 'f'
+                            and pg_get_constraintdef(c.oid) ilike '%references%schools(id)%')
+           then 'ACTION NEEDED — subscriptions has no foreign key to schools, so a '
+                || 'school deleted from now on will leave its subscription behind. '
+                || 'Run bundle 8, which restores it.'
+         else 'PASS' end
+
+union all
 -- Not pass/fail: publishing a release is something only you can do. But a school
 -- asking for the desktop installer is the commonest request there is, and until
 -- this is done the website tells them it is being prepared.
