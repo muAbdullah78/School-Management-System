@@ -90,5 +90,18 @@ These are real, current, and none of them is a bug:
   column level and DELETE is gone. The others are configuration rather than
   money, and closing them means building the function first.
 
+- **A school row can still be deleted outside the product, and nothing here can
+  stop it.** `fn_platform_purge_school` clears every table before it removes the
+  school, and 37 `ON DELETE NO ACTION` children mean an ordinary `delete from
+  schools` is *refused*. But a delete run with foreign keys stood down — a
+  restore, a point-in-time recovery, or `set session_replication_role =
+  'replica'`, which is the first answer most search results give for "foreign key
+  will not let me delete" — succeeds and leaves the school's settings, licence,
+  fee records and audit rows behind. 0092 makes that state visible (platform
+  console → *Records with no school*), clearable, and no longer write-locked, and
+  `supabase/repair/enforcement.sql` reports whether enforcement is still switched
+  off. None of that prevents it happening again: only leaving that setting alone
+  does.
+
 Product decisions live in [`09-DECISIONS-LOCKED.md`](09-DECISIONS-LOCKED.md).
 The money engine's reasoning is in [`10-MONEY-ENGINE-V2.md`](10-MONEY-ENGINE-V2.md).

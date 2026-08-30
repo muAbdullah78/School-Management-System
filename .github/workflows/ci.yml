@@ -1548,6 +1548,27 @@ jobs:
         # convalidated.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/counter_repair.sql
 
+      - name: Records left behind by a deleted school
+        # Assertions 22-23 are the ones to keep. They hold in place the fact that
+        # a VALIDATED foreign key is a statement about the PAST: they orphan a row
+        # by deleting its school with session_replication_role = 'replica', then
+        # require that the constraint still reports itself validated and that
+        # ALTER TABLE … VALIDATE CONSTRAINT returns success without re-scanning.
+        #
+        # Those two readings are why verify.sql, repair/why.sql and 0091 were
+        # briefly inverted to trust the constraint over a query, and why that
+        # inversion reported PASS on a live database holding a real orphan. If
+        # anybody restores it, these fail.
+        #
+        # Assertions 25-26 cover the fault underneath: audit_trigger files an
+        # audit row against the school of the row being written, and
+        # audit_log.school_id is NOT NULL with a NO ACTION key to schools — so
+        # once the school is gone, every write to any of the seventeen audited
+        # tables is refused, with an error naming audit_log and explaining
+        # nothing. The records were not merely orphaned, they could not be
+        # deleted.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/orphan_data.sql
+
       - name: The website's prices match what the console charges
         # site/index.html reads `plans` at load, so the LIVE page is right. These
         # literals are the FALLBACK — what a visitor sees when Supabase is slow —

@@ -20,7 +20,8 @@ import { OffboardDialog } from './Offboard'
 import { NewSchoolDialog } from './NewSchool'
 import { Business } from './Business'
 import { Publishing } from './Publishing'
-import { paymentClaims, dueSoon, platformSettings } from '@/lib/platform'
+import { LeftBehind } from './LeftBehind'
+import { paymentClaims, dueSoon, platformSettings, orphanReport } from '@/lib/platform'
 
 const STATUS_STYLE: Record<PlatformSchool['status'], string> = {
   trialing: 'bg-sky-100 text-sky-800',
@@ -33,6 +34,7 @@ const STATUS_STYLE: Record<PlatformSchool['status'], string> = {
 const FIELD = 'rounded border border-slate-300 px-2 py-1.5 text-sm'
 
 type Tab = 'schools' | 'renewals' | 'claims' | 'business' | 'publishing' | 'billing'
+  | 'leftbehind'
 
 const TAB_TITLE: Record<Tab, string> = {
   schools: 'Schools',
@@ -41,6 +43,7 @@ const TAB_TITLE: Record<Tab, string> = {
   business: 'The business',
   publishing: 'Downloads and notices',
   billing: 'Our billing details',
+  leftbehind: 'Records with no school',
 }
 
 function monthStart(): string {
@@ -96,6 +99,16 @@ export function PlatformPage() {
     enabled: isAdmin.data === true,
   })
   const settingsIncomplete = (settings.data?.missing.length ?? 0) > 0
+  // Distinct school ids with records but no school row. Normally zero, and then
+  // the tab is not rendered at all — but when it is not zero, nothing else in
+  // this console would ever show it: those ids are absent from the school list
+  // by definition.
+  const orphanCount = useQuery({
+    queryKey: ['orphanReport', 'count'],
+    queryFn: async () => new Set((await orphanReport()).map((r) => r.school_id)).size,
+    enabled: isAdmin.data === true,
+    retry: false,
+  })
   const schools = useQuery({
     // Keyed on the flag: an archived school appearing in a cache the console
     // filled while the toggle was off is how a departed customer shows up in
@@ -212,6 +225,15 @@ export function PlatformPage() {
           <TabButton now={tab} me="publishing" set={setTab} label="Downloads & notices" />
           <TabButton now={tab} me="billing" set={setTab} label="Our billing details"
             warn={settingsIncomplete} />
+          {/* Only appears when there IS something, because a permanently empty
+              tab teaches people to stop reading the nav. What it describes is
+              invisible everywhere else in this console: a school with no
+              `schools` row is not in the school list, so its leftover records
+              have no other screen. */}
+          {(orphanCount.data ?? 0) > 0 && (
+            <TabButton now={tab} me="leftbehind" set={setTab} label="Records with no school"
+              badge={orphanCount.data} warn />
+          )}
         </nav>
 
         {tab === 'renewals' && (
@@ -224,6 +246,7 @@ export function PlatformPage() {
         {tab === 'business' && <Business />}
         {tab === 'publishing' && <Publishing />}
         {tab === 'billing' && <BillingSettings />}
+        {tab === 'leftbehind' && <LeftBehind />}
 
         {tab === 'schools' && <>
 

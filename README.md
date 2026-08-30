@@ -85,6 +85,8 @@ supabase/
   repair/detect.sql      what is it missing?
   repair/why.sql         and WHY does it say that? — names objects, not migrations
   repair/inspect-orphans.sql   what IS that row, before you delete it?
+  repair/facts.sql       raw readings, no interpretation — for when a checker is the thing that is wrong
+  repair/enforcement.sql are foreign keys still being enforced at all?
 site/                    the public website (static)
 desktop/                 Tauri shell that wraps the web app as a Windows .msi
 docs/                    design records and the school handbook

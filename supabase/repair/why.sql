@@ -47,6 +47,26 @@ exception
 end
 $ask$;
 
+-- Counts rows naming a school that is not there, as the table owner, so
+-- row-level security cannot hide the school and manufacture a false orphan.
+-- That concern was the reason this file once believed a validated foreign key
+-- over its own query — see row 1 — and standing RLS down settles it without
+-- believing a flag that only describes the past.
+create or replace function pg_temp.orphans(p_table text) returns bigint
+language plpgsql security definer as $orph$
+declare v_n bigint;
+begin
+  execute format(
+    'select count(*) from public.%I t
+      where t.school_id is not null
+        and not exists (select 1 from public.schools sc where sc.id = t.school_id)',
+    p_table) into v_n;
+  return v_n;
+exception when others then
+  return 0;
+end
+$orph$;
+
 select * from (
 
 -- ---------------------------------------------------------------------------
@@ -63,37 +83,36 @@ select 1 as sort, 'orphan subscription' as finding,
        $q$), '') as object,
        case
          when to_regclass('public.subscriptions') is null then 'n/a — no subscriptions table yet'
-         when coalesce(pg_temp.ask($q$
-                select count(*)::text from public.subscriptions s
-                 where not exists (select 1 from public.schools sc where sc.id = s.school_id)
-              $q$), '0') = '0'
+         when pg_temp.orphans('subscriptions') = 0
            then 'ok — every subscription has its school'
-         -- THE CONSTRAINT OUTRANKS THIS QUERY. A validated foreign key means
-         -- Postgres has already scanned every row, so a SELECT that still sees
-         -- orphans cannot SEE the schools rows rather than proving them absent —
-         -- public.schools carries RLS, and a session that is neither its owner
-         -- nor BYPASSRLS reads an empty answer. Reproduced. Reporting this as an
-         -- orphan sent two rounds of repair after a row that was never wrong.
-         when exists (select 1 from pg_constraint c
-                      join pg_class t on t.oid = c.conrelid
-                      join pg_namespace n on n.oid = t.relnamespace
-                      where n.nspname = 'public' and t.relname = 'subscriptions'
-                        and c.contype = 'f' and c.convalidated
-                        and pg_get_constraintdef(c.oid) ilike '%references%schools(id)%')
-           then 'PROBABLY NOT AN ORPHAN. The foreign key on the next line is '
-                || 'VALIDATED, which is Postgres''s own statement that it has '
-                || 'scanned every row — so the constraint is the one to believe '
-                || 'and this query is the one that is wrong. Why it is wrong is '
-                || 'not established. Run supabase/repair/facts.sql and send the '
-                || 'output rather than deleting anything.'
-         else 'These rows cannot be viewed, billed or renewed, and they are what '
-              || 'stopped bundle 6. Nothing has deleted them and nothing will — a '
-              || 'customer record is the operator''s to decide about. Run '
-              || 'supabase/repair/inspect-orphans.sql to see what each one IS '
-              || '(an abandoned signup, or a school somebody was actually billed '
-              || 'for), delete the ones you have looked at BY ID, then run bundle 9 '
-              || '(0091), which puts the foreign key into the state line 2 will '
-              || 'tell you it is not in yet.'
+         -- THIS ROW ONCE ANSWERED "PROBABLY NOT AN ORPHAN" HERE, and it was
+         -- wrong. The reasoning was that a VALIDATED foreign key is Postgres's
+         -- own statement that it has scanned every row, so a query disagreeing
+         -- with one must be failing to SEE the schools rows — public.schools
+         -- carries RLS, and a session that is neither its owner nor BYPASSRLS
+         -- reads an empty answer.
+         --
+         -- The mechanism is real. The inference was not. `convalidated` records
+         -- that the table was checked at some earlier moment; it says nothing
+         -- about rows orphaned since by a path that did not run the enforcement
+         -- triggers, and `VALIDATE CONSTRAINT` on an already-validated
+         -- constraint returns success without re-scanning, so it cannot even be
+         -- used to check. On the project this file was written for, that
+         -- inversion printed "probably not an orphan" over a real one.
+         --
+         -- The count above is taken as the table's owner, with RLS stood down,
+         -- which answers the original worry properly instead of trading it for
+         -- a worse one.
+         else pg_temp.orphans('subscriptions')::text
+              || ' subscription(s) name a school that is not in `schools`, read '
+              || 'with row-level security stood down, so they are real. They '
+              || 'cannot be viewed, billed or renewed, and they are what stopped '
+              || 'bundle 6. Nothing has deleted them — a customer record is the '
+              || 'operator''s to decide about. Run supabase/repair/enforcement.sql '
+              || 'FIRST: it says whether foreign keys are still switched off, and '
+              || 'sweeps every table rather than this one, because a school that '
+              || 'goes without its children leaves rows in all of them. Then '
+              || 'clear them from the platform console under Danger zone.'
        end as what_to_do
 
 union all
@@ -124,8 +143,19 @@ select 2, 'subscriptions -> schools foreign key',
                       where n.nspname = 'public' and t.relname = 'subscriptions'
                         and c.contype = 'f' and c.convalidated
                         and pg_get_constraintdef(c.oid) ilike '%references%schools(id)%')
-           then 'ok — checked against every existing row, so deleting a school '
-                || 'takes its subscription with it and the orphan above cannot recur'
+           -- "Checked" is past tense on purpose. This says the constraint was
+           -- scanned and is enforced from here on; it does NOT say the table is
+           -- clean right now, which is row 1's job and row 1's alone. Conflating
+           -- the two is what made this file print "ok" beside a real orphan.
+           then case when pg_temp.orphans('subscriptions') > 0
+                     then 'enforced from here on, but NOT a statement about today. '
+                          || 'It was scanned at some earlier moment and row 1 has '
+                          || 'found rows that postdate it — which means something '
+                          || 'deleted a school with foreign keys switched off. '
+                          || 'supabase/repair/enforcement.sql says whether they '
+                          || 'still are.'
+                     else 'ok — checked against every existing row, so deleting a '
+                          || 'school takes its subscription with it' end
          when exists (select 1 from pg_constraint c
                       join pg_class t on t.oid = c.conrelid
                       join pg_namespace n on n.oid = t.relnamespace
