@@ -203,7 +203,8 @@ select * from (
          coalesce(pg_temp.ask($q$
            select string_agg(distinct school_id::text, ', ')
              from public.subscriptions s
-            where not exists (select 1 from public.schools sc where sc.id = s.school_id)
+            where s.school_id is not null
+              and not exists (select 1 from public.schools sc where sc.id = s.school_id)
          $q$), '(none)'),
          'these are the ids to pass to fn_platform_purge_orphan_data, one at a time'
 

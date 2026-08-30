@@ -134,7 +134,8 @@ begin
   select count(*), string_agg(s.school_id::text, ', ')
     into v_orphans, v_ids
   from public.subscriptions s
-  where not exists (select 1 from public.schools sc where sc.id = s.school_id);
+  where s.school_id is not null
+    and not exists (select 1 from public.schools sc where sc.id = s.school_id);
 
   -- Absent. 0090 handles this and will have run first in bundle order; the
   -- branch is here so this file is complete on its own.
@@ -229,7 +230,8 @@ begin
 
   select count(*) into v_orphans
   from public.subscriptions s
-  where not exists (select 1 from public.schools sc where sc.id = s.school_id);
+  where s.school_id is not null
+    and not exists (select 1 from public.schools sc where sc.id = s.school_id);
 
   if coalesce(v_valid, false) and v_orphans > 0 then
     raise notice
