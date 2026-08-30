@@ -38,10 +38,39 @@
 -- there is the same error one layer in — and it is the reason 0090 returned
 -- early instead of finishing the job.
 --
--- WHAT THIS EXPLAINS, retrospectively. The constraint was almost certainly NOT
--- VALID from the start on that project, the orphan predates it, and 0067's
--- closing backfill walked straight into a row the database had promised to
--- forbid. Nothing "dropped" the constraint; it was simply never asked to check.
+-- AND THAT EXPLANATION WAS ALSO WRONG ON THE PROJECT IT WAS WRITTEN FOR.
+--
+-- This header first said the constraint "was almost certainly NOT VALID from the
+-- start". It is not: on that database it reports itself VALIDATED, and this
+-- file's own end-state check said so by aborting the bundle. That is the second
+-- confident explanation of one row, after "the foreign key is missing", and both
+-- were inferences dressed as findings.
+--
+-- What IS established, rather than inferred:
+--
+--   * a NOT VALID constraint produces exactly the reported symptoms, and the
+--     old check could not see it. That hole was real and is closed.
+--   * a VALIDATED constraint is Postgres's own statement that it has scanned
+--     every row. When a SELECT disagrees with one, the SELECT is what is wrong.
+--   * a reader that cannot SEE the referenced table produces a false orphan.
+--     Demonstrated on a two-table model: with RLS hiding `schools`, the same
+--     query reports one orphan and zero schools while the constraint is
+--     validated and correct.
+--
+--     THAT IS A MECHANISM, NOT THIS PROJECT'S DIAGNOSIS, and the difference is
+--     the point. On the real schema `subscriptions` carries RLS too, so a
+--     session that cannot see a school cannot see its subscription either and
+--     both rows disappear together — which is NOT the live shape (one school
+--     visible, one subscription apparently orphaned). So the mechanism is real
+--     and it does not explain that project. What explains it is not yet known,
+--     and this file no longer pretends otherwise.
+--
+-- So this file now TRUSTS THE CONSTRAINT over the query, everywhere. That
+-- conclusion does not depend on knowing WHY they disagree, which is what makes
+-- it the right one to act on: Postgres has scanned the table and a SELECT has
+-- not. supabase/repair/facts.sql prints raw readings, with no interpretation,
+-- for working out the rest. Three confident explanations of one row is enough to
+-- stop summarising and start measuring.
 --
 -- WHAT THIS FILE DOES
 --
@@ -99,6 +128,9 @@ begin
     return;
   end if;
 
+  -- Checked BEFORE the orphan count is used for anything. A validated
+  -- constraint is Postgres's own statement that it has scanned every row, and
+  -- it outranks a SELECT that may be reading through RLS.
   if v_valid then
     return;                                   -- present and checked; nothing to do
   end if;
@@ -122,18 +154,40 @@ begin
 end $validate$;
 
 -- ---------------------------------------------------------------------------
--- The end state, asserted — but only as far as it CAN be
+-- The end state, REPORTED — never asserted
 --
--- "The constraint is validated" is not assertable here: a database that still
--- has an orphan is a database this migration has deliberately left alone, and
--- raising would abort a bundle over a row the operator has not looked at yet.
--- That is the whole lesson of 0090, one file later.
+-- THIS BLOCK RAISED, AND RAISING WAS THE MISTAKE.
 --
--- What IS assertable is the two states being mutually exclusive from here on:
--- if the constraint is valid, there are no orphans, because Postgres has just
--- checked. Catching THAT disagreement is what the checker failed to do.
+-- Its first version ended with `raise exception` when the constraint reported
+-- itself validated while orphan rows were still visible. It fired on a live
+-- project and took the whole of bundle 9 down with it.
+--
+-- The check found something real: those two readings cannot both be true, and
+-- one of them is a checker reading something it does not mean. But 0090 exists
+-- BECAUSE a loop that raised on one bad row discarded eleven migrations for
+-- every tenant, and its header says in as many words that "a convenience must
+-- never be able to discard eleven migrations". One file later I put an
+-- exception in a migration over a data condition the operator has not looked at
+-- yet, and it did exactly that.
+--
+-- A migration may refuse to ACT on a state it does not understand. It may not
+-- refuse to APPLY over one. The disagreement is reported here and carried by
+-- verify.sql, where it can be read without blocking an upgrade.
+--
+-- AND THE CHECK ITSELF IS NOW THE RIGHT WAY ROUND. A VALIDATED foreign key
+-- means Postgres has already scanned every row and found no orphan — that is
+-- what validation IS. So when a SELECT disagrees with a validated constraint,
+-- the SELECT is what is wrong, and the likeliest reason is that it cannot SEE
+-- the row: `public.schools` carries RLS, and a session that is neither the
+-- table's owner nor BYPASSRLS gets an empty answer rather than a wrong one.
+-- Reproduced: under RLS the same query reports one orphan and zero schools
+-- while the constraint is validated and correct.
+--
+-- Trusting the constraint over the query removes that entire class of
+-- confusion. supabase/repair/facts.sql prints the readings, with no
+-- interpretation, when the two still disagree.
 -- ---------------------------------------------------------------------------
-do $assert$
+do $report$
 declare v_valid boolean; v_orphans bigint;
 begin
   select bool_or(c.convalidated) into v_valid
@@ -148,9 +202,14 @@ begin
   where not exists (select 1 from public.schools sc where sc.id = s.school_id);
 
   if coalesce(v_valid, false) and v_orphans > 0 then
-    raise exception
-      '0091: the foreign key reports itself validated and % subscription row(s) '
-      'still name a school that does not exist. Those cannot both be true — one '
-      'of them is a checker reading something it does not mean.', v_orphans;
+    raise notice
+      '0091: the foreign key reports itself VALIDATED and a query still sees % '
+      'subscription row(s) with no school. Postgres has already scanned this '
+      'table, so the constraint is the one to believe and the query is the one '
+      'that is wrong. WHY it is wrong is not known — nothing has been changed, '
+      'and nothing here will guess again. Run supabase/repair/facts.sql and send '
+      'the output: it prints the same counts with RLS stood down, every foreign '
+      'key on the table with its validated flag, and the row itself.',
+      v_orphans;
   end if;
-end $assert$;
+end $report$;

@@ -1074,6 +1074,34 @@ union all
 select 'every subscription belongs to a school that exists',
        case
          when to_regclass('public.subscriptions') is null then 'n/a — bundle 1 not applied'
+         -- THE CONSTRAINT IS THE AUTHORITY, THE QUERY IS A HINT.
+         --
+         -- A VALIDATED foreign key is Postgres's own statement that it has
+         -- scanned every existing row and found no orphan. That outranks a
+         -- SELECT, and the conclusion does not depend on knowing why the two
+         -- disagree — which is what makes it safe to act on.
+         --
+         -- Checking the query first is how this row reported ACTION NEEDED on a
+         -- database where the constraint had already proved the opposite, and
+         -- sent two rounds of repair after a row that may never have been
+         -- wrong.
+         when exists (select 1 from pg_constraint c
+                      join pg_class t on t.oid = c.conrelid
+                      join pg_namespace n on n.oid = t.relnamespace
+                      where n.nspname = 'public' and t.relname = 'subscriptions'
+                        and c.contype = 'f' and c.convalidated
+                        and pg_get_constraintdef(c.oid) ilike '%references%schools(id)%')
+           then case
+                  when coalesce(pg_temp.ask($q$
+                         select count(*)::text from public.subscriptions s
+                          where not exists (select 1 from public.schools sc
+                                             where sc.id = s.school_id)
+                       $q$), '0') <> '0'
+                    then 'PASS — the foreign key is validated, so Postgres has '
+                         || 'already checked every row. (A query here still sees '
+                         || 'some, which makes the QUERY the thing that is wrong; '
+                         || 'run supabase/repair/facts.sql to find out how.)'
+                  else 'PASS' end
          when coalesce(pg_temp.ask($q$
                 select count(*)::text from public.subscriptions s
                  where not exists (select 1 from public.schools sc where sc.id = s.school_id)
@@ -1081,12 +1109,11 @@ select 'every subscription belongs to a school that exists',
            then 'ACTION NEEDED — ' || pg_temp.ask($q$
                   select count(*)::text from public.subscriptions s
                    where not exists (select 1 from public.schools sc where sc.id = s.school_id)
-                $q$) || ' subscription(s) name a school that is not there. Nothing '
-                || 'is broken and nothing has been deleted, but the foreign key '
-                || 'cannot be put beyond doubt while they exist. Run '
-                || 'supabase/repair/why.sql — it prints the ids and says whether '
-                || 'the constraint is absent or merely NOT VALID — decide what '
-                || 'they are, remove them, then run bundle 9.'
+                $q$) || ' subscription(s) name a school that is not there, and the '
+                || 'foreign key has not been validated, so nothing has proved '
+                || 'otherwise. Run supabase/repair/inspect-orphans.sql to see what '
+                || 'they are, remove the ones you have looked at BY ID, then run '
+                || 'bundle 9.'
          when not exists (select 1 from pg_constraint c
                           join pg_class t on t.oid = c.conrelid
                           join pg_namespace n on n.oid = t.relnamespace
@@ -1096,19 +1123,9 @@ select 'every subscription belongs to a school that exists',
            then 'ACTION NEEDED — subscriptions has no foreign key to schools, so a '
                 || 'school deleted from now on will leave its subscription behind. '
                 || 'Run bundle 8, which restores it.'
-         -- A NOT VALID constraint used to pass this row while an orphan sat in
-         -- the table, because the check read the definition and never asked
-         -- whether it had been enforced against the rows already there.
-         when not exists (select 1 from pg_constraint c
-                          join pg_class t on t.oid = c.conrelid
-                          join pg_namespace n on n.oid = t.relnamespace
-                          where n.nspname = 'public' and t.relname = 'subscriptions'
-                            and c.contype = 'f' and c.convalidated
-                            and pg_get_constraintdef(c.oid) ilike '%references%schools(id)%')
-           then 'ACTION NEEDED — the foreign key is NOT VALID: it refuses every new '
-                || 'orphan and has never checked the rows that were already there. '
-                || 'Run bundle 9 (0091) to validate it.'
-         else 'PASS' end
+         else 'ACTION NEEDED — the foreign key exists but is NOT VALID: it refuses '
+              || 'every new orphan and has never checked the rows already there. '
+              || 'Run bundle 9 (0091) to validate it.' end
 
 union all
 -- Not pass/fail: publishing a release is something only you can do. But a school

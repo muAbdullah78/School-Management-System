@@ -640,18 +640,23 @@ with sig(migration, object, present) as (values
   -- correctly refuse again. What IS checkable is the DISAGREEMENT the whole
   -- incident turned on: a constraint reporting itself validated while orphan
   -- rows exist. Those cannot both be true, and nothing was looking.
-  ('0091_validate_the_subscription_fk', 'the subscription foreign key and the rows agree',
-     (select not (
-        coalesce((select bool_or(c.convalidated)
-                    from pg_constraint c
-                    join pg_class t on t.oid = c.conrelid
-                    join pg_namespace n on n.oid = t.relnamespace
-                   where n.nspname = 'public' and t.relname = 'subscriptions'
-                     and c.contype = 'f'
-                     and pg_get_constraintdef(c.oid) ilike '%references%schools(id)%'), false)
-        and exists (select 1 from public.subscriptions s
-                     where not exists (select 1 from public.schools sc
-                                        where sc.id = s.school_id)))))
+  -- 0091. The signature is what the file GUARANTEES: the foreign key exists AND
+  -- has been VALIDATED, which is Postgres's own statement that it has scanned
+  -- every existing row.
+  --
+  -- Its first version reported the CONTRADICTION instead — validated while a
+  -- query still sees orphans — and that was unusable as a detect row: it says
+  -- MISSING on a database that re-running 0091 cannot change, which is the
+  -- "re-run this and nothing happens" loop this whole file exists to end.
+  ('0091_validate_the_subscription_fk', 'the subscription foreign key has been validated',
+     (select coalesce((select bool_or(c.convalidated)
+                         from pg_constraint c
+                         join pg_class t on t.oid = c.conrelid
+                         join pg_namespace n on n.oid = t.relnamespace
+                        where n.nspname = 'public' and t.relname = 'subscriptions'
+                          and c.contype = 'f'
+                          and pg_get_constraintdef(c.oid) ilike '%references%schools(id)%'),
+                      false)))
 )
 select migration,
        object                                   as looked_for,
