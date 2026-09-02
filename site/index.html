@@ -22,7 +22,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#F7F4EC">
 
-<!--ART:favicon-->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'><path%20fill='%23F7F4EC'%20d='M0%200h24v24H0z'/><circle%20cx='12'%20cy='12'%20r='10.75'%20fill='none'%20stroke='%2320315E'%20stroke-width='1.5'/><g%20fill='%2320315E'><circle%20cx='12'%20cy='8'%20r='1'/><path%20fill-rule='evenodd'%20d='M6%2014h12v5H6zm3%201h6v1H9zm0%202h6v1H9z'/></g></svg>">
 
 <link rel="stylesheet" href="styles.css">
 
@@ -65,7 +65,11 @@
 <div class="nav">
   <div class="wrap nav__in">
     <a class="brand" href="#top">
-      <!--ART:seal-nav-->
+      <svg class="seal" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+  <circle cx="12" cy="12" r="10.75" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <circle cx="12" cy="8" r="1" fill="currentColor"/>
+  <path fill="currentColor" fill-rule="evenodd" d="M6 14h12v5H6zm3 1h6v1H9zm0 2h6v1H9z"/>
+</svg>
       <span>School Manager</span>
     </a>
 
@@ -144,7 +148,148 @@
     </div>
 
     <div>
-      <!--ART:receipt-->
+      <!-- ===========================================================================
+     THE FEE RECEIPT, drawn at full size. The flagship artefact of the page.
+
+     Drawn against, in this repo:
+       site/styles.css                       tokens, .doc, .doc__cap, .tnum
+       web/src/components/Receipt.tsx        the real receipt this imitates,
+                                             including its family "covers" list
+       web/src/pages/fees/ChallanPrint.tsx   the precedent for ink on white,
+                                             ruled, no fill, "Rs" as a column head
+
+     Pure HTML and CSS. No SVG, no <text>, no image, no font request. Three
+     reasons, all of which matter more than the drawing would: the labels wrap,
+     so Chrome translate to Urdu can rewrite them without bursting the layout;
+     it grows under text only zoom and Android font scaling, which is WCAG
+     1.4.4; and every figure stays real selectable text a clerk can copy.
+
+     Ink on white throughout. The only colour is the RECEIVED stamp, which is
+     --money-800 as text and as its outline, because brand #4338CA and danger
+     #B91C1C photocopy to within 0.4 percent of each other under Rec.601, so no
+     hue on this object could be allowed to carry meaning.
+
+     Arithmetic, which is the one thing this audience will check:
+       Ahmed 1,900 + Fatima 1,700 + Bilal 2,200 = 5,800
+       arrears 0, fine 0, so the five rows sum to the printed total exactly.
+     Both zero rows print the word None. A dash in a money column is meaning
+     carried by punctuation, which is a defect.
+
+     .doc--lift is deliberately NOT used here. This one object carries the only
+     true elevation on the page, specified separately in receipt.css.
+     =========================================================================== -->
+<figure class="rcpt-fig">
+  <div class="doc rcpt">
+    <div class="rcpt__in">
+
+      <header class="rcpt__head">
+        <p class="rcpt__school">Al-Noor School</p>
+        <p class="rcpt__kind">Fee Receipt</p>
+      </header>
+
+      <div class="rcpt__meta">
+        <div class="rcpt__cell">
+          <span class="rcpt__k">Receipt No</span>
+          <span class="rcpt__v">1043</span>
+        </div>
+        <div class="rcpt__cell">
+          <span class="rcpt__k">Date</span>
+          <span class="rcpt__v">04-09-2026</span>
+        </div>
+        <div class="rcpt__cell">
+          <span class="rcpt__k">GR No</span>
+          <span class="rcpt__v">2211</span>
+        </div>
+      </div>
+
+      <dl class="rcpt__who">
+        <dt>Received from</dt>
+        <dd>Muhammad Aslam <span class="rcpt__note">(three children)</span></dd>
+        <dt>Payment</dt>
+        <dd>Cash, at the fee counter</dd>
+      </dl>
+
+      <table class="rcpt__tbl">
+        <caption class="rcpt__sr">
+          Fee receipt No 1043, Al-Noor School, dated 04-09-2026. What the one
+          payment of Rs 5,800 was applied to, child by child.
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Particulars</th>
+            <th scope="col">Rs</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">
+              <span class="rcpt__name">Ahmed</span>
+              <span class="rcpt__sub">Class 5, monthly fee, September 2026</span>
+            </th>
+            <td class="tnum">1,900</td>
+          </tr>
+          <tr>
+            <th scope="row">
+              <span class="rcpt__name">Fatima</span>
+              <span class="rcpt__sub">Class 3, monthly fee, September 2026</span>
+            </th>
+            <td class="tnum">1,700</td>
+          </tr>
+          <tr>
+            <th scope="row">
+              <span class="rcpt__name">Bilal</span>
+              <span class="rcpt__sub">Play Group, monthly fee, September 2026</span>
+            </th>
+            <td class="tnum">2,200</td>
+          </tr>
+          <tr>
+            <th scope="row">
+              <span class="rcpt__name">Arrears brought forward</span>
+              <span class="rcpt__sub">All three children, up to August 2026</span>
+            </th>
+            <td class="rcpt__none">None</td>
+          </tr>
+          <tr>
+            <th scope="row">
+              <span class="rcpt__name">Late fee</span>
+              <span class="rcpt__sub">September 2026, paid before the 10th</span>
+            </th>
+            <td class="rcpt__none">None</td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr>
+            <th scope="row">Total received</th>
+            <td class="tnum">Rs 5,800</td>
+          </tr>
+        </tfoot>
+      </table>
+
+      <div class="rcpt__foot">
+        <div class="rcpt__words">
+          <span class="rcpt__k">In words</span>
+          <p class="rcpt__wv">Five thousand eight hundred rupees only</p>
+          <p class="rcpt__sig">Received by, office</p>
+        </div>
+        <p class="rcpt__stamp">
+          <span class="rcpt__stamp-w">Received</span>
+          <span class="rcpt__stamp-m">Cash, 04-09-2026</span>
+        </p>
+      </div>
+
+      <p class="rcpt__serial">
+        Computer generated receipt. Keep it for your records.
+        <span class="rcpt__sn">ANS-1043-04092026</span>
+      </p>
+
+    </div>
+  </div>
+  <figcaption class="doc__cap">
+    One father, three children, one payment, one number. Every receipt number is
+    issued in an unbroken sequence, and this is exactly what prints.
+  </figcaption>
+</figure>
+
     </div>
   </div>
 </header>
@@ -370,7 +515,119 @@
         </p>
       </div>
       <div>
-        <!--ART:drawer-->
+        <!-- ===========================================================================
+     THE CASH DRAWER SETTLEMENT SLIP. Section 04, as that section's primary
+     object. Paste in place of the ART:drawer marker.
+
+     Drawn against, in this repo:
+       site/styles.css   the tokens, .doc, .doc--lift, .doc__cap, .tnum
+       site/index.html   section 04 "End of day", and the "Cash drawer
+                         settlement" line of the fee control checklist in
+                         section 03, whose promise this object has to keep
+     There is no app component for this screen to be verified against, so
+     nothing else is cited and nothing is implied about one.
+
+     Pure HTML and CSS, no SVG, which the spec allows and three things require:
+     every figure stays selectable text a clerk can copy, the labels wrap so
+     Chrome translate to Urdu can rewrite them, and the slip grows under
+     Android font scaling instead of being scaled by a transform.
+
+     THE ONE COLOUR DECISION. Ink on white throughout, because this is a slip
+     that gets printed and filed. The single exception is the Difference row,
+     which carries TWO signals: the word "short" in --due-800 as text, and a
+     3px --due rule down its left edge. Two, not one, because brand #4338CA and
+     danger #B91C1C photocopy to within 0.4 percent of each other under
+     Rec.601, so no hue on this object may carry meaning by itself.
+
+     ARITHMETIC, which is the one thing this audience will actually check:
+       system 84,500 less counted 84,200 = 300 short.
+     The written reason accounts for the whole of it and no more: receipt 1067
+     was entered as Rs 2,800 while Rs 2,500 sat in the tray against it, a
+     difference of exactly 300. The receipt range sums too: 1041 to 1068
+     inclusive is 28 receipts.
+
+     A DIFFERENT FAMILY AND A DIFFERENT RECEIPT FROM THE HERO, on purpose. The
+     hero receipt is No 1043, Muhammad Aslam, Rs 5,800, and it is correct. A
+     slip that corrected the hero receipt would tell anybody who read both
+     objects that the flagship artefact of the page was the erroneous one, and
+     that the family's true balance was Rs 300 off. This one names receipt
+     No 1067 and the Yousaf family, which touches nothing in the hero. Both
+     numbers still fall inside the session's unbroken range 1041 to 1068, so
+     the two objects describe the same day at the same counter.
+     =========================================================================== -->
+<figure class="drw-fig">
+  <div class="doc doc--lift drw">
+    <div class="drw__in">
+
+      <header class="drw__head">
+        <p class="drw__school">Al-Noor School</p>
+        <p class="drw__kind">Cash Drawer Settlement</p>
+      </header>
+
+      <dl class="drw__rows">
+        <div class="drw__row">
+          <dt class="drw__k">Collector</dt>
+          <dd class="drw__v drw__v--name">Nadia Iqbal</dd>
+        </div>
+        <div class="drw__row">
+          <dt class="drw__k">Counter</dt>
+          <dd class="drw__v">Front office, 1</dd>
+        </div>
+        <div class="drw__row">
+          <dt class="drw__k">Session</dt>
+          <dd class="drw__v tnum">04-09-2026, 08:15 to 16:00</dd>
+        </div>
+        <div class="drw__row">
+          <dt class="drw__k">Receipts issued</dt>
+          <dd class="drw__v tnum">No 1041 to No 1068
+            <span class="drw__note">28 receipts, none missing</span>
+          </dd>
+        </div>
+
+        <div class="drw__row drw__row--money">
+          <dt class="drw__k">System says</dt>
+          <dd class="drw__v drw__v--amt tnum">Rs 84,500</dd>
+        </div>
+        <div class="drw__row drw__row--money">
+          <dt class="drw__k">Counted</dt>
+          <dd class="drw__v drw__v--amt tnum">Rs 84,200</dd>
+        </div>
+        <div class="drw__row drw__row--money drw__row--diff">
+          <dt class="drw__k">Difference</dt>
+          <dd class="drw__v drw__v--amt tnum">Rs 300 <span class="drw__short">Short</span></dd>
+        </div>
+      </dl>
+
+      <div class="drw__reason">
+        <p class="drw__k">Reason for the difference</p>
+        <p class="drw__rt">
+          Receipt No 1067, Yousaf family, was entered as Rs 2,800. Three notes
+          of Rs 100 were short in the bundle handed over, so only Rs 2,500 sat
+          in the tray against it. The father has been telephoned. A reversal and
+          a fresh receipt go to the principal for approval in the morning.
+        </p>
+        <p class="drw__by">
+          Written by Nadia Iqbal at 16:04. It cannot be edited once the drawer
+          is closed, and it stays on the record under her name.
+        </p>
+      </div>
+
+      <p class="drw__sig">Collector's signature, Nadia Iqbal</p>
+
+      <p class="drw__serial">
+        Drawer session closed and locked at 16:00.
+        <span class="drw__sn">ANS-DRW-04092026-01</span>
+      </p>
+
+    </div>
+  </div>
+  <figcaption class="doc__cap">
+    Rs 300 short, on the day it happened, with a name and a written reason
+    attached to it. The word beside the figure carries the meaning, so the slip
+    still says "short" after it has been photocopied.
+  </figcaption>
+</figure>
+
       </div>
     </div>
   </div>
@@ -435,10 +692,462 @@
          comment beside each. -->
     <div class="grid grid--3" style="margin-top:38px;align-items:start">
       <div>
-        <!--ART:challan-->
+        <!-- ============================================================================
+     ART:challan  ::  the three part bank payable fee challan.
+
+     Drawn against web/src/pages/fees/ChallanPrint.tsx, line by line: the copy
+     order in COPIES, the letterhead block, the six Row() calls in their exact
+     order, the Particulars / Rs table with the discount in parentheses, the
+     total inside a double rule, the due date, the dotted bank stamp rule and
+     the QR block with the voucher code in a monospaced face beneath it.
+     Figures follow supabase fn_challan: a discount line stores a positive
+     amount and is flagged, so it prints in parentheses and subtracts.
+     The QR matrix is the real one, generated the way components/QrCode.tsx
+     generates it (version 1, error correction M, zero margin).
+
+     THREE separate svg elements, one per copy, each with its own viewBox. Not
+     one wide svg with <use>: a media query cannot change a viewBox, and <use>
+     cannot reach a <symbol> parked in a <template>, whose content is an inert
+     fragment outside the document tree.
+
+     Ink on white with rules for structure. No fill of any hue anywhere inside
+     the form, because the object has to survive a photocopier.
+
+     Arithmetic: 1,800 + 700 - 200 = 2,300.  2,300 + 1,200 = 3,500.
+     ============================================================================ -->
+<div class="chln">
+
+  <!-- Below 700px the three up becomes this true proportion miniature, because
+       the three copy ness is the actual argument and it has to stay visible
+       even when only one copy is legible. Same geometry as the row below, so it
+       is the sheet at a smaller size rather than a different drawing. -->
+  <svg class="chln__thumb" viewBox="0 0 564 370" aria-hidden="true">
+    <path class="chln__r-thumbsheet" d="M0.5 0.5h563v369h-563z" fill="none" stroke="currentColor" stroke-width="1"/>
+    <path class="chln__r-thumbframe" d="M9.8 9.8h174.4v350.4h-174.4z
+             M194.8 9.8h174.4v350.4h-174.4z
+             M379.8 9.8h174.4v350.4h-174.4z" fill="none" stroke="currentColor" stroke-width="1.6"/>
+    <path class="chln__r-thumbframe" d="M57 49h80v15h-80z
+             M242 49h80v15h-80z
+             M427 49h80v15h-80z" fill="none" stroke="currentColor" stroke-width="1.6"/>
+    <path class="chln__r-thumbgreek" d="M48 40H146 M18 71H176 M18 158H176 M18 175H176 M18 220H176 M18 81H49 M129 81H176 M18 94H49 M129 94H176 M18 107H49 M129 107H176 M18 120H49 M129 120H176 M18 133H49 M129 133H176 M18 146H49 M129 146H176 M18 167H57 M165 167H176 M18 184H79 M154 184H176 M18 197H64 M154 197H176 M18 210H109 M154 210H176 M18 229H64 M157 229H176 M18 242H71 M157 242H176 M18 290H53 M142 290H176 M18 338H121 M133 349H175
+             M233 40H331 M203 71H361 M203 158H361 M203 175H361 M203 220H361 M203 81H234 M314 81H361 M203 94H234 M314 94H361 M203 107H234 M314 107H361 M203 120H234 M314 120H361 M203 133H234 M314 133H361 M203 146H234 M314 146H361 M203 167H242 M350 167H361 M203 184H264 M339 184H361 M203 197H249 M339 197H361 M203 210H294 M339 210H361 M203 229H249 M342 229H361 M203 242H256 M342 242H361 M203 290H238 M327 290H361 M203 338H306 M318 349H360
+             M418 40H516 M388 71H546 M388 158H546 M388 175H546 M388 220H546 M388 81H419 M499 81H546 M388 94H419 M499 94H546 M388 107H419 M499 107H546 M388 120H419 M499 120H546 M388 133H419 M499 133H546 M388 146H419 M499 146H546 M388 167H427 M535 167H546 M388 184H449 M524 184H546 M388 197H434 M524 197H546 M388 210H479 M524 210H546 M388 229H434 M527 229H546 M388 242H441 M527 242H546 M388 290H423 M512 290H546 M388 338H491 M503 349H545" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <path class="chln__r-thumbgreek" d="M40 28H154 M18 264H97 M147 264H176
+             M225 28H339 M203 264H282 M332 264H361
+             M410 28H524 M388 264H467 M517 264H546" fill="none" stroke="currentColor" stroke-width="3.4"/>
+    <path class="chln__r-total" d="M18 253H176 M18 279H176
+             M203 253H361 M203 279H361
+             M388 253H546 M388 279H546" fill="none" stroke="currentColor" stroke-width="3"/>
+    <path class="chln__r-thumbqr" d="M133 297h14v14h-14z M135 299h10v10h-10z M137 301h6v6h-6z M161 297h14v14h-14z M163 299h10v10h-10z M165 301h6v6h-6z M133 325h14v14h-14z M135 327h10v10h-10z M137 329h6v6h-6z M149 299h4v4h-4z M155 303h4v4h-4z M149 309h4v4h-4z M159 309h4v4h-4z M167 313h4v4h-4z M153 315h4v4h-4z M143 317h4v4h-4z M135 319h4v4h-4z M149 323h4v4h-4z M161 321h4v4h-4z M169 325h4v4h-4z M153 329h4v4h-4z M163 331h4v4h-4z M145 331h4v4h-4z M169 333h4v4h-4z M157 317h4v4h-4z
+             M318 297h14v14h-14z M320 299h10v10h-10z M322 301h6v6h-6z M346 297h14v14h-14z M348 299h10v10h-10z M350 301h6v6h-6z M318 325h14v14h-14z M320 327h10v10h-10z M322 329h6v6h-6z M334 299h4v4h-4z M340 303h4v4h-4z M334 309h4v4h-4z M344 309h4v4h-4z M352 313h4v4h-4z M338 315h4v4h-4z M328 317h4v4h-4z M320 319h4v4h-4z M334 323h4v4h-4z M346 321h4v4h-4z M354 325h4v4h-4z M338 329h4v4h-4z M348 331h4v4h-4z M330 331h4v4h-4z M354 333h4v4h-4z M342 317h4v4h-4z
+             M503 297h14v14h-14z M505 299h10v10h-10z M507 301h6v6h-6z M531 297h14v14h-14z M533 299h10v10h-10z M535 301h6v6h-6z M503 325h14v14h-14z M505 327h10v10h-10z M507 329h6v6h-6z M519 299h4v4h-4z M525 303h4v4h-4z M519 309h4v4h-4z M529 309h4v4h-4z M537 313h4v4h-4z M523 315h4v4h-4z M513 317h4v4h-4z M505 319h4v4h-4z M519 323h4v4h-4z M531 321h4v4h-4z M539 325h4v4h-4z M523 329h4v4h-4z M533 331h4v4h-4z M515 331h4v4h-4z M539 333h4v4h-4z M527 317h4v4h-4z" fill="currentColor" fill-rule="evenodd"/>
+  </svg>
+  <p class="chln__three small muted">Every sheet prints three copies: bank, school, parent.</p>
+
+  <div class="doc doc--lift">
+    <!-- the sheet margin, p-2 in the component, as a percentage so it holds at
+         any width -->
+    <div class="chln__sheet">
+      <div class="chln__row">
+        <svg class="chln__copy" viewBox="0 0 176 352" role="img"
+               aria-labelledby="chln-t-bank" aria-describedby="chln-d-bank">
+          <title id="chln-t-bank">Fee challan, bank copy</title>
+          <desc id="chln-d-bank">Al-Noor School fee challan, bank copy. Challan 7KQ4M2WD for Ahmed Aslam, Class 5-A, Roll 12, GR No 1187, father Muhammad Aslam, month October 2026. Tuition Rs 1,800 plus transport Rs 700 less a sibling discount of Rs 200 is Rs 2,300 for the month. Added to previous dues of Rs 1,200 the total payable is Rs 3,500, due 10-10-2026. A space is ruled off for the bank stamp and signature, beside a QR code carrying the challan number.</desc>
+
+          <!-- The form grid: one path for the horizontals, one for the
+               verticals, both at the same hairline weight. -->
+          <g class="chln__r-form" fill="none" stroke="currentColor" stroke-width="1">
+            <path d="M0.5 0.5H175.5 M0.5 351.5H175.5 M48 40H128 M48 55H128 M9 62H167 M9 149H167 M9 166H167 M9 211H167"/>
+            <path d="M0.5 0.5V351.5 M175.5 0.5V351.5 M48 40V55 M128 40V55"/>
+          </g>
+          <!-- The two rules the spec weights differently. stroke-width and
+               stroke-dasharray are per element, so these cannot join the
+               two paths above. -->
+          <path class="chln__r-total" d="M9 244H167 M9 270H167" fill="none" stroke="currentColor" stroke-width="2"/>
+          <path class="chln__r-stamp" d="M9 329H112" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="2 2"/>
+
+          <!-- letterhead. No logo line and no phone line: the component
+               renders each only when the school has stored one, so their
+               absence is the real behaviour, not a gap. -->
+          <text x="88" y="22" text-anchor="middle" font-size="11" font-weight="700" letter-spacing="0.9" fill="currentColor">AL-NOOR SCHOOL</text>
+          <text x="88" y="34" text-anchor="middle" font-size="9" class="chln__t-lbl" fill="currentColor">Jhang Road, Faisalabad</text>
+          <text x="88" y="51" text-anchor="middle" font-size="9.5" font-weight="600" letter-spacing="0.6" fill="currentColor">BANK COPY</text>
+
+          <!-- the six rows, in the component's order -->
+          <text x="9" y="75" font-size="9.4" class="chln__t-lbl" fill="currentColor">Challan</text>
+          <text x="167" y="75" text-anchor="end" font-size="9.4" font-weight="600" class="tnum" fill="currentColor">7KQ4M2WD</text>
+          <text x="9" y="88" font-size="9.4" class="chln__t-lbl" fill="currentColor">Month</text>
+          <text x="167" y="88" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">October 2026</text>
+          <text x="9" y="101" font-size="9.4" class="chln__t-lbl" fill="currentColor">Student</text>
+          <text x="167" y="101" text-anchor="end" font-size="9.4" font-weight="600" fill="currentColor">Ahmed Aslam</text>
+          <text x="9" y="114" font-size="9.4" class="chln__t-lbl" fill="currentColor">Father</text>
+          <text x="167" y="114" text-anchor="end" font-size="9.4" fill="currentColor">Muhammad Aslam</text>
+          <text x="9" y="127" font-size="9.4" class="chln__t-lbl" fill="currentColor">Class</text>
+          <text x="167" y="127" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">Class 5-A &#183; Roll 12</text>
+          <text x="9" y="140" font-size="9.4" class="chln__t-lbl" fill="currentColor">GR No</text>
+          <text x="167" y="140" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">1187</text>
+
+          <!-- Particulars / Rs. The unit is stated once, in the column head,
+               which is what the head is for. -->
+          <text x="9" y="161" font-size="9.4" font-weight="600" fill="currentColor">Particulars</text>
+          <text x="167" y="161" text-anchor="end" font-size="9.4" font-weight="600" fill="currentColor">Rs</text>
+          <text x="9" y="178" font-size="9.4" fill="currentColor">Tuition</text>
+          <text x="167" y="178" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">1,800</text>
+          <text x="9" y="191" font-size="9.4" fill="currentColor">Transport</text>
+          <text x="167" y="191" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">700</text>
+          <text x="9" y="204" font-size="9.4" fill="currentColor">Less: Sibling discount</text>
+          <text x="167" y="204" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">(200)</text>
+          <text x="9" y="223" font-size="9.4" fill="currentColor">This month</text>
+          <text x="167" y="223" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">2,300</text>
+          <text x="9" y="236" font-size="9.4" fill="currentColor">Previous dues</text>
+          <text x="167" y="236" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">1,200</text>
+          <text x="9" y="258" font-size="9.4" font-weight="700" fill="currentColor">TOTAL PAYABLE</text>
+          <text x="167" y="258" text-anchor="end" font-size="9.4" font-weight="700" class="tnum" fill="currentColor">3,500</text>
+
+          <text x="9" y="284" font-size="9.4" class="chln__t-lbl" fill="currentColor">Due date</text>
+          <text x="167" y="284" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">10-10-2026</text>
+          <text x="9" y="340" font-size="9" class="chln__t-lbl" fill="currentColor">Bank stamp &amp; signature</text>
+
+          <!-- A real QR, version 1, error correction M, zero margin: the same
+               21 module matrix QrCode.tsx produces for this voucher code. 21
+               modules at scale 2, so every module edge lands on an integer
+               user unit and nothing softens on a phone. -->
+          <path d="M0 0h7v1h-7zM8 0h5v1h-5zM14 0h7v1h-7zM0 1h1v1h-1zM6 1h1v1h-1zM8 1h2v1h-2zM12 1h1v1h-1zM14 1h1v1h-1zM20 1h1v1h-1zM0 2h1v1h-1zM2 2h3v1h-3zM6 2h1v1h-1zM9 2h3v1h-3zM14 2h1v1h-1zM16 2h3v1h-3zM20 2h1v1h-1zM0 3h1v1h-1zM2 3h3v1h-3zM6 3h1v1h-1zM8 3h1v1h-1zM12 3h1v1h-1zM14 3h1v1h-1zM16 3h3v1h-3zM20 3h1v1h-1zM0 4h1v1h-1zM2 4h3v1h-3zM6 4h1v1h-1zM8 4h1v1h-1zM12 4h1v1h-1zM14 4h1v1h-1zM16 4h3v1h-3zM20 4h1v1h-1zM0 5h1v1h-1zM6 5h1v1h-1zM8 5h5v1h-5zM14 5h1v1h-1zM20 5h1v1h-1zM0 6h7v1h-7zM8 6h1v1h-1zM10 6h1v1h-1zM12 6h1v1h-1zM14 6h7v1h-7zM11 7h2v1h-2zM3 8h1v1h-1zM6 8h1v1h-1zM11 8h1v1h-1zM15 8h3v1h-3zM19 8h2v1h-2zM2 9h1v1h-1zM4 9h2v1h-2zM10 9h2v1h-2zM14 9h2v1h-2zM17 9h2v1h-2zM20 9h1v1h-1zM1 10h1v1h-1zM3 10h1v1h-1zM6 10h1v1h-1zM8 10h1v1h-1zM10 10h1v1h-1zM13 10h6v1h-6zM3 11h1v1h-1zM5 11h1v1h-1zM8 11h2v1h-2zM12 11h1v1h-1zM14 11h3v1h-3zM19 11h2v1h-2zM0 12h4v1h-4zM6 12h2v1h-2zM9 12h1v1h-1zM11 12h1v1h-1zM14 12h2v1h-2zM19 12h2v1h-2zM8 13h2v1h-2zM11 13h2v1h-2zM15 13h2v1h-2zM18 13h2v1h-2zM0 14h7v1h-7zM9 14h2v1h-2zM12 14h1v1h-1zM16 14h3v1h-3zM0 15h1v1h-1zM6 15h1v1h-1zM9 15h2v1h-2zM12 15h2v1h-2zM15 15h1v1h-1zM18 15h2v1h-2zM0 16h1v1h-1zM2 16h3v1h-3zM6 16h1v1h-1zM9 16h1v1h-1zM12 16h3v1h-3zM16 16h2v1h-2zM20 16h1v1h-1zM0 17h1v1h-1zM2 17h3v1h-3zM6 17h1v1h-1zM8 17h1v1h-1zM10 17h1v1h-1zM12 17h1v1h-1zM14 17h3v1h-3zM18 17h3v1h-3zM0 18h1v1h-1zM2 18h3v1h-3zM6 18h1v1h-1zM9 18h1v1h-1zM11 18h6v1h-6zM18 18h1v1h-1zM20 18h1v1h-1zM0 19h1v1h-1zM6 19h1v1h-1zM9 19h1v1h-1zM13 19h1v1h-1zM16 19h2v1h-2zM20 19h1v1h-1zM0 20h7v1h-7zM9 20h1v1h-1zM11 20h3v1h-3zM15 20h1v1h-1zM17 20h1v1h-1z" fill="currentColor" transform="translate(124 288) scale(2)" aria-hidden="true"/>
+          <!-- tracking-tight on the code, as the component sets it. -->
+          <text x="144" y="340" text-anchor="middle" font-size="9" letter-spacing="-0.2" class="chln__t-mono" fill="currentColor">7KQ4M2WD</text>
+        </svg>
+
+        <svg class="chln__copy" viewBox="0 0 176 352" role="img"
+               aria-labelledby="chln-t-school" aria-describedby="chln-d-school">
+          <title id="chln-t-school">Fee challan, school copy</title>
+          <desc id="chln-d-school">Al-Noor School fee challan, school copy. The same challan, 7KQ4M2WD, with figures identical to the bank copy: Rs 3,500 payable by 10-10-2026. This is the copy that comes back stamped, and the one the office reconciles against.</desc>
+
+          <!-- The form grid: one path for the horizontals, one for the
+               verticals, both at the same hairline weight. -->
+          <g class="chln__r-form" fill="none" stroke="currentColor" stroke-width="1">
+            <path d="M0.5 0.5H175.5 M0.5 351.5H175.5 M41 40H136 M41 55H136 M9 62H167 M9 149H167 M9 166H167 M9 211H167"/>
+            <path d="M0.5 0.5V351.5 M175.5 0.5V351.5 M41 40V55 M136 40V55"/>
+          </g>
+          <!-- The two rules the spec weights differently. stroke-width and
+               stroke-dasharray are per element, so these cannot join the
+               two paths above. -->
+          <path class="chln__r-total" d="M9 244H167 M9 270H167" fill="none" stroke="currentColor" stroke-width="2"/>
+          <path class="chln__r-stamp" d="M9 329H112" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="2 2"/>
+
+          <!-- letterhead. No logo line and no phone line: the component
+               renders each only when the school has stored one, so their
+               absence is the real behaviour, not a gap. -->
+          <text x="88" y="22" text-anchor="middle" font-size="11" font-weight="700" letter-spacing="0.9" fill="currentColor">AL-NOOR SCHOOL</text>
+          <text x="88" y="34" text-anchor="middle" font-size="9" class="chln__t-lbl" fill="currentColor">Jhang Road, Faisalabad</text>
+          <text x="88" y="51" text-anchor="middle" font-size="9.5" font-weight="600" letter-spacing="0.6" fill="currentColor">SCHOOL COPY</text>
+
+          <!-- the six rows, in the component's order -->
+          <text x="9" y="75" font-size="9.4" class="chln__t-lbl" fill="currentColor">Challan</text>
+          <text x="167" y="75" text-anchor="end" font-size="9.4" font-weight="600" class="tnum" fill="currentColor">7KQ4M2WD</text>
+          <text x="9" y="88" font-size="9.4" class="chln__t-lbl" fill="currentColor">Month</text>
+          <text x="167" y="88" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">October 2026</text>
+          <text x="9" y="101" font-size="9.4" class="chln__t-lbl" fill="currentColor">Student</text>
+          <text x="167" y="101" text-anchor="end" font-size="9.4" font-weight="600" fill="currentColor">Ahmed Aslam</text>
+          <text x="9" y="114" font-size="9.4" class="chln__t-lbl" fill="currentColor">Father</text>
+          <text x="167" y="114" text-anchor="end" font-size="9.4" fill="currentColor">Muhammad Aslam</text>
+          <text x="9" y="127" font-size="9.4" class="chln__t-lbl" fill="currentColor">Class</text>
+          <text x="167" y="127" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">Class 5-A &#183; Roll 12</text>
+          <text x="9" y="140" font-size="9.4" class="chln__t-lbl" fill="currentColor">GR No</text>
+          <text x="167" y="140" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">1187</text>
+
+          <!-- Particulars / Rs. The unit is stated once, in the column head,
+               which is what the head is for. -->
+          <text x="9" y="161" font-size="9.4" font-weight="600" fill="currentColor">Particulars</text>
+          <text x="167" y="161" text-anchor="end" font-size="9.4" font-weight="600" fill="currentColor">Rs</text>
+          <text x="9" y="178" font-size="9.4" fill="currentColor">Tuition</text>
+          <text x="167" y="178" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">1,800</text>
+          <text x="9" y="191" font-size="9.4" fill="currentColor">Transport</text>
+          <text x="167" y="191" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">700</text>
+          <text x="9" y="204" font-size="9.4" fill="currentColor">Less: Sibling discount</text>
+          <text x="167" y="204" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">(200)</text>
+          <text x="9" y="223" font-size="9.4" fill="currentColor">This month</text>
+          <text x="167" y="223" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">2,300</text>
+          <text x="9" y="236" font-size="9.4" fill="currentColor">Previous dues</text>
+          <text x="167" y="236" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">1,200</text>
+          <text x="9" y="258" font-size="9.4" font-weight="700" fill="currentColor">TOTAL PAYABLE</text>
+          <text x="167" y="258" text-anchor="end" font-size="9.4" font-weight="700" class="tnum" fill="currentColor">3,500</text>
+
+          <text x="9" y="284" font-size="9.4" class="chln__t-lbl" fill="currentColor">Due date</text>
+          <text x="167" y="284" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">10-10-2026</text>
+          <text x="9" y="340" font-size="9" class="chln__t-lbl" fill="currentColor">Bank stamp &amp; signature</text>
+
+          <!-- A real QR, version 1, error correction M, zero margin: the same
+               21 module matrix QrCode.tsx produces for this voucher code. 21
+               modules at scale 2, so every module edge lands on an integer
+               user unit and nothing softens on a phone. -->
+          <path d="M0 0h7v1h-7zM8 0h5v1h-5zM14 0h7v1h-7zM0 1h1v1h-1zM6 1h1v1h-1zM8 1h2v1h-2zM12 1h1v1h-1zM14 1h1v1h-1zM20 1h1v1h-1zM0 2h1v1h-1zM2 2h3v1h-3zM6 2h1v1h-1zM9 2h3v1h-3zM14 2h1v1h-1zM16 2h3v1h-3zM20 2h1v1h-1zM0 3h1v1h-1zM2 3h3v1h-3zM6 3h1v1h-1zM8 3h1v1h-1zM12 3h1v1h-1zM14 3h1v1h-1zM16 3h3v1h-3zM20 3h1v1h-1zM0 4h1v1h-1zM2 4h3v1h-3zM6 4h1v1h-1zM8 4h1v1h-1zM12 4h1v1h-1zM14 4h1v1h-1zM16 4h3v1h-3zM20 4h1v1h-1zM0 5h1v1h-1zM6 5h1v1h-1zM8 5h5v1h-5zM14 5h1v1h-1zM20 5h1v1h-1zM0 6h7v1h-7zM8 6h1v1h-1zM10 6h1v1h-1zM12 6h1v1h-1zM14 6h7v1h-7zM11 7h2v1h-2zM3 8h1v1h-1zM6 8h1v1h-1zM11 8h1v1h-1zM15 8h3v1h-3zM19 8h2v1h-2zM2 9h1v1h-1zM4 9h2v1h-2zM10 9h2v1h-2zM14 9h2v1h-2zM17 9h2v1h-2zM20 9h1v1h-1zM1 10h1v1h-1zM3 10h1v1h-1zM6 10h1v1h-1zM8 10h1v1h-1zM10 10h1v1h-1zM13 10h6v1h-6zM3 11h1v1h-1zM5 11h1v1h-1zM8 11h2v1h-2zM12 11h1v1h-1zM14 11h3v1h-3zM19 11h2v1h-2zM0 12h4v1h-4zM6 12h2v1h-2zM9 12h1v1h-1zM11 12h1v1h-1zM14 12h2v1h-2zM19 12h2v1h-2zM8 13h2v1h-2zM11 13h2v1h-2zM15 13h2v1h-2zM18 13h2v1h-2zM0 14h7v1h-7zM9 14h2v1h-2zM12 14h1v1h-1zM16 14h3v1h-3zM0 15h1v1h-1zM6 15h1v1h-1zM9 15h2v1h-2zM12 15h2v1h-2zM15 15h1v1h-1zM18 15h2v1h-2zM0 16h1v1h-1zM2 16h3v1h-3zM6 16h1v1h-1zM9 16h1v1h-1zM12 16h3v1h-3zM16 16h2v1h-2zM20 16h1v1h-1zM0 17h1v1h-1zM2 17h3v1h-3zM6 17h1v1h-1zM8 17h1v1h-1zM10 17h1v1h-1zM12 17h1v1h-1zM14 17h3v1h-3zM18 17h3v1h-3zM0 18h1v1h-1zM2 18h3v1h-3zM6 18h1v1h-1zM9 18h1v1h-1zM11 18h6v1h-6zM18 18h1v1h-1zM20 18h1v1h-1zM0 19h1v1h-1zM6 19h1v1h-1zM9 19h1v1h-1zM13 19h1v1h-1zM16 19h2v1h-2zM20 19h1v1h-1zM0 20h7v1h-7zM9 20h1v1h-1zM11 20h3v1h-3zM15 20h1v1h-1zM17 20h1v1h-1z" fill="currentColor" transform="translate(124 288) scale(2)" aria-hidden="true"/>
+          <!-- tracking-tight on the code, as the component sets it. -->
+          <text x="144" y="340" text-anchor="middle" font-size="9" letter-spacing="-0.2" class="chln__t-mono" fill="currentColor">7KQ4M2WD</text>
+        </svg>
+
+        <svg class="chln__copy" viewBox="0 0 176 352" role="img"
+               aria-labelledby="chln-t-parent" aria-describedby="chln-d-parent">
+          <title id="chln-t-parent">Fee challan, parent copy</title>
+          <desc id="chln-d-parent">Al-Noor School fee challan, parent copy. The same challan, 7KQ4M2WD, with figures identical to the bank copy: Rs 3,500 payable by 10-10-2026. This is the copy the family keeps.</desc>
+
+          <!-- The form grid: one path for the horizontals, one for the
+               verticals, both at the same hairline weight. -->
+          <g class="chln__r-form" fill="none" stroke="currentColor" stroke-width="1">
+            <path d="M0.5 0.5H175.5 M0.5 351.5H175.5 M42 40H135 M42 55H135 M9 62H167 M9 149H167 M9 166H167 M9 211H167"/>
+            <path d="M0.5 0.5V351.5 M175.5 0.5V351.5 M42 40V55 M135 40V55"/>
+          </g>
+          <!-- The two rules the spec weights differently. stroke-width and
+               stroke-dasharray are per element, so these cannot join the
+               two paths above. -->
+          <path class="chln__r-total" d="M9 244H167 M9 270H167" fill="none" stroke="currentColor" stroke-width="2"/>
+          <path class="chln__r-stamp" d="M9 329H112" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="2 2"/>
+
+          <!-- letterhead. No logo line and no phone line: the component
+               renders each only when the school has stored one, so their
+               absence is the real behaviour, not a gap. -->
+          <text x="88" y="22" text-anchor="middle" font-size="11" font-weight="700" letter-spacing="0.9" fill="currentColor">AL-NOOR SCHOOL</text>
+          <text x="88" y="34" text-anchor="middle" font-size="9" class="chln__t-lbl" fill="currentColor">Jhang Road, Faisalabad</text>
+          <text x="88" y="51" text-anchor="middle" font-size="9.5" font-weight="600" letter-spacing="0.6" fill="currentColor">PARENT COPY</text>
+
+          <!-- the six rows, in the component's order -->
+          <text x="9" y="75" font-size="9.4" class="chln__t-lbl" fill="currentColor">Challan</text>
+          <text x="167" y="75" text-anchor="end" font-size="9.4" font-weight="600" class="tnum" fill="currentColor">7KQ4M2WD</text>
+          <text x="9" y="88" font-size="9.4" class="chln__t-lbl" fill="currentColor">Month</text>
+          <text x="167" y="88" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">October 2026</text>
+          <text x="9" y="101" font-size="9.4" class="chln__t-lbl" fill="currentColor">Student</text>
+          <text x="167" y="101" text-anchor="end" font-size="9.4" font-weight="600" fill="currentColor">Ahmed Aslam</text>
+          <text x="9" y="114" font-size="9.4" class="chln__t-lbl" fill="currentColor">Father</text>
+          <text x="167" y="114" text-anchor="end" font-size="9.4" fill="currentColor">Muhammad Aslam</text>
+          <text x="9" y="127" font-size="9.4" class="chln__t-lbl" fill="currentColor">Class</text>
+          <text x="167" y="127" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">Class 5-A &#183; Roll 12</text>
+          <text x="9" y="140" font-size="9.4" class="chln__t-lbl" fill="currentColor">GR No</text>
+          <text x="167" y="140" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">1187</text>
+
+          <!-- Particulars / Rs. The unit is stated once, in the column head,
+               which is what the head is for. -->
+          <text x="9" y="161" font-size="9.4" font-weight="600" fill="currentColor">Particulars</text>
+          <text x="167" y="161" text-anchor="end" font-size="9.4" font-weight="600" fill="currentColor">Rs</text>
+          <text x="9" y="178" font-size="9.4" fill="currentColor">Tuition</text>
+          <text x="167" y="178" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">1,800</text>
+          <text x="9" y="191" font-size="9.4" fill="currentColor">Transport</text>
+          <text x="167" y="191" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">700</text>
+          <text x="9" y="204" font-size="9.4" fill="currentColor">Less: Sibling discount</text>
+          <text x="167" y="204" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">(200)</text>
+          <text x="9" y="223" font-size="9.4" fill="currentColor">This month</text>
+          <text x="167" y="223" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">2,300</text>
+          <text x="9" y="236" font-size="9.4" fill="currentColor">Previous dues</text>
+          <text x="167" y="236" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">1,200</text>
+          <text x="9" y="258" font-size="9.4" font-weight="700" fill="currentColor">TOTAL PAYABLE</text>
+          <text x="167" y="258" text-anchor="end" font-size="9.4" font-weight="700" class="tnum" fill="currentColor">3,500</text>
+
+          <text x="9" y="284" font-size="9.4" class="chln__t-lbl" fill="currentColor">Due date</text>
+          <text x="167" y="284" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">10-10-2026</text>
+          <text x="9" y="340" font-size="9" class="chln__t-lbl" fill="currentColor">Bank stamp &amp; signature</text>
+
+          <!-- A real QR, version 1, error correction M, zero margin: the same
+               21 module matrix QrCode.tsx produces for this voucher code. 21
+               modules at scale 2, so every module edge lands on an integer
+               user unit and nothing softens on a phone. -->
+          <path d="M0 0h7v1h-7zM8 0h5v1h-5zM14 0h7v1h-7zM0 1h1v1h-1zM6 1h1v1h-1zM8 1h2v1h-2zM12 1h1v1h-1zM14 1h1v1h-1zM20 1h1v1h-1zM0 2h1v1h-1zM2 2h3v1h-3zM6 2h1v1h-1zM9 2h3v1h-3zM14 2h1v1h-1zM16 2h3v1h-3zM20 2h1v1h-1zM0 3h1v1h-1zM2 3h3v1h-3zM6 3h1v1h-1zM8 3h1v1h-1zM12 3h1v1h-1zM14 3h1v1h-1zM16 3h3v1h-3zM20 3h1v1h-1zM0 4h1v1h-1zM2 4h3v1h-3zM6 4h1v1h-1zM8 4h1v1h-1zM12 4h1v1h-1zM14 4h1v1h-1zM16 4h3v1h-3zM20 4h1v1h-1zM0 5h1v1h-1zM6 5h1v1h-1zM8 5h5v1h-5zM14 5h1v1h-1zM20 5h1v1h-1zM0 6h7v1h-7zM8 6h1v1h-1zM10 6h1v1h-1zM12 6h1v1h-1zM14 6h7v1h-7zM11 7h2v1h-2zM3 8h1v1h-1zM6 8h1v1h-1zM11 8h1v1h-1zM15 8h3v1h-3zM19 8h2v1h-2zM2 9h1v1h-1zM4 9h2v1h-2zM10 9h2v1h-2zM14 9h2v1h-2zM17 9h2v1h-2zM20 9h1v1h-1zM1 10h1v1h-1zM3 10h1v1h-1zM6 10h1v1h-1zM8 10h1v1h-1zM10 10h1v1h-1zM13 10h6v1h-6zM3 11h1v1h-1zM5 11h1v1h-1zM8 11h2v1h-2zM12 11h1v1h-1zM14 11h3v1h-3zM19 11h2v1h-2zM0 12h4v1h-4zM6 12h2v1h-2zM9 12h1v1h-1zM11 12h1v1h-1zM14 12h2v1h-2zM19 12h2v1h-2zM8 13h2v1h-2zM11 13h2v1h-2zM15 13h2v1h-2zM18 13h2v1h-2zM0 14h7v1h-7zM9 14h2v1h-2zM12 14h1v1h-1zM16 14h3v1h-3zM0 15h1v1h-1zM6 15h1v1h-1zM9 15h2v1h-2zM12 15h2v1h-2zM15 15h1v1h-1zM18 15h2v1h-2zM0 16h1v1h-1zM2 16h3v1h-3zM6 16h1v1h-1zM9 16h1v1h-1zM12 16h3v1h-3zM16 16h2v1h-2zM20 16h1v1h-1zM0 17h1v1h-1zM2 17h3v1h-3zM6 17h1v1h-1zM8 17h1v1h-1zM10 17h1v1h-1zM12 17h1v1h-1zM14 17h3v1h-3zM18 17h3v1h-3zM0 18h1v1h-1zM2 18h3v1h-3zM6 18h1v1h-1zM9 18h1v1h-1zM11 18h6v1h-6zM18 18h1v1h-1zM20 18h1v1h-1zM0 19h1v1h-1zM6 19h1v1h-1zM9 19h1v1h-1zM13 19h1v1h-1zM16 19h2v1h-2zM20 19h1v1h-1zM0 20h7v1h-7zM9 20h1v1h-1zM11 20h3v1h-3zM15 20h1v1h-1zM17 20h1v1h-1z" fill="currentColor" transform="translate(124 288) scale(2)" aria-hidden="true"/>
+          <!-- tracking-tight on the code, as the component sets it. -->
+          <text x="144" y="340" text-anchor="middle" font-size="9" letter-spacing="-0.2" class="chln__t-mono" fill="currentColor">7KQ4M2WD</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <p class="doc__cap chln__cap--all">
+    Three copies on one landscape sheet, in the order a bank expects. The bank
+    keeps the first, the second comes back stamped and is what your office
+    reconciles against, the family keeps the third. Identical figures on all
+    three and the same challan number on each, so any copy that reaches the
+    counter can be scanned.
+  </p>
+  <p class="doc__cap chln__cap--one">One of the three copies on every sheet.</p>
+</div>
+
       </div>
       <div>
-        <!--ART:attendance-->
+        <!-- ============================================================================
+     ART:attendance  ::  the daily attendance sheet.
+
+     Drawn against web/src/pages/attendance/AttendanceSheet.tsx and nothing
+     else, plus the two things that file imports and prints through:
+       web/src/lib/constants.ts   ATTENDANCE_STATUSES and ATTENDANCE_SHORT,
+                                  which are the source of the status codes
+       web/src/lib/format.ts      fmtDate, which is the source of the date
+     Everything on this sheet is something that component actually emits, in
+     the order it emits it:
+       1. school name, then "Daily Attendance Sheet" in tracked caps
+       2. one line carrying Class, Date and Students, wrapping when it must
+       3. a four column table whose heads are exactly Roll, Student, Status,
+          Remarks, ruled above and below, Remarks left blank as it prints
+       4. the status count legend, which maps ALL FIVE statuses, zeros included
+       5. Class Teacher and Principal at the foot
+     The component's Print and Close buttons are print:hidden, so they are not
+     part of the printed object and are not drawn.
+
+     THREE PLACES THIS FOLLOWS THE COMPONENT AGAINST THE BRIEF:
+
+     a. THE STATUS CODES ARE P, A, L, Lt AND A HALF SIGN, not P, A and L.
+        ATTENDANCE_SHORT is built from ATTENDANCE_STATUSES, which carries five
+        entries: present P, absent A, leave L, late Lt, half_day as the half
+        sign. Late and half day are real codes in this product, so the legend
+        prints five items and two of them are zero on this day.
+
+     b. THE DATE READS "4 Sept 2026", not 04-09-2026. fmtDate calls
+        toLocaleDateString('en-PK', { year: 'numeric', month: 'short',
+        day: 'numeric' }), and en-PK renders the short September as "Sept".
+        The receipt's 04-09-2026 comes from a different formatter, so the two
+        artefacts differ on purpose: each prints what its own screen prints.
+
+     c. EVERY ROW CARRIES A ROLL NUMBER. The component falls back to a dash
+        glyph when roll_no is null. That glyph is banned here, so no row is
+        given a null roll and the fallback never renders.
+
+     THE STUDENT COLUMN IS EIGHT 1px RULES. No pupil is invented and no child
+     is depicted: each row carries the blank write-on line a name would sit on,
+     at --rule-3, which site/styles.css defines as the weight for a form field
+     border. The light row separators at --rule run under all four columns, so
+     the Remarks column reads as the write-in column it is.
+
+     NO SVG, deliberately, as with the receipt: the figures stay selectable
+     text, Chrome translate to Urdu can rewrite the labels without bursting the
+     layout, and the sheet grows under Android font scaling. Nothing here is a
+     filter, a blend mode or a transformed glyph. Every rule is a border rather
+     than a background, because borders print and background colour does not.
+
+     Ink on white throughout. Not one hue inside the sheet: no fill, no chip,
+     no tint, and in particular nothing green on Present or red on Absent,
+     because the codes have to survive a photocopier that cannot tell
+     #4338CA from #B91C1C.
+
+     ARITHMETIC, the one thing this audience checks. Eight rows are drawn,
+     Students reads 8, and the legend sums to the same 8:
+       P 6 + A 1 + L 0 + Lt 1 + half day 0 = 8
+     The six P, one A and one Lt in the Status column are the same six, one and
+     one that the legend counts.
+     ============================================================================ -->
+<figure class="att-fig">
+  <div class="doc doc--lift att">
+    <div class="att__in">
+
+      <header class="att__head">
+        <p class="att__school">Al-Noor School</p>
+        <p class="att__kind">Daily Attendance Sheet</p>
+      </header>
+
+      <!-- The component's flex row. At this column width it wraps to two
+           lines, Class and Date on the first, Students on the second. -->
+      <dl class="att__meta">
+        <div class="att__mi">
+          <dt>Class:</dt>
+          <dd>Class 5 &#183; Section A</dd>
+        </div>
+        <div class="att__mi">
+          <dt>Date:</dt>
+          <dd class="tnum">4 Sept 2026</dd>
+        </div>
+        <div class="att__mi">
+          <dt>Students:</dt>
+          <dd class="tnum">8</dd>
+        </div>
+      </dl>
+
+      <table class="att__tbl">
+        <caption class="att__sr">
+          Daily attendance sheet, Al-Noor School, Class 5 Section A, 4 Sept
+          2026. Eight pupils on the register. Pupil names are left off this
+          sample sheet, so the Student column is a blank rule on every row and
+          the Remarks column is blank as it prints.
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col" class="att__h-roll">Roll</th>
+            <th scope="col" class="att__h-name">Student</th>
+            <th scope="col" class="att__h-st">Status</th>
+            <th scope="col" class="att__h-rem">Remarks</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row" class="att__roll">01</th>
+            <td class="att__name"><span class="att__nameline" aria-hidden="true"></span></td>
+            <td class="att__st">P</td>
+            <td class="att__rem"></td>
+          </tr>
+          <tr>
+            <th scope="row" class="att__roll">02</th>
+            <td class="att__name"><span class="att__nameline" aria-hidden="true"></span></td>
+            <td class="att__st">P</td>
+            <td class="att__rem"></td>
+          </tr>
+          <tr>
+            <th scope="row" class="att__roll">03</th>
+            <td class="att__name"><span class="att__nameline" aria-hidden="true"></span></td>
+            <td class="att__st">A</td>
+            <td class="att__rem"></td>
+          </tr>
+          <tr>
+            <th scope="row" class="att__roll">04</th>
+            <td class="att__name"><span class="att__nameline" aria-hidden="true"></span></td>
+            <td class="att__st">P</td>
+            <td class="att__rem"></td>
+          </tr>
+          <tr>
+            <th scope="row" class="att__roll">05</th>
+            <td class="att__name"><span class="att__nameline" aria-hidden="true"></span></td>
+            <td class="att__st">P</td>
+            <td class="att__rem"></td>
+          </tr>
+          <tr>
+            <th scope="row" class="att__roll">06</th>
+            <td class="att__name"><span class="att__nameline" aria-hidden="true"></span></td>
+            <td class="att__st">Lt</td>
+            <td class="att__rem"></td>
+          </tr>
+          <tr>
+            <th scope="row" class="att__roll">07</th>
+            <td class="att__name"><span class="att__nameline" aria-hidden="true"></span></td>
+            <td class="att__st">P</td>
+            <td class="att__rem"></td>
+          </tr>
+          <tr>
+            <th scope="row" class="att__roll">08</th>
+            <td class="att__name"><span class="att__nameline" aria-hidden="true"></span></td>
+            <td class="att__st">P</td>
+            <td class="att__rem"></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- ATTENDANCE_STATUSES in its declared order, every entry printed with
+           its count, exactly as the component does. The list is given a name
+           for assistive technology, which the printed sheet does not need
+           because the table sits directly above it. -->
+      <ul class="att__legend" aria-label="Status counts for 4 Sept 2026">
+        <li><b>P</b> Present: <span class="tnum">6</span></li>
+        <li><b>A</b> Absent: <span class="tnum">1</span></li>
+        <li><b>L</b> Leave: <span class="tnum">0</span></li>
+        <li><b>Lt</b> Late: <span class="tnum">1</span></li>
+        <li><b>&#189;</b> Half day: <span class="tnum">0</span></li>
+      </ul>
+
+      <div class="att__sign">
+        <p class="att__sig">Class Teacher</p>
+        <p class="att__sig">Principal</p>
+      </div>
+
+    </div>
+  </div>
+  <figcaption class="doc__cap">
+    The class register as it prints, straight off the screen a teacher marks on
+    in the morning. Names are held off this sample, one rule each, and the
+    counts still have to meet the roll: 6 present, 1 absent, 1 late, 8 on the
+    register.
+  </figcaption>
+</figure>
+
       </div>
       <div>
         <!--ART:resultcard-->
@@ -475,7 +1184,141 @@
         </p>
       </div>
       <div>
-        <!--ART:reversal-->
+        <!-- ART:reversal, the ledger reversal pair.
+
+     Drawn against web/src/pages/fees/CollectPayment.tsx (the payments table and
+     its Reverse action) and supabase/migrations/0021_fee_fixes.sql, function
+     fn_reverse_payment, which is what makes this artefact truthful rather than
+     decorative: a reversal INSERTS a new payment row. It takes its own gapless
+     receipt number from next_counter('receipt'), carries the negative of the
+     original amount, records received_by as the actor and note as the typed
+     reason, and never touches the row it reverses. The function also refuses to
+     reverse a reversal and refuses a second reversal of the same payment, which
+     is why exactly two lines can ever exist for one mistake. Only owner or
+     principal may call it, which is why the second line is signed by the
+     principal and the first by the clerk.
+
+     The amount format is the one already in web/src/pages/fees/ChallanPrint.tsx
+     for discount lines, `({fmtPKR(amount)})`: parentheses around a figure whose
+     sign is already leading, so the entry reads as a deduction with the minus
+     visible and the brackets carrying the same meaning again. Two signals, both
+     pure shape, so neither greyscale nor a third generation photocopy can lose
+     it. The minus is U+2212, the character web/src/lib/format.ts uses, not a
+     hyphen.
+
+     No colour inside the sheet, on purpose. Not even --navy for the header:
+     this is paper, so it is ink, rules and nothing else, per the arithmetic
+     noted at the top of site/styles.css. Nothing is struck through and nothing
+     is greyed, because the argument of the whole object is that neither entry
+     was removed. The two rows get identical weight; the only thing marking the
+     second is that it names the first.
+
+     Staff names are part of the same visibly illustrative mockup as the
+     placeholder school and family. No real school is named or implied. -->
+
+<figure class="rev">
+  <div class="doc doc--lift rev__doc">
+
+    <table class="rev__t">
+      <!-- The document header lives in the table's own <caption>, so the table
+           has a real accessible name and no text has to be hidden to give it
+           one. -->
+      <caption>
+        <span class="rev__head">
+          <span class="rev__head__t">Payments ledger</span>
+          <span class="rev__head__s">Al-Noor School, Muhammad Aslam</span>
+          <span class="rev__serial">PAY/1041-1042</span>
+        </span>
+      </caption>
+
+      <thead>
+        <tr>
+          <th scope="col" class="rev__c1">Entry</th>
+          <th scope="col" class="rev__c2">Time</th>
+          <th scope="col" class="rev__c3">By</th>
+          <th scope="col" class="rev__c4">Reason</th>
+          <th scope="col" class="rev__c5 rev__num">Amount</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        <tr>
+          <td data-th="Entry">
+            <span class="rev__v">
+              <b class="rev__no tnum">No 1041</b>
+              <span class="rev__sub">Ahmed, Class 5</span>
+            </span>
+          </td>
+          <td data-th="Time">
+            <span class="rev__v">
+              <span class="rev__date tnum">04-09-2026</span>
+              <span class="rev__sub tnum">10:12</span>
+            </span>
+          </td>
+          <td data-th="By">
+            <span class="rev__v">
+              <span class="rev__who">Asif Mehmood</span>
+              <span class="rev__sub">Clerk</span>
+            </span>
+          </td>
+          <td data-th="Reason">
+            <span class="rev__v">September fee, cash at counter</span>
+          </td>
+          <td data-th="Amount" class="rev__num">
+            <span class="rev__v tnum">Rs 1,700</span>
+          </td>
+        </tr>
+
+        <tr>
+          <td data-th="Entry">
+            <span class="rev__v">
+              <b class="rev__no tnum">No 1042</b>
+              <span class="rev__sub"><svg class="rev__tie" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 1.5v4a2.5 2.5 0 0 1-2.5 2.5H3"/><path d="M5.5 5.5 3 8l2.5 2.5"/></svg>Reversal of No 1041</span>
+            </span>
+          </td>
+          <td data-th="Time">
+            <span class="rev__v">
+              <span class="rev__date tnum">04-09-2026</span>
+              <span class="rev__sub tnum">10:19</span>
+            </span>
+          </td>
+          <td data-th="By">
+            <span class="rev__v">
+              <span class="rev__who">Rukhsana Yousaf</span>
+              <span class="rev__sub">Principal</span>
+            </span>
+          </td>
+          <td data-th="Reason">
+            <span class="rev__v">Fatima's fee posted to Ahmed in error. Corrected on No 1043.</span>
+          </td>
+          <td data-th="Amount" class="rev__num">
+            <span class="rev__v tnum">(&#8722;Rs 1,700)</span>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="rev__foot">
+      <p class="rev__net">
+        <span>Net effect on Ahmed's account</span>
+        <b class="tnum">Rs 0</b>
+      </p>
+      <p class="rev__note">
+        The fee was then taken correctly on receipt No 1043, Rs 5,800 for all
+        three children. Receipt numbers run unbroken: 1041, 1042, 1043.
+      </p>
+    </div>
+
+  </div>
+
+  <figcaption class="doc__cap">
+    Nothing is deleted and nothing is edited. A mistake is corrected by a
+    reversal, so both entries stay in the record, each with its own receipt
+    number, a reason and the name of the person who made it. Neither line is
+    struck out, because neither one was removed.
+  </figcaption>
+</figure>
+
       </div>
     </div>
   </div>
@@ -746,7 +1589,11 @@
     <div class="foot__grid">
       <div>
         <div class="brand" style="color:#fff;margin-bottom:12px">
-          <!--ART:seal-nav-->
+          <svg class="seal" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+  <circle cx="12" cy="12" r="10.75" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <circle cx="12" cy="8" r="1" fill="currentColor"/>
+  <path fill="currentColor" fill-rule="evenodd" d="M6 14h12v5H6zm3 1h6v1H9zm0 2h6v1H9z"/>
+</svg>
           <span>School Manager</span>
         </div>
         <p style="color:var(--on-navy-2);margin-bottom:14px">
