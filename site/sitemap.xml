@@ -1,10 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Replace schoolmanager.pk with the real domain once it is registered, and
-     update <lastmod> whenever the page content meaningfully changes. -->
+<!-- The live domain is theschoolmanager.site. This file previously pointed at
+     schoolmanager.pk, a domain that was never registered, so every URL in it
+     failed to resolve and the sitemap was worthless.
+
+     Update <lastmod> whenever the page content meaningfully changes. -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://schoolmanager.pk/</loc>
-    <lastmod>2026-08-16</lastmod>
+    <loc>https://theschoolmanager.site/</loc>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>

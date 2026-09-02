@@ -3,6 +3,15 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/auth/AuthProvider'
 import { appTitle } from '@/lib/config'
 import { useSchoolName } from '@/hooks/useSchoolName'
+import {
+  AuthError,
+  AuthLayout,
+  AuthSpinner,
+  ReceiptArtefact,
+  authButton,
+  authField,
+  authLabel,
+} from '@/components/AuthLayout'
 
 export function Login() {
   const { signIn } = useAuth()
@@ -27,54 +36,54 @@ export function Login() {
   }
 
   return (
-    <div className="flex h-full items-center justify-center bg-slate-100 p-4">
-      <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow">
-        <h1 className="text-lg font-semibold text-slate-800">{appTitle(schoolName)}</h1>
-        <p className="mt-1 text-sm text-slate-500">Sign in to continue.</p>
-        <form onSubmit={onSubmit} className="mt-5 space-y-3">
-          <label className="block">
-            <span className="text-sm text-slate-600">Email</span>
-            <input
-              type="email"
-              autoComplete="username"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-            />
-          </label>
-          <label className="block">
-            <span className="text-sm text-slate-600">Password</span>
-            <input
-              type="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-            />
-          </label>
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <button
-            type="submit"
-            disabled={busy}
-            className="w-full rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60"
-          >
-            {busy ? 'Signing in…' : 'Sign in'}
-          </button>
-        </form>
-        <p className="mt-3 text-center text-sm">
-          <Link to="/forgot" className="text-slate-500 hover:text-brand-700 hover:underline">
-            Forgotten your password?
-          </Link>
-        </p>
-        <p className="mt-4 text-center text-sm text-slate-500">
-          New school?{' '}
-          <Link to="/signup" className="font-medium text-brand-700 hover:underline">
-            Start a free 14-day trial
-          </Link>
-        </p>
-      </div>
-    </div>
+    <AuthLayout
+      line="The register, the fee book and the attendance sheet, in one place."
+      artefact={<ReceiptArtefact />}
+    >
+      <h1 className="text-2xl font-semibold tracking-[-0.015em] text-slate-900">
+        {appTitle(schoolName)}
+      </h1>
+      <p className="mt-1.5 text-base text-slate-500">Sign in to continue.</p>
+      <form onSubmit={onSubmit} className="mt-7 space-y-4">
+        <label className="block">
+          <span className={authLabel}>Email</span>
+          <input
+            type="email"
+            autoComplete="username"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className={authField}
+          />
+        </label>
+        <label className="block">
+          <span className={authLabel}>Password</span>
+          <input
+            type="password"
+            autoComplete="current-password"
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className={authField}
+          />
+        </label>
+        {error && <AuthError>{error}</AuthError>}
+        <button type="submit" disabled={busy} aria-busy={busy} className={authButton}>
+          {busy && <AuthSpinner />}
+          {busy ? 'Signing in' : 'Sign in'}
+        </button>
+      </form>
+      <p className="mt-4 text-center text-sm">
+        <Link to="/forgot" className="text-slate-500 hover:text-brand-700 hover:underline">
+          Forgotten your password?
+        </Link>
+      </p>
+      <p className="mt-5 border-t border-slate-200 pt-5 text-center text-sm text-slate-500">
+        New school?{' '}
+        <Link to="/signup" className="font-medium text-brand-700 hover:underline">
+          Start a free 14-day trial
+        </Link>
+      </p>
+    </AuthLayout>
   )
 }

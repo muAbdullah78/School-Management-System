@@ -1,43 +1,121 @@
 /* =============================================================================
-   School Manager — marketing site
-   Hand-written CSS. No framework, no build step, no external requests: the
-   whole page is one HTML file plus this stylesheet, so it renders on a slow
-   3G connection in a Faisalabad staffroom as fast as it does on fibre.
+   School Manager, marketing site.
 
-   Type: Charter/Georgia for display, system sans for UI. A serif headline
-   reads as "an institution wrote this", which is the register schools trust.
+   Hand-written CSS. No framework, no build step, no external requests: the
+   whole page is one HTML file, this stylesheet and one small script, so it
+   renders on a slow 3G connection in a Faisalabad staffroom as fast as it does
+   on fibre. That constraint is the reason there are no webfonts and no
+   photography here, and it is a feature rather than a limitation.
+
+   ---------------------------------------------------------------------------
+   WHY THIS LOOKS THE WAY IT DOES
+
+   The previous version was diagnosed as looking dated, and the cause was not
+   the colour. Its display stack began with Charter, which is not installed on
+   Windows, so every school PC in Pakistan fell through to GEORGIA. Georgia
+   headlines are the 2010 to 2014 blog voice, and no amount of palette work
+   fixes that. The stack below asks Windows 11 for "Segoe UI Variable Display",
+   Microsoft's optical cut for large text, which is already installed, which
+   almost no site requests by name, and which is the largest free improvement
+   available on the target machine.
+
+   THE BRAND MOVE IS THE PAPER, NOT THE HUE, and that is a forced choice rather
+   than a preference. Three colours are already spoken for and mean exactly one
+   thing each throughout the product: green is money received, amber is money
+   due, red is genuinely wrong. A fourth semantic hue would collide with one of
+   them, and violet or aubergine collapses into the app's own indigo (measured
+   at 1.10:1 against #4338CA), which would read as a mistake rather than a
+   system. Teal desaturates toward blue-grey under deuteranopia and becomes
+   confusable with chrome. So the identity moves to the substrate: the page is
+   printed on warm stock, #F7F4EC, instead of the cool #F7F8FC screen white
+   every competitor uses. That is visible at a glance in a browser tab, where an
+   eleven degree hue shift is not.
+
+   COLOUR IS CONFINED TO SCREEN CHROME. Nothing that represents something the
+   product prints carries a brand fill. This is not modesty, it is arithmetic:
+   under gamma-space Rec.601, which most print drivers use, brand #4338CA lands
+   at 29.8 percent white and danger #B91C1C at 29.4, so they photocopy
+   identically. Under WCAG relative luminance they separate. Which pair collides
+   depends on the driver, and no palette survives every path, so instead the
+   drawn documents use ink on white with rules for structure, exactly as
+   ChallanPrint.tsx already does.
+
+   NO DARK MODE, deliberately. Three of the four candidate directions promised
+   one and all three failed the arithmetic, one shipping a dark ground and a
+   dark tint band that measured 1.06:1 against each other, which is the same
+   colour. A marketing page that is wrong in dark mode is worse than one that is
+   honestly light only.
    ============================================================================= */
 
 :root {
-  --ink:        #12142b;
-  --ink-2:      #3b3f5c;
-  --ink-3:      #6b7091;
-  --line:       #e4e6f0;
-  --paper:      #ffffff;
-  --paper-2:    #f7f8fc;
+  /* --- the ground ------------------------------------------------------- */
+  --paper:      #F7F4EC;   /* warm printed stock. The actual brand move. */
+  --paper-2:    #EFEADD;   /* alternating section band and table zebra */
+  --card:       #FFFFFF;   /* only drawn documents and form fields */
 
-  --brand:      #4338ca;
-  --brand-600:  #4f46e5;
-  --brand-700:  #3730a3;
-  --brand-900:  #1e1b4b;
-  --brand-tint: #eef2ff;
+  /* --- rules. Three weights, and the third is structural ---------------- */
+  --rule:       #D9D2C2;   /* decorative hairline, separation only */
+  --rule-2:     #C6BEA9;   /* table row rules, internal document ruling */
+  --rule-3:     #8A8271;   /* structural rules and EVERY form field border.
+                              3.47:1 on paper, so a bare input is still a
+                              visible control under WCAG 1.4.11. */
 
-  --money:      #047857;
-  --money-tint: #ecfdf5;
-  --due:        #b45309;
-  --due-tint:   #fffbeb;
-  --danger:     #b91c1c;
+  /* --- ink -------------------------------------------------------------- */
+  --ink:        #14171C;   /* headlines, figures, table data. 16.34:1 on paper */
+  --ink-2:      #40454E;   /* body copy and ledes. 8.77:1 on paper */
+  --ink-3:      #545965;   /* labels, captions, column heads. 6.42:1 on paper */
 
-  --radius:     14px;
-  --shadow:     0 1px 2px rgba(18,20,43,.04), 0 8px 24px -12px rgba(18,20,43,.18);
-  --shadow-lg:  0 24px 60px -24px rgba(18,20,43,.35);
+  /* --- institutional blue, for structure rather than interaction -------- */
+  --navy:       #20315E;   /* labels, section numbers, seals on light ground */
+  --navy-deep:  #17244A;   /* full-bleed bands, footer, ledger ground */
+  --on-navy-2:  #AFBDD6;   /* captions and column heads on navy. 7.98:1 */
 
+  /* --- interactive. Taken byte for byte from web/tailwind.config.js so the
+         site and the app share a hex and the login screen is not a different
+         product from the dashboard behind it. ------------------------------ */
+  --brand:      #4338CA;   /* brand.700. links, primary text-links */
+  --brand-600:  #4F46E5;   /* brand.600. primary button fill */
+  --brand-400:  #818CF8;   /* brand.400. accent on dark panels only */
+  --brand-950:  #1E1B4B;   /* brand.950. the auth panel ground */
+
+  /* --- semantics. Unchanged from the app on purpose --------------------- */
+  --money:      #047857;   /* fills, borders, icons on light ground */
+  --money-800:  #065F46;   /* the ONLY green permitted on text. 6.99:1 */
+  --money-dark: #6EE7B7;   /* money on the navy bands. 9.93:1 */
+  --due:        #B45309;   /* fills and icons only, never text */
+  --due-800:    #92400E;   /* the ONLY amber permitted on text */
+  --due-dark:   #FCD34D;   /* due on the navy bands. 10.50:1 */
+  --danger:     #B91C1C;
+
+  /* --- focus. There were ZERO focus declarations in the previous 295 lines,
+         which means keyboard users had no visible position anywhere on the
+         page. Two tokens because one ring cannot work on both grounds. --- */
+  --focus-light: #4338CA;  /* 7.19:1 on paper */
+  --focus-dark:  #FFFFFF;  /* 15.13:1 on navy-deep */
+
+  --radius:     10px;
+  --radius-lg:  14px;
   --wrap:       1120px;
+
+  /* Type. Bound to h1 and h2 ONLY. Segoe UI Variable Display is an optical cut
+     for roughly 24pt and up: at 17px it renders thin and over-tight on Windows
+     11 while rendering normally on Windows 10, which would make the two
+     majority platforms disagree. So h3, labels and the price figure stay on the
+     text stack. */
+  --display: "Segoe UI Variable Display", -apple-system, BlinkMacSystemFont,
+             "Segoe UI", Roboto, "Liberation Sans", Arial, sans-serif;
+  --text:    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+             "Liberation Sans", Arial, sans-serif;
+  --mono:    ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas,
+             "Liberation Mono", monospace;
 }
 
 * { box-sizing: border-box; }
 
-html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
 
 /* The nav is sticky, so an anchor jump would otherwise land with the heading
    hidden underneath it. Every linkable section reserves the nav's height. */
@@ -47,249 +125,636 @@ body {
   margin: 0;
   background: var(--paper);
   color: var(--ink);
-  font: 400 17px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-        "Helvetica Neue", Arial, sans-serif;
+  font: 400 16px/1.58 var(--text);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-h1, h2, h3, .display {
-  font-family: Charter, "Bitstream Charter", "Sitka Text", Cambria, Georgia, serif;
-  font-weight: 600;
-  letter-spacing: -0.015em;
-  line-height: 1.15;
+h1, h2 {
+  font-family: var(--display);
+  font-weight: 700;
   margin: 0;
 }
-
-h1 { font-size: clamp(2.1rem, 5vw, 3.4rem); }
-h2 { font-size: clamp(1.6rem, 3.4vw, 2.35rem); }
-h3 { font-size: 1.12rem; letter-spacing: -0.005em; }
-
+h1 {
+  font-size: clamp(2rem, 4.2vw, 3rem);
+  letter-spacing: -0.028em;
+  line-height: 1.06;
+  text-wrap: balance;
+  max-inline-size: 20ch;
+}
+h2 {
+  font-size: clamp(1.45rem, 2.6vw, 1.9rem);
+  letter-spacing: -0.022em;
+  line-height: 1.12;
+  text-wrap: balance;
+}
+h3 {
+  font-family: var(--text);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+  margin: 0;
+}
 p { margin: 0; }
 a { color: inherit; }
 
+/* Every figure on this page is money or a count, and money in a column that
+   does not line up looks like a rounding error. font-variant-numeric is
+   written ALONE: font-feature-settings is the low-level property and wins for
+   the features it names, so adding "tnum" beside this would silently discard
+   the lnum request. */
+.tnum, .price__amt, .doc td, .doc th, .recon td, .recon th, .spec__v {
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
 .wrap { max-width: var(--wrap); margin: 0 auto; padding: 0 24px; }
-.section { padding: 88px 0; }
-.section--tint { background: var(--paper-2); border-block: 1px solid var(--line); }
+.section { padding: 84px 0; }
+.section--tint { background: var(--paper-2); }
+.section--tint + .section--tint { border-top: 1px solid var(--rule); }
 
-.eyebrow {
-  display: inline-block;
-  font-size: .74rem;
-  font-weight: 700;
-  letter-spacing: .11em;
-  text-transform: uppercase;
-  color: var(--brand);
-  margin-bottom: 14px;
+.lede {
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  max-width: 58ch;
 }
-
-.lede { font-size: 1.12rem; color: var(--ink-2); max-width: 62ch; }
 .muted { color: var(--ink-3); }
-.small { font-size: .9rem; }
+.small { font-size: 14px; }
 
-/* ------------------------------------------------------------------ nav --- */
+/* ---------------------------------------------------------------- eyebrow --
+   A numbered rule rather than a coloured word. The number gives the page a
+   spine you can feel while scrolling, which is what the old uniform "eyebrow,
+   h2, lede, card grid" rhythm never had. */
+.rulehead {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.rulehead__no {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--navy);
+  flex: 0 0 auto;
+}
+.rulehead__label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  flex: 0 0 auto;
+}
+.rulehead__line {
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--rule-2);
+}
+.on-navy .rulehead__no { color: var(--due-dark); }
+.on-navy .rulehead__label { color: var(--on-navy-2); }
+.on-navy .rulehead__line { background: rgba(255, 255, 255, 0.22); }
+
+/* ----------------------------------------------------------------- focus ---
+   One rule, both grounds. Applied with :focus-visible so a mouse click does
+   not draw a ring, and with a hard offset so it never sits on the glyphs. */
+:where(a, button, summary, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus-light);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+.on-navy :where(a, button, summary, input, [tabindex]):focus-visible,
+.band :where(a, button, summary, input, [tabindex]):focus-visible {
+  outline-color: var(--focus-dark);
+}
+
+/* ------------------------------------------------------------------- nav ---
+   The old stylesheet set .nav__links { display: none } below 700px with
+   nothing in its place, so a phone visitor had no route to pricing at all.
+   Most principals open this on a phone, which made it the worst defect on the
+   page and it was not on anybody's list.
+
+   Two replacements, deliberately: a <details> disclosure, which is keyboard
+   accessible and needs no JavaScript, and the sticky action bar at the bottom
+   carrying the two things worth a tap. */
 .nav {
-  position: sticky; top: 0; z-index: 50;
-  background: rgba(255,255,255,.86);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  background: rgba(247, 244, 236, 0.92);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--rule);
 }
-.nav__in { display: flex; align-items: center; gap: 28px; height: 66px; }
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: -.01em; text-decoration: none; }
-.brand__mark {
-  width: 30px; height: 30px; border-radius: 9px;
-  background: linear-gradient(140deg, var(--brand-600), var(--brand-900));
-  color: #fff; display: grid; place-items: center;
-  font-size: 15px; font-weight: 700;
+.nav__in { display: flex; align-items: center; gap: 24px; height: 64px; }
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  color: var(--ink);
 }
-.nav__links { display: flex; gap: 26px; margin-left: auto; }
-.nav__links a { text-decoration: none; font-size: .95rem; color: var(--ink-2); }
-.nav__links a:hover { color: var(--brand); }
+.brand svg { display: block; }
+.nav__links { display: flex; gap: 24px; margin-left: auto; align-items: center; }
+.nav__links a {
+  text-decoration: none;
+  font-size: 15px;
+  color: var(--ink-2);
+  padding: 4px 0;
+  border-bottom: 1px solid transparent;
+}
+.nav__links a:hover { color: var(--brand); border-bottom-color: var(--brand); }
+.nav__cta { display: flex; gap: 10px; align-items: center; margin-left: 8px; }
 
-/* ---------------------------------------------------------------- button -- */
+/* The mobile disclosure. Hidden above 860px, where the real links fit. */
+.navmenu { display: none; margin-left: auto; }
+.navmenu > summary {
+  list-style: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--rule-3);
+  border-radius: var(--radius);
+  font-size: 15px;
+  font-weight: 600;
+  background: var(--card);
+}
+.navmenu > summary::-webkit-details-marker { display: none; }
+.navmenu[open] > summary { border-color: var(--brand); color: var(--brand); }
+.navmenu__panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 64px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--rule-3);
+  border-top: 1px solid var(--rule);
+  padding: 8px 24px 18px;
+  box-shadow: 0 18px 30px -20px rgba(20, 23, 28, 0.35);
+}
+.navmenu__panel a {
+  display: block;
+  padding: 13px 0;
+  font-size: 16px;
+  text-decoration: none;
+  color: var(--ink);
+  border-bottom: 1px solid var(--rule);
+}
+.navmenu__panel a:last-of-type { border-bottom: 0; }
+
+/* ---------------------------------------------------------------- button ---
+   No transform lift. A 1px rise under the cursor is the tell of a template,
+   and on the five year old office laptop this is built for it repaints the
+   shadow on every hover. Pressure is shown by darkening the fill, which is
+   what a physical button does. */
 .btn {
-  display: inline-flex; align-items: center; gap: 9px;
-  padding: 12px 20px; border-radius: 11px;
-  font-size: .96rem; font-weight: 600; text-decoration: none;
-  border: 1px solid transparent; cursor: pointer;
-  transition: transform .12s ease, box-shadow .12s ease, background .12s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 44px;
+  padding: 11px 20px;
+  border-radius: var(--radius);
+  font-family: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
-.btn:hover { transform: translateY(-1px); }
-.btn--primary { background: var(--brand-600); color: #fff; box-shadow: var(--shadow); }
-.btn--primary:hover { background: var(--brand-700); }
-.btn--ghost { background: #fff; color: var(--ink); border-color: var(--line); }
+.btn--primary { background: var(--brand-600); color: #fff; }
+.btn--primary:hover { background: var(--brand); }
+.btn--ghost { background: var(--card); color: var(--ink); border-color: var(--rule-3); }
 .btn--ghost:hover { border-color: var(--brand); color: var(--brand); }
-.btn--lg { padding: 15px 26px; font-size: 1.02rem; }
-
-/* ----------------------------------------------------------------- hero --- */
-.hero {
-  position: relative; overflow: hidden;
-  background:
-    radial-gradient(1200px 480px at 12% -10%, #eef2ff 0%, transparent 60%),
-    radial-gradient(900px 420px at 92% 4%, #ecfdf5 0%, transparent 62%);
-  padding: 76px 0 0;
+.btn--lg { min-height: 50px; padding: 14px 26px; font-size: 16px; }
+.btn[aria-disabled="true"] { opacity: 0.62; cursor: default; }
+.btn[aria-disabled="true"]:hover { background: var(--card); border-color: var(--rule-3); color: var(--ink); }
+.on-navy .btn--ghost, .band .btn--ghost {
+  background: transparent;
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.42);
 }
+.on-navy .btn--ghost:hover, .band .btn--ghost:hover {
+  border-color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ------------------------------------------------------------------ hero ---
+   Letterhead left, a drawn receipt right. The receipt is the whole argument of
+   the page: a principal recognises a fee receipt instantly, and no competitor
+   is showing one. */
+.hero { padding: 68px 0 76px; position: relative; overflow: hidden; }
 .hero__grid { display: grid; gap: 44px; align-items: center; }
-@media (min-width: 940px) { .hero__grid { grid-template-columns: 1.02fr .98fr; } }
+@media (min-width: 940px) { .hero__grid { grid-template-columns: 1.04fr 0.96fr; } }
+.hero h1 { margin-bottom: 18px; }
+.hero h1 em { font-style: normal; color: var(--navy); }
+.hero__cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
+.hero__note { margin-top: 16px; font-size: 14px; color: var(--ink-3); }
 
-.hero h1 { margin-bottom: 20px; }
-.hero h1 em { font-style: normal; color: var(--brand); }
-.hero__cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
-.hero__note { margin-top: 18px; font-size: .89rem; color: var(--ink-3); }
+/* The letterhead rule above the headline, which is what makes the left column
+   read as a document rather than a hero. */
+.letterhead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 14px;
+  margin-bottom: 26px;
+  border-bottom: 2px solid var(--navy);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--navy);
+}
+.letterhead span:last-child { margin-left: auto; color: var(--ink-3); font-weight: 600; }
 
-.trustline {
-  display: flex; flex-wrap: wrap; gap: 10px 26px;
-  margin-top: 40px; padding-top: 26px; border-top: 1px solid var(--line);
-  font-size: .88rem; color: var(--ink-3);
+/* ------------------------------------------------------------ spec strip ---
+   A deliberate trough. After the tallest block on the page, three facts in
+   tabular figures and nothing else. */
+.spec {
+  border-top: 1px solid var(--rule-2);
+  border-bottom: 1px solid var(--rule-2);
+  background: var(--paper-2);
 }
-.trustline b { color: var(--ink); font-weight: 600; }
+.spec__in {
+  display: grid;
+  gap: 0;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+.spec__cell { padding: 22px 24px; border-left: 1px solid var(--rule); }
+.spec__cell:first-child { border-left: 0; }
+.spec__k {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  display: block;
+  margin-bottom: 6px;
+}
+.spec__v { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+.spec__v small { font-size: 14px; font-weight: 500; color: var(--ink-3); }
 
-/* ------------------------------------------------------------ app mockup -- */
-/* A real rendering of the product in HTML/CSS rather than a stock photo.
-   It stays crisp at any zoom and weighs nothing. */
-.shot {
-  border-radius: 16px; overflow: hidden;
-  box-shadow: var(--shadow-lg);
-  border: 1px solid #d9dcea;
-  background: #fff;
+/* ------------------------------------------------------------ navy bands ---
+   The page's peaks. Ledger ruling drawn in CSS: horizontal hairlines at the
+   pitch of a real account book, which costs nothing and is the cheapest way to
+   make a dark band read as paper rather than as a coloured box. */
+.band {
+  background: var(--navy-deep);
+  color: #fff;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.055) 0,
+    rgba(255, 255, 255, 0.055) 1px,
+    transparent 1px,
+    transparent 30px
+  );
 }
-.shot__bar {
-  display: flex; align-items: center; gap: 7px;
-  padding: 10px 13px; background: #f1f2f8; border-bottom: 1px solid var(--line);
-}
-.dot { width: 10px; height: 10px; border-radius: 50%; background: #cfd3e4; }
-.shot__url {
-  margin-left: 8px; font-size: .72rem; color: var(--ink-3);
-  background: #fff; border: 1px solid var(--line); border-radius: 6px;
-  padding: 3px 10px;
-}
-.shot__body { display: grid; grid-template-columns: 148px 1fr; min-height: 330px; }
-.shot__side {
-  background: linear-gradient(180deg, var(--brand-900), #171544);
-  padding: 14px 10px; color: #c7d2fe;
-}
-.shot__side b { display: block; color: #fff; font-size: .78rem; margin-bottom: 12px; padding: 0 8px; }
-.shot__nav { display: flex; flex-direction: column; gap: 3px; }
-.shot__nav span {
-  font-size: .74rem; padding: 7px 9px; border-radius: 7px; opacity: .72;
-}
-.shot__nav span.on { background: rgba(255,255,255,.16); color: #fff; opacity: 1; font-weight: 600; }
-.shot__main { padding: 16px; background: #fafbfe; }
+.band h2, .band h3 { color: #fff; }
+.band .lede, .band p { color: #D6DEEE; }
+.band .muted { color: var(--on-navy-2); }
+.band a { color: #fff; }
 
-.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
-.tile { border-radius: 11px; padding: 11px; color: #fff; }
-.tile b { display: block; font-size: 1.02rem; line-height: 1.25; white-space: nowrap; }
-.tile span { font-size: .62rem; opacity: .85; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
-.tile--money { background: linear-gradient(140deg, #10b981, #047857); }
-.tile--due   { background: linear-gradient(140deg, #f59e0b, #b45309); }
-.tile--brand { background: linear-gradient(140deg, #6366f1, #4338ca); }
-
-.rows { margin-top: 12px; background: #fff; border: 1px solid var(--line); border-radius: 11px; overflow: hidden; }
-.row { display: flex; align-items: center; justify-content: space-between; padding: 9px 12px; font-size: .78rem; }
-.row + .row { border-top: 1px solid #f0f1f7; }
-.row b { font-weight: 600; }
-.pill { font-size: .66rem; padding: 2px 8px; border-radius: 99px; font-weight: 600; }
-.pill--due { background: var(--due-tint); color: var(--due); }
-.pill--paid { background: var(--money-tint); color: var(--money); }
-
-/* -------------------------------------------------------------- features -- */
-.grid { display: grid; gap: 22px; }
-.grid--3 { grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); }
-.grid--2 { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+/* ------------------------------------------------------------------ card ---
+   One hairline, no shadow, square-ish corners. Removing the shadow is what
+   stops every section reading at the same visual weight, and it is also why
+   the hairlines have to be right: nothing is left to hide a misalignment. */
+.grid { display: grid; gap: 20px; }
+.grid--3 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.grid--2 { grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); }
 
 .card {
-  background: #fff; border: 1px solid var(--line);
-  border-radius: var(--radius); padding: 26px;
-  box-shadow: var(--shadow);
+  background: var(--card);
+  border: 1px solid var(--rule-2);
+  border-radius: var(--radius);
+  padding: 22px;
 }
-.card h3 { margin-bottom: 9px; }
-.card p { color: var(--ink-2); font-size: .97rem; }
+.card h3 { margin-bottom: 8px; }
+.card p { color: var(--ink-2); font-size: 15px; }
 .card__icon {
-  width: 40px; height: 40px; border-radius: 11px;
-  display: grid; place-items: center; margin-bottom: 15px;
-  background: var(--brand-tint); color: var(--brand);
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 14px;
+  color: var(--navy);
+  border: 1px solid var(--rule-2);
+  border-radius: 8px;
 }
-.card__icon svg { width: 20px; height: 20px; }
-.card__icon--money { background: var(--money-tint); color: var(--money); }
-.card__icon--due { background: var(--due-tint); color: var(--due); }
-
-/* ---------------------------------------------------------------- proof --- */
-.proof {
-  border-left: 3px solid var(--brand);
-  padding: 4px 0 4px 22px;
-  margin: 30px 0;
+.card__icon svg { width: 18px; height: 18px; }
+.band .card {
+  background: rgba(255, 255, 255, 0.045);
+  border-color: rgba(255, 255, 255, 0.16);
 }
-.proof p { font-size: 1.06rem; color: var(--ink); }
+.band .card p { color: #C9D3E6; }
+.band .card__icon { color: var(--brand-400); border-color: rgba(255, 255, 255, 0.22); }
 
-.split { display: grid; gap: 40px; align-items: start; }
+/* --------------------------------------------------------------- artefact --
+   The drawn documents. Always true white on the warm ground, so paper reads as
+   paper by contrast, and always ink on white inside, never a brand fill, so
+   the object photocopies exactly as the real one does. */
+.doc {
+  background: var(--card);
+  border: 1px solid var(--rule-3);
+  border-radius: 4px;
+  padding: 0;
+  overflow: hidden;
+}
+.doc svg { display: block; width: 100%; height: auto; }
+.doc__cap {
+  font-size: 13px;
+  color: var(--ink-3);
+  margin-top: 10px;
+  max-width: 46ch;
+}
+.band .doc__cap { color: var(--on-navy-2); }
+
+/* A slight paper lift, done with a stacked edge rather than a blur, so it
+   reads as a sheet on a desk instead of a floating UI card. */
+.doc--lift {
+  box-shadow: 3px 3px 0 0 var(--paper-2), 3px 3px 0 1px var(--rule-2);
+}
+.band .doc--lift { box-shadow: 4px 4px 0 0 rgba(0, 0, 0, 0.22); }
+
+/* ------------------------------------------------------------- checklist ---
+   Rule-separated rows rather than bulleted text, so the list has the density
+   of a specification. */
+.checklist { list-style: none; margin: 18px 0 0; padding: 0; }
+.checklist li {
+  display: flex;
+  gap: 12px;
+  padding: 13px 0;
+  border-top: 1px solid var(--rule);
+  font-size: 15px;
+  color: var(--ink-2);
+}
+.checklist li:last-child { border-bottom: 1px solid var(--rule); }
+.checklist b { color: var(--ink); font-weight: 600; }
+.checklist svg { flex: 0 0 18px; width: 18px; height: 18px; color: var(--money-800); margin-top: 2px; }
+.band .checklist li { border-color: rgba(255, 255, 255, 0.16); color: #D6DEEE; }
+.band .checklist b { color: #fff; }
+.band .checklist svg { color: var(--money-dark); }
+
+.split { display: grid; gap: 38px; align-items: start; }
 @media (min-width: 900px) { .split { grid-template-columns: 1fr 1fr; } }
+@media (min-width: 900px) { .split--wide { grid-template-columns: 0.86fr 1.14fr; } }
 
-.checklist { list-style: none; margin: 18px 0 0; padding: 0; display: grid; gap: 12px; }
-.checklist li { display: flex; gap: 11px; font-size: .98rem; color: var(--ink-2); }
-.checklist svg { flex: 0 0 19px; width: 19px; height: 19px; color: var(--money); margin-top: 2px; }
-
-/* -------------------------------------------------------------- pricing --- */
-.prices { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); align-items: stretch; }
-.price {
-  background: #fff; border: 1px solid var(--line); border-radius: var(--radius);
-  padding: 28px; display: flex; flex-direction: column;
+/* ------------------------------------------------------------------ proof --
+   A margin note, set against a structural rule. */
+.proof {
+  border-left: 3px solid var(--navy);
+  padding: 2px 0 2px 20px;
+  margin: 26px 0;
 }
-.price--hot { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-tint), var(--shadow); position: relative; }
-.price__tag {
-  position: absolute; top: -11px; left: 28px;
-  background: var(--brand-600); color: #fff;
-  font-size: .68rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
-  padding: 4px 11px; border-radius: 99px;
-}
-.price h3 { font-size: 1rem; color: var(--ink-3); font-family: inherit; font-weight: 600; letter-spacing: 0; }
-.price__amt { font-size: 2.4rem; font-weight: 700; letter-spacing: -.02em; margin: 10px 0 2px; font-family: Charter, Georgia, serif; }
-.price__amt small { font-size: .95rem; font-weight: 500; color: var(--ink-3); }
-.price__cap { font-size: .9rem; color: var(--ink-3); margin-bottom: 18px; }
-.price ul { list-style: none; margin: 0 0 22px; padding: 0; display: grid; gap: 9px; font-size: .93rem; color: var(--ink-2); }
-.price ul li::before { content: "→"; color: var(--brand); margin-right: 9px; }
-.price .btn { margin-top: auto; justify-content: center; }
+.proof p { font-size: 16px; color: var(--ink); }
+.band .proof { border-left-color: var(--due-dark); }
+.band .proof p { color: #fff; }
 
-/* ------------------------------------------------------------------ faq --- */
-details {
-  border-bottom: 1px solid var(--line);
-  padding: 20px 0;
+/* -------------------------------------------------------- reconciliation ---
+   A real table, ruled, with tabular figures and a shortfall bar. Below 700px
+   it becomes one block per class, because a five column money table at 360px
+   is unreadable however it is scrolled. */
+.recon { width: 100%; border-collapse: collapse; font-size: 14px; }
+.recon th, .recon td { padding: 11px 12px; text-align: right; }
+.recon th:first-child, .recon td:first-child { text-align: left; }
+.recon thead th {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  border-bottom: 1px solid var(--rule-3);
 }
-summary {
-  cursor: pointer; font-weight: 600; font-size: 1.03rem;
-  list-style: none; display: flex; justify-content: space-between; gap: 16px;
+.recon tbody td { border-bottom: 1px solid var(--rule); }
+.recon tbody tr:last-child td { border-bottom: 1px solid var(--rule-3); }
+.recon .gap-none { color: var(--ink-3); }
+.recon .gap-short { color: var(--due-800); font-weight: 600; }
+.band .recon thead th { color: var(--on-navy-2); border-bottom-color: rgba(255, 255, 255, 0.4); }
+.band .recon tbody td { border-bottom-color: rgba(255, 255, 255, 0.14); color: #E6EBF5; }
+.band .recon tbody tr:last-child td { border-bottom-color: rgba(255, 255, 255, 0.4); }
+.band .recon .gap-none { color: var(--on-navy-2); }
+.band .recon .gap-short { color: var(--due-dark); }
+
+/* The bar is a sighted-only reinforcement of a number that is already printed
+   beside it, so it needs no accessible name of its own. */
+.bar { display: block; height: 5px; background: rgba(255, 255, 255, 0.16); border-radius: 3px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--due-dark); }
+
+/* --------------------------------------------------------------- pricing ---
+   A rate card, not four floating boxes. One bordered table on desktop that
+   becomes stacked rows on mobile. */
+.rates { border: 1px solid var(--rule-3); border-radius: var(--radius); background: var(--card); overflow: hidden; }
+.rates__row {
+  display: grid;
+  gap: 0;
+  grid-template-columns: 1.1fr 0.9fr 1.4fr auto;
+  align-items: center;
+  padding: 20px 22px;
+  border-top: 1px solid var(--rule-2);
 }
-summary::-webkit-details-marker { display: none; }
-summary::after { content: "+"; color: var(--brand); font-size: 1.35rem; line-height: 1; }
-details[open] summary::after { content: "–"; }
-details p { margin-top: 12px; color: var(--ink-2); max-width: 74ch; }
-
-/* ------------------------------------------------------------------ cta --- */
-.cta {
-  background: linear-gradient(150deg, var(--brand-900), #2a2668 60%, #1c1a4d);
-  color: #fff; border-radius: 20px; padding: 54px 40px; text-align: center;
+.rates__row:first-child { border-top: 0; }
+.rates__row--hot { background: #FBFAF6; }
+.rates__name { font-size: 17px; font-weight: 600; }
+.rates__tag {
+  display: inline-block;
+  margin-left: 9px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--navy);
+  border: 1px solid var(--navy);
+  border-radius: 99px;
+  padding: 2px 8px;
+  vertical-align: 2px;
 }
-.cta h2 { color: #fff; margin-bottom: 14px; }
-.cta p { color: #c7d2fe; max-width: 56ch; margin: 0 auto 26px; }
+.rates__cap { font-size: 14px; color: var(--ink-3); }
+.price__amt {
+  font-family: var(--text);
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+.price__amt small { font-size: 14px; font-weight: 500; color: var(--ink-3); letter-spacing: 0; }
+.rates__yearly { font-size: 14px; color: var(--ink-3); }
 
-/* --------------------------------------------------------------- footer --- */
-.foot { border-top: 1px solid var(--line); padding: 46px 0 60px; font-size: .92rem; color: var(--ink-3); }
-.foot__grid { display: grid; gap: 30px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
-.foot h4 { font-size: .78rem; text-transform: uppercase; letter-spacing: .09em; color: var(--ink); margin: 0 0 12px; }
-.foot a { display: block; text-decoration: none; margin-bottom: 8px; }
-.foot a:hover { color: var(--brand); }
-.foot__bottom { margin-top: 36px; padding-top: 22px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; }
+/* ------------------------------------------------------------------- faq ---*/
+details.q { border-bottom: 1px solid var(--rule); padding: 18px 0; }
+details.q > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 16px;
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 28px;
+  align-items: center;
+}
+details.q > summary::-webkit-details-marker { display: none; }
+details.q > summary::after { content: "+"; color: var(--navy); font-size: 20px; line-height: 1; flex: 0 0 auto; }
+details.q[open] > summary::after { content: "\2013"; }
+details.q p { margin-top: 11px; color: var(--ink-2); max-width: 72ch; font-size: 15px; }
 
-/* --------------------------------------------------------------- tables --- */
-.compare { width: 100%; border-collapse: collapse; font-size: .95rem; }
-.compare th, .compare td { text-align: left; padding: 13px 14px; border-bottom: 1px solid var(--line); }
-.compare th { font-size: .76rem; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3); font-weight: 700; }
-.compare td:first-child { font-weight: 500; }
-.compare .yes { color: var(--money); font-weight: 600; }
-.compare .no  { color: var(--ink-3); }
+/* ------------------------------------------------------------------- cta ---*/
+.cta { padding: 62px 40px; text-align: center; }
+.cta h2 { color: #fff; margin: 0 auto 12px; max-width: 26ch; }
+.cta p { color: #C9D3E6; max-width: 54ch; margin: 0 auto 24px; }
+.cta__row { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+
+/* ---------------------------------------------------------------- footer ---*/
+.foot { background: var(--navy-deep); color: var(--on-navy-2); padding: 52px 0 40px; font-size: 14px; }
+.foot__grid { display: grid; gap: 28px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.foot h4 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: #fff;
+  margin: 0 0 12px;
+  font-weight: 700;
+}
+.foot a { display: block; text-decoration: none; margin-bottom: 9px; color: var(--on-navy-2); }
+.foot a:hover { color: #fff; text-decoration: underline; }
+.foot__bottom {
+  margin-top: 34px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.16);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+}
+.foot__ur { font-size: 15px; line-height: 1.9; color: #fff; }
+
+/* --------------------------------------------------------- sticky action ---
+   The highest revenue line item on the page and it did not exist. On a phone
+   the two things worth a tap follow the visitor down the page. */
+.actionbar { display: none; }
+@media (max-width: 859px) {
+  .actionbar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 70;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+    background: rgba(247, 244, 236, 0.96);
+    backdrop-filter: blur(10px);
+    border-top: 1px solid var(--rule-3);
+  }
+  .actionbar .btn { width: 100%; }
+  /* Room for the bar, so the footer's last link is never under it. */
+  body { padding-bottom: 76px; }
+}
+
+/* --------------------------------------------------------------- tables ---*/
 .table-scroll { overflow-x: auto; }
+.compare { width: 100%; border-collapse: collapse; font-size: 15px; }
+.compare th, .compare td { text-align: left; padding: 12px 13px; border-bottom: 1px solid var(--rule); }
+.compare th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-3); font-weight: 700; }
+.compare .yes { color: var(--money-800); font-weight: 600; }
+.compare .no { color: var(--ink-3); }
 
+/* ------------------------------------------------------------ responsive ---*/
+@media (max-width: 859px) {
+  .nav__links, .nav__cta { display: none; }
+  .navmenu { display: block; }
+}
 @media (max-width: 700px) {
-  .section { padding: 62px 0; }
-  .nav__links { display: none; }
-  .cta { padding: 40px 22px; }
-  .shot__body { grid-template-columns: 92px 1fr; }
-  .tiles { grid-template-columns: 1fr; }
+  .section { padding: 58px 0; }
+  .hero { padding: 44px 0 56px; }
+  .cta { padding: 42px 22px; }
+  .spec__cell { border-left: 0; border-top: 1px solid var(--rule); }
+  .spec__cell:first-child { border-top: 0; }
+
+  /* The money table becomes one block per class. */
+  .recon thead { display: none; }
+  .recon, .recon tbody, .recon tr, .recon td { display: block; width: 100%; }
+  .recon tr {
+    border: 1px solid var(--rule-2);
+    border-radius: var(--radius);
+    padding: 6px 12px 10px;
+    margin-bottom: 10px;
+  }
+  .recon td { display: flex; justify-content: space-between; gap: 14px; text-align: right; border: 0; padding: 7px 0; }
+  .recon td::before {
+    content: attr(data-th);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    text-align: left;
+  }
+  .band .recon tr { border-color: rgba(255, 255, 255, 0.2); }
+  .band .recon td::before { color: var(--on-navy-2); }
+
+  .rates__row { grid-template-columns: 1fr; gap: 8px; }
+  .rates__row .btn { width: 100%; margin-top: 6px; }
+}
+
+/* ------------------------------------------------------ reduced motion ---
+   The only motion here is smooth scrolling and colour on hover, but the
+   declaration is unconditional because a future addition must not have to
+   remember. */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ------------------------------------------------------- forced colours ---
+   Windows high contrast replaces every colour. Borders drawn with background
+   gradients vanish, so the ledger ruling and the bars are re-declared against
+   system colours rather than left invisible. */
+@media (forced-colors: active) {
+  .band { background-image: none; }
+  .bar { border: 1px solid CanvasText; }
+  .bar i { background: Highlight; }
+  .doc--lift { box-shadow: none; }
+  .card, .doc, .rates { border-color: CanvasText; }
+  :where(a, button, summary, input, [tabindex]):focus-visible { outline-color: Highlight; }
+}
+
+/* ---------------------------------------------------------------- print ---
+   Browsers do not print background-color or background-image by default, so a
+   navy band prints as white while `color: #fff` still prints white, which is
+   an invisible page. Every inverted surface is explicitly re-grounded. */
+@media print {
+  :root { --paper: #fff; --paper-2: #fff; }
+  body { background: #fff; color: #000; font-size: 11pt; padding-bottom: 0; }
+  .nav, .actionbar, .navmenu, .hero__cta, .cta__row, .btn { display: none !important; }
+  .band, .foot, .cta {
+    background: #fff !important;
+    background-image: none !important;
+    color: #000 !important;
+    border: 1px solid #000;
+  }
+  .band h2, .band h3, .band p, .band .lede, .band .muted, .band a,
+  .foot, .foot a, .foot h4, .cta h2, .cta p,
+  .band .checklist li, .band .checklist b, .band .recon tbody td {
+    color: #000 !important;
+  }
+  .band .card { background: #fff !important; border-color: #000; }
+  .bar { border: 1px solid #000; }
+  .bar i { background: #000; }
+  .doc--lift { box-shadow: none; }
+  .section { padding: 18pt 0; }
+  details.q { break-inside: avoid; }
+  details.q p { display: block !important; }
+  a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 9pt; color: #000; }
 }

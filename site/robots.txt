@@ -1,5 +1,7 @@
-# Replace schoolmanager.pk with the real domain once it is registered.
+# The live domain. This file used to say schoolmanager.pk, which was never
+# registered, so the Sitemap line pointed a crawler at a domain that did not
+# resolve and the sitemap was therefore never read.
 User-agent: *
 Allow: /
 
-Sitemap: https://schoolmanager.pk/sitemap.xml
+Sitemap: https://theschoolmanager.site/sitemap.xml

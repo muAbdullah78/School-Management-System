@@ -52,14 +52,52 @@ if [ -z "$rows" ]; then
 fi
 
 # The block of HTML for one plan, from its data-plan attribute to the closing
-# </div>. Extracted per plan so a figure in the WRONG card is caught — the
+# </div>. Extracted per plan so a figure in the WRONG card is caught: the
 # failure a whole-file grep would miss, and the one that quotes Growth's price
 # for Starter's limit.
+#
+# THIS DID NOT WORK, AND IT IS WORTH SAYING WHY IN FULL.
+#
+# The closing condition used to be:
+#
+#     inside && /<\/div>[[:space:]]*$/ && /btn/ { inside = 0 }
+#
+# which requires ONE line to both end in </div> and contain "btn". No line in
+# the markup ever did: the button and the closing tag are on separate lines, as
+# any formatter would leave them. So `inside` was never cleared, every card
+# extraction ran to end of file, and each plan's "card" contained every other
+# plan's prices. Measured before rewriting: the starter extraction returned 240
+# lines and matched Growth's "Rs 2,000".
+#
+# So the check passed, and it passed for a reason that had nothing to do with
+# what it claimed. The whole-card assertion it advertises was a whole-file grep
+# wearing a per-card costume, and the one failure the comment above promises to
+# catch was the exact failure it could not see.
+#
+# Two changes, and the second is the one that matters:
+#
+#   1. Close on an EXPLICIT marker, <!-- /plan -->, rather than on a guessed
+#      combination of tag and class. Markup gets reformatted; a marker does not
+#      move on its own.
+#   2. REFUSE if the marker is missing, rather than falling back to end of file.
+#      A checker that degrades quietly into a weaker check when its assumption
+#      breaks is worse than one that stops, because the weaker check still
+#      prints success. That is precisely how this one hid for so long.
 card() {
   awk -v want="$1" '
     $0 ~ ("data-plan=\"" want "\"") { inside = 1 }
     inside { print }
-    inside && /<\/div>[[:space:]]*$/ && /btn/ { inside = 0 }
+    inside && /<!-- \/plan -->/ { exit }
+  ' "$HTML"
+}
+
+# True when the plan block is properly terminated. Kept separate from card() so
+# the refusal below is explicit rather than inferred from a line count.
+card_is_closed() {
+  awk -v want="$1" '
+    $0 ~ ("data-plan=\"" want "\"") { inside = 1 }
+    inside && /<!-- \/plan -->/ { found = 1; exit }
+    END { exit(found ? 0 : 1) }
   ' "$HTML"
 }
 
@@ -77,6 +115,14 @@ while IFS='|' read -r code limit monthly yearly; do
     echo "  $code: the website has no card for this plan (data-plan=\"$code\")"
     fail=1
     continue
+  fi
+  # Unterminated means the block below is every remaining line of the file, so
+  # every assertion against it would pass on any other plan's figures. Refuse
+  # rather than check something weaker than advertised.
+  if ! card_is_closed "$code"; then
+    echo "REFUSING TO REPORT SUCCESS: the $code card in $HTML has no <!-- /plan --> marker," >&2
+    echo "so its block runs to end of file and would match any plan's price." >&2
+    exit 1
   fi
   checked=$((checked + 1))
 

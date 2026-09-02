@@ -103,5 +103,16 @@ These are real, current, and none of them is a bug:
   off. None of that prevents it happening again: only leaving that setting alone
   does.
 
+- **The em dash ban is enforced on published surfaces only, so far.** The rule
+  applies to all writing in this project. `scripts/check-no-emdash.py` enforces
+  it in CI across `site/` and the four authentication screens, which is
+  everything a school reads. It is not yet enforced across the rest of the
+  codebase: `web/src` carries about 930 instances across 121 of 144 files and
+  `supabase/` about 2,900, almost all of them inside code comments. That is a
+  mechanical sweep of roughly three thousand comment lines, and doing it in one
+  unreviewable diff is how a real defect gets hidden, so it is a separate job.
+  The scope list in that script grows one directory at a time as each is swept,
+  which keeps the check honest about what it actually asserts.
+
 Product decisions live in [`09-DECISIONS-LOCKED.md`](09-DECISIONS-LOCKED.md).
 The money engine's reasoning is in [`10-MONEY-ENGINE-V2.md`](10-MONEY-ENGINE-V2.md).
