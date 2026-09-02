@@ -72,7 +72,13 @@ export function GateBoard({ name }: { name: string }) {
   const size = parts.length < 16 ? 22 : parts.length < 22 ? 18 : 15
 
   return (
-    <div aria-hidden="true" className="w-[calc(100%+160px)]">
+    // Capped rather than overhanging. The board was drawn to overhang the panel
+    // by 160px so it read as continuing past the screen, and rendered at 1280px
+    // that made it about 980px wide, at which scale the piers and railings read
+    // as architecture and the SIGN, which is the only thing this object exists to
+    // say, stopped being the subject. Left aligned rather than centred so it
+    // still sits in a scene instead of reading as a logo.
+    <div aria-hidden="true" className="w-full max-w-[600px]">
       <div className="relative">
         <svg viewBox="0 0 520 248" className="block h-auto w-full" role="presentation">
           {/* piers */}
