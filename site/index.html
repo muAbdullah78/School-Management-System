@@ -1150,7 +1150,206 @@
 
       </div>
       <div>
-        <!--ART:resultcard-->
+        <!-- ===========================================================================
+     THE RESULT CARD, drawn at full size, in its final published state.
+
+     Drawn against, in this repo:
+       web/src/pages/exams/ResultCardPrint.tsx   the component this imitates:
+                                                 its centred masthead, its
+                                                 "Result Card, {term}" line, its
+                                                 four field meta block, its
+                                                 Subject / Max / Obtained table,
+                                                 its Total row, its Percentage,
+                                                 Grade and Position row, and its
+                                                 two signature lines
+       supabase/migrations/0089_gpa_scale.sql    the letter bands, so the grade
+                                                 printed here is the grade the
+                                                 database would return
+       supabase/migrations/0058_exam_computation.sql
+                                                 percentage rounded to 2 dp, and
+                                                 position ranked by class_id
+       site/styles.css                           tokens, .doc, .doc--lift,
+                                                 .doc__cap, .tnum
+       site/index.html                           the receipt and the attendance
+                                                 sheet, for the house pattern of
+                                                 a drawn document
+
+     Pure HTML and CSS. No SVG anywhere on this artefact, so there is no
+     role="img" and no <title> to write: every figure is real selectable text.
+     That is deliberate and it is the same choice the receipt made, for the same
+     three reasons. The column heads and labels wrap, so Chrome translate to
+     Urdu can rewrite them without bursting the table; the whole card grows
+     under text only zoom and Android font scaling, which is WCAG 1.4.4; and a
+     clerk can select a mark and copy it.
+
+     INK ON WHITE, with no exception. Not even the one hue the house rules would
+     allow: the verdict is printed as the word "Pass" in --ink rather than in
+     --money-800, because the word is already the meaning and a green word would
+     be a second, weaker copy of it. Under Rec.601 the app's brand #4338CA and
+     danger #B91C1C land within 0.4 percent of each other, so nothing on an
+     object that prints is allowed to carry meaning in colour, and the cheapest
+     way to hold that line on a card a parent will photocopy is to spend no
+     colour at all.
+
+     NO CERTIFICATE BORDER. A 45 degree repeating gradient with 1px stops is the
+     worst case there is for rasterisation, and 8 percent navy on cream is about
+     a 3 percent luminance step, under the just noticeable difference on the
+     cheap TN panel this page is built for, so it would arrive as a faint grey
+     smudge rather than as an ornament. The frame here is a plain double
+     hairline inset 6px from the edge of the sheet, drawn as two real borders,
+     which prints and which Windows forced colours repaints.
+
+     THE ARITHMETIC, which is the one thing this audience will check:
+       English         100 :  78
+       Urdu            100 :  86
+       Mathematics     100 :  92
+       Islamiyat       100 :  88
+       General Science 100 :  81
+       Social Studies  100 :  70
+       Total           600 : 495     six rows of 100 sum to 600, marks to 495
+       Percentage      495 / 600 = 0.825 exactly, so 82.50
+       Grade           82.50 is at or above 80 and below 90, so A
+       Verdict         lowest paper is 70, the pass mark is 33, so no failures
+
+     WHY THE POSITION SAYS 41 AND THE ATTENDANCE SHEET SAYS 8. They are not the
+     same population. fn_generate_result_cards ranks with
+     rank() over (order by pct desc) inside a set filtered on class_id, so the
+     position on a card is the pupil's place in CLASS 5 as a whole. The
+     attendance sheet elsewhere on this page is one section's daily register,
+     Class 5 Section A, and it is a sample of eight ruled rows.
+
+     Identity is taken from the challan already on this page: Ahmed Aslam,
+     Class 5-A, Roll 12, GR No 1187, father Muhammad Aslam. Nothing new is
+     invented about the family.
+     =========================================================================== -->
+<figure class="res-fig">
+  <div class="doc doc--lift res">
+    <!-- The two halves of the inset double rule. The outer bar is the border of
+         .res__frame, held 6px off the sheet edge by its margin; the inner bar is
+         the border of .res__in, held 2px inside it by the frame's padding. -->
+    <div class="res__frame">
+      <div class="res__in">
+
+        <header class="res__head">
+          <p class="res__school">Al-Noor School</p>
+          <p class="res__kind">Result Card, First Term 2026</p>
+        </header>
+
+        <dl class="res__meta">
+          <div class="res__mi">
+            <dt>Student</dt>
+            <dd>Ahmed Aslam</dd>
+          </div>
+          <div class="res__mi">
+            <dt>Class</dt>
+            <dd>Class 5, Section A</dd>
+          </div>
+          <div class="res__mi">
+            <dt>GR No</dt>
+            <dd class="tnum">1187</dd>
+          </div>
+          <div class="res__mi">
+            <dt>Roll No</dt>
+            <dd class="tnum">12</dd>
+          </div>
+        </dl>
+
+        <table class="res__tbl">
+          <caption class="res__sr">
+            Result card, Al-Noor School, First Term 2026, for Ahmed Aslam of
+            Class 5 Section A. Six subjects, each out of 100, obtaining 495 of
+            600 marks in total, which is 82.50 percent, grade A, position 4 of
+            41 in the class. Published, not provisional.
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col" class="res__h-sub">Subject</th>
+              <th scope="col" class="res__h-num">Total</th>
+              <th scope="col" class="res__h-num">Obtained</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">English</th>
+              <td>100</td>
+              <td>78</td>
+            </tr>
+            <tr>
+              <th scope="row">Urdu</th>
+              <td>100</td>
+              <td>86</td>
+            </tr>
+            <tr>
+              <th scope="row">Mathematics</th>
+              <td>100</td>
+              <td>92</td>
+            </tr>
+            <tr>
+              <th scope="row">Islamiyat</th>
+              <td>100</td>
+              <td>88</td>
+            </tr>
+            <tr>
+              <th scope="row">General Science</th>
+              <td>100</td>
+              <td>81</td>
+            </tr>
+            <tr>
+              <th scope="row">Social Studies</th>
+              <td>100</td>
+              <td>70</td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr>
+              <th scope="row">Total</th>
+              <td>600</td>
+              <td>495</td>
+            </tr>
+          </tfoot>
+        </table>
+
+        <dl class="res__result">
+          <div class="res__ri">
+            <dt>Percentage</dt>
+            <dd class="tnum">82.50%</dd>
+          </div>
+          <div class="res__ri">
+            <dt>Grade</dt>
+            <dd>A</dd>
+          </div>
+          <div class="res__ri">
+            <dt>Position</dt>
+            <dd><span class="tnum">4</span> of <span class="tnum">41</span></dd>
+          </div>
+        </dl>
+
+        <p class="res__verdict">
+          <span class="res__vk">Result</span>
+          <b class="res__vv">Pass</b>
+          <span class="res__vn">Passed in every subject, pass mark 33% overall.</span>
+        </p>
+
+        <div class="res__sign">
+          <p class="res__sig">Class Teacher</p>
+          <p class="res__sig">Principal</p>
+        </div>
+
+        <p class="res__serial">
+          Computer generated result card, published 04-09-2026.
+          <span class="res__sn">ANS-RC-1187-FT2026</span>
+        </p>
+
+      </div>
+    </div>
+  </div>
+  <figcaption class="doc__cap">
+    The card as it prints once results are published: the marks it was built
+    from, the percentage they add up to, and the place in the class. A card that
+    is still provisional or withheld says so on its face instead.
+  </figcaption>
+</figure>
+
       </div>
     </div>
   </div>
@@ -1601,7 +1800,18 @@
         </p>
         <p class="foot__ur" lang="ur" dir="rtl">پاکستانی اسکولوں کے لیے بنایا گیا</p>
         <div style="margin-top:16px">
-          <!--ART:gateboard-->
+          <div class="gate gate--vignette">
+  <svg viewBox="0 0 130 76" aria-hidden="true">
+    <!-- board, posts and the three name rules: one weight, 1.25 -->
+    <g fill="none" stroke="currentColor" stroke-width="1.25">
+      <path d="M11 6h108v42H11z"/>
+      <path d="M38 48v22M92 48v22"/>
+      <path d="M27 18h76M37 27h56M48 36h34"/>
+    </g>
+    <!-- the ground line. See decision 3 for why this one is lighter. -->
+    <path d="M6 70H124" fill="none" stroke="currentColor" stroke-width="1"/>
+  </svg>
+</div>
         </div>
       </div>
       <div>

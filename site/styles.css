@@ -1431,93 +1431,248 @@ details.q p { margin-top: 11px; color: var(--ink-2); max-width: 72ch; font-size:
   .drw__row--diff { border-left-color: currentColor; }
 }
 
-/* ---- seal ---- */
+/* ---- gateboard ---- */
 /* =============================================================================
-   seal.css, the new CSS for the seal.
+   gateboard.css, the new CSS for the school gate name board: the static footer
+   vignette and the live board whose school name is real HTML text.
 
-   Everything the mark needs beyond this file is already in site/styles.css:
-   .brand supplies the flex row and the 10px gap, ".brand svg { display: block }"
-   kills the inline baseline gap, and the tokens supply every colour. Nine
-   declarations in four rules is the whole cost of the mark.
+   NEW CSS ONLY. Everything else both versions need is already in
+   site/styles.css: the tokens, the .foot ground the vignette sits on, the print
+   block that re-grounds the footer to white and forces black ink on it, and the
+   forced colours block. Nothing here overrides a house rule, so the link order
+   of the two files does not matter, and every selector is prefixed .gate so
+   nothing can collide.
 
-   Every selector is prefixed .seal so nothing can collide with the house
-   sheet. Link it after site/styles.css. Nothing here overrides a house rule,
-   so the order only matters for the print block at the bottom.
-
-   No new colour. Two tokens, var(--navy) and inherit, and no hex at all.
+   NO NEW COLOUR AND NO LITERAL HEX. Two values in the whole file, var(--navy)
+   and inherit, and the second one is not a colour at all.
 
    ---------------------------------------------------------------------------
    WHY THE MARK SETS `color` INSTEAD OF PAINTING ITSELF
 
-   Every stroke and fill in the SVG is currentColor, which is what lets one
-   geometry serve the warm nav, the navy footer, the auth panel, the letterhead
-   of a drawn artefact, the print sheet and Windows high contrast. But in the
-   nav the inherited colour is --ink, because .brand sets it for the wordmark,
-   and the seal is specified as --navy. So the mark declares its own `color`
-   and lets currentColor read it back. That is one property doing the work a
-   fill attribute cannot, since a fill written into the markup could not then
-   be inherited on the navy grounds.
+   Every stroke in the markup is stroke="currentColor", so one geometry serves
+   the warm ground, the white card, the navy footer, the print sheet and Windows
+   high contrast. The mark therefore has to declare its own `color` and let
+   currentColor read it back, because a stroke written into the markup could not
+   then be inherited on the navy grounds. Measured:
 
-   THE ORDER OF THE COLOUR RULES IS LOAD BEARING. .seal is one class, the
-   context rules are two, so they win on specificity wherever the mark sits on
-   navy, and nothing needs !important.
+       --navy #20315E on --paper  #F7F4EC   11.49:1
+       --navy #20315E on --card   #FFFFFF   12.63:1
+       --navy #20315E on --navy-deep #17244A  1.20:1
+       --on-navy-2 #AFBDD6 on --navy-deep      7.98:1
+
+   The third figure is the reason the context rules below exist. The spec asks
+   for a --navy stroke and the only place the static version is used is the navy
+   footer, where --navy against --navy-deep is 1.20:1, which is the same colour.
+   So on every navy ground the mark inherits, which in .foot is --on-navy-2.
+   .band .gate and .on-navy .gate are two classes each, so they beat the single
+   class .gate on specificity and nothing needs !important.
 
    ---------------------------------------------------------------------------
-   WHY THE SIZE IS A CLAMP ON A 24 PIXEL MARK
+   WHY THE THREE FIXED SIZES ARE WRITTEN AS clamp()
 
-   Because at 320px the nav carries the seal, "School Manager" at 16px and the
-   Menu button, and the two pixels the clamp gives back are the cheapest ones
-   on the row. The clamp reaches its 24px ceiling at a 533px viewport, so every
-   tablet and desktop gets the specified size and only the narrowest phones see
-   21px. Width and height are set from one custom property rather than leaving
-   height auto, so the box is square in every engine without relying on
-   intrinsic aspect ratio inference, and neither variant is ever scaled with a
-   transform.
+   The spec gives the live name three sizes by length, 22px, 18px and 15px, and
+   the house rule is that type is fluid from 320px to 1440px and never scaled by
+   a transform. Those two are reconciled by making each specified size the
+   CEILING of a clamp whose middle term is proportional to the board:
+
+       board width  = min(20rem, 100%), so 320px once there is room for it
+       column width = 100vw less the .wrap gutters, 24px each side
+       ceiling met  = 100vw - 48px >= 320px, so at a 368px viewport and above
+
+   Above 368px every name renders at exactly the specified px size. Below it the
+   board is narrower than 20rem, so the name comes down with it in proportion
+   rather than bursting the frame: at a 320px viewport the three sizes are
+   18.7px, 15.3px and 13px. The slopes are the ceiling divided by the 320px
+   board, so 22/320 is 6.875vw, 18/320 is 5.625vw and 15/320 is 4.6875vw, each
+   less the share of the 48px gutter.
+
+   The floor on all three is 0.8125rem, 13px at the default root size, which is
+   the house type floor. It only ever bites on the 15px class, which would
+   otherwise reach 12.75px at a 320px viewport. There is no monospaced serial on
+   this object, so 13px is the smallest thing it can render.
+
+   Ceiling and floor are in rem and the board width is in rem, so text only zoom
+   and a raised Android font scale grow the board and the name together.
    ============================================================================= */
 
-.seal {
-  --seal-size: clamp(21px, 1.5vw + 16px, 24px);
-  width: var(--seal-size);
-  height: var(--seal-size);
-  flex: 0 0 auto;          /* .brand is a flex row: never let the mark squash */
-  color: var(--navy);      /* the source currentColor reads on the warm ground */
+
+/* ------------------------------------------------------------- both versions --
+   position: relative on .gate rather than only on .gate--live, so any board can
+   host a name without the markup having to remember which class carries the
+   containing block. The svg rule is the same one site/styles.css gives ".doc
+   svg", repeated because this object is not inside a .doc: display:block kills
+   the inline baseline gap that would otherwise open under the drawing, and the
+   width and height pair make it fluid without a transform. */
+.gate {
+  position: relative;
+  color: var(--navy);      /* the source currentColor reads. See the note above. */
+}
+.gate svg {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 
-/* (b), the auth panel. 40px at a 533px viewport and above, 34px at 320px. */
-.seal--panel { --seal-size: clamp(34px, 3vw + 24px, 40px); }
+/* Every navy ground. .foot sets color: var(--on-navy-2) and .band sets #fff for
+   the whole band, so inherit is both correct and the only value that cannot go
+   stale if either of those changes. */
+.band .gate,
+.on-navy .gate,
+.foot .gate { color: inherit; }
 
-/* Every navy ground. .foot .brand already carries color:#fff and .band sets
-   #fff for the whole band, so inherit is both correct and the only value that
-   cannot go stale if either of those changes. seal--onnavy is the manual
-   handle for the auth panel, which is --brand-950 and lives outside this
-   sheet's selectors. */
-.band .seal,
-.on-navy .seal,
-.foot .seal,
-.seal--onnavy { color: inherit; }
 
-/* ---------------------------------------------------------------- print ---
-   The house print sheet re-grounds .foot to white and forces #000 on a named
-   list of footer selectors, and .foot .brand is not on that list: it keeps its
-   inline color:#fff, so an inheriting mark would print white on white. Navy
-   prints legibly on white and --navy is not redefined for print, so one rule
-   covers every ground. It sits last so it beats the two class context rules
-   above on order rather than on weight. */
+/* ----------------------------------------------------------------- (a) part A --
+   The footer vignette, at the specified 130px. min() rather than a bare width
+   so it can never be wider than the footer column it sits in: at a 320px
+   viewport that column is about 272px, so the cap is what applies and the mark
+   is drawn at its intended size, but the declaration does not depend on that
+   being true. 8.125rem is 130px at the default root size and grows with it. */
+.gate--vignette { width: min(8.125rem, 100%); }
+
+
+/* ----------------------------------------------------------------- (b) part B --
+   The live board. 20rem, 320px at the default root size, which is where the
+   three type ceilings are calibrated. */
+.gate--live { width: min(20rem, 100%); }
+
+/* THE NAME, laid over the board panel in percentages of the drawing, so it
+   tracks the frame at every width with no second set of numbers to keep in
+   step. The panel is x 11 to 119 and y 6 to 48 in a 130 by 76 viewBox, so:
+
+       top     6 / 76     =  7.8947%
+       right  11 / 130    =  8.4615%
+       bottom 28 / 76     = 36.8421%
+       left   11 / 130    =  8.4615%
+
+   Column flex with justify-content: center rather than a grid with
+   place-items: center, because an anonymous grid item under justify-items:
+   center sizes to max-content and a long name would then overflow sideways out
+   of the frame. As a column flex item the text fills the panel width, wraps
+   inside it, and centres vertically. If a name is somehow taller than the panel
+   it overflows visibly rather than being clipped, which is the safe failure: a
+   name that spills is a bug someone reports, a name that is silently cut is a
+   wrong name on a gate board.
+
+   The text stack is --text, NOT --display, and that is deliberate. The comment
+   at the head of site/styles.css binds the display cut to h1 and h2 only,
+   because Segoe UI Variable Display is an optical cut for roughly 24pt and up
+   and renders thin and over-tight below 17px on Windows 11 while rendering
+   normally on Windows 10. The largest size here is 22px, under that threshold
+   and on the majority platform, so the sign takes the text stack.
+
+   No text-transform. Uppercasing is a no-op on Urdu and it would overwrite the
+   capitalisation the owner actually typed on the other side. */
+.gate__name {
+  position: absolute;
+  inset: 7.8947% 8.4615% 36.8421%;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 7%;                 /* clearance inside the 1.25 unit frame */
+  font-family: var(--text);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  text-align: center;
+  text-wrap: balance;
+  overflow-wrap: break-word;     /* an unbreakable string wraps rather than spills */
+  hyphens: none;                 /* nobody hyphenates the name on their own gate */
+  color: currentColor;
+}
+
+/* The three sizes, by grapheme cluster count. See the note at the head of this
+   file for how each ceiling becomes a clamp, and gateboard.html for the count
+   thresholds and for why the count is by cluster. */
+.gate__name--l { font-size: clamp(0.8125rem, calc(6.875vw - 3.3px), 1.375rem); }   /* n < 16,       22px */
+.gate__name--m { font-size: clamp(0.8125rem, calc(5.625vw - 2.7px), 1.125rem); }   /* 16 <= n < 22, 18px */
+.gate__name--s { font-size: clamp(0.8125rem, calc(4.6875vw - 2.25px), 0.9375rem); }/* n >= 22,      15px */
+
+
+/* ------------------------------------------------------------- Arabic script --
+   THE FIRST HARD REQUIREMENT. Tracking applied to a connected script does not
+   look loose, it severs the joins and the word stops being a word, so this is a
+   correctness rule rather than a typographic taste. Urdu is the ordinary case
+   for this product, not an edge case: the footer of the page this mark sits in
+   already carries a line of Urdu directly above it.
+
+   letter-spacing is set to `normal` and not to 0. They are not the same thing:
+   normal returns the value the face itself specifies, which for a Nastaliq face
+   is part of how the joins are drawn, while 0 pins it to zero and overrides the
+   font. Word spacing goes back to normal for the same reason.
+
+   THE STACK IS LOCAL FAMILY NAMES ONLY. No @font-face, no webfont, no request
+   of any kind: each name is a face that is already installed on one of the
+   target machines, and the browser uses the first it finds.
+       Noto Nastaliq Urdu        Android, ChromeOS, most Linux
+       Jameel Noori Nastaleeq    the face most commonly installed by hand on a
+                                 Pakistani school office Windows PC
+       Urdu Typesetting          ships with Windows
+       Noto Naskh Arabic         the Naskh fallback where no Nastaliq exists
+       Segoe UI, Tahoma          both carry full Arabic coverage on Windows
+   The generic sans-serif closes the stack so there is always a match.
+
+   line-height goes to 1.9. Nastaliq is a steeply cascading script whose
+   ascenders and descenders reach far past a Latin em box, and at 1.2 the second
+   line of a wrapped name collides with the first.
+
+   font-synthesis: none because a Nastaliq face usually ships in one weight, and
+   the 700 above would then be synthesised by smearing the glyph sideways, which
+   thickens the joins into blobs. Asking for 700 and refusing the fake is the
+   correct pair: a face with a real bold uses it, a face without one renders as
+   designed.
+
+   Three hooks, so the rule fires whichever way the caller marks the name up:
+   the explicit class, and :lang() for the five languages that use this script
+   in this market. :lang() inherits, so setting lang on an ancestor works too.
+   site/index.html sets lang="en-PK" on the html element, so none of these can
+   fire by accident. */
+.gate__name--ar,
+.gate__name:lang(ur),
+.gate__name:lang(ar),
+.gate__name:lang(fa),
+.gate__name:lang(ps),
+.gate__name:lang(sd) {
+  font-family: "Noto Nastaliq Urdu", "Jameel Noori Nastaleeq",
+               "Urdu Typesetting", "Noto Naskh Arabic",
+               "Segoe UI", Tahoma, sans-serif;
+  letter-spacing: normal;
+  word-spacing: normal;
+  line-height: 1.9;
+  font-synthesis: none;
+  text-wrap: wrap;      /* balance re-breaks lines by measure, which fights a
+                           cascading script far more than it helps it */
+}
+
+
+/* -------------------------------------------------------------- print --------
+   Nothing to declare for colour. The house print sheet re-grounds .foot to
+   white and forces color: #000 on .foot itself, and this mark sits in a plain
+   div in the footer's first column rather than inside .brand, which is the one
+   footer element that carries an inline color: #fff. So `.foot .gate { color:
+   inherit }` resolves to black ink on white paper, every stroke is
+   currentColor, and the drawing prints correctly with no rule of its own.
+
+   The live board is not on the printed marketing page at all, and if it ever is
+   printed it is 20rem of line drawing in black, which is right.
+
+   The one thing worth saying: the board is a picture, and a picture split
+   across a page break is two broken pictures. */
 @media print {
-  .seal,
-  .band .seal,
-  .on-navy .seal,
-  .foot .seal,
-  .seal--onnavy { color: var(--navy); }
+  .gate { break-inside: avoid; }
 }
 
-/* -------------------------------------------------------- forced colours ---
-   Deliberately empty, and recorded so nobody adds a rule here later. In
-   forced-colors mode the UA replaces `color`, so the ring, the dot and the
-   block take the system text or link colour on their own, and the two
-   hairlines are holes rather than paint, so they take the system Canvas. The
-   mark is correct in high contrast because of how it is drawn, not because of
-   anything declared for it. */
+
+/* ---------------------------------------------------- forced colours ---------
+   Deliberately empty, and recorded so that nobody adds a rule here later. In
+   Windows high contrast the user agent replaces `color`, so every stroke in
+   both versions takes the system text colour on its own, and there is no fill
+   anywhere to be forced to a system ground. The board is correct in high
+   contrast because of how it is drawn, not because of anything declared for it.
+
+   The live name is real text, so it takes the system text colour with
+   everything else on the page. That is the third thing the HTML text buys over
+   an SVG <text>, after wrapping and font scaling. */
 
 /* ---- receipt ---- */
 /* =============================================================================
@@ -1935,6 +2090,412 @@ details.q p { margin-top: 11px; color: var(--ink-2); max-width: 72ch; font-size:
   }
 }
 
+/* ---- resultcard ---- */
+/* =============================================================================
+   resultcard.css, the new CSS for ART:resultcard, the published result card
+   drawn against web/src/pages/exams/ResultCardPrint.tsx.
+
+   NEW CSS ONLY. Everything else the fragment needs is already in
+   site/styles.css: the tokens, .doc for the white surface and its structural
+   --rule-3 border, .doc--lift for the stacked paper edge, .doc__cap for the
+   caption, and the .tnum rule, which already reaches ".doc td, .doc th" and so
+   puts tabular lining figures on the Total and Obtained columns with no class
+   of its own. The .tnum class appears in the fragment only on the figures that
+   sit OUTSIDE the table, which that selector cannot reach: the GR number, the
+   roll number, the percentage and the two halves of the position.
+
+   Every selector is prefixed .res so nothing can collide with the house sheet,
+   and nothing here overrides a .doc rule, so the link order of the two files
+   does not matter. Link it after site/styles.css.
+
+   Every colour is a var() token. There is not one literal hex, and not one hue:
+   five tokens do the whole card, --ink for figures and names, --ink-3 for
+   labels and notes, and --rule, --rule-2 and --rule-3 for the three rule
+   weights. There is no SVG on this artefact at all, so there is nothing here
+   that needs a filter, a blend mode or a transform, and none is used.
+
+   ---------------------------------------------------------------------------
+   FIVE DECISIONS RECORDED HERE RATHER THAN IN A COMMIT MESSAGE.
+
+   1. TYPE FLOOR, 13px, OVER THE SPECIFIED 11px MASTHEAD. The brief asks for the
+      school name in 11px letter spaced caps, and separately for nothing below
+      13px except a monospaced serial. The floor wins, because it is the
+      accessibility constraint and the 11px is a taste, and because the receipt
+      and the attendance sheet on this page resolved the same conflict the same
+      way. The masthead keeps everything else the 11px was asking for: small,
+      heavy, widely tracked caps, quieter than the pupil's name below it. Every
+      size in this file is a clamp() whose minimum is 0.8125rem, which is 13px
+      at the default root size and larger the moment a phone raises its font
+      scale. The one item below the floor is the monospaced card serial, which
+      is the exception the rule itself allows.
+
+   2. THE INSET DOUBLE RULE IS TWO REAL BORDERS, NOT A GRADIENT. It is the
+      cheapest thing in the file: a 6px margin holds .res__frame off the edge of
+      the sheet, its border draws the outer bar, its 2px padding sets the gap,
+      and .res__in's border draws the inner bar. Borders print, and Windows
+      forced colours repaints border-color in CanvasText, so both routes reach
+      both bars with nothing extra declared. A repeating gradient would have
+      needed a print rule and a forced colours rule and would still have been a
+      background, which browsers do not print by default.
+
+   3. THREE RULE WEIGHTS, EACH DOING THE JOB site/styles.css DEFINES FOR IT.
+      --rule-2 for the inset frame, which is decorative separation and must
+      never compete with the sheet's own --rule-3 edge 6px outside it. --rule
+      for the row separators inside the table and the two thin bands under it,
+      separation only. --rule-3 for the column head rule, for both bars of the
+      double rule above the totals row, and for the two signature rules,
+      because those are structure, and because the token comment calls --rule-3
+      the weight for every form field border and a blank line to sign on is
+      exactly that.
+
+   4. THE MASTHEAD RULE IS --ink, NOT A RULE TOKEN. It is the one rule on the
+      card that is part of the letterhead rather than part of the ruling, which
+      is the same choice .rcpt__school and .drw__school already made, so the
+      three drawn documents read as one system.
+
+   5. NO GREEN ON THE VERDICT. The house rules permit --money-800 as text, and
+      it is declined: "Pass" is a word, and a word does not need a hue to say
+      what it says. Spending no colour at all is also the only version of this
+      card that is certainly correct on a photocopier, where the app's brand and
+      danger hues land within 0.4 percent of each other.
+   ============================================================================= */
+
+.res-fig {
+  margin: 0;
+  /* Fluid below this. The cap only matters if the card is pasted into a slot
+     wider than the column it is drawn for: a portrait card stretched past
+     about 550px stops reading as portrait. */
+  max-width: 34rem;
+}
+
+/* ------------------------------------------------------------------ frame ---
+   See decision 2. The 6px is the inset the brief specifies, and it is a margin
+   rather than a padding so that the gap belongs to the sheet rather than to the
+   frame, and .doc's own overflow: hidden clips nothing. */
+.res__frame {
+  margin: 6px;
+  padding: 2px;                          /* the gap between the two bars */
+  border: 1px solid var(--rule-2);
+}
+
+/* Percentage padding, so the margins inside the frame stay in proportion to the
+   card at every width instead of crowding at 320px. On this inner element
+   rather than on .doc, which sets padding: 0. */
+.res__in {
+  padding: 5.5% 6.5% 6%;
+  border: 1px solid var(--rule-2);
+}
+
+/* --------------------------------------------------------------- masthead ---
+   Centred, exactly as the component's header is, and single ruled: the receipt
+   uses a double rule under its school name because it is a document handed over
+   in exchange for money, and the two objects should not claim to be the same
+   kind of paper. */
+.res__head { text-align: center; }
+
+.res__school {
+  font-size: clamp(0.8125rem, 1.6vw, 0.875rem);
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  line-height: 1.3;
+  text-transform: uppercase;
+  color: var(--ink);
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--ink);
+}
+.res__kind {
+  margin-top: 9px;
+  font-size: clamp(0.8125rem, 1.2vw, 0.875rem);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1.35;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* ------------------------------------------------------------------ meta ---
+   The component's two column grid of four fields. auto-fit rather than a media
+   query, because the breakpoint that matters is the width of a FIELD, not the
+   width of the viewport: this card can sit in a full width block or in half of
+   a split, and either way the pair goes to one column the moment two of them
+   will not fit. 180px is the widest field here, "Class, Class 5, Section A". */
+.res__meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 6px 22px;
+  margin: 5% 0 0;
+}
+.res__mi {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.res__meta dt {
+  flex: 0 0 auto;
+  font-size: clamp(0.8125rem, 1.1vw, 0.875rem);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.5;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.res__meta dd {
+  margin: 0;
+  min-width: 0;
+  font-size: clamp(0.875rem, 1.6vw, 1rem);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+/* ----------------------------------------------------------------- table ---
+   table-layout stays auto on purpose. The two widths below are hints, so the
+   min-content width of a column head always wins over its percentage and no
+   head can be clipped or forced to overflow its cell. Subject names are allowed
+   to wrap, which is what buys the narrow end its room: "General Science" breaks
+   across two lines at 320px and nothing else has to give. */
+.res__tbl {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 5.5%;
+}
+.res__tbl th,
+.res__tbl td {
+  text-align: left;
+  vertical-align: top;
+  padding: 8px 6px 9px 0;
+  font-weight: 400;                      /* the component's subject cell is not
+                                            bold, and a row header would be */
+}
+/* Both figure columns: right aligned, never broken. */
+.res__tbl th:not(:first-child),
+.res__tbl td:not(:first-child) {
+  text-align: right;
+  padding-right: 0;
+  padding-left: 12px;
+  white-space: nowrap;
+}
+
+.res__tbl thead th {
+  padding-top: 0;
+  padding-bottom: 7px;
+  font-size: clamp(0.8125rem, 1.1vw, 0.875rem);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.4;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--ink-3);
+  border-bottom: 1px solid var(--rule-3);
+}
+.res__h-sub { width: 52%; }
+.res__h-num { width: 24%; }
+
+.res__tbl tbody th,
+.res__tbl tbody td {
+  font-size: clamp(0.875rem, 1.6vw, 1rem);
+  line-height: 1.4;
+  color: var(--ink);
+  border-bottom: 1px solid var(--rule);
+}
+/* The component's Max column is text-slate-600 against an --ink Obtained: the
+   denominator is context, the mark is the fact. */
+.res__tbl tbody td:first-of-type { color: var(--ink-3); }
+
+/* The last body row's hairline is removed rather than left to collapse against
+   the totals row's --rule-3 border. Border collapse between two 1px solid cell
+   borders is not resolved by darkness, so the structural rule could silently
+   have lost to the hairline. */
+.res__tbl tbody tr:last-child th,
+.res__tbl tbody tr:last-child td { border-bottom: 0; }
+
+/* ------------------------------------------------------------- totals row ---
+   The double rule is a 1px border plus a second 1px bar three pixels above it,
+   one segment per cell. With border-collapse the padding boxes abut, so the
+   segments join seamlessly and the rule is real structure at both ends, rather
+   than a border-style: double that thickens unevenly at 1px. */
+.res__tbl tfoot th,
+.res__tbl tfoot td {
+  position: relative;
+  padding-top: 12px;
+  font-size: clamp(0.9375rem, 1.8vw, 1.0625rem);
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--ink);
+  border-top: 1px solid var(--rule-3);
+}
+.res__tbl tfoot th::before,
+.res__tbl tfoot td::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -3px;
+  height: 1px;
+  background: var(--rule-3);
+}
+
+/* ---------------------------------------------------------- the three numbers
+   The component's wrapping flex row with space between, and the same three
+   items the brief names. Each pair is nowrap, so a percentage never breaks away
+   from its label, and the row wraps instead. At 320px "Percentage 82.50%" takes
+   the first line on its own and the other two share the second, which is what
+   space-between is for: both ends of the card stay flush. */
+.res__result {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 9px 22px;
+  margin: 5% 0 0;
+  padding-top: 13px;
+  border-top: 1px solid var(--rule);
+}
+.res__ri {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  white-space: nowrap;
+}
+.res__result dt {
+  font-size: clamp(0.8125rem, 1.1vw, 0.875rem);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.5;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.res__result dd {
+  margin: 0;
+  font-size: clamp(1rem, 2.1vw, 1.1875rem);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+  color: var(--ink);
+}
+
+/* --------------------------------------------------------------- verdict ---
+   The word, and the fact behind it, on one line that wraps. See decision 5 for
+   why there is no colour on it. */
+.res__verdict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin-top: 4.5%;
+  padding-top: 13px;
+  border-top: 1px solid var(--rule);
+}
+.res__vk {
+  font-size: clamp(0.8125rem, 1.1vw, 0.875rem);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.5;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.res__vv {
+  font-size: clamp(0.9375rem, 1.8vw, 1.0625rem);
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--ink);
+}
+.res__vn {
+  font-size: clamp(0.8125rem, 1.2vw, 0.875rem);
+  line-height: 1.45;
+  color: var(--ink-3);
+}
+
+/* ------------------------------------------------------------ signatures ---
+   The component prints a run of underscores after each label. A real rule is
+   the same object done properly, and it is the same construction the receipt
+   and the attendance sheet already use: room to sign, a --rule-3 field border,
+   then the label under it. */
+.res__sign {
+  display: flex;
+  gap: 9%;
+  margin-top: 7%;
+}
+.res__sig {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 30px 0 0;                      /* 30px is the room to sign in */
+  padding-top: 6px;
+  border-top: 1px solid var(--rule-3);
+  font-size: clamp(0.8125rem, 1.1vw, 0.875rem);
+  line-height: 1.4;
+  color: var(--ink-3);
+}
+
+/* ---------------------------------------------------------------- serial ---
+   The one item allowed below 13px, and only because it is a monospaced serial
+   read a character at a time rather than as prose. */
+.res__serial {
+  margin-top: 6%;
+  font-size: clamp(0.8125rem, 1.2vw, 0.875rem);
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+.res__sn {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+/* Visually hidden, still read out. The table caption names the document for
+   anyone who arrives at the table out of context, and states the state it is
+   in, since "published" is otherwise carried only by the absence of a banner. */
+.res__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  border: 0;
+}
+
+/* ------------------------------------------------------------ narrow end ---
+   Below 400px the card's margins and the head tracking both tighten, which buys
+   back the room the three tracked column heads need, and the summary row stops
+   justifying: at that width space-between would strand one pair against each
+   edge and read as two unrelated facts. Nothing is scaled and nothing is
+   hidden. */
+@media (max-width: 400px) {
+  .res__in { padding: 5% 4.5% 5.5%; }
+  .res__tbl thead th { letter-spacing: 0.02em; }
+  .res__tbl th,
+  .res__tbl td { padding-right: 5px; }
+  .res__tbl th:not(:first-child),
+  .res__tbl td:not(:first-child) { padding-right: 0; padding-left: 9px; }
+  .res__result { justify-content: flex-start; gap: 9px 18px; }
+  .res__sign { gap: 7%; }
+}
+
+/* -------------------------------------------------------- forced colours ---
+   Nothing to re-declare, and this is recorded so that nobody adds a rule here
+   later. Every rule on this card is a border or, in the one case of the second
+   bar of the double rule, a 1px box with a background: Windows high contrast
+   repaints border-color in CanvasText on its own, and site/styles.css already
+   drops .doc--lift's shadow and re-borders .doc. The double rule's second bar
+   is the only mark that could thin to nothing, and it cannot: forced colours
+   does not remove background-color, only background-image. */
+
+/* ---------------------------------------------------------------- print ---
+   The card is a facsimile of a printout, so on paper it should be the page
+   rather than a card on a page: the width cap goes, and site/styles.css has
+   already removed the stacked paper edge. A result card split across two sheets
+   is not a result card, so the whole figure is kept together, and the table is
+   named separately so that if anything has to move it is the caption, which is
+   commentary, rather than the marks. */
+@media print {
+  .res-fig { max-width: none; }
+  .res-fig, .res { break-inside: avoid; }
+  .res__tbl { break-inside: avoid; }
+}
+
 /* ---- reversal ---- */
 /* =============================================================================
    ART:reversal, the ledger reversal pair. New CSS only; everything else comes
@@ -2156,5 +2717,93 @@ details.q p { margin-top: 11px; color: var(--ink-2); max-width: 72ch; font-size:
 @media print {
   .rev { break-inside: avoid; }
 }
+
+/* ---- seal ---- */
+/* =============================================================================
+   seal.css, the new CSS for the seal.
+
+   Everything the mark needs beyond this file is already in site/styles.css:
+   .brand supplies the flex row and the 10px gap, ".brand svg { display: block }"
+   kills the inline baseline gap, and the tokens supply every colour. Nine
+   declarations in four rules is the whole cost of the mark.
+
+   Every selector is prefixed .seal so nothing can collide with the house
+   sheet. Link it after site/styles.css. Nothing here overrides a house rule,
+   so the order only matters for the print block at the bottom.
+
+   No new colour. Two tokens, var(--navy) and inherit, and no hex at all.
+
+   ---------------------------------------------------------------------------
+   WHY THE MARK SETS `color` INSTEAD OF PAINTING ITSELF
+
+   Every stroke and fill in the SVG is currentColor, which is what lets one
+   geometry serve the warm nav, the navy footer, the auth panel, the letterhead
+   of a drawn artefact, the print sheet and Windows high contrast. But in the
+   nav the inherited colour is --ink, because .brand sets it for the wordmark,
+   and the seal is specified as --navy. So the mark declares its own `color`
+   and lets currentColor read it back. That is one property doing the work a
+   fill attribute cannot, since a fill written into the markup could not then
+   be inherited on the navy grounds.
+
+   THE ORDER OF THE COLOUR RULES IS LOAD BEARING. .seal is one class, the
+   context rules are two, so they win on specificity wherever the mark sits on
+   navy, and nothing needs !important.
+
+   ---------------------------------------------------------------------------
+   WHY THE SIZE IS A CLAMP ON A 24 PIXEL MARK
+
+   Because at 320px the nav carries the seal, "School Manager" at 16px and the
+   Menu button, and the two pixels the clamp gives back are the cheapest ones
+   on the row. The clamp reaches its 24px ceiling at a 533px viewport, so every
+   tablet and desktop gets the specified size and only the narrowest phones see
+   21px. Width and height are set from one custom property rather than leaving
+   height auto, so the box is square in every engine without relying on
+   intrinsic aspect ratio inference, and neither variant is ever scaled with a
+   transform.
+   ============================================================================= */
+
+.seal {
+  --seal-size: clamp(21px, 1.5vw + 16px, 24px);
+  width: var(--seal-size);
+  height: var(--seal-size);
+  flex: 0 0 auto;          /* .brand is a flex row: never let the mark squash */
+  color: var(--navy);      /* the source currentColor reads on the warm ground */
+}
+
+/* (b), the auth panel. 40px at a 533px viewport and above, 34px at 320px. */
+.seal--panel { --seal-size: clamp(34px, 3vw + 24px, 40px); }
+
+/* Every navy ground. .foot .brand already carries color:#fff and .band sets
+   #fff for the whole band, so inherit is both correct and the only value that
+   cannot go stale if either of those changes. seal--onnavy is the manual
+   handle for the auth panel, which is --brand-950 and lives outside this
+   sheet's selectors. */
+.band .seal,
+.on-navy .seal,
+.foot .seal,
+.seal--onnavy { color: inherit; }
+
+/* ---------------------------------------------------------------- print ---
+   The house print sheet re-grounds .foot to white and forces #000 on a named
+   list of footer selectors, and .foot .brand is not on that list: it keeps its
+   inline color:#fff, so an inheriting mark would print white on white. Navy
+   prints legibly on white and --navy is not redefined for print, so one rule
+   covers every ground. It sits last so it beats the two class context rules
+   above on order rather than on weight. */
+@media print {
+  .seal,
+  .band .seal,
+  .on-navy .seal,
+  .foot .seal,
+  .seal--onnavy { color: var(--navy); }
+}
+
+/* -------------------------------------------------------- forced colours ---
+   Deliberately empty, and recorded so nobody adds a rule here later. In
+   forced-colors mode the UA replaces `color`, so the ring, the dot and the
+   block take the system text or link colour on their own, and the two
+   hairlines are holes rather than paint, so they take the system Canvas. The
+   mark is correct in high contrast because of how it is drawn, not because of
+   anything declared for it. */
 
 /* ==== END ARTEFACT STYLES ==== */
