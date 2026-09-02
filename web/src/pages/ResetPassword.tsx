@@ -14,6 +14,7 @@ import {
   authButtonLink,
   authField,
   authLabel,
+  AuthBusy,
 } from '@/components/AuthLayout'
 
 /**
@@ -134,10 +135,10 @@ export function ResetPassword() {
       ) : ready === 'no' ? (
         <>
           <div className="mt-5">
-            <AuthNotice tone="due">
+            <AuthError>
               This link has expired or has already been used. Reset links last one hour and
               work once.
-            </AuthNotice>
+            </AuthError>
           </div>
           <Link to="/forgot" className={`mt-6 ${authButtonLink}`}>
             Send a new link
@@ -146,7 +147,8 @@ export function ResetPassword() {
       ) : (
         <>
           <p className="mt-1.5 text-base text-slate-500">Choose a new password.</p>
-          <form onSubmit={onSubmit} className="mt-7 space-y-4">
+          <form onSubmit={onSubmit} className="mt-7 space-y-4" aria-busy={busy}>
+          <AuthBusy label={busy ? 'Saving your password' : null} />
             <label className="block">
               <span className={authLabel}>New password</span>
               <input
@@ -174,7 +176,7 @@ export function ResetPassword() {
               At least 8 characters. Do not reuse the password from another site.
             </p>
             {error && <AuthError>{error}</AuthError>}
-            <button type="submit" disabled={busy} aria-busy={busy} className={authButton}>
+            <button type="submit" disabled={busy} className={authButton}>
               {busy && <AuthSpinner />}
               {busy ? 'Saving' : 'Set the new password'}
             </button>

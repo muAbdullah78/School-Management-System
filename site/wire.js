@@ -30,6 +30,11 @@
 
   var C = window.SITE_CONFIG || {}
   var app = String(C.APP_URL || '').replace(/\/+$/, '')
+  // A value with no scheme is a RELATIVE path, so 'app.schoolmanager.pk' sends
+  // every button to a same-origin 404 on the marketing host while looking
+  // perfectly correct in config.js. Treated as unset so the honest degradation
+  // below fires and #wire-warning appears, which is what gets it fixed.
+  if (app && !/^https?:\/\//.test(app)) app = ''
 
   // ---- 1 & 2. Everything that points into the app ------------------------
   //
@@ -144,6 +149,10 @@
       .then(function (plans) {
         if (!plans || !plans.length) return
         plans.forEach(function (p) {
+          // The code goes into a selector, so it is validated rather than
+          // trusted. A row with a code of "] , *" would otherwise either throw
+          // or match every card on the page.
+          if (typeof p.code !== 'string' || !/^[a-z0-9_-]+$/i.test(p.code)) return
           var card = document.querySelector('[data-plan="' + p.code + '"]')
           if (!card) return
           var monthly = card.querySelector('[data-price-monthly]')
@@ -163,10 +172,22 @@
         })
         // The headline price in the hero, kept in step with the cheapest plan
         // rather than typed twice.
-        var cheapest = plans.filter(function (p) { return Number(p.price_monthly) > 0 })[0]
+        // By PRICE, not by position. This took plans[0] of a list ordered by
+        // sort_order, so with growth ahead of starter the hero read "From
+        // Rs 2,000" above a Rs 950 card. "From" is a promise about the minimum.
+        var cheapest = plans.filter(function (p) { return Number(p.price_monthly) > 0 })
+          .reduce(function (a, b) {
+            return Number(b.price_monthly) < Number(a.price_monthly) ? b : a
+          }, null)
         var lead = document.getElementById('lead-price')
         if (lead && cheapest) lead.textContent = money(cheapest.price_monthly)
       })
+      // The only network consumer here that had no catch. A throwing row in the
+      // middle of the loop left the cards half rewritten: some plans updated,
+      // the rest showing the HTML fallback, with no error anywhere. The
+      // fallback prices are CI-checked against the database, so falling back
+      // silently is correct; falling over halfway is not.
+      .catch(function () {})
   }
 
   // ---- 3. The installer --------------------------------------------------
@@ -209,6 +230,13 @@
 
         var section = document.getElementById('download')
         if (section) section.hidden = false
+        // The nav entries ship hidden, so a visitor with no JavaScript is never
+        // pointed at a section that is not there. They come back here.
+        var routes = document.querySelectorAll('a[href="#download"]')
+        for (var k = 0; k < routes.length; k++) {
+          var host = routes[k].closest('li') || routes[k]
+          host.hidden = false
+        }
 
         var btn = document.getElementById('download-btn')
         btn.setAttribute('href', r.url)

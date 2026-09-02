@@ -112,9 +112,23 @@
 
 * { box-sizing: border-box; }
 
+/* The hidden attribute has to win, and by default it does not.
+   The UA sheet's [hidden] { display: none } is a single type-less rule, so any
+   class that sets display beats it. wire.js hides the sticky bar's WhatsApp
+   button and the mobile menu's Download entry with el.hidden = true, and .btn
+   sets display:inline-flex while .navmenu__panel a sets display:block, so both
+   stayed visible: measured with the repo's blank config, hiddenAttr true and
+   computed display inline-flex. One reset fixes those two and every future
+   JS-driven hide. */
+[hidden] { display: none !important; }
+
 html {
   scroll-behavior: smooth;
   -webkit-text-size-adjust: 100%;
+  /* SC 2.4.11: keyboard focus must not be obscured. scroll-margin-top on the
+     sections handles anchor jumps, but it does nothing when the browser scrolls
+     to a focused element, which lands under the 64px sticky nav. */
+  scroll-padding-top: 84px;
 }
 
 /* The nav is sticky, so an anchor jump would otherwise land with the heading
@@ -213,9 +227,49 @@ a { color: inherit; }
   height: 1px;
   background: var(--rule-2);
 }
-.on-navy .rulehead__no { color: var(--due-dark); }
+/* NOT --due-dark. Amber means money due throughout the product, and using it
+   for a section number made 03 the only number on the page in the colour that
+   means arrears. brand-400 matches the accent precedent on the auth panel. */
+.on-navy .rulehead__no { color: var(--brand-400); }
 .on-navy .rulehead__label { color: var(--on-navy-2); }
 .on-navy .rulehead__line { background: rgba(255, 255, 255, 0.22); }
+
+/* ------------------------------------------------------------ skip link ---
+   The first focusable element on the page. Off screen until focused, which is
+   the only correct way to do this: display:none would make it unreachable and
+   a permanently visible one gets deleted by the next person. */
+.skip {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  background: var(--brand-600);
+  color: #fff;
+  padding: 12px 18px;
+  border-radius: 0 0 var(--radius) 0;
+  font-weight: 600;
+  text-decoration: none;
+}
+.skip:focus {
+  left: 0;
+}
+/* The main landmark takes focus from the skip link, so it must not draw a ring
+   around the entire page. */
+main:focus { outline: none; }
+
+/* Visually hidden but read aloud. Used for the table captions that name a
+   figure a sighted reader gets from the heading above it. */
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
 
 /* ----------------------------------------------------------------- focus ---
    One rule, both grounds. Applied with :focus-visible so a mouse click does
@@ -226,7 +280,11 @@ a { color: inherit; }
   border-radius: 4px;
 }
 .on-navy :where(a, button, summary, input, [tabindex]):focus-visible,
-.band :where(a, button, summary, input, [tabindex]):focus-visible {
+.band :where(a, button, summary, input, [tabindex]):focus-visible,
+/* .foot is a navy ground too and was missing here, so every footer focus ring
+   drew indigo on navy at 1.91:1 against the 3:1 SC 1.4.11 wants. Ten focusable
+   links live in the footer, which is the most of any landmark on the page. */
+.foot :where(a, button, summary, input, [tabindex]):focus-visible {
   outline-color: var(--focus-dark);
 }
 
@@ -387,8 +445,12 @@ a { color: inherit; }
 .spec__in {
   display: grid;
   gap: 0;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  /* Pinned rather than auto-fit: four cells in an auto-fit list resolve to
+     three tracks plus an orphan across a whole band of widths, and the orphan
+     drags a stray vertical hairline under it. Two and four both divide four. */
+  grid-template-columns: repeat(2, 1fr);
 }
+@media (min-width: 880px) { .spec__in { grid-template-columns: repeat(4, 1fr); } }
 .spec__cell { padding: 22px 24px; border-left: 1px solid var(--rule); }
 .spec__cell:first-child { border-left: 0; }
 .spec__k {
@@ -545,7 +607,7 @@ a { color: inherit; }
 
 /* The bar is a sighted-only reinforcement of a number that is already printed
    beside it, so it needs no accessible name of its own. */
-.bar { display: block; height: 5px; background: rgba(255, 255, 255, 0.16); border-radius: 3px; overflow: hidden; }
+.bar { display: block; height: 5px; flex: 1 1 auto; min-width: 0; background: rgba(255, 255, 255, 0.16); border-radius: 3px; overflow: hidden; }
 .bar i { display: block; height: 100%; background: var(--due-dark); }
 
 /* --------------------------------------------------------------- pricing ---
@@ -600,8 +662,18 @@ details.q > summary {
   align-items: center;
 }
 details.q > summary::-webkit-details-marker { display: none; }
-details.q > summary::after { content: "+"; color: var(--navy); font-size: 20px; line-height: 1; flex: 0 0 auto; }
-details.q[open] > summary::after { content: "\2013"; }
+/* Drawn on a real span rather than with pseudo-element content. Chrome folds
+   ::after content into the accessible name, so every question used to be
+   announced with a trailing plus sign. The span carries aria-hidden. */
+.q__m { flex: 0 0 auto; position: relative; width: 14px; height: 14px; }
+.q__m::before, .q__m::after {
+  content: "";
+  position: absolute;
+  background: var(--navy);
+}
+.q__m::before { left: 0; right: 0; top: 6px; height: 2px; }
+.q__m::after { top: 0; bottom: 0; left: 6px; width: 2px; }
+details.q[open] .q__m::after { display: none; }
 details.q p { margin-top: 11px; color: var(--ink-2); max-width: 72ch; font-size: 15px; }
 
 /* ------------------------------------------------------------------- cta ---*/
@@ -612,8 +684,10 @@ details.q p { margin-top: 11px; color: var(--ink-2); max-width: 72ch; font-size:
 
 /* ---------------------------------------------------------------- footer ---*/
 .foot { background: var(--navy-deep); color: var(--on-navy-2); padding: 52px 0 40px; font-size: 14px; }
-.foot__grid { display: grid; gap: 28px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
-.foot h4 {
+/* Same 3+1 orphan as the spec strip, for the same reason. */
+.foot__grid { display: grid; gap: 28px; grid-template-columns: repeat(2, 1fr); }
+@media (min-width: 880px) { .foot__grid { grid-template-columns: repeat(4, 1fr); } }
+.foot h4, .foot__h {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.09em;
@@ -631,6 +705,18 @@ details.q p { margin-top: 11px; color: var(--ink-2); max-width: 72ch; font-size:
   flex-wrap: wrap;
   gap: 12px;
   justify-content: space-between;
+}
+/* The Urdu line had no font-family, so it inherited --text and fell through
+   every Latin face to a default serif. Nastaliq is calligraphic and diagonal
+   and a Naskh or serif fallback is not merely a different look, it is harder to
+   read. Applied by language rather than by class so any future Urdu inherits
+   it. line-height stays generous because Nastaliq needs the descender room. */
+.foot__ur,
+[lang="ur"], [lang="ar"], [lang="fa"], [lang="ps"], [lang="sd"] {
+  font-family: "Noto Nastaliq Urdu", "Jameel Noori Nastaleeq", "Urdu Typesetting",
+               "Noto Naskh Arabic", "Segoe UI", Tahoma, sans-serif;
+  /* Tracking applied to a connected script breaks the letterforms. */
+  letter-spacing: normal;
 }
 .foot__ur { font-size: 15px; line-height: 1.9; color: #fff; }
 
@@ -654,8 +740,19 @@ details.q p { margin-top: 11px; color: var(--ink-2); max-width: 72ch; font-size:
     border-top: 1px solid var(--rule-3);
   }
   .actionbar .btn { width: 100%; }
-  /* Room for the bar, so the footer's last link is never under it. */
-  body { padding-bottom: 76px; }
+  /* Room for the bar, so the footer's last link is never under it.
+     Measured 92.4px at 320 to 360px, where the primary label wraps to two
+     lines, against the 76px this used to reserve: the last footer link sat
+     under the bar on exactly the narrowest phones. Reserving the two-line
+     height rather than the one-line height, since over-reserving costs a
+     little whitespace and under-reserving costs a tap target. */
+  body { padding-bottom: 100px; }
+  /* SC 2.4.11 again, at the other edge: without this, tabbing to anything near
+     the bottom scrolls it to just above the fold and the fixed bar covers it. */
+  html { scroll-padding-bottom: 100px; }
+  /* The label is short enough not to wrap at 320px. The long form stays in the
+     hero, where there is room for it. */
+  .actionbar .btn { white-space: nowrap; }
 }
 
 /* --------------------------------------------------------------- tables ---*/
@@ -671,6 +768,16 @@ details.q p { margin-top: 11px; color: var(--ink-2); max-width: 72ch; font-size:
   .nav__links, .nav__cta { display: none; }
   .navmenu { display: block; }
 }
+/* The three-up challan needs room the module index does not have. Above
+   1080px the artefact row has three columns of roughly 340px, which puts each
+   challan copy at about 110px wide: measured effective type of 5.2px, which is
+   not small, it is unreadable. Given its own full-width row instead, so a copy
+   is about 300px wide and its body labels render near 10px. */
+@media (min-width: 701px) {
+  .artefacts { grid-template-columns: 1fr; gap: 34px; max-width: 760px; }
+  .artefacts > * { max-width: 100%; }
+}
+
 @media (max-width: 700px) {
   .section { padding: 58px 0; }
   .hero { padding: 44px 0 56px; }
@@ -697,6 +804,11 @@ details.q p { margin-top: 11px; color: var(--ink-2); max-width: 72ch; font-size:
     color: var(--ink-3);
     text-align: left;
   }
+  /* The bar is a sighted-only reinforcement of the Gap figure printed two rows
+     above it, so on the stacked layout the generated column label was the only
+     thing left to announce: every row ended with the bare word "Shortfall".
+     The whole cell goes, rather than just its label. */
+  .recon td[data-th="Shortfall"] { display: none; }
   .band .recon tr { border-color: rgba(255, 255, 255, 0.2); }
   .band .recon td::before { color: var(--on-navy-2); }
 
@@ -727,6 +839,13 @@ details.q p { margin-top: 11px; color: var(--ink-2); max-width: 72ch; font-size:
   .bar i { background: Highlight; }
   .doc--lift { box-shadow: none; }
   .card, .doc, .rates { border-color: CanvasText; }
+  /* The document double rules are painted as background-color on a pseudo
+     element. forced-colors does not remove background-color, but it does
+     REPAINT it, which on some themes lands on the ground colour and the rule
+     vanishes. Named explicitly rather than trusted. */
+  .rcpt__total::before, .rcpt__hd::after, .res__tot::before, .chln__dbl {
+    background-color: CanvasText !important;
+  }
   :where(a, button, summary, input, [tabindex]):focus-visible { outline-color: Highlight; }
 }
 
@@ -735,7 +854,29 @@ details.q p { margin-top: 11px; color: var(--ink-2); max-width: 72ch; font-size:
    navy band prints as white while `color: #fff` still prints white, which is
    an invisible page. Every inverted surface is explicitly re-grounded. */
 @media print {
-  :root { --paper: #fff; --paper-2: #fff; }
+  /* TOKENS, not a selector list. The previous version overrode two tokens and
+     then chased individual selectors with #000, so every pale on-navy token
+     kept its screen value on a white printed ground. Measured: --on-navy-2 and
+     the reconciliation figures at 1.4:1 to 1.9:1, and the footer wordmark and
+     the Urdu line at exactly 1.00:1, white on white. Redefining the tokens
+     fixes everything that uses them, including anything added later. */
+  :root {
+    --paper: #fff;
+    --paper-2: #fff;
+    --card: #fff;
+    --navy-deep: #fff;
+    --navy: #000;
+    --on-navy-2: #333;
+    --ink: #000;
+    --ink-2: #000;
+    --ink-3: #333;
+    --money-dark: #000;
+    --due-dark: #000;
+    --brand-400: #000;
+    --rule: #999;
+    --rule-2: #777;
+    --rule-3: #000;
+  }
   body { background: #fff; color: #000; font-size: 11pt; padding-bottom: 0; }
   .nav, .actionbar, .navmenu, .hero__cta, .cta__row, .btn { display: none !important; }
   .band, .foot, .cta {
@@ -744,8 +885,11 @@ details.q p { margin-top: 11px; color: var(--ink-2); max-width: 72ch; font-size:
     color: #000 !important;
     border: 1px solid #000;
   }
+  /* Anything that hard-codes #fff rather than reading a token still has to be
+     named, because a token redefinition cannot reach a literal. */
   .band h2, .band h3, .band p, .band .lede, .band .muted, .band a,
-  .foot, .foot a, .foot h4, .cta h2, .cta p,
+  .foot, .foot a, .foot h4, .foot h3, .cta h2, .cta p,
+  .foot .brand, .foot .brand span, .foot__ur,
   .band .checklist li, .band .checklist b, .band .recon tbody td {
     color: #000 !important;
   }
@@ -755,7 +899,18 @@ details.q p { margin-top: 11px; color: var(--ink-2); max-width: 72ch; font-size:
   .doc--lift { box-shadow: none; }
   .section { padding: 18pt 0; }
   details.q { break-inside: avoid; }
+  /* A closed <details> hides its content via ::details-content with
+     content-visibility: hidden, NOT via display on the children, so the old
+     `details.q p { display: block !important }` was a no-op and the printed
+     page carried seven questions, seven plus signs and no answers. Measured:
+     getComputedStyle(details, '::details-content').contentVisibility ===
+     'hidden' in print media. The display rule is kept for older engines. */
+  details.q::details-content {
+    content-visibility: visible !important;
+    block-size: auto !important;
+  }
   details.q p { display: block !important; }
+  details.q > summary::after { content: "" !important; }
   a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 9pt; color: #000; }
 }
 

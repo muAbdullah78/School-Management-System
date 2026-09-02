@@ -49,11 +49,17 @@ import { config } from '@/lib/config'
    product. A `sm:text-sm` would reintroduce exactly that on iPadOS Safari in
    both orientations, which is the device a principal hands to a clerk.
 
-   border-slate-300 as the floor. With the card gone, the field sits directly on
-   white, and a decorative hairline on white is not a visible control under
-   WCAG 1.4.11. */
+   THE BORDER, and a correction. This said border-slate-300 was the floor for
+   WCAG 1.4.11, and it is not: #CBD5E1 on white measures 1.48:1 against the 3:1
+   the criterion requires for the boundary of a control. With the card gone the
+   field sits directly on white, so the border is the only thing that says
+   "this is where you type", and a comment asserting compliance is worse than
+   no comment because it stops the next person measuring.
+
+   slate-500 #64748B measures 4.76:1 on white and still reads as a quiet field
+   rather than a heavy one. */
 export const authField =
-  'mt-1.5 block min-h-[44px] w-full rounded border border-slate-300 px-3 py-2.5 ' +
+  'mt-1.5 block min-h-[44px] w-full rounded border border-slate-500 px-3 py-2.5 ' +
   'text-base text-slate-900 placeholder:text-slate-400 ' +
   'focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 
@@ -66,7 +72,11 @@ export const authButton =
   'flex min-h-[44px] w-full items-center justify-center gap-2 rounded bg-brand-600 ' +
   'px-4 py-2.5 text-base font-medium text-white hover:bg-brand-700 ' +
   'focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 ' +
-  'disabled:opacity-60'
+  // NOT disabled:opacity-60. Every page swaps the label to live status text
+  // while busy ("Signing in", "Creating your school"), and dimming the whole
+  // button took that text to 2.79:1 at exactly the moment it matters most.
+  // A slightly lighter fill says "working" without hiding the word.
+  'disabled:bg-brand-500 disabled:opacity-100 disabled:cursor-progress'
 
 /** Same shape, for the places where the action is a link rather than a submit. */
 export const authButtonLink = `${authButton} text-center no-underline`
@@ -133,8 +143,35 @@ export function AuthNotice({
       ? 'border-money-100 border-l-money-700 bg-money-50 text-money-800'
       : 'border-due-100 border-l-due-700 bg-due-50 text-due-800'
   return (
-    <p className={`rounded-r border border-l-[3px] py-2.5 pl-3 pr-3 text-sm ${skin}`}>
+    // role="status" so a good outcome is ANNOUNCED. AuthError has carried
+    // role="alert" since it was written and this had nothing, so every
+    // successful outcome on these four screens was silent to a screen reader:
+    // the form simply stopped responding as far as the user could tell.
+    // "status" rather than "alert" because it is polite news, not an error.
+    <p
+      role="status"
+      className={`rounded-r border border-l-[3px] py-2.5 pl-3 pr-3 text-sm ${skin}`}
+    >
       {children}
+    </p>
+  )
+}
+
+/**
+ * The busy announcement, for the moment between pressing submit and anything
+ * visible happening.
+ *
+ * Submitting sets disabled on the button, and a disabled element cannot hold
+ * focus, so the browser drops focus to <body>. aria-busy on that same button is
+ * then attached to something the user is no longer on, and nothing is spoken at
+ * all. Measured in a fixture: activeElement went from BUTTON to BODY the moment
+ * disabled flipped. So the status lives outside the button, in its own polite
+ * live region that is present before the text arrives.
+ */
+export function AuthBusy({ label }: { label: string | null }) {
+  return (
+    <p role="status" aria-live="polite" className="sr-only">
+      {label ?? ''}
     </p>
   )
 }

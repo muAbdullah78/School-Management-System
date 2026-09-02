@@ -136,7 +136,11 @@ export function GateBoard({ name }: { name: string }) {
               {shown}
             </span>
           ) : (
-            <span className="text-[15px] font-medium tracking-[0.04em] text-slate-400">
+            <span // slate-500, not slate-400. This placeholder sits on the white signboard
+              // and measured 2.56:1, and it is the first thing anybody sees on the
+              // most important page in the product. slate-500 is 4.76:1 and still
+              // reads as an empty board rather than a filled one.
+              className="text-[15px] font-medium tracking-[0.04em] text-slate-500">
               Your school name here
             </span>
           )}

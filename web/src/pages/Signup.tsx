@@ -11,6 +11,7 @@ import {
   authField,
   authHint,
   authLabel,
+  AuthBusy,
 } from '@/components/AuthLayout'
 
 /**
@@ -75,7 +76,8 @@ export function Signup() {
         14 days free. No card needed: pay by bank transfer only if you decide to continue.
       </p>
 
-      <form onSubmit={onSubmit} className="mt-7 space-y-4">
+      <form onSubmit={onSubmit} className="mt-7 space-y-4" aria-busy={busy}>
+          <AuthBusy label={busy ? 'Creating your school' : null} />
         <label className="block">
           <span className={authLabel}>School name</span>
           <input
@@ -86,6 +88,7 @@ export function Signup() {
             className={authField}
           />
         </label>
+          <p id="pw-hint" className={authHint}>At least 8 characters.</p>
         <label className="block">
           <span className={authLabel}>Your name</span>
           <input
@@ -132,14 +135,14 @@ export function Signup() {
           <span className={authLabel}>Choose a password</span>
           <input
             type="password" autoComplete="new-password" required minLength={8}
-            value={form.password} onChange={set('password')} className={authField}
+            value={form.password} onChange={set('password')} className={authField} aria-describedby="pw-hint"
           />
-          <span className={authHint}>At least 8 characters.</span>
+          
         </label>
 
         {error && <AuthError>{error}</AuthError>}
 
-        <button type="submit" disabled={busy} aria-busy={busy} className={authButton}>
+        <button type="submit" disabled={busy} className={authButton}>
           {busy && <AuthSpinner />}
           {busy ? 'Creating your school' : 'Create my school'}
         </button>

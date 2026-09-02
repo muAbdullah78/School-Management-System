@@ -11,6 +11,7 @@ import {
   authButton,
   authField,
   authLabel,
+  AuthBusy,
 } from '@/components/AuthLayout'
 
 export function Login() {
@@ -44,7 +45,8 @@ export function Login() {
         {appTitle(schoolName)}
       </h1>
       <p className="mt-1.5 text-base text-slate-500">Sign in to continue.</p>
-      <form onSubmit={onSubmit} className="mt-7 space-y-4">
+      <form onSubmit={onSubmit} className="mt-7 space-y-4" aria-busy={busy}>
+          <AuthBusy label={busy ? 'Signing in' : null} />
         <label className="block">
           <span className={authLabel}>Email</span>
           <input
@@ -68,7 +70,7 @@ export function Login() {
           />
         </label>
         {error && <AuthError>{error}</AuthError>}
-        <button type="submit" disabled={busy} aria-busy={busy} className={authButton}>
+        <button type="submit" disabled={busy} className={authButton}>
           {busy && <AuthSpinner />}
           {busy ? 'Signing in' : 'Sign in'}
         </button>

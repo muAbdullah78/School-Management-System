@@ -13,6 +13,7 @@ import {
   authButtonLink,
   authField,
   authLabel,
+  AuthBusy,
 } from '@/components/AuthLayout'
 
 /**
@@ -96,7 +97,8 @@ export function ForgotPassword() {
             Enter the email address you sign in with and we will send a link to set a new
             password.
           </p>
-          <form onSubmit={onSubmit} className="mt-7 space-y-4">
+          <form onSubmit={onSubmit} className="mt-7 space-y-4" aria-busy={busy}>
+          <AuthBusy label={busy ? 'Sending the link' : null} />
             <label className="block">
               <span className={authLabel}>Email</span>
               <input
@@ -110,7 +112,7 @@ export function ForgotPassword() {
               />
             </label>
             {error && <AuthError>{error}</AuthError>}
-            <button type="submit" disabled={busy} aria-busy={busy} className={authButton}>
+            <button type="submit" disabled={busy} className={authButton}>
               {busy && <AuthSpinner />}
               {busy ? 'Sending' : 'Send the link'}
             </button>
