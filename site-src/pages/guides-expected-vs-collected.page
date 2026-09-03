@@ -1,0 +1,144 @@
+path: /guides/expected-vs-collected
+title: Finding school fees that were never recorded at all
+description: Gapless receipts catch under-recording. They cannot catch cash nobody entered at all. Here is the check that can, and how to run it on paper.
+og_type: article
+breadcrumb: Finding fees that were never recorded
+schema: org
+priority: 0.6
+---
+
+<section class="section">
+  <div class="wrap prose">
+    <span class="eyebrow">Guide</span>
+    <h1>Finding fees that were never recorded at all</h1>
+    <div class="meta">
+      <span>For the owner and the principal</span>
+      <span>About 6 minutes</span>
+    </div>
+
+    <p>
+      Most anti-fraud advice for schools is about receipts: number them, never
+      delete them, keep the book. That advice is right and it catches one kind of
+      problem. It cannot catch the other kind, and the other kind is bigger.
+    </p>
+
+    <h2>The two kinds, and why one is invisible</h2>
+    <p>
+      <b>Under-recording</b> is when a payment is entered for less than was
+      taken. A parent pays Rs 5,800, the receipt says Rs 3,800. Gapless receipt
+      numbers and a copy of the receipt going to the parent catch this, because
+      two records of the same event exist and they disagree.
+    </p>
+    <p>
+      <b>Non-recording</b> is when the payment is never entered at all. A parent
+      pays Rs 5,800 in cash, no receipt is written, and the money does not reach
+      the drawer. There is now exactly one record of the event, in the parent's
+      memory, and nothing in the school's books to compare it against. Your
+      receipt book is perfect. Your day book balances. The month's collection is
+      simply smaller than it should have been, and nothing in the system knows
+      what "should have been" is.
+    </p>
+    <blockquote>
+      <p>
+        A perfectly balanced set of books proves that what was written down is
+        consistent. It says nothing at all about what was not written down.
+      </p>
+    </blockquote>
+
+    <h2>The check that does work</h2>
+    <p>
+      Compare what the <b>roll</b> says should have been billed against what was
+      actually collected, class by class, and look at the difference. That is it.
+      The power of it is that the expected figure comes from a completely
+      different source than the collected figure: the roll and the fee structure,
+      not the receipt book.
+    </p>
+    <p>
+      For one class the arithmetic is:
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Line</th><th>Where it comes from</th><th>Example</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Pupils on the roll</td><td>The admission register</td><td>34</td></tr>
+          <tr><td>Monthly fee for the class</td><td>The fee structure</td><td>Rs 3,750</td></tr>
+          <tr><td>Approved concessions</td><td>The discount register</td><td>Rs 5,200</td></tr>
+          <tr><td><b>Expected</b></td><td>34 x 3,750 minus 5,200</td><td><b>Rs 122,300</b></td></tr>
+          <tr><td>Collected this month</td><td>The receipt book</td><td>Rs 96,000</td></tr>
+          <tr><td><b>Gap</b></td><td>Expected minus collected</td><td><b>Rs 26,300</b></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>A gap is a question, not an accusation</h2>
+    <p>
+      This matters, and getting it wrong will cost you a good clerk. In every
+      school we have looked at, most of the gap is one of these, and none of them
+      is theft:
+    </p>
+    <ul>
+      <li>
+        <b>Pupils who left and were never marked as gone.</b> They are still on
+        the roll, so they are still being billed, and no money will ever arrive.
+        This is usually the single largest slice.
+      </li>
+      <li>
+        <b>Concessions granted verbally.</b> The principal told a family to pay
+        half and nobody wrote it in the discount register, so the expected figure
+        is too high by the amount of the kindness.
+      </li>
+      <li>
+        <b>Families who are simply behind.</b> Genuine arrears, already known to
+        the office, correctly recorded.
+      </li>
+      <li>
+        <b>A wrong fee amount on the class.</b> The structure says Rs 3,750 and
+        the school has been charging Rs 3,500 since the last increase was agreed.
+      </li>
+    </ul>
+    <p>
+      Work down that list before you think about the fifth possibility. And when
+      you find one of the first four, the fix is a record: mark the leaver as
+      left, write the concession in the register, correct the fee amount. Each one
+      you fix makes the next month's gap a sharper instrument.
+    </p>
+
+    <h3>The ghost check, which needs no software</h3>
+    <p>
+      Take the list of pupils being billed this month. Take the attendance
+      register for the same month. Any pupil on the first list who appears on no
+      day of the second is worth a five minute conversation. They have almost
+      certainly left. You are billing a family that has moved on, and your
+      expected figure is carrying money that will never arrive.
+    </p>
+
+    <h2>How often to run it</h2>
+    <p>
+      Monthly, at the same point in the month, and write the figure down. One
+      month's gap tells you very little. Six months of gaps tells you whether the
+      number is drifting, and in which class, which is the thing you actually
+      want to know.
+    </p>
+
+    <h2>How this works in The School Manager</h2>
+    <p>
+      The expected against collected table is a screen, computed from the roll
+      and the fee structure rather than typed in, with the shortfall per class and
+      the ghost check beside it. Concessions cannot be granted without an approver
+      and a reason, which removes the second cause above entirely, and a leaver
+      marked as left stops being billed the same day.
+    </p>
+    <p>
+      It is worth being clear that no software can find non-recording on its own.
+      What it can do is compute the expected figure honestly, from a source the
+      person taking the cash does not control, and put the two numbers next to
+      each other every month without anybody having to remember.
+    </p>
+    <p>
+      <a class="btn btn--primary" href="/fee-management">See the reconciliation screen</a>
+      <a class="btn btn--ghost" href="/guides/moving-from-paper-registers" style="margin-left:10px">Next guide: moving off paper</a>
+    </p>
+  </div>
+</section>

@@ -116,7 +116,8 @@ npm test                  # unit tests
 npm run harness           # render printables and pages to scratch/ for a look
 
 # The database, against a throwaway Postgres
-psql -f supabase/bundles/1_core.sql        # ... through 9, in order
+psql -f supabase/bundles/1_core.sql        # ... through 10, in NUMERIC order
+#   ls supabase/bundles/*.sql | sort -V   # a shell glob puts 10 before 2
 psql -f supabase/verify.sql                # every row should say PASS
 psql -f supabase/tests/tenant_isolation.sql
 

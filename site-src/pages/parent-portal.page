@@ -1,0 +1,117 @@
+path: /parent-portal
+title: Parent portal for schools: fee balance, receipts and results
+description: Parents sign in on their own phone and see their own children only: what is owed, every receipt, attendance day by day, and released results.
+nav_order: 30
+breadcrumb: Parent portal
+schema: org software
+priority: 0.8
+---
+
+<section class="section">
+  <div class="wrap">
+    <span class="eyebrow">Parent portal</span>
+    <h1>The answer, without the phone call</h1>
+    <p class="lede" style="margin-top:14px;max-width:62ch">
+      Most calls to a school office are one of three questions: how much do I
+      owe, was my child in school on Tuesday, and what did she get in the test.
+      A parent can answer all three themselves, on the phone in their hand, with
+      nothing to install.
+    </p>
+    <div class="hero__cta">
+      <a class="btn btn--primary btn--lg" href="/pricing" data-app="signup">Start 14 day free trial</a>
+      <a class="btn btn--ghost btn--lg" href="/contact" data-app="portal">Open the portal</a>
+    </div>
+  </div>
+</section>
+
+<section class="section section--tint">
+  <div class="wrap">
+    <h2>What a parent sees, and what they cannot</h2>
+    <div class="grid grid--2" style="margin-top:32px">
+      <div class="card">
+        <h3>Their own children, all of them</h3>
+        <p>
+          One login for the family. A father with three children in the school
+          sees all three, with one combined balance and the per child breakdown
+          underneath, which is the same shape as the receipt he was handed.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Every receipt, not just the balance</h3>
+        <p>
+          The full history: what was charged, what was paid, when, and by which
+          receipt number. A parent who thinks a payment is missing can check
+          before they ring, and usually finds it.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Attendance day by day</h3>
+        <p>
+          Present, absent, late, half day or leave, per day. Not a percentage
+          with no detail behind it, because a percentage is exactly what starts
+          the argument a school wants to avoid.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Results, once you release them</h3>
+        <p>
+          Nothing appears until the school publishes it. Marks being entered and
+          results being visible are two separate events, so a teacher can work
+          on Tuesday and the school can announce on Friday.
+        </p>
+      </div>
+    </div>
+
+    <div class="note" style="margin-top:26px">
+      <p>
+        <b>A parent cannot see another family's child.</b> Not because a menu is
+        hidden: a parent account has no direct access to any table at all, and
+        every read it makes goes through a function scoped to that parent's own
+        children. A parent who tried a different address would get nothing back
+        rather than somebody else's data.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <h2>Two things it deliberately does not do</h2>
+    <ul class="checklist" style="margin-top:22px">
+      <li>
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>
+        <span><b>Parents cannot pay through it.</b> Cash, bank transfer and wallet payments are all recorded by the office, but there is no online payment for school fees. Saying so costs a few visitors and saves every one of them a surprise.</span>
+      </li>
+      <li>
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>
+        <span><b>Parents cannot open their own account.</b> The school creates the login and hands it over, which is deliberate: an open registration form on a page listing children is not something a school should have to police.</span>
+      </li>
+    </ul>
+    <p style="margin-top:20px">
+      <a class="btn btn--ghost" href="/faq">More questions principals ask</a>
+    </p>
+  </div>
+</section>
+
+<section class="section section--tint">
+  <div class="wrap">
+    <h2>What is next to this</h2>
+    <div class="grid grid--3" style="margin-top:26px">
+      <a class="card card--link" href="/fee-management">
+        <h3>Fee management</h3>
+        <p>The balance a parent reads, and where the number comes from.</p>
+        <span class="card__more">See fees</span>
+      </a>
+      <a class="card card--link" href="/exams-and-results">
+        <h3>Exams and results</h3>
+        <p>What a released result card contains, and how it is computed.</p>
+        <span class="card__more">See exams</span>
+      </a>
+      <a class="card card--link" href="/guide.html">
+        <h3>The handbook</h3>
+        <p>Three chapters cover the portal, with real screenshots.</p>
+        <span class="card__more">Read it</span>
+      </a>
+    </div>
+  </div>
+</section>

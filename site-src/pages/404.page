@@ -1,0 +1,44 @@
+path: /404
+title: Page not found: The School Manager
+description: That address does not exist on this site. The pages people usually want are fee management, attendance and pricing, all linked from here.
+breadcrumb: Page not found
+sitemap: no
+schema: org
+---
+
+<section class="section">
+  <div class="wrap" style="max-width:660px">
+    <span class="eyebrow">404</span>
+    <h1>That page is not here</h1>
+    <p class="lede" style="margin-top:14px">
+      The address you asked for does not exist on this site. It may have been a
+      typing mistake, or a link somewhere that is out of date. Nothing is broken
+      in your account.
+    </p>
+    <p style="margin-top:20px">
+      Most people arriving here were looking for one of these:
+    </p>
+    <ul class="checklist" style="margin-top:18px">
+      <li>
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>
+        <span><a href="/fee-management">Fee management</a>, including challans, arrears and the reconciliation screen.</span>
+      </li>
+      <li>
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>
+        <span><a href="/pricing">Pricing</a>, from Rs 950 a month with every module in every plan.</span>
+      </li>
+      <li>
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>
+        <span><a href="/contact" data-app="signin">Signing in</a> to your school's account.</span>
+      </li>
+      <li>
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>
+        <span><a href="/guide.html">The handbook</a>, sixteen chapters with real screenshots.</span>
+      </li>
+    </ul>
+    <p style="margin-top:26px">
+      <a class="btn btn--primary" href="/">Back to the home page</a>
+      <a class="btn btn--ghost" href="/contact" style="margin-left:10px">Tell us about the broken link</a>
+    </p>
+  </div>
+</section>

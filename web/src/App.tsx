@@ -4,6 +4,7 @@ import { queryClient } from '@/lib/queryClient'
 import { AuthProvider } from '@/auth/AuthProvider'
 import { AppShell } from '@/components/AppShell'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
+import { RedirectIfSignedIn } from '@/components/RedirectIfSignedIn'
 import { LicenceGate } from '@/components/LicenceGate'
 import { SetupGate } from '@/components/SetupGate'
 import { Login } from '@/pages/Login'
@@ -11,6 +12,7 @@ import { Signup } from '@/pages/Signup'
 import { ForgotPassword } from '@/pages/ForgotPassword'
 import { ResetPassword } from '@/pages/ResetPassword'
 import { Account } from '@/pages/Account'
+import { FeedbackPage } from '@/pages/FeedbackPage'
 import { PlatformPage } from '@/pages/platform/PlatformPage'
 import { CheckIn } from '@/pages/CheckIn'
 import { Dashboard } from '@/pages/Dashboard'
@@ -65,15 +67,38 @@ export default function App() {
       <AuthProvider>
         <BrowserRouter>
           <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/signup" element={<Signup />} />
+            {/* Wrapped so a signed-in user is never shown a sign-in form. See
+                RedirectIfSignedIn for why /reset is deliberately not wrapped. */}
+            <Route
+              path="/login"
+              element={
+                <RedirectIfSignedIn>
+                  <Login />
+                </RedirectIfSignedIn>
+              }
+            />
+            <Route
+              path="/signup"
+              element={
+                <RedirectIfSignedIn>
+                  <Signup />
+                </RedirectIfSignedIn>
+              }
+            />
             {/* Both OUTSIDE ProtectedRoute, and they have to be. Somebody who
                 has forgotten their password is signed out by definition, and the
                 recovery link lands on /reset before the user has any credentials
                 to offer. Putting either behind the guard would redirect them to
                 the login screen they came from — with the recovery token stripped
                 out of the URL on the way. */}
-            <Route path="/forgot" element={<ForgotPassword />} />
+            <Route
+              path="/forgot"
+              element={
+                <RedirectIfSignedIn>
+                  <ForgotPassword />
+                </RedirectIfSignedIn>
+              }
+            />
             <Route path="/reset" element={<ResetPassword />} />
             <Route path="/checkin" element={<CheckIn />} />
             {/* Signed in, but outside both the staff shell and the portal: every
@@ -117,6 +142,12 @@ export default function App() {
               }
             >
               <Route path="/" element={<Dashboard />} />
+              {/* NOT in NAV, on purpose. Writing a review is a once-a-term
+                  action, and a permanent sidebar entry for it would be both
+                  clutter and a nag. It is reached from the dashboard card that
+                  appears when the school becomes eligible, and stays reachable
+                  by address afterwards so somebody can come back and edit. */}
+              <Route path="/feedback" element={<FeedbackPage />} />
               {NAV.filter((n) => n.path !== '/').map((n) => (
                 <Route key={n.path} path={n.path} element={IMPLEMENTED[n.path] ?? <ModulePlaceholder />} />
               ))}

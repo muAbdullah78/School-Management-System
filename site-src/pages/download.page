@@ -1,0 +1,63 @@
+path: /download
+title: Install The School Manager on the office computer
+description: The software runs in any browser with nothing to install. The optional Windows program is the same software in its own window, on the same records.
+nav_order: 21
+breadcrumb: Download
+schema: org software
+priority: 0.5
+---
+
+<section class="section" id="download">
+  <div class="wrap">
+    <span class="eyebrow">Desktop</span>
+    <h1>Install it on the office computer</h1>
+    <p class="lede" style="margin-top:12px">
+      The software runs in a browser and works the same either way. The desktop
+      version is for the front desk: it opens on its own and remembers the address
+      of your school's software, so nobody has to type it.
+    </p>
+
+    <div id="download-box" class="card" style="margin-top:26px;max-width:56ch">
+      <a class="btn btn--ghost btn--lg" id="download-btn" href="/contact" aria-disabled="true">
+        Windows installer: being prepared
+      </a>
+      <p class="small muted" id="download-meta" style="margin-top:12px"></p>
+      <p class="small muted" id="download-notes" hidden style="margin-top:6px"></p>
+      <details hidden style="margin-top:14px">
+        <summary class="small muted" style="cursor:pointer">Verify this file</summary>
+        <p class="small muted" style="margin-top:8px">
+          Compare the SHA-256 of the file you downloaded with this. If they differ,
+          do not run it and tell us.
+        </p>
+        <code id="download-sha" style="font-size:12px;word-break:break-all;font-family:var(--mono)"></code>
+      </details>
+      <p class="small muted" style="margin-top:16px">
+        Prefer the browser? Nothing to install. <a href="/contact" data-app="signin" style="color:var(--brand)">Sign in here</a>.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section class="section section--tint">
+  <div class="wrap">
+    <h2>You do not need it</h2>
+    <p class="lede" style="margin-top:12px;max-width:64ch">
+      Worth saying plainly, because "download" usually means "the real version".
+    </p>
+    <p style="margin-top:16px;max-width:66ch">
+      The Windows program is a window around the same web application, on the same
+      records, with no separate data of its own. Everything works in Chrome or Edge
+      on the computer the office already has. The program exists because a real
+      icon on the desktop is easier to explain to a clerk than a bookmark, and
+      because a browser tab gets closed by accident.
+    </p>
+    <p style="margin-top:16px;max-width:66ch">
+      It is not an offline system. Attendance keeps working with no connection;
+      taking a fee does not. If your office loses power and internet for a week,
+      this is not the answer to that.
+    </p>
+    <p style="margin-top:20px">
+      <a class="btn btn--ghost" href="/faq">What happens when the internet drops</a>
+    </p>
+  </div>
+</section>

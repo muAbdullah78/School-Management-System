@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/auth/AuthProvider'
 import { ROLE_LABELS } from '@/auth/roles'
 import { canAccess, visibleNav } from '@/navigation'
-import { appTitle, guideUrl } from '@/lib/config'
+import { PRODUCT_NAME, appTitle, guideUrl } from '@/lib/config'
 import { useSchoolName } from '@/hooks/useSchoolName'
 import { OfflineIndicator } from '@/components/OfflineIndicator'
 import { LicenceBanner } from '@/components/LicenceBanner'
@@ -74,8 +74,10 @@ export function AppShell() {
           </span>
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold leading-tight">{appTitle(schoolName)}</div>
+            {/* The vendor's name, under the school's own. The line above is
+                the school; this line is who made it. */}
             <div className="mt-0.5 text-[11px] uppercase tracking-wide text-brand-200/70">
-              School Manager
+              {PRODUCT_NAME}
             </div>
           </div>
         </div>

@@ -12,7 +12,8 @@ Consequence: there is **no shared cloud control plane, no per-tenant billing the
 ## Locked answers
 | # | Decision | Final |
 |---|----------|-------|
-| 1 | Product name | **"{School Name} Manager"** — branding is per-school config (e.g. *City Public School Manager*) |
+| 1 | Product name, inside a school | **"{School Name} Manager"** (branding is per-school config, e.g. *City Public School Manager*) |
+| 1b | Vendor brand, everywhere else | **"The School Manager"**, matching the domain theschoolmanager.site. Used on the marketing site, the browser tab, the desktop program, the handbook, the sign-in screens (no school is known yet) and the line under the school's name in the sidebar. One constant, `PRODUCT_NAME` in `web/src/lib/config.ts`, so the two names cannot drift. The earlier wordmark said "School Manager" while the domain said theschoolmanager, so the logo, the address and the search result each said something slightly different and none reinforced the others. |
 | 2 | Who builds | **Claude builds it**; the owner does the manual/business tasks with step-by-step instructions |
 | 3 | Scope | **Full v1.0**, everything — built **step by step**, starting from Phase 0 foundation |
 | 4 | First build step | **Phase 0 foundation** (repo, database schema, app shell) — done in this change |

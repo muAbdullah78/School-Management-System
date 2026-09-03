@@ -1260,6 +1260,34 @@ select 'migrations recorded',
        end
 
 union all
+-- 0093. The review system, and the two numbers that say whether it is honest.
+--
+-- Not pass/fail on the COUNT: zero reviews is the correct state for a new
+-- business and is not a failure. What is checked is that the machinery exists
+-- and that the published aggregate agrees with the rows behind it, because a
+-- website quoting an average that its own database does not support is the one
+-- outcome this whole design exists to prevent.
+select 'reviews are wired, and the published average matches the rows',
+       case
+         when to_regclass('public.reviews') is null
+           then 'FAIL — 0093 not applied yet, so the reviews page has nothing to read'
+         when to_regclass('public.reviews_public') is null
+           or to_regclass('public.reviews_summary') is null
+           then 'FAIL — the public views are missing; re-run 0093'
+         when coalesce(pg_temp.ask('select total::text from public.reviews_summary'), '0') = '0'
+           then 'PASS — no published reviews yet, so the website claims no rating'
+         when pg_temp.ask($q$select case
+                 when round(avg(rating)::numeric, 2)
+                      = (select average from public.reviews_summary)
+                 then 'ok' else 'mismatch' end
+               from public.reviews_public$q$) <> 'ok'
+           then 'FAIL — the published average does not match the published reviews'
+         else 'PASS — ' || pg_temp.ask('select total::text from public.reviews_summary')
+              || ' published, average '
+              || pg_temp.ask('select average::text from public.reviews_summary')
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS — no schools yet, as expected'

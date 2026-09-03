@@ -666,7 +666,15 @@ with sig(migration, object, present) as (values
      (select exists (select 1 from pg_proc
                       where proname = 'audit_trigger'
                         and pronamespace = 'public'::regnamespace
-                        and prosrc like '%not exists (select 1 from public.schools s where s.id = v_school)%')))
+                        and prosrc like '%not exists (select 1 from public.schools s where s.id = v_school)%'))),
+
+  -- 0093. The review system. Detected by the PUBLIC VIEW rather than by the
+  -- table, because the view is the half that has to exist for the website to
+  -- read anything: a database with the table and no view has reviews nobody
+  -- outside the school can see, which looks like an empty page rather than an
+  -- error and is exactly the state worth naming.
+  ('0093_reviews', 'the website can read published reviews with no login',
+     to_regclass('public.reviews_public') is not null)
 )
 select migration,
        object                                   as looked_for,

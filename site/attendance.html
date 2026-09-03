@@ -1,0 +1,369 @@
+<!doctype html>
+<!-- BUILT FILE. Do not edit site/*.html by hand.
+     Source: site-src/layout.html + site-src/pages/<name>.page
+     Rebuild: python3 scripts/build-site.py
+     A guard (scripts/check-site-seo.py) refuses a build that has drifted. -->
+<html lang="en-PK">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>School attendance software that works with no internet</title>
+<meta name="description" content="A daily class register marked from a phone that keeps working when the internet drops. Finalise the day, lock it, and print the monthly sheet.">
+<link rel="canonical" href="https://theschoolmanager.site/attendance">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="School attendance software that works with no internet">
+<meta property="og:description" content="A daily class register marked from a phone that keeps working when the internet drops. Finalise the day, lock it, and print the monthly sheet.">
+<meta property="og:url" content="https://theschoolmanager.site/attendance">
+<meta property="og:site_name" content="The School Manager">
+<meta property="og:locale" content="en_PK">
+<meta property="og:image" content="https://theschoolmanager.site/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The School Manager: school management software for Pakistani schools">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#FFFFFF">
+
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'><rect%20width='24'%20height='24'%20rx='6'%20fill='%234F46E5'/><g%20fill='%23fff'><circle%20cx='12'%20cy='7.5'%20r='1.4'/><path%20fill-rule='evenodd'%20d='M5.5%2012.5h13v6h-13zm2.5%201.5h8v1h-8zm0%202h8v1h-8z'/></g></svg>">
+
+<link rel="stylesheet" href="/styles.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://theschoolmanager.site/#org",
+      "name": "The School Manager",
+      "url": "https://theschoolmanager.site/",
+      "description": "School management software built in Pakistan for Pakistani private schools.",
+      "areaServed": {
+        "@type": "Country",
+        "name": "Pakistan"
+      },
+      "knowsLanguage": [
+        "en",
+        "ur"
+      ]
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://theschoolmanager.site/#software",
+      "name": "The School Manager",
+      "applicationCategory": "BusinessApplication",
+      "applicationSubCategory": "School management software",
+      "operatingSystem": "Any modern web browser, Windows desktop",
+      "url": "https://theschoolmanager.site/",
+      "publisher": {
+        "@id": "https://theschoolmanager.site/#org"
+      },
+      "inLanguage": "en-PK",
+      "offers": [
+        {
+          "@type": "Offer",
+          "name": "Starter",
+          "price": "950",
+          "priceCurrency": "PKR",
+          "description": "Up to 100 students",
+          "availability": "https://schema.org/InStock"
+        },
+        {
+          "@type": "Offer",
+          "name": "Growth",
+          "price": "2000",
+          "priceCurrency": "PKR",
+          "description": "Up to 300 students",
+          "availability": "https://schema.org/InStock"
+        },
+        {
+          "@type": "Offer",
+          "name": "Institution",
+          "price": "3500",
+          "priceCurrency": "PKR",
+          "description": "Up to 1,000 students",
+          "availability": "https://schema.org/InStock"
+        }
+      ],
+      "featureList": [
+        "Family fee collection: one payment across all siblings",
+        "Expected versus collected reconciliation",
+        "Gapless receipt numbering with reversals",
+        "Daily attendance that works offline",
+        "Exam computation and printed result cards",
+        "Expense ledger, payroll and monthly profit",
+        "Parent portal with fee balance and results"
+      ]
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Home",
+          "item": "https://theschoolmanager.site/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Attendance",
+          "item": "https://theschoolmanager.site/attendance"
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="nav">
+  <div class="wrap nav__in">
+    <a class="brand" href="/">
+      <svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true">
+        <rect width="24" height="24" rx="6" fill="#4F46E5"/>
+        <g fill="#fff">
+          <circle cx="12" cy="7.5" r="1.4"/>
+          <path fill-rule="evenodd" d="M5.5 12.5h13v6h-13zm2.5 1.5h8v1h-8zm0 2h8v1h-8z"/>
+        </g>
+      </svg>
+      <span>The School Manager</span>
+    </a>
+
+    <nav class="nav__links" aria-label="Sections">
+      <ul>
+        <li><a href="/fee-management">Fees</a></li>
+        <li><a href="/attendance">Attendance</a></li>
+        <li><a href="/exams-and-results">Exams</a></li>
+        <li><a href="/pricing">Pricing</a></li>
+        <li><a href="/faq">Questions</a></li>
+        <li><a href="/guides">Guides</a></li></ul>
+    </nav>
+    <div class="nav__cta">
+      <a href="/contact" data-app="signin">Sign in</a>
+      <a class="btn btn--primary" href="/pricing" data-app="signup">Start free trial</a>
+    </div>
+
+    <details class="navmenu" id="navmenu">
+      <summary aria-label="Menu">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <path d="M2 5h14M2 9h14M2 13h14" stroke-linecap="round"/>
+        </svg>
+        Menu
+      </summary>
+      <div class="navmenu__panel">
+        <a href="/fee-management">Fees</a>
+        <a href="/attendance">Attendance</a>
+        <a href="/exams-and-results">Exams</a>
+        <a href="/pricing">Pricing</a>
+        <a href="/faq">Questions</a>
+        <a href="/guides">Guides</a>
+        <a href="/contact">Contact</a>
+        <a href="/contact" data-app="signin">Sign in</a>
+      </div>
+    </details>
+  </div>
+</div>
+
+<p id="wire-warning" hidden class="wrap small" style="padding-top:12px;color:var(--due-800)">
+  This page is not yet pointed at the software. Set APP_URL in config.js on the deployment.
+</p>
+
+<main id="main" tabindex="-1">
+<nav class="wrap crumb" aria-label="Breadcrumb">
+  <a href="/">Home</a>
+  <span aria-hidden="true">/</span>
+  <span aria-current="page">Attendance</span>
+</nav>
+
+<section class="section">
+  <div class="wrap">
+    <span class="eyebrow">Attendance</span>
+    <h1>The register, marked in the classroom</h1>
+    <p class="lede" style="margin-top:14px;max-width:62ch">
+      A teacher opens their class on a phone, taps the two or three children who
+      are not there, and presses save. That is the whole interaction, and it has
+      to be faster than the paper register or it will not be used.
+    </p>
+    <div class="hero__cta">
+      <a class="btn btn--primary btn--lg" href="/pricing" data-app="signup">Start 14 day free trial</a>
+      <a class="btn btn--ghost btn--lg" href="/guide.html">Read the handbook</a>
+    </div>
+  </div>
+</section>
+
+<section class="section section--tint">
+  <div class="wrap">
+    <h2>It keeps working when the connection does not</h2>
+    <p class="lede" style="margin-top:12px;max-width:64ch">
+      This is the part most software gets wrong, and the part that decides
+      whether teachers keep using it in week three.
+    </p>
+    <div class="grid grid--2" style="margin-top:34px">
+      <div class="card">
+        <h3>Marked offline, queued, then synced</h3>
+        <p>
+          A register marked with no signal is saved on the phone and sent when
+          there is one. The teacher is told which state it is in rather than left
+          guessing, and the same class cannot be marked twice into two different
+          answers.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Finalise and lock the day</h3>
+        <p>
+          An unfinalised register is a draft and says so. Once the day is
+          finalised it is locked, so a figure quoted to a parent in the afternoon
+          is the same figure next week. A correction after that is a recorded
+          change, not a silent overwrite.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Teachers see only their own classes</h3>
+        <p>
+          A teacher login reaches the classes and subjects that teacher actually
+          teaches, and nothing else. That is enforced in the database rather than
+          by hiding a menu, so it holds even if somebody types a different
+          address.
+        </p>
+      </div>
+      <div class="card">
+        <h3>The printable monthly sheet</h3>
+        <p>
+          The sheet an inspector or a board asks for, printed from the same data
+          the teachers marked, so it cannot disagree with itself. Present,
+          absent, late, half day and leave are all separate states.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap split">
+    <div>
+      <h2>Attendance is also a fee control</h2>
+      <p class="lede" style="margin-top:12px">
+        A pupil who is on the fee roll but has never appeared in any attendance
+        register is worth looking at. That is not an accusation, it is usually a
+        pupil who left and was never marked as gone, and it is money the school
+        thinks it is owed by a family that has moved on.
+      </p>
+      <p style="margin-top:16px">
+        The reconciliation screen puts those two lists side by side and names the
+        difference, which is a check no paper register can do at all.
+      </p>
+      <p style="margin-top:20px">
+        <a class="btn btn--ghost" href="/fee-management">How the fee side works</a>
+      </p>
+    </div>
+    <div class="panel">
+      <div class="panel__head">
+        <span class="panel__title">Class 5 A</span>
+        <span class="panel__sub">Thursday, 3 September</span>
+      </div>
+      <div class="app__rows" style="border:0;border-radius:0">
+        <div class="arow"><span>Ahmed Raza</span><span class="pill pill--paid">Present</span></div>
+        <div class="arow"><span>Fatima Bibi</span><span class="pill pill--paid">Present</span></div>
+        <div class="arow"><span>Bilal Ahmad</span><span class="pill pill--due">Absent</span></div>
+        <div class="arow"><span>Ayesha Noor</span><span class="pill pill--due">Late</span></div>
+      </div>
+      <div class="panel__foot">
+        38 present, 2 absent, 1 late. Finalised at 09:14 by Miss Saima.
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section section--tint">
+  <div class="wrap">
+    <h2>What is next to this</h2>
+    <div class="grid grid--3" style="margin-top:26px">
+      <a class="card card--link" href="/exams-and-results">
+        <h3>Exams and results</h3>
+        <p>Marks, grades on your own scale, printed cards and class positions.</p>
+        <span class="card__more">See exams</span>
+      </a>
+      <a class="card card--link" href="/parent-portal">
+        <h3>Parent portal</h3>
+        <p>Parents see their own child's attendance day by day, without phoning.</p>
+        <span class="card__more">See the portal</span>
+      </a>
+      <a class="card card--link" href="/faq">
+        <h3>Questions</h3>
+        <p>What happens offline, who can change what, and where your data goes.</p>
+        <span class="card__more">Read the answers</span>
+      </a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div class="foot__grid">
+      <div>
+        <div class="brand" style="margin-bottom:14px">
+          <svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true">
+            <rect width="24" height="24" rx="6" fill="#4F46E5"/>
+            <g fill="#fff"><circle cx="12" cy="7.5" r="1.4"/><path fill-rule="evenodd" d="M5.5 12.5h13v6h-13zm2.5 1.5h8v1h-8zm0 2h8v1h-8z"/></g>
+          </svg>
+          <span>The School Manager</span>
+        </div>
+        <p style="max-width:34ch">
+          School management software made in Pakistan, for Pakistani schools.
+        </p>
+        <p class="foot__ur" lang="ur" dir="rtl">پاکستانی اسکولوں کے لیے بنایا گیا</p>
+      </div>
+      <div>
+        <h3>What it does</h3>
+        <a href="/fee-management">Fee management</a>
+        <a href="/attendance">Attendance</a>
+        <a href="/exams-and-results">Exams and results</a>
+        <a href="/accounts">Accounts and payroll</a>
+        <a href="/parent-portal">Parent portal</a>
+      </div>
+      <div>
+        <h3>Support</h3>
+        <a href="/pricing">Pricing</a>
+        <a href="/faq">Questions</a>
+        <a href="/reviews">What schools say</a>
+        <a href="/guides">Guides for school offices</a>
+        <a href="/guide.html">The handbook</a>
+        <ul style="list-style:none;margin:0;padding:0">
+          <li hidden><a href="/download">Download</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Contact</h3>
+        <a href="/contact">Get in touch</a>
+        <a href="/contact" data-app="signin">Sign in</a>
+        <a href="/contact" data-app="billing">Manage your subscription</a>
+        <a href="/contact" data-app="portal">Parent portal login</a>
+      </div>
+    </div>
+    <div class="foot__bottom">
+      <span>&copy; <span id="yr">2026</span> The School Manager</span>
+      <span>theschoolmanager.site</span>
+    </div>
+  </div>
+</footer>
+
+<div class="actionbar">
+  <a class="btn btn--primary" href="/pricing" data-app="signup">Start free trial</a>
+  <a class="btn btn--ghost" id="bar-whatsapp" href="/contact" aria-label="WhatsApp us">
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+      <path d="M17 9.6a7 7 0 0 1-10.3 6.2L3 16.8l1.1-3.6A7 7 0 1 1 17 9.6z" stroke-linejoin="round"/>
+    </svg>
+    WhatsApp
+  </a>
+</div>
+
+<script src="/config.js"></script>
+<script src="/wire.js"></script>
+</body>
+</html>

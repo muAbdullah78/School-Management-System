@@ -1,0 +1,134 @@
+path: /faq
+title: School software questions a principal actually asks
+description: What happens to your data if you stop paying, what works when the internet drops, whether a clerk can change a printed receipt, and whether it is in Urdu.
+nav: Questions
+nav_order: 7
+breadcrumb: Questions
+schema: org
+priority: 0.8
+---
+
+<section class="section">
+  <div class="wrap" style="max-width:860px">
+    <span class="eyebrow">Questions</span>
+    <h1>Questions a principal actually asks</h1>
+    <p class="lede" style="margin-top:14px">
+      The ones that come up in the first meeting, answered including where the
+      answer is no.
+    </p>
+
+    <div style="margin-top:30px">
+<details class="q">
+        <summary>What happens to our data if we stop paying?<span class="q__m" aria-hidden="true"></span></summary>
+        <p>
+          It stays yours. Export everything at any time, including after you have
+          cancelled, in a plain readable format. We do not hold records to ransom
+          and there is no charge for taking your own data out.
+        </p>
+      </details>
+      <details class="q">
+        <summary>Does it work when the internet goes down?<span class="q__m" aria-hidden="true"></span></summary>
+        <p>
+          Attendance does. Teachers can keep marking the register and it syncs when
+          the connection returns. Fee collection needs the connection, because two
+          clerks taking cash offline would issue two receipts with the same number,
+          and a fee book with duplicate numbers is worse than a fee book you have to
+          wait five minutes for.
+        </p>
+      </details>
+      <details class="q">
+        <summary>Can a clerk change a receipt after it is printed?<span class="q__m" aria-hidden="true"></span></summary>
+        <p>
+          No. Nothing is deleted or edited. A mistake is corrected by a reversal
+          entry, so both lines stay in the ledger with a reason and the name of the
+          person who made the correction. Receipt numbers are issued in an unbroken
+          sequence, so a missing number is itself visible.
+        </p>
+      </details>
+      <details class="q">
+        <summary>Can parents see other children's information?<span class="q__m" aria-hidden="true"></span></summary>
+        <p>
+          A parent login reaches only that family's own children: their fee balance,
+          their receipts, their attendance and their results once you publish them.
+          It cannot reach any other family, and it cannot reach anything you have
+          not published.
+        </p>
+      </details>
+      <details class="q">
+        <summary>We already have years of records in Excel. Can we move them?<span class="q__m" aria-hidden="true"></span></summary>
+        <p>
+          Yes. Students, staff and opening balances import from a spreadsheet. Bring
+          us the file you already keep and we will map it with you rather than asking
+          you to retype a school.
+        </p>
+      </details>
+      <details class="q">
+        <summary>What about results that are not final yet?<span class="q__m" aria-hidden="true"></span></summary>
+        <p>
+          Marks stay unpublished until you publish them, and a result card can be
+          withheld for a single student, for example while a fee matter is settled.
+          Parents see nothing until you decide they should.
+        </p>
+      </details>
+      <details class="q">
+        <summary>Is there a manual, or do you train us?<span class="q__m" aria-hidden="true"></span></summary>
+        <p>
+          Both. The <a href="/guide.html">handbook</a> is sixteen chapters with real
+          screenshots taken from the software itself, and it is free to read now,
+          before you buy anything. It covers the office screens, the parent portal
+          and what to do when something is entered wrong. We also walk your clerk
+          through the first month's fee run on a call.
+        </p>
+      </details>
+
+      <details class="q">
+        <summary>Is it in Urdu?<span class="q__m" aria-hidden="true"></span></summary>
+        <p>
+          The screens are in English. Anything you type is accepted and printed in
+          Urdu, including names, addresses and remarks, so a certificate or a fee
+          receipt can carry Urdu text. A full Urdu interface is not built yet, and we
+          would rather say so than imply otherwise.
+        </p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ download
+     Hidden by default and revealed by wire.js only when app_releases carries a
+     current Windows build. Every id here is written into by wire.js and
+     asserted by CI, so the markup stays even while the section is hidden.
+     ================================================================ -->
+<section class="section" id="download" hidden>
+  <div class="wrap">
+    <span class="eyebrow">Desktop</span>
+    <h2>Install it on the office computer</h2>
+    <p class="lede" style="margin-top:12px">
+      The software runs in a browser and works the same either way. The desktop
+      version is for the front desk: it opens on its own and remembers the address
+      of your school's software, so nobody has to type it.
+    </p>
+
+    <div id="download-box" class="card" style="margin-top:26px;max-width:56ch">
+      <a class="btn btn--ghost btn--lg" id="download-btn" href="#contact" aria-disabled="true">
+        Windows installer: being prepared
+      </a>
+      <p class="small muted" id="download-meta" style="margin-top:12px"></p>
+      <p class="small muted" id="download-notes" hidden style="margin-top:6px"></p>
+      <details hidden style="margin-top:14px">
+        <summary class="small muted" style="cursor:pointer">Verify this file</summary>
+        <p class="small muted" style="margin-top:8px">
+          Compare the SHA-256 of the file you downloaded with this. If they differ,
+          do not run it and tell us.
+        </p>
+        <code id="download-sha" style="font-size:12px;word-break:break-all;font-family:var(--mono)"></code>
+      </details>
+    </div>
+
+    <p style="margin-top:30px">
+      Still unanswered? <a href="/contact">Ring or message a person</a>, or read
+      <a href="/guide.html">the handbook</a>, which is sixteen chapters with real
+      screenshots and free to read before you buy anything.
+    </p>
+  </div>
+</section>

@@ -1,0 +1,186 @@
+path: /fee-management
+title: School fee management software for Pakistani schools
+description: Fee challans, arrears, partial payments and approved discounts, with one payment covering every child in a family. See what was owed against what came in.
+nav: Fees
+nav_order: 1
+breadcrumb: Fee management
+schema: org software
+priority: 0.9
+---
+
+<section class="section">
+  <div class="wrap">
+    <span class="eyebrow">Fee management</span>
+    <h1>One parent pays once, for every child</h1>
+    <p class="lede" style="margin-top:14px;max-width:62ch">
+      A father with three children in your school hands the clerk one bundle of
+      cash. Most software makes the clerk do that three times, once per child,
+      and prints three receipts. This does it once, and the receipt lists all
+      three children with what each of them owed.
+    </p>
+    <div class="hero__cta">
+      <a class="btn btn--primary btn--lg" href="/pricing" data-app="signup">Start 14 day free trial</a>
+      <a class="btn btn--ghost btn--lg" href="/contact">Ask a question first</a>
+    </div>
+  </div>
+</section>
+
+<section class="section section--tint">
+  <div class="wrap">
+    <h2>What a monthly fee run actually involves</h2>
+    <p class="lede" style="margin-top:12px;max-width:64ch">
+      Not "generate challans". These are the parts that take a clerk's morning,
+      and the parts a spreadsheet gets wrong.
+    </p>
+
+    <div class="grid grid--2" style="margin-top:34px">
+      <div class="card">
+        <h3>Fee heads and per class structures</h3>
+        <p>
+          Tuition, admission, exam, transport, whatever your school charges, each
+          as its own head. Amounts are set per class, so class 9 and Play Group
+          are not forced onto the same figure, and a change to next month's
+          amounts does not rewrite last month's bills.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Arrears that carry themselves forward</h3>
+        <p>
+          An unpaid month is not silently dropped when the next challan is
+          issued. It is carried, it appears on the new challan as arrears, and
+          the total a parent owes is one number rather than a stack of slips the
+          office has to add up by hand.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Partial payments, and what is left</h3>
+        <p>
+          A parent pays Rs 2,000 of a Rs 5,800 bill. The receipt says so, the
+          balance says so, and the next reminder is for the remainder rather
+          than for the whole bill again. Nobody has to remember what was paid on
+          the counter last Tuesday.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Discounts that somebody approved</h3>
+        <p>
+          A discount is not a number a clerk can type into a total. It is
+          recorded against the pupil with a reason and the name of whoever
+          allowed it, so a concession granted quietly is a concession you can
+          find. Fines work the same way.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap split split--wide">
+    <div>
+      <span class="eyebrow">Fee control</span>
+      <h2>Know what should have been collected</h2>
+      <p class="lede" style="margin-top:12px">
+        Most school software tells you what was collected. That number is only
+        useful if you already trust it. The harder and more valuable question is
+        what the roll says should have arrived, and where the difference went.
+      </p>
+      <div class="note" style="margin-top:18px">
+        <p>
+          Nothing here is an accusation. Most of the gap in most schools is a
+          mistake in the record, corrected by a reversal that leaves both entries
+          in place with a reason and a name attached.
+        </p>
+      </div>
+      <ul class="checklist" style="margin-top:22px">
+        <li>
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>
+          <span><b>Expected against collected:</b> class by class, from the real roll.</span>
+        </li>
+        <li>
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>
+          <span><b>Ghost student check:</b> anyone being billed who never appears in a register.</span>
+        </li>
+        <li>
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>
+          <span><b>Discounts need approval.</b> A clerk proposes, the principal approves, both are recorded.</span>
+        </li>
+        <li>
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>
+          <span><b>Cash drawer settlement:</b> each collector counts their own drawer, and a difference needs a written reason.</span>
+        </li>
+        <li>
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>
+          <span><b>Full audit trail:</b> every change to money, marks and attendance, with who and when.</span>
+        </li>
+      </ul>
+    </div>
+    <div class="panel">
+      <div class="panel__head">
+        <span class="panel__title">Reconciliation</span>
+        <span class="panel__sub">September 2026</span>
+      </div>
+      <div class="panel__body">
+        <table class="recon">
+          <caption class="sr">Expected against collected fee income by class</caption>
+          <thead>
+            <tr><th>Class</th><th>Expected</th><th>Collected</th><th>Gap</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Class 1</td><td>124,000</td><td>124,000</td><td class="ok">None</td></tr>
+            <tr><td>Class 2</td><td>124,500</td><td>121,500</td><td class="short">3,000</td></tr>
+            <tr><td>Class 3</td><td>132,000</td><td>96,000</td><td class="short">36,000</td></tr>
+            <tr><td>Class 4</td><td>127,500</td><td>127,500</td><td class="ok">None</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="panel__foot">
+        Class 3 is Rs 35,000 short. Eleven families are behind, and two students
+        on the roll have never appeared in the attendance register.
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section section--tint">
+  <div class="wrap">
+    <h2>Receipt numbers that cannot skip</h2>
+    <p class="lede" style="margin-top:12px;max-width:64ch">
+      Every receipt is issued in an unbroken sequence, and nothing is ever
+      deleted. That single rule is what makes the rest of it checkable.
+    </p>
+    <p style="margin-top:16px;max-width:66ch">
+      If a receipt could be deleted, a missing number would mean nothing: it could
+      be a cancelled sale, a printer jam or cash that never reached the drawer, and
+      there would be no way to tell which. Because a mistake is corrected by a
+      <b>reversal</b> rather than a deletion, a gap in the sequence is always a
+      question with an answer, and the answer is in the record with a name against
+      it.
+    </p>
+    <p style="margin-top:20px">
+      <a class="btn btn--ghost" href="/guides/fee-challan-pakistan">What a fee challan has to say</a>
+    </p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <h2>What is next to this</h2>
+    <div class="grid grid--3" style="margin-top:26px">
+      <a class="card card--link" href="/accounts">
+        <h3>Accounts and payroll</h3>
+        <p>Where the fee income meets the expense ledger and becomes a monthly profit figure.</p>
+        <span class="card__more">See the accounts</span>
+      </a>
+      <a class="card card--link" href="/parent-portal">
+        <h3>Parent portal</h3>
+        <p>Parents check their own balance and receipts, so the office phone rings less.</p>
+        <span class="card__more">See the portal</span>
+      </a>
+      <a class="card card--link" href="/pricing">
+        <h3>Pricing</h3>
+        <p>From Rs 950 a month. Every module in every plan.</p>
+        <span class="card__more">See the prices</span>
+      </a>
+    </div>
+  </div>
+</section>

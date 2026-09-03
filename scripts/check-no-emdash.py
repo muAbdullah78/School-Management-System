@@ -19,7 +19,8 @@ edit of three thousand comment lines with no review, which is how a real defect
 gets hidden inside a diff nobody can read. So the scope here is the surfaces a
 school actually reads, where the rule earns its keep:
 
-  * everything in site/, which is pure published copy
+  * everything in site/ and site-src/, which is pure published copy and the
+    templates it is built from
   * the four authentication pages, which are the highest-intent screens in the
     product and the place a wrong character is read most carefully
   * the desktop shell's connect screen, which is the first thing a school sees
@@ -39,6 +40,10 @@ ROOT = Path(__file__).resolve().parent.parent
 
 SCOPE = [
     "site",
+    # The SOURCE as well as the built output. site/ is generated from these, so
+    # a rule enforced only on the output is a rule that fails on the next build
+    # rather than on the edit that broke it.
+    "site-src",
     "web/src/pages/Login.tsx",
     "web/src/pages/Signup.tsx",
     "web/src/pages/ForgotPassword.tsx",

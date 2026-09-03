@@ -199,10 +199,31 @@ emit supabase/bundles/8_counter_repair.sql \
 # 0091 finishes what 0090 could not see. The subscriptions -> schools foreign key
 # was present the whole time and NOT VALID: it refused every new orphan and had
 # never checked the rows already there, so the diagnostic reported an orphan and
-# "ok, the constraint is there" in the same output — two answers that cannot both
+# "ok, the constraint is there" in the same output, two answers that cannot both
 # be true of an enforced constraint.
+#
+# NOW FROZEN, and it took a sixth occurrence of the same mistake to get here.
+# Its glob was `0091*.sql 009[2-9]*.sql`, and there was no MANIFEST line to stop
+# it, so when 0093 was written the glob quietly swallowed it into a file that
+# had ALREADY BEEN PASTED into a live database. A bundle is one transaction: a
+# school re-running the changed file to pick up 0093 would re-run 0091 and 0092
+# as well, and any statement in those that is not re-runnable rolls the whole
+# thing back, 0093 included. That is precisely how bundle 3 cost a real school
+# fifteen migrations.
+#
+# Every bundle from here gets its glob pinned to exactly what it shipped with,
+# and a MANIFEST line, on the same day.
 emit supabase/bundles/9_validate_constraints.sql \
-     supabase/migrations/0091*.sql supabase/migrations/009[2-9]*.sql
+     supabase/migrations/0091*.sql supabase/migrations/0092*.sql
+
+# A TENTH bundle, because bundle 9 is frozen above.
+#
+# 0093 is the review system: the table, the eligibility rules, the two public
+# views the website reads with no login, and the operator's narrow power to hide
+# one for abuse. Nothing in it touches an existing table, so a school that never
+# runs it loses reviews and nothing else.
+emit supabase/bundles/10_reviews.sql \
+     supabase/migrations/0093*.sql
 
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen

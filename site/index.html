@@ -1,57 +1,100 @@
 <!doctype html>
+<!-- BUILT FILE. Do not edit site/*.html by hand.
+     Source: site-src/layout.html + site-src/pages/<name>.page
+     Rebuild: python3 scripts/build-site.py
+     A guard (scripts/check-site-seo.py) refuses a build that has drifted. -->
 <html lang="en-PK">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<title>School Manager: school management software for Pakistan</title>
-<meta name="description" content="School management software built for Pakistani schools. Collect fees from one parent for all their children, see exactly what should have been collected, and give parents their own login. From Rs 950 a month.">
-
-<!-- These five references used to name schoolmanager.pk, a domain that was
-     never registered. A canonical tag pointing at a domain you do not own tells
-     Google the authoritative copy of the page lives somewhere else. -->
+<title>The School Manager: school management software for Pakistan</title>
+<meta name="description" content="School management software for Pakistani private schools. One parent pays once for all their children, and you see what was owed. From Rs 950 a month.">
 <link rel="canonical" href="https://theschoolmanager.site/">
 
 <meta property="og:type" content="website">
-<meta property="og:title" content="School Manager: school management software for Pakistan">
-<meta property="og:description" content="One parent, one payment, one receipt. Know exactly what should have been collected and what actually was. From Rs 950 a month.">
+<meta property="og:title" content="The School Manager: school management software for Pakistan">
+<meta property="og:description" content="School management software for Pakistani private schools. One parent pays once for all their children, and you see what was owed. From Rs 950 a month.">
 <meta property="og:url" content="https://theschoolmanager.site/">
+<meta property="og:site_name" content="The School Manager">
 <meta property="og:locale" content="en_PK">
-<!-- "summary" not "summary_large_image": there is no og:image in site/, and
-     promising a large image that does not exist renders a blank panel. -->
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="https://theschoolmanager.site/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The School Manager: school management software for Pakistani schools">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#FFFFFF">
 
-<!-- No font-family and no text element inside the favicon. The previous one had
-     font-family='Georgia,serif' baked in, so the dated typeface was in the
-     browser tab of every page and rendered differently on every OS. -->
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'><rect%20width='24'%20height='24'%20rx='6'%20fill='%234F46E5'/><g%20fill='%23fff'><circle%20cx='12'%20cy='7.5'%20r='1.4'/><path%20fill-rule='evenodd'%20d='M5.5%2012.5h13v6h-13zm2.5%201.5h8v1h-8zm0%202h8v1h-8z'/></g></svg>">
 
-<link rel="stylesheet" href="styles.css">
-
+<link rel="stylesheet" href="/styles.css">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
-  "@type": "SoftwareApplication",
-  "name": "School Manager",
-  "applicationCategory": "BusinessApplication",
-  "operatingSystem": "Any modern web browser",
-  "description": "School management software for Pakistani schools: family fee collection, attendance, exams and result cards, expense and profit tracking, and a parent portal.",
-  "url": "https://theschoolmanager.site/",
-  "inLanguage": "en-PK",
-  "offers": [
-    { "@type": "Offer", "name": "Starter",     "price": "950",  "priceCurrency": "PKR", "description": "Up to 100 students" },
-    { "@type": "Offer", "name": "Growth",      "price": "2000", "priceCurrency": "PKR", "description": "Up to 300 students" },
-    { "@type": "Offer", "name": "Institution", "price": "3500", "priceCurrency": "PKR", "description": "Up to 1,000 students" }
-  ],
-  "featureList": [
-    "Family fee collection: one payment across all siblings",
-    "Expected versus collected reconciliation",
-    "Gapless receipt numbering",
-    "Daily attendance that works offline",
-    "Exam computation and printed result cards",
-    "Expense ledger and monthly profit",
-    "Parent portal with fee balance and results"
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://theschoolmanager.site/#org",
+      "name": "The School Manager",
+      "url": "https://theschoolmanager.site/",
+      "description": "School management software built in Pakistan for Pakistani private schools.",
+      "areaServed": {
+        "@type": "Country",
+        "name": "Pakistan"
+      },
+      "knowsLanguage": [
+        "en",
+        "ur"
+      ]
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://theschoolmanager.site/#software",
+      "name": "The School Manager",
+      "applicationCategory": "BusinessApplication",
+      "applicationSubCategory": "School management software",
+      "operatingSystem": "Any modern web browser, Windows desktop",
+      "url": "https://theschoolmanager.site/",
+      "publisher": {
+        "@id": "https://theschoolmanager.site/#org"
+      },
+      "inLanguage": "en-PK",
+      "offers": [
+        {
+          "@type": "Offer",
+          "name": "Starter",
+          "price": "950",
+          "priceCurrency": "PKR",
+          "description": "Up to 100 students",
+          "availability": "https://schema.org/InStock"
+        },
+        {
+          "@type": "Offer",
+          "name": "Growth",
+          "price": "2000",
+          "priceCurrency": "PKR",
+          "description": "Up to 300 students",
+          "availability": "https://schema.org/InStock"
+        },
+        {
+          "@type": "Offer",
+          "name": "Institution",
+          "price": "3500",
+          "priceCurrency": "PKR",
+          "description": "Up to 1,000 students",
+          "availability": "https://schema.org/InStock"
+        }
+      ],
+      "featureList": [
+        "Family fee collection: one payment across all siblings",
+        "Expected versus collected reconciliation",
+        "Gapless receipt numbering with reversals",
+        "Daily attendance that works offline",
+        "Exam computation and printed result cards",
+        "Expense ledger, payroll and monthly profit",
+        "Parent portal with fee balance and results"
+      ]
+    }
   ]
 }
 </script>
@@ -60,15 +103,9 @@
 
 <a class="skip" href="#main">Skip to content</a>
 
-<!-- ===================================================================== nav
-     Below 880px the links move into a <details> disclosure and the two actions
-     worth a tap move to a fixed bar at the bottom. The first version of this
-     site simply set display:none on the links with nothing in their place, so a
-     phone visitor had no route to pricing at all.
-     ===================================================================== -->
 <div class="nav">
   <div class="wrap nav__in">
-    <a class="brand" href="#top">
+    <a class="brand" href="/">
       <svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true">
         <rect width="24" height="24" rx="6" fill="#4F46E5"/>
         <g fill="#fff">
@@ -76,22 +113,21 @@
           <path fill-rule="evenodd" d="M5.5 12.5h13v6h-13zm2.5 1.5h8v1h-8zm0 2h8v1h-8z"/>
         </g>
       </svg>
-      <span>School Manager</span>
+      <span>The School Manager</span>
     </a>
 
     <nav class="nav__links" aria-label="Sections">
       <ul>
-        <li><a href="#how">How it works</a></li>
-        <li><a href="#control">Fee control</a></li>
-        <li><a href="#box">Features</a></li>
-        <li><a href="#pricing">Pricing</a></li>
-        <li hidden><a href="#download">Download</a></li>
-        <li><a href="#faq">Questions</a></li>
-      </ul>
+        <li><a href="/fee-management">Fees</a></li>
+        <li><a href="/attendance">Attendance</a></li>
+        <li><a href="/exams-and-results">Exams</a></li>
+        <li><a href="/pricing">Pricing</a></li>
+        <li><a href="/faq">Questions</a></li>
+        <li><a href="/guides">Guides</a></li></ul>
     </nav>
     <div class="nav__cta">
-      <a href="#contact" data-app="signin">Sign in</a>
-      <a class="btn btn--primary" href="#pricing" data-app="signup">Start free trial</a>
+      <a href="/contact" data-app="signin">Sign in</a>
+      <a class="btn btn--primary" href="/pricing" data-app="signup">Start free trial</a>
     </div>
 
     <details class="navmenu" id="navmenu">
@@ -102,14 +138,14 @@
         Menu
       </summary>
       <div class="navmenu__panel">
-        <a href="#how">How it works</a>
-        <a href="#control">Fee control</a>
-        <a href="#box">Features</a>
-        <a href="#pricing">Pricing</a>
-        <a href="#download" hidden>Download</a>
-        <a href="#faq">Questions</a>
-        <a href="#contact">Contact</a>
-        <a href="#contact" data-app="signin">Sign in</a>
+        <a href="/fee-management">Fees</a>
+        <a href="/attendance">Attendance</a>
+        <a href="/exams-and-results">Exams</a>
+        <a href="/pricing">Pricing</a>
+        <a href="/faq">Questions</a>
+        <a href="/guides">Guides</a>
+        <a href="/contact">Contact</a>
+        <a href="/contact" data-app="signin">Sign in</a>
       </div>
     </details>
   </div>
@@ -121,13 +157,6 @@
 
 <main id="main" tabindex="-1">
 
-<!-- ==================================================================== hero
-     The software shown as a calm screen you could work in all day, drawn in
-     HTML and CSS. Deliberately abstract rather than a facsimile: no receipt, no
-     challan, no paper. A school owner buying software is trying to get AWAY
-     from the paperwork, and an earlier version of this page stacked nine
-     printed documents down it, which reminded them of the pile.
-     ==================================================================== -->
 <header class="hero" id="top">
   <div class="wrap hero__grid">
     <div>
@@ -140,8 +169,8 @@
         actually did.
       </p>
       <div class="hero__cta">
-        <a class="btn btn--primary btn--lg" href="#pricing" data-app="signup">Start 14 day free trial</a>
-        <a class="btn btn--ghost btn--lg" href="#how">See how it works</a>
+        <a class="btn btn--primary btn--lg" href="/pricing" data-app="signup">Start 14 day free trial</a>
+        <a class="btn btn--ghost btn--lg" href="/fee-management">See how fees work</a>
       </div>
       <p class="hero__note">No card required. Set up in an afternoon. Your data stays yours.</p>
       <p id="signup-closed" hidden class="hero__note">
@@ -224,505 +253,118 @@
   </div>
 </div>
 
-<!-- ============================================================== how it works -->
-<section class="section" id="how">
+<!-- =========================================================== what it does ===
+     Nine capabilities, each linking to the page that covers it properly. This
+     replaces the old feature grid whose cards linked nowhere: a visitor who
+     wanted to know how fees actually work had no next page to go to, and
+     neither did a search engine. -->
+<section class="section" id="what">
   <div class="wrap">
-    <span class="eyebrow">How it works</span>
-    <h2>Three screens your office will actually live in</h2>
-    <p class="lede" style="margin-top:12px">
-      Everything else is reporting. These are the ones that run all day.
-    </p>
-
-    <div class="grid grid--3" style="margin-top:38px">
-      <div class="card">
-        <div class="card__icon">
-          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
-            <rect x="2.5" y="4.5" width="15" height="11" rx="2"/><path d="M2.5 8.5h15M6 12h4"/>
-          </svg>
-        </div>
-        <h3>Take the fee in fifteen seconds</h3>
-        <p>
-          Search by the father's CNIC, a phone number, or any child's name. Every
-          child in the family comes up together. Enter one amount. It clears the
-          oldest month first, across all of them, and prints one receipt.
-        </p>
-      </div>
-      <div class="card">
-        <div class="card__icon card__icon--accent">
-          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
-            <rect x="3" y="3.5" width="14" height="13" rx="2"/><path d="M3 7h14M7 2.5v2M13 2.5v2M6.5 11l1.6 1.6 3.4-3.4"/>
-          </svg>
-        </div>
-        <h3>Mark the register from a phone</h3>
-        <p>
-          Teachers open the class list, tap the absentees, and finalise. It keeps
-          working when the internet drops: marks queue on the phone and sync the
-          moment the connection returns.
-        </p>
-      </div>
-      <div class="card">
-        <div class="card__icon">
-          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
-            <path d="M3 16.5h14M5 13V8M9 16V5M13 16v-6M17 13V9" stroke-linecap="round"/>
-          </svg>
-        </div>
-        <h3>See where the month went</h3>
-        <p>
-          Fees collected, expenses paid, profit for the month. Which classes are
-          behind. Which families to ring. Who took which payment, and whether the
-          cash drawer balanced at four o'clock.
-        </p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============================================================= fee control
-     The strongest argument on the page, so it gets a real panel rather than a
-     drawn sheet of paper. Light background: the previous version put this on a
-     full-bleed navy block in the middle of the page.
-     ============================================================= -->
-<section class="section section--tint" id="control">
-  <div class="wrap">
-    <div class="split split--wide">
-      <div>
-        <span class="eyebrow">Fee control</span>
-        <h2>Know what should have been collected</h2>
-        <p class="lede" style="margin-top:14px">
-          Most school software tells you what was collected. That number is only
-          useful if you already trust it. The harder and more valuable question is
-          what the roll says should have arrived, and where the difference went.
-        </p>
-
-        <div class="note">
-          <p>
-            Every receipt number is issued in an unbroken sequence. Nothing is ever
-            deleted. A mistake is corrected by a reversal that leaves both entries
-            in the record, with a reason and a name attached.
-          </p>
-        </div>
-
-        <ul class="checklist">
-          <li>
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>
-            <span><b>Expected against collected</b>, class by class, from the real roll.</span>
-          </li>
-          <li>
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>
-            <span><b>Ghost student check:</b> anyone being billed who never appears in a register.</span>
-          </li>
-          <li>
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>
-            <span><b>Discounts need approval.</b> A clerk proposes, the principal approves, both are recorded.</span>
-          </li>
-          <li>
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>
-            <span><b>Cash drawer settlement:</b> each collector counts their own drawer, and a difference needs a written reason.</span>
-          </li>
-          <li>
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>
-            <span><b>Full audit trail:</b> every change to money, marks and attendance, with who and when.</span>
-          </li>
-        </ul>
-      </div>
-
-      <div class="panel">
-        <div class="panel__head">
-          <span class="panel__title">Reconciliation</span>
-          <span class="panel__sub">September 2026</span>
-        </div>
-        <div class="panel__body">
-          <table class="recon">
-            <caption class="sr">Expected against collected fee income by class for September, with the shortfall for each.</caption>
-            <thead>
-              <tr>
-                <th scope="col">Class</th>
-                <th scope="col">Expected</th>
-                <th scope="col">Collected</th>
-                <th scope="col">Gap</th>
-                <th scope="col" style="width:20%">Shortfall</th>
-              </tr>
-            </thead>
-            <tbody class="tnum">
-              <tr>
-                <td data-th="Class"><b>Class 1</b></td>
-                <td data-th="Expected">118,000</td>
-                <td data-th="Collected">118,000</td>
-                <td data-th="Gap" class="ok">None</td>
-                <td data-th="Shortfall"><span class="bar" aria-hidden="true"><i style="width:0%"></i></span></td>
-              </tr>
-              <tr>
-                <td data-th="Class"><b>Class 2</b></td>
-                <td data-th="Expected">124,500</td>
-                <td data-th="Collected">121,500</td>
-                <td data-th="Gap" class="short">3,000</td>
-                <td data-th="Shortfall"><span class="bar" aria-hidden="true"><i style="width:9%"></i></span></td>
-              </tr>
-              <tr>
-                <td data-th="Class"><b>Class 3</b></td>
-                <td data-th="Expected">131,000</td>
-                <td data-th="Collected">96,000</td>
-                <td data-th="Gap" class="short">35,000</td>
-                <td data-th="Shortfall"><span class="bar" aria-hidden="true"><i style="width:100%"></i></span></td>
-              </tr>
-              <tr>
-                <td data-th="Class"><b>Class 4</b></td>
-                <td data-th="Expected">127,500</td>
-                <td data-th="Collected">127,500</td>
-                <td data-th="Gap" class="ok">None</td>
-                <td data-th="Shortfall"><span class="bar" aria-hidden="true"><i style="width:0%"></i></span></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="panel__foot">
-          Class 3 is Rs 35,000 short. Eleven families are behind, and two students
-          on the fee list have not appeared in the attendance register for six
-          weeks. The second number is the one worth knowing.
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============================================================ what is in it -->
-<section class="section" id="box">
-  <div class="wrap">
-    <span class="eyebrow">Everything in the box</span>
+    <span class="eyebrow">What it does</span>
     <h2>The whole school, not just the fee counter</h2>
-    <p class="lede" style="margin-top:12px">One price. Every module. No add-ons to buy later.</p>
+    <p class="lede" style="margin-top:12px">
+      One price. Every module. No add-ons to buy later.
+    </p>
 
     <div class="grid grid--3" style="margin-top:38px">
-      <div class="card">
-        <h3>Admissions and students</h3>
-        <p>Admission forms with automatic GR numbers, sibling linking, transfers, and a lifelong profile for every student. Bulk import from a spreadsheet when you switch.</p>
-      </div>
-      <div class="card">
-        <h3>Fees</h3>
-        <p>Fee heads and per class structures, monthly challans, arrears carried forward, partial payments, fines, approved discounts, advance payments, and printable receipts.</p>
-      </div>
-      <div class="card">
-        <h3>Attendance</h3>
-        <p>Daily register per class, finalise and lock, printable monthly attendance sheets, and a phone friendly marking screen that works with no internet.</p>
-      </div>
-      <div class="card">
-        <h3>Exams and results</h3>
-        <p>Marks per paper, practicals and weightage, computed grades on your own scale, printed result cards, tabulation sheets and positions.</p>
-      </div>
-      <div class="card">
-        <h3>Accounts</h3>
-        <p>Expense ledger with categories, other income, cash drawer sessions, day book, and the monthly profit figure that follows from all of it.</p>
-      </div>
-      <div class="card">
-        <h3>Staff</h3>
-        <p>Staff records, teacher logins tied to the classes they teach, staff attendance with a daily check in code, and printable staff cards.</p>
-      </div>
-      <div class="card">
-        <h3>Parent portal</h3>
-        <p>Parents sign in on their phone to see their own children only: fee balance, every receipt, attendance day by day, and results once you publish them.</p>
-      </div>
-      <div class="card">
-        <h3>Certificates</h3>
-        <p>School leaving, character and bonafide certificates, each on its own tracked serial register, plus student and staff ID cards with a QR code.</p>
-      </div>
-      <div class="card">
-        <h3>Year end rollover</h3>
-        <p>Promote, retain or graduate the whole school into a new session in one pass. Arrears follow the student. Preview it first, and undo it if something looks wrong.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============================================================ your records -->
-<section class="section section--tint" id="records">
-  <div class="wrap">
-    <div class="split">
-      <div>
-        <span class="eyebrow">Your records</span>
-        <h2>Your records leave with you</h2>
-        <p class="lede" style="margin-top:14px">
-          Export everything you have entered, at any time, in a plain readable
-          format, including on the day you decide to leave. There is no lock in and
-          no fee for your own data.
-        </p>
-        <p class="lede" style="margin-top:16px">
-          And nothing is ever quietly removed. A wrong entry is corrected by a
-          reversal, so both lines stay in the record with a reason and a name. If
-          somebody asks in two years why a receipt was cancelled, the answer is
-          still there.
-        </p>
-      </div>
-
-      <div class="panel">
-        <div class="panel__head">
-          <span class="panel__title">Audit trail</span>
-          <span class="panel__sub">Muhammad Aslam</span>
-        </div>
-        <div class="panel__body" style="padding:12px 18px 18px">
-          <div class="app__rows" style="margin-top:0">
-            <div class="arow">
-              <span><b>Receipt 1041</b><br><span class="muted">Asif Mehmood, clerk, 10:12</span></span>
-              <b class="tnum">Rs 1,700</b>
-            </div>
-            <div class="arow">
-              <span><b>Reversal of 1041</b><br><span class="muted">Rukhsana Yousaf, principal, 10:19</span></span>
-              <b class="tnum">(Rs 1,700)</b>
-            </div>
-            <div class="arow">
-              <span class="muted">Posted to the wrong child, corrected on 1043</span>
-              <span class="pill pill--paid">Net Rs 0</span>
-            </div>
-          </div>
-        </div>
-        <div class="panel__foot">
-          Neither line is struck out, because neither was removed. That is what
-          answers the question two years later.
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ================================================================= pricing
-     Each card carries data-plan and is closed by the end-of-plan HTML comment
-     directly beneath it. That marker bounds the card for the CI price check;
-     without it every card's block ran to end of file and matched every other
-     plan's figures. Do not write the marker inside another comment, because
-     HTML comments do not nest.
-     ================================================================= -->
-<section class="section" id="pricing">
-  <div class="wrap">
-    <span class="eyebrow">Pricing</span>
-    <h2>Priced for a real Pakistani school</h2>
-    <p class="lede" style="margin-top:12px">
-      Every plan includes every feature. You pay for size, not for modules. Pay
-      yearly and get two months free.
-    </p>
-
-    <div class="prices" style="margin-top:38px">
-      <div class="price" data-plan="starter">
-        <h3>Starter</h3>
-        <div class="price__amt"><span data-price-monthly>Rs 950</span><small>/month</small></div>
-        <p class="price__cap" data-price-cap>Up to 100 students</p>
-        <ul>
-          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Every module included</li>
-          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Unlimited staff logins</li>
-          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Parent portal</li>
-          <li data-price-yearly>Rs 9,500 a year</li>
-        </ul>
-        <a class="btn btn--ghost" href="#contact" data-app="signup"
-           aria-label="Start a free trial on the Starter plan">Start free trial</a>
-      </div>
-      <!-- /plan -->
-
-      <div class="price price--hot" data-plan="growth">
-        <span class="price__tag">Most schools</span>
-        <h3>Growth</h3>
-        <div class="price__amt"><span data-price-monthly>Rs 2,000</span><small>/month</small></div>
-        <p class="price__cap" data-price-cap>Up to 300 students</p>
-        <ul>
-          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Every module included</li>
-          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Unlimited staff logins</li>
-          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Parent portal</li>
-          <li data-price-yearly>Rs 20,000 a year</li>
-        </ul>
-        <a class="btn btn--primary" href="#contact" data-app="signup"
-           aria-label="Start a free trial on the Growth plan">Start free trial</a>
-      </div>
-      <!-- /plan -->
-
-      <div class="price" data-plan="institution">
-        <h3>Institution</h3>
-        <div class="price__amt"><span data-price-monthly>Rs 3,500</span><small>/month</small></div>
-        <p class="price__cap" data-price-cap>Up to 1,000 students</p>
-        <ul>
-          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Every module included</li>
-          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Unlimited staff logins</li>
-          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Parent portal</li>
-          <li data-price-yearly>Rs 35,000 a year</li>
-        </ul>
-        <a class="btn btn--ghost" href="#contact" data-app="signup"
-           aria-label="Start a free trial on the Institution plan">Start free trial</a>
-      </div>
-      <!-- /plan -->
-
-      <div class="price" data-plan="custom">
-        <h3>Larger institutions</h3>
-        <div class="price__amt">Let's talk</div>
-        <p class="price__cap">More than 1,000 students</p>
-        <ul>
-          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Multiple campuses</li>
-          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Migration from your current system</li>
-          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>A direct line for support</li>
-        </ul>
-        <a class="btn btn--ghost" href="#contact">Contact us</a>
-      </div>
-      <!-- /plan -->
-    </div>
-
-    <p class="small muted" style="margin-top:20px;max-width:70ch">
-      Grow past your plan mid year and nothing stops working. Admissions are never
-      blocked by a billing limit. We will call you about moving up at a sensible
-      moment, not in the middle of admission season. Payment is by bank transfer:
-      there is no card on file and no automatic renewal.
-    </p>
-  </div>
-</section>
-
-<!-- ===================================================================== faq -->
-<section class="section section--tint" id="faq">
-  <div class="wrap" style="max-width:860px">
-    <span class="eyebrow">Questions</span>
-    <h2>Questions a principal actually asks</h2>
-
-    <div style="margin-top:28px">
-      <details class="q">
-        <summary>What happens to our data if we stop paying?<span class="q__m" aria-hidden="true"></span></summary>
+      <a class="card card--link" href="/fee-management">
+        <h3>Fees and challans</h3>
         <p>
-          It stays yours. Export everything at any time, including after you have
-          cancelled, in a plain readable format. We do not hold records to ransom
-          and there is no charge for taking your own data out.
+          One parent pays once for all their children. Monthly challans, arrears
+          carried forward, partial payments, fines, approved discounts, and a
+          receipt number that cannot skip.
         </p>
-      </details>
-      <details class="q">
-        <summary>Does it work when the internet goes down?<span class="q__m" aria-hidden="true"></span></summary>
-        <p>
-          Attendance does. Teachers can keep marking the register and it syncs when
-          the connection returns. Fee collection needs the connection, because two
-          clerks taking cash offline would issue two receipts with the same number,
-          and a fee book with duplicate numbers is worse than a fee book you have to
-          wait five minutes for.
-        </p>
-      </details>
-      <details class="q">
-        <summary>Can a clerk change a receipt after it is printed?<span class="q__m" aria-hidden="true"></span></summary>
-        <p>
-          No. Nothing is deleted or edited. A mistake is corrected by a reversal
-          entry, so both lines stay in the ledger with a reason and the name of the
-          person who made the correction. Receipt numbers are issued in an unbroken
-          sequence, so a missing number is itself visible.
-        </p>
-      </details>
-      <details class="q">
-        <summary>Can parents see other children's information?<span class="q__m" aria-hidden="true"></span></summary>
-        <p>
-          A parent login reaches only that family's own children: their fee balance,
-          their receipts, their attendance and their results once you publish them.
-          It cannot reach any other family, and it cannot reach anything you have
-          not published.
-        </p>
-      </details>
-      <details class="q">
-        <summary>We already have years of records in Excel. Can we move them?<span class="q__m" aria-hidden="true"></span></summary>
-        <p>
-          Yes. Students, staff and opening balances import from a spreadsheet. Bring
-          us the file you already keep and we will map it with you rather than asking
-          you to retype a school.
-        </p>
-      </details>
-      <details class="q">
-        <summary>What about results that are not final yet?<span class="q__m" aria-hidden="true"></span></summary>
-        <p>
-          Marks stay unpublished until you publish them, and a result card can be
-          withheld for a single student, for example while a fee matter is settled.
-          Parents see nothing until you decide they should.
-        </p>
-      </details>
-      <details class="q">
-        <summary>Is there a manual, or do you train us?<span class="q__m" aria-hidden="true"></span></summary>
-        <p>
-          Both. The <a href="guide.html">handbook</a> is sixteen chapters with real
-          screenshots taken from the software itself, and it is free to read now,
-          before you buy anything. It covers the office screens, the parent portal
-          and what to do when something is entered wrong. We also walk your clerk
-          through the first month's fee run on a call.
-        </p>
-      </details>
-
-      <details class="q">
-        <summary>Is it in Urdu?<span class="q__m" aria-hidden="true"></span></summary>
-        <p>
-          The screens are in English. Anything you type is accepted and printed in
-          Urdu, including names, addresses and remarks, so a certificate or a fee
-          receipt can carry Urdu text. A full Urdu interface is not built yet, and we
-          would rather say so than imply otherwise.
-        </p>
-      </details>
-    </div>
-  </div>
-</section>
-
-<!-- ================================================================ download
-     Hidden by default and revealed by wire.js only when app_releases carries a
-     current Windows build. Every id here is written into by wire.js and
-     asserted by CI, so the markup stays even while the section is hidden.
-     ================================================================ -->
-<section class="section" id="download" hidden>
-  <div class="wrap">
-    <span class="eyebrow">Desktop</span>
-    <h2>Install it on the office computer</h2>
-    <p class="lede" style="margin-top:12px">
-      The software runs in a browser and works the same either way. The desktop
-      version is for the front desk: it opens on its own and remembers the address
-      of your school's software, so nobody has to type it.
-    </p>
-
-    <div id="download-box" class="card" style="margin-top:26px;max-width:56ch">
-      <a class="btn btn--ghost btn--lg" id="download-btn" href="#contact" aria-disabled="true">
-        Windows installer: being prepared
+        <span class="card__more">How fee collection works</span>
       </a>
-      <p class="small muted" id="download-meta" style="margin-top:12px"></p>
-      <p class="small muted" id="download-notes" hidden style="margin-top:6px"></p>
-      <details hidden style="margin-top:14px">
-        <summary class="small muted" style="cursor:pointer">Verify this file</summary>
-        <p class="small muted" style="margin-top:8px">
-          Compare the SHA-256 of the file you downloaded with this. If they differ,
-          do not run it and tell us.
+      <a class="card card--link" href="/attendance">
+        <h3>Attendance</h3>
+        <p>
+          A daily register per class, marked from a phone in the classroom, that
+          keeps working when the internet does not. Finalise, lock, and print the
+          monthly sheet.
         </p>
-        <code id="download-sha" style="font-size:12px;word-break:break-all;font-family:var(--mono)"></code>
-      </details>
-      <p class="small muted" style="margin-top:16px">
-        Prefer the browser? Nothing to install. <a href="#contact" data-app="signin" style="color:var(--brand)">Sign in here</a>.
+        <span class="card__more">How attendance works</span>
+      </a>
+      <a class="card card--link" href="/exams-and-results">
+        <h3>Exams and result cards</h3>
+        <p>
+          Marks per paper, practicals and weightage, grades computed on your own
+          scale, then printed result cards, tabulation sheets and class positions.
+        </p>
+        <span class="card__more">How exams work</span>
+      </a>
+      <a class="card card--link" href="/accounts">
+        <h3>Accounts and payroll</h3>
+        <p>
+          An expense ledger with categories, other income, cash drawer sessions,
+          a day book, staff salaries, and the monthly profit that follows from
+          all of it.
+        </p>
+        <span class="card__more">How the accounts work</span>
+      </a>
+      <a class="card card--link" href="/parent-portal">
+        <h3>Parent portal</h3>
+        <p>
+          Parents sign in on their own phone and see their own children only:
+          balance, every receipt, attendance day by day, and results once you
+          publish them.
+        </p>
+        <span class="card__more">How the portal works</span>
+      </a>
+      <div class="card">
+        <h3>And the rest of it</h3>
+        <p>
+          Admissions with automatic GR numbers and sibling linking. Staff records
+          and teacher logins. Leaving, character and bonafide certificates on
+          tracked serial registers. Student and staff ID cards. Year end rollover
+          for the whole school in one pass.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ records ===-->
+<section class="section section--tint" id="records">
+  <div class="wrap split">
+    <div>
+      <span class="eyebrow">Your records</span>
+      <h2>Your records leave with you</h2>
+      <p class="lede" style="margin-top:12px">
+        Export everything you have entered, at any time, in a plain readable
+        format, including on the day you decide to leave. There is no lock in
+        and no fee for your own data.
+      </p>
+      <p style="margin-top:16px">
+        And nothing is ever quietly removed. A wrong entry is corrected by a
+        reversal, so both lines stay in the record with a reason and a name. If
+        somebody asks in two years why a receipt was cancelled, the answer is
+        still there.
+      </p>
+      <p style="margin-top:20px">
+        <a class="btn btn--ghost" href="/faq">Read the questions principals ask</a>
       </p>
     </div>
-  </div>
-</section>
-
-<!-- ================================================================= contact -->
-<section class="section section--tint" id="contact">
-  <div class="wrap">
-    <span class="eyebrow">Contact</span>
-    <h2>Who you are calling</h2>
-    <p class="lede" style="margin-top:12px">
-      A small team in Pakistan. Ring the number and a person who knows the software
-      answers. If you would rather see it than read about it, we will walk one class
-      through with you on a call.
-    </p>
-
-    <div class="grid grid--3" style="margin-top:30px">
-      <div class="card">
-        <h3>Phone</h3>
-        <p><a class="clink" id="contact-phone" hidden href="#"></a></p>
+    <div class="panel">
+      <div class="panel__head">
+        <span class="panel__title">Audit trail</span>
+        <span class="panel__sub">Muhammad Aslam</span>
       </div>
-      <div class="card">
-        <h3>WhatsApp</h3>
-        <p><a class="clink" id="contact-whatsapp" hidden href="#" rel="noopener"></a></p>
+      <div class="app__rows" style="border:0;border-radius:0">
+        <div class="arow"><span>Receipt 1041<br><small>Asif Mehmood, class 5</small></span><b>Rs 1,700</b></div>
+        <div class="arow"><span>Reversal of 1041<br><small>Wrong pupil, entered 09:12</small></span><b>(Rs 1,700)</b></div>
+        <div class="arow"><span>Posted to the wrong child</span><span class="pill pill--paid">Net Rs 0</span></div>
       </div>
-      <div class="card">
-        <h3>Email</h3>
-        <p><a class="clink" id="contact-email" hidden href="#"></a></p>
+      <div class="panel__foot">
+        Neither line is struck out, because neither line happened by accident. This
+        is what answers the question two years later.
       </div>
     </div>
-    <p id="contact-todo" hidden class="small" style="margin-top:16px;color:var(--due-800)">
-      Set CONTACT_PHONE, CONTACT_WHATSAPP and CONTACT_EMAIL in config.js on the
-      deployment. A page this careful with an unset phone number is worse than a
-      plain page with a real one.
-    </p>
   </div>
 </section>
 
-<!-- ===================================================================== cta -->
-<section class="section" style="padding-top:0">
+<!-- ==================================================================== cta ===-->
+<section class="section">
   <div class="wrap">
     <div class="cta on-dark">
       <h2>Try it with one class first</h2>
@@ -731,8 +373,8 @@
         challans, and see whether the numbers agree with your register.
       </p>
       <div class="cta__row">
-        <a class="btn btn--primary btn--lg" href="#pricing" data-app="signup">Start your free trial</a>
-        <a class="btn btn--ghost btn--lg" href="#contact">Talk to a person first</a>
+        <a class="btn btn--primary btn--lg" href="/pricing" data-app="signup">Start your free trial</a>
+        <a class="btn btn--ghost btn--lg" href="/contact">Talk to a person first</a>
       </div>
     </div>
   </div>
@@ -740,7 +382,6 @@
 
 </main>
 
-<!-- ================================================================== footer -->
 <footer class="foot">
   <div class="wrap">
     <div class="foot__grid">
@@ -750,7 +391,7 @@
             <rect width="24" height="24" rx="6" fill="#4F46E5"/>
             <g fill="#fff"><circle cx="12" cy="7.5" r="1.4"/><path fill-rule="evenodd" d="M5.5 12.5h13v6h-13zm2.5 1.5h8v1h-8zm0 2h8v1h-8z"/></g>
           </svg>
-          <span>School Manager</span>
+          <span>The School Manager</span>
         </div>
         <p style="max-width:34ch">
           School management software made in Pakistan, for Pakistani schools.
@@ -758,39 +399,42 @@
         <p class="foot__ur" lang="ur" dir="rtl">پاکستانی اسکولوں کے لیے بنایا گیا</p>
       </div>
       <div>
-        <h3>Product</h3>
-        <a href="#how">How it works</a>
-        <a href="#control">Fee control</a>
-        <a href="#box">Features</a>
-        <a href="#pricing">Pricing</a>
-        <a href="#records">Your records</a>
+        <h3>What it does</h3>
+        <a href="/fee-management">Fee management</a>
+        <a href="/attendance">Attendance</a>
+        <a href="/exams-and-results">Exams and results</a>
+        <a href="/accounts">Accounts and payroll</a>
+        <a href="/parent-portal">Parent portal</a>
       </div>
       <div>
         <h3>Support</h3>
-        <a href="#faq">Questions</a>
-        <a href="guide.html">The handbook</a>
+        <a href="/pricing">Pricing</a>
+        <a href="/faq">Questions</a>
+        <a href="/reviews">What schools say</a>
+        <a href="/guides">Guides for school offices</a>
+        <a href="/guide.html">The handbook</a>
         <ul style="list-style:none;margin:0;padding:0">
-          <li hidden><a href="#download">Download</a></li>
+          <li hidden><a href="/download">Download</a></li>
         </ul>
-        <a href="#contact" data-app="signin">Sign in</a>
-        <a href="#contact" data-app="billing">Manage your subscription</a>
-        <a href="#contact" data-app="portal">Parent portal</a>
       </div>
       <div>
         <h3>Contact</h3>
-        <a href="#contact">Get in touch</a>
+        <a href="/contact">Get in touch</a>
+        <a href="/contact" data-app="signin">Sign in</a>
+        <a href="/contact" data-app="billing">Manage your subscription</a>
+        <a href="/contact" data-app="portal">Parent portal login</a>
       </div>
     </div>
     <div class="foot__bottom">
-      <span>&copy; <span id="yr">2026</span> School Manager</span>
+      <span>&copy; <span id="yr">2026</span> The School Manager</span>
       <span>theschoolmanager.site</span>
     </div>
   </div>
 </footer>
 
 <div class="actionbar">
-  <a class="btn btn--primary" href="#pricing" data-app="signup">Start free trial</a>
-  <a class="btn btn--ghost" id="bar-whatsapp" href="#contact" aria-label="WhatsApp us">
+  <a class="btn btn--primary" href="/pricing" data-app="signup">Start free trial</a>
+  <a class="btn btn--ghost" id="bar-whatsapp" href="/contact" aria-label="WhatsApp us">
     <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
       <path d="M17 9.6a7 7 0 0 1-10.3 6.2L3 16.8l1.1-3.6A7 7 0 1 1 17 9.6z" stroke-linejoin="round"/>
     </svg>
@@ -798,7 +442,7 @@
   </a>
 </div>
 
-<script src="config.js"></script>
-<script src="wire.js"></script>
+<script src="/config.js"></script>
+<script src="/wire.js"></script>
 </body>
 </html>

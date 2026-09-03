@@ -21,6 +21,7 @@ import { NewSchoolDialog } from './NewSchool'
 import { Business } from './Business'
 import { Publishing } from './Publishing'
 import { LeftBehind } from './LeftBehind'
+import { Reviews } from './Reviews'
 import { paymentClaims, dueSoon, platformSettings, orphanReport } from '@/lib/platform'
 
 const STATUS_STYLE: Record<PlatformSchool['status'], string> = {
@@ -34,7 +35,7 @@ const STATUS_STYLE: Record<PlatformSchool['status'], string> = {
 const FIELD = 'rounded border border-slate-300 px-2 py-1.5 text-sm'
 
 type Tab = 'schools' | 'renewals' | 'claims' | 'business' | 'publishing' | 'billing'
-  | 'leftbehind'
+  | 'leftbehind' | 'reviews'
 
 const TAB_TITLE: Record<Tab, string> = {
   schools: 'Schools',
@@ -44,6 +45,7 @@ const TAB_TITLE: Record<Tab, string> = {
   publishing: 'Downloads and notices',
   billing: 'Our billing details',
   leftbehind: 'Records with no school',
+  reviews: 'What schools say',
 }
 
 function monthStart(): string {
@@ -223,6 +225,12 @@ export function PlatformPage() {
             badge={claimCount.data?.length} />
           <TabButton now={tab} me="business" set={setTab} label="The business" />
           <TabButton now={tab} me="publishing" set={setTab} label="Downloads & notices" />
+          {/* Deliberately NOT badged with a count. A badge means "there is
+              something here for you to action", and the only thing an operator
+              can do to a review is take one down for abuse. A number nagging
+              from the nav would invite exactly the habit this design is built
+              to prevent. */}
+          <TabButton now={tab} me="reviews" set={setTab} label="What schools say" />
           <TabButton now={tab} me="billing" set={setTab} label="Our billing details"
             warn={settingsIncomplete} />
           {/* Only appears when there IS something, because a permanently empty
@@ -247,6 +255,7 @@ export function PlatformPage() {
         {tab === 'publishing' && <Publishing />}
         {tab === 'billing' && <BillingSettings />}
         {tab === 'leftbehind' && <LeftBehind />}
+        {tab === 'reviews' && <Reviews />}
 
         {tab === 'schools' && <>
 

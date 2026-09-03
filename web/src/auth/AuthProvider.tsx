@@ -1,8 +1,17 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useReducer,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
 import { cacheSchoolId } from '@/lib/offlineQueue'
 import type { Role } from './roles'
+import { gateIsLoading, initialGate, reduceGate } from './authGate'
 
 export interface Profile {
   id: string
@@ -40,31 +49,70 @@ interface AuthState {
 export const AuthContext = createContext<AuthState | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<Session | null>(null)
+  /*
+   * The gate is a reducer in ./authGate.ts, not a pile of flags here, because
+   * the bug it fixes was an ORDERING bug and ordering is what a reducer makes
+   * testable. This project has no jsdom and its rendering harness fires no
+   * effects, so a flag set in the wrong effect is invisible to every test it
+   * can run. authGate.test.ts plays the exact cold-start sequence that used to
+   * redirect a signed-in clerk to /login on every launch of the desktop app.
+   */
+  const [gate, dispatch] = useReducer(reduceGate, initialGate)
   const [profile, setProfile] = useState<Profile | null>(null)
-  const [loading, setLoading] = useState(true)
+
+  /*
+   * Once onAuthStateChange has spoken, a late getSession() result is STALE and
+   * must be dropped.
+   *
+   * signInWithPassword fires auth-change immediately, while getSession() may
+   * still be resolving against a snapshot taken before the sign-in. Applying
+   * that answer would sign the user out one tick after they signed in. Asserted
+   * in authGate.test.ts as a hazard the call site owns, which is here.
+   */
+  const authChangeSeen = useRef(false)
 
   useEffect(() => {
     if (!supabase) {
-      setLoading(false)
+      dispatch({ type: 'no-client' })
       return
     }
     let active = true
 
-    supabase.auth.getSession().then(({ data }) => {
-      if (!active) return
-      setSession(data.session)
+    // Subscribed BEFORE getSession() is called, so a change that happens during
+    // the restore cannot be missed in the gap between them.
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
+      authChangeSeen.current = true
+      dispatch({ type: 'auth-change', session: s })
     })
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
-      setSession(s)
-    })
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        if (!active || authChangeSeen.current) return
+        dispatch({ type: 'restored', session: data.session })
+      })
+      // A THROW HERE USED TO BE UNHANDLED. getSession() refreshes an expired
+      // token, which is a network call, so offline it can reject. Unhandled,
+      // the gate never opened and the app sat on "Loading" with no way past it.
+      .catch(() => {
+        if (active) dispatch({ type: 'restore-failed' })
+      })
+
+    // The floor. If neither path ever settles, the user gets the sign-in screen
+    // rather than a spinner with no end. Ten seconds, because a slow school
+    // connection refreshing a token is normal and a permanent spinner is not.
+    const watchdog = setTimeout(() => {
+      if (active) dispatch({ type: 'watchdog' })
+    }, 10000)
 
     return () => {
       active = false
+      clearTimeout(watchdog)
       sub.subscription.unsubscribe()
     }
   }, [])
+
+  const session = gate.session
 
   // Load the user's profile (role) whenever the session changes.
   useEffect(() => {
@@ -72,27 +120,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const userId = session?.user?.id
     if (!userId) {
       setProfile(null)
-      setLoading(false)
+      dispatch({ type: 'profile-settled' })
       return
     }
-    setLoading(true)
+    let active = true
+    dispatch({ type: 'profile-loading' })
     supabase
       .from('profiles')
       .select('id, full_name, role, staff_id, school_id')
       .eq('id', userId)
       // maybeSingle, not single: a PLATFORM admin has no profile at all (they
-      // belong to no school), and .single() treats that as an error — which
+      // belong to no school), and .single() treats that as an error, which
       // would leave them stuck on a loading screen they can never get past.
       .maybeSingle()
-      .then(({ data }) => {
-        const p = (data as Profile) ?? null
-        setProfile(p)
-        // Cached so work queued while OFFLINE can still be stamped with the
-        // school it belongs to — there is no server to ask at that moment.
-        cacheSchoolId(p?.school_id ?? null)
-        setLoading(false)
-      })
+      // TWO ARGUMENTS, not .then().catch(): the query builder resolves to a
+      // PromiseLike, which has then and no catch, so the chained form does not
+      // typecheck. Both paths must settle the gate. Same reasoning as the
+      // restore above: a failed profile fetch is a reason to carry on with no
+      // profile, and never a reason to hang on a spinner.
+      .then(
+        ({ data }) => {
+          if (!active) return
+          const p = (data as Profile) ?? null
+          setProfile(p)
+          // Cached so work queued while OFFLINE can still be stamped with the
+          // school it belongs to: there is no server to ask at that moment.
+          cacheSchoolId(p?.school_id ?? null)
+          dispatch({ type: 'profile-settled' })
+        },
+        () => {
+          if (active) dispatch({ type: 'profile-settled' })
+        },
+      )
+    return () => {
+      active = false
+    }
   }, [session])
+
+  const loading = gateIsLoading(gate)
 
   async function signIn(email: string, password: string) {
     if (!supabase) return { error: 'App is not configured.' }

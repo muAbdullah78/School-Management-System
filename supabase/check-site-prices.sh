@@ -4,7 +4,7 @@
 #
 # WHY THIS EXISTS
 #
-# site/index.html carries the prices as literal text — Rs 950, Rs 9,500 a year,
+# The site carries the prices as literal text — Rs 950, Rs 9,500 a year,
 # "up to 100 students" — and `plans` carries them as data. 0082 made the site read
 # `plans` at page load, so the live page is correct. But the literals are the
 # FALLBACK, shown when Supabase is unreachable or before the fetch lands, and a
@@ -25,14 +25,30 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-HTML=site/index.html
+# THE SITE IS NO LONGER ONE PAGE, and this check assumed it was.
+#
+# The plan cards moved to site/pricing.html when the site was split up for
+# search. The hero's "From Rs 950" stayed on the home page. The JSON-LD offers
+# are emitted by scripts/build-site.py into every page that asks for the
+# software schema, which is currently seven of them.
+#
+# Pointed at site/index.html alone this check would have found no cards at all
+# and hit its own "matched fewer than 3 plans" floor, which is the right
+# failure but the wrong reason. Each figure is now checked where it actually
+# lives, and PAGES lists everything that may carry a price so a stale figure
+# cannot hide on a page nobody thought to look at.
+CARDS=site/pricing.html
+HERO=site/index.html
+PAGES=$(ls site/*.html site/guides/*.html 2>/dev/null | grep -v '^site/guide\.html$')
 fail=0
 checked=0
 
-if [ ! -f "$HTML" ]; then
-  echo "REFUSING TO REPORT SUCCESS: $HTML does not exist"
-  exit 1
-fi
+for f in "$CARDS" "$HERO"; do
+  if [ ! -f "$f" ]; then
+    echo "REFUSING TO REPORT SUCCESS: $f does not exist. Run python3 scripts/build-site.py"
+    exit 1
+  fi
+done
 
 # Every active, priced plan from the database. `custom` has no price and its card
 # says "Let's talk", so it is skipped by the price filter rather than by name —
@@ -88,7 +104,7 @@ card() {
     $0 ~ ("data-plan=\"" want "\"") { inside = 1 }
     inside { print }
     inside && /<!-- \/plan -->/ { exit }
-  ' "$HTML"
+  ' "$CARDS"
 }
 
 # True when the plan block is properly terminated. Kept separate from card() so
@@ -98,7 +114,7 @@ card_is_closed() {
     $0 ~ ("data-plan=\"" want "\"") { inside = 1 }
     inside && /<!-- \/plan -->/ { found = 1; exit }
     END { exit(found ? 0 : 1) }
-  ' "$HTML"
+  ' "$CARDS"
 }
 
 commas() {   # 9500 -> 9,500  (the grouping the page prints)
@@ -112,7 +128,7 @@ while IFS='|' read -r code limit monthly yearly; do
   [ -z "${code:-}" ] && continue
   block=$(card "$code")
   if [ -z "$block" ]; then
-    echo "  $code: the website has no card for this plan (data-plan=\"$code\")"
+    echo "  $code: $CARDS has no card for this plan (data-plan=\"$code\")"
     fail=1
     continue
   fi
@@ -120,7 +136,7 @@ while IFS='|' read -r code limit monthly yearly; do
   # every assertion against it would pass on any other plan's figures. Refuse
   # rather than check something weaker than advertised.
   if ! card_is_closed "$code"; then
-    echo "REFUSING TO REPORT SUCCESS: the $code card in $HTML has no <!-- /plan --> marker," >&2
+    echo "REFUSING TO REPORT SUCCESS: the $code card in $CARDS has no <!-- /plan --> marker," >&2
     echo "so its block runs to end of file and would match any plan's price." >&2
     exit 1
   fi
@@ -149,8 +165,8 @@ done <<< "$rows"
 cheapest=$(psql -tA -v ON_ERROR_STOP=1 -c \
   "select price_monthly::bigint from public.plans
     where active and price_monthly > 0 order by price_monthly limit 1")
-grep -qF "Rs $(commas "$cheapest")" <(grep 'id="lead-price"' "$HTML") \
-  || { echo "  the headline price in the hero is not Rs $cheapest"; fail=1; }
+grep -qF "Rs $(commas "$cheapest")" <(grep 'id="lead-price"' "$HERO") \
+  || { echo "  the headline price in the hero of $HERO is not Rs $cheapest"; fail=1; }
 
 # --- the copies of the price that live OUTSIDE the cards -------------------
 #
@@ -162,27 +178,66 @@ grep -qF "Rs $(commas "$cheapest")" <(grep 'id="lead-price"' "$HTML") \
 # a rich result.
 cheap=$(commas "$cheapest")
 
-for label in 'meta name="description"' 'meta property="og:description"'; do
-  line=$(grep "$label" "$HTML" || true)
-  if [ -z "$line" ]; then
-    echo "  the page has no <$label>, which the price check expects to find"
-    fail=1
-  elif ! printf '%s' "$line" | grep -qF "Rs $cheap"; then
-    echo "  <$label> does not quote the cheapest price, Rs $cheapest"
-    fail=1
-  fi
+# Two pages quote the price in their own meta description and Open Graph
+# description: the home page and the pricing page. Checked by page rather than
+# demanding every page quote a price, because most of them should not.
+for f in "$HERO" "$CARDS"; do
+  for label in 'meta name="description"' 'meta property="og:description"'; do
+    line=$(grep "$label" "$f" || true)
+    if [ -z "$line" ]; then
+      echo "  $f has no <$label>, which the price check expects to find"
+      fail=1
+    elif ! printf '%s' "$line" | grep -qF "Rs $cheap"; then
+      echo "  <$label> in $f does not quote the cheapest price, Rs $cheapest"
+      fail=1
+    fi
+  done
+done
+
+# And no OTHER page may quote a price that is not the current cheapest. A stale
+# "Rs 800" in the middle of a guide is a price you will be held to just as much
+# as one in a card.
+for f in $PAGES; do
+  while read -r stale; do
+    [ -z "$stale" ] && continue
+    case "$stale" in
+      "Rs $cheap"|"Rs $(commas "$(psql -tA -c "select price_monthly::bigint from public.plans where active and price_monthly>0 order by price_monthly desc limit 1")")") continue ;;
+    esac
+    known=0
+    while IFS='|' read -r c l m y; do
+      [ -z "${c:-}" ] && continue
+      [ "$stale" = "Rs $(commas "$m")" ] && known=1
+      [ "$stale" = "Rs $(commas "$y")" ] && known=1
+    done <<< "$rows"
+    if [ "$known" = 0 ]; then
+      echo "  $f quotes \"$stale\" a month, which is not any active plan's price"
+      fail=1
+    fi
+  done <<< "$(grep -oE 'Rs [0-9][0-9,]*(\.[0-9]+)? a month' "$f" | sed -E 's/ a month$//' | sort -u)"
 done
 
 # The JSON-LD offers, which are structured data and get scraped verbatim.
-while IFS='|' read -r code limit monthly yearly; do
-  [ -z "${code:-}" ] && continue
-  grep -qE "\"price\": ?\"$monthly\"" "$HTML" \
-    || { echo "  the JSON-LD has no offer priced \"$monthly\" for $code"; fail=1; }
-  if [ -n "${limit:-}" ]; then
-    grep -qF "Up to $(commas "$limit") students" "$HTML" \
-      || { echo "  the JSON-LD has no \"Up to $(commas "$limit") students\" for $code"; fail=1; }
-  fi
-done <<< "$rows"
+# The JSON-LD offers, which are structured data and get scraped verbatim.
+# scripts/build-site.py emits them from one PLANS list into every page that
+# declares the software schema, so any such page is a valid place to check and
+# every one of them must agree.
+ld_pages=$(grep -l '"@type": "SoftwareApplication"' $PAGES || true)
+if [ -z "$ld_pages" ]; then
+  echo "REFUSING TO REPORT SUCCESS: no page carries the SoftwareApplication schema," >&2
+  echo "so the offer prices Google reads are not being checked at all." >&2
+  exit 1
+fi
+for f in $ld_pages; do
+  while IFS='|' read -r code limit monthly yearly; do
+    [ -z "${code:-}" ] && continue
+    grep -qE "\"price\": ?\"$monthly\"" "$f" \
+      || { echo "  $f: JSON-LD has no offer priced \"$monthly\" for $code"; fail=1; }
+    if [ -n "${limit:-}" ]; then
+      grep -qF "Up to $(commas "$limit") students" "$f" \
+        || { echo "  $f: JSON-LD has no \"Up to $(commas "$limit") students\" for $code"; fail=1; }
+    fi
+  done <<< "$rows"
+done
 
 # The AUTH SCREENS quote it too, and they are in the app rather than the site.
 AUTH=web/src/components/AuthLayout.tsx
@@ -201,11 +256,11 @@ fi
 
 if [ "$fail" = 1 ]; then
   echo
-  echo "::error::site/index.html quotes prices the console does not charge"
+  echo "::error::the site quotes prices the console does not charge"
   echo "The page reads \`plans\` at load, so the LIVE site is right — but these"
   echo "literals are what a visitor sees when Supabase is slow or unreachable,"
   echo "and a stale fallback is a price you will be held to. Update them."
   exit 1
 fi
 
-echo "site/index.html and public.plans agree on $checked plan(s), the headline price, both meta descriptions, the JSON-LD offers and the signup panel"
+echo "the site and public.plans agree on $checked plan(s), the hero figure, the meta and Open Graph descriptions on both money pages, the JSON-LD offers on $(printf '%s\n' $ld_pages | wc -l | tr -d ' ') page(s), the signup panel, and no page quotes a price that is not a real one"
