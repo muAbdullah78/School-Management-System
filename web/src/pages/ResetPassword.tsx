@@ -2,14 +2,11 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/auth/AuthProvider'
 import { supabase } from '@/lib/supabase'
-import { appTitle } from '@/lib/config'
-import { useSchoolName } from '@/hooks/useSchoolName'
 import {
   AuthError,
   AuthLayout,
   AuthNotice,
   AuthSpinner,
-  ReceiptArtefact,
   authButton,
   authButtonLink,
   authField,
@@ -44,7 +41,6 @@ import {
 export function ResetPassword() {
   const { setPassword, signOut } = useAuth()
   const navigate = useNavigate()
-  const schoolName = useSchoolName()
   const [ready, setReady] = useState<'checking' | 'yes' | 'no'>('checking')
   const [pw, setPw] = useState('')
   const [pw2, setPw2] = useState('')
@@ -107,12 +103,15 @@ export function ResetPassword() {
   }
 
   return (
-    <AuthLayout
-      line="One new password, and you are back where you left off."
-      artefact={<ReceiptArtefact />}
-    >
+    <AuthLayout line="One new password, and you are back where you left off.">
+      {/* Four states, four headings. A fixed heading over the "this link has
+          expired" branch reads as though the form is still coming. */}
       <h1 className="text-2xl font-semibold tracking-[-0.015em] text-slate-900">
-        {appTitle(schoolName)}
+        {done
+          ? 'Password changed'
+          : ready === 'no'
+            ? 'That link has expired'
+            : 'Set a new password'}
       </h1>
 
       {done ? (

@@ -1,13 +1,10 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/auth/AuthProvider'
-import { appTitle } from '@/lib/config'
-import { useSchoolName } from '@/hooks/useSchoolName'
 import {
   AuthError,
   AuthLayout,
   AuthSpinner,
-  ReceiptArtefact,
   authButton,
   authField,
   authLabel,
@@ -17,7 +14,6 @@ import {
 export function Login() {
   const { signIn } = useAuth()
   const navigate = useNavigate()
-  const schoolName = useSchoolName()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -37,14 +33,14 @@ export function Login() {
   }
 
   return (
-    <AuthLayout
-      line="The register, the fee book and the attendance sheet, in one place."
-      artefact={<ReceiptArtefact />}
-    >
-      <h1 className="text-2xl font-semibold tracking-[-0.015em] text-slate-900">
-        {appTitle(schoolName)}
-      </h1>
-      <p className="mt-1.5 text-base text-slate-500">Sign in to continue.</p>
+    <AuthLayout line="The register, the fee book and the attendance sheet, in one place.">
+      {/* The heading is the ACTION. The school's name is in the bar above,
+          where it is rendered once for all four screens; repeating it here put
+          the same words twice within 30px of each other. */}
+      <h1 className="text-2xl font-semibold tracking-[-0.015em] text-slate-900">Sign in</h1>
+      <p className="mt-1.5 text-base text-slate-500">
+        Use the email address your account was set up with.
+      </p>
       <form onSubmit={onSubmit} className="mt-7 space-y-4" aria-busy={busy}>
           <AuthBusy label={busy ? 'Signing in' : null} />
         <label className="block">

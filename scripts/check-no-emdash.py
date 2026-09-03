@@ -42,7 +42,7 @@ SCOPE = [
     "web/src/pages/ForgotPassword.tsx",
     "web/src/pages/ResetPassword.tsx",
     "web/src/components/AuthLayout.tsx",
-    "web/src/components/GateBoard.tsx",
+    "web/src/lib/schoolLabel.ts",
 ]
 
 # U+2014 em dash, and U+2013 en dash used as a dash rather than in a range.

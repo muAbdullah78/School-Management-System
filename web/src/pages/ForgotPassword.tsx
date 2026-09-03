@@ -1,14 +1,11 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '@/auth/AuthProvider'
-import { appTitle } from '@/lib/config'
-import { useSchoolName } from '@/hooks/useSchoolName'
 import {
   AuthError,
   AuthLayout,
   AuthNotice,
   AuthSpinner,
-  ReceiptArtefact,
   authButton,
   authButtonLink,
   authField,
@@ -35,12 +32,12 @@ import {
  * flashing a toast, because the next thing the user does is leave for their
  * email, and a message they have to remember is a message they will not act on.
  *
- * It wears the same frame and the same drawn receipt as /login on purpose.
- * Recovery is a sign-in that went wrong, so it should feel like the same room.
+ * It wears the same frame and the same one line of copy beside it as /login on
+ * purpose. Recovery is a sign-in that went wrong, so it should feel like the
+ * same room rather than announcing itself as a different place.
  */
 export function ForgotPassword() {
   const { sendReset } = useAuth()
-  const schoolName = useSchoolName()
   const [email, setEmail] = useState('')
   const [sent, setSent] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -62,12 +59,12 @@ export function ForgotPassword() {
   }
 
   return (
-    <AuthLayout
-      line="A way back in that does not need a phone call."
-      artefact={<ReceiptArtefact />}
-    >
+    <AuthLayout line="A way back in that does not need a phone call.">
+      {/* Both headings are the state the screen is in, because the two states
+          are genuinely different pages: one asks for an address, the other has
+          already sent to it and the user's next move is to leave for email. */}
       <h1 className="text-2xl font-semibold tracking-[-0.015em] text-slate-900">
-        {appTitle(schoolName)}
+        {sent ? 'Check your email' : 'Reset your password'}
       </h1>
 
       {sent ? (
