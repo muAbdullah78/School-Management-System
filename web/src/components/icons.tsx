@@ -174,6 +174,14 @@ export const IconWhatsApp = svg(
   <path d="M21 11.5a8.4 8.4 0 0 1-12.6 7.3L3 20.5l1.8-5.2A8.5 8.5 0 1 1 21 11.5Z" />,
 )
 export const IconChevron = svg(<path d="m9 18 6-6-6-6" />)
+/** An open book, for the handbook link in the shell and the parent portal. */
+export const IconBook = svg(
+  <>
+    <path d="M12 7.5V20" />
+    <path d="M12 7.5a2 2 0 0 0-2-2H3.5v12H10a2 2 0 0 1 2 2" />
+    <path d="M12 7.5a2 2 0 0 1 2-2h6.5v12H14a2 2 0 0 0-2 2" />
+  </>,
+)
 export const IconLogout = svg(
   <>
     <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />

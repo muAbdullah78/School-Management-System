@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Build docs/GUIDE.html from the template plus the captured screenshots.
+Build site/guide.html from the template plus the captured screenshots.
 
 WHY A BUILD STEP AND NOT A HAND-WRITTEN FILE
 
@@ -10,14 +10,14 @@ first time somebody forwards it. So every PNG is embedded as a data URI, and
 nobody can hand-maintain 1.5MB of base64.
 
 More importantly, this makes the guide REPRODUCIBLE. Change a screen, re-run the
-harness and this script, and the guide's pictures follow. The alternative — a
-document with pasted images — starts drifting from the software the day it is
+harness and this script, and the guide's pictures follow. The alternative, a
+document with pasted images, starts drifting from the software the day it is
 written, and a manual that shows a screen the school cannot find is worse than no
 manual.
 
     cd web && npm run build && npm run harness   # render the screens to HTML
     cd .. && node scripts/shot-guide.mjs         # photograph them
-    python3 scripts/build-guide.py               # embed and write docs/GUIDE.html
+    python3 scripts/build-guide.py               # embed and write site/guide.html
 
 Missing images are a hard error, not a gap: a guide with a caption and no picture
 under it reads as a fault in the reader's own device.
@@ -30,7 +30,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE = ROOT / 'docs' / 'guide' / 'guide.template.html'
 IMG_DIR = ROOT / 'scratch' / 'guide-img'
-OUT = ROOT / 'docs' / 'GUIDE.html'
+OUT = ROOT / 'site' / 'guide.html'
 
 # The artifact ceiling is 16MB and base64 adds about a third. Warn well below it,
 # because the failure at the limit is a publish that is refused after the work.
@@ -45,7 +45,7 @@ def main() -> int:
 
     wanted = re.findall(r'\{\{IMG:([a-z0-9-]+)\}\}', html)
     if not wanted:
-        print('the template asks for no images — that is almost certainly wrong',
+        print('the template asks for no images, which is almost certainly wrong',
               file=sys.stderr)
         return 1
 
@@ -69,10 +69,10 @@ def main() -> int:
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(html, encoding='utf-8')
     size = OUT.stat().st_size
-    print(f'wrote {OUT.relative_to(ROOT)} — {size // 1024} KB '
+    print(f'wrote {OUT.relative_to(ROOT)}: {size // 1024} KB '
           f'({len(set(wanted))} screenshot(s), {total // 1024} KB before base64)')
     if size > WARN_BYTES:
-        print(f'WARNING: {size // 1024 // 1024} MB. The artifact limit is 16MB — '
+        print(f'WARNING: {size // 1024 // 1024} MB. The artifact limit is 16MB, '
               'shrink the screenshots before adding more.')
     return 0
 

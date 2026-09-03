@@ -45,7 +45,7 @@ signed-in user of another school.
 |---|---|
 | **install or upgrade a database** | [`docs/SETUP.md`](docs/SETUP.md) — the bundles, in order |
 | **know what a database has right now** | run `psql -f supabase/verify.sql`; one row per guarantee |
-| **hand a school a manual** | [`docs/GUIDE.html`](docs/GUIDE.html) — 16 chapters, real screenshots. Regenerate with `python3 scripts/build-guide.py` |
+| **hand a school a manual** | [`site/guide.html`](site/guide.html), 16 chapters with real screenshots, published at `/guide.html` and linked from the site footer, the FAQ, the app shell and the parent portal. Regenerate with `python3 scripts/build-guide.py` |
 | **know what is built and what is not** | [`docs/STATUS.md`](docs/STATUS.md) for the exclusions and the honest gaps; [`docs/PARITY.md`](docs/PARITY.md) for the competitor-feature inventory |
 | **understand a product decision** | [`docs/09-DECISIONS-LOCKED.md`](docs/09-DECISIONS-LOCKED.md) |
 | **understand the money engine** | [`docs/10-MONEY-ENGINE-V2.md`](docs/10-MONEY-ENGINE-V2.md) |
@@ -90,7 +90,7 @@ supabase/
 site/                    the public website (static)
 desktop/                 Tauri shell that wraps the web app as a Windows .msi
 docs/                    design records and the school handbook
-scripts/                 builds docs/GUIDE.html from the template plus screenshots
+scripts/                 builds site/guide.html from the template plus screenshots
   check-parity.py        does docs/PARITY.md still match the code?
 ```
 

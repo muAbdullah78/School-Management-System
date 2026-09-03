@@ -22,6 +22,17 @@ export const config = {
   siteUrl: (import.meta.env.VITE_SITE_URL as string | undefined) ?? 'https://theschoolmanager.site',
 }
 
+/**
+ * The handbook, which ships with the marketing site rather than with the app.
+ *
+ * It was written, generated from the software's own screens, and then linked
+ * from nowhere: not the website, not the app. A manual a school cannot reach is
+ * a manual nobody reads, and "is there a manual?" is asked in the first meeting
+ * every time. Derived from siteUrl so a school that moves its site does not end
+ * up with a Help link pointing at somebody else's domain.
+ */
+export const guideUrl = `${config.siteUrl.replace(/\/+$/, '')}/guide.html`
+
 /** True only when the app has been pointed at a Supabase project. */
 export const isConfigured = Boolean(config.supabaseUrl && config.supabaseAnonKey)
 

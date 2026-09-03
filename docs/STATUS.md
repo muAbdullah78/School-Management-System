@@ -31,7 +31,7 @@ the software instead of remembering:
 | How many migrations are there? | `ls supabase/migrations/*.sql \| wc -l` |
 | Do the tests pass? | `.github/workflows/ci.yml` runs every suite and all 13 guards on every push |
 | Which of the competitor's features exist? | [`PARITY.md`](PARITY.md), which states exactly which of its rows have been re-verified and which have not |
-| How does a school actually use it? | [`GUIDE.html`](GUIDE.html) — the handbook, with real screenshots |
+| How does a school actually use it? | [the handbook](../site/guide.html), with real screenshots, published at `/guide.html` |
 
 `verify.sql` is the one to run. It also reports the two things that need a human
 and cannot be done in code: the vendor's own billing details, and publishing a
