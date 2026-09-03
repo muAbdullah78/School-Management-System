@@ -277,6 +277,15 @@ jobs:
         # The real install path, on a separate database: each bundle as ONE
         # transaction, exactly as the SQL Editor runs a paste. Globbed, so a new
         # bundle is covered the moment build-bundles.sh emits it.
+        #
+        # SORTED NUMERICALLY, and this is why. `supabase/bundles/*.sql` is a
+        # shell glob, which sorts lexicographically, so the moment a tenth
+        # bundle existed the order became 1, 10, 2, 3, ... and bundle 10 was
+        # applied SECOND. 0093 needs current_school_id from 0025, payments from
+        # 0035, is_platform_admin from 0027 and fn__log_operator_action from
+        # 0073, so it failed outright, and the error named a function rather
+        # than the ordering. The step below at line ~474 already used sort -V
+        # for exactly this reason; this one had not needed it yet.
         run: |
           psql -v ON_ERROR_STOP=1 -c "create database bundlecheck;"
           PGDATABASE=bundlecheck psql -v ON_ERROR_STOP=1 -q <<'SQL'
@@ -300,7 +309,7 @@ jobs:
           alter default privileges in schema public
             grant all on tables to postgres, anon, authenticated, service_role;
           SQL
-          for b in supabase/bundles/*.sql; do
+          for b in $(ls supabase/bundles/*.sql | sort -V); do
             echo "── $b"
             PGDATABASE=bundlecheck psql -v ON_ERROR_STOP=1 -q --single-transaction -f "$b"
           done
@@ -410,6 +419,9 @@ jobs:
           done
 
           echo "── they paste every current bundle, as instructed. 1-3 fail; that is the bug."
+          # [1-5]_ deliberately does not match 10_, and the glob order within
+          # that range is already 1..5. See the sort -V note above before
+          # widening this pattern.
           for b in supabase/bundles/[1-5]_*.sql; do
             if psql -v ON_ERROR_STOP=1 -q --single-transaction -f "$b" >/dev/null 2>&1; then
               echo "   $b applied"
@@ -470,8 +482,21 @@ jobs:
           # superseded, and bundle 5 carries 0050-0056 — several of whose
           # function bodies 0059 rewrites. Re-running bundle 5 after 6 would put
           # the has_role read gates back and quietly undo the observer role, with
-          # nothing failing. `sort -V` keeps 10 after 9 when there is a tenth.
-          for b in $(ls supabase/bundles/[5-9]_*.sql | sort -V); do
+          # nothing failing.
+          #
+          # AND THE PATTERN IS NOT [5-9]_, WHICH IS WHAT IT USED TO BE. The
+          # comment on this line claimed sort -V "keeps 10 after 9 when there
+          # is a tenth", and sort -V does, but the GLOB never handed it a tenth:
+          # [5-9]_ does not match 10_reviews.sql. So the moment a tenth bundle
+          # existed this step skipped it silently and verify.sql failed two
+          # steps later on a row about a migration that had never been applied.
+          # A comment asserting a protection the code does not provide is worse
+          # than no comment, because it stops the next person checking.
+          #
+          # Selected by NUMBER rather than by a character range, so it covers
+          # bundle 10, 11 and 12 without anybody remembering to widen it.
+          for b in $(ls supabase/bundles/*.sql | sort -V \
+                     | awk -F/ '{ n = $NF; sub(/_.*/, "", n); if (n + 0 >= 5) print }'); do
             echo "   applying $b"
             psql -v ON_ERROR_STOP=1 -q --single-transaction -f "$b"
           done
