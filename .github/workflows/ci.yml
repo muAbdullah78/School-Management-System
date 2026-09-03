@@ -126,6 +126,23 @@ jobs:
         working-directory: .
         run: python3 supabase/check-orphan-queries.py
 
+      - name: No em dash on a surface a school reads
+        # The em dash is banned in this project's writing and it is the single
+        # easiest character to reintroduce, because every editor and every model
+        # inserts it automatically and because it looks correct.
+        #
+        # The scope is deliberately NOT the whole repository, and the script says
+        # why in full: site/ had 39, web/src has about 930 across 121 of 144
+        # files, and supabase/ about 2,900, almost all of them in code comments
+        # no school ever reads. Sweeping three thousand comment lines in one
+        # unreviewable diff is how a real defect hides. So this asserts the
+        # surfaces a school actually reads, the marketing page and the four auth
+        # screens, and the rest is recorded in docs/STATUS.md as the mechanical
+        # job it is. The scope list grows one directory at a time as each is
+        # swept, so the check only ever claims what is true.
+        working-directory: .
+        run: python3 scripts/check-no-emdash.py
+
       - name: The website's buttons lead somewhere
         # Needs no database, so it lives in this job. Every call to action on the
         # marketing site used to be an anchor on the page the visitor was already

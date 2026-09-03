@@ -4,18 +4,29 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<title>School Manager — school management software for Pakistan</title>
+<title>School Manager: school management software for Pakistan</title>
 <meta name="description" content="School management software built for Pakistani schools. Collect fees from one parent for all their children, see exactly what should have been collected, and give parents their own login. From Rs 950 a month.">
-<link rel="canonical" href="https://schoolmanager.pk/">
+
+<!-- The canonical, the Open Graph URLs and the JSON-LD below all used to point
+     at https://schoolmanager.pk/, a domain that was never registered. A
+     canonical tag naming a domain you do not own tells Google the authoritative
+     copy of the page lives somewhere else, which suppresses the page that
+     actually exists. All five references now name the live domain. -->
+<link rel="canonical" href="https://theschoolmanager.site/">
 
 <meta property="og:type" content="website">
-<meta property="og:title" content="School Manager — school management software for Pakistan">
+<meta property="og:title" content="School Manager: school management software for Pakistan">
 <meta property="og:description" content="One parent, one payment, one receipt. Know exactly what should have been collected and what actually was. From Rs 950 a month.">
-<meta property="og:url" content="https://schoolmanager.pk/">
+<meta property="og:url" content="https://theschoolmanager.site/">
 <meta property="og:locale" content="en_PK">
-<meta name="twitter:card" content="summary_large_image">
+<!-- "summary" and not "summary_large_image": there is no og:image anywhere in
+     site/, and promising a large image that does not exist makes the card fall
+     back to a blank panel rather than a tidy summary. -->
+<meta name="twitter:card" content="summary">
+<meta name="theme-color" content="#F7F4EC">
 
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%234338ca'/><text y='72' x='50' text-anchor='middle' font-size='58' font-family='Georgia,serif' fill='white'>S</text></svg>">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'><path%20fill='%23F7F4EC'%20d='M0%200h24v24H0z'/><circle%20cx='12'%20cy='12'%20r='10.75'%20fill='none'%20stroke='%2320315E'%20stroke-width='1.5'/><g%20fill='%2320315E'><circle%20cx='12'%20cy='8'%20r='1'/><path%20fill-rule='evenodd'%20d='M6%2014h12v5H6zm3%201h6v1H9zm0%202h6v1H9z'/></g></svg>">
+
 <link rel="stylesheet" href="styles.css">
 
 <script type="application/ld+json">
@@ -24,9 +35,9 @@
   "@type": "SoftwareApplication",
   "name": "School Manager",
   "applicationCategory": "BusinessApplication",
-  "operatingSystem": "Windows 10, Windows 11, any modern web browser",
+  "operatingSystem": "Any modern web browser",
   "description": "School management software for Pakistani schools: family fee collection, attendance, exams and result cards, expense and profit tracking, and a parent portal.",
-  "url": "https://schoolmanager.pk/",
+  "url": "https://theschoolmanager.site/",
   "inLanguage": "en-PK",
   "offers": [
     { "@type": "Offer", "name": "Starter",     "price": "950",  "priceCurrency": "PKR", "description": "Up to 100 students" },
@@ -34,153 +45,334 @@
     { "@type": "Offer", "name": "Institution", "price": "3500", "priceCurrency": "PKR", "description": "Up to 1,000 students" }
   ],
   "featureList": [
-    "Family fee collection — one payment across all siblings",
-    "Expected vs collected reconciliation",
+    "Family fee collection: one payment across all siblings",
+    "Expected versus collected reconciliation",
     "Gapless receipt numbering",
     "Daily attendance that works offline",
-    "Exams, result cards and tabulation sheets",
-    "Expense tracking and monthly profit",
-    "Parent portal",
-    "Year-end promotion with undo"
+    "Exam computation and printed result cards",
+    "Expense ledger and monthly profit",
+    "Parent portal with fee balance and results"
   ]
 }
 </script>
 </head>
 <body>
 
-<nav class="nav">
-  <div class="wrap nav__in">
-    <a class="brand" href="/"><span class="brand__mark">S</span> School Manager</a>
-    <div class="nav__links">
-      <a href="#how">How it works</a>
-      <a href="#features">Features</a>
-      <a href="#money">Fee control</a>
-      <a href="#pricing">Pricing</a>
-      <a href="#download">Download</a>
-      <a href="#faq">FAQ</a>
-    </div>
-    <div style="display:flex;gap:10px;align-items:center">
-      <a href="#" data-app="signin">Sign in</a>
-      <a class="btn btn--primary" href="#" data-app="signup">Start free trial</a>
-    </div>
-  </div>
-</nav>
+<!-- The first focusable thing on the page. There was no way past the navigation
+     for a keyboard user, and no main landmark to skip to. -->
+<a class="skip" href="#main">Skip to content</a>
 
-<!-- ============================================================== hero -- -->
-<header class="hero">
+<!-- ===================================================================== nav
+     Below 860px the links move into a <details> disclosure and the two actions
+     worth a tap move to a fixed bar at the bottom of the screen. The previous
+     version simply set .nav__links { display: none } on a phone with nothing in
+     its place, so a phone visitor had no route to pricing at all. Most
+     principals open this on a phone.
+     ===================================================================== -->
+<div class="nav">
+  <div class="wrap nav__in">
+    <a class="brand" href="#top">
+      <svg class="seal" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+  <circle cx="12" cy="12" r="10.75" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <circle cx="12" cy="8" r="1" fill="currentColor"/>
+  <path fill="currentColor" fill-rule="evenodd" d="M6 14h12v5H6zm3 1h6v1H9zm0 2h6v1H9z"/>
+</svg>
+      <span>School Manager</span>
+    </a>
+
+    <nav class="nav__links" aria-label="Sections">
+      <ul style="display:flex;gap:24px;list-style:none;margin:0;padding:0;align-items:center">
+        <li><a href="#how">How it works</a></li>
+        <li><a href="#control">Fee control</a></li>
+        <li><a href="#box">Features</a></li>
+        <li><a href="#pricing">Pricing</a></li>
+        <li hidden><a href="#download">Download</a></li>
+        <li><a href="#faq">Questions</a></li>
+      </ul>
+    </nav>
+    <div class="nav__cta">
+      <a href="#contact" data-app="signin">Sign in</a>
+      <a class="btn btn--primary" href="#pricing" data-app="signup">Start free trial</a>
+    </div>
+
+    <details class="navmenu" id="navmenu">
+      <summary aria-label="Menu">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <path d="M2 5h14M2 9h14M2 13h14" stroke-linecap="round"/>
+        </svg>
+        Menu
+      <span class="q__m" aria-hidden="true"></span></summary>
+      <div class="navmenu__panel">
+        <a href="#how">How it works</a>
+        <a href="#control">Fee control</a>
+        <a href="#box">Features</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#download" hidden>Download</a>
+        <a href="#faq">Questions</a>
+        <a href="#contact">Contact</a>
+        <a href="#contact" data-app="signin">Sign in</a>
+      </div>
+    </details>
+  </div>
+</div>
+
+<p id="wire-warning" hidden class="wrap small" style="padding-top:12px;color:var(--due-800)">
+  This page is not yet pointed at the software. Set APP_URL in config.js on the deployment.
+</p>
+
+<main id="main" tabindex="-1">
+
+<!-- ==================================================================== hero
+     Letterhead left, a drawn receipt right. The receipt is the argument: a
+     principal recognises a fee receipt instantly, and no competitor is showing
+     one. It is drawn in HTML rather than SVG so the figures stay selectable
+     text, survive Chrome's translate to Urdu, and scale with Android font
+     scaling.
+     ==================================================================== -->
+<header class="hero" id="top">
   <div class="wrap hero__grid">
     <div>
-      <span class="eyebrow">Built for Pakistani schools</span>
+      <div class="letterhead">
+        <span>School Manager</span>
+        <span>Built for Pakistani schools</span>
+      </div>
+
       <h1>One parent. One payment. <em>One receipt.</em></h1>
-      <p class="lede" style="margin-top:18px">
-        A father with three children in your school hands over one bundle of cash.
-        Most software makes your clerk do that three times. This does it once —
-        and tells you, at the end of the month, exactly how much should have come
-        in and how much actually did.
+
+      <p class="lede">
+        A father with three children hands over one bundle of cash. Most software
+        makes your clerk do that three times. This does it once, and tells you at
+        the end of the month exactly how much should have come in and how much
+        actually did.
       </p>
+
       <div class="hero__cta">
-        <a class="btn btn--primary btn--lg" href="#" data-app="signup">Start 14-day free trial</a>
+        <a class="btn btn--primary btn--lg" href="#pricing" data-app="signup">Start 14 day free trial</a>
         <a class="btn btn--ghost btn--lg" href="#how">See how it works</a>
       </div>
-
-      <!-- Shown only when APP_URL is unset in config.js. A button that silently
-           does nothing sends the visitor away; one that says the address has not
-           been filled in gets somebody to fill it in. -->
-      <p id="wire-warning" hidden
-         style="margin-top:12px;padding:10px 12px;border:1px solid #f59e0b;background:#fffbeb;color:#7c2d12;border-radius:8px;font-size:14px">
-        <b>Not connected yet.</b> Set <code>APP_URL</code> in <code>site/config.js</code>
-        to the address of the deployed software, or these buttons go nowhere.
+      <p class="hero__note">No card required. Set up in an afternoon. Your data stays yours.</p>
+      <p id="signup-closed" hidden class="hero__note">
+        We are at capacity this month. Get in touch and we will put you next in line.
       </p>
-      <p id="signup-closed" hidden
-         style="margin-top:12px;padding:10px 12px;border:1px solid #cbd5e1;background:#f8fafc;color:#334155;border-radius:8px;font-size:14px">
-        We have paused new signups while we look after the schools already with us.
-        Get in touch and we will let you know as soon as we reopen.
-      </p>
-      <p class="hero__note">No card required · Set up in an afternoon · Your data stays yours</p>
-
-      <div class="trustline">
-        <span><b id="lead-price">Rs 950</b>/month to start</span>
-        <span><b>Urdu-medium and English-medium</b> schools</span>
-        <span><b>Windows</b> desktop + browser</span>
-      </div>
     </div>
 
-    <!-- Product rendered in HTML/CSS, not a stock photo -->
-    <div class="shot" role="img" aria-label="The fee collection screen showing one family with three children and a single payment.">
-      <div class="shot__bar">
-        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-        <span class="shot__url">Fees → Collect</span>
-      </div>
-      <div class="shot__body">
-        <aside class="shot__side">
-          <b>Al-Noor School</b>
-          <nav class="shot__nav">
-            <span>Dashboard</span>
-            <span>Admissions</span>
-            <span>Students</span>
-            <span>Attendance</span>
-            <span class="on">Fees</span>
-            <span>Exams</span>
-            <span>Reports</span>
-          </nav>
-        </aside>
-        <div class="shot__main">
-          <div class="tiles">
-            <div class="tile tile--money"><span>Collected</span><b>Rs 84,500</b></div>
-            <div class="tile tile--due"><span>Outstanding</span><b>Rs 312,000</b></div>
-            <div class="tile tile--brand"><span>Students</span><b>486</b></div>
-          </div>
-          <div class="rows">
-            <div class="row"><b>Muhammad Aslam</b><span class="muted">3 children · 35201-…-1</span></div>
-            <div class="row"><span>Ahmed — Class 5</span><span class="pill pill--paid">Paid</span></div>
-            <div class="row"><span>Fatima — Class 3</span><span class="pill pill--paid">Paid</span></div>
-            <div class="row"><span>Bilal — Play Group</span><span class="pill pill--due">Rs 1,200 due</span></div>
-            <div class="row"><b>Receipt #1043</b><b style="color:var(--money)">Rs 5,800 received</b></div>
-          </div>
+    <div>
+      <!-- ===========================================================================
+     THE FEE RECEIPT, drawn at full size. The flagship artefact of the page.
+
+     Drawn against, in this repo:
+       site/styles.css                       tokens, .doc, .doc__cap, .tnum
+       web/src/components/Receipt.tsx        the real receipt this imitates,
+                                             including its family "covers" list
+       web/src/pages/fees/ChallanPrint.tsx   the precedent for ink on white,
+                                             ruled, no fill, "Rs" as a column head
+
+     Pure HTML and CSS. No SVG, no <text>, no image, no font request. Three
+     reasons, all of which matter more than the drawing would: the labels wrap,
+     so Chrome translate to Urdu can rewrite them without bursting the layout;
+     it grows under text only zoom and Android font scaling, which is WCAG
+     1.4.4; and every figure stays real selectable text a clerk can copy.
+
+     Ink on white throughout. The only colour is the RECEIVED stamp, which is
+     --money-800 as text and as its outline, because brand #4338CA and danger
+     #B91C1C photocopy to within 0.4 percent of each other under Rec.601, so no
+     hue on this object could be allowed to carry meaning.
+
+     Arithmetic, which is the one thing this audience will check:
+       Ahmed 1,900 + Fatima 1,700 + Bilal 2,200 = 5,800
+       arrears 0, fine 0, so the five rows sum to the printed total exactly.
+     Both zero rows print the word None. A dash in a money column is meaning
+     carried by punctuation, which is a defect.
+
+     .doc--lift is deliberately NOT used here. This one object carries the only
+     true elevation on the page, specified separately in receipt.css.
+     =========================================================================== -->
+<figure class="rcpt-fig">
+  <div class="doc rcpt">
+    <div class="rcpt__in">
+
+      <div class="rcpt__head" role="presentation">
+        <p class="rcpt__school">Al-Noor School</p>
+        <p class="rcpt__kind">Fee Receipt</p>
+      </header>
+
+      <div class="rcpt__meta">
+        <div class="rcpt__cell">
+          <span class="rcpt__k">Receipt No</span>
+          <span class="rcpt__v">1043</span>
+        </div>
+        <div class="rcpt__cell">
+          <span class="rcpt__k">Date</span>
+          <span class="rcpt__v">04-09-2026</span>
+        </div>
+        <div class="rcpt__cell">
+          <span class="rcpt__k">GR No</span>
+          <span class="rcpt__v">2211</span>
         </div>
       </div>
+
+      <dl class="rcpt__who">
+        <dt>Received from</dt>
+        <dd>Muhammad Aslam <span class="rcpt__note">(three children)</span></dd>
+        <dt>Payment</dt>
+        <dd>Cash, at the fee counter</dd>
+      </dl>
+
+      <table class="rcpt__tbl">
+        <caption class="rcpt__sr">
+          Fee receipt No 1043, Al-Noor School, dated 04-09-2026. What the one
+          payment of Rs 5,800 was applied to, child by child.
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Particulars</th>
+            <th scope="col">Rs</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">
+              <span class="rcpt__name">Ahmed</span>
+              <span class="rcpt__sub">Class 5, monthly fee, September 2026</span>
+            </th>
+            <td class="tnum">1,900</td>
+          </tr>
+          <tr>
+            <th scope="row">
+              <span class="rcpt__name">Fatima</span>
+              <span class="rcpt__sub">Class 3, monthly fee, September 2026</span>
+            </th>
+            <td class="tnum">1,700</td>
+          </tr>
+          <tr>
+            <th scope="row">
+              <span class="rcpt__name">Bilal</span>
+              <span class="rcpt__sub">Play Group, monthly fee, September 2026</span>
+            </th>
+            <td class="tnum">2,200</td>
+          </tr>
+          <tr>
+            <th scope="row">
+              <span class="rcpt__name">Arrears brought forward</span>
+              <span class="rcpt__sub">All three children, up to August 2026</span>
+            </th>
+            <td class="rcpt__none">None</td>
+          </tr>
+          <tr>
+            <th scope="row">
+              <span class="rcpt__name">Late fee</span>
+              <span class="rcpt__sub">September 2026, paid before the 10th</span>
+            </th>
+            <td class="rcpt__none">None</td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr>
+            <th scope="row">Total received</th>
+            <td class="tnum">Rs 5,800</td>
+          </tr>
+        </tfoot>
+      </table>
+
+      <div class="rcpt__foot">
+        <div class="rcpt__words">
+          <span class="rcpt__k">In words</span>
+          <p class="rcpt__wv">Five thousand eight hundred rupees only</p>
+          <p class="rcpt__sig">Received by, office</p>
+        </div>
+        <p class="rcpt__stamp">
+          <span class="rcpt__stamp-w">Received</span>
+          <span class="rcpt__stamp-m">Cash, 04-09-2026</span>
+        </p>
+      </div>
+
+      <p class="rcpt__serial">
+        Computer generated receipt. Keep it for your records.
+        <span class="rcpt__sn">ANS-1043-04092026</span>
+      </p>
+
     </div>
   </div>
-  <div style="height:44px"></div>
+  <figcaption class="doc__cap">
+    One father, three children, one payment, one number. Every receipt number is
+    issued in an unbroken sequence, and this is exactly what prints.
+  </figcaption>
+</figure>
+
+    </div>
+  </div>
 </header>
 
-<!-- =============================================================== how -- -->
-<section class="section section--tint" id="how">
+<!-- ============================================================ spec strip
+     A deliberate trough after the tallest block on the page. Three facts in
+     tabular figures and nothing else.
+     ============================================================ -->
+<div class="spec">
+  <div class="wrap spec__in">
+    <div class="spec__cell">
+      <span class="spec__k">From</span>
+      <span class="spec__v"><b id="lead-price">Rs 950</b> <small>a month</small></span>
+    </div>
+    <div class="spec__cell">
+      <span class="spec__k">Trial</span>
+      <span class="spec__v">14 days <small>no card</small></span>
+    </div>
+    <div class="spec__cell">
+      <span class="spec__k">Modules</span>
+      <span class="spec__v">All included <small>every plan</small></span>
+    </div>
+    <div class="spec__cell">
+      <span class="spec__k">Runs on</span>
+      <span class="spec__v">Any browser <small>no install</small></span>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ 02 how it works -->
+<section class="section" id="how">
   <div class="wrap">
-    <span class="eyebrow">How it works</span>
+    <div class="rulehead">
+      <span class="rulehead__no">02</span>
+      <span class="rulehead__label">How it works</span>
+      <span class="rulehead__line"></span>
+    </div>
     <h2>Three screens your office will actually live in</h2>
-    <p class="lede" style="margin-top:14px">
+    <p class="lede" style="margin-top:12px">
       Everything else is reporting. These are the ones that run all day.
     </p>
 
-    <div class="grid grid--3" style="margin-top:38px">
-      <article class="card">
-        <div class="card__icon card__icon--money">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="12" cy="12" r="3"/></svg>
+    <div class="grid grid--3" style="margin-top:34px">
+      <div class="card">
+        <div class="card__icon">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <rect x="2.5" y="4.5" width="15" height="11" rx="1.5"/><path d="M2.5 8.5h15M6 12h4"/>
+          </svg>
         </div>
         <h3>Take the fee in fifteen seconds</h3>
         <p>
           Search by the father's CNIC, a phone number, or any child's name. Every
-          child in the family comes up together. Enter one amount — it clears the
-          oldest month first, across all of them — and print one receipt.
+          child in the family comes up together. Enter one amount. It clears the
+          oldest month first, across all of them, and prints one receipt.
         </p>
-      </article>
-
-      <article class="card">
+      </div>
+      <div class="card">
         <div class="card__icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M9 15l2 2 4-4"/></svg>
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <rect x="3" y="3.5" width="14" height="13" rx="1.5"/><path d="M3 7h14M7 2.5v2M13 2.5v2M6.5 11l1.6 1.6 3.4-3.4"/>
+          </svg>
         </div>
         <h3>Mark the register from a phone</h3>
         <p>
           Teachers open the class list, tap the absentees, and finalise. It keeps
-          working when the internet drops — marks queue on the phone and sync the
+          working when the internet drops: marks queue on the phone and sync the
           moment the connection returns.
         </p>
-      </article>
-
-      <article class="card">
-        <div class="card__icon card__icon--due">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 3v18h18M7 15l3-4 3 2 5-7"/></svg>
+      </div>
+      <div class="card">
+        <div class="card__icon">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M3 16.5h14M5 13V8M9 16V5M13 16v-6M17 13V9"/>
+          </svg>
         </div>
         <h3>See where the month went</h3>
         <p>
@@ -188,401 +380,1503 @@
           behind. Which families to ring. Who took which payment, and whether the
           cash drawer balanced at four o'clock.
         </p>
-      </article>
+      </div>
     </div>
   </div>
 </section>
 
-<!-- ============================================================= money -- -->
-<section class="section" id="money">
-  <div class="wrap split">
-    <div>
-      <span class="eyebrow">Fee control</span>
-      <h2>Know what <em style="font-style:normal;color:var(--brand)">should</em> have been collected</h2>
-      <p class="lede" style="margin-top:16px">
-        Most school software tells you what was collected. That number is only
-        useful if you already trust it. The harder and more valuable question is
-        what the roster says <em>should</em> have arrived — and where the
-        difference went.
-      </p>
-
-      <div class="proof">
-        <p>
-          Every receipt number is issued in an unbroken sequence. Nothing is ever
-          deleted — a mistake is corrected by a reversal that leaves both entries
-          in the record, with a reason and a name attached.
-        </p>
-      </div>
-
-      <ul class="checklist">
-        <li>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m5 13 4 4L19 7"/></svg>
-          <span><b>Expected vs collected</b>, class by class, from the real roster</span>
-        </li>
-        <li>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m5 13 4 4L19 7"/></svg>
-          <span><b>Ghost-student check</b> — anyone being billed who never appears in a register</span>
-        </li>
-        <li>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m5 13 4 4L19 7"/></svg>
-          <span><b>Discounts need approval</b> — a clerk proposes, the principal approves, both are recorded</span>
-        </li>
-        <li>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m5 13 4 4L19 7"/></svg>
-          <span><b>Cash drawer settlement</b> — each collector counts their own drawer, and a difference needs a written reason</span>
-        </li>
-        <li>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m5 13 4 4L19 7"/></svg>
-          <span><b>Full audit trail</b> — every change to money, marks and attendance, with who and when</span>
-        </li>
-      </ul>
+<!-- ======================================================== 03 fee control
+     The page's peak, and the answer to "no vibe". A full bleed navy band with
+     CSS ledger ruling, carrying the reconciliation as a real ruled table with
+     tabular figures. Below 700px the table becomes one block per class, because
+     a five column money table at 360px is unreadable however it is scrolled.
+     ======================================================== -->
+<section class="section band on-navy" id="control">
+  <div class="wrap">
+    <div class="rulehead">
+      <span class="rulehead__no">03</span>
+      <span class="rulehead__label">Fee control</span>
+      <span class="rulehead__line"></span>
     </div>
 
-    <div class="card" style="padding:0;overflow:hidden">
-      <div style="padding:24px 26px;border-bottom:1px solid var(--line);background:var(--paper-2)">
-        <h3 style="font-family:inherit;font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3)">
-          Reconciliation — September
-        </h3>
+    <div class="split split--wide" style="margin-top:8px">
+      <div>
+        <h2>Know what should have been collected</h2>
+        <p class="lede" style="margin-top:14px">
+          Most school software tells you what was collected. That number is only
+          useful if you already trust it. The harder and more valuable question is
+          what the roll says should have arrived, and where the difference went.
+        </p>
+
+        <div class="proof">
+          <p>
+            Every receipt number is issued in an unbroken sequence. Nothing is ever
+            deleted. A mistake is corrected by a reversal that leaves both entries
+            in the record, with a reason and a name attached.
+          </p>
+        </div>
+
+        <ul class="checklist">
+          <li>
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 10.5l4 4 8-9"/></svg>
+            <span><b>Expected against collected</b>, class by class, from the real roll.</span>
+          </li>
+          <li>
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 10.5l4 4 8-9"/></svg>
+            <span><b>Ghost student check:</b> anyone being billed who never appears in a register.</span>
+          </li>
+          <li>
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 10.5l4 4 8-9"/></svg>
+            <span><b>Discounts need approval.</b> A clerk proposes, the principal approves, both are recorded.</span>
+          </li>
+          <li>
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 10.5l4 4 8-9"/></svg>
+            <span><b>Cash drawer settlement:</b> each collector counts their own drawer, and a difference needs a written reason.</span>
+          </li>
+          <li>
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 10.5l4 4 8-9"/></svg>
+            <span><b>Full audit trail:</b> every change to money, marks and attendance, with who and when.</span>
+          </li>
+        </ul>
       </div>
-      <div class="table-scroll">
-        <table class="compare">
+
+      <div>
+        <div class="rulehead" style="margin-bottom:12px">
+          <span class="rulehead__label">Reconciliation, September</span>
+          <span class="rulehead__line"></span>
+        </div>
+        <table class="recon">
+          <caption class="sr">Reconciliation for September: expected against collected fee income, by class, with the shortfall for each.</caption>
           <thead>
-            <tr><th>Class</th><th>Expected</th><th>Collected</th><th>Gap</th></tr>
+            <tr>
+              <th scope="col">Class</th>
+              <th scope="col">Expected</th>
+              <th scope="col">Collected</th>
+              <th scope="col">Gap</th>
+              <th scope="col" style="width:22%">Shortfall</th>
+            </tr>
           </thead>
           <tbody>
-            <tr><td>Class 1</td><td>118,000</td><td>118,000</td><td class="yes">—</td></tr>
-            <tr><td>Class 2</td><td>124,500</td><td>121,500</td><td>3,000</td></tr>
-            <tr><td>Class 3</td><td>131,000</td><td>96,000</td><td style="color:var(--danger);font-weight:600">35,000</td></tr>
-            <tr><td>Class 4</td><td>127,500</td><td>127,500</td><td class="yes">—</td></tr>
+            <tr>
+              <td data-th="Class">Class 1</td>
+              <td data-th="Expected">118,000</td>
+              <td data-th="Collected">118,000</td>
+              <td data-th="Gap" class="gap-none">None</td>
+              <td data-th="Shortfall"><span class="bar" aria-hidden="true"><i style="width:0%"></i></span></td>
+            </tr>
+            <tr>
+              <td data-th="Class">Class 2</td>
+              <td data-th="Expected">124,500</td>
+              <td data-th="Collected">121,500</td>
+              <td data-th="Gap" class="gap-short">3,000</td>
+              <td data-th="Shortfall"><span class="bar" aria-hidden="true"><i style="width:9%"></i></span></td>
+            </tr>
+            <tr>
+              <td data-th="Class">Class 3</td>
+              <td data-th="Expected">131,000</td>
+              <td data-th="Collected">96,000</td>
+              <td data-th="Gap" class="gap-short">35,000</td>
+              <td data-th="Shortfall"><span class="bar" aria-hidden="true"><i style="width:100%"></i></span></td>
+            </tr>
+            <tr>
+              <td data-th="Class">Class 4</td>
+              <td data-th="Expected">127,500</td>
+              <td data-th="Collected">127,500</td>
+              <td data-th="Gap" class="gap-none">None</td>
+              <td data-th="Shortfall"><span class="bar" aria-hidden="true"><i style="width:0%"></i></span></td>
+            </tr>
           </tbody>
         </table>
-      </div>
-      <div style="padding:18px 26px;background:var(--due-tint);border-top:1px solid var(--line)">
-        <p class="small" style="color:var(--due)">
-          <b>Class 3 is Rs 35,000 short.</b> Eleven families are behind, and two
-          students on the fee list have not appeared in the attendance register
-          for six weeks.
+        <p class="doc__cap" style="margin-top:14px">
+          Class 3 is Rs 35,000 short. Eleven families are behind, and two students
+          on the fee list have not appeared in the attendance register for six
+          weeks. The second number is the one worth knowing.
         </p>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ========================================================== features -- -->
-<section class="section section--tint" id="features">
+<!-- ==================================================== 04 the cash drawer
+     The best return per hour in the whole plan: the only object on the page that
+     shows the software catching a real error, with a named person and a written
+     explanation attached, and no fabricated testimony.
+     ==================================================== -->
+<section class="section" id="drawer">
   <div class="wrap">
-    <span class="eyebrow">Everything in the box</span>
-    <h2>The whole school, not just the fee counter</h2>
-    <p class="lede" style="margin-top:14px">
-      One price. Every module. No add-ons to buy later.
-    </p>
+    <div class="rulehead">
+      <span class="rulehead__no">04</span>
+      <span class="rulehead__label">End of day</span>
+      <span class="rulehead__line"></span>
+    </div>
 
-    <div class="grid grid--3" style="margin-top:38px">
-      <article class="card">
-        <h3>Admissions &amp; students</h3>
+    <div class="split" style="margin-top:8px">
+      <div>
+        <h2>The drawer balanced at four o'clock</h2>
+        <p class="lede" style="margin-top:14px">
+          Every collector counts their own drawer and closes it. If the count does
+          not match what the software says, the difference cannot be dismissed: it
+          needs a written reason and it stays on the record under the name of the
+          person who wrote it.
+        </p>
+        <p class="lede" style="margin-top:14px">
+          This is the screen that turns "I think we are short" into a document you
+          can act on tomorrow morning.
+        </p>
+      </div>
+      <div>
+        <!-- ===========================================================================
+     THE CASH DRAWER SETTLEMENT SLIP. Section 04, as that section's primary
+     object. Paste in place of the ART:drawer marker.
+
+     Drawn against, in this repo:
+       site/styles.css   the tokens, .doc, .doc--lift, .doc__cap, .tnum
+       site/index.html   section 04 "End of day", and the "Cash drawer
+                         settlement" line of the fee control checklist in
+                         section 03, whose promise this object has to keep
+     There is no app component for this screen to be verified against, so
+     nothing else is cited and nothing is implied about one.
+
+     Pure HTML and CSS, no SVG, which the spec allows and three things require:
+     every figure stays selectable text a clerk can copy, the labels wrap so
+     Chrome translate to Urdu can rewrite them, and the slip grows under
+     Android font scaling instead of being scaled by a transform.
+
+     THE ONE COLOUR DECISION. Ink on white throughout, because this is a slip
+     that gets printed and filed. The single exception is the Difference row,
+     which carries TWO signals: the word "short" in --due-800 as text, and a
+     3px --due rule down its left edge. Two, not one, because brand #4338CA and
+     danger #B91C1C photocopy to within 0.4 percent of each other under
+     Rec.601, so no hue on this object may carry meaning by itself.
+
+     ARITHMETIC, which is the one thing this audience will actually check:
+       system 84,500 less counted 84,200 = 300 short.
+     The written reason accounts for the whole of it and no more: receipt 1067
+     was entered as Rs 2,800 while Rs 2,500 sat in the tray against it, a
+     difference of exactly 300. The receipt range sums too: 1043 to 1070
+     inclusive is 28 receipts.
+
+     A DIFFERENT FAMILY AND A DIFFERENT RECEIPT FROM THE HERO, on purpose. The
+     hero receipt is No 1043, Muhammad Aslam, Rs 5,800, and it is correct. A
+     slip that corrected the hero receipt would tell anybody who read both
+     objects that the flagship artefact of the page was the erroneous one, and
+     that the family's true balance was Rs 300 off. This one names receipt
+     No 1067 and the Yousaf family, which touches nothing in the hero. Both
+     numbers still fall inside the session's unbroken range 1043 to 1070, so
+     the two objects describe the same day at the same counter.
+     =========================================================================== -->
+<figure class="drw-fig">
+  <div class="doc doc--lift drw">
+    <div class="drw__in">
+
+      <header class="drw__head">
+        <p class="drw__school">Al-Noor School</p>
+        <p class="drw__kind">Cash Drawer Settlement</p>
+      </header>
+
+      <dl class="drw__rows">
+        <div class="drw__row">
+          <dt class="drw__k">Collector</dt>
+          <dd class="drw__v drw__v--name">Nadia Iqbal</dd>
+        </div>
+        <div class="drw__row">
+          <dt class="drw__k">Counter</dt>
+          <dd class="drw__v">Front office, 1</dd>
+        </div>
+        <div class="drw__row">
+          <dt class="drw__k">Session</dt>
+          <dd class="drw__v tnum">04-09-2026, 08:15 to 16:00</dd>
+        </div>
+        <div class="drw__row">
+          <dt class="drw__k">Receipts issued</dt>
+          <dd class="drw__v tnum">No 1043 to No 1070
+            <span class="drw__note">28 receipts, none missing</span>
+          </dd>
+        </div>
+
+        <div class="drw__row drw__row--money">
+          <dt class="drw__k">System says</dt>
+          <dd class="drw__v drw__v--amt tnum">Rs 84,500</dd>
+        </div>
+        <div class="drw__row drw__row--money">
+          <dt class="drw__k">Counted</dt>
+          <dd class="drw__v drw__v--amt tnum">Rs 84,200</dd>
+        </div>
+        <div class="drw__row drw__row--money drw__row--diff">
+          <dt class="drw__k">Difference</dt>
+          <dd class="drw__v drw__v--amt tnum">Rs 300 <span class="drw__short">Short</span></dd>
+        </div>
+      </dl>
+
+      <div class="drw__reason">
+        <p class="drw__k">Reason for the difference</p>
+        <p class="drw__rt">
+          Receipt No 1067, Yousaf family, was entered as Rs 2,800. Three notes
+          of Rs 100 were short in the bundle handed over, so only Rs 2,500 sat
+          in the tray against it. The father has been telephoned. A reversal and
+          a fresh receipt go to the principal for approval in the morning.
+        </p>
+        <p class="drw__by">
+          Written by Nadia Iqbal at 16:04. It cannot be edited once the drawer
+          is closed, and it stays on the record under her name.
+        </p>
+      </div>
+
+      <p class="drw__sig">Collector's signature, Nadia Iqbal</p>
+
+      <p class="drw__serial">
+        Drawer session closed and locked at 16:00.
+        <span class="drw__sn">ANS-DRW-04092026-01</span>
+      </p>
+
+    </div>
+  </div>
+  <figcaption class="doc__cap">
+    Rs 300 short, on the day it happened, with a name and a written reason
+    attached to it. The word beside the figure carries the meaning, so the slip
+    still says "short" after it has been photocopied.
+  </figcaption>
+</figure>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================= 05 what is in it
+     Deliberately the lowest weight block on the page. A feature list is a
+     reference section, not an argument, and giving it the same treatment as the
+     hero is what made every section on the old page feel equally unimportant.
+     ======================================================= -->
+<section class="section section--tint" id="box">
+  <div class="wrap">
+    <div class="rulehead">
+      <span class="rulehead__no">05</span>
+      <span class="rulehead__label">Everything in the box</span>
+      <span class="rulehead__line"></span>
+    </div>
+    <h2>The whole school, not just the fee counter</h2>
+    <p class="lede" style="margin-top:12px">One price. Every module. No add-ons to buy later.</p>
+
+    <div class="grid grid--3" style="margin-top:32px">
+      <div class="card">
+        <h3>Admissions and students</h3>
         <p>Admission forms with automatic GR numbers, sibling linking, transfers, and a lifelong profile for every student. Bulk import from a spreadsheet when you switch.</p>
-      </article>
-      <article class="card">
+      </div>
+      <div class="card">
         <h3>Fees</h3>
-        <p>Fee heads and per-class structures, monthly challans, arrears carried forward, partial payments, fines, approved discounts, advance payments, and printable receipts.</p>
-      </article>
-      <article class="card">
+        <p>Fee heads and per class structures, monthly challans, arrears carried forward, partial payments, fines, approved discounts, advance payments, and printable receipts.</p>
+      </div>
+      <div class="card">
         <h3>Attendance</h3>
-        <p>Daily register per class, finalise and lock, printable monthly attendance sheets, and a phone-friendly marking screen that works with no internet.</p>
-      </article>
-      <article class="card">
-        <h3>Exams &amp; results</h3>
-        <p>Terms, papers, marks entry, grading, class positions, printed result cards, tabulation sheets, date sheets and admit cards. Release results to parents when you're ready.</p>
-      </article>
-      <article class="card">
-        <h3>Tests</h3>
-        <p>Weekly and monthly class tests, recorded separately from formal exams so a bad Tuesday doesn't sit on the term result card.</p>
-      </article>
-      <article class="card">
+        <p>Daily register per class, finalise and lock, printable monthly attendance sheets, and a phone friendly marking screen that works with no internet.</p>
+      </div>
+      <div class="card">
+        <h3>Exams and results</h3>
+        <p>Marks per paper, practicals and weightage, computed grades on your own scale, printed result cards, tabulation sheets and positions.</p>
+      </div>
+      <div class="card">
         <h3>Accounts</h3>
-        <p>Expenses by category, non-fee income, and a monthly profit figure. Fee income is calculated from actual receipts and can never be typed in by hand.</p>
-      </article>
-      <article class="card">
+        <p>Expense ledger with categories, other income, cash drawer sessions, day book, and the monthly profit figure that follows from all of it.</p>
+      </div>
+      <div class="card">
         <h3>Staff</h3>
-        <p>Staff records, departments, teacher logins tied to the classes they teach, staff attendance with a daily check-in code, and printable staff cards.</p>
-      </article>
-      <article class="card">
+        <p>Staff records, teacher logins tied to the classes they teach, staff attendance with a daily check in code, and printable staff cards.</p>
+      </div>
+      <div class="card">
         <h3>Parent portal</h3>
         <p>Parents sign in on their phone to see their own children only: fee balance, every receipt, attendance day by day, and results once you publish them.</p>
-      </article>
-      <article class="card">
+      </div>
+      <div class="card">
         <h3>Certificates</h3>
-        <p>School leaving, character and bonafide certificates, plus student and staff ID cards with a QR code — each on its own tracked serial register.</p>
-      </article>
-      <article class="card">
-        <h3>Year-end rollover</h3>
+        <p>School leaving, character and bonafide certificates, each on its own tracked serial register, plus student and staff ID cards with a QR code.</p>
+      </div>
+      <div class="card">
+        <h3>Year end rollover</h3>
         <p>Promote, retain or graduate the whole school into a new session in one pass. Arrears follow the student. Preview it first, and undo it if something looks wrong.</p>
-      </article>
-      <article class="card">
-        <h3>Reports</h3>
-        <p>Defaulters, per-student fee ledgers, day book and cash position, monthly attendance registers, class strength, and an owner-only audit log.</p>
-      </article>
-      <article class="card">
-        <h3>Your data, always</h3>
-        <p>Export everything you have entered at any time, in a plain readable format — including on the day you decide to leave. No lock-in, no hostage fees.</p>
-      </article>
+      </div>
+    </div>
+
+    <!-- The three printed objects a school recognises without being told what
+         they are. Drawn against the real print components, which are named in a
+         comment beside each. -->
+    <div class="grid grid--3 artefacts" style="margin-top:38px;align-items:start">
+      <div>
+        <!-- ============================================================================
+     ART:challan  ::  the three part bank payable fee challan.
+
+     Drawn against web/src/pages/fees/ChallanPrint.tsx, line by line: the copy
+     order in COPIES, the letterhead block, the six Row() calls in their exact
+     order, the Particulars / Rs table with the discount in parentheses, the
+     total inside a double rule, the due date, the dotted bank stamp rule and
+     the QR block with the voucher code in a monospaced face beneath it.
+     Figures follow supabase fn_challan: a discount line stores a positive
+     amount and is flagged, so it prints in parentheses and subtracts.
+     The QR matrix is the real one, generated the way components/QrCode.tsx
+     generates it (version 1, error correction M, zero margin).
+
+     THREE separate svg elements, one per copy, each with its own viewBox. Not
+     one wide svg with <use>: a media query cannot change a viewBox, and <use>
+     cannot reach a <symbol> parked in a <template>, whose content is an inert
+     fragment outside the document tree.
+
+     Ink on white with rules for structure. No fill of any hue anywhere inside
+     the form, because the object has to survive a photocopier.
+
+     Arithmetic: 1,800 + 700 - 200 = 2,300.  2,300 + 1,200 = 3,500.
+     ============================================================================ -->
+<div class="chln">
+
+  <!-- Below 700px the three up becomes this true proportion miniature, because
+       the three copy ness is the actual argument and it has to stay visible
+       even when only one copy is legible. Same geometry as the row below, so it
+       is the sheet at a smaller size rather than a different drawing. -->
+  <svg class="chln__thumb" viewBox="0 0 564 370" aria-hidden="true">
+    <path class="chln__r-thumbsheet" d="M0.5 0.5h563v369h-563z" fill="none" stroke="currentColor" stroke-width="1"/>
+    <path class="chln__r-thumbframe" d="M9.8 9.8h174.4v350.4h-174.4z
+             M194.8 9.8h174.4v350.4h-174.4z
+             M379.8 9.8h174.4v350.4h-174.4z" fill="none" stroke="currentColor" stroke-width="1.6"/>
+    <path class="chln__r-thumbframe" d="M57 49h80v15h-80z
+             M242 49h80v15h-80z
+             M427 49h80v15h-80z" fill="none" stroke="currentColor" stroke-width="1.6"/>
+    <path class="chln__r-thumbgreek" d="M48 40H146 M18 71H176 M18 158H176 M18 175H176 M18 220H176 M18 81H49 M129 81H176 M18 94H49 M129 94H176 M18 107H49 M129 107H176 M18 120H49 M129 120H176 M18 133H49 M129 133H176 M18 146H49 M129 146H176 M18 167H57 M165 167H176 M18 184H79 M154 184H176 M18 197H64 M154 197H176 M18 210H109 M154 210H176 M18 229H64 M157 229H176 M18 242H71 M157 242H176 M18 290H53 M142 290H176 M18 338H121 M133 349H175
+             M233 40H331 M203 71H361 M203 158H361 M203 175H361 M203 220H361 M203 81H234 M314 81H361 M203 94H234 M314 94H361 M203 107H234 M314 107H361 M203 120H234 M314 120H361 M203 133H234 M314 133H361 M203 146H234 M314 146H361 M203 167H242 M350 167H361 M203 184H264 M339 184H361 M203 197H249 M339 197H361 M203 210H294 M339 210H361 M203 229H249 M342 229H361 M203 242H256 M342 242H361 M203 290H238 M327 290H361 M203 338H306 M318 349H360
+             M418 40H516 M388 71H546 M388 158H546 M388 175H546 M388 220H546 M388 81H419 M499 81H546 M388 94H419 M499 94H546 M388 107H419 M499 107H546 M388 120H419 M499 120H546 M388 133H419 M499 133H546 M388 146H419 M499 146H546 M388 167H427 M535 167H546 M388 184H449 M524 184H546 M388 197H434 M524 197H546 M388 210H479 M524 210H546 M388 229H434 M527 229H546 M388 242H441 M527 242H546 M388 290H423 M512 290H546 M388 338H491 M503 349H545" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <path class="chln__r-thumbgreek" d="M40 28H154 M18 264H97 M147 264H176
+             M225 28H339 M203 264H282 M332 264H361
+             M410 28H524 M388 264H467 M517 264H546" fill="none" stroke="currentColor" stroke-width="3.4"/>
+    <path class="chln__r-total" d="M18 253H176 M18 279H176
+             M203 253H361 M203 279H361
+             M388 253H546 M388 279H546" fill="none" stroke="currentColor" stroke-width="3"/>
+    <path class="chln__r-thumbqr" d="M133 297h14v14h-14z M135 299h10v10h-10z M137 301h6v6h-6z M161 297h14v14h-14z M163 299h10v10h-10z M165 301h6v6h-6z M133 325h14v14h-14z M135 327h10v10h-10z M137 329h6v6h-6z M149 299h4v4h-4z M155 303h4v4h-4z M149 309h4v4h-4z M159 309h4v4h-4z M167 313h4v4h-4z M153 315h4v4h-4z M143 317h4v4h-4z M135 319h4v4h-4z M149 323h4v4h-4z M161 321h4v4h-4z M169 325h4v4h-4z M153 329h4v4h-4z M163 331h4v4h-4z M145 331h4v4h-4z M169 333h4v4h-4z M157 317h4v4h-4z
+             M318 297h14v14h-14z M320 299h10v10h-10z M322 301h6v6h-6z M346 297h14v14h-14z M348 299h10v10h-10z M350 301h6v6h-6z M318 325h14v14h-14z M320 327h10v10h-10z M322 329h6v6h-6z M334 299h4v4h-4z M340 303h4v4h-4z M334 309h4v4h-4z M344 309h4v4h-4z M352 313h4v4h-4z M338 315h4v4h-4z M328 317h4v4h-4z M320 319h4v4h-4z M334 323h4v4h-4z M346 321h4v4h-4z M354 325h4v4h-4z M338 329h4v4h-4z M348 331h4v4h-4z M330 331h4v4h-4z M354 333h4v4h-4z M342 317h4v4h-4z
+             M503 297h14v14h-14z M505 299h10v10h-10z M507 301h6v6h-6z M531 297h14v14h-14z M533 299h10v10h-10z M535 301h6v6h-6z M503 325h14v14h-14z M505 327h10v10h-10z M507 329h6v6h-6z M519 299h4v4h-4z M525 303h4v4h-4z M519 309h4v4h-4z M529 309h4v4h-4z M537 313h4v4h-4z M523 315h4v4h-4z M513 317h4v4h-4z M505 319h4v4h-4z M519 323h4v4h-4z M531 321h4v4h-4z M539 325h4v4h-4z M523 329h4v4h-4z M533 331h4v4h-4z M515 331h4v4h-4z M539 333h4v4h-4z M527 317h4v4h-4z" fill="currentColor" fill-rule="evenodd"/>
+  </svg>
+  <p class="chln__three small muted">Every sheet prints three copies: bank, school, parent.</p>
+
+  <div class="doc doc--lift">
+    <!-- the sheet margin, p-2 in the component, as a percentage so it holds at
+         any width -->
+    <div class="chln__sheet">
+      <div class="chln__row">
+        <svg class="chln__copy" viewBox="0 0 176 352" role="img"
+               aria-labelledby="chln-t-bank" aria-describedby="chln-d-bank">
+          <title id="chln-t-bank">Fee challan, bank copy</title>
+          <desc id="chln-d-bank">Al-Noor School fee challan, bank copy. Challan 7KQ4M2WD for Ahmed Aslam, Class 5-A, Roll 12, GR No 1187, father Muhammad Aslam, month October 2026. Tuition Rs 1,800 plus transport Rs 700 less a sibling discount of Rs 200 is Rs 2,300 for the month. Added to previous dues of Rs 1,200 the total payable is Rs 3,500, due 10-10-2026. A space is ruled off for the bank stamp and signature, beside a QR code carrying the challan number.</desc>
+
+          <!-- The form grid: one path for the horizontals, one for the
+               verticals, both at the same hairline weight. -->
+          <g class="chln__r-form" fill="none" stroke="currentColor" stroke-width="1">
+            <path d="M0.5 0.5H175.5 M0.5 351.5H175.5 M48 40H128 M48 55H128 M9 62H167 M9 149H167 M9 166H167 M9 211H167"/>
+            <path d="M0.5 0.5V351.5 M175.5 0.5V351.5 M48 40V55 M128 40V55"/>
+          </g>
+          <!-- The two rules the spec weights differently. stroke-width and
+               stroke-dasharray are per element, so these cannot join the
+               two paths above. -->
+          <path class="chln__r-total" d="M9 244H167 M9 270H167" fill="none" stroke="currentColor" stroke-width="2"/>
+          <path class="chln__r-stamp" d="M9 329H112" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="2 2"/>
+
+          <!-- letterhead. No logo line and no phone line: the component
+               renders each only when the school has stored one, so their
+               absence is the real behaviour, not a gap. -->
+          <text x="88" y="22" text-anchor="middle" font-size="11" font-weight="700" letter-spacing="0.9" fill="currentColor">AL-NOOR SCHOOL</text>
+          <text x="88" y="34" text-anchor="middle" font-size="9" class="chln__t-lbl" fill="currentColor">Jhang Road, Faisalabad</text>
+          <text x="88" y="51" text-anchor="middle" font-size="9.5" font-weight="600" letter-spacing="0.6" fill="currentColor">BANK COPY</text>
+
+          <!-- the six rows, in the component's order -->
+          <text x="9" y="75" font-size="9.4" class="chln__t-lbl" fill="currentColor">Challan</text>
+          <text x="167" y="75" text-anchor="end" font-size="9.4" font-weight="600" class="tnum" fill="currentColor">7KQ4M2WD</text>
+          <text x="9" y="88" font-size="9.4" class="chln__t-lbl" fill="currentColor">Month</text>
+          <text x="167" y="88" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">October 2026</text>
+          <text x="9" y="101" font-size="9.4" class="chln__t-lbl" fill="currentColor">Student</text>
+          <text x="167" y="101" text-anchor="end" font-size="9.4" font-weight="600" fill="currentColor">Ahmed Aslam</text>
+          <text x="9" y="114" font-size="9.4" class="chln__t-lbl" fill="currentColor">Father</text>
+          <text x="167" y="114" text-anchor="end" font-size="9.4" fill="currentColor">Muhammad Aslam</text>
+          <text x="9" y="127" font-size="9.4" class="chln__t-lbl" fill="currentColor">Class</text>
+          <text x="167" y="127" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">Class 5-A &#183; Roll 12</text>
+          <text x="9" y="140" font-size="9.4" class="chln__t-lbl" fill="currentColor">GR No</text>
+          <text x="167" y="140" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">1187</text>
+
+          <!-- Particulars / Rs. The unit is stated once, in the column head,
+               which is what the head is for. -->
+          <text x="9" y="161" font-size="9.4" font-weight="600" fill="currentColor">Particulars</text>
+          <text x="167" y="161" text-anchor="end" font-size="9.4" font-weight="600" fill="currentColor">Rs</text>
+          <text x="9" y="178" font-size="9.4" fill="currentColor">Tuition</text>
+          <text x="167" y="178" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">1,800</text>
+          <text x="9" y="191" font-size="9.4" fill="currentColor">Transport</text>
+          <text x="167" y="191" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">700</text>
+          <text x="9" y="204" font-size="9.4" fill="currentColor">Less: Sibling discount</text>
+          <text x="167" y="204" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">(200)</text>
+          <text x="9" y="223" font-size="9.4" fill="currentColor">This month</text>
+          <text x="167" y="223" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">2,300</text>
+          <text x="9" y="236" font-size="9.4" fill="currentColor">Previous dues</text>
+          <text x="167" y="236" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">1,200</text>
+          <text x="9" y="258" font-size="9.4" font-weight="700" fill="currentColor">TOTAL PAYABLE</text>
+          <text x="167" y="258" text-anchor="end" font-size="9.4" font-weight="700" class="tnum" fill="currentColor">3,500</text>
+
+          <text x="9" y="284" font-size="9.4" class="chln__t-lbl" fill="currentColor">Due date</text>
+          <text x="167" y="284" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">10-10-2026</text>
+          <text x="9" y="340" font-size="9" class="chln__t-lbl" fill="currentColor">Bank stamp &amp; signature</text>
+
+          <!-- A real QR, version 1, error correction M, zero margin: the same
+               21 module matrix QrCode.tsx produces for this voucher code. 21
+               modules at scale 2, so every module edge lands on an integer
+               user unit and nothing softens on a phone. -->
+          <path d="M0 0h7v1h-7zM8 0h5v1h-5zM14 0h7v1h-7zM0 1h1v1h-1zM6 1h1v1h-1zM8 1h2v1h-2zM12 1h1v1h-1zM14 1h1v1h-1zM20 1h1v1h-1zM0 2h1v1h-1zM2 2h3v1h-3zM6 2h1v1h-1zM9 2h3v1h-3zM14 2h1v1h-1zM16 2h3v1h-3zM20 2h1v1h-1zM0 3h1v1h-1zM2 3h3v1h-3zM6 3h1v1h-1zM8 3h1v1h-1zM12 3h1v1h-1zM14 3h1v1h-1zM16 3h3v1h-3zM20 3h1v1h-1zM0 4h1v1h-1zM2 4h3v1h-3zM6 4h1v1h-1zM8 4h1v1h-1zM12 4h1v1h-1zM14 4h1v1h-1zM16 4h3v1h-3zM20 4h1v1h-1zM0 5h1v1h-1zM6 5h1v1h-1zM8 5h5v1h-5zM14 5h1v1h-1zM20 5h1v1h-1zM0 6h7v1h-7zM8 6h1v1h-1zM10 6h1v1h-1zM12 6h1v1h-1zM14 6h7v1h-7zM11 7h2v1h-2zM3 8h1v1h-1zM6 8h1v1h-1zM11 8h1v1h-1zM15 8h3v1h-3zM19 8h2v1h-2zM2 9h1v1h-1zM4 9h2v1h-2zM10 9h2v1h-2zM14 9h2v1h-2zM17 9h2v1h-2zM20 9h1v1h-1zM1 10h1v1h-1zM3 10h1v1h-1zM6 10h1v1h-1zM8 10h1v1h-1zM10 10h1v1h-1zM13 10h6v1h-6zM3 11h1v1h-1zM5 11h1v1h-1zM8 11h2v1h-2zM12 11h1v1h-1zM14 11h3v1h-3zM19 11h2v1h-2zM0 12h4v1h-4zM6 12h2v1h-2zM9 12h1v1h-1zM11 12h1v1h-1zM14 12h2v1h-2zM19 12h2v1h-2zM8 13h2v1h-2zM11 13h2v1h-2zM15 13h2v1h-2zM18 13h2v1h-2zM0 14h7v1h-7zM9 14h2v1h-2zM12 14h1v1h-1zM16 14h3v1h-3zM0 15h1v1h-1zM6 15h1v1h-1zM9 15h2v1h-2zM12 15h2v1h-2zM15 15h1v1h-1zM18 15h2v1h-2zM0 16h1v1h-1zM2 16h3v1h-3zM6 16h1v1h-1zM9 16h1v1h-1zM12 16h3v1h-3zM16 16h2v1h-2zM20 16h1v1h-1zM0 17h1v1h-1zM2 17h3v1h-3zM6 17h1v1h-1zM8 17h1v1h-1zM10 17h1v1h-1zM12 17h1v1h-1zM14 17h3v1h-3zM18 17h3v1h-3zM0 18h1v1h-1zM2 18h3v1h-3zM6 18h1v1h-1zM9 18h1v1h-1zM11 18h6v1h-6zM18 18h1v1h-1zM20 18h1v1h-1zM0 19h1v1h-1zM6 19h1v1h-1zM9 19h1v1h-1zM13 19h1v1h-1zM16 19h2v1h-2zM20 19h1v1h-1zM0 20h7v1h-7zM9 20h1v1h-1zM11 20h3v1h-3zM15 20h1v1h-1zM17 20h1v1h-1z" fill="currentColor" transform="translate(124 288) scale(2)" aria-hidden="true"/>
+          <!-- tracking-tight on the code, as the component sets it. -->
+          <text x="144" y="340" text-anchor="middle" font-size="9" letter-spacing="-0.2" class="chln__t-mono" fill="currentColor">7KQ4M2WD</text>
+        </svg>
+
+        <svg class="chln__copy" viewBox="0 0 176 352" role="img"
+               aria-labelledby="chln-t-school" aria-describedby="chln-d-school">
+          <title id="chln-t-school">Fee challan, school copy</title>
+          <desc id="chln-d-school">Al-Noor School fee challan, school copy. The same challan, 7KQ4M2WD, with figures identical to the bank copy: Rs 3,500 payable by 10-10-2026. This is the copy that comes back stamped, and the one the office reconciles against.</desc>
+
+          <!-- The form grid: one path for the horizontals, one for the
+               verticals, both at the same hairline weight. -->
+          <g class="chln__r-form" fill="none" stroke="currentColor" stroke-width="1">
+            <path d="M0.5 0.5H175.5 M0.5 351.5H175.5 M41 40H136 M41 55H136 M9 62H167 M9 149H167 M9 166H167 M9 211H167"/>
+            <path d="M0.5 0.5V351.5 M175.5 0.5V351.5 M41 40V55 M136 40V55"/>
+          </g>
+          <!-- The two rules the spec weights differently. stroke-width and
+               stroke-dasharray are per element, so these cannot join the
+               two paths above. -->
+          <path class="chln__r-total" d="M9 244H167 M9 270H167" fill="none" stroke="currentColor" stroke-width="2"/>
+          <path class="chln__r-stamp" d="M9 329H112" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="2 2"/>
+
+          <!-- letterhead. No logo line and no phone line: the component
+               renders each only when the school has stored one, so their
+               absence is the real behaviour, not a gap. -->
+          <text x="88" y="22" text-anchor="middle" font-size="11" font-weight="700" letter-spacing="0.9" fill="currentColor">AL-NOOR SCHOOL</text>
+          <text x="88" y="34" text-anchor="middle" font-size="9" class="chln__t-lbl" fill="currentColor">Jhang Road, Faisalabad</text>
+          <text x="88" y="51" text-anchor="middle" font-size="9.5" font-weight="600" letter-spacing="0.6" fill="currentColor">SCHOOL COPY</text>
+
+          <!-- the six rows, in the component's order -->
+          <text x="9" y="75" font-size="9.4" class="chln__t-lbl" fill="currentColor">Challan</text>
+          <text x="167" y="75" text-anchor="end" font-size="9.4" font-weight="600" class="tnum" fill="currentColor">7KQ4M2WD</text>
+          <text x="9" y="88" font-size="9.4" class="chln__t-lbl" fill="currentColor">Month</text>
+          <text x="167" y="88" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">October 2026</text>
+          <text x="9" y="101" font-size="9.4" class="chln__t-lbl" fill="currentColor">Student</text>
+          <text x="167" y="101" text-anchor="end" font-size="9.4" font-weight="600" fill="currentColor">Ahmed Aslam</text>
+          <text x="9" y="114" font-size="9.4" class="chln__t-lbl" fill="currentColor">Father</text>
+          <text x="167" y="114" text-anchor="end" font-size="9.4" fill="currentColor">Muhammad Aslam</text>
+          <text x="9" y="127" font-size="9.4" class="chln__t-lbl" fill="currentColor">Class</text>
+          <text x="167" y="127" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">Class 5-A &#183; Roll 12</text>
+          <text x="9" y="140" font-size="9.4" class="chln__t-lbl" fill="currentColor">GR No</text>
+          <text x="167" y="140" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">1187</text>
+
+          <!-- Particulars / Rs. The unit is stated once, in the column head,
+               which is what the head is for. -->
+          <text x="9" y="161" font-size="9.4" font-weight="600" fill="currentColor">Particulars</text>
+          <text x="167" y="161" text-anchor="end" font-size="9.4" font-weight="600" fill="currentColor">Rs</text>
+          <text x="9" y="178" font-size="9.4" fill="currentColor">Tuition</text>
+          <text x="167" y="178" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">1,800</text>
+          <text x="9" y="191" font-size="9.4" fill="currentColor">Transport</text>
+          <text x="167" y="191" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">700</text>
+          <text x="9" y="204" font-size="9.4" fill="currentColor">Less: Sibling discount</text>
+          <text x="167" y="204" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">(200)</text>
+          <text x="9" y="223" font-size="9.4" fill="currentColor">This month</text>
+          <text x="167" y="223" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">2,300</text>
+          <text x="9" y="236" font-size="9.4" fill="currentColor">Previous dues</text>
+          <text x="167" y="236" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">1,200</text>
+          <text x="9" y="258" font-size="9.4" font-weight="700" fill="currentColor">TOTAL PAYABLE</text>
+          <text x="167" y="258" text-anchor="end" font-size="9.4" font-weight="700" class="tnum" fill="currentColor">3,500</text>
+
+          <text x="9" y="284" font-size="9.4" class="chln__t-lbl" fill="currentColor">Due date</text>
+          <text x="167" y="284" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">10-10-2026</text>
+          <text x="9" y="340" font-size="9" class="chln__t-lbl" fill="currentColor">Bank stamp &amp; signature</text>
+
+          <!-- A real QR, version 1, error correction M, zero margin: the same
+               21 module matrix QrCode.tsx produces for this voucher code. 21
+               modules at scale 2, so every module edge lands on an integer
+               user unit and nothing softens on a phone. -->
+          <path d="M0 0h7v1h-7zM8 0h5v1h-5zM14 0h7v1h-7zM0 1h1v1h-1zM6 1h1v1h-1zM8 1h2v1h-2zM12 1h1v1h-1zM14 1h1v1h-1zM20 1h1v1h-1zM0 2h1v1h-1zM2 2h3v1h-3zM6 2h1v1h-1zM9 2h3v1h-3zM14 2h1v1h-1zM16 2h3v1h-3zM20 2h1v1h-1zM0 3h1v1h-1zM2 3h3v1h-3zM6 3h1v1h-1zM8 3h1v1h-1zM12 3h1v1h-1zM14 3h1v1h-1zM16 3h3v1h-3zM20 3h1v1h-1zM0 4h1v1h-1zM2 4h3v1h-3zM6 4h1v1h-1zM8 4h1v1h-1zM12 4h1v1h-1zM14 4h1v1h-1zM16 4h3v1h-3zM20 4h1v1h-1zM0 5h1v1h-1zM6 5h1v1h-1zM8 5h5v1h-5zM14 5h1v1h-1zM20 5h1v1h-1zM0 6h7v1h-7zM8 6h1v1h-1zM10 6h1v1h-1zM12 6h1v1h-1zM14 6h7v1h-7zM11 7h2v1h-2zM3 8h1v1h-1zM6 8h1v1h-1zM11 8h1v1h-1zM15 8h3v1h-3zM19 8h2v1h-2zM2 9h1v1h-1zM4 9h2v1h-2zM10 9h2v1h-2zM14 9h2v1h-2zM17 9h2v1h-2zM20 9h1v1h-1zM1 10h1v1h-1zM3 10h1v1h-1zM6 10h1v1h-1zM8 10h1v1h-1zM10 10h1v1h-1zM13 10h6v1h-6zM3 11h1v1h-1zM5 11h1v1h-1zM8 11h2v1h-2zM12 11h1v1h-1zM14 11h3v1h-3zM19 11h2v1h-2zM0 12h4v1h-4zM6 12h2v1h-2zM9 12h1v1h-1zM11 12h1v1h-1zM14 12h2v1h-2zM19 12h2v1h-2zM8 13h2v1h-2zM11 13h2v1h-2zM15 13h2v1h-2zM18 13h2v1h-2zM0 14h7v1h-7zM9 14h2v1h-2zM12 14h1v1h-1zM16 14h3v1h-3zM0 15h1v1h-1zM6 15h1v1h-1zM9 15h2v1h-2zM12 15h2v1h-2zM15 15h1v1h-1zM18 15h2v1h-2zM0 16h1v1h-1zM2 16h3v1h-3zM6 16h1v1h-1zM9 16h1v1h-1zM12 16h3v1h-3zM16 16h2v1h-2zM20 16h1v1h-1zM0 17h1v1h-1zM2 17h3v1h-3zM6 17h1v1h-1zM8 17h1v1h-1zM10 17h1v1h-1zM12 17h1v1h-1zM14 17h3v1h-3zM18 17h3v1h-3zM0 18h1v1h-1zM2 18h3v1h-3zM6 18h1v1h-1zM9 18h1v1h-1zM11 18h6v1h-6zM18 18h1v1h-1zM20 18h1v1h-1zM0 19h1v1h-1zM6 19h1v1h-1zM9 19h1v1h-1zM13 19h1v1h-1zM16 19h2v1h-2zM20 19h1v1h-1zM0 20h7v1h-7zM9 20h1v1h-1zM11 20h3v1h-3zM15 20h1v1h-1zM17 20h1v1h-1z" fill="currentColor" transform="translate(124 288) scale(2)" aria-hidden="true"/>
+          <!-- tracking-tight on the code, as the component sets it. -->
+          <text x="144" y="340" text-anchor="middle" font-size="9" letter-spacing="-0.2" class="chln__t-mono" fill="currentColor">7KQ4M2WD</text>
+        </svg>
+
+        <svg class="chln__copy" viewBox="0 0 176 352" role="img"
+               aria-labelledby="chln-t-parent" aria-describedby="chln-d-parent">
+          <title id="chln-t-parent">Fee challan, parent copy</title>
+          <desc id="chln-d-parent">Al-Noor School fee challan, parent copy. The same challan, 7KQ4M2WD, with figures identical to the bank copy: Rs 3,500 payable by 10-10-2026. This is the copy the family keeps.</desc>
+
+          <!-- The form grid: one path for the horizontals, one for the
+               verticals, both at the same hairline weight. -->
+          <g class="chln__r-form" fill="none" stroke="currentColor" stroke-width="1">
+            <path d="M0.5 0.5H175.5 M0.5 351.5H175.5 M42 40H135 M42 55H135 M9 62H167 M9 149H167 M9 166H167 M9 211H167"/>
+            <path d="M0.5 0.5V351.5 M175.5 0.5V351.5 M42 40V55 M135 40V55"/>
+          </g>
+          <!-- The two rules the spec weights differently. stroke-width and
+               stroke-dasharray are per element, so these cannot join the
+               two paths above. -->
+          <path class="chln__r-total" d="M9 244H167 M9 270H167" fill="none" stroke="currentColor" stroke-width="2"/>
+          <path class="chln__r-stamp" d="M9 329H112" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="2 2"/>
+
+          <!-- letterhead. No logo line and no phone line: the component
+               renders each only when the school has stored one, so their
+               absence is the real behaviour, not a gap. -->
+          <text x="88" y="22" text-anchor="middle" font-size="11" font-weight="700" letter-spacing="0.9" fill="currentColor">AL-NOOR SCHOOL</text>
+          <text x="88" y="34" text-anchor="middle" font-size="9" class="chln__t-lbl" fill="currentColor">Jhang Road, Faisalabad</text>
+          <text x="88" y="51" text-anchor="middle" font-size="9.5" font-weight="600" letter-spacing="0.6" fill="currentColor">PARENT COPY</text>
+
+          <!-- the six rows, in the component's order -->
+          <text x="9" y="75" font-size="9.4" class="chln__t-lbl" fill="currentColor">Challan</text>
+          <text x="167" y="75" text-anchor="end" font-size="9.4" font-weight="600" class="tnum" fill="currentColor">7KQ4M2WD</text>
+          <text x="9" y="88" font-size="9.4" class="chln__t-lbl" fill="currentColor">Month</text>
+          <text x="167" y="88" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">October 2026</text>
+          <text x="9" y="101" font-size="9.4" class="chln__t-lbl" fill="currentColor">Student</text>
+          <text x="167" y="101" text-anchor="end" font-size="9.4" font-weight="600" fill="currentColor">Ahmed Aslam</text>
+          <text x="9" y="114" font-size="9.4" class="chln__t-lbl" fill="currentColor">Father</text>
+          <text x="167" y="114" text-anchor="end" font-size="9.4" fill="currentColor">Muhammad Aslam</text>
+          <text x="9" y="127" font-size="9.4" class="chln__t-lbl" fill="currentColor">Class</text>
+          <text x="167" y="127" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">Class 5-A &#183; Roll 12</text>
+          <text x="9" y="140" font-size="9.4" class="chln__t-lbl" fill="currentColor">GR No</text>
+          <text x="167" y="140" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">1187</text>
+
+          <!-- Particulars / Rs. The unit is stated once, in the column head,
+               which is what the head is for. -->
+          <text x="9" y="161" font-size="9.4" font-weight="600" fill="currentColor">Particulars</text>
+          <text x="167" y="161" text-anchor="end" font-size="9.4" font-weight="600" fill="currentColor">Rs</text>
+          <text x="9" y="178" font-size="9.4" fill="currentColor">Tuition</text>
+          <text x="167" y="178" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">1,800</text>
+          <text x="9" y="191" font-size="9.4" fill="currentColor">Transport</text>
+          <text x="167" y="191" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">700</text>
+          <text x="9" y="204" font-size="9.4" fill="currentColor">Less: Sibling discount</text>
+          <text x="167" y="204" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">(200)</text>
+          <text x="9" y="223" font-size="9.4" fill="currentColor">This month</text>
+          <text x="167" y="223" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">2,300</text>
+          <text x="9" y="236" font-size="9.4" fill="currentColor">Previous dues</text>
+          <text x="167" y="236" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">1,200</text>
+          <text x="9" y="258" font-size="9.4" font-weight="700" fill="currentColor">TOTAL PAYABLE</text>
+          <text x="167" y="258" text-anchor="end" font-size="9.4" font-weight="700" class="tnum" fill="currentColor">3,500</text>
+
+          <text x="9" y="284" font-size="9.4" class="chln__t-lbl" fill="currentColor">Due date</text>
+          <text x="167" y="284" text-anchor="end" font-size="9.4" class="tnum" fill="currentColor">10-10-2026</text>
+          <text x="9" y="340" font-size="9" class="chln__t-lbl" fill="currentColor">Bank stamp &amp; signature</text>
+
+          <!-- A real QR, version 1, error correction M, zero margin: the same
+               21 module matrix QrCode.tsx produces for this voucher code. 21
+               modules at scale 2, so every module edge lands on an integer
+               user unit and nothing softens on a phone. -->
+          <path d="M0 0h7v1h-7zM8 0h5v1h-5zM14 0h7v1h-7zM0 1h1v1h-1zM6 1h1v1h-1zM8 1h2v1h-2zM12 1h1v1h-1zM14 1h1v1h-1zM20 1h1v1h-1zM0 2h1v1h-1zM2 2h3v1h-3zM6 2h1v1h-1zM9 2h3v1h-3zM14 2h1v1h-1zM16 2h3v1h-3zM20 2h1v1h-1zM0 3h1v1h-1zM2 3h3v1h-3zM6 3h1v1h-1zM8 3h1v1h-1zM12 3h1v1h-1zM14 3h1v1h-1zM16 3h3v1h-3zM20 3h1v1h-1zM0 4h1v1h-1zM2 4h3v1h-3zM6 4h1v1h-1zM8 4h1v1h-1zM12 4h1v1h-1zM14 4h1v1h-1zM16 4h3v1h-3zM20 4h1v1h-1zM0 5h1v1h-1zM6 5h1v1h-1zM8 5h5v1h-5zM14 5h1v1h-1zM20 5h1v1h-1zM0 6h7v1h-7zM8 6h1v1h-1zM10 6h1v1h-1zM12 6h1v1h-1zM14 6h7v1h-7zM11 7h2v1h-2zM3 8h1v1h-1zM6 8h1v1h-1zM11 8h1v1h-1zM15 8h3v1h-3zM19 8h2v1h-2zM2 9h1v1h-1zM4 9h2v1h-2zM10 9h2v1h-2zM14 9h2v1h-2zM17 9h2v1h-2zM20 9h1v1h-1zM1 10h1v1h-1zM3 10h1v1h-1zM6 10h1v1h-1zM8 10h1v1h-1zM10 10h1v1h-1zM13 10h6v1h-6zM3 11h1v1h-1zM5 11h1v1h-1zM8 11h2v1h-2zM12 11h1v1h-1zM14 11h3v1h-3zM19 11h2v1h-2zM0 12h4v1h-4zM6 12h2v1h-2zM9 12h1v1h-1zM11 12h1v1h-1zM14 12h2v1h-2zM19 12h2v1h-2zM8 13h2v1h-2zM11 13h2v1h-2zM15 13h2v1h-2zM18 13h2v1h-2zM0 14h7v1h-7zM9 14h2v1h-2zM12 14h1v1h-1zM16 14h3v1h-3zM0 15h1v1h-1zM6 15h1v1h-1zM9 15h2v1h-2zM12 15h2v1h-2zM15 15h1v1h-1zM18 15h2v1h-2zM0 16h1v1h-1zM2 16h3v1h-3zM6 16h1v1h-1zM9 16h1v1h-1zM12 16h3v1h-3zM16 16h2v1h-2zM20 16h1v1h-1zM0 17h1v1h-1zM2 17h3v1h-3zM6 17h1v1h-1zM8 17h1v1h-1zM10 17h1v1h-1zM12 17h1v1h-1zM14 17h3v1h-3zM18 17h3v1h-3zM0 18h1v1h-1zM2 18h3v1h-3zM6 18h1v1h-1zM9 18h1v1h-1zM11 18h6v1h-6zM18 18h1v1h-1zM20 18h1v1h-1zM0 19h1v1h-1zM6 19h1v1h-1zM9 19h1v1h-1zM13 19h1v1h-1zM16 19h2v1h-2zM20 19h1v1h-1zM0 20h7v1h-7zM9 20h1v1h-1zM11 20h3v1h-3zM15 20h1v1h-1zM17 20h1v1h-1z" fill="currentColor" transform="translate(124 288) scale(2)" aria-hidden="true"/>
+          <!-- tracking-tight on the code, as the component sets it. -->
+          <text x="144" y="340" text-anchor="middle" font-size="9" letter-spacing="-0.2" class="chln__t-mono" fill="currentColor">7KQ4M2WD</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <p class="doc__cap chln__cap--all">
+    Three copies on one landscape sheet, in the order a bank expects. The bank
+    keeps the first, the second comes back stamped and is what your office
+    reconciles against, the family keeps the third. Identical figures on all
+    three and the same challan number on each, so any copy that reaches the
+    counter can be scanned.
+  </p>
+  <p class="doc__cap chln__cap--one">One of the three copies on every sheet.</p>
+</div>
+
+      </div>
+      <div>
+        <!-- ============================================================================
+     ART:attendance  ::  the daily attendance sheet.
+
+     Drawn against web/src/pages/attendance/AttendanceSheet.tsx and nothing
+     else, plus the two things that file imports and prints through:
+       web/src/lib/constants.ts   ATTENDANCE_STATUSES and ATTENDANCE_SHORT,
+                                  which are the source of the status codes
+       web/src/lib/format.ts      fmtDate, which is the source of the date
+     Everything on this sheet is something that component actually emits, in
+     the order it emits it:
+       1. school name, then "Daily Attendance Sheet" in tracked caps
+       2. one line carrying Class, Date and Students, wrapping when it must
+       3. a four column table whose heads are exactly Roll, Student, Status,
+          Remarks, ruled above and below, Remarks left blank as it prints
+       4. the status count legend, which maps ALL FIVE statuses, zeros included
+       5. Class Teacher and Principal at the foot
+     The component's Print and Close buttons are print:hidden, so they are not
+     part of the printed object and are not drawn.
+
+     THREE PLACES THIS FOLLOWS THE COMPONENT AGAINST THE BRIEF:
+
+     a. THE STATUS CODES ARE P, A, L, Lt AND A HALF SIGN, not P, A and L.
+        ATTENDANCE_SHORT is built from ATTENDANCE_STATUSES, which carries five
+        entries: present P, absent A, leave L, late Lt, half_day as the half
+        sign. Late and half day are real codes in this product, so the legend
+        prints five items and two of them are zero on this day.
+
+     b. THE DATE READS "4 Sept 2026", not 04-09-2026. fmtDate calls
+        toLocaleDateString('en-PK', { year: 'numeric', month: 'short',
+        day: 'numeric' }), and en-PK renders the short September as "Sept".
+        The receipt's 04-09-2026 comes from a different formatter, so the two
+        artefacts differ on purpose: each prints what its own screen prints.
+
+     c. EVERY ROW CARRIES A ROLL NUMBER. The component falls back to a dash
+        glyph when roll_no is null. That glyph is banned here, so no row is
+        given a null roll and the fallback never renders.
+
+     THE STUDENT COLUMN IS EIGHT 1px RULES. No pupil is invented and no child
+     is depicted: each row carries the blank write-on line a name would sit on,
+     at --rule-3, which site/styles.css defines as the weight for a form field
+     border. The light row separators at --rule run under all four columns, so
+     the Remarks column reads as the write-in column it is.
+
+     NO SVG, deliberately, as with the receipt: the figures stay selectable
+     text, Chrome translate to Urdu can rewrite the labels without bursting the
+     layout, and the sheet grows under Android font scaling. Nothing here is a
+     filter, a blend mode or a transformed glyph. Every rule is a border rather
+     than a background, because borders print and background colour does not.
+
+     Ink on white throughout. Not one hue inside the sheet: no fill, no chip,
+     no tint, and in particular nothing green on Present or red on Absent,
+     because the codes have to survive a photocopier that cannot tell
+     #4338CA from #B91C1C.
+
+     ARITHMETIC, the one thing this audience checks. Eight rows are drawn,
+     Students reads 8, and the legend sums to the same 8:
+       P 6 + A 1 + L 0 + Lt 1 + half day 0 = 8
+     The six P, one A and one Lt in the Status column are the same six, one and
+     one that the legend counts.
+     ============================================================================ -->
+<figure class="att-fig">
+  <div class="doc doc--lift att">
+    <div class="att__in">
+
+      <header class="att__head">
+        <p class="att__school">Al-Noor School</p>
+        <p class="att__kind">Daily Attendance Sheet</p>
+      </header>
+
+      <!-- The component's flex row. At this column width it wraps to two
+           lines, Class and Date on the first, Students on the second. -->
+      <dl class="att__meta">
+        <div class="att__mi">
+          <dt>Class:</dt>
+          <dd>Class 5 &#183; Section A</dd>
+        </div>
+        <div class="att__mi">
+          <dt>Date:</dt>
+          <dd class="tnum">4 Sept 2026</dd>
+        </div>
+        <div class="att__mi">
+          <dt>Students:</dt>
+          <dd class="tnum">8</dd>
+        </div>
+      </dl>
+
+      <table class="att__tbl">
+        <caption class="att__sr">
+          Daily attendance sheet, Al-Noor School, Class 5 Section A, 4 Sept
+          2026. Eight pupils on the register. Pupil names are left off this
+          sample sheet, so the Student column is a blank rule on every row and
+          the Remarks column is blank as it prints.
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col" class="att__h-roll">Roll</th>
+            <th scope="col" class="att__h-name">Student</th>
+            <th scope="col" class="att__h-st">Status</th>
+            <th scope="col" class="att__h-rem">Remarks</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row" class="att__roll">01</th>
+            <td class="att__name"><span class="att__nameline" aria-hidden="true"></span></td>
+            <td class="att__st">P</td>
+            <td class="att__rem"></td>
+          </tr>
+          <tr>
+            <th scope="row" class="att__roll">02</th>
+            <td class="att__name"><span class="att__nameline" aria-hidden="true"></span></td>
+            <td class="att__st">P</td>
+            <td class="att__rem"></td>
+          </tr>
+          <tr>
+            <th scope="row" class="att__roll">03</th>
+            <td class="att__name"><span class="att__nameline" aria-hidden="true"></span></td>
+            <td class="att__st">A</td>
+            <td class="att__rem"></td>
+          </tr>
+          <tr>
+            <th scope="row" class="att__roll">04</th>
+            <td class="att__name"><span class="att__nameline" aria-hidden="true"></span></td>
+            <td class="att__st">P</td>
+            <td class="att__rem"></td>
+          </tr>
+          <tr>
+            <th scope="row" class="att__roll">05</th>
+            <td class="att__name"><span class="att__nameline" aria-hidden="true"></span></td>
+            <td class="att__st">P</td>
+            <td class="att__rem"></td>
+          </tr>
+          <tr>
+            <th scope="row" class="att__roll">06</th>
+            <td class="att__name"><span class="att__nameline" aria-hidden="true"></span></td>
+            <td class="att__st">Lt</td>
+            <td class="att__rem"></td>
+          </tr>
+          <tr>
+            <th scope="row" class="att__roll">07</th>
+            <td class="att__name"><span class="att__nameline" aria-hidden="true"></span></td>
+            <td class="att__st">P</td>
+            <td class="att__rem"></td>
+          </tr>
+          <tr>
+            <th scope="row" class="att__roll">08</th>
+            <td class="att__name"><span class="att__nameline" aria-hidden="true"></span></td>
+            <td class="att__st">P</td>
+            <td class="att__rem"></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- ATTENDANCE_STATUSES in its declared order, every entry printed with
+           its count, exactly as the component does. The list is given a name
+           for assistive technology, which the printed sheet does not need
+           because the table sits directly above it. -->
+      <ul class="att__legend" aria-label="Status counts for 4 Sept 2026">
+        <li><b>P</b> Present: <span class="tnum">6</span></li>
+        <li><b>A</b> Absent: <span class="tnum">1</span></li>
+        <li><b>L</b> Leave: <span class="tnum">0</span></li>
+        <li><b>Lt</b> Late: <span class="tnum">1</span></li>
+        <li><b>&#189;</b> Half day: <span class="tnum">0</span></li>
+      </ul>
+
+      <div class="att__sign">
+        <p class="att__sig">Class Teacher</p>
+        <p class="att__sig">Principal</p>
+      </div>
+
+    </div>
+  </div>
+  <figcaption class="doc__cap">
+    The class register as it prints, straight off the screen a teacher marks on
+    in the morning. Names are held off this sample, one rule each, and the
+    counts still have to meet the roll: 6 present, 1 absent, 1 late, 8 on the
+    register.
+  </figcaption>
+</figure>
+
+      </div>
+      <div>
+        <!-- ===========================================================================
+     THE RESULT CARD, drawn at full size, in its final published state.
+
+     Drawn against, in this repo:
+       web/src/pages/exams/ResultCardPrint.tsx   the component this imitates:
+                                                 its centred masthead, its
+                                                 "Result Card, {term}" line, its
+                                                 four field meta block, its
+                                                 Subject / Max / Obtained table,
+                                                 its Total row, its Percentage,
+                                                 Grade and Position row, and its
+                                                 two signature lines
+       supabase/migrations/0089_gpa_scale.sql    the letter bands, so the grade
+                                                 printed here is the grade the
+                                                 database would return
+       supabase/migrations/0058_exam_computation.sql
+                                                 percentage rounded to 2 dp, and
+                                                 position ranked by class_id
+       site/styles.css                           tokens, .doc, .doc--lift,
+                                                 .doc__cap, .tnum
+       site/index.html                           the receipt and the attendance
+                                                 sheet, for the house pattern of
+                                                 a drawn document
+
+     Pure HTML and CSS. No SVG anywhere on this artefact, so there is no
+     role="img" and no <title> to write: every figure is real selectable text.
+     That is deliberate and it is the same choice the receipt made, for the same
+     three reasons. The column heads and labels wrap, so Chrome translate to
+     Urdu can rewrite them without bursting the table; the whole card grows
+     under text only zoom and Android font scaling, which is WCAG 1.4.4; and a
+     clerk can select a mark and copy it.
+
+     INK ON WHITE, with no exception. Not even the one hue the house rules would
+     allow: the verdict is printed as the word "Pass" in --ink rather than in
+     --money-800, because the word is already the meaning and a green word would
+     be a second, weaker copy of it. Under Rec.601 the app's brand #4338CA and
+     danger #B91C1C land within 0.4 percent of each other, so nothing on an
+     object that prints is allowed to carry meaning in colour, and the cheapest
+     way to hold that line on a card a parent will photocopy is to spend no
+     colour at all.
+
+     NO CERTIFICATE BORDER. A 45 degree repeating gradient with 1px stops is the
+     worst case there is for rasterisation, and 8 percent navy on cream is about
+     a 3 percent luminance step, under the just noticeable difference on the
+     cheap TN panel this page is built for, so it would arrive as a faint grey
+     smudge rather than as an ornament. The frame here is a plain double
+     hairline inset 6px from the edge of the sheet, drawn as two real borders,
+     which prints and which Windows forced colours repaints.
+
+     THE ARITHMETIC, which is the one thing this audience will check:
+       English         100 :  78
+       Urdu            100 :  86
+       Mathematics     100 :  92
+       Islamiyat       100 :  88
+       General Science 100 :  81
+       Social Studies  100 :  70
+       Total           600 : 495     six rows of 100 sum to 600, marks to 495
+       Percentage      495 / 600 = 0.825 exactly, so 82.50
+       Grade           82.50 is at or above 80 and below 90, so A
+       Verdict         lowest paper is 70, the pass mark is 33, so no failures
+
+     WHY THE POSITION SAYS 41 AND THE ATTENDANCE SHEET SAYS 8. They are not the
+     same population. fn_generate_result_cards ranks with
+     rank() over (order by pct desc) inside a set filtered on class_id, so the
+     position on a card is the pupil's place in CLASS 5 as a whole. The
+     attendance sheet elsewhere on this page is one section's daily register,
+     Class 5 Section A, and it is a sample of eight ruled rows.
+
+     Identity is taken from the challan already on this page: Ahmed Aslam,
+     Class 5-A, Roll 12, GR No 1187, father Muhammad Aslam. Nothing new is
+     invented about the family.
+     =========================================================================== -->
+<figure class="res-fig">
+  <div class="doc doc--lift res">
+    <!-- The two halves of the inset double rule. The outer bar is the border of
+         .res__frame, held 6px off the sheet edge by its margin; the inner bar is
+         the border of .res__in, held 2px inside it by the frame's padding. -->
+    <div class="res__frame">
+      <div class="res__in">
+
+        <header class="res__head">
+          <p class="res__school">Al-Noor School</p>
+          <p class="res__kind">Result Card, First Term 2026</p>
+        </header>
+
+        <dl class="res__meta">
+          <div class="res__mi">
+            <dt>Student</dt>
+            <dd>Ahmed Aslam</dd>
+          </div>
+          <div class="res__mi">
+            <dt>Class</dt>
+            <dd>Class 5, Section A</dd>
+          </div>
+          <div class="res__mi">
+            <dt>GR No</dt>
+            <dd class="tnum">1187</dd>
+          </div>
+          <div class="res__mi">
+            <dt>Roll No</dt>
+            <dd class="tnum">12</dd>
+          </div>
+        </dl>
+
+        <table class="res__tbl">
+          <caption class="res__sr">
+            Result card, Al-Noor School, First Term 2026, for Ahmed Aslam of
+            Class 5 Section A. Six subjects, each out of 100, obtaining 495 of
+            600 marks in total, which is 82.50 percent, grade A, position 4 of
+            41 in the class. Published, not provisional.
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col" class="res__h-sub">Subject</th>
+              <th scope="col" class="res__h-num">Total</th>
+              <th scope="col" class="res__h-num">Obtained</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">English</th>
+              <td>100</td>
+              <td>78</td>
+            </tr>
+            <tr>
+              <th scope="row">Urdu</th>
+              <td>100</td>
+              <td>86</td>
+            </tr>
+            <tr>
+              <th scope="row">Mathematics</th>
+              <td>100</td>
+              <td>92</td>
+            </tr>
+            <tr>
+              <th scope="row">Islamiyat</th>
+              <td>100</td>
+              <td>88</td>
+            </tr>
+            <tr>
+              <th scope="row">General Science</th>
+              <td>100</td>
+              <td>81</td>
+            </tr>
+            <tr>
+              <th scope="row">Social Studies</th>
+              <td>100</td>
+              <td>70</td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr>
+              <th scope="row">Total</th>
+              <td>600</td>
+              <td>495</td>
+            </tr>
+          </tfoot>
+        </table>
+
+        <dl class="res__result">
+          <div class="res__ri">
+            <dt>Percentage</dt>
+            <dd class="tnum">82.50%</dd>
+          </div>
+          <div class="res__ri">
+            <dt>Grade</dt>
+            <dd>A</dd>
+          </div>
+          <div class="res__ri">
+            <dt>Position</dt>
+            <dd><span class="tnum">4</span> of <span class="tnum">41</span></dd>
+          </div>
+        </dl>
+
+        <p class="res__verdict">
+          <span class="res__vk">Result</span>
+          <b class="res__vv">Pass</b>
+          <span class="res__vn">Passed in every subject, pass mark 33% overall.</span>
+        </p>
+
+        <div class="res__sign">
+          <p class="res__sig">Class Teacher</p>
+          <p class="res__sig">Principal</p>
+        </div>
+
+        <p class="res__serial">
+          Computer generated result card, published 04-09-2026.
+          <span class="res__sn">ANS-RC-1187-FT2026</span>
+        </p>
+
+      </div>
+    </div>
+  </div>
+  <figcaption class="doc__cap">
+    The card as it prints once results are published: the marks it was built
+    from, the percentage they add up to, and the place in the class. A card that
+    is still provisional or withheld says so on its face instead.
+  </figcaption>
+</figure>
+
+      </div>
     </div>
   </div>
 </section>
 
-<!-- =========================================================== pricing -- -->
-<section class="section" id="pricing">
+<!-- ================================================ 06 your records are yours
+     Placed above the module index in weight on purpose: it answers the fear a
+     burned buyer actually walks in with, which no feature list addresses.
+     ================================================ -->
+<section class="section" id="records">
   <div class="wrap">
-    <span class="eyebrow">Pricing</span>
+    <div class="rulehead">
+      <span class="rulehead__no">06</span>
+      <span class="rulehead__label">Your records</span>
+      <span class="rulehead__line"></span>
+    </div>
+
+    <div class="split" style="margin-top:8px">
+      <div>
+        <h2>Your records leave with you</h2>
+        <p class="lede" style="margin-top:14px">
+          Export everything you have entered, at any time, in a plain readable
+          format, including on the day you decide to leave. There is no lock in and
+          no fee for your own data.
+        </p>
+        <p class="lede" style="margin-top:14px">
+          And nothing is ever quietly removed. A wrong entry is corrected by a
+          reversal, so both lines stay in the ledger with a reason and a name. If
+          somebody asks in two years why a receipt was cancelled, the answer is
+          still there.
+        </p>
+      </div>
+      <div>
+        <!-- ART:reversal, the ledger reversal pair.
+
+     Drawn against web/src/pages/fees/CollectPayment.tsx (the payments table and
+     its Reverse action) and supabase/migrations/0021_fee_fixes.sql, function
+     fn_reverse_payment, which is what makes this artefact truthful rather than
+     decorative: a reversal INSERTS a new payment row. It takes its own gapless
+     receipt number from next_counter('receipt'), carries the negative of the
+     original amount, records received_by as the actor and note as the typed
+     reason, and never touches the row it reverses. The function also refuses to
+     reverse a reversal and refuses a second reversal of the same payment, which
+     is why exactly two lines can ever exist for one mistake. Only owner or
+     principal may call it, which is why the second line is signed by the
+     principal and the first by the clerk.
+
+     The amount format is the one already in web/src/pages/fees/ChallanPrint.tsx
+     for discount lines, `({fmtPKR(amount)})`: parentheses around a figure whose
+     sign is already leading, so the entry reads as a deduction with the minus
+     visible and the brackets carrying the same meaning again. Two signals, both
+     pure shape, so neither greyscale nor a third generation photocopy can lose
+     it. The minus is U+2212, the character web/src/lib/format.ts uses, not a
+     hyphen.
+
+     No colour inside the sheet, on purpose. Not even --navy for the header:
+     this is paper, so it is ink, rules and nothing else, per the arithmetic
+     noted at the top of site/styles.css. Nothing is struck through and nothing
+     is greyed, because the argument of the whole object is that neither entry
+     was removed. The two rows get identical weight; the only thing marking the
+     second is that it names the first.
+
+     Staff names are part of the same visibly illustrative mockup as the
+     placeholder school and family. No real school is named or implied. -->
+
+<figure class="rev">
+  <div class="doc doc--lift rev__doc">
+
+    <table class="rev__t">
+      <!-- The document header lives in the table's own <caption>, so the table
+           has a real accessible name and no text has to be hidden to give it
+           one. -->
+      <caption>
+        <span class="rev__head">
+          <span class="rev__head__t">Payments ledger</span>
+          <span class="rev__head__s">Al-Noor School, Muhammad Aslam</span>
+          <span class="rev__serial">PAY/1041-1042</span>
+        </span>
+      </caption>
+
+      <thead>
+        <tr>
+          <th scope="col" class="rev__c1">Entry</th>
+          <th scope="col" class="rev__c2">Time</th>
+          <th scope="col" class="rev__c3">By</th>
+          <th scope="col" class="rev__c4">Reason</th>
+          <th scope="col" class="rev__c5 rev__num">Amount</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        <tr>
+          <td data-th="Entry">
+            <span class="rev__v">
+              <b class="rev__no tnum">No 1041</b>
+              <span class="rev__sub">Ahmed, Class 5</span>
+            </span>
+          </td>
+          <td data-th="Time">
+            <span class="rev__v">
+              <span class="rev__date tnum">04-09-2026</span>
+              <span class="rev__sub tnum">10:12</span>
+            </span>
+          </td>
+          <td data-th="By">
+            <span class="rev__v">
+              <span class="rev__who">Asif Mehmood</span>
+              <span class="rev__sub">Clerk</span>
+            </span>
+          </td>
+          <td data-th="Reason">
+            <span class="rev__v">September fee, cash at counter</span>
+          </td>
+          <td data-th="Amount" class="rev__num">
+            <span class="rev__v tnum">Rs 1,700</span>
+          </td>
+        </tr>
+
+        <tr>
+          <td data-th="Entry">
+            <span class="rev__v">
+              <b class="rev__no tnum">No 1042</b>
+              <span class="rev__sub"><svg class="rev__tie" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 1.5v4a2.5 2.5 0 0 1-2.5 2.5H3"/><path d="M5.5 5.5 3 8l2.5 2.5"/></svg>Reversal of No 1041</span>
+            </span>
+          </td>
+          <td data-th="Time">
+            <span class="rev__v">
+              <span class="rev__date tnum">04-09-2026</span>
+              <span class="rev__sub tnum">10:19</span>
+            </span>
+          </td>
+          <td data-th="By">
+            <span class="rev__v">
+              <span class="rev__who">Rukhsana Yousaf</span>
+              <span class="rev__sub">Principal</span>
+            </span>
+          </td>
+          <td data-th="Reason">
+            <span class="rev__v">Fatima's fee posted to Ahmed in error. Corrected on No 1043.</span>
+          </td>
+          <td data-th="Amount" class="rev__num">
+            <span class="rev__v tnum">(&#8722;Rs 1,700)</span>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="rev__foot">
+      <p class="rev__net">
+        <span>Net effect on Ahmed's account</span>
+        <b class="tnum">Rs 0</b>
+      </p>
+      <p class="rev__note">
+        The fee was then taken correctly on receipt No 1043, Rs 5,800 for all
+        three children. Receipt numbers run unbroken: 1041, 1042, 1043.
+      </p>
+    </div>
+
+  </div>
+
+  <figcaption class="doc__cap">
+    Nothing is deleted and nothing is edited. A mistake is corrected by a
+    reversal, so both entries stay in the record, each with its own receipt
+    number, a reason and the name of the person who made it. Neither line is
+    struck out, because neither one was removed.
+  </figcaption>
+</figure>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================= 07 pricing
+     A rate card rather than four floating boxes. The literals here are the
+     FALLBACK shown when Supabase is slow: wire.js overwrites them from `plans`
+     on load, and supabase/check-site-prices.sh fails CI if the two disagree, so
+     the fallback can never become a price nobody will honour.
+
+     Each card carries data-plan and is closed by the end-of-plan HTML comment
+     directly beneath it. That marker is not decoration: the CI extractor uses
+     it to bound the card, and without it every card's block ran to end of file
+     and matched every other plan's figures. Do not write the marker inside
+     another comment, because HTML comments do not nest and the first closing
+     sequence would end the outer one.
+     ============================================================= -->
+<section class="section section--tint" id="pricing">
+  <div class="wrap">
+    <div class="rulehead">
+      <span class="rulehead__no">07</span>
+      <span class="rulehead__label">Pricing</span>
+      <span class="rulehead__line"></span>
+    </div>
     <h2>Priced for a real Pakistani school</h2>
-    <p class="lede" style="margin-top:14px">
-      Every plan includes every feature. You pay for size, not for modules.
-      Pay yearly and get two months free.
+    <p class="lede" style="margin-top:12px">
+      Every plan includes every feature. You pay for size, not for modules. Pay
+      yearly and get two months free.
     </p>
 
-    <div class="prices" style="margin-top:38px">
-      <!-- The figures below are the fallback, not the source. wire.js replaces
-           them from `plans` so the site can never quote a price the console does
-           not charge, and supabase/check-site-prices.sh fails CI if these
-           literals and the seed drift apart — because the fallback has to be
-           true on the day the fetch fails. -->
-      <div class="price" data-plan="starter">
-        <h3>Starter</h3>
+    <div class="rates" style="margin-top:30px">
+      <div class="rates__row" data-plan="starter">
+        <div>
+          <div class="rates__name">Starter</div>
+          <div class="rates__cap" data-price-cap>Up to 100 students</div>
+        </div>
         <div class="price__amt"><span data-price-monthly>Rs 950</span><small>/month</small></div>
-        <p class="price__cap" data-price-cap>Up to 100 students</p>
-        <ul>
-          <li>Every module included</li>
-          <li>Unlimited staff logins</li>
-          <li>Parent portal</li>
-          <li data-price-yearly>Rs 9,500 a year</li>
-        </ul>
-        <a class="btn btn--ghost" href="#" data-app="signup">Start free trial</a>
+        <div class="rates__yearly"><span data-price-yearly>Rs 9,500 a year</span>. Every module, unlimited staff logins, parent portal.</div>
+        <a class="btn btn--ghost" href="#contact" data-app="signup"
+           aria-label="Start a free trial on the Starter plan">Start free trial</a>
       </div>
+      <!-- /plan -->
 
-      <div class="price price--hot" data-plan="growth">
-        <span class="price__tag">Most schools</span>
-        <h3>Growth</h3>
+      <div class="rates__row rates__row--hot" data-plan="growth">
+        <div>
+          <div class="rates__name">Growth <span class="rates__tag">Most schools</span></div>
+          <div class="rates__cap" data-price-cap>Up to 300 students</div>
+        </div>
         <div class="price__amt"><span data-price-monthly>Rs 2,000</span><small>/month</small></div>
-        <p class="price__cap" data-price-cap>Up to 300 students</p>
-        <ul>
-          <li>Every module included</li>
-          <li>Unlimited staff logins</li>
-          <li>Parent portal</li>
-          <li data-price-yearly>Rs 20,000 a year</li>
-        </ul>
-        <a class="btn btn--primary" href="#" data-app="signup">Start free trial</a>
+        <div class="rates__yearly"><span data-price-yearly>Rs 20,000 a year</span>. Every module, unlimited staff logins, parent portal.</div>
+        <a class="btn btn--primary" href="#contact" data-app="signup"
+           aria-label="Start a free trial on the Growth plan">Start free trial</a>
       </div>
+      <!-- /plan -->
 
-      <div class="price" data-plan="institution">
-        <h3>Institution</h3>
+      <div class="rates__row" data-plan="institution">
+        <div>
+          <div class="rates__name">Institution</div>
+          <div class="rates__cap" data-price-cap>Up to 1,000 students</div>
+        </div>
         <div class="price__amt"><span data-price-monthly>Rs 3,500</span><small>/month</small></div>
-        <p class="price__cap" data-price-cap>Up to 1,000 students</p>
-        <ul>
-          <li>Every module included</li>
-          <li>Unlimited staff logins</li>
-          <li>Parent portal</li>
-          <li data-price-yearly>Rs 35,000 a year</li>
-        </ul>
-        <a class="btn btn--ghost" href="#" data-app="signup">Start free trial</a>
+        <div class="rates__yearly"><span data-price-yearly>Rs 35,000 a year</span>. Every module, unlimited staff logins, parent portal.</div>
+        <a class="btn btn--ghost" href="#contact" data-app="signup"
+           aria-label="Start a free trial on the Institution plan">Start free trial</a>
       </div>
+      <!-- /plan -->
 
-      <div class="price">
-        <h3>Larger institutions</h3>
+      <div class="rates__row" data-plan="custom">
+        <div>
+          <div class="rates__name">Larger institutions</div>
+          <div class="rates__cap">More than 1,000 students</div>
+        </div>
         <div class="price__amt">Let's talk</div>
-        <p class="price__cap">More than 1,000 students</p>
-        <ul>
-          <li>Multiple campuses</li>
-          <li>Migration from your current system</li>
-          <li>Direct line for support</li>
-        </ul>
+        <div class="rates__yearly">Multiple campuses, migration from your current system, a direct line for support.</div>
         <a class="btn btn--ghost" href="#contact">Contact us</a>
       </div>
+      <!-- /plan -->
     </div>
 
-    <p class="small muted" style="margin-top:26px;max-width:70ch">
-      Grow past your plan mid-year and nothing stops working — admissions never
-      get blocked by a billing limit. We'll call you about moving up at a sensible
+    <p class="small muted" style="margin-top:16px;max-width:70ch">
+      Grow past your plan mid year and nothing stops working. Admissions are never
+      blocked by a billing limit. We will call you about moving up at a sensible
       moment, not in the middle of admission season.
     </p>
+    <p class="small muted" style="margin-top:10px">
+      Payment is by bank transfer. There is no card on file and no automatic renewal.
+    </p>
   </div>
 </section>
 
-<!-- ============================================================== FAQ --- -->
-<section class="section section--tint" id="faq">
-  <div class="wrap" style="max-width:820px">
-    <span class="eyebrow">Questions</span>
-    <h2>Straight answers</h2>
+<!-- =============================================================== 08 faq --->
+<section class="section" id="faq">
+  <div class="wrap" style="max-width:860px">
+    <div class="rulehead">
+      <span class="rulehead__no">08</span>
+      <span class="rulehead__label">Questions</span>
+      <span class="rulehead__line"></span>
+    </div>
+    <h2>Questions a principal actually asks</h2>
 
-    <div style="margin-top:30px">
-      <details open>
-        <summary>We're mid-session. Can we switch now?</summary>
+    <div style="margin-top:26px">
+      <details class="q">
+        <summary>What happens to our data if we stop paying?<span class="q__m" aria-hidden="true"></span></summary>
         <p>
-          Yes, and this is the part most systems get wrong. You can import your
-          student list from a spreadsheet <em>and</em> import what each family
-          already owes, so your defaulter list is correct from day one. You do not
-          have to wait for April.
+          It stays yours. Export everything at any time, including after you have
+          cancelled, in a plain readable format. We do not hold records to ransom
+          and there is no charge for taking your own data out.
         </p>
       </details>
-
-      <details>
-        <summary>Does it work when the internet goes down?</summary>
+      <details class="q">
+        <summary>Does it work when the internet goes down?<span class="q__m" aria-hidden="true"></span></summary>
         <p>
-          Attendance does — teachers can open the class list and mark the register
-          with no connection, and it syncs when the internet returns. Fee
-          collection and reports need a connection. We'd rather say that plainly
-          than have you find out on a Monday morning.
+          Attendance does. Teachers can keep marking the register and it syncs when
+          the connection returns. Fee collection needs the connection, because two
+          clerks taking cash offline would issue two receipts with the same number,
+          and a fee book with duplicate numbers is worse than a fee book you have to
+          wait five minutes for.
         </p>
       </details>
-
-      <details>
-        <summary>Is it a desktop program or a website?</summary>
+      <details class="q">
+        <summary>Can a clerk change a receipt after it is printed?<span class="q__m" aria-hidden="true"></span></summary>
         <p>
-          Both, and it's the same system either way. There's a proper Windows
-          application that installs on the office computer with its own icon, and
-          the same thing opens in any browser for teachers and parents. Your data
-          lives in one place, so it doesn't matter which one you use.
+          No. Nothing is deleted or edited. A mistake is corrected by a reversal
+          entry, so both lines stay in the ledger with a reason and the name of the
+          person who made the correction. Receipt numbers are issued in an unbroken
+          sequence, so a missing number is itself visible.
         </p>
       </details>
-
-      <details>
-        <summary>Is it in Urdu?</summary>
+      <details class="q">
+        <summary>Can parents see other children's information?<span class="q__m" aria-hidden="true"></span></summary>
         <p>
-          Not yet. The interface is English today. Everything you type in — student
-          names, remarks, fee heads — accepts Urdu and prints correctly. A full
-          Urdu interface is on the list, and if it's the thing standing between you
-          and switching, tell us; it moves the priority.
+          A parent login reaches only that family's own children: their fee balance,
+          their receipts, their attendance and their results once you publish them.
+          It cannot reach any other family, and it cannot reach anything you have
+          not published.
         </p>
       </details>
-
-      <details>
-        <summary>Can parents see other children's information?</summary>
+      <details class="q">
+        <summary>We already have years of records in Excel. Can we move them?<span class="q__m" aria-hidden="true"></span></summary>
         <p>
-          No. A parent account can only reach its own family — that restriction is
-          enforced in the database itself, not just hidden in the app, and we have
-          automated tests that fail the build if it ever stops being true. A parent
-          also cannot see fee totals, staff records, or anything about the school's
-          accounts.
+          Yes. Students, staff and opening balances import from a spreadsheet. Bring
+          us the file you already keep and we will map it with you rather than asking
+          you to retype a school.
         </p>
       </details>
-
-      <details>
-        <summary>What happens to our data if we stop paying?</summary>
+      <details class="q">
+        <summary>What about results that are not final yet?<span class="q__m" aria-hidden="true"></span></summary>
         <p>
-          Nothing is deleted. Day-to-day entry pauses, but you can still sign in and
-          export everything you have ever entered. We think holding a school's own
-          records hostage is indefensible, so we made sure we can't do it.
+          Marks stay unpublished until you publish them, and a result card can be
+          withheld for a single student, for example while a fee matter is settled.
+          Parents see nothing until you decide they should.
         </p>
       </details>
-
-      <details>
-        <summary>How long does setup take?</summary>
+      <details class="q">
+        <summary>Is it in Urdu?<span class="q__m" aria-hidden="true"></span></summary>
         <p>
-          An afternoon for a small school. You enter your classes and sections, set
-          the fee for each class, and import your student list. Most schools are
-          taking real fee payments the same week.
+          The screens are in English. Anything you type is accepted and printed in
+          Urdu, including names, addresses and remarks, so a certificate or a fee
+          receipt can carry Urdu text. A full Urdu interface is not built yet, and we
+          would rather say so than imply otherwise.
         </p>
       </details>
     </div>
   </div>
 </section>
 
-<!-- ========================================================= download --- -->
-<!-- The section that did not exist. desktop/ has produced a Windows .msi in CI
-     since it was written, and it went into a workflow artifact — behind a GitHub
-     login, expiring after 90 days. So the one thing a school office actually asks
-     for could not be given to them. wire.js fills this in from app_releases;
-     until a release is published it says so, which is true and better than a
-     button that 404s. -->
-<section class="section" id="download">
+<!-- ========================================================== 09 download
+     Hidden by default and revealed by wire.js only when app_releases actually
+     carries a current Windows build. Every id here is written into by wire.js
+     and asserted by supabase/check-site-links.sh, so the markup stays even while
+     the section is hidden.
+
+     This is why the "broken download button" was not broken. There is no
+     published installer, so the honest fallback text was correct. But a visitor
+     cannot tell an honest placeholder from a broken site, and the nav pointed
+     straight at it. You cannot link to a file that does not exist, so the answer
+     is to stop advertising the download until there is one.
+     ========================================================== -->
+<section class="section" id="download" hidden>
   <div class="wrap">
+    <div class="rulehead">
+      <span class="rulehead__no">09</span>
+      <span class="rulehead__label">Desktop</span>
+      <span class="rulehead__line"></span>
+    </div>
     <h2>Install it on the office computer</h2>
-    <p class="lede" style="margin-top:14px;max-width:70ch">
+    <p class="lede" style="margin-top:12px">
       The software runs in a browser and works the same either way. The desktop
-      version is for the front desk: it opens on its own, remembers the printer,
-      and keeps working on the days the internet does not.
+      version is for the front desk: it opens on its own and remembers the address
+      of your school's software, so nobody has to type it.
     </p>
 
-    <div id="download-box" style="margin-top:26px;padding:22px;border:1px solid #e2e8f0;border-radius:12px;background:#fff;max-width:60ch">
+    <div id="download-box" class="card" style="margin-top:24px;max-width:56ch">
       <a class="btn btn--ghost btn--lg" id="download-btn" href="#contact" aria-disabled="true">
-        Windows installer — being prepared
+        Windows installer: being prepared
       </a>
       <p class="small muted" id="download-meta" style="margin-top:10px"></p>
       <p class="small muted" id="download-notes" hidden style="margin-top:6px"></p>
-      <p class="small muted" hidden style="margin-top:10px;word-break:break-all">
-        Check the file before you install it — SHA-256:<br>
-        <code id="download-sha" style="font-size:12px"></code>
-      </p>
+      <details hidden style="margin-top:12px">
+        <summary class="small muted" style="cursor:pointer">Verify this file<span class="q__m" aria-hidden="true"></span></summary>
+        <p class="small muted" style="margin-top:8px">
+          Compare the SHA-256 of the file you downloaded with this. If they differ,
+          do not run it and tell us.
+        </p>
+        <code id="download-sha" style="font-size:12px;word-break:break-all;font-family:var(--mono)"></code>
+      </details>
       <p class="small muted" style="margin-top:14px">
-        Prefer the browser? Nothing to install —
-        <a href="#" data-app="signin">sign in here</a>.
+        Prefer the browser? Nothing to install. <a href="#contact" data-app="signin">Sign in here</a>.
       </p>
     </div>
   </div>
 </section>
 
-<!-- ============================================================== CTA --- -->
-<section class="section" id="trial">
+<!-- ============================================================ 10 contact -->
+<section class="section section--tint" id="contact">
   <div class="wrap">
+    <div class="rulehead">
+      <span class="rulehead__no">10</span>
+      <span class="rulehead__label">Contact</span>
+      <span class="rulehead__line"></span>
+    </div>
+    <h2>Who you are calling</h2>
+    <p class="lede" style="margin-top:12px">
+      A small team in Pakistan. Ring the number and a person who knows the software
+      answers. If you would rather see it than read about it, we will walk one class
+      through with you on a call.
+    </p>
+
+    <div class="grid grid--3" style="margin-top:28px">
+      <div class="card">
+        <h3>Phone</h3>
+        <p><a id="contact-phone" hidden href="#" style="color:var(--brand);text-decoration:none"></a></p>
+      </div>
+      <div class="card">
+        <h3>WhatsApp</h3>
+        <p><a id="contact-whatsapp" hidden href="#" rel="noopener" style="color:var(--brand);text-decoration:none"></a></p>
+      </div>
+      <div class="card">
+        <h3>Email</h3>
+        <p><a id="contact-email" hidden href="#" style="color:var(--brand);text-decoration:none"></a></p>
+      </div>
+    </div>
+    <p id="contact-todo" hidden class="small" style="margin-top:14px;color:var(--due-800)">
+      Set CONTACT_PHONE, CONTACT_WHATSAPP and CONTACT_EMAIL in config.js on the
+      deployment. A page this careful with an unset phone number is worse than a
+      plain page with a real one.
+    </p>
+  </div>
+</section>
+
+<!-- ================================================================== cta --->
+<section class="band" style="padding:0">
+  <div class="wrap" style="padding-top:0;padding-bottom:0">
     <div class="cta">
       <h2>Try it with one class first</h2>
       <p>
         Fourteen days, no card, no commitment. Put one class in, run a month's
         challans, and see whether the numbers agree with your register.
       </p>
-      <a class="btn btn--primary btn--lg" href="#" data-app="signup"
-         style="background:#fff;color:var(--brand-900)">
-        Start your free trial
-      </a>
+      <div class="cta__row">
+        <a class="btn btn--primary btn--lg" href="#pricing" data-app="signup">Start your free trial</a>
+        <a class="btn btn--ghost btn--lg" href="#contact">Talk to a person first</a>
+      </div>
     </div>
   </div>
 </section>
 
-<!-- =========================================================== footer --- -->
-<footer class="foot" id="contact">
+</main>
+
+<!-- =============================================================== footer -->
+<footer class="foot">
   <div class="wrap">
     <div class="foot__grid">
       <div>
-        <a class="brand" href="/" style="margin-bottom:12px"><span class="brand__mark">S</span> School Manager</a>
-        <p class="small">School management software made in Pakistan, for Pakistani schools.</p>
-      </div>
-      <div>
-        <h4>Product</h4>
-        <a href="#how">How it works</a>
-        <a href="#features">Features</a>
-        <a href="#money">Fee control</a>
-        <a href="#pricing">Pricing</a>
-      </div>
-      <div>
-        <h4>Support</h4>
-        <a href="#faq">FAQ</a>
-        <a href="#download">Download</a>
-        <a href="#" data-app="signin">Sign in</a>
-        <!-- Where a school goes to see its own invoices, get a copy with our NTN
-             on it, and tell us about a transfer. It used to be a phone call. -->
-        <a href="#" data-app="billing">Manage your subscription</a>
-        <a href="#" data-app="portal">Parent portal</a>
-      </div>
-      <div>
-        <h4>Contact</h4>
-        <!-- Filled in from site/config.js, so a number changes in one place
-             instead of being hunted through the markup. Hidden until set. -->
-        <a id="contact-phone" href="#" hidden></a>
-        <a id="contact-whatsapp" href="#" hidden></a>
-        <a id="contact-email" href="#" hidden></a>
-        <p class="small" id="contact-todo">
-          Set CONTACT_PHONE, CONTACT_WHATSAPP and CONTACT_EMAIL in
-          <code>site/config.js</code>.
+        <div class="brand" style="color:#fff;margin-bottom:12px">
+          <svg class="seal" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+  <circle cx="12" cy="12" r="10.75" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <circle cx="12" cy="8" r="1" fill="currentColor"/>
+  <path fill="currentColor" fill-rule="evenodd" d="M6 14h12v5H6zm3 1h6v1H9zm0 2h6v1H9z"/>
+</svg>
+          <span>School Manager</span>
+        </div>
+        <p style="color:var(--on-navy-2);margin-bottom:14px">
+          School management software made in Pakistan, for Pakistani schools.
         </p>
+        <p class="foot__ur" lang="ur" dir="rtl">پاکستانی اسکولوں کے لیے بنایا گیا</p>
+        <div style="margin-top:16px">
+          <div class="gate gate--vignette">
+  <svg viewBox="0 0 130 76" aria-hidden="true">
+    <!-- board, posts and the three name rules: one weight, 1.25 -->
+    <g fill="none" stroke="currentColor" stroke-width="1.25">
+      <path d="M11 6h108v42H11z"/>
+      <path d="M38 48v22M92 48v22"/>
+      <path d="M27 18h76M37 27h56M48 36h34"/>
+    </g>
+    <!-- the ground line. See decision 3 for why this one is lighter. -->
+    <path d="M6 70H124" fill="none" stroke="currentColor" stroke-width="1"/>
+  </svg>
+</div>
+        </div>
+      </div>
+      <div>
+        <h3 class="foot__h">Product</h3>
+        <a href="#how">How it works</a>
+        <a href="#control">Fee control</a>
+        <a href="#box">Features</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#records">Your records</a>
+      </div>
+      <div>
+        <h3 class="foot__h">Support</h3>
+        <a href="#faq">Questions</a>
+        <ul style="list-style:none;margin:0;padding:0">
+          <li hidden><a href="#download">Download</a></li>
+        </ul>
+        <a href="#contact" data-app="signin">Sign in</a>
+        <a href="#contact" data-app="billing">Manage your subscription</a>
+        <a href="#contact" data-app="portal">Parent portal</a>
+      </div>
+      <div>
+        <h3 class="foot__h">Contact</h3>
+        <a href="#contact">Get in touch</a>
       </div>
     </div>
     <div class="foot__bottom">
-      <span>© <span id="yr">2026</span> School Manager</span>
-      <span>Made in Pakistan</span>
+      <span>&copy; <span id="yr">2026</span> School Manager</span>
+      <span>theschoolmanager.site</span>
     </div>
   </div>
 </footer>
 
-<script src="/config.js"></script>
-<script src="/wire.js"></script>
+<!-- ==================================================== sticky action bar
+     The highest revenue line item on the page and it did not exist. On a phone
+     the two things worth a tap follow the visitor down the page. The WhatsApp
+     button removes itself when no number is configured, rather than pointing at
+     wa.me with no recipient.
+     ==================================================== -->
+<div class="actionbar">
+  <a class="btn btn--primary" href="#pricing" data-app="signup">Start free trial</a>
+  <a class="btn btn--ghost" id="bar-whatsapp" href="#contact" aria-label="WhatsApp us">
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+      <path d="M17 9.6a7 7 0 0 1-10.3 6.2L3 16.8l1.1-3.6A7 7 0 1 1 17 9.6z" stroke-linejoin="round"/>
+    </svg>
+    WhatsApp
+  </a>
+</div>
+
+<script src="config.js"></script>
+<script src="wire.js"></script>
 </body>
 </html>

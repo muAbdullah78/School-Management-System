@@ -1,43 +1,135 @@
 /* =============================================================================
-   School Manager — marketing site
-   Hand-written CSS. No framework, no build step, no external requests: the
-   whole page is one HTML file plus this stylesheet, so it renders on a slow
-   3G connection in a Faisalabad staffroom as fast as it does on fibre.
+   School Manager, marketing site.
 
-   Type: Charter/Georgia for display, system sans for UI. A serif headline
-   reads as "an institution wrote this", which is the register schools trust.
+   Hand-written CSS. No framework, no build step, no external requests: the
+   whole page is one HTML file, this stylesheet and one small script, so it
+   renders on a slow 3G connection in a Faisalabad staffroom as fast as it does
+   on fibre. That constraint is the reason there are no webfonts and no
+   photography here, and it is a feature rather than a limitation.
+
+   ---------------------------------------------------------------------------
+   WHY THIS LOOKS THE WAY IT DOES
+
+   The previous version was diagnosed as looking dated, and the cause was not
+   the colour. Its display stack began with Charter, which is not installed on
+   Windows, so every school PC in Pakistan fell through to GEORGIA. Georgia
+   headlines are the 2010 to 2014 blog voice, and no amount of palette work
+   fixes that. The stack below asks Windows 11 for "Segoe UI Variable Display",
+   Microsoft's optical cut for large text, which is already installed, which
+   almost no site requests by name, and which is the largest free improvement
+   available on the target machine.
+
+   THE BRAND MOVE IS THE PAPER, NOT THE HUE, and that is a forced choice rather
+   than a preference. Three colours are already spoken for and mean exactly one
+   thing each throughout the product: green is money received, amber is money
+   due, red is genuinely wrong. A fourth semantic hue would collide with one of
+   them, and violet or aubergine collapses into the app's own indigo (measured
+   at 1.10:1 against #4338CA), which would read as a mistake rather than a
+   system. Teal desaturates toward blue-grey under deuteranopia and becomes
+   confusable with chrome. So the identity moves to the substrate: the page is
+   printed on warm stock, #F7F4EC, instead of the cool #F7F8FC screen white
+   every competitor uses. That is visible at a glance in a browser tab, where an
+   eleven degree hue shift is not.
+
+   COLOUR IS CONFINED TO SCREEN CHROME. Nothing that represents something the
+   product prints carries a brand fill. This is not modesty, it is arithmetic:
+   under gamma-space Rec.601, which most print drivers use, brand #4338CA lands
+   at 29.8 percent white and danger #B91C1C at 29.4, so they photocopy
+   identically. Under WCAG relative luminance they separate. Which pair collides
+   depends on the driver, and no palette survives every path, so instead the
+   drawn documents use ink on white with rules for structure, exactly as
+   ChallanPrint.tsx already does.
+
+   NO DARK MODE, deliberately. Three of the four candidate directions promised
+   one and all three failed the arithmetic, one shipping a dark ground and a
+   dark tint band that measured 1.06:1 against each other, which is the same
+   colour. A marketing page that is wrong in dark mode is worse than one that is
+   honestly light only.
    ============================================================================= */
 
 :root {
-  --ink:        #12142b;
-  --ink-2:      #3b3f5c;
-  --ink-3:      #6b7091;
-  --line:       #e4e6f0;
-  --paper:      #ffffff;
-  --paper-2:    #f7f8fc;
+  /* --- the ground ------------------------------------------------------- */
+  --paper:      #F7F4EC;   /* warm printed stock. The actual brand move. */
+  --paper-2:    #EFEADD;   /* alternating section band and table zebra */
+  --card:       #FFFFFF;   /* only drawn documents and form fields */
 
-  --brand:      #4338ca;
-  --brand-600:  #4f46e5;
-  --brand-700:  #3730a3;
-  --brand-900:  #1e1b4b;
-  --brand-tint: #eef2ff;
+  /* --- rules. Three weights, and the third is structural ---------------- */
+  --rule:       #D9D2C2;   /* decorative hairline, separation only */
+  --rule-2:     #C6BEA9;   /* table row rules, internal document ruling */
+  --rule-3:     #8A8271;   /* structural rules and EVERY form field border.
+                              3.47:1 on paper, so a bare input is still a
+                              visible control under WCAG 1.4.11. */
 
-  --money:      #047857;
-  --money-tint: #ecfdf5;
-  --due:        #b45309;
-  --due-tint:   #fffbeb;
-  --danger:     #b91c1c;
+  /* --- ink -------------------------------------------------------------- */
+  --ink:        #14171C;   /* headlines, figures, table data. 16.34:1 on paper */
+  --ink-2:      #40454E;   /* body copy and ledes. 8.77:1 on paper */
+  --ink-3:      #545965;   /* labels, captions, column heads. 6.42:1 on paper */
 
-  --radius:     14px;
-  --shadow:     0 1px 2px rgba(18,20,43,.04), 0 8px 24px -12px rgba(18,20,43,.18);
-  --shadow-lg:  0 24px 60px -24px rgba(18,20,43,.35);
+  /* --- institutional blue, for structure rather than interaction -------- */
+  --navy:       #20315E;   /* labels, section numbers, seals on light ground */
+  --navy-deep:  #17244A;   /* full-bleed bands, footer, ledger ground */
+  --on-navy-2:  #AFBDD6;   /* captions and column heads on navy. 7.98:1 */
 
+  /* --- interactive. Taken byte for byte from web/tailwind.config.js so the
+         site and the app share a hex and the login screen is not a different
+         product from the dashboard behind it. ------------------------------ */
+  --brand:      #4338CA;   /* brand.700. links, primary text-links */
+  --brand-600:  #4F46E5;   /* brand.600. primary button fill */
+  --brand-400:  #818CF8;   /* brand.400. accent on dark panels only */
+  --brand-950:  #1E1B4B;   /* brand.950. the auth panel ground */
+
+  /* --- semantics. Unchanged from the app on purpose --------------------- */
+  --money:      #047857;   /* fills, borders, icons on light ground */
+  --money-800:  #065F46;   /* the ONLY green permitted on text. 6.99:1 */
+  --money-dark: #6EE7B7;   /* money on the navy bands. 9.93:1 */
+  --due:        #B45309;   /* fills and icons only, never text */
+  --due-800:    #92400E;   /* the ONLY amber permitted on text */
+  --due-dark:   #FCD34D;   /* due on the navy bands. 10.50:1 */
+  --danger:     #B91C1C;
+
+  /* --- focus. There were ZERO focus declarations in the previous 295 lines,
+         which means keyboard users had no visible position anywhere on the
+         page. Two tokens because one ring cannot work on both grounds. --- */
+  --focus-light: #4338CA;  /* 7.19:1 on paper */
+  --focus-dark:  #FFFFFF;  /* 15.13:1 on navy-deep */
+
+  --radius:     10px;
+  --radius-lg:  14px;
   --wrap:       1120px;
+
+  /* Type. Bound to h1 and h2 ONLY. Segoe UI Variable Display is an optical cut
+     for roughly 24pt and up: at 17px it renders thin and over-tight on Windows
+     11 while rendering normally on Windows 10, which would make the two
+     majority platforms disagree. So h3, labels and the price figure stay on the
+     text stack. */
+  --display: "Segoe UI Variable Display", -apple-system, BlinkMacSystemFont,
+             "Segoe UI", Roboto, "Liberation Sans", Arial, sans-serif;
+  --text:    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+             "Liberation Sans", Arial, sans-serif;
+  --mono:    ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas,
+             "Liberation Mono", monospace;
 }
 
 * { box-sizing: border-box; }
 
-html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+/* The hidden attribute has to win, and by default it does not.
+   The UA sheet's [hidden] { display: none } is a single type-less rule, so any
+   class that sets display beats it. wire.js hides the sticky bar's WhatsApp
+   button and the mobile menu's Download entry with el.hidden = true, and .btn
+   sets display:inline-flex while .navmenu__panel a sets display:block, so both
+   stayed visible: measured with the repo's blank config, hiddenAttr true and
+   computed display inline-flex. One reset fixes those two and every future
+   JS-driven hide. */
+[hidden] { display: none !important; }
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+  /* SC 2.4.11: keyboard focus must not be obscured. scroll-margin-top on the
+     sections handles anchor jumps, but it does nothing when the browser scrolls
+     to a focused element, which lands under the 64px sticky nav. */
+  scroll-padding-top: 84px;
+}
 
 /* The nav is sticky, so an anchor jump would otherwise land with the heading
    hidden underneath it. Every linkable section reserves the nav's height. */
@@ -47,249 +139,2826 @@ body {
   margin: 0;
   background: var(--paper);
   color: var(--ink);
-  font: 400 17px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-        "Helvetica Neue", Arial, sans-serif;
+  font: 400 16px/1.58 var(--text);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-h1, h2, h3, .display {
-  font-family: Charter, "Bitstream Charter", "Sitka Text", Cambria, Georgia, serif;
-  font-weight: 600;
-  letter-spacing: -0.015em;
-  line-height: 1.15;
+h1, h2 {
+  font-family: var(--display);
+  font-weight: 700;
   margin: 0;
 }
-
-h1 { font-size: clamp(2.1rem, 5vw, 3.4rem); }
-h2 { font-size: clamp(1.6rem, 3.4vw, 2.35rem); }
-h3 { font-size: 1.12rem; letter-spacing: -0.005em; }
-
+h1 {
+  font-size: clamp(2rem, 4.2vw, 3rem);
+  letter-spacing: -0.028em;
+  line-height: 1.06;
+  text-wrap: balance;
+  max-inline-size: 20ch;
+}
+h2 {
+  font-size: clamp(1.45rem, 2.6vw, 1.9rem);
+  letter-spacing: -0.022em;
+  line-height: 1.12;
+  text-wrap: balance;
+}
+h3 {
+  font-family: var(--text);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+  margin: 0;
+}
 p { margin: 0; }
 a { color: inherit; }
 
+/* Every figure on this page is money or a count, and money in a column that
+   does not line up looks like a rounding error. font-variant-numeric is
+   written ALONE: font-feature-settings is the low-level property and wins for
+   the features it names, so adding "tnum" beside this would silently discard
+   the lnum request. */
+.tnum, .price__amt, .doc td, .doc th, .recon td, .recon th, .spec__v {
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
 .wrap { max-width: var(--wrap); margin: 0 auto; padding: 0 24px; }
-.section { padding: 88px 0; }
-.section--tint { background: var(--paper-2); border-block: 1px solid var(--line); }
+.section { padding: 84px 0; }
+.section--tint { background: var(--paper-2); }
+.section--tint + .section--tint { border-top: 1px solid var(--rule); }
 
-.eyebrow {
-  display: inline-block;
-  font-size: .74rem;
-  font-weight: 700;
-  letter-spacing: .11em;
-  text-transform: uppercase;
-  color: var(--brand);
-  margin-bottom: 14px;
+.lede {
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  max-width: 58ch;
 }
-
-.lede { font-size: 1.12rem; color: var(--ink-2); max-width: 62ch; }
 .muted { color: var(--ink-3); }
-.small { font-size: .9rem; }
+.small { font-size: 14px; }
 
-/* ------------------------------------------------------------------ nav --- */
+/* ---------------------------------------------------------------- eyebrow --
+   A numbered rule rather than a coloured word. The number gives the page a
+   spine you can feel while scrolling, which is what the old uniform "eyebrow,
+   h2, lede, card grid" rhythm never had. */
+.rulehead {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.rulehead__no {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--navy);
+  flex: 0 0 auto;
+}
+.rulehead__label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  flex: 0 0 auto;
+}
+.rulehead__line {
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--rule-2);
+}
+/* NOT --due-dark. Amber means money due throughout the product, and using it
+   for a section number made 03 the only number on the page in the colour that
+   means arrears. brand-400 matches the accent precedent on the auth panel. */
+.on-navy .rulehead__no { color: var(--brand-400); }
+.on-navy .rulehead__label { color: var(--on-navy-2); }
+.on-navy .rulehead__line { background: rgba(255, 255, 255, 0.22); }
+
+/* ------------------------------------------------------------ skip link ---
+   The first focusable element on the page. Off screen until focused, which is
+   the only correct way to do this: display:none would make it unreachable and
+   a permanently visible one gets deleted by the next person. */
+.skip {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  background: var(--brand-600);
+  color: #fff;
+  padding: 12px 18px;
+  border-radius: 0 0 var(--radius) 0;
+  font-weight: 600;
+  text-decoration: none;
+}
+.skip:focus {
+  left: 0;
+}
+/* The main landmark takes focus from the skip link, so it must not draw a ring
+   around the entire page. */
+main:focus { outline: none; }
+
+/* Visually hidden but read aloud. Used for the table captions that name a
+   figure a sighted reader gets from the heading above it. */
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ----------------------------------------------------------------- focus ---
+   One rule, both grounds. Applied with :focus-visible so a mouse click does
+   not draw a ring, and with a hard offset so it never sits on the glyphs. */
+:where(a, button, summary, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus-light);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+.on-navy :where(a, button, summary, input, [tabindex]):focus-visible,
+.band :where(a, button, summary, input, [tabindex]):focus-visible,
+/* .foot is a navy ground too and was missing here, so every footer focus ring
+   drew indigo on navy at 1.91:1 against the 3:1 SC 1.4.11 wants. Ten focusable
+   links live in the footer, which is the most of any landmark on the page. */
+.foot :where(a, button, summary, input, [tabindex]):focus-visible {
+  outline-color: var(--focus-dark);
+}
+
+/* ------------------------------------------------------------------- nav ---
+   The old stylesheet set .nav__links { display: none } below 700px with
+   nothing in its place, so a phone visitor had no route to pricing at all.
+   Most principals open this on a phone, which made it the worst defect on the
+   page and it was not on anybody's list.
+
+   Two replacements, deliberately: a <details> disclosure, which is keyboard
+   accessible and needs no JavaScript, and the sticky action bar at the bottom
+   carrying the two things worth a tap. */
 .nav {
-  position: sticky; top: 0; z-index: 50;
-  background: rgba(255,255,255,.86);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  background: rgba(247, 244, 236, 0.92);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--rule);
 }
-.nav__in { display: flex; align-items: center; gap: 28px; height: 66px; }
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: -.01em; text-decoration: none; }
-.brand__mark {
-  width: 30px; height: 30px; border-radius: 9px;
-  background: linear-gradient(140deg, var(--brand-600), var(--brand-900));
-  color: #fff; display: grid; place-items: center;
-  font-size: 15px; font-weight: 700;
+.nav__in { display: flex; align-items: center; gap: 24px; height: 64px; }
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  color: var(--ink);
 }
-.nav__links { display: flex; gap: 26px; margin-left: auto; }
-.nav__links a { text-decoration: none; font-size: .95rem; color: var(--ink-2); }
-.nav__links a:hover { color: var(--brand); }
+.brand svg { display: block; }
+.nav__links { display: flex; gap: 24px; margin-left: auto; align-items: center; }
+.nav__links a {
+  text-decoration: none;
+  font-size: 15px;
+  color: var(--ink-2);
+  padding: 4px 0;
+  border-bottom: 1px solid transparent;
+}
+.nav__links a:hover { color: var(--brand); border-bottom-color: var(--brand); }
+.nav__cta { display: flex; gap: 10px; align-items: center; margin-left: 8px; }
 
-/* ---------------------------------------------------------------- button -- */
+/* The mobile disclosure. Hidden above 860px, where the real links fit. */
+.navmenu { display: none; margin-left: auto; }
+.navmenu > summary {
+  list-style: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--rule-3);
+  border-radius: var(--radius);
+  font-size: 15px;
+  font-weight: 600;
+  background: var(--card);
+}
+.navmenu > summary::-webkit-details-marker { display: none; }
+.navmenu[open] > summary { border-color: var(--brand); color: var(--brand); }
+.navmenu__panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 64px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--rule-3);
+  border-top: 1px solid var(--rule);
+  padding: 8px 24px 18px;
+  box-shadow: 0 18px 30px -20px rgba(20, 23, 28, 0.35);
+}
+.navmenu__panel a {
+  display: block;
+  padding: 13px 0;
+  font-size: 16px;
+  text-decoration: none;
+  color: var(--ink);
+  border-bottom: 1px solid var(--rule);
+}
+.navmenu__panel a:last-of-type { border-bottom: 0; }
+
+/* ---------------------------------------------------------------- button ---
+   No transform lift. A 1px rise under the cursor is the tell of a template,
+   and on the five year old office laptop this is built for it repaints the
+   shadow on every hover. Pressure is shown by darkening the fill, which is
+   what a physical button does. */
 .btn {
-  display: inline-flex; align-items: center; gap: 9px;
-  padding: 12px 20px; border-radius: 11px;
-  font-size: .96rem; font-weight: 600; text-decoration: none;
-  border: 1px solid transparent; cursor: pointer;
-  transition: transform .12s ease, box-shadow .12s ease, background .12s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 44px;
+  padding: 11px 20px;
+  border-radius: var(--radius);
+  font-family: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
-.btn:hover { transform: translateY(-1px); }
-.btn--primary { background: var(--brand-600); color: #fff; box-shadow: var(--shadow); }
-.btn--primary:hover { background: var(--brand-700); }
-.btn--ghost { background: #fff; color: var(--ink); border-color: var(--line); }
+.btn--primary { background: var(--brand-600); color: #fff; }
+.btn--primary:hover { background: var(--brand); }
+.btn--ghost { background: var(--card); color: var(--ink); border-color: var(--rule-3); }
 .btn--ghost:hover { border-color: var(--brand); color: var(--brand); }
-.btn--lg { padding: 15px 26px; font-size: 1.02rem; }
-
-/* ----------------------------------------------------------------- hero --- */
-.hero {
-  position: relative; overflow: hidden;
-  background:
-    radial-gradient(1200px 480px at 12% -10%, #eef2ff 0%, transparent 60%),
-    radial-gradient(900px 420px at 92% 4%, #ecfdf5 0%, transparent 62%);
-  padding: 76px 0 0;
+.btn--lg { min-height: 50px; padding: 14px 26px; font-size: 16px; }
+.btn[aria-disabled="true"] { opacity: 0.62; cursor: default; }
+.btn[aria-disabled="true"]:hover { background: var(--card); border-color: var(--rule-3); color: var(--ink); }
+.on-navy .btn--ghost, .band .btn--ghost {
+  background: transparent;
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.42);
 }
+.on-navy .btn--ghost:hover, .band .btn--ghost:hover {
+  border-color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ------------------------------------------------------------------ hero ---
+   Letterhead left, a drawn receipt right. The receipt is the whole argument of
+   the page: a principal recognises a fee receipt instantly, and no competitor
+   is showing one. */
+.hero { padding: 68px 0 76px; position: relative; overflow: hidden; }
 .hero__grid { display: grid; gap: 44px; align-items: center; }
-@media (min-width: 940px) { .hero__grid { grid-template-columns: 1.02fr .98fr; } }
+@media (min-width: 940px) { .hero__grid { grid-template-columns: 1.04fr 0.96fr; } }
+.hero h1 { margin-bottom: 18px; }
+.hero h1 em { font-style: normal; color: var(--navy); }
+.hero__cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
+.hero__note { margin-top: 16px; font-size: 14px; color: var(--ink-3); }
 
-.hero h1 { margin-bottom: 20px; }
-.hero h1 em { font-style: normal; color: var(--brand); }
-.hero__cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
-.hero__note { margin-top: 18px; font-size: .89rem; color: var(--ink-3); }
+/* The letterhead rule above the headline, which is what makes the left column
+   read as a document rather than a hero. */
+.letterhead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 14px;
+  margin-bottom: 26px;
+  border-bottom: 2px solid var(--navy);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--navy);
+}
+.letterhead span:last-child { margin-left: auto; color: var(--ink-3); font-weight: 600; }
 
-.trustline {
-  display: flex; flex-wrap: wrap; gap: 10px 26px;
-  margin-top: 40px; padding-top: 26px; border-top: 1px solid var(--line);
-  font-size: .88rem; color: var(--ink-3);
+/* ------------------------------------------------------------ spec strip ---
+   A deliberate trough. After the tallest block on the page, three facts in
+   tabular figures and nothing else. */
+.spec {
+  border-top: 1px solid var(--rule-2);
+  border-bottom: 1px solid var(--rule-2);
+  background: var(--paper-2);
 }
-.trustline b { color: var(--ink); font-weight: 600; }
+.spec__in {
+  display: grid;
+  gap: 0;
+  /* Pinned rather than auto-fit: four cells in an auto-fit list resolve to
+     three tracks plus an orphan across a whole band of widths, and the orphan
+     drags a stray vertical hairline under it. Two and four both divide four. */
+  grid-template-columns: repeat(2, 1fr);
+}
+@media (min-width: 880px) { .spec__in { grid-template-columns: repeat(4, 1fr); } }
+.spec__cell { padding: 22px 24px; border-left: 1px solid var(--rule); }
+.spec__cell:first-child { border-left: 0; }
+.spec__k {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  display: block;
+  margin-bottom: 6px;
+}
+.spec__v { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+.spec__v small { font-size: 14px; font-weight: 500; color: var(--ink-3); }
 
-/* ------------------------------------------------------------ app mockup -- */
-/* A real rendering of the product in HTML/CSS rather than a stock photo.
-   It stays crisp at any zoom and weighs nothing. */
-.shot {
-  border-radius: 16px; overflow: hidden;
-  box-shadow: var(--shadow-lg);
-  border: 1px solid #d9dcea;
-  background: #fff;
+/* ------------------------------------------------------------ navy bands ---
+   The page's peaks. Ledger ruling drawn in CSS: horizontal hairlines at the
+   pitch of a real account book, which costs nothing and is the cheapest way to
+   make a dark band read as paper rather than as a coloured box. */
+.band {
+  background: var(--navy-deep);
+  color: #fff;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.055) 0,
+    rgba(255, 255, 255, 0.055) 1px,
+    transparent 1px,
+    transparent 30px
+  );
 }
-.shot__bar {
-  display: flex; align-items: center; gap: 7px;
-  padding: 10px 13px; background: #f1f2f8; border-bottom: 1px solid var(--line);
-}
-.dot { width: 10px; height: 10px; border-radius: 50%; background: #cfd3e4; }
-.shot__url {
-  margin-left: 8px; font-size: .72rem; color: var(--ink-3);
-  background: #fff; border: 1px solid var(--line); border-radius: 6px;
-  padding: 3px 10px;
-}
-.shot__body { display: grid; grid-template-columns: 148px 1fr; min-height: 330px; }
-.shot__side {
-  background: linear-gradient(180deg, var(--brand-900), #171544);
-  padding: 14px 10px; color: #c7d2fe;
-}
-.shot__side b { display: block; color: #fff; font-size: .78rem; margin-bottom: 12px; padding: 0 8px; }
-.shot__nav { display: flex; flex-direction: column; gap: 3px; }
-.shot__nav span {
-  font-size: .74rem; padding: 7px 9px; border-radius: 7px; opacity: .72;
-}
-.shot__nav span.on { background: rgba(255,255,255,.16); color: #fff; opacity: 1; font-weight: 600; }
-.shot__main { padding: 16px; background: #fafbfe; }
+.band h2, .band h3 { color: #fff; }
+.band .lede, .band p { color: #D6DEEE; }
+.band .muted { color: var(--on-navy-2); }
+.band a { color: #fff; }
 
-.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
-.tile { border-radius: 11px; padding: 11px; color: #fff; }
-.tile b { display: block; font-size: 1.02rem; line-height: 1.25; white-space: nowrap; }
-.tile span { font-size: .62rem; opacity: .85; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
-.tile--money { background: linear-gradient(140deg, #10b981, #047857); }
-.tile--due   { background: linear-gradient(140deg, #f59e0b, #b45309); }
-.tile--brand { background: linear-gradient(140deg, #6366f1, #4338ca); }
-
-.rows { margin-top: 12px; background: #fff; border: 1px solid var(--line); border-radius: 11px; overflow: hidden; }
-.row { display: flex; align-items: center; justify-content: space-between; padding: 9px 12px; font-size: .78rem; }
-.row + .row { border-top: 1px solid #f0f1f7; }
-.row b { font-weight: 600; }
-.pill { font-size: .66rem; padding: 2px 8px; border-radius: 99px; font-weight: 600; }
-.pill--due { background: var(--due-tint); color: var(--due); }
-.pill--paid { background: var(--money-tint); color: var(--money); }
-
-/* -------------------------------------------------------------- features -- */
-.grid { display: grid; gap: 22px; }
-.grid--3 { grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); }
-.grid--2 { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+/* ------------------------------------------------------------------ card ---
+   One hairline, no shadow, square-ish corners. Removing the shadow is what
+   stops every section reading at the same visual weight, and it is also why
+   the hairlines have to be right: nothing is left to hide a misalignment. */
+.grid { display: grid; gap: 20px; }
+.grid--3 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.grid--2 { grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); }
 
 .card {
-  background: #fff; border: 1px solid var(--line);
-  border-radius: var(--radius); padding: 26px;
-  box-shadow: var(--shadow);
+  background: var(--card);
+  border: 1px solid var(--rule-2);
+  border-radius: var(--radius);
+  padding: 22px;
 }
-.card h3 { margin-bottom: 9px; }
-.card p { color: var(--ink-2); font-size: .97rem; }
+.card h3 { margin-bottom: 8px; }
+.card p { color: var(--ink-2); font-size: 15px; }
 .card__icon {
-  width: 40px; height: 40px; border-radius: 11px;
-  display: grid; place-items: center; margin-bottom: 15px;
-  background: var(--brand-tint); color: var(--brand);
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 14px;
+  color: var(--navy);
+  border: 1px solid var(--rule-2);
+  border-radius: 8px;
 }
-.card__icon svg { width: 20px; height: 20px; }
-.card__icon--money { background: var(--money-tint); color: var(--money); }
-.card__icon--due { background: var(--due-tint); color: var(--due); }
-
-/* ---------------------------------------------------------------- proof --- */
-.proof {
-  border-left: 3px solid var(--brand);
-  padding: 4px 0 4px 22px;
-  margin: 30px 0;
+.card__icon svg { width: 18px; height: 18px; }
+.band .card {
+  background: rgba(255, 255, 255, 0.045);
+  border-color: rgba(255, 255, 255, 0.16);
 }
-.proof p { font-size: 1.06rem; color: var(--ink); }
+.band .card p { color: #C9D3E6; }
+.band .card__icon { color: var(--brand-400); border-color: rgba(255, 255, 255, 0.22); }
 
-.split { display: grid; gap: 40px; align-items: start; }
+/* --------------------------------------------------------------- artefact --
+   The drawn documents. Always true white on the warm ground, so paper reads as
+   paper by contrast, and always ink on white inside, never a brand fill, so
+   the object photocopies exactly as the real one does. */
+.doc {
+  background: var(--card);
+  border: 1px solid var(--rule-3);
+  border-radius: 4px;
+  padding: 0;
+  overflow: hidden;
+}
+.doc svg { display: block; width: 100%; height: auto; }
+.doc__cap {
+  font-size: 13px;
+  color: var(--ink-3);
+  margin-top: 10px;
+  max-width: 46ch;
+}
+.band .doc__cap { color: var(--on-navy-2); }
+
+/* A slight paper lift, done with a stacked edge rather than a blur, so it
+   reads as a sheet on a desk instead of a floating UI card. */
+.doc--lift {
+  box-shadow: 3px 3px 0 0 var(--paper-2), 3px 3px 0 1px var(--rule-2);
+}
+.band .doc--lift { box-shadow: 4px 4px 0 0 rgba(0, 0, 0, 0.22); }
+
+/* ------------------------------------------------------------- checklist ---
+   Rule-separated rows rather than bulleted text, so the list has the density
+   of a specification. */
+.checklist { list-style: none; margin: 18px 0 0; padding: 0; }
+.checklist li {
+  display: flex;
+  gap: 12px;
+  padding: 13px 0;
+  border-top: 1px solid var(--rule);
+  font-size: 15px;
+  color: var(--ink-2);
+}
+.checklist li:last-child { border-bottom: 1px solid var(--rule); }
+.checklist b { color: var(--ink); font-weight: 600; }
+.checklist svg { flex: 0 0 18px; width: 18px; height: 18px; color: var(--money-800); margin-top: 2px; }
+.band .checklist li { border-color: rgba(255, 255, 255, 0.16); color: #D6DEEE; }
+.band .checklist b { color: #fff; }
+.band .checklist svg { color: var(--money-dark); }
+
+.split { display: grid; gap: 38px; align-items: start; }
 @media (min-width: 900px) { .split { grid-template-columns: 1fr 1fr; } }
+@media (min-width: 900px) { .split--wide { grid-template-columns: 0.86fr 1.14fr; } }
 
-.checklist { list-style: none; margin: 18px 0 0; padding: 0; display: grid; gap: 12px; }
-.checklist li { display: flex; gap: 11px; font-size: .98rem; color: var(--ink-2); }
-.checklist svg { flex: 0 0 19px; width: 19px; height: 19px; color: var(--money); margin-top: 2px; }
-
-/* -------------------------------------------------------------- pricing --- */
-.prices { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); align-items: stretch; }
-.price {
-  background: #fff; border: 1px solid var(--line); border-radius: var(--radius);
-  padding: 28px; display: flex; flex-direction: column;
+/* ------------------------------------------------------------------ proof --
+   A margin note, set against a structural rule. */
+.proof {
+  border-left: 3px solid var(--navy);
+  padding: 2px 0 2px 20px;
+  margin: 26px 0;
 }
-.price--hot { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-tint), var(--shadow); position: relative; }
-.price__tag {
-  position: absolute; top: -11px; left: 28px;
-  background: var(--brand-600); color: #fff;
-  font-size: .68rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
-  padding: 4px 11px; border-radius: 99px;
-}
-.price h3 { font-size: 1rem; color: var(--ink-3); font-family: inherit; font-weight: 600; letter-spacing: 0; }
-.price__amt { font-size: 2.4rem; font-weight: 700; letter-spacing: -.02em; margin: 10px 0 2px; font-family: Charter, Georgia, serif; }
-.price__amt small { font-size: .95rem; font-weight: 500; color: var(--ink-3); }
-.price__cap { font-size: .9rem; color: var(--ink-3); margin-bottom: 18px; }
-.price ul { list-style: none; margin: 0 0 22px; padding: 0; display: grid; gap: 9px; font-size: .93rem; color: var(--ink-2); }
-.price ul li::before { content: "→"; color: var(--brand); margin-right: 9px; }
-.price .btn { margin-top: auto; justify-content: center; }
+.proof p { font-size: 16px; color: var(--ink); }
+.band .proof { border-left-color: var(--due-dark); }
+.band .proof p { color: #fff; }
 
-/* ------------------------------------------------------------------ faq --- */
-details {
-  border-bottom: 1px solid var(--line);
-  padding: 20px 0;
+/* -------------------------------------------------------- reconciliation ---
+   A real table, ruled, with tabular figures and a shortfall bar. Below 700px
+   it becomes one block per class, because a five column money table at 360px
+   is unreadable however it is scrolled. */
+.recon { width: 100%; border-collapse: collapse; font-size: 14px; }
+.recon th, .recon td { padding: 11px 12px; text-align: right; }
+.recon th:first-child, .recon td:first-child { text-align: left; }
+.recon thead th {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  border-bottom: 1px solid var(--rule-3);
 }
-summary {
-  cursor: pointer; font-weight: 600; font-size: 1.03rem;
-  list-style: none; display: flex; justify-content: space-between; gap: 16px;
+.recon tbody td { border-bottom: 1px solid var(--rule); }
+.recon tbody tr:last-child td { border-bottom: 1px solid var(--rule-3); }
+.recon .gap-none { color: var(--ink-3); }
+.recon .gap-short { color: var(--due-800); font-weight: 600; }
+.band .recon thead th { color: var(--on-navy-2); border-bottom-color: rgba(255, 255, 255, 0.4); }
+.band .recon tbody td { border-bottom-color: rgba(255, 255, 255, 0.14); color: #E6EBF5; }
+.band .recon tbody tr:last-child td { border-bottom-color: rgba(255, 255, 255, 0.4); }
+.band .recon .gap-none { color: var(--on-navy-2); }
+.band .recon .gap-short { color: var(--due-dark); }
+
+/* The bar is a sighted-only reinforcement of a number that is already printed
+   beside it, so it needs no accessible name of its own. */
+.bar { display: block; height: 5px; flex: 1 1 auto; min-width: 0; background: rgba(255, 255, 255, 0.16); border-radius: 3px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--due-dark); }
+
+/* --------------------------------------------------------------- pricing ---
+   A rate card, not four floating boxes. One bordered table on desktop that
+   becomes stacked rows on mobile. */
+.rates { border: 1px solid var(--rule-3); border-radius: var(--radius); background: var(--card); overflow: hidden; }
+.rates__row {
+  display: grid;
+  gap: 0;
+  grid-template-columns: 1.1fr 0.9fr 1.4fr auto;
+  align-items: center;
+  padding: 20px 22px;
+  border-top: 1px solid var(--rule-2);
 }
-summary::-webkit-details-marker { display: none; }
-summary::after { content: "+"; color: var(--brand); font-size: 1.35rem; line-height: 1; }
-details[open] summary::after { content: "–"; }
-details p { margin-top: 12px; color: var(--ink-2); max-width: 74ch; }
-
-/* ------------------------------------------------------------------ cta --- */
-.cta {
-  background: linear-gradient(150deg, var(--brand-900), #2a2668 60%, #1c1a4d);
-  color: #fff; border-radius: 20px; padding: 54px 40px; text-align: center;
+.rates__row:first-child { border-top: 0; }
+.rates__row--hot { background: #FBFAF6; }
+.rates__name { font-size: 17px; font-weight: 600; }
+.rates__tag {
+  display: inline-block;
+  margin-left: 9px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--navy);
+  border: 1px solid var(--navy);
+  border-radius: 99px;
+  padding: 2px 8px;
+  vertical-align: 2px;
 }
-.cta h2 { color: #fff; margin-bottom: 14px; }
-.cta p { color: #c7d2fe; max-width: 56ch; margin: 0 auto 26px; }
+.rates__cap { font-size: 14px; color: var(--ink-3); }
+.price__amt {
+  font-family: var(--text);
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+.price__amt small { font-size: 14px; font-weight: 500; color: var(--ink-3); letter-spacing: 0; }
+.rates__yearly { font-size: 14px; color: var(--ink-3); }
 
-/* --------------------------------------------------------------- footer --- */
-.foot { border-top: 1px solid var(--line); padding: 46px 0 60px; font-size: .92rem; color: var(--ink-3); }
-.foot__grid { display: grid; gap: 30px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
-.foot h4 { font-size: .78rem; text-transform: uppercase; letter-spacing: .09em; color: var(--ink); margin: 0 0 12px; }
-.foot a { display: block; text-decoration: none; margin-bottom: 8px; }
-.foot a:hover { color: var(--brand); }
-.foot__bottom { margin-top: 36px; padding-top: 22px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; }
+/* ------------------------------------------------------------------- faq ---*/
+details.q { border-bottom: 1px solid var(--rule); padding: 18px 0; }
+details.q > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 16px;
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 28px;
+  align-items: center;
+}
+details.q > summary::-webkit-details-marker { display: none; }
+/* Drawn on a real span rather than with pseudo-element content. Chrome folds
+   ::after content into the accessible name, so every question used to be
+   announced with a trailing plus sign. The span carries aria-hidden. */
+.q__m { flex: 0 0 auto; position: relative; width: 14px; height: 14px; }
+.q__m::before, .q__m::after {
+  content: "";
+  position: absolute;
+  background: var(--navy);
+}
+.q__m::before { left: 0; right: 0; top: 6px; height: 2px; }
+.q__m::after { top: 0; bottom: 0; left: 6px; width: 2px; }
+details.q[open] .q__m::after { display: none; }
+details.q p { margin-top: 11px; color: var(--ink-2); max-width: 72ch; font-size: 15px; }
 
-/* --------------------------------------------------------------- tables --- */
-.compare { width: 100%; border-collapse: collapse; font-size: .95rem; }
-.compare th, .compare td { text-align: left; padding: 13px 14px; border-bottom: 1px solid var(--line); }
-.compare th { font-size: .76rem; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3); font-weight: 700; }
-.compare td:first-child { font-weight: 500; }
-.compare .yes { color: var(--money); font-weight: 600; }
-.compare .no  { color: var(--ink-3); }
+/* ------------------------------------------------------------------- cta ---*/
+.cta { padding: 62px 40px; text-align: center; }
+.cta h2 { color: #fff; margin: 0 auto 12px; max-width: 26ch; }
+.cta p { color: #C9D3E6; max-width: 54ch; margin: 0 auto 24px; }
+.cta__row { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+
+/* ---------------------------------------------------------------- footer ---*/
+.foot { background: var(--navy-deep); color: var(--on-navy-2); padding: 52px 0 40px; font-size: 14px; }
+/* Same 3+1 orphan as the spec strip, for the same reason. */
+.foot__grid { display: grid; gap: 28px; grid-template-columns: repeat(2, 1fr); }
+@media (min-width: 880px) { .foot__grid { grid-template-columns: repeat(4, 1fr); } }
+.foot h4, .foot__h {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: #fff;
+  margin: 0 0 12px;
+  font-weight: 700;
+}
+.foot a { display: block; text-decoration: none; margin-bottom: 9px; color: var(--on-navy-2); }
+.foot a:hover { color: #fff; text-decoration: underline; }
+.foot__bottom {
+  margin-top: 34px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.16);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+}
+/* The Urdu line had no font-family, so it inherited --text and fell through
+   every Latin face to a default serif. Nastaliq is calligraphic and diagonal
+   and a Naskh or serif fallback is not merely a different look, it is harder to
+   read. Applied by language rather than by class so any future Urdu inherits
+   it. line-height stays generous because Nastaliq needs the descender room. */
+.foot__ur,
+[lang="ur"], [lang="ar"], [lang="fa"], [lang="ps"], [lang="sd"] {
+  font-family: "Noto Nastaliq Urdu", "Jameel Noori Nastaleeq", "Urdu Typesetting",
+               "Noto Naskh Arabic", "Segoe UI", Tahoma, sans-serif;
+  /* Tracking applied to a connected script breaks the letterforms. */
+  letter-spacing: normal;
+}
+.foot__ur { font-size: 15px; line-height: 1.9; color: #fff; }
+
+/* --------------------------------------------------------- sticky action ---
+   The highest revenue line item on the page and it did not exist. On a phone
+   the two things worth a tap follow the visitor down the page. */
+.actionbar { display: none; }
+@media (max-width: 859px) {
+  .actionbar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 70;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+    background: rgba(247, 244, 236, 0.96);
+    backdrop-filter: blur(10px);
+    border-top: 1px solid var(--rule-3);
+  }
+  .actionbar .btn { width: 100%; }
+  /* Room for the bar, so the footer's last link is never under it.
+     Measured 92.4px at 320 to 360px, where the primary label wraps to two
+     lines, against the 76px this used to reserve: the last footer link sat
+     under the bar on exactly the narrowest phones. Reserving the two-line
+     height rather than the one-line height, since over-reserving costs a
+     little whitespace and under-reserving costs a tap target. */
+  body { padding-bottom: 100px; }
+  /* SC 2.4.11 again, at the other edge: without this, tabbing to anything near
+     the bottom scrolls it to just above the fold and the fixed bar covers it. */
+  html { scroll-padding-bottom: 100px; }
+  /* The label is short enough not to wrap at 320px. The long form stays in the
+     hero, where there is room for it. */
+  .actionbar .btn { white-space: nowrap; }
+}
+
+/* --------------------------------------------------------------- tables ---*/
 .table-scroll { overflow-x: auto; }
+.compare { width: 100%; border-collapse: collapse; font-size: 15px; }
+.compare th, .compare td { text-align: left; padding: 12px 13px; border-bottom: 1px solid var(--rule); }
+.compare th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-3); font-weight: 700; }
+.compare .yes { color: var(--money-800); font-weight: 600; }
+.compare .no { color: var(--ink-3); }
+
+/* ------------------------------------------------------------ responsive ---*/
+@media (max-width: 859px) {
+  .nav__links, .nav__cta { display: none; }
+  .navmenu { display: block; }
+}
+/* The three-up challan needs room the module index does not have. Above
+   1080px the artefact row has three columns of roughly 340px, which puts each
+   challan copy at about 110px wide: measured effective type of 5.2px, which is
+   not small, it is unreadable. Given its own full-width row instead, so a copy
+   is about 300px wide and its body labels render near 10px. */
+@media (min-width: 701px) {
+  .artefacts { grid-template-columns: 1fr; gap: 34px; max-width: 760px; }
+  .artefacts > * { max-width: 100%; }
+}
 
 @media (max-width: 700px) {
-  .section { padding: 62px 0; }
-  .nav__links { display: none; }
-  .cta { padding: 40px 22px; }
-  .shot__body { grid-template-columns: 92px 1fr; }
-  .tiles { grid-template-columns: 1fr; }
+  .section { padding: 58px 0; }
+  .hero { padding: 44px 0 56px; }
+  .cta { padding: 42px 22px; }
+  .spec__cell { border-left: 0; border-top: 1px solid var(--rule); }
+  .spec__cell:first-child { border-top: 0; }
+
+  /* The money table becomes one block per class. */
+  .recon thead { display: none; }
+  .recon, .recon tbody, .recon tr, .recon td { display: block; width: 100%; }
+  .recon tr {
+    border: 1px solid var(--rule-2);
+    border-radius: var(--radius);
+    padding: 6px 12px 10px;
+    margin-bottom: 10px;
+  }
+  .recon td { display: flex; justify-content: space-between; gap: 14px; text-align: right; border: 0; padding: 7px 0; }
+  .recon td::before {
+    content: attr(data-th);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    text-align: left;
+  }
+  /* The bar is a sighted-only reinforcement of the Gap figure printed two rows
+     above it, so on the stacked layout the generated column label was the only
+     thing left to announce: every row ended with the bare word "Shortfall".
+     The whole cell goes, rather than just its label. */
+  .recon td[data-th="Shortfall"] { display: none; }
+  .band .recon tr { border-color: rgba(255, 255, 255, 0.2); }
+  .band .recon td::before { color: var(--on-navy-2); }
+
+  .rates__row { grid-template-columns: 1fr; gap: 8px; }
+  .rates__row .btn { width: 100%; margin-top: 6px; }
 }
+
+/* ------------------------------------------------------ reduced motion ---
+   The only motion here is smooth scrolling and colour on hover, but the
+   declaration is unconditional because a future addition must not have to
+   remember. */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ------------------------------------------------------- forced colours ---
+   Windows high contrast replaces every colour. Borders drawn with background
+   gradients vanish, so the ledger ruling and the bars are re-declared against
+   system colours rather than left invisible. */
+@media (forced-colors: active) {
+  .band { background-image: none; }
+  .bar { border: 1px solid CanvasText; }
+  .bar i { background: Highlight; }
+  .doc--lift { box-shadow: none; }
+  .card, .doc, .rates { border-color: CanvasText; }
+  /* The document double rules are painted as background-color on a pseudo
+     element. forced-colors does not remove background-color, but it does
+     REPAINT it, which on some themes lands on the ground colour and the rule
+     vanishes. Named explicitly rather than trusted. */
+  .rcpt__total::before, .rcpt__hd::after, .res__tot::before, .chln__dbl {
+    background-color: CanvasText !important;
+  }
+  :where(a, button, summary, input, [tabindex]):focus-visible { outline-color: Highlight; }
+}
+
+/* ---------------------------------------------------------------- print ---
+   Browsers do not print background-color or background-image by default, so a
+   navy band prints as white while `color: #fff` still prints white, which is
+   an invisible page. Every inverted surface is explicitly re-grounded. */
+@media print {
+  /* TOKENS, not a selector list. The previous version overrode two tokens and
+     then chased individual selectors with #000, so every pale on-navy token
+     kept its screen value on a white printed ground. Measured: --on-navy-2 and
+     the reconciliation figures at 1.4:1 to 1.9:1, and the footer wordmark and
+     the Urdu line at exactly 1.00:1, white on white. Redefining the tokens
+     fixes everything that uses them, including anything added later. */
+  :root {
+    --paper: #fff;
+    --paper-2: #fff;
+    --card: #fff;
+    --navy-deep: #fff;
+    --navy: #000;
+    --on-navy-2: #333;
+    --ink: #000;
+    --ink-2: #000;
+    --ink-3: #333;
+    --money-dark: #000;
+    --due-dark: #000;
+    --brand-400: #000;
+    --rule: #999;
+    --rule-2: #777;
+    --rule-3: #000;
+  }
+  body { background: #fff; color: #000; font-size: 11pt; padding-bottom: 0; }
+  .nav, .actionbar, .navmenu, .hero__cta, .cta__row, .btn { display: none !important; }
+  .band, .foot, .cta {
+    background: #fff !important;
+    background-image: none !important;
+    color: #000 !important;
+    border: 1px solid #000;
+  }
+  /* Anything that hard-codes #fff rather than reading a token still has to be
+     named, because a token redefinition cannot reach a literal. */
+  .band h2, .band h3, .band p, .band .lede, .band .muted, .band a,
+  .foot, .foot a, .foot h4, .foot h3, .cta h2, .cta p,
+  .foot .brand, .foot .brand span, .foot__ur,
+  .band .checklist li, .band .checklist b, .band .recon tbody td {
+    color: #000 !important;
+  }
+  .band .card { background: #fff !important; border-color: #000; }
+  .bar { border: 1px solid #000; }
+  .bar i { background: #000; }
+  .doc--lift { box-shadow: none; }
+  .section { padding: 18pt 0; }
+  details.q { break-inside: avoid; }
+  /* A closed <details> hides its content via ::details-content with
+     content-visibility: hidden, NOT via display on the children, so the old
+     `details.q p { display: block !important }` was a no-op and the printed
+     page carried seven questions, seven plus signs and no answers. Measured:
+     getComputedStyle(details, '::details-content').contentVisibility ===
+     'hidden' in print media. The display rule is kept for older engines. */
+  details.q::details-content {
+    content-visibility: visible !important;
+    block-size: auto !important;
+  }
+  details.q p { display: block !important; }
+  details.q > summary::after { content: "" !important; }
+  a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 9pt; color: #000; }
+}
+
+/* ==== ARTEFACT STYLES, spliced from the fragment files. ==== */
+
+/* ---- attendance ---- */
+/* =============================================================================
+   attendance.css, the new CSS for ART:attendance, the daily attendance sheet
+   drawn against web/src/pages/attendance/AttendanceSheet.tsx.
+
+   NEW CSS ONLY. Everything else the fragment needs is already in
+   site/styles.css: the tokens, .doc for the white surface and its structural
+   border, .doc--lift for the stacked paper edge, .doc__cap for the caption,
+   and the .tnum rule, which already reaches ".doc td, .doc th" and so puts
+   tabular lining figures on the roll column with no class of its own. The
+   .tnum class appears in the fragment only on the figures that sit OUTSIDE the
+   table, which that selector cannot reach: the date, the student count and the
+   five legend counts.
+
+   Every selector is prefixed .att so nothing can collide with the house sheet,
+   and nothing here overrides .doc, so the link order of the two files does not
+   matter. Every colour is a var() token. There is not one literal hex, and not
+   one hue: the sheet is ink on white with rules for structure, because a code
+   in the Status column has to survive the photocopier that cannot separate
+   #4338CA from #B91C1C.
+
+   ---------------------------------------------------------------------------
+   FOUR DECISIONS RECORDED HERE RATHER THAN IN A COMMIT MESSAGE.
+
+   1. TYPE FLOOR, 13px. The brief asks for the "Daily Attendance Sheet" line at
+      12px caps, and separately for nothing below 13px except a monospaced
+      serial. The floor wins, because it is the accessibility constraint and
+      the 12px is a taste, and because the sibling artefacts on this page
+      resolved the same conflict the same way. Every size here is a clamp()
+      whose minimum is 0.8125rem, which is 13px at the default root size and
+      larger the moment a phone raises its font scale. There is no monospaced
+      serial on this artefact, so nothing at all falls below 13px.
+
+   2. THE RULES ARE BORDERS, NEVER BACKGROUNDS. A 1px rule is cheapest to draw
+      as a background on a 1px box, and that is wrong twice over: browsers do
+      not print background colour, so every rule on the sheet would vanish from
+      the printout, and this object exists to look like a printout. Borders
+      print, and Windows forced colours re-paints border-color in CanvasText,
+      so both routes reach every rule with no extra declaration.
+
+   3. THREE RULE WEIGHTS, EACH DOING THE JOB site/styles.css DEFINES FOR IT.
+      --rule-2 for the band above and below the column heads, which is the
+      component's border-y at slate-300, mid weight internal document ruling.
+      --rule for the row separators, the component's slate-100, separation
+      only. --rule-3 for the eight write-on lines in the Student column and the
+      two signature rules, because the token comment calls --rule-3 the weight
+      for "EVERY form field border" and a blank name line is exactly that. It
+      also keeps the eight rules the firmest marks in the table, which is right:
+      on a filled sheet the names are the heaviest ink in it.
+
+   4. THE COLUMN HEADS SET THE MINIMUM WIDTH, so they are measured, not
+      guessed. Four tracked caps heads at 13px in the widest face of the text
+      stack (Liberation Sans and Arial share metrics) need about 237px
+      including the gaps between the cells. Below 400px the sheet margin drops
+      from 5.5 percent to 3.6 percent and the tracking from 0.05em to 0.02em,
+      which leaves about 250px of inner width at a 320px viewport. That is a
+      13px margin of error with no transform scaling anywhere and no
+      horizontal scroller inside a document, which would be absurd.
+   ============================================================================= */
+
+.att-fig {
+  margin: 0;
+  /* Fluid below this. The cap only matters if the sheet is ever pasted into a
+     slot wider than the three up row it is drawn for: a portrait register
+     stretched to 700px stops reading as portrait. */
+  max-width: 26rem;
+}
+
+/* Percentage padding, so the margins of the sheet stay in proportion to the
+   sheet at every width instead of crowding at 320px. On an inner element
+   because .doc itself sets padding: 0. */
+.att__in { padding: 5% 5.5% 5.5%; }
+
+/* -------------------------------------------------------------- masthead ---
+   Centred, and deliberately unruled. The component prints no rule under its
+   header, and the outer .doc border plus the table's own head band already
+   give the object all the structure it needs at this size. */
+.att__head { text-align: center; }
+
+.att__school {
+  font-size: clamp(1rem, 2.6vw, 1.125rem);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  color: var(--ink);
+}
+
+/* The component's text-xs uppercase tracking-wide. See decision 1: it is
+   13px here, not 12px. */
+.att__kind {
+  margin-top: 2px;
+  font-size: clamp(0.8125rem, 1.1vw, 0.875rem);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  line-height: 1.4;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* ------------------------------------------------------------ header line ---
+   The component's wrapping flex row with space between. At the width of one
+   column of the three up it breaks into two lines, Class and Date on the
+   first, Students on the second, which is what space-between is for: the two
+   ends of the sheet stay flush and the wrap looks intended rather than
+   accidental. Each item is nowrap so a date never breaks across lines. */
+.att__meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 3px 16px;
+  margin: 4.5% 0 0;
+  font-size: clamp(0.8125rem, 1.5vw, 0.875rem);
+  line-height: 1.5;
+}
+.att__mi {
+  display: flex;
+  gap: 6px;
+  white-space: nowrap;
+}
+.att__meta dt { color: var(--ink-3); }
+.att__meta dd {
+  margin: 0;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+/* ----------------------------------------------------------------- table ---
+   table-layout stays auto on purpose. The widths below are hints, so the
+   min-content width of a column head always wins over its percentage and no
+   head can ever be clipped or forced to overflow its cell. */
+.att__tbl {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 5%;
+}
+.att__tbl th,
+.att__tbl td {
+  text-align: left;
+  vertical-align: top;
+  padding: 7px 6px 9px 0;
+  font-weight: 400;
+}
+.att__tbl th:last-child,
+.att__tbl td:last-child { padding-right: 0; }
+
+/* border-y at slate-300 in the component: one band, two rules, mid weight. */
+.att__tbl thead th {
+  padding-top: 5px;
+  padding-bottom: 5px;
+  font-size: clamp(0.8125rem, 1.1vw, 0.875rem);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  line-height: 1.4;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--ink-3);
+  border-top: 1px solid var(--rule-2);
+  border-bottom: 1px solid var(--rule-2);
+}
+
+/* Proportions taken from the component's w-16 / auto / w-24 / w-40 inside its
+   max-w-3xl, then eased toward the heads so the narrow end is not fighting
+   them. Hints only, see the note on the table above. */
+.att__h-roll { width: 15%; }
+.att__h-name { width: 36%; }
+.att__h-st   { width: 19%; }
+.att__h-rem  { width: 30%; }
+
+/* One light separator per row, running under all four columns, so the empty
+   Remarks column reads as the write-in column it is rather than as a hole. */
+.att__tbl tbody th,
+.att__tbl tbody td {
+  font-size: clamp(0.8125rem, 1.5vw, 0.9375rem);
+  line-height: 1.35;
+  border-bottom: 1px solid var(--rule);
+}
+
+/* Each of the three qualified with the table, and the two that touch a
+   property the shorthand above also sets are qualified with their element as
+   well. .att__st alone would be one class against ".att__tbl td", a class and
+   a type, and would silently lose its weight back to 400. */
+.att__tbl th.att__roll { color: var(--ink-3); }
+
+/* font-medium on the status cell in the component, and no colour on it there
+   either: Present is not green and Absent is not red, on screen or on paper.
+   600 rather than 500 because several faces in the text stack have no 500 and
+   would round it back to 400, losing the emphasis the component asks for. */
+.att__tbl td.att__st {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* The write-on rule stops well short of the Status code beside it, so the two
+   never read as one mark. The Remarks cell is the last child and takes its
+   flush right edge from the rule above. */
+.att__tbl td.att__name { padding-right: 10px; }
+
+/* The Student column. An empty box one line tall, ruled along its baseline:
+   the line a pupil's name would have been written on. No name is invented, so
+   no child is depicted, and the sheet still reads as a register of eight.
+   height in em rather than px so the rule follows the text size under Android
+   font scaling instead of drifting away from the roll number beside it. */
+.att__nameline {
+  display: block;
+  height: 1.25em;
+  border-bottom: 1px solid var(--rule-3);
+}
+
+/* ---------------------------------------------------------------- legend ---
+   ATTENDANCE_STATUSES in its declared order, all five, zeros printed. The
+   component's text-slate-600 maps to --ink-3, and the code letters take --ink
+   as its font-semibold implies, but the row as a whole is lifted to --ink-2
+   because it carries figures at 13px and figures are read one glyph at a
+   time. */
+.att__legend {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 15px;
+  margin: 5% 0 0;
+  padding: 0;
+  font-size: clamp(0.8125rem, 1.2vw, 0.875rem);
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.att__legend li { white-space: nowrap; }
+.att__legend b {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+/* ------------------------------------------------------------ signatures ---
+   The component prints a run of underscores after each label. A real rule is
+   the same object done properly, and it is the same construction as the
+   receipt's "Received by, office" line: space to sign, a --rule-3 field
+   border, then the label under it. */
+.att__sign {
+  display: flex;
+  gap: 8%;
+  margin-top: 6%;
+}
+.att__sig {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 28px 0 0;      /* 28px is the room to sign in */
+  padding-top: 6px;
+  border-top: 1px solid var(--rule-3);
+  font-size: clamp(0.8125rem, 1.1vw, 0.875rem);
+  line-height: 1.4;
+  color: var(--ink-3);
+}
+
+/* Visually hidden, still read out. The table caption names the document for
+   anyone who arrives at the table out of context, and says plainly that the
+   Student column is blank by intent rather than by a rendering failure. */
+.att__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  border: 0;
+}
+
+/* ------------------------------------------------------------ narrow end ---
+   See decision 4. Below 400px the sheet margin and the head tracking both
+   tighten, which buys back the room the four caps heads need. Nothing is
+   scaled and nothing is hidden. */
+@media (max-width: 400px) {
+  .att__in { padding: 4.5% 3.6% 5%; }
+  .att__tbl thead th { letter-spacing: 0.02em; }
+  .att__tbl th,
+  .att__tbl td { padding-right: 5px; }
+  .att__legend { gap: 4px 12px; }
+}
+
+/* -------------------------------------------------------- forced colours ---
+   Nothing to re-declare. Every rule on this sheet is a border, so Windows
+   high contrast repaints all of them in CanvasText on its own, and
+   site/styles.css already drops .doc--lift's shadow and re-borders .doc.
+   The table simply becomes a heavier grid, which is the correct outcome. */
+
+/* ---------------------------------------------------------------- print ---
+   The sheet is a facsimile of a printout, so on paper it should be the page
+   rather than a card on a page: the width cap goes, and site/styles.css has
+   already removed the stacked paper edge. */
+@media print {
+  .att-fig { max-width: none; }
+  .att__tbl { break-inside: avoid; }
+}
+
+/* ---- challan ---- */
+/* =============================================================================
+   ART:challan  ::  the three part bank payable fee challan.
+   New CSS only. Everything else comes from site/styles.css: .doc, .doc--lift,
+   .doc__cap, .tnum, .small, .muted, and the .doc svg { width:100%; height:auto }
+   rule that makes the three copies fluid.
+
+   Every colour here is a var() from site/styles.css. Nothing is a literal hex.
+   The rules inside the form are drawn with stroke="currentColor" and get their
+   colour from these classes, which is what lets the print stylesheet and Windows
+   forced colours both reach them. It is also the only way to satisfy two of the
+   spec's requirements at once: the total rule has to be --rule-3 and every
+   stroke has to be currentColor, so the colour is set as a `color` property and
+   the stroke follows it.
+
+   Type inside the svg is sized in the viewBox's own units, so it scales with the
+   drawing rather than being transformed. No filters, no blend modes, no scaled
+   type: a filtered svg rasterises at reduced resolution on cheap Android Chrome
+   and reads as smudged rather than inky, which is the one thing a facsimile of a
+   printed form cannot afford.
+   ============================================================================= */
+
+/* --- the sheet ------------------------------------------------------------- */
+
+/* p-2 in ChallanPrint.tsx, as a percentage so the margin around the three
+   copies stays in proportion at every width. Kept on an inner element rather
+   than on .doc itself, so it does not depend on this file loading after
+   styles.css, where .doc sets padding: 0. */
+.chln__sheet { padding: 1.6%; }
+
+/* grid-cols-3 gap-2 in the component, as a flex row. align-items: flex-start
+   rather than the default stretch, because a stretched cross size would
+   override each svg's intrinsic aspect ratio and squash the drawing. */
+.chln__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.6%;
+}
+
+.chln__copy {
+  flex: 1 1 0;
+  min-width: 0;
+  color: var(--ink);            /* text fill, via currentColor */
+  font-family: var(--text);
+}
+
+/* --- ink ------------------------------------------------------------------- */
+
+/* Labels, the address line and the bank stamp caption: the component's
+   text-slate-600. */
+.chln__t-lbl  { color: var(--ink-3); }
+.chln__t-mono { font-family: var(--mono); }
+
+/* --- rules ----------------------------------------------------------------- */
+
+/* The form grid. --rule-2 is the token for internal document ruling, and it is
+   one weight for the whole grid: the component distinguishes slate-400 from the
+   lighter slate-300 above This month, but a single 1 unit hairline at --rule
+   disappears entirely once a copy is a third of a phone screen wide, so the
+   grid is drawn at one legible weight instead of two, one of which would be
+   invisible. */
+.chln__r-form  { color: var(--rule-2); }
+
+/* The two rules the spec weights differently. Both structural, so both
+   --rule-3, the same token the surrounding .doc border uses. */
+.chln__r-total { color: var(--rule-3); }
+.chln__r-stamp { color: var(--rule-3); }
+
+/* --- the mobile three up --------------------------------------------------- */
+
+/* Hidden by default, in step with styles.css, which is written desktop first
+   with max-width queries. */
+.chln__thumb  { display: none; }
+.chln__three  { display: none; }
+.chln__cap--one { display: none; }
+
+.chln__r-thumbsheet { color: var(--rule); }
+.chln__r-thumbframe { color: var(--rule-3); }
+.chln__r-thumbgreek { color: var(--rule-2); }
+.chln__r-thumbqr    { color: var(--ink-3); }
+
+@media (max-width: 700px) {
+  /* One copy at full legibility. At 320px the copy is about 300px wide, so the
+     9.4 unit body type in a 176 unit viewBox renders at roughly 16px. */
+  .chln__row > .chln__copy + .chln__copy { display: none; }
+
+  .chln__thumb {
+    display: block;
+    width: 100%;
+    height: auto;
+    /* Fluid, with a floor so the three copies stay tellable apart at 320px and
+       a ceiling so it never competes with the legible copy below it. */
+    max-width: clamp(196px, 62%, 288px);
+    margin-bottom: 10px;
+    background: var(--card);
+    border: 1px solid var(--rule-2);
+    border-radius: 3px;
+  }
+  .chln__three {
+    display: block;
+    margin-bottom: 16px;
+  }
+  .chln__cap--all { display: none; }
+  .chln__cap--one { display: block; }
+}
+
+/* --- print ----------------------------------------------------------------- */
+
+/* Last, so it wins over the 700px branch on a narrow print width. On paper the
+   whole point is the three up, and the miniature would be a second, smaller
+   copy of the same drawing. */
+@media print {
+  .chln__thumb, .chln__three, .chln__cap--one { display: none !important; }
+  .chln__row > .chln__copy + .chln__copy { display: block; }
+  .chln__cap--all { display: block; }
+}
+
+/* --- forced colours -------------------------------------------------------- */
+
+/* Nothing to re-declare for the strokes: they are all currentColor, so they
+   follow the system text colour automatically. Only the miniature's own border
+   and the white sheet under it need pinning, since a system ground would
+   otherwise leave the drawing floating. */
+@media (forced-colors: active) {
+  .chln__thumb { border-color: CanvasText; background: Canvas; }
+}
+
+/* ---- drawer ---- */
+/* =============================================================================
+   drawer.css, the new CSS for the cash drawer settlement slip.
+
+   Everything else it needs is already in site/styles.css: the tokens, .doc for
+   the white surface and its structural --rule-3 border, .doc--lift for the
+   stacked paper edge, .doc__cap for the caption, and .tnum for tabular lining
+   figures, which is why no font-variant-numeric is declared here. Every
+   selector is prefixed .drw so nothing can collide with the house sheet. Link
+   it after site/styles.css.
+
+   No new colour. Only var() tokens, and only these four on the slip itself:
+   --ink for figures, --ink-3 for labels and notes, --rule and --rule-3 for the
+   two rule weights, plus the one amber pair on the difference row.
+
+   ---------------------------------------------------------------------------
+   FOUR DECISIONS THE BRIEF FORCED, recorded here because this is where the
+   next person will look.
+
+   1. THE SHARED LABEL AND VALUE ROW. The brief asks for a row class shared
+      with the other artefacts, and separately for every selector in this file
+      to be prefixed so it cannot collide. Those two cannot both be literally
+      true, so the prefix wins, because a collision is a defect and duplication
+      is only a cost. .drw__row, .drw__k and .drw__v are byte for byte the same
+      specification as .rcpt__cell, .rcpt__k and .rcpt__v in receipt.css: the
+      same 0.8125rem floor, the same 0.08em uppercase --ink-3 label, the same
+      monospaced value. The two objects read as one system today. When these
+      fragments are folded into site/styles.css, fold the three pairs into one
+      house class, which is the right place for a shared row and this is not.
+
+   2. NO TRANSPARENT LEFT BORDER. The obvious way to keep the labels aligned
+      while only one row carries a rule is a 3px transparent left border on
+      every row. That is wrong here: forced colours mode forces border-color to
+      a system colour, so a 3px line would appear on all seven rows in Windows
+      high contrast. Instead the rows carry 12px of left padding and the
+      difference row alone trades 3px of that padding for 3px of --due border.
+      The labels land on the same pixel either way, with nothing to override.
+
+   3. AMBER IS NEVER ALONE, AND IT IS NOT THE PRINTED SIGNAL. The word "Short"
+      beside the figure is real text in --due-800, and the rule is --due, which
+      are the only permitted uses of each. Measured on --card #FFFFFF: the word
+      is 7.09:1, the labels are 7.01:1, the figures are 17.96:1, and the rule is
+      5.02:1 against the 3:1 that WCAG 1.4.11 asks of a non text indicator.
+      Under print the rule is re-declared as currentColor, which the print
+      stylesheet has already forced to black, so a black and white driver still
+      gets a rule rather than a pale smudge.
+
+   4. TYPE FLOOR OVER TASTE. Nothing here renders below 13px except the
+      monospaced slip serial, which is the exception the rule itself allows.
+      Every size is a clamp() with a 0.8125rem minimum, so a phone raising its
+      font scale raises the slip with it. There is no transform on any type.
+   ============================================================================= */
+
+.drw-fig {
+  margin: 0;
+  /* Fluid below this. The cap only stops a small internal slip from stretching
+     into a banner in the 537px column this sits in at 1120px. */
+  max-width: 30rem;
+}
+
+/* Percentage padding, so the margins of the slip stay in proportion to the
+   slip from 320px to 1440px rather than crowding at the narrow end. */
+.drw__in { padding: 6% 7% 6.5%; }
+
+/* ------------------------------------------------------------------ head ---
+   Left aligned and single ruled, deliberately unlike the receipt's centred
+   double rule. This is an internal slip, not a document handed to a parent,
+   and the two objects should not claim to be the same kind of paper. */
+.drw__head { margin-bottom: 4%; }
+
+.drw__school {
+  font-size: clamp(0.8125rem, 1.9vw, 0.9375rem);
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  line-height: 1.3;
+  text-transform: uppercase;
+  color: var(--ink);
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--ink);
+}
+.drw__kind {
+  margin-top: 9px;
+  font-size: clamp(0.8125rem, 1.3vw, 0.875rem);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1.35;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* ------------------------------------------------------------------ rows ---
+   Label left, value right, hairline separated. The dt and dd pairs are wrapped
+   in a <div> per row, which a <dl> has permitted since HTML 5.2 and which is
+   what lets one row be a grid without a subgrid.
+
+   Two rule weights, and the difference is structural: --rule separates rows of
+   the same kind, --rule-3 marks where the identification ends and the money
+   begins. That heavier rule is placed by the sibling combinator rather than by
+   a class, so the money block can gain or lose a row without the markup having
+   to remember which one is first. */
+.drw__rows { margin: 0; }
+
+.drw__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 3px 14px;
+  padding: 10px 0 10px 12px;
+}
+.drw__row + .drw__row { border-top: 1px solid var(--rule); }
+.drw__row:not(.drw__row--money) + .drw__row--money {
+  border-top: 1px solid var(--rule-3);
+}
+
+.drw__k {
+  margin: 0;
+  font-size: clamp(0.8125rem, 1.1vw, 0.875rem);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.4;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.drw__v {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: clamp(0.8125rem, 1.4vw, 0.9375rem);
+  line-height: 1.5;
+  text-align: right;
+  color: var(--ink);
+}
+/* A name is prose, not a code, so it comes off the monospaced face. */
+.drw__v--name {
+  font-family: var(--text);
+  font-size: clamp(0.875rem, 1.7vw, 1rem);
+  font-weight: 600;
+  line-height: 1.4;
+}
+/* Money takes the text face with .tnum from the house sheet, exactly as
+   .price__amt does, so the three figures below each other line up digit for
+   digit and the column can be read as a column. */
+.drw__v--amt {
+  font-family: var(--text);
+  font-size: clamp(1rem, 2.2vw, 1.1875rem);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+.drw__note {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--text);
+  font-size: clamp(0.8125rem, 1.1vw, 0.875rem);
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--ink-3);
+}
+
+/* ------------------------------------------------------------ difference ---
+   See note 2 for why the 3px comes out of the padding rather than off a
+   transparent border on every row, and note 3 for why the word carries the
+   meaning and the colour only reinforces it. */
+.drw__row--diff {
+  padding-left: 9px;
+  border-left: 3px solid var(--due);
+}
+.drw__short {
+  margin-left: 4px;
+  font-size: clamp(0.8125rem, 1.2vw, 0.875rem);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--due-800);
+}
+
+/* ---------------------------------------------------------------- reason ---
+   The whole point of the object: a difference cannot be dismissed, so the
+   written explanation is part of the same sheet rather than a tooltip. */
+.drw__reason {
+  margin-top: 5%;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule);
+}
+.drw__rt {
+  margin-top: 7px;
+  font-size: clamp(0.875rem, 1.5vw, 0.9375rem);
+  line-height: 1.5;
+  color: var(--ink);
+}
+.drw__by {
+  margin-top: 8px;
+  font-size: clamp(0.8125rem, 1.2vw, 0.875rem);
+  line-height: 1.45;
+  color: var(--ink-3);
+}
+
+/* -------------------------------------------------------------- signature --
+   A rule to sign above, at the structural weight, because on this slip the
+   signature is the part that makes the difference somebody's responsibility. */
+.drw__sig {
+  max-width: 26ch;
+  margin-top: 26px;
+  padding-top: 6px;
+  border-top: 1px solid var(--rule-3);
+  font-size: clamp(0.8125rem, 1.2vw, 0.875rem);
+  line-height: 1.45;
+  color: var(--ink-3);
+}
+
+/* ---------------------------------------------------------------- serial ---
+   The one item allowed below 13px, and only because it is a monospaced serial
+   read a character at a time rather than as prose. */
+.drw__serial {
+  margin-top: 16px;
+  font-size: clamp(0.8125rem, 1.2vw, 0.875rem);
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+.drw__sn {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------- forced colours ---
+   High contrast keeps borders but repaints them, so the difference rule
+   survives as a system coloured rule. It is re-declared here only so that the
+   intent is explicit at the one place it matters, and .doc--lift's shadow is
+   already dropped by the house sheet. */
+@media (forced-colors: active) {
+  .drw__row--diff { border-left-color: CanvasText; }
+}
+
+/* ---------------------------------------------------------------- print ---
+   The print stylesheet in site/styles.css already forces body colour to black,
+   so currentColor here is black ink: the difference rule prints as a rule on a
+   black and white driver instead of a pale amber that greys out to nothing.
+   The word "Short" beside the figure is doing the real work either way. */
+@media print {
+  .drw-fig { max-width: none; }
+  /* A settlement slip split across two printed pages is not a settlement slip.
+     The figure is kept whole, and the sheet is named separately so that if
+     anything has to move to the next page it is the caption, which is
+     commentary, rather than the money. */
+  .drw-fig, .drw { break-inside: avoid; }
+  .drw__row--diff { border-left-color: currentColor; }
+}
+
+/* ---- gateboard ---- */
+/* =============================================================================
+   gateboard.css, the new CSS for the school gate name board: the static footer
+   vignette and the live board whose school name is real HTML text.
+
+   NEW CSS ONLY. Everything else both versions need is already in
+   site/styles.css: the tokens, the .foot ground the vignette sits on, the print
+   block that re-grounds the footer to white and forces black ink on it, and the
+   forced colours block. Nothing here overrides a house rule, so the link order
+   of the two files does not matter, and every selector is prefixed .gate so
+   nothing can collide.
+
+   NO NEW COLOUR AND NO LITERAL HEX. Two values in the whole file, var(--navy)
+   and inherit, and the second one is not a colour at all.
+
+   ---------------------------------------------------------------------------
+   WHY THE MARK SETS `color` INSTEAD OF PAINTING ITSELF
+
+   Every stroke in the markup is stroke="currentColor", so one geometry serves
+   the warm ground, the white card, the navy footer, the print sheet and Windows
+   high contrast. The mark therefore has to declare its own `color` and let
+   currentColor read it back, because a stroke written into the markup could not
+   then be inherited on the navy grounds. Measured:
+
+       --navy #20315E on --paper  #F7F4EC   11.49:1
+       --navy #20315E on --card   #FFFFFF   12.63:1
+       --navy #20315E on --navy-deep #17244A  1.20:1
+       --on-navy-2 #AFBDD6 on --navy-deep      7.98:1
+
+   The third figure is the reason the context rules below exist. The spec asks
+   for a --navy stroke and the only place the static version is used is the navy
+   footer, where --navy against --navy-deep is 1.20:1, which is the same colour.
+   So on every navy ground the mark inherits, which in .foot is --on-navy-2.
+   .band .gate and .on-navy .gate are two classes each, so they beat the single
+   class .gate on specificity and nothing needs !important.
+
+   ---------------------------------------------------------------------------
+   WHY THE THREE FIXED SIZES ARE WRITTEN AS clamp()
+
+   The spec gives the live name three sizes by length, 22px, 18px and 15px, and
+   the house rule is that type is fluid from 320px to 1440px and never scaled by
+   a transform. Those two are reconciled by making each specified size the
+   CEILING of a clamp whose middle term is proportional to the board:
+
+       board width  = min(20rem, 100%), so 320px once there is room for it
+       column width = 100vw less the .wrap gutters, 24px each side
+       ceiling met  = 100vw - 48px >= 320px, so at a 368px viewport and above
+
+   Above 368px every name renders at exactly the specified px size. Below it the
+   board is narrower than 20rem, so the name comes down with it in proportion
+   rather than bursting the frame: at a 320px viewport the three sizes are
+   18.7px, 15.3px and 13px. The slopes are the ceiling divided by the 320px
+   board, so 22/320 is 6.875vw, 18/320 is 5.625vw and 15/320 is 4.6875vw, each
+   less the share of the 48px gutter.
+
+   The floor on all three is 0.8125rem, 13px at the default root size, which is
+   the house type floor. It only ever bites on the 15px class, which would
+   otherwise reach 12.75px at a 320px viewport. There is no monospaced serial on
+   this object, so 13px is the smallest thing it can render.
+
+   Ceiling and floor are in rem and the board width is in rem, so text only zoom
+   and a raised Android font scale grow the board and the name together.
+   ============================================================================= */
+
+
+/* ------------------------------------------------------------- both versions --
+   position: relative on .gate rather than only on .gate--live, so any board can
+   host a name without the markup having to remember which class carries the
+   containing block. The svg rule is the same one site/styles.css gives ".doc
+   svg", repeated because this object is not inside a .doc: display:block kills
+   the inline baseline gap that would otherwise open under the drawing, and the
+   width and height pair make it fluid without a transform. */
+.gate {
+  position: relative;
+  color: var(--navy);      /* the source currentColor reads. See the note above. */
+}
+.gate svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* Every navy ground. .foot sets color: var(--on-navy-2) and .band sets #fff for
+   the whole band, so inherit is both correct and the only value that cannot go
+   stale if either of those changes. */
+.band .gate,
+.on-navy .gate,
+.foot .gate { color: inherit; }
+
+
+/* ----------------------------------------------------------------- (a) part A --
+   The footer vignette, at the specified 130px. min() rather than a bare width
+   so it can never be wider than the footer column it sits in: at a 320px
+   viewport that column is about 272px, so the cap is what applies and the mark
+   is drawn at its intended size, but the declaration does not depend on that
+   being true. 8.125rem is 130px at the default root size and grows with it. */
+.gate--vignette { width: min(8.125rem, 100%); }
+
+
+/* ----------------------------------------------------------------- (b) part B --
+   The live board. 20rem, 320px at the default root size, which is where the
+   three type ceilings are calibrated. */
+.gate--live { width: min(20rem, 100%); }
+
+/* THE NAME, laid over the board panel in percentages of the drawing, so it
+   tracks the frame at every width with no second set of numbers to keep in
+   step. The panel is x 11 to 119 and y 6 to 48 in a 130 by 76 viewBox, so:
+
+       top     6 / 76     =  7.8947%
+       right  11 / 130    =  8.4615%
+       bottom 28 / 76     = 36.8421%
+       left   11 / 130    =  8.4615%
+
+   Column flex with justify-content: center rather than a grid with
+   place-items: center, because an anonymous grid item under justify-items:
+   center sizes to max-content and a long name would then overflow sideways out
+   of the frame. As a column flex item the text fills the panel width, wraps
+   inside it, and centres vertically. If a name is somehow taller than the panel
+   it overflows visibly rather than being clipped, which is the safe failure: a
+   name that spills is a bug someone reports, a name that is silently cut is a
+   wrong name on a gate board.
+
+   The text stack is --text, NOT --display, and that is deliberate. The comment
+   at the head of site/styles.css binds the display cut to h1 and h2 only,
+   because Segoe UI Variable Display is an optical cut for roughly 24pt and up
+   and renders thin and over-tight below 17px on Windows 11 while rendering
+   normally on Windows 10. The largest size here is 22px, under that threshold
+   and on the majority platform, so the sign takes the text stack.
+
+   No text-transform. Uppercasing is a no-op on Urdu and it would overwrite the
+   capitalisation the owner actually typed on the other side. */
+.gate__name {
+  position: absolute;
+  inset: 7.8947% 8.4615% 36.8421%;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 7%;                 /* clearance inside the 1.25 unit frame */
+  font-family: var(--text);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  text-align: center;
+  text-wrap: balance;
+  overflow-wrap: break-word;     /* an unbreakable string wraps rather than spills */
+  hyphens: none;                 /* nobody hyphenates the name on their own gate */
+  color: currentColor;
+}
+
+/* The three sizes, by grapheme cluster count. See the note at the head of this
+   file for how each ceiling becomes a clamp, and gateboard.html for the count
+   thresholds and for why the count is by cluster. */
+.gate__name--l { font-size: clamp(0.8125rem, calc(6.875vw - 3.3px), 1.375rem); }   /* n < 16,       22px */
+.gate__name--m { font-size: clamp(0.8125rem, calc(5.625vw - 2.7px), 1.125rem); }   /* 16 <= n < 22, 18px */
+.gate__name--s { font-size: clamp(0.8125rem, calc(4.6875vw - 2.25px), 0.9375rem); }/* n >= 22,      15px */
+
+
+/* ------------------------------------------------------------- Arabic script --
+   THE FIRST HARD REQUIREMENT. Tracking applied to a connected script does not
+   look loose, it severs the joins and the word stops being a word, so this is a
+   correctness rule rather than a typographic taste. Urdu is the ordinary case
+   for this product, not an edge case: the footer of the page this mark sits in
+   already carries a line of Urdu directly above it.
+
+   letter-spacing is set to `normal` and not to 0. They are not the same thing:
+   normal returns the value the face itself specifies, which for a Nastaliq face
+   is part of how the joins are drawn, while 0 pins it to zero and overrides the
+   font. Word spacing goes back to normal for the same reason.
+
+   THE STACK IS LOCAL FAMILY NAMES ONLY. No @font-face, no webfont, no request
+   of any kind: each name is a face that is already installed on one of the
+   target machines, and the browser uses the first it finds.
+       Noto Nastaliq Urdu        Android, ChromeOS, most Linux
+       Jameel Noori Nastaleeq    the face most commonly installed by hand on a
+                                 Pakistani school office Windows PC
+       Urdu Typesetting          ships with Windows
+       Noto Naskh Arabic         the Naskh fallback where no Nastaliq exists
+       Segoe UI, Tahoma          both carry full Arabic coverage on Windows
+   The generic sans-serif closes the stack so there is always a match.
+
+   line-height goes to 1.9. Nastaliq is a steeply cascading script whose
+   ascenders and descenders reach far past a Latin em box, and at 1.2 the second
+   line of a wrapped name collides with the first.
+
+   font-synthesis: none because a Nastaliq face usually ships in one weight, and
+   the 700 above would then be synthesised by smearing the glyph sideways, which
+   thickens the joins into blobs. Asking for 700 and refusing the fake is the
+   correct pair: a face with a real bold uses it, a face without one renders as
+   designed.
+
+   Three hooks, so the rule fires whichever way the caller marks the name up:
+   the explicit class, and :lang() for the five languages that use this script
+   in this market. :lang() inherits, so setting lang on an ancestor works too.
+   site/index.html sets lang="en-PK" on the html element, so none of these can
+   fire by accident. */
+.gate__name--ar,
+.gate__name:lang(ur),
+.gate__name:lang(ar),
+.gate__name:lang(fa),
+.gate__name:lang(ps),
+.gate__name:lang(sd) {
+  font-family: "Noto Nastaliq Urdu", "Jameel Noori Nastaleeq",
+               "Urdu Typesetting", "Noto Naskh Arabic",
+               "Segoe UI", Tahoma, sans-serif;
+  letter-spacing: normal;
+  word-spacing: normal;
+  line-height: 1.9;
+  font-synthesis: none;
+  text-wrap: wrap;      /* balance re-breaks lines by measure, which fights a
+                           cascading script far more than it helps it */
+}
+
+
+/* -------------------------------------------------------------- print --------
+   Nothing to declare for colour. The house print sheet re-grounds .foot to
+   white and forces color: #000 on .foot itself, and this mark sits in a plain
+   div in the footer's first column rather than inside .brand, which is the one
+   footer element that carries an inline color: #fff. So `.foot .gate { color:
+   inherit }` resolves to black ink on white paper, every stroke is
+   currentColor, and the drawing prints correctly with no rule of its own.
+
+   The live board is not on the printed marketing page at all, and if it ever is
+   printed it is 20rem of line drawing in black, which is right.
+
+   The one thing worth saying: the board is a picture, and a picture split
+   across a page break is two broken pictures. */
+@media print {
+  .gate { break-inside: avoid; }
+}
+
+
+/* ---------------------------------------------------- forced colours ---------
+   Deliberately empty, and recorded so that nobody adds a rule here later. In
+   Windows high contrast the user agent replaces `color`, so every stroke in
+   both versions takes the system text colour on its own, and there is no fill
+   anywhere to be forced to a system ground. The board is correct in high
+   contrast because of how it is drawn, not because of anything declared for it.
+
+   The live name is real text, so it takes the system text colour with
+   everything else on the page. That is the third thing the HTML text buys over
+   an SVG <text>, after wrapping and font scaling. */
+
+/* ---- receipt ---- */
+/* =============================================================================
+   receipt.css, the new CSS for the full size fee receipt.
+
+   Everything else it needs is already in site/styles.css: the tokens, .doc for
+   the white surface and structural border, .doc__cap for the caption, and the
+   .tnum rule, which already reaches ".doc td, .doc th" and so puts tabular
+   lining figures in the money column without a class. Every selector here is
+   prefixed .rcpt so nothing can collide with the house sheet. Link it after
+   site/styles.css; the one place it overrides .doc is written as .doc.rcpt so
+   that it holds even if somebody links it before.
+
+   No new colour is introduced. Only var() tokens, plus the two notes below.
+
+   ---------------------------------------------------------------------------
+   THREE THINGS THE BRIEF FORCED A DECISION ON, recorded here rather than in a
+   commit message, because this is where somebody will look.
+
+   1. TYPE FLOOR. The brief asks for 12px ledger cells and a 12px stamp line,
+      and separately for nothing below 13px except a monospaced serial. The
+      13px floor wins, because it is the accessibility constraint and the other
+      is a taste. Every label and value here is a clamp() whose minimum is
+      0.8125rem: 13px at the default root size, and larger the moment a phone
+      raises its font scale. The single sub 13px item on the artefact is the
+      monospaced serial, which is the exception the rule itself allows.
+
+   2. ALPHA ON A TOKEN. The elevation the brief specifies is written in
+      rgba(20, 23, 28, a). That is --ink #14171C decomposed, and a custom
+      property holding a hex cannot be given alpha without relative colour
+      syntax that low end Android Chrome may not have. So the channels are
+      declared once, below, and used through rgba(). It is the existing ink
+      token, not a new value.
+
+   3. THE PERFORATION IS THE EDGE. The brief calls the bottom edge a
+      perforation. Laying a dotted 1px line immediately inside .doc's solid 1px
+      --rule-3 border reads as a doubled edge, not as a tear, so the bottom
+      border is removed and the perforation becomes the actual bottom edge of
+      the sheet: the receipt is torn out of a book. The repeating gradient is
+      written in the long form rather than the double position colour stop
+      form, which is identical output and does not need Chrome 72.
+   ============================================================================= */
+
+.rcpt-fig {
+  margin: 0;
+  /* Fluid below this. The cap only stops a receipt reading as a banner at
+     1440px, where paper proportions would otherwise be lost. */
+  max-width: 37.5rem;
+}
+
+.rcpt {
+  --rcpt-ink-rgb: 20, 23, 28;   /* --ink #14171C, decomposed. See note 2. */
+
+  position: relative;
+  /* The one true elevation on the page: a hairline contact shadow, one soft
+     cast shadow, and a hard 6px offset with zero blur in --paper-2 that reads
+     as a second sheet under this one. Painted last so it sits furthest back. */
+  box-shadow:
+    0 1px 0 rgba(var(--rcpt-ink-rgb), 0.06),
+    0 18px 40px -28px rgba(var(--rcpt-ink-rgb), 0.34),
+    6px 6px 0 0 var(--paper-2);
+}
+
+/* Two classes, so this beats .doc's shorthand border whichever order the two
+   stylesheets are linked in. See note 3: the perforation takes over as the
+   bottom edge of the sheet. */
+.doc.rcpt { border-bottom: 0; }
+
+.rcpt::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0,
+    transparent 5px,
+    var(--rule-2) 5px,
+    var(--rule-2) 9px
+  );
+}
+
+/* Percentage padding, so the margins of the sheet stay in proportion to the
+   sheet at every width instead of crowding at 320px. */
+.rcpt__in { padding: 5.5% 6.5% 6%; }
+
+/* ------------------------------------------------------------------ head ---
+   The 3px double rule is a 1px border plus a 1px bar three pixels down, so it
+   is real structure at both ends rather than a border-style: double that
+   thickens unevenly at 1px. */
+.rcpt__head { text-align: center; }
+
+.rcpt__school {
+  position: relative;
+  font-size: clamp(0.8125rem, 1.9vw, 0.9375rem);
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  line-height: 1.3;
+  text-transform: uppercase;
+  color: var(--ink);
+  padding-bottom: 9px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--ink);
+}
+.rcpt__school::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -3px;
+  height: 1px;
+  background: var(--ink);
+}
+
+.rcpt__kind {
+  font-size: clamp(0.8125rem, 1.3vw, 0.875rem);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* ------------------------------------------------------------ ledger band ---
+   Three cells, hairline ruled. Under 400px it becomes two cells with the third
+   stacked full width beneath them, because three money-width cells at 320px
+   force "04-09-2026" to break across two lines. */
+.rcpt__meta {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin-top: 16px;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+.rcpt__cell {
+  padding: 9px 11px;
+  border-left: 1px solid var(--rule);
+}
+.rcpt__cell:first-child { border-left: 0; padding-left: 0; }
+
+.rcpt__k {
+  display: block;
+  font-size: clamp(0.8125rem, 1.1vw, 0.875rem);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.4;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.rcpt__v {
+  display: block;
+  font-family: var(--mono);
+  font-size: clamp(0.8125rem, 1.4vw, 0.9375rem);
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+@media (max-width: 400px) {
+  .rcpt__meta { grid-template-columns: repeat(2, 1fr); }
+  .rcpt__cell:nth-child(3) {
+    grid-column: 1 / -1;
+    border-left: 0;
+    border-top: 1px solid var(--rule);
+    padding-left: 0;
+  }
+}
+
+/* ------------------------------------------------------------------- who ---*/
+.rcpt__who {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  margin: 14px 0 0;
+}
+.rcpt__who dt {
+  font-size: clamp(0.8125rem, 1.1vw, 0.875rem);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding-top: 2px;
+}
+.rcpt__who dd {
+  margin: 0;
+  font-size: clamp(0.875rem, 1.7vw, 1rem);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--ink);
+}
+.rcpt__note { font-weight: 400; color: var(--ink-3); }
+
+/* ----------------------------------------------------------------- table ---
+   Five ruled rows at 1px --rule, class and month on the left, amount right in
+   tabular figures. The head rule and the total rule are --rule-3, because they
+   are structure rather than separation.
+
+   The last body row's rule is removed rather than left to collapse against the
+   total's --rule-3 border: border-collapse resolution between two 1px solid
+   cell borders is not decided by darkness, so the structural rule could have
+   silently lost to the hairline. */
+.rcpt__tbl {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 5%;
+}
+.rcpt__tbl th,
+.rcpt__tbl td {
+  text-align: left;
+  vertical-align: top;
+  padding: 11px 0;
+  font-weight: 400;
+}
+.rcpt__tbl td,
+.rcpt__tbl th:last-child {
+  text-align: right;
+  padding-left: 14px;
+  white-space: nowrap;
+}
+.rcpt__tbl thead th {
+  padding: 0 0 7px;
+  font-size: clamp(0.8125rem, 1.1vw, 0.875rem);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  border-bottom: 1px solid var(--rule-3);
+}
+.rcpt__tbl tbody th,
+.rcpt__tbl tbody td { border-bottom: 1px solid var(--rule); }
+.rcpt__tbl tbody tr:last-child th,
+.rcpt__tbl tbody tr:last-child td { border-bottom: 0; }
+
+.rcpt__name {
+  display: block;
+  font-size: clamp(0.9375rem, 1.8vw, 1.0625rem);
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--ink);
+}
+.rcpt__sub {
+  display: block;
+  margin-top: 2px;
+  font-size: clamp(0.8125rem, 1.3vw, 0.875rem);
+  line-height: 1.45;
+  color: var(--ink-3);
+  white-space: normal;
+}
+.rcpt__tbl tbody td {
+  font-size: clamp(0.9375rem, 1.8vw, 1.0625rem);
+  line-height: 1.35;
+  color: var(--ink);
+}
+/* A zero in a money column is printed as a word, never as punctuation. An
+   absence reads quieter than a figure, so it takes --ink-3, which is still
+   6.4:1 or better. Qualified by the table so it outweighs the cell rule above
+   it: one class alone would have lost the colour back to --ink. */
+.rcpt__tbl tbody td.rcpt__none { color: var(--ink-3); }
+
+.rcpt__tbl tfoot th,
+.rcpt__tbl tfoot td {
+  position: relative;
+  padding-top: 13px;
+  font-weight: 600;
+  border-top: 1px solid var(--rule-3);
+}
+/* The second bar of the double rule above the total. One segment per cell, and
+   with border-collapse the padding boxes abut, so the two join seamlessly. */
+.rcpt__tbl tfoot th::before,
+.rcpt__tbl tfoot td::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -3px;
+  height: 1px;
+  background: var(--rule-3);
+}
+.rcpt__tbl tfoot th {
+  font-size: clamp(0.875rem, 1.6vw, 1rem);
+  color: var(--ink);
+}
+.rcpt__tbl tfoot td {
+  font-size: clamp(1.125rem, 2.6vw, 1.375rem);
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+/* ------------------------------------------------------------------ foot ---*/
+.rcpt__foot {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 18px;
+  margin-top: 5%;
+  margin-bottom: 12px;   /* clearance for the rotated stamp's low corner */
+}
+@media (min-width: 420px) {
+  .rcpt__foot {
+    grid-template-columns: 1fr auto;
+    align-items: end;
+    gap: 16px 22px;
+  }
+}
+/* A grid item's automatic minimum size is min-content, which lets a long
+   unbreakable value push the stamp out of the row. */
+.rcpt__words { min-width: 0; }
+
+.rcpt__wv {
+  margin-top: 3px;
+  font-size: clamp(0.875rem, 1.5vw, 0.9375rem);
+  line-height: 1.45;
+  color: var(--ink);
+}
+.rcpt__sig {
+  max-width: 24ch;
+  margin-top: 26px;
+  padding-top: 6px;
+  border-top: 1px solid var(--rule-3);
+  font-size: clamp(0.8125rem, 1.2vw, 0.875rem);
+  color: var(--ink-3);
+}
+
+/* ----------------------------------------------------------------- stamp ---
+   An outline and nothing else: no tint, no blend mode, no filter. A filtered
+   SVG stamp would have been the obvious way to do this and it is exactly wrong,
+   because low end Android Chrome rasterises filtered SVG at reduced resolution
+   and an inky stamp comes out blurry.
+
+   The word never renders below 18.66px bold, which is the WCAG large text
+   threshold, so the outline stays legible at the size the rotation is tuned
+   for. Rotation is not a scale: no type here is transformed in size. */
+.rcpt__stamp {
+  justify-self: end;
+  align-self: end;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin: 0 2px 6px 0;
+  padding: 7px 16px 8px;
+  background: transparent;
+  border: 1.5px solid var(--money-800);
+  border-radius: 4px;
+  color: var(--money-800);
+  text-align: center;
+  transform: rotate(-6deg);
+  transform-origin: 80% 100%;
+}
+.rcpt__stamp-w {
+  font-size: clamp(1.1663rem, 2.5vw, 1.4375rem);
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+.rcpt__stamp-m {
+  font-family: var(--mono);
+  font-size: clamp(0.8125rem, 1.1vw, 0.875rem);
+  line-height: 1.3;
+  letter-spacing: 0.02em;
+}
+
+/* ---------------------------------------------------------------- serial ---
+   The one item allowed below 13px, and only because it is a monospaced serial
+   that is read a character at a time rather than as prose. */
+.rcpt__serial {
+  margin-top: 16px;
+  font-size: clamp(0.8125rem, 1.2vw, 0.875rem);
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+.rcpt__sn {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+/* Visually hidden, still read out. The table caption names the document for
+   anyone arriving at it out of context. */
+.rcpt__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ------------------------------------------------------- forced colours ---
+   High contrast throws away the elevation and every background image, so the
+   perforation is re-drawn as a solid system-coloured edge rather than left
+   invisible, and the stamp outline is re-declared. */
+@media (forced-colors: active) {
+  .rcpt { box-shadow: none; }
+  .rcpt::after { background-image: none; background-color: CanvasText; }
+  .rcpt__stamp { border-color: CanvasText; }
+}
+
+/* ---------------------------------------------------------------- print ---
+   Background images do not print, so the perforation becomes a dashed border
+   in currentColor, which does. The elevation goes: paper on paper is a screen
+   idea. */
+@media print {
+  .rcpt-fig { max-width: none; }
+  .rcpt { box-shadow: none; }
+  .rcpt::after {
+    background: none;
+    height: 0;
+    border-top: 1px dashed currentColor;
+  }
+}
+
+/* ---- resultcard ---- */
+/* =============================================================================
+   resultcard.css, the new CSS for ART:resultcard, the published result card
+   drawn against web/src/pages/exams/ResultCardPrint.tsx.
+
+   NEW CSS ONLY. Everything else the fragment needs is already in
+   site/styles.css: the tokens, .doc for the white surface and its structural
+   --rule-3 border, .doc--lift for the stacked paper edge, .doc__cap for the
+   caption, and the .tnum rule, which already reaches ".doc td, .doc th" and so
+   puts tabular lining figures on the Total and Obtained columns with no class
+   of its own. The .tnum class appears in the fragment only on the figures that
+   sit OUTSIDE the table, which that selector cannot reach: the GR number, the
+   roll number, the percentage and the two halves of the position.
+
+   Every selector is prefixed .res so nothing can collide with the house sheet,
+   and nothing here overrides a .doc rule, so the link order of the two files
+   does not matter. Link it after site/styles.css.
+
+   Every colour is a var() token. There is not one literal hex, and not one hue:
+   five tokens do the whole card, --ink for figures and names, --ink-3 for
+   labels and notes, and --rule, --rule-2 and --rule-3 for the three rule
+   weights. There is no SVG on this artefact at all, so there is nothing here
+   that needs a filter, a blend mode or a transform, and none is used.
+
+   ---------------------------------------------------------------------------
+   FIVE DECISIONS RECORDED HERE RATHER THAN IN A COMMIT MESSAGE.
+
+   1. TYPE FLOOR, 13px, OVER THE SPECIFIED 11px MASTHEAD. The brief asks for the
+      school name in 11px letter spaced caps, and separately for nothing below
+      13px except a monospaced serial. The floor wins, because it is the
+      accessibility constraint and the 11px is a taste, and because the receipt
+      and the attendance sheet on this page resolved the same conflict the same
+      way. The masthead keeps everything else the 11px was asking for: small,
+      heavy, widely tracked caps, quieter than the pupil's name below it. Every
+      size in this file is a clamp() whose minimum is 0.8125rem, which is 13px
+      at the default root size and larger the moment a phone raises its font
+      scale. The one item below the floor is the monospaced card serial, which
+      is the exception the rule itself allows.
+
+   2. THE INSET DOUBLE RULE IS TWO REAL BORDERS, NOT A GRADIENT. It is the
+      cheapest thing in the file: a 6px margin holds .res__frame off the edge of
+      the sheet, its border draws the outer bar, its 2px padding sets the gap,
+      and .res__in's border draws the inner bar. Borders print, and Windows
+      forced colours repaints border-color in CanvasText, so both routes reach
+      both bars with nothing extra declared. A repeating gradient would have
+      needed a print rule and a forced colours rule and would still have been a
+      background, which browsers do not print by default.
+
+   3. THREE RULE WEIGHTS, EACH DOING THE JOB site/styles.css DEFINES FOR IT.
+      --rule-2 for the inset frame, which is decorative separation and must
+      never compete with the sheet's own --rule-3 edge 6px outside it. --rule
+      for the row separators inside the table and the two thin bands under it,
+      separation only. --rule-3 for the column head rule, for both bars of the
+      double rule above the totals row, and for the two signature rules,
+      because those are structure, and because the token comment calls --rule-3
+      the weight for every form field border and a blank line to sign on is
+      exactly that.
+
+   4. THE MASTHEAD RULE IS --ink, NOT A RULE TOKEN. It is the one rule on the
+      card that is part of the letterhead rather than part of the ruling, which
+      is the same choice .rcpt__school and .drw__school already made, so the
+      three drawn documents read as one system.
+
+   5. NO GREEN ON THE VERDICT. The house rules permit --money-800 as text, and
+      it is declined: "Pass" is a word, and a word does not need a hue to say
+      what it says. Spending no colour at all is also the only version of this
+      card that is certainly correct on a photocopier, where the app's brand and
+      danger hues land within 0.4 percent of each other.
+   ============================================================================= */
+
+.res-fig {
+  margin: 0;
+  /* Fluid below this. The cap only matters if the card is pasted into a slot
+     wider than the column it is drawn for: a portrait card stretched past
+     about 550px stops reading as portrait. */
+  max-width: 34rem;
+}
+
+/* ------------------------------------------------------------------ frame ---
+   See decision 2. The 6px is the inset the brief specifies, and it is a margin
+   rather than a padding so that the gap belongs to the sheet rather than to the
+   frame, and .doc's own overflow: hidden clips nothing. */
+.res__frame {
+  margin: 6px;
+  padding: 2px;                          /* the gap between the two bars */
+  border: 1px solid var(--rule-2);
+}
+
+/* Percentage padding, so the margins inside the frame stay in proportion to the
+   card at every width instead of crowding at 320px. On this inner element
+   rather than on .doc, which sets padding: 0. */
+.res__in {
+  padding: 5.5% 6.5% 6%;
+  border: 1px solid var(--rule-2);
+}
+
+/* --------------------------------------------------------------- masthead ---
+   Centred, exactly as the component's header is, and single ruled: the receipt
+   uses a double rule under its school name because it is a document handed over
+   in exchange for money, and the two objects should not claim to be the same
+   kind of paper. */
+.res__head { text-align: center; }
+
+.res__school {
+  font-size: clamp(0.8125rem, 1.6vw, 0.875rem);
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  line-height: 1.3;
+  text-transform: uppercase;
+  color: var(--ink);
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--ink);
+}
+.res__kind {
+  margin-top: 9px;
+  font-size: clamp(0.8125rem, 1.2vw, 0.875rem);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1.35;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* ------------------------------------------------------------------ meta ---
+   The component's two column grid of four fields. auto-fit rather than a media
+   query, because the breakpoint that matters is the width of a FIELD, not the
+   width of the viewport: this card can sit in a full width block or in half of
+   a split, and either way the pair goes to one column the moment two of them
+   will not fit. 180px is the widest field here, "Class, Class 5, Section A". */
+.res__meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 6px 22px;
+  margin: 5% 0 0;
+}
+.res__mi {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.res__meta dt {
+  flex: 0 0 auto;
+  font-size: clamp(0.8125rem, 1.1vw, 0.875rem);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.5;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.res__meta dd {
+  margin: 0;
+  min-width: 0;
+  font-size: clamp(0.875rem, 1.6vw, 1rem);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+/* ----------------------------------------------------------------- table ---
+   table-layout stays auto on purpose. The two widths below are hints, so the
+   min-content width of a column head always wins over its percentage and no
+   head can be clipped or forced to overflow its cell. Subject names are allowed
+   to wrap, which is what buys the narrow end its room: "General Science" breaks
+   across two lines at 320px and nothing else has to give. */
+.res__tbl {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 5.5%;
+}
+.res__tbl th,
+.res__tbl td {
+  text-align: left;
+  vertical-align: top;
+  padding: 8px 6px 9px 0;
+  font-weight: 400;                      /* the component's subject cell is not
+                                            bold, and a row header would be */
+}
+/* Both figure columns: right aligned, never broken. */
+.res__tbl th:not(:first-child),
+.res__tbl td:not(:first-child) {
+  text-align: right;
+  padding-right: 0;
+  padding-left: 12px;
+  white-space: nowrap;
+}
+
+.res__tbl thead th {
+  padding-top: 0;
+  padding-bottom: 7px;
+  font-size: clamp(0.8125rem, 1.1vw, 0.875rem);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.4;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--ink-3);
+  border-bottom: 1px solid var(--rule-3);
+}
+.res__h-sub { width: 52%; }
+.res__h-num { width: 24%; }
+
+.res__tbl tbody th,
+.res__tbl tbody td {
+  font-size: clamp(0.875rem, 1.6vw, 1rem);
+  line-height: 1.4;
+  color: var(--ink);
+  border-bottom: 1px solid var(--rule);
+}
+/* The component's Max column is text-slate-600 against an --ink Obtained: the
+   denominator is context, the mark is the fact. */
+.res__tbl tbody td:first-of-type { color: var(--ink-3); }
+
+/* The last body row's hairline is removed rather than left to collapse against
+   the totals row's --rule-3 border. Border collapse between two 1px solid cell
+   borders is not resolved by darkness, so the structural rule could silently
+   have lost to the hairline. */
+.res__tbl tbody tr:last-child th,
+.res__tbl tbody tr:last-child td { border-bottom: 0; }
+
+/* ------------------------------------------------------------- totals row ---
+   The double rule is a 1px border plus a second 1px bar three pixels above it,
+   one segment per cell. With border-collapse the padding boxes abut, so the
+   segments join seamlessly and the rule is real structure at both ends, rather
+   than a border-style: double that thickens unevenly at 1px. */
+.res__tbl tfoot th,
+.res__tbl tfoot td {
+  position: relative;
+  padding-top: 12px;
+  font-size: clamp(0.9375rem, 1.8vw, 1.0625rem);
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--ink);
+  border-top: 1px solid var(--rule-3);
+}
+.res__tbl tfoot th::before,
+.res__tbl tfoot td::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -3px;
+  height: 1px;
+  background: var(--rule-3);
+}
+
+/* ---------------------------------------------------------- the three numbers
+   The component's wrapping flex row with space between, and the same three
+   items the brief names. Each pair is nowrap, so a percentage never breaks away
+   from its label, and the row wraps instead. At 320px "Percentage 82.50%" takes
+   the first line on its own and the other two share the second, which is what
+   space-between is for: both ends of the card stay flush. */
+.res__result {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 9px 22px;
+  margin: 5% 0 0;
+  padding-top: 13px;
+  border-top: 1px solid var(--rule);
+}
+.res__ri {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  white-space: nowrap;
+}
+.res__result dt {
+  font-size: clamp(0.8125rem, 1.1vw, 0.875rem);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.5;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.res__result dd {
+  margin: 0;
+  font-size: clamp(1rem, 2.1vw, 1.1875rem);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+  color: var(--ink);
+}
+
+/* --------------------------------------------------------------- verdict ---
+   The word, and the fact behind it, on one line that wraps. See decision 5 for
+   why there is no colour on it. */
+.res__verdict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin-top: 4.5%;
+  padding-top: 13px;
+  border-top: 1px solid var(--rule);
+}
+.res__vk {
+  font-size: clamp(0.8125rem, 1.1vw, 0.875rem);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.5;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.res__vv {
+  font-size: clamp(0.9375rem, 1.8vw, 1.0625rem);
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--ink);
+}
+.res__vn {
+  font-size: clamp(0.8125rem, 1.2vw, 0.875rem);
+  line-height: 1.45;
+  color: var(--ink-3);
+}
+
+/* ------------------------------------------------------------ signatures ---
+   The component prints a run of underscores after each label. A real rule is
+   the same object done properly, and it is the same construction the receipt
+   and the attendance sheet already use: room to sign, a --rule-3 field border,
+   then the label under it. */
+.res__sign {
+  display: flex;
+  gap: 9%;
+  margin-top: 7%;
+}
+.res__sig {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 30px 0 0;                      /* 30px is the room to sign in */
+  padding-top: 6px;
+  border-top: 1px solid var(--rule-3);
+  font-size: clamp(0.8125rem, 1.1vw, 0.875rem);
+  line-height: 1.4;
+  color: var(--ink-3);
+}
+
+/* ---------------------------------------------------------------- serial ---
+   The one item allowed below 13px, and only because it is a monospaced serial
+   read a character at a time rather than as prose. */
+.res__serial {
+  margin-top: 6%;
+  font-size: clamp(0.8125rem, 1.2vw, 0.875rem);
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+.res__sn {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+/* Visually hidden, still read out. The table caption names the document for
+   anyone who arrives at the table out of context, and states the state it is
+   in, since "published" is otherwise carried only by the absence of a banner. */
+.res__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  border: 0;
+}
+
+/* ------------------------------------------------------------ narrow end ---
+   Below 400px the card's margins and the head tracking both tighten, which buys
+   back the room the three tracked column heads need, and the summary row stops
+   justifying: at that width space-between would strand one pair against each
+   edge and read as two unrelated facts. Nothing is scaled and nothing is
+   hidden. */
+@media (max-width: 400px) {
+  .res__in { padding: 5% 4.5% 5.5%; }
+  .res__tbl thead th { letter-spacing: 0.02em; }
+  .res__tbl th,
+  .res__tbl td { padding-right: 5px; }
+  .res__tbl th:not(:first-child),
+  .res__tbl td:not(:first-child) { padding-right: 0; padding-left: 9px; }
+  .res__result { justify-content: flex-start; gap: 9px 18px; }
+  .res__sign { gap: 7%; }
+}
+
+/* -------------------------------------------------------- forced colours ---
+   Nothing to re-declare, and this is recorded so that nobody adds a rule here
+   later. Every rule on this card is a border or, in the one case of the second
+   bar of the double rule, a 1px box with a background: Windows high contrast
+   repaints border-color in CanvasText on its own, and site/styles.css already
+   drops .doc--lift's shadow and re-borders .doc. The double rule's second bar
+   is the only mark that could thin to nothing, and it cannot: forced colours
+   does not remove background-color, only background-image. */
+
+/* ---------------------------------------------------------------- print ---
+   The card is a facsimile of a printout, so on paper it should be the page
+   rather than a card on a page: the width cap goes, and site/styles.css has
+   already removed the stacked paper edge. A result card split across two sheets
+   is not a result card, so the whole figure is kept together, and the table is
+   named separately so that if anything has to move it is the caption, which is
+   commentary, rather than the marks. */
+@media print {
+  .res-fig { max-width: none; }
+  .res-fig, .res { break-inside: avoid; }
+  .res__tbl { break-inside: avoid; }
+}
+
+/* ---- reversal ---- */
+/* =============================================================================
+   ART:reversal, the ledger reversal pair. New CSS only; everything else comes
+   from site/styles.css (.doc, .doc--lift, .doc__cap, .tnum). Every colour is a
+   var() from that file and no new hex value is introduced.
+
+   WHY A CONTAINER QUERY AND NOT A MEDIA QUERY
+
+   The width that decides this table's layout is the COLUMN width, not the
+   viewport. In .split the artefact column is about 407px at a 900px viewport,
+   where the two column layout first engages, and about 517px at the 1120px
+   wrap. A viewport breakpoint would therefore switch the table back on at
+   exactly the width where it has least room. So the base styles below are the
+   stacked layout, one labelled block per entry, which is correct at any width
+   from 320px up, and the ruled five column table is applied only once the sheet
+   itself is at least 500px wide. A browser with no container query support
+   keeps the stacked layout, which is the safe direction to fail in.
+
+   WHY THE TABLE BODY IS 13px AND NOT CLAMPED UPWARDS
+
+   Because the sheet stops growing at about 517px while the viewport carries on
+   to 1440px. Clamping the type up against the viewport would make the money
+   column narrower exactly where the figures are widest, which is the one thing
+   a fee table may not do. Type is clamped where the box does grow: the stacked
+   layout, the header and the footing. 13px is the floor set for this page and
+   the only thing under it is the monospaced serial.
+   ========================================================================= */
+
+/* <figure> carries a 40px side margin from the UA sheet. */
+.rev { margin: 0; }
+
+/* The sheet is .doc. The only addition is the size query container. */
+.rev__doc { container: rev / inline-size; }
+
+/* ------------------------------------------------- the document header ------
+   Carried in the table's <caption>, so the table has an accessible name and
+   the visible header is that name rather than a duplicate of it. */
+.rev__t caption { display: block; text-align: left; }
+.rev__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px 10px;
+  padding: 13px 4% 11px;
+  border-bottom: 1px solid var(--rule-3);
+}
+.rev__head__t {
+  font-size: clamp(13px, 1.25vw, 14px);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.rev__head__s {
+  font-size: clamp(13px, 1.15vw, 14px);
+  color: var(--ink-3);
+}
+.rev__serial {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 11px;            /* the one thing permitted under 13px: a serial */
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  color: var(--ink-3);
+}
+
+/* ------------------------------------------- base layout, stacked entries ---
+   One block per entry with its column head printed beside the value. Also the
+   fallback for a browser without container queries. */
+.rev__t {
+  display: block;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: clamp(13px, 3.6vw, 15px);
+  line-height: 1.45;
+  color: var(--ink);
+}
+.rev__t thead { display: none; }
+.rev__t tbody,
+.rev__t tr,
+.rev__t td { display: block; }
+.rev__t tr {
+  padding: 5px 4% 9px;
+  border-bottom: 1px solid var(--rule);
+}
+/* The pair reads as a pair: a hairline BETWEEN the two entries, a structural
+   rule under them. Neither entry is greyed and neither is struck through. */
+.rev__t tbody tr:last-child { border-bottom: 1px solid var(--rule-3); }
+.rev__t td {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 6px 0;
+}
+.rev__t td::before {
+  content: attr(data-th);
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.rev__v {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: right;
+}
+
+/* Cell internals, shared by both layouts. */
+.rev__no { display: block; font-weight: 700; }
+.rev__who { display: block; font-weight: 600; }
+.rev__date { display: block; white-space: nowrap; }
+.rev__sub { display: block; color: var(--ink-3); }
+
+/* The tie glyph on the reversal entry, which points back at the line it
+   reverses. Decorative: the cell says "Reversal of No 1041" in real text.
+   Sized against .doc svg, which is width:100% for the drawn documents. */
+.rev__t .rev__tie {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  margin-right: 5px;
+  vertical-align: -1px;
+  color: var(--ink-3);
+}
+
+/* ------------------------------------------------------------ the footing ---
+   Outside the table on purpose, so the table stays at two entries and a head.
+   Its 4% side padding matches the table's end cells, so the figure lines up
+   under the Amount column. */
+.rev__foot { padding: 12px 4% 15px; }
+.rev__net {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-size: clamp(13px, 1.35vw, 15px);
+  font-weight: 600;
+}
+.rev__net b { margin-left: auto; font-weight: 700; }
+.rev__note {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+/* ------------------------------------------ upgrade: the five column table --
+   Engaged on the sheet's own width, not the viewport. table-layout is fixed so
+   that the prose in Reason can never squeeze Amount or the date: the columns
+   are declared, and the reason wraps into whatever is left. */
+@container rev (min-width: 500px) {
+  .rev__t {
+    display: table;
+    table-layout: fixed;
+    font-size: 13px;
+  }
+  .rev__t caption { display: table-caption; }
+  .rev__t thead { display: table-header-group; }
+  .rev__t tbody { display: table-row-group; }
+  .rev__t tr { display: table-row; padding: 0; border-bottom: 0; }
+  /* Reset the stacked layout's row rules explicitly, so the rules below come
+     from the cells and collapse against nothing. */
+  .rev__t tbody tr:last-child { border-bottom: 0; }
+  .rev__t th,
+  .rev__t td {
+    display: table-cell;
+    padding: 11px 8px;
+    text-align: left;
+    vertical-align: top;
+    overflow-wrap: break-word;
+  }
+  .rev__t th:first-child,
+  .rev__t td:first-child { padding-left: 4%; }
+  .rev__t th:last-child,
+  .rev__t td:last-child { padding-right: 4%; }
+  .rev__t td::before { display: none; }
+  .rev__v { text-align: inherit; }
+
+  .rev__t thead th {
+    padding-top: 9px;
+    padding-bottom: 9px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    border-bottom: 1px solid var(--rule-3);
+  }
+  .rev__t tbody td { border-bottom: 1px solid var(--rule); }
+  .rev__t tbody tr:last-child td { border-bottom: 1px solid var(--rule-3); }
+
+  /* Sums to 100. At the tightest real width, a 500px sheet, this leaves the
+     date 69px against the 66px it needs and the bracketed reversal figure 72px
+     against 68px, both measured at 13px tabular. */
+  .rev__c1 { width: 19%; }
+  .rev__c2 { width: 17%; }
+  .rev__c3 { width: 16%; }
+  .rev__c4 { width: 28%; }
+  .rev__c5 { width: 20%; }
+  .rev__num { text-align: right; }
+}
+
+/* ------------------------------------------------------- forced colours -----
+   Same treatment site/styles.css gives .doc and .card: the rules are the only
+   structure this object has, so they are named against a system colour rather
+   than left to a forced palette. */
+@media (forced-colors: active) {
+  .rev__head,
+  .rev__t tr,
+  .rev__t thead th,
+  .rev__t tbody td { border-color: CanvasText; }
+}
+
+/* --------------------------------------------------------------- print -----
+   The pair is the argument. Splitting it across a page break would print one
+   entry alone, which says the opposite of what the object is for. */
+@media print {
+  .rev { break-inside: avoid; }
+}
+
+/* ---- seal ---- */
+/* =============================================================================
+   seal.css, the new CSS for the seal.
+
+   Everything the mark needs beyond this file is already in site/styles.css:
+   .brand supplies the flex row and the 10px gap, ".brand svg { display: block }"
+   kills the inline baseline gap, and the tokens supply every colour. Nine
+   declarations in four rules is the whole cost of the mark.
+
+   Every selector is prefixed .seal so nothing can collide with the house
+   sheet. Link it after site/styles.css. Nothing here overrides a house rule,
+   so the order only matters for the print block at the bottom.
+
+   No new colour. Two tokens, var(--navy) and inherit, and no hex at all.
+
+   ---------------------------------------------------------------------------
+   WHY THE MARK SETS `color` INSTEAD OF PAINTING ITSELF
+
+   Every stroke and fill in the SVG is currentColor, which is what lets one
+   geometry serve the warm nav, the navy footer, the auth panel, the letterhead
+   of a drawn artefact, the print sheet and Windows high contrast. But in the
+   nav the inherited colour is --ink, because .brand sets it for the wordmark,
+   and the seal is specified as --navy. So the mark declares its own `color`
+   and lets currentColor read it back. That is one property doing the work a
+   fill attribute cannot, since a fill written into the markup could not then
+   be inherited on the navy grounds.
+
+   THE ORDER OF THE COLOUR RULES IS LOAD BEARING. .seal is one class, the
+   context rules are two, so they win on specificity wherever the mark sits on
+   navy, and nothing needs !important.
+
+   ---------------------------------------------------------------------------
+   WHY THE SIZE IS A CLAMP ON A 24 PIXEL MARK
+
+   Because at 320px the nav carries the seal, "School Manager" at 16px and the
+   Menu button, and the two pixels the clamp gives back are the cheapest ones
+   on the row. The clamp reaches its 24px ceiling at a 533px viewport, so every
+   tablet and desktop gets the specified size and only the narrowest phones see
+   21px. Width and height are set from one custom property rather than leaving
+   height auto, so the box is square in every engine without relying on
+   intrinsic aspect ratio inference, and neither variant is ever scaled with a
+   transform.
+   ============================================================================= */
+
+.seal {
+  --seal-size: clamp(21px, 1.5vw + 16px, 24px);
+  width: var(--seal-size);
+  height: var(--seal-size);
+  flex: 0 0 auto;          /* .brand is a flex row: never let the mark squash */
+  color: var(--navy);      /* the source currentColor reads on the warm ground */
+}
+
+/* (b), the auth panel. 40px at a 533px viewport and above, 34px at 320px. */
+.seal--panel { --seal-size: clamp(34px, 3vw + 24px, 40px); }
+
+/* Every navy ground. .foot .brand already carries color:#fff and .band sets
+   #fff for the whole band, so inherit is both correct and the only value that
+   cannot go stale if either of those changes. seal--onnavy is the manual
+   handle for the auth panel, which is --brand-950 and lives outside this
+   sheet's selectors. */
+.band .seal,
+.on-navy .seal,
+.foot .seal,
+.seal--onnavy { color: inherit; }
+
+/* ---------------------------------------------------------------- print ---
+   The house print sheet re-grounds .foot to white and forces #000 on a named
+   list of footer selectors, and .foot .brand is not on that list: it keeps its
+   inline color:#fff, so an inheriting mark would print white on white. Navy
+   prints legibly on white and --navy is not redefined for print, so one rule
+   covers every ground. It sits last so it beats the two class context rules
+   above on order rather than on weight. */
+@media print {
+  .seal,
+  .band .seal,
+  .on-navy .seal,
+  .foot .seal,
+  .seal--onnavy { color: var(--navy); }
+}
+
+/* -------------------------------------------------------- forced colours ---
+   Deliberately empty, and recorded so nobody adds a rule here later. In
+   forced-colors mode the UA replaces `color`, so the ring, the dot and the
+   block take the system text or link colour on their own, and the two
+   hairlines are holes rather than paint, so they take the system Canvas. The
+   mark is correct in high contrast because of how it is drawn, not because of
+   anything declared for it. */
+
+/* ==== END ARTEFACT STYLES ==== */

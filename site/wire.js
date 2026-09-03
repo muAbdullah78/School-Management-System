@@ -3,16 +3,17 @@
  *
  * Before this file, site/index.html linked only to its own anchors: every
  * "Start free trial" button scrolled the visitor down the page they were already
- * on, there was no way to sign in, and there was no download — the Windows
- * installer existed only as a CI artifact behind a GitHub login.
+ * on, there was no way to sign in, and there was no download at all.
  *
- * FOUR THINGS, and each one is a link that was missing:
+ * FIVE THINGS:
  *
- *   1. Sign in         → the app
- *   2. Start free trial → the app's signup
- *   3. Download         → the current release from app_releases (0082)
- *   4. Prices           → read from `plans`, so the site cannot quote a figure
- *                         the console does not charge
+ *   1. Sign in         -> the app
+ *   2. Start free trial -> the app's signup
+ *   3. Download         -> the current release from app_releases (0082), and the
+ *                          whole section HIDES ITSELF when there is no release
+ *   4. Prices           -> read from `plans`, so the site cannot quote a figure
+ *                          the console does not charge
+ *   5. The mobile menu  -> closing behaviour for the <details> disclosure
  *
  * NO FRAMEWORK, NO BUILD. The site is static HTML served from a CDN and it stays
  * that way: a marketing page that needs npm to change a phone number is a
@@ -20,15 +21,20 @@
  *
  * EVERY NETWORK READ HERE IS OPTIONAL. If Supabase is unreachable, or the config
  * is blank, the page keeps the prices written into the HTML and the download
- * button says the installer is being prepared. A visitor must never see a broken
- * page because a fetch failed — and the CI check keeps the hardcoded prices in
- * step with the database so the fallback is not a lie.
+ * section stays hidden. A visitor must never see a broken page because a fetch
+ * failed, and the CI check keeps the hardcoded prices in step with the database
+ * so the fallback is not a lie.
  * =========================================================================== */
 (function () {
   'use strict'
 
   var C = window.SITE_CONFIG || {}
   var app = String(C.APP_URL || '').replace(/\/+$/, '')
+  // A value with no scheme is a RELATIVE path, so 'app.schoolmanager.pk' sends
+  // every button to a same-origin 404 on the marketing host while looking
+  // perfectly correct in config.js. Treated as unset so the honest degradation
+  // below fires and #wire-warning appears, which is what gets it fixed.
+  if (app && !/^https?:\/\//.test(app)) app = ''
 
   // ---- 1 & 2. Everything that points into the app ------------------------
   //
@@ -98,6 +104,20 @@
     // beside a real phone number would look like the site was half finished.
     var todo = document.getElementById('contact-todo')
     if (todo) todo.hidden = any
+
+    // The sticky mobile bar's WhatsApp button. It is the second most tapped
+    // thing on a phone after the trial button, and it is useless without a
+    // number, so it is removed rather than left pointing at wa.me/ with no
+    // recipient.
+    var bar = document.getElementById('bar-whatsapp')
+    if (bar) {
+      if (C.CONTACT_WHATSAPP) {
+        bar.setAttribute('href', 'https://wa.me/' + String(C.CONTACT_WHATSAPP).replace(/[^\d]/g, ''))
+        bar.setAttribute('rel', 'noopener')
+      } else {
+        bar.hidden = true
+      }
+    }
   }
 
   // ---- Supabase REST, by hand -------------------------------------------
@@ -129,6 +149,10 @@
       .then(function (plans) {
         if (!plans || !plans.length) return
         plans.forEach(function (p) {
+          // The code goes into a selector, so it is validated rather than
+          // trusted. A row with a code of "] , *" would otherwise either throw
+          // or match every card on the page.
+          if (typeof p.code !== 'string' || !/^[a-z0-9_-]+$/i.test(p.code)) return
           var card = document.querySelector('[data-plan="' + p.code + '"]')
           if (!card) return
           var monthly = card.querySelector('[data-price-monthly]')
@@ -148,17 +172,52 @@
         })
         // The headline price in the hero, kept in step with the cheapest plan
         // rather than typed twice.
-        var cheapest = plans.filter(function (p) { return Number(p.price_monthly) > 0 })[0]
+        // By PRICE, not by position. This took plans[0] of a list ordered by
+        // sort_order, so with growth ahead of starter the hero read "From
+        // Rs 2,000" above a Rs 950 card. "From" is a promise about the minimum.
+        var cheapest = plans.filter(function (p) { return Number(p.price_monthly) > 0 })
+          .reduce(function (a, b) {
+            return Number(b.price_monthly) < Number(a.price_monthly) ? b : a
+          }, null)
         var lead = document.getElementById('lead-price')
         if (lead && cheapest) lead.textContent = money(cheapest.price_monthly)
       })
+      // The only network consumer here that had no catch. A throwing row in the
+      // middle of the loop left the cards half rewritten: some plans updated,
+      // the rest showing the HTML fallback, with no error anywhere. The
+      // fallback prices are CI-checked against the database, so falling back
+      // silently is correct; falling over halfway is not.
+      .catch(function () {})
   }
 
   // ---- 3. The installer --------------------------------------------------
+  //
+  // THIS USED TO LEAVE A DEAD BUTTON ON THE PAGE, and that was reported as a
+  // broken link. It was not broken: there is no published release, so the
+  // fallback text "Windows installer: being prepared" was correct. But the
+  // visitor cannot tell the difference between an honest placeholder and a site
+  // that does not work, and the nav carried a Download link straight to it.
+  //
+  // You cannot link to a file that does not exist, so the answer is to stop
+  // advertising the download until there is one. The section and every id stay
+  // in the markup, because CI asserts they exist and because the day a release
+  // is published this lights up with no further edit.
   function bytes(n) {
     if (!n) return ''
     var mb = Number(n) / (1024 * 1024)
     return mb >= 1 ? ' · ' + mb.toFixed(0) + ' MB' : ''
+  }
+
+  function hideDownload() {
+    var section = document.getElementById('download')
+    if (section) section.hidden = true
+    // Every route to it goes too, or the nav scrolls to a hidden anchor and
+    // nothing appears to happen.
+    var links = document.querySelectorAll('a[href="#download"]')
+    for (var i = 0; i < links.length; i++) {
+      var li = links[i].closest('li')
+      if (li) { li.hidden = true } else { links[i].hidden = true }
+    }
   }
 
   function wireDownload() {
@@ -167,7 +226,18 @@
     return rest('app_releases?select=version,url,sha256,size_bytes,notes,published_at&platform=eq.windows&channel=eq.stable&is_current=is.true&limit=1')
       .then(function (rows) {
         var r = rows && rows[0]
-        if (!r) return          // the "being prepared" text already in the HTML
+        if (!r || !r.url) { hideDownload(); return }
+
+        var section = document.getElementById('download')
+        if (section) section.hidden = false
+        // The nav entries ship hidden, so a visitor with no JavaScript is never
+        // pointed at a section that is not there. They come back here.
+        var routes = document.querySelectorAll('a[href="#download"]')
+        for (var k = 0; k < routes.length; k++) {
+          var host = routes[k].closest('li') || routes[k]
+          host.hidden = false
+        }
+
         var btn = document.getElementById('download-btn')
         btn.setAttribute('href', r.url)
         btn.textContent = 'Download for Windows'
@@ -181,12 +251,17 @@
             year: 'numeric', month: 'short', day: 'numeric',
           }) : '')
 
-        // The checksum, in full, because a school that has been told to check it
-        // needs the whole thing — and because publishing it is the only reason
-        // the check means anything.
+        // The checksum stays, because publishing it is the only reason checking
+        // it means anything. But it is behind a disclosure rather than printed
+        // in full: the buyer is a school owner, he does not know what a checksum
+        // is, he will never verify one, and 64 characters of hexadecimal across
+        // his phone screen is spatially the largest thing in the section.
         var sum = document.getElementById('download-sha')
-        sum.textContent = r.sha256
-        sum.parentElement.hidden = false
+        if (sum) {
+          sum.textContent = r.sha256
+          var wrapper = sum.closest('details') || sum.parentElement
+          if (wrapper) wrapper.hidden = false
+        }
 
         if (r.notes) {
           var notes = document.getElementById('download-notes')
@@ -194,12 +269,50 @@
           notes.hidden = false
         }
       })
+      .catch(function () { hideDownload() })
+  }
+
+  // ---- 5. The mobile menu ------------------------------------------------
+  //
+  // The disclosure itself is a <details>, so it opens and closes with no
+  // JavaScript and is keyboard accessible for free. This adds only the three
+  // behaviours a <details> does not give you, each of which is a way a visitor
+  // gets stranded with the panel open over the page.
+  function wireMenu() {
+    var menu = document.getElementById('navmenu')
+    if (!menu) return
+
+    // Tapping a link inside it navigates, and the panel must not stay open over
+    // the destination.
+    menu.addEventListener('click', function (e) {
+      var a = e.target.closest && e.target.closest('a')
+      if (a) menu.removeAttribute('open')
+    })
+
+    // Escape closes it, which is what every other disclosure on the web does.
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && menu.hasAttribute('open')) {
+        menu.removeAttribute('open')
+        var s = menu.querySelector('summary')
+        if (s) s.focus()
+      }
+    })
+
+    // Rotating a phone to landscape can cross the 860px breakpoint, at which
+    // point the real nav returns and the open panel would hang below it.
+    if (window.matchMedia) {
+      var mq = window.matchMedia('(min-width: 860px)')
+      var onChange = function (ev) { if (ev.matches) menu.removeAttribute('open') }
+      if (mq.addEventListener) { mq.addEventListener('change', onChange) }
+      else if (mq.addListener) { mq.addListener(onChange) }
+    }
   }
 
   function start() {
     wireAppLinks()
     applySignupSwitch()
     wireContact()
+    wireMenu()
     wirePrices()
     wireDownload()
     var yr = document.getElementById('yr')

@@ -52,14 +52,52 @@ if [ -z "$rows" ]; then
 fi
 
 # The block of HTML for one plan, from its data-plan attribute to the closing
-# </div>. Extracted per plan so a figure in the WRONG card is caught — the
+# </div>. Extracted per plan so a figure in the WRONG card is caught: the
 # failure a whole-file grep would miss, and the one that quotes Growth's price
 # for Starter's limit.
+#
+# THIS DID NOT WORK, AND IT IS WORTH SAYING WHY IN FULL.
+#
+# The closing condition used to be:
+#
+#     inside && /<\/div>[[:space:]]*$/ && /btn/ { inside = 0 }
+#
+# which requires ONE line to both end in </div> and contain "btn". No line in
+# the markup ever did: the button and the closing tag are on separate lines, as
+# any formatter would leave them. So `inside` was never cleared, every card
+# extraction ran to end of file, and each plan's "card" contained every other
+# plan's prices. Measured before rewriting: the starter extraction returned 240
+# lines and matched Growth's "Rs 2,000".
+#
+# So the check passed, and it passed for a reason that had nothing to do with
+# what it claimed. The whole-card assertion it advertises was a whole-file grep
+# wearing a per-card costume, and the one failure the comment above promises to
+# catch was the exact failure it could not see.
+#
+# Two changes, and the second is the one that matters:
+#
+#   1. Close on an EXPLICIT marker, <!-- /plan -->, rather than on a guessed
+#      combination of tag and class. Markup gets reformatted; a marker does not
+#      move on its own.
+#   2. REFUSE if the marker is missing, rather than falling back to end of file.
+#      A checker that degrades quietly into a weaker check when its assumption
+#      breaks is worse than one that stops, because the weaker check still
+#      prints success. That is precisely how this one hid for so long.
 card() {
   awk -v want="$1" '
     $0 ~ ("data-plan=\"" want "\"") { inside = 1 }
     inside { print }
-    inside && /<\/div>[[:space:]]*$/ && /btn/ { inside = 0 }
+    inside && /<!-- \/plan -->/ { exit }
+  ' "$HTML"
+}
+
+# True when the plan block is properly terminated. Kept separate from card() so
+# the refusal below is explicit rather than inferred from a line count.
+card_is_closed() {
+  awk -v want="$1" '
+    $0 ~ ("data-plan=\"" want "\"") { inside = 1 }
+    inside && /<!-- \/plan -->/ { found = 1; exit }
+    END { exit(found ? 0 : 1) }
   ' "$HTML"
 }
 
@@ -77,6 +115,14 @@ while IFS='|' read -r code limit monthly yearly; do
     echo "  $code: the website has no card for this plan (data-plan=\"$code\")"
     fail=1
     continue
+  fi
+  # Unterminated means the block below is every remaining line of the file, so
+  # every assertion against it would pass on any other plan's figures. Refuse
+  # rather than check something weaker than advertised.
+  if ! card_is_closed "$code"; then
+    echo "REFUSING TO REPORT SUCCESS: the $code card in $HTML has no <!-- /plan --> marker," >&2
+    echo "so its block runs to end of file and would match any plan's price." >&2
+    exit 1
   fi
   checked=$((checked + 1))
 
@@ -96,11 +142,54 @@ done <<< "$rows"
 
 # The hero also quotes the cheapest monthly price. It is a separate literal and
 # it drifted in exactly the way this whole check exists to stop.
+# By PRICE, not by sort_order. This ordered by sort_order and took the first
+# row, which is the same defect wire.js had: with growth ahead of starter, the
+# guard would have demanded the hero quote Rs 2,000 as its "From" figure while
+# a Rs 950 plan sat in the table below it. "From" is a claim about the minimum.
 cheapest=$(psql -tA -v ON_ERROR_STOP=1 -c \
   "select price_monthly::bigint from public.plans
-    where active and price_monthly > 0 order by sort_order limit 1")
+    where active and price_monthly > 0 order by price_monthly limit 1")
 grep -qF "Rs $(commas "$cheapest")" <(grep 'id="lead-price"' "$HTML") \
   || { echo "  the headline price in the hero is not Rs $cheapest"; fail=1; }
+
+# --- the copies of the price that live OUTSIDE the cards -------------------
+#
+# The cards and the hero were guarded; four other places quoting the same figure
+# were not, and a stale price in any of them is a price you will be held to.
+# Measured with plans stubbed to 1400/2900/4900: the cards and the hero all
+# updated correctly while the meta description, the Open Graph description and
+# the JSON-LD offers still read 950, and the JSON-LD is the copy Google puts in
+# a rich result.
+cheap=$(commas "$cheapest")
+
+for label in 'meta name="description"' 'meta property="og:description"'; do
+  line=$(grep "$label" "$HTML" || true)
+  if [ -z "$line" ]; then
+    echo "  the page has no <$label>, which the price check expects to find"
+    fail=1
+  elif ! printf '%s' "$line" | grep -qF "Rs $cheap"; then
+    echo "  <$label> does not quote the cheapest price, Rs $cheapest"
+    fail=1
+  fi
+done
+
+# The JSON-LD offers, which are structured data and get scraped verbatim.
+while IFS='|' read -r code limit monthly yearly; do
+  [ -z "${code:-}" ] && continue
+  grep -qE "\"price\": ?\"$monthly\"" "$HTML" \
+    || { echo "  the JSON-LD has no offer priced \"$monthly\" for $code"; fail=1; }
+  if [ -n "${limit:-}" ]; then
+    grep -qF "Up to $(commas "$limit") students" "$HTML" \
+      || { echo "  the JSON-LD has no \"Up to $(commas "$limit") students\" for $code"; fail=1; }
+  fi
+done <<< "$rows"
+
+# The AUTH SCREENS quote it too, and they are in the app rather than the site.
+AUTH=web/src/components/AuthLayout.tsx
+if [ -f "$AUTH" ]; then
+  grep -qF "Rs $cheap" "$AUTH" \
+    || { echo "  $AUTH quotes a price that is not Rs $cheapest (the signup panel)"; fail=1; }
+fi
 
 # The floor. A card-matching function that silently matched nothing would report
 # a clean run over an empty check — the failure mode two of this project's other
@@ -119,4 +208,4 @@ if [ "$fail" = 1 ]; then
   exit 1
 fi
 
-echo "site/index.html and public.plans agree on $checked plan(s), and on the headline price"
+echo "site/index.html and public.plans agree on $checked plan(s), the headline price, both meta descriptions, the JSON-LD offers and the signup panel"

@@ -3,15 +3,27 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '@/auth/AuthProvider'
 import { appTitle } from '@/lib/config'
 import { useSchoolName } from '@/hooks/useSchoolName'
+import {
+  AuthError,
+  AuthLayout,
+  AuthNotice,
+  AuthSpinner,
+  ReceiptArtefact,
+  authButton,
+  authButtonLink,
+  authField,
+  authLabel,
+  AuthBusy,
+} from '@/components/AuthLayout'
 
 /**
  * "I have forgotten my password."
  *
- * Until this existed there was NO WAY BACK IN for anybody — a principal, a
- * clerk, or a parent. The only remedy was for the vendor to set a new password
- * by hand and send it over WhatsApp, which is both a support call the vendor
- * cannot scale to fifty schools and a security posture nobody would choose: the
- * vendor knowing a school owner's password.
+ * Until this existed there was NO WAY BACK IN for anybody, not a principal, not
+ * a clerk, not a parent. The only remedy was for the vendor to set a new
+ * password by hand and send it over WhatsApp, which is both a support call the
+ * vendor cannot scale to fifty schools and a security posture nobody would
+ * choose: the vendor knowing a school owner's password.
  *
  * THE SAME SENTENCE FOR EVERY OUTCOME. A real account, a mistyped address, and a
  * stranger checking whether a particular teacher works at a particular school
@@ -22,6 +34,9 @@ import { useSchoolName } from '@/hooks/useSchoolName'
  * NO SPINNER-THEN-NOTHING. The confirmation replaces the form rather than
  * flashing a toast, because the next thing the user does is leave for their
  * email, and a message they have to remember is a message they will not act on.
+ *
+ * It wears the same frame and the same drawn receipt as /login on purpose.
+ * Recovery is a sign-in that went wrong, so it should feel like the same room.
  */
 export function ForgotPassword() {
   const { sendReset } = useAuth()
@@ -37,7 +52,7 @@ export function ForgotPassword() {
     setError(null)
     const { error } = await sendReset(email.trim())
     setBusy(false)
-    // A failure here is a failure to SEND — offline, or too many attempts. It is
+    // A failure here is a failure to SEND: offline, or too many attempts. It is
     // never "no such account", which this screen must not disclose.
     if (error) {
       setError(error)
@@ -47,68 +62,68 @@ export function ForgotPassword() {
   }
 
   return (
-    <div className="flex h-full items-center justify-center bg-slate-100 p-4">
-      <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow">
-        <h1 className="text-lg font-semibold text-slate-800">{appTitle(schoolName)}</h1>
+    <AuthLayout
+      line="A way back in that does not need a phone call."
+      artefact={<ReceiptArtefact />}
+    >
+      <h1 className="text-2xl font-semibold tracking-[-0.015em] text-slate-900">
+        {appTitle(schoolName)}
+      </h1>
 
-        {sent ? (
-          <>
-            <p className="mt-3 rounded bg-money-50 px-3 py-2 text-sm text-money-800 ring-1 ring-money-100">
+      {sent ? (
+        <>
+          <div className="mt-5">
+            <AuthNotice>
               If that address has an account, a link to set a new password is on its way.
               It is valid for one hour.
-            </p>
-            <ul className="mt-3 space-y-1.5 text-xs text-slate-500">
-              <li>Check the spam or junk folder — reset emails often land there.</li>
-              <li>
-                Open the link on this device if you can. Opening it on a phone and then
-                signing in on the computer works too, but the link itself must be opened
-                once.
-              </li>
-              <li>Nothing arrived? Ask the school office, or try again in a few minutes.</li>
-            </ul>
-            <Link
-              to="/login"
-              className="mt-5 block w-full rounded bg-brand-600 px-3 py-2 text-center text-sm font-medium text-white hover:bg-brand-700"
-            >
+            </AuthNotice>
+          </div>
+          <ul className="mt-4 space-y-2 text-sm text-slate-500">
+            <li>Check the spam or junk folder. Reset emails often land there.</li>
+            <li>
+              Open the link on this device if you can. Opening it on a phone and then
+              signing in on the computer works too, but the link itself must be opened
+              once.
+            </li>
+            <li>Nothing arrived? Ask the school office, or try again in a few minutes.</li>
+          </ul>
+          <Link to="/login" className={`mt-6 ${authButtonLink}`}>
+            Back to sign in
+          </Link>
+        </>
+      ) : (
+        <>
+          <p className="mt-1.5 text-base text-slate-500">
+            Enter the email address you sign in with and we will send a link to set a new
+            password.
+          </p>
+          <form onSubmit={onSubmit} className="mt-7 space-y-4" aria-busy={busy}>
+          <AuthBusy label={busy ? 'Sending the link' : null} />
+            <label className="block">
+              <span className={authLabel}>Email</span>
+              <input
+                type="email"
+                autoComplete="username"
+                autoFocus
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className={authField}
+              />
+            </label>
+            {error && <AuthError>{error}</AuthError>}
+            <button type="submit" disabled={busy} className={authButton}>
+              {busy && <AuthSpinner />}
+              {busy ? 'Sending' : 'Send the link'}
+            </button>
+          </form>
+          <p className="mt-5 border-t border-slate-200 pt-5 text-center text-sm text-slate-500">
+            <Link to="/login" className="font-medium text-brand-700 hover:underline">
               Back to sign in
             </Link>
-          </>
-        ) : (
-          <>
-            <p className="mt-1 text-sm text-slate-500">
-              Enter the email address you sign in with and we will send a link to set a new
-              password.
-            </p>
-            <form onSubmit={onSubmit} className="mt-5 space-y-3">
-              <label className="block">
-                <span className="text-sm text-slate-600">Email</span>
-                <input
-                  type="email"
-                  autoComplete="username"
-                  autoFocus
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-                />
-              </label>
-              {error && <p className="text-sm text-red-600">{error}</p>}
-              <button
-                type="submit"
-                disabled={busy}
-                className="w-full rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60"
-              >
-                {busy ? 'Sending…' : 'Send the link'}
-              </button>
-            </form>
-            <p className="mt-4 text-center text-sm text-slate-500">
-              <Link to="/login" className="font-medium text-brand-700 hover:underline">
-                Back to sign in
-              </Link>
-            </p>
-          </>
-        )}
-      </div>
-    </div>
+          </p>
+        </>
+      )}
+    </AuthLayout>
   )
 }

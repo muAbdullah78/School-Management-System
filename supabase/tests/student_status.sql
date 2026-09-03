@@ -142,12 +142,29 @@ begin
     'full_name','Moved Away','father_name','Moved Father','father_cnic','35201-3000001-1',
     'phone','0300-100 0001','admission_date',(current_date - 190)::date,
     'session_id',v_sess,'class_id',v_cl,'section_id',v_sec,'roll_no','1','links','[]'::jsonb));
-  -- Month-ALIGNED on purpose: months_here is asserted, and day offsets would
-  -- make that assertion depend on which day of the month the suite runs.
+  -- Month-aligned to THE LEAVING DATE, not to today, and that distinction is the
+  -- whole point.
+  --
+  -- months_here is a pure calendar-month difference (0054: year*12 + month, on
+  -- both dates), so only the MONTHS of the two dates matter. This aligned the
+  -- admission to date_trunc('month', current_date) while the leaving date is
+  -- current_date - 2, so on the 1st and 2nd of any month the leaving date fell
+  -- into the PREVIOUS month and the span came out as five, not six. Measured
+  -- over 2026: assertion 35 failed on 24 of 365 days, every 1st and every 2nd.
+  -- It failed a real CI run on 2 September.
+  --
+  -- Aligning to (current_date - 2) makes the span exactly six calendar months by
+  -- construction. Measured over 1,096 days from 2026 to 2028: zero failures.
+  --
+  -- This is the fifth time this project has pinned an assertion to something
+  -- that moves with the calendar. Assertion 38 below carries the comment about
+  -- the previous four, and its author was right to; this line was written under
+  -- that same comment and still got it wrong, because it protected one of the
+  -- two dates and forgot the other.
   perform public.fn_admit_student(jsonb_build_object(
     'full_name','Struck Child','father_name','Struck Father','father_cnic','35201-3000002-2',
     'phone','0300-100 0002',
-    'admission_date',(date_trunc('month', current_date) - interval '6 months')::date,
+    'admission_date',(date_trunc('month', current_date - 2) - interval '6 months')::date,
     'session_id',v_sess,'class_id',v_cl,'section_id',v_sec,'roll_no','2','links','[]'::jsonb));
   perform public.fn_admit_student(jsonb_build_object(
     'full_name','Grad Child','father_name','Grad Father','father_cnic','35201-3000003-3',
