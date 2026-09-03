@@ -591,6 +591,51 @@ details.q p { margin-top: 12px; color: var(--ink-2); max-width: 72ch; font-size:
 .clink { color: var(--brand); text-decoration: none; font-weight: 600; }
 .clink:hover { text-decoration: underline; }
 
+/* ---------------------------------------------------------------- reviews ---
+   The distribution is not decoration. An average alone can be curated; an
+   average printed beside the count of each rating either matches the shape of
+   the bars or it does not, and a run of removed one-star reviews leaves a hole
+   anybody can see. So the bars are as prominent as the number. */
+.rsum {
+  margin-top: 30px; display: grid; gap: 20px; align-items: center;
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--r);
+  padding: 22px 24px;
+}
+@media (min-width: 620px) { .rsum { grid-template-columns: auto 1fr; } }
+.rsum__avg { display: flex; flex-direction: column; align-items: flex-start; }
+.rsum__avg b {
+  font-family: var(--display); font-size: 3rem; font-weight: 700;
+  line-height: 1; letter-spacing: -0.03em; color: var(--ink);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.rsum__avg span { font-size: 13px; color: var(--ink-3); margin-top: 4px; }
+.rsum__n { grid-column: 1 / -1; margin: 0; font-size: 14px; color: var(--ink-2); }
+.rdist { display: grid; gap: 7px; }
+.rdist__row { display: flex; align-items: center; gap: 10px; }
+.rdist__k { width: 12px; font-size: 13px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.rdist__row .bar { background: var(--bg-3); }
+.rdist__row .bar i { background: var(--due); }
+.rdist__n { width: 28px; text-align: right; font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+
+.reviews { margin-top: 26px; display: grid; gap: 18px; }
+.review {
+  background: #fff; border: 1px solid var(--line); border-radius: var(--r);
+  padding: 22px 24px; box-shadow: var(--sh);
+}
+/* The rating in ink beside the glyphs. The glyphs are aria-hidden and are
+   decoration; the words are the rating. See build-site.py for why. */
+.review__rating { display: flex; align-items: center; gap: 9px; margin: 0; }
+.review__rating b { font-size: 13.5px; font-weight: 600; color: var(--ink-2); }
+.review__stars { color: var(--due); font-size: 15px; letter-spacing: 2px; }
+.review__stars span { color: var(--ink-3); }
+.review h3 { font-size: 1.05rem; margin: 10px 0 8px; }
+.review p { font-size: 15.5px; color: var(--ink-2); line-height: 1.65; }
+.review footer {
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--bg-2);
+  font-size: 13.5px; color: var(--ink-3);
+}
+.review footer span { color: var(--ink-3); margin: 0 4px; }
+
 /* --------------------------------------------------------------- articles ---
    Long-form typography for the guides. The product pages are short blocks in
    cards and panels; a 900 word article needs a measure, a rhythm and list

@@ -1363,6 +1363,22 @@ jobs:
         # would be easy to make May correct by ignoring dates again.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/fee_setup.sql
 
+      - name: Reviews cannot be faked, including by us
+        # Storing a rating is easy; the value of 0093 is entirely in the rules,
+        # and a rule that is not tested is a comment. This suite is written so
+        # that REMOVING a rule makes it fail.
+        #
+        # The assertions that matter most, because they are the ones somebody
+        # would be tempted to loosen: a clerk cannot review and neither can a
+        # school that has not used it; a REVERSED payment does not count towards
+        # having used it; one review per school, by an index rather than a form;
+        # the 24 hour window really does hide a review; an operator can hide
+        # only for a listed abuse category and CANNOT hide for a low rating;
+        # every hide is written to operator_actions with the rating attached;
+        # anon reads a view with no author column rather than the table; and
+        # nobody signed in can insert, update or delete a row directly.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/reviews.sql
+
       - name: Live student count — does a school outgrowing its plan get noticed?
         # It did not. subscriptions.student_count is a stored number driving the
         # console's count, limit_state, over_limit_flagged_at, suggested_plan and

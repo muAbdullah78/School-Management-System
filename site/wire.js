@@ -288,6 +288,146 @@
   // JavaScript and is keyboard accessible for free. This adds only the three
   // behaviours a <details> does not give you, each of which is a way a visitor
   // gets stranded with the panel open over the page.
+  /* ------------------------------------------------------------ reviews ---
+     The live list on /reviews, replacing the snapshot baked in at build time.
+
+     WHY BOTH. The snapshot is what a crawler reads and what carries the
+     structured data, because a rating that depends on a runtime fetch is a
+     rating that silently vanishes the day the fetch fails. The live read is so
+     that a school which posted a review yesterday sees it today without
+     anybody rebuilding the site. If this fetch fails, the baked snapshot stays
+     on the page, which is the correct fallback rather than an empty section.
+
+     EVERY VALUE GOES IN AS textContent, never as HTML. A review body is typed
+     by a customer, and the one thing that must not be possible on this page is
+     a school writing a review that runs script in another school owner's
+     browser. Nodes are built rather than strings concatenated, so there is no
+     place for markup to be interpreted even by accident.
+  */
+  function el(tag, cls, text) {
+    var n = document.createElement(tag)
+    if (cls) n.className = cls
+    if (text !== undefined && text !== null) n.textContent = String(text)
+    return n
+  }
+
+  function starRow(rating) {
+    var p = el('p', 'review__rating')
+    var glyphs = el('span', 'review__stars')
+    glyphs.setAttribute('aria-hidden', 'true')
+    // Filled stars, then outline stars. The outline is a different character
+    // rather than a paler colour, because a pale solid star is invisible and
+    // then three out of five looks like three out of three.
+    for (var i = 1; i <= 5; i++) {
+      if (i <= rating) {
+        glyphs.appendChild(document.createTextNode('\u2605'))
+      } else {
+        glyphs.appendChild(el('span', null, '\u2606'))
+      }
+    }
+    p.appendChild(glyphs)
+    // The rating as TEXT, which is what makes the glyphs decoration.
+    p.appendChild(el('b', null, rating + ' out of 5'))
+    return p
+  }
+
+  function bar(label, n, total) {
+    var row = el('div', 'rdist__row')
+    row.appendChild(el('span', 'rdist__k', label))
+    var track = el('span', 'bar')
+    var fill = document.createElement('i')
+    fill.style.width = (total ? Math.round((n / total) * 100) : 0) + '%'
+    track.appendChild(fill)
+    row.appendChild(track)
+    row.appendChild(el('span', 'rdist__n', n))
+    return row
+  }
+
+  function wireReviews() {
+    var host = document.getElementById('reviews-live')
+    if (!host) return Promise.resolve()
+
+    return Promise.all([
+      rest('reviews_summary?select=total,average,five,four,three,two,one&limit=1'),
+      rest('reviews_public?select=id,rating,title,body,school_name,city,published_on&order=published_on.desc&limit=100'),
+    ]).then(function (both) {
+      var s = both[0] && both[0][0]
+      var list = both[1] || []
+      if (!s) return
+      var total = Number(s.total) || 0
+
+      // The two must agree, or the page would print "12 schools" above eleven
+      // reviews. Sooner leave the baked snapshot, which was consistent when it
+      // was built.
+      if (total !== list.length) return
+
+      var frag = document.createDocumentFragment()
+
+      if (total === 0) {
+        var card = el('div', 'card')
+        card.style.maxWidth = '60ch'
+        card.appendChild(el('h3', null, 'No reviews yet'))
+        card.appendChild(el('p', null,
+          'A school can only write one after using this for three weeks and issuing '
+          + 'twenty real receipts, which is deliberate: it is what makes the reviews on '
+          + 'this page worth reading. Nothing here is written by us, and there is '
+          + 'nothing here yet.'))
+        frag.appendChild(card)
+      } else {
+        var sum = el('div', 'rsum')
+        sum.id = 'reviews-summary'
+        var avg = el('div', 'rsum__avg')
+        avg.appendChild(el('b', null, s.average))
+        avg.appendChild(el('span', null, 'out of 5'))
+        sum.appendChild(avg)
+        var dist = el('div', 'rdist')
+        dist.appendChild(bar('5', Number(s.five) || 0, total))
+        dist.appendChild(bar('4', Number(s.four) || 0, total))
+        dist.appendChild(bar('3', Number(s.three) || 0, total))
+        dist.appendChild(bar('2', Number(s.two) || 0, total))
+        dist.appendChild(bar('1', Number(s.one) || 0, total))
+        sum.appendChild(dist)
+        var n = el('p', 'rsum__n')
+        n.appendChild(document.createTextNode('From '))
+        n.appendChild(el('b', null, total))
+        n.appendChild(document.createTextNode(
+          ' school' + (total === 1 ? '' : 's') + ' that wrote a review. Every published '
+          + 'review is counted here, including the critical ones.'))
+        sum.appendChild(n)
+        frag.appendChild(sum)
+
+        var wrap = el('div', 'reviews')
+        wrap.id = 'reviews-list'
+        list.forEach(function (r) {
+          var rating = Math.max(1, Math.min(5, Number(r.rating) || 0))
+          var art = el('article', 'review')
+          art.appendChild(starRow(rating))
+          art.appendChild(el('h3', null, r.title))
+          art.appendChild(el('p', null, r.body))
+          var foot = el('footer')
+          foot.appendChild(document.createTextNode(
+            String(r.school_name || '') + (r.city ? ', ' + r.city : '')))
+          foot.appendChild(el('span', null, '\u00b7'))
+          var t = document.createElement('time')
+          t.setAttribute('datetime', String(r.published_on || ''))
+          t.textContent = String(r.published_on || '')
+          foot.appendChild(t)
+          art.appendChild(foot)
+          wrap.appendChild(art)
+        })
+        frag.appendChild(wrap)
+      }
+
+      host.textContent = ''
+      host.appendChild(frag)
+    })
+    .catch(function () {
+      // Leave the baked snapshot in place. It was consistent when it was built,
+      // and a page that empties itself because a fetch failed is worse than a
+      // page that is a few days behind.
+    })
+  }
+
   function wireMenu() {
     var menu = document.getElementById('navmenu')
     if (!menu) return
@@ -325,6 +465,7 @@
     wireMenu()
     wirePrices()
     wireDownload()
+    wireReviews()
     var yr = document.getElementById('yr')
     if (yr) yr.textContent = String(new Date().getFullYear())
   }

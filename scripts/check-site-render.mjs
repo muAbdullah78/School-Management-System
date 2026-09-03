@@ -39,7 +39,7 @@ import { dirname, resolve } from 'node:path'
 const OUT = process.env.SP || resolve(dirname(fileURLToPath(import.meta.url)), '../scratch/site-render')
 mkdirSync(OUT, { recursive: true })
 const ORIGIN = 'http://127.0.0.1:8803'
-const PAGES = ["/", "/fee-management", "/attendance", "/exams-and-results", "/accounts", "/parent-portal", "/pricing", "/faq", "/contact", "/download", "/guides", "/guides/fee-challan-pakistan", "/guides/expected-vs-collected", "/guides/moving-from-paper-registers", "/404"]
+const PAGES = ["/", "/fee-management", "/attendance", "/exams-and-results", "/accounts", "/parent-portal", "/pricing", "/faq", "/contact", "/download", "/guides", "/guides/fee-challan-pakistan", "/guides/expected-vs-collected", "/guides/moving-from-paper-registers", "/reviews", "/404"]
 const browser = await chromium.launch()
 
 const audit = () => {
@@ -102,7 +102,14 @@ const audit = () => {
     const L1 = lum(fg), L2 = lum(bg)
     const ratio = (Math.max(L1,L2)+.05)/(Math.min(L1,L2)+.05)
     const px = parseFloat(s.fontSize), bold = parseInt(s.fontWeight,10) >= 700
-    const need = px >= 24 || (bold && px >= 18.66) ? 3 : 4.5
+    // aria-hidden text is DECORATION and is held to 1.4.11's 3:1 for a
+    // graphical object rather than 1.4.3's 4.5:1 for text. That is the correct
+    // reading, and it is not a free pass: something declared decorative still
+    // has to be visible, or a five-star row is indistinguishable from a
+    // three-star one. The reviews page prints "4 out of 5" in ink beside the
+    // glyphs, so the rating itself is text and is measured as text.
+    const decorative = !!el.closest('[aria-hidden="true"]')
+    const need = decorative ? 3 : (px >= 24 || (bold && px >= 18.66) ? 3 : 4.5)
     if (ratio < need) low.push(`"${t.slice(0,24)}" ${ratio.toFixed(2)}<${need} ${px}px/${s.fontWeight} ${s.color} on rgb(${bg})`)
   }
   // A stray text node with no element of its own, which is what a nested HTML
@@ -153,7 +160,7 @@ for (const w of [320, 360, 414, 768, 1024, 1280, 1440]) {
         r.strays.map((x) => `\n      stray: ${x}`).join('') +
         errs.map((x) => `\n      err : ${x}`).join(''))
     }
-    if (w === 1280 && ['/', '/fee-management', '/guides/expected-vs-collected'].includes(path)) {
+    if (w === 1280 && ['/', '/fee-management', '/guides/expected-vs-collected', '/reviews'].includes(path)) {
       await page.screenshot({ path: `${OUT}/pg-${path.replace(/\//g, '_') || 'home'}-1280.png`, fullPage: true })
     }
   }
@@ -163,4 +170,4 @@ for (const w of [320, 360, 414, 768, 1024, 1280, 1440]) {
   await ctx.close()
 }
 await browser.close()
-console.log(fails === 0 ? '\nALL 15 PAGES CLEAN AT EVERY WIDTH' : `\n${fails} findings`)
+console.log(fails === 0 ? `\nALL ${PAGES.length} PAGES CLEAN AT EVERY WIDTH` : `\n${fails} findings`)

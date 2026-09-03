@@ -49,6 +49,7 @@ import json
 import re
 import sys
 from datetime import date
+from html import escape as html_escape
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -108,6 +109,60 @@ SOFTWARE = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Reviews, baked in from site-src/data/reviews.json (written by
+# scripts/fetch-reviews.py) so the structured data is in the HTML Google fetches
+# rather than in a runtime response that can silently stop arriving.
+# ---------------------------------------------------------------------------
+REVIEW_DATA = SRC / 'data' / 'reviews.json'
+
+
+def load_reviews() -> dict:
+    if not REVIEW_DATA.exists():
+        return {'summary': {'total': 0, 'average': None}, 'reviews': []}
+    return json.loads(REVIEW_DATA.read_text(encoding='utf-8'))
+
+
+def review_schema(data: dict) -> list[dict]:
+    """aggregateRating and the reviews, or NOTHING if there are none.
+
+    An aggregateRating of 0 from 0 reviews is not a rating, and marking one up
+    would be a claim about customers who have not said anything. Google also
+    treats an aggregateRating with reviewCount 0 as invalid, so emitting it
+    would be both dishonest and broken.
+    """
+    s = data.get('summary') or {}
+    total = int(s.get('total') or 0)
+    if total < 1 or s.get('average') is None:
+        return []
+    return [{
+        '@type': 'AggregateRating',
+        '@id': f'{SITE}/reviews#rating',
+        'itemReviewed': {'@id': f'{SITE}/#software'},
+        'ratingValue': str(s['average']),
+        'bestRating': '5',
+        'worstRating': '1',
+        'ratingCount': total,
+        'reviewCount': total,
+    }] + [{
+        '@type': 'Review',
+        'itemReviewed': {'@id': f'{SITE}/#software'},
+        'reviewRating': {
+            '@type': 'Rating',
+            'ratingValue': str(r['rating']),
+            'bestRating': '5',
+            'worstRating': '1',
+        },
+        # The reviewer is the SCHOOL, which is who wrote it and what a reader
+        # cares about. No person is ever named: 0093 keeps author_name out of
+        # the public view entirely.
+        'author': {'@type': 'Organization', 'name': r['school_name']},
+        'name': r['title'],
+        'reviewBody': r['body'],
+        'datePublished': r['published_on'],
+    } for r in data.get('reviews') or []]
+
+
 def jsonld(*blocks: dict) -> str:
     """One @graph, so the entities can reference each other by @id."""
     doc = {'@context': 'https://schema.org', '@graph': list(blocks)}
@@ -152,8 +207,75 @@ def out_path(url_path: str) -> Path:
     return OUT / (url_path.strip('/') + '.html')
 
 
+def render_reviews(data: dict) -> str:
+    """The visible list, or an honest empty state.
+
+    Rendered here rather than only by wire.js so the page is complete with
+    JavaScript switched off and so a crawler reads the same words a visitor
+    does. wire.js replaces this with the live list on top.
+    """
+    s = data.get('summary') or {}
+    total = int(s.get('total') or 0)
+    if total < 1:
+        return (
+            '      <div class="card" style="max-width:60ch">\n'
+            '        <h3>No reviews yet</h3>\n'
+            '        <p>\n'
+            '          A school can only write one after using this for three weeks and\n'
+            '          issuing twenty real receipts, which is deliberate: it is what makes\n'
+            '          the reviews on this page worth reading. Nothing here is written by\n'
+            '          us, and there is nothing here yet.\n'
+            '        </p>\n'
+            '      </div>'
+        )
+
+    bars = []
+    for label, key in (('5', 'five'), ('4', 'four'), ('3', 'three'), ('2', 'two'), ('1', 'one')):
+        n = int(s.get(key) or 0)
+        pct = round(n * 100 / total)
+        bars.append(
+            f'        <div class="rdist__row">'
+            f'<span class="rdist__k">{label}</span>'
+            f'<span class="bar"><i style="width:{pct}%"></i></span>'
+            f'<span class="rdist__n">{n}</span></div>'
+        )
+
+    cards = []
+    for r in data.get('reviews') or []:
+        who = html_escape(r['school_name'])
+        if r.get('city'):
+            who += ', ' + html_escape(r['city'])
+        stars = int(r['rating'])
+        cards.append(
+            '      <article class="review">\n'
+            '        <p class="review__rating">\n'
+            f'          <span class="review__stars" aria-hidden="true">{"&#9733;" * stars}'
+            f'{"<span>&#9734;</span>" * (5 - stars)}</span>\n'
+            f'          <b>{stars} out of 5</b>\n'
+            '        </p>\n'
+            f'        <h3>{html_escape(r["title"])}</h3>\n'
+            f'        <p>{html_escape(r["body"])}</p>\n'
+            f'        <footer>{who} <span>&middot;</span> '
+            f'<time datetime="{r["published_on"]}">{r["published_on"]}</time></footer>\n'
+            '      </article>'
+        )
+
+    avg = s.get('average')
+    return (
+        '      <div class="rsum" id="reviews-summary">\n'
+        f'        <div class="rsum__avg"><b>{avg}</b><span>out of 5</span></div>\n'
+        '        <div class="rdist">\n' + '\n'.join(bars) + '\n        </div>\n'
+        f'        <p class="rsum__n">From <b>{total}</b> school'
+        f'{"" if total == 1 else "s"} that wrote a review. Every published review is '
+        'counted here, including the critical ones.</p>\n'
+        '      </div>\n\n'
+        '      <div class="reviews" id="reviews-list">\n' + '\n'.join(cards) + '\n      </div>'
+    )
+
+
 def main() -> int:
     layout = (SRC / 'layout.html').read_text(encoding='utf-8')
+    reviews = load_reviews()
     pages = sorted((SRC / 'pages').glob('*.page'))
     if not pages:
         sys.exit('no pages in site-src/pages')
@@ -200,7 +322,15 @@ def main() -> int:
         if 'org' in wanted:
             blocks.append(ORGANISATION)
         if 'software' in wanted:
-            blocks.append(SOFTWARE)
+            soft = dict(SOFTWARE)
+            agg = review_schema(reviews)
+            if agg:
+                # By @id, so the rating is a separate node referring to the
+                # software rather than a copy of it inside every page.
+                soft['aggregateRating'] = {'@id': f'{SITE}/reviews#rating'}
+            blocks.append(soft)
+        if 'reviews' in wanted:
+            blocks.extend(review_schema(reviews))
         if meta.get('breadcrumb'):
             blocks.append(breadcrumb_schema(meta['breadcrumb'], path))
         extra = (SRC / 'schema' / f'{Path(name).stem}.json')
@@ -216,6 +346,11 @@ def main() -> int:
                 f'  <span aria-current="page">{meta["breadcrumb"]}</span>\n'
                 '</nav>'
             )
+
+        body = body.replace(
+            '{{REVIEWS}}',
+            '    <div id="reviews-live">\n' + render_reviews(reviews) + '\n    </div>',
+        )
 
         html = (layout
                 .replace('{{TITLE}}', title)

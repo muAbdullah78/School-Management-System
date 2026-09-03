@@ -177,3 +177,48 @@ It does not promise stars. Anything that promised stars from first-party
 markup would be promising you something outside its control, and if the
 aggregate were ever inflated to chase them, the markup would be a lie about
 your customers.
+
+## How the review system works, and how to publish one
+
+**A school writes it from inside the software.** Dashboard, or `/feedback`
+directly. The rules are in the database (migration 0093), not in the form:
+
+| Rule | Enforced by |
+| --- | --- |
+| Only the owner or principal of the school | `fn_review_upsert` checks the role |
+| 21 days since the school was created | `fn_review_eligibility` |
+| 20 real receipts issued, reversals excluded | `fn_review_eligibility` |
+| One review per school | a partial unique index |
+| Invisible for 24 hours, then public by itself | a condition on the read, not a scheduler |
+| Editing re-arms the 24 hours | `fn_review_upsert` |
+| Removable only for a listed abuse category | a CHECK constraint, and every removal is logged |
+
+There is **no approve button** in the operator console, on purpose. If
+publishing needed our approval, every review we did not like could sit in a
+queue for ever and the average on the website would be a number we chose. The
+console can take one down for spam or for naming a child, and that is all, and
+both the reason and the rating go into `operator_actions`.
+
+**The page shows the whole distribution**, not just the average. An average of
+4.9 over three reviews reads as three reviews, and a curated average is obvious
+from a distribution with a hole in it.
+
+### Getting a new review onto the website
+
+The page reads reviews live, so a new one appears for visitors on its own. But
+the STRUCTURED DATA is baked into the HTML, because a rating that depends on a
+runtime fetch is a rating that silently disappears the day the fetch fails. So
+after a school posts one, to update what Google reads:
+
+```
+export PGHOST=... PGPORT=... PGUSER=... PGDATABASE=... PGPASSWORD=...
+python3 scripts/fetch-reviews.py     # reads the live database
+python3 scripts/build-site.py        # bakes it into /reviews
+python3 scripts/check-site-seo.py    # refuses a page that disagrees with the data
+```
+
+then upload `site/` again. `fetch-reviews.py` reads only the public views, so
+it cannot copy an author's name or a moderation note into a file that goes on a
+web server. `check-site-seo.py` refuses a build where the page, the JSON and the
+marked-up rating do not all agree, and refuses an `aggregateRating` with no
+reviews behind it.

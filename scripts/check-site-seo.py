@@ -28,6 +28,10 @@ WHY EACH CHECK IS HERE, because a checklist nobody can justify gets deleted:
   SITEMAP AGREEMENT in both directions: every page listed, and nothing listed
   that does not exist.
 
+  THE REVIEWS PAGE AGREEING WITH ITS OWN DATA. It is the one page built from
+  data rather than prose, and a marked-up rating that does not match the words
+  under it is a lie about customers rather than a formatting slip.
+
   MORE THAN ONE H1, OR NONE. The h1 is what the page is about. Two h1s is two
   answers and no h1 is none. And two PAGES sharing an h1 compete for the same
   query, which is the cannibalisation splitting the site was meant to avoid.
@@ -286,6 +290,52 @@ def main() -> int:
                 fail(f'sitemap.xml lists {loc}, which has no page behind it')
         if f'{DOMAIN}/404' in listed:
             fail('sitemap.xml lists /404, which must never be offered as a destination')
+
+    # --- reviews: the page, the data and the markup must all agree ---
+    #
+    # /reviews is the one page whose content is DATA rather than prose, baked in
+    # by build-site.py from site-src/data/reviews.json, which
+    # scripts/fetch-reviews.py writes out of the database. Three ways that can
+    # go wrong, and all three would be a lie about customers:
+    #
+    #   * the JSON says twelve reviews and the page shows eleven
+    #   * an aggregateRating is emitted with no reviews behind it, which Google
+    #     treats as invalid and a reader treats as a claim
+    #   * the rating in the markup does not match the rating on the page
+    #
+    # It cannot detect a hand-written review, because nothing can: that is
+    # fabrication, not drift. What it can do is make sure the number in the
+    # markup came from the same file as the words on the page.
+    rjson = ROOT / 'site-src' / 'data' / 'reviews.json'
+    rpage = SITE / 'reviews.html'
+    if rpage.exists():
+        text = rpage.read_text(encoding='utf-8')
+        shown = len(re.findall(r'<article class="review">', text))
+        agg = re.search(r'"reviewCount":\s*(\d+)', text)
+        avg = re.search(r'"ratingValue":\s*"([\d.]+)"', text)
+        if not rjson.exists():
+            fail('site/reviews.html exists but site-src/data/reviews.json does not. '
+                 'Run python3 scripts/fetch-reviews.py')
+        else:
+            data = json.loads(rjson.read_text(encoding='utf-8'))
+            total = int((data.get('summary') or {}).get('total') or 0)
+            listed = len(data.get('reviews') or [])
+            if total != listed:
+                fail(f'reviews.json says {total} reviews and lists {listed}')
+            if shown != total:
+                fail(f'/reviews shows {shown} review(s) and reviews.json says {total}. '
+                     'Re-run scripts/build-site.py')
+            if total == 0 and agg:
+                fail('/reviews emits an aggregateRating with no reviews behind it. '
+                     'A rating of nothing from nobody is a claim, not a rating.')
+            if total > 0:
+                if not agg:
+                    fail(f'/reviews shows {total} review(s) but emits no aggregateRating')
+                elif int(agg.group(1)) != total:
+                    fail(f'the aggregateRating claims {agg.group(1)} reviews, the page has {total}')
+                page_avg = str((data.get('summary') or {}).get('average'))
+                if avg and avg.group(1) != page_avg:
+                    fail(f'the marked-up rating is {avg.group(1)} and the data says {page_avg}')
 
     # --- robots.txt must point at the sitemap, or nothing reads it ---
     robots = SITE / 'robots.txt'

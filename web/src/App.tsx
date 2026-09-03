@@ -12,6 +12,7 @@ import { Signup } from '@/pages/Signup'
 import { ForgotPassword } from '@/pages/ForgotPassword'
 import { ResetPassword } from '@/pages/ResetPassword'
 import { Account } from '@/pages/Account'
+import { FeedbackPage } from '@/pages/FeedbackPage'
 import { PlatformPage } from '@/pages/platform/PlatformPage'
 import { CheckIn } from '@/pages/CheckIn'
 import { Dashboard } from '@/pages/Dashboard'
@@ -141,6 +142,12 @@ export default function App() {
               }
             >
               <Route path="/" element={<Dashboard />} />
+              {/* NOT in NAV, on purpose. Writing a review is a once-a-term
+                  action, and a permanent sidebar entry for it would be both
+                  clutter and a nag. It is reached from the dashboard card that
+                  appears when the school becomes eligible, and stays reachable
+                  by address afterwards so somebody can come back and edit. */}
+              <Route path="/feedback" element={<FeedbackPage />} />
               {NAV.filter((n) => n.path !== '/').map((n) => (
                 <Route key={n.path} path={n.path} element={IMPLEMENTED[n.path] ?? <ModulePlaceholder />} />
               ))}

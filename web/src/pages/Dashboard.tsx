@@ -1,9 +1,11 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/auth/AuthProvider'
 import { ROLE_LABELS, isTeacher } from '@/auth/roles'
 import { MyClass } from './MyClass'
 import { getDashboardSummary } from '@/lib/db'
+import { requireSupabase } from '@/lib/supabase'
 import { isConfigured } from '@/lib/config'
 import { fmtPKR } from '@/lib/format'
 import { Card, CardTitle, StatTile, PageHeader, EmptyState, Badge } from '@/components/ui'
@@ -212,6 +214,8 @@ export function Dashboard() {
             )}
           </div>
 
+          <ReviewPrompt />
+
           <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
             <Card className="lg:col-span-2">
               <CardTitle icon={<IconChevron />}>Jump straight in</CardTitle>
@@ -286,5 +290,75 @@ export function Dashboard() {
         </>
       )}
     </div>
+  )
+}
+
+/**
+ * The only place the software ever asks for a review, and it asks once.
+ *
+ * It renders NOTHING unless the database says this school is eligible and has
+ * not written one: an owner three days in, a clerk, or a school that already
+ * reviewed us all see an ordinary dashboard. That is the difference between
+ * asking and nagging, and it is decided by fn_review_eligibility() rather than
+ * by a rule in this file, so the answer here and the answer on /feedback
+ * cannot disagree.
+ *
+ * A school that dismisses it gets it back on the next visit, which is a
+ * deliberate limit: remembering the dismissal would need a per-user setting,
+ * and a card that appears only for a school that has genuinely used the
+ * software for a term and taken twenty fees is not the kind of thing that
+ * needs suppressing for ever. If that turns out to be wrong, the honest fix is
+ * a stored preference, not a longer nag.
+ */
+function ReviewPrompt() {
+  const [dismissed, setDismissed] = useState(false)
+  const elig = useQuery({
+    queryKey: ['review-eligibility-card'],
+    queryFn: async () => {
+      const sb = requireSupabase()
+      const { data, error } = await sb.rpc('fn_review_eligibility')
+      if (error) throw new Error(error.message)
+      return data as { may_review: boolean; existing_review: string | null }
+    },
+    enabled: isConfigured,
+    // Once a term is the natural cadence of the answer, so this does not need
+    // to be asked again on every dashboard render.
+    staleTime: 60 * 60 * 1000,
+  })
+
+  if (dismissed) return null
+  if (!elig.data?.may_review) return null
+  if (elig.data.existing_review) return null
+
+  return (
+    <Card className="mt-6 border-brand-200 bg-brand-50/60">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="max-w-[64ch]">
+          <h2 className="text-base font-semibold text-slate-900">
+            Would you tell another school what this is like?
+          </h2>
+          <p className="mt-1.5 text-sm text-slate-600">
+            You have been running a real month on this. A school owner deciding whether to
+            ring us would rather read your two sentences than anything we write about
+            ourselves. It goes on the website under your school's name, or just your city if
+            you would rather, and you can take it down whenever you like.
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Link
+            to="/feedback"
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand-600 px-3.5 py-2 text-sm font-medium text-white shadow-card transition hover:bg-brand-700"
+          >
+            Write a review
+          </Link>
+          <button
+            onClick={() => setDismissed(true)}
+            className="rounded-lg px-3 py-2 text-sm text-slate-600 transition hover:bg-white"
+          >
+            Not now
+          </button>
+        </div>
+      </div>
+    </Card>
   )
 }

@@ -1,0 +1,57 @@
+path: /reviews
+title: What Pakistani schools say about this software
+description: Reviews written only by schools that have used this for three weeks and issued twenty real receipts. Every published review is counted, including the critical ones.
+nav_order: 25
+breadcrumb: Reviews
+schema: org software reviews
+priority: 0.8
+changefreq: weekly
+---
+
+<section class="section">
+  <div class="wrap" style="max-width:820px">
+    <span class="eyebrow">Reviews</span>
+    <h1>What schools say, in their own words</h1>
+    <p class="lede" style="margin-top:14px">
+      Nothing on this page is written by us, and nothing on it can be. A review
+      can only be written from inside the software, by the owner or principal of
+      a school that has been using it for three weeks and has issued twenty real
+      receipts.
+    </p>
+
+    <div class="note" style="margin-top:24px">
+      <p>
+        <b>How this is kept honest, in four rules.</b>
+        One review per school, enforced by the database and not by a form. It
+        publishes itself a day after it is written, so there is no approval queue
+        for inconvenient reviews to sit in. We can only take one down for
+        something like spam or naming a child, never for being critical, and
+        every removal is recorded with its reason and its rating in our own audit
+        log. And the average below counts every published review, with the full
+        spread of ratings printed beside it, so a curated average would be
+        obvious from the shape of it.
+      </p>
+    </div>
+
+{{REVIEWS}}
+
+    <h2 style="margin-top:46px">Reviews we do not have</h2>
+    <p style="margin-top:12px">
+      There are none from before a school had used the software properly, none
+      from an account that never took a fee, and none written by us. There are
+      also none bought from anywhere. If this page is short, it is short because
+      we are new, and a short honest page is worth more to you than a long one
+      you cannot check.
+    </p>
+    <p style="margin-top:16px">
+      Google shows stars beside a business from its own Business Profile rather
+      than from a company's own website, so if you want to see us rated
+      somewhere we do not control, look us up there.
+    </p>
+
+    <p style="margin-top:30px">
+      <a class="btn btn--primary btn--lg" href="/pricing" data-app="signup">Start the 14 day trial</a>
+      <a class="btn btn--ghost btn--lg" href="/contact" style="margin-left:10px">Ask us anything first</a>
+    </p>
+  </div>
+</section>
