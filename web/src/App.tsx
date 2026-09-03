@@ -4,6 +4,7 @@ import { queryClient } from '@/lib/queryClient'
 import { AuthProvider } from '@/auth/AuthProvider'
 import { AppShell } from '@/components/AppShell'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
+import { RedirectIfSignedIn } from '@/components/RedirectIfSignedIn'
 import { LicenceGate } from '@/components/LicenceGate'
 import { SetupGate } from '@/components/SetupGate'
 import { Login } from '@/pages/Login'
@@ -65,15 +66,38 @@ export default function App() {
       <AuthProvider>
         <BrowserRouter>
           <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/signup" element={<Signup />} />
+            {/* Wrapped so a signed-in user is never shown a sign-in form. See
+                RedirectIfSignedIn for why /reset is deliberately not wrapped. */}
+            <Route
+              path="/login"
+              element={
+                <RedirectIfSignedIn>
+                  <Login />
+                </RedirectIfSignedIn>
+              }
+            />
+            <Route
+              path="/signup"
+              element={
+                <RedirectIfSignedIn>
+                  <Signup />
+                </RedirectIfSignedIn>
+              }
+            />
             {/* Both OUTSIDE ProtectedRoute, and they have to be. Somebody who
                 has forgotten their password is signed out by definition, and the
                 recovery link lands on /reset before the user has any credentials
                 to offer. Putting either behind the guard would redirect them to
                 the login screen they came from — with the recovery token stripped
                 out of the URL on the way. */}
-            <Route path="/forgot" element={<ForgotPassword />} />
+            <Route
+              path="/forgot"
+              element={
+                <RedirectIfSignedIn>
+                  <ForgotPassword />
+                </RedirectIfSignedIn>
+              }
+            />
             <Route path="/reset" element={<ResetPassword />} />
             <Route path="/checkin" element={<CheckIn />} />
             {/* Signed in, but outside both the staff shell and the portal: every

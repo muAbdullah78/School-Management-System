@@ -1,6 +1,6 @@
-# School Manager: the Windows desktop shell
+# The School Manager: the Windows desktop shell
 
-A thin [Tauri](https://tauri.app) wrapper that turns the School Manager web app
+A thin [Tauri](https://tauri.app) wrapper that turns The School Manager web app
 into a Windows desktop program. It is **not** a separate app: it opens the
 hosted web app in a native window, so the office PC gets a real "program"
 instead of a browser tab, on the same data as everybody else.

@@ -36,7 +36,31 @@ export const guideUrl = `${config.siteUrl.replace(/\/+$/, '')}/guide.html`
 /** True only when the app has been pointed at a Supabase project. */
 export const isConfigured = Boolean(config.supabaseUrl && config.supabaseAnonKey)
 
-/** Compose the product name shown in the UI, e.g. "City Public School Manager". */
+/**
+ * THE VENDOR'S BRAND, which is not the same thing as the title inside a school.
+ *
+ * Decision 1 in docs/09-DECISIONS-LOCKED.md says the title a signed-in school
+ * sees is "{School Name} Manager", so a principal opens the software and reads
+ * their own school's name. That is deliberate and appTitle below still does it.
+ *
+ * But there are places where the name of the BUSINESS is what belongs: the
+ * marketing site, the browser tab, the desktop program in the Start menu, the
+ * handbook, the sign-in screens where no school is known yet, and the small
+ * line under the school's name in the sidebar. Those used to read "School
+ * Manager" while the domain reads theschoolmanager.site, so search results, the
+ * logo and the address all said something slightly different and none of them
+ * reinforced the others.
+ *
+ * One constant, so the two names can never drift apart again.
+ */
+export const PRODUCT_NAME = 'The School Manager'
+
+/**
+ * The title a SIGNED-IN school sees, e.g. "City Public School Manager".
+ *
+ * Per-school by design, not by accident. See PRODUCT_NAME above for the vendor
+ * brand, and use that anywhere no particular school is known.
+ */
 export function appTitle(schoolName?: string | null): string {
   const name = (schoolName && schoolName.trim()) || config.schoolNameFallback
   return `${name} Manager`

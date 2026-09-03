@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react'
-import { appTitle, config } from '@/lib/config'
-import { useSchoolName } from '@/hooks/useSchoolName'
+import { PRODUCT_NAME, config } from '@/lib/config'
 import { schoolLabel } from '@/lib/schoolLabel'
 
 /**
@@ -396,10 +395,16 @@ export type AuthLayoutProps = {
 }
 
 export function AuthLayout({ line, schoolName, children }: AuthLayoutProps) {
-  // On a single-school deployment VITE_SCHOOL_NAME makes this the school's own
-  // name; on the hosted service it is the product name. Either way it belongs
-  // in the bar once, not in the heading of every card.
-  const wordmark = appTitle(useSchoolName())
+  /*
+   * The vendor's name, not appTitle(useSchoolName()).
+   *
+   * These four screens run with NO SESSION, and useSchoolName reads
+   * school_settings, which RLS closes to an anonymous caller. So it could only
+   * ever return the build-time fallback here: a network request that always
+   * fails, to render a name that was never the school's. Before a sign-in the
+   * honest label is who made the software, which is also what the domain says.
+   */
+  const wordmark = PRODUCT_NAME
 
   return (
     <div className="flex min-h-full flex-col bg-white lg:bg-slate-50">
@@ -416,8 +421,17 @@ export function AuthLayout({ line, schoolName, children }: AuthLayoutProps) {
               {wordmark}
             </span>
           </span>
+          {/* Below 640px this is the chevron alone. "The School Manager" is
+              four characters longer than the name it replaced, and at 320px the
+              bar ran out of room and truncated the brand to "The School Manag".
+              The aria-label carries the same words the wide layout shows, so a
+              voice-control user says what they see either way, and the target
+              stays 36px. Spending the last of a 320px budget on the label of a
+              secondary link rather than on the product's own name is the wrong
+              way round. */}
           <a
             href={config.siteUrl}
+            aria-label="Back to the website"
             className="inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-lg px-2 text-[13px] text-slate-500 hover:text-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 sm:text-sm"
           >
             <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none">
@@ -430,7 +444,6 @@ export function AuthLayout({ line, schoolName, children }: AuthLayoutProps) {
               />
             </svg>
             <span className="hidden sm:inline">Back to the website</span>
-            <span className="sm:hidden">Website</span>
           </a>
         </div>
       </header>

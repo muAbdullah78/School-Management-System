@@ -1,7 +1,7 @@
 {
-  "name": "School Manager",
+  "name": "The School Manager",
   "short_name": "School",
-  "description": "School management \u2014 admissions, attendance, fees, exams and reports.",
+  "description": "School management: admissions, attendance, fees, exams and reports.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

@@ -2,7 +2,7 @@
   "name": "school-manager-desktop",
   "private": true,
   "version": "1.0.0",
-  "description": "Windows desktop shell for the School Manager web app (Tauri).",
+  "description": "Windows desktop shell for The School Manager web app (Tauri).",
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",

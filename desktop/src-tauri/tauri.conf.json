@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "School Manager",
+  "productName": "The School Manager",
   "version": "1.0.0",
   "identifier": "com.schoolmanager.desktop",
   "build": {
@@ -10,7 +10,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "School Manager",
+        "title": "The School Manager",
         "width": 1200,
         "height": 800,
         "minWidth": 900,
