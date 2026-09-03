@@ -1,4 +1,36 @@
+<!doctype html>
+<!-- THE SKELETON IS NOT DECORATION, and this file had none of it.
+     It opened straight on <title>, which cost four things, all of them on the
+     one document every school is handed:
+
+     1. NO DOCTYPE put the browser in QUIRKS MODE. box-sizing, percentage
+        heights and margin collapsing all behave differently there, so a
+        stylesheet written against the standard box model is being interpreted
+        against a different one.
+     2. NO VIEWPORT META meant a phone laid the page out at a 980px virtual
+        width and then zoomed out to fit, so every word was too small to read.
+        A principal reading this on a phone is the normal case, not the edge.
+     3. NO CHARSET meant the encoding was guessed. Over HTTP the host usually
+        sends utf-8 and it works; opened from an email attachment or a USB
+        stick there is no header at all, and the arrows, bullets and ellipses
+        in the text can come through as mojibake.
+     4. NO LANG left assistive technology and translation without a language.
+
+     The file is a single self-contained document sent by email and copied onto
+     memory sticks, so it has to be correct with no server helping it. -->
+<html lang="en-PK">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>School Manager Handbook</title>
+<meta name="description" content="How to run a school on School Manager: fees, attendance, exams, result cards, staff and the parent portal.">
+
+<!-- The webfonts are an ENHANCEMENT, never a requirement. This document is
+     handed out on memory sticks and read on school connections that may not
+     reach Google at all, so every stack below names a face that is already on
+     a Windows or Android machine. Georgia and Segoe UI are the fallbacks that
+     actually render, not ui-serif and sans-serif, which resolve to whatever
+     the browser feels like. -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Figtree:wght@400;500;600;700&display=swap">
@@ -76,7 +108,7 @@ body {
   margin: 0;
   background: var(--ground);
   color: var(--ink);
-  font-family: Figtree, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: Figtree, system-ui, -apple-system, 'Segoe UI', Roboto, 'Liberation Sans', Arial, sans-serif;
   /* Deliberately large. Half the people who open this read slowly, and a manual
      set at 15px is a manual they give up on. */
   font-size: 18px;
@@ -98,7 +130,7 @@ body {
   color: var(--brand); margin-bottom: 1rem;
 }
 .mast h1 {
-  font-family: Newsreader, ui-serif, Georgia, serif;
+  font-family: Newsreader, Georgia, 'Times New Roman', serif;
   font-weight: 500; font-size: clamp(2.6rem, 7vw, 4.4rem); line-height: 1.02;
   margin: 0 0 1rem; letter-spacing: -.02em; text-wrap: balance;
 }
@@ -111,7 +143,7 @@ body {
   max-width: 52rem;
 }
 .toc h2 {
-  font-family: Figtree, sans-serif; font-size: .72rem; font-weight: 600;
+  font-family: Figtree, system-ui, 'Segoe UI', Arial, sans-serif; font-size: .72rem; font-weight: 600;
   letter-spacing: .16em; text-transform: uppercase; color: var(--ink-faint);
   margin: 0 0 1rem;
 }
@@ -127,18 +159,18 @@ body {
 section.ch { padding-top: 2.5rem; margin-bottom: 4.5rem; }
 section.ch > .head { border-top: 2px solid var(--ink); padding-top: 1.25rem; margin-bottom: 1.75rem; }
 section.ch .num {
-  font-family: Newsreader, serif; font-size: .95rem; font-weight: 600;
+  font-family: Newsreader, Georgia, serif; font-size: .95rem; font-weight: 600;
   letter-spacing: .1em; color: var(--brand); display: block; margin-bottom: .35rem;
 }
 section.ch h2 {
-  font-family: Newsreader, ui-serif, Georgia, serif; font-weight: 500;
+  font-family: Newsreader, Georgia, 'Times New Roman', serif; font-weight: 500;
   font-size: clamp(1.8rem, 4vw, 2.5rem); line-height: 1.12; margin: 0 0 .6rem;
   letter-spacing: -.015em; text-wrap: balance;
 }
 section.ch .lede { font-size: 1.08rem; color: var(--ink-soft); margin: 0; max-width: 58ch; }
 
 h3 {
-  font-family: Figtree, sans-serif; font-size: 1.15rem; font-weight: 600;
+  font-family: Figtree, system-ui, 'Segoe UI', Arial, sans-serif; font-size: 1.15rem; font-weight: 600;
   margin: 2.5rem 0 .75rem; letter-spacing: -.01em;
 }
 p { margin: 0 0 1rem; max-width: var(--step-max); }
@@ -259,6 +291,8 @@ a { color: var(--brand); }
   .mast { padding-top: 0; }
 }
 </style>
+</head>
+<body>
 
 <div class="wrap">
 
@@ -354,14 +388,14 @@ a { color: var(--brand); }
   <figure class="shot phone">
     <div class="frame"><img src="{{IMG:login}}" alt="The sign-in screen: email, password, a Sign in button, and a link reading Forgotten your password?"></div>
     <figcaption>The sign-in screen. <b>Forgotten your password?</b> is underneath the
-    button — you never need to telephone anybody to get back in.</figcaption>
+    button, and you never need to telephone anybody to get back in.</figcaption>
   </figure>
 
   <h3>If you have forgotten your password</h3>
   <ol class="steps">
     <li><p>Press <span class="where">Forgotten your password?</span></p></li>
     <li><p>Type the email address you sign in with. Press <span class="where">Send the link</span>.</p></li>
-    <li><p>Open your email. Look in the spam or junk folder as well — reset emails
+    <li><p>Open your email. Look in the spam or junk folder as well, because reset emails
       often land there.</p></li>
     <li><p>Press the link in the email. Choose a new password and type it twice.</p>
       <p class="after">The link works once and lasts one hour. After that, ask for a new one.</p></li>
@@ -382,7 +416,7 @@ a { color: var(--brand); }
   <div class="note care">
     <span class="lbl">Careful</span>
     <p>You will be signed out after changing it, and asked to sign in again with the
-    new one. That is on purpose — it proves the new password works before you walk
+    new one. That is on purpose: it proves the new password works before you walk
     away from the computer.</p>
   </div>
 </section>
@@ -399,7 +433,7 @@ a { color: var(--brand); }
   <ol class="steps">
     <li><p><strong>Your school's details.</strong>
       <span class="where">Settings</span> → <span class="where">School Profile</span>.
-      Name, address, phone. Upload your logo here too — it then prints on every
+      Name, address, phone. Upload your logo here too, and it then prints on every
       receipt, challan, result card and certificate.</p></li>
 
     <li><p><strong>The academic session.</strong>
@@ -433,14 +467,14 @@ a { color: var(--brand); }
     <span class="lbl">The mistake to avoid</span>
     <p>If a class has children but no fee amounts, generating challans produces
     <strong>Rs 0</strong> slips and reports success. The school looks billed when it
-    is not. The dashboard warns you about this by name — do not ignore that
+    is not. The dashboard warns you about this by name. Do not ignore that
     yellow strip.</p>
   </div>
 
   <div class="note">
     <span class="lbl">Which year am I working in?</span>
     <p>Look at the grey chip on the bar across the top of every screen, just to
-    the left of where it names the page you are on — it says
+    the left of where it names the page you are on. It says
     <span class="val">2026-2027</span> or whatever your current session is called.
     Everything you type is recorded against that session, and there is no year
     selector anywhere: the software always uses the one marked
@@ -456,7 +490,7 @@ a { color: var(--brand); }
     <div class="frame"><img src="{{IMG:dashboard}}" alt="The dashboard: a yellow warning that one class has students but no fee set, four coloured tiles for attendance, students, collected today and outstanding, then shortcut links and an at-a-glance list"></div>
     <figcaption>The dashboard. The yellow strip at the top is the warning above:
     <b>one class has students but no fee set</b>. Below it, today in four numbers.
-    Note <b>Outstanding Rs 386,000 · 23 students with dues</b> — that is the figure
+    Note <b>Outstanding Rs 386,000 · 23 students with dues</b>. That is the figure
     Chapter 8 is about.</figcaption>
   </figure>
 </section>
@@ -484,7 +518,7 @@ a { color: var(--brand); }
   <div class="note good">
     <span class="lbl">Why the sibling link matters</span>
     <p>Linking brothers and sisters into <strong>one family</strong> means the father
-    pays <strong>once</strong> for all his children — one amount, one receipt, one
+    pays <strong>once</strong> for all his children: one amount, one receipt, one
     entry in the day book. Without it he queues three times.</p>
     <p>Missed it at admission? Open the child's profile and press
     <span class="where">+ Link a sibling or relative</span>, then
@@ -501,7 +535,7 @@ a { color: var(--brand); }
       anything.</p></li>
     <li><p>Read that list. If it is right, press the button to import.</p>
       <p class="after">Rows with a problem are named with the reason. Fix them in the
-      file and upload again — nothing is half-done.</p></li>
+      file and upload again, and nothing is half-done.</p></li>
   </ol>
 </section>
 
@@ -525,7 +559,7 @@ a { color: var(--brand); }
   <div class="note care">
     <span class="lbl">This decides who can change a result</span>
     <p>A teacher may enter marks only for a class they are class teacher of, or a
-    class and subject listed here. Everybody else is refused — including for the
+    class and subject listed here. Everybody else is refused, including for the
     exam marks that go on the result card.</p>
     <p>A subject with <strong>nobody assigned</strong> can only be marked by the
     office. The screen counts those for you, so fill them in before exam week and
@@ -566,7 +600,7 @@ a { color: var(--brand); }
   <h3>Finalising, and telling the parents</h3>
   <p>When you are sure, press <span class="where">Finalise</span>. Two things
   happen. The day is locked, so nobody can change it quietly. And a WhatsApp
-  message is prepared <strong>for each absent child</strong> — waiting under
+  message is prepared <strong>for each absent child</strong>, waiting under
   <span class="where">Messages</span>, naming that one child and that one date.</p>
   <div class="note good">
     <span class="lbl">Nothing is sent without you</span>
@@ -632,7 +666,7 @@ a { color: var(--brand); }
   <h3>Cash at the end of the day</h3>
   <p><span class="where">Fees</span> → <span class="where">Till</span>. Count the cash
   drawer and enter what is actually in it. The software shows what it expected. Any
-  difference is recorded with your name against it — which protects the honest
+  difference is recorded with your name against it, which protects the honest
   clerk, because the day it balances is on record too.</p>
 </section>
 
@@ -688,19 +722,19 @@ a { color: var(--brand); }
   <ol class="steps">
     <li><p>Open the child's profile → <span class="where">Fees</span>.</p></li>
     <li><p>Find the month. Press <span class="where">Cancel charge</span>.</p></li>
-    <li><p>Type <strong>why</strong>. A few words at least — somebody reads this
+    <li><p>Type <strong>why</strong>. A few words at least, because somebody reads this
       months later.</p></li>
   </ol>
   <p>The challan stops counting: it leaves the family's balance, the defaulters
   list, the unpaid-challan report and the parent portal, and it will no longer
   print. It is not deleted. Every cancellation is listed under
   <span class="where">Reports</span> → <span class="where">Cancelled charges</span>
-  with the amount, your name and your reason — and a clerk can read that list even
+  with the amount, your name and your reason, and a clerk can read that list even
   though they cannot cancel anything.</p>
 
   <div class="note wrong">
     <span class="lbl">Cancel and Delay are opposites</span>
-    <p><strong>Delay</strong> says <em>you still owe this, later</em> — the reminder
+    <p><strong>Delay</strong> says <em>you still owe this, later</em>. The reminder
     pauses, the money is still due. <strong>Cancel</strong> says <em>you never owed
     it</em>. Reaching for the wrong one either leaves money uncollected or chases a
     family for something they never owed.</p>
@@ -709,8 +743,8 @@ a { color: var(--brand); }
   <div class="note care">
     <span class="lbl">If the family has already paid</span>
     <p>You cannot cancel a challan with money against it, and the software will
-    tell you the amount. Reverse the <em>payment</em> first — that writes a
-    matching reversal receipt, so the cash movement stays visible — and then
+    tell you the amount. Reverse the <em>payment</em> first, which writes a
+    matching reversal receipt, so the cash movement stays visible, and then
     cancel the charge. Doing it the other way round would leave a receipt pointing
     at a charge that no longer exists.</p>
   </div>
@@ -719,7 +753,7 @@ a { color: var(--brand); }
   <p><span class="where">Settings</span> → <span class="where">Fee Increase</span>.
   Choose the session, a percentage or a flat amount, and the date it starts.
   Press <span class="where">Preview the change</span> and <strong>read the
-  list</strong> — it shows every fee going from what to what. Only then press Apply.</p>
+  list</strong>, which shows every fee going from what to what. Only then press Apply.</p>
   <div class="note good">
     <span class="lbl">Challans already sent are safe</span>
     <p>An increase dated 1 April does not change a challan raised in March. The old
@@ -739,7 +773,7 @@ a { color: var(--brand); }
 
   <ol class="steps">
     <li><p><span class="where">Accounts</span>. Type the amount and choose a
-      <strong>category</strong> — Salaries, Rent, Utilities, and so on.</p></li>
+      <strong>category</strong>: Salaries, Rent, Utilities, and so on.</p></li>
     <li><p>Fill in who it was paid to, and how.</p></li>
     <li><p>Press <span class="where">Record expense</span>. You get a voucher number.</p></li>
   </ol>
@@ -752,7 +786,7 @@ a { color: var(--brand); }
     <p>Eight are provided. If your real costs include generator diesel or a security
     guard, press <span class="where">Manage categories</span> and add them. Filing
     everything under "Other" makes the expense report answer nothing.</p>
-    <p>You can <strong>retire</strong> a category but never delete one — old
+    <p>You can <strong>retire</strong> a category but never delete one, because old
     vouchers keep it, so last year's reports still add up.</p>
   </div>
 
@@ -786,7 +820,7 @@ a { color: var(--brand); }
 
   <div class="note care">
     <span class="lbl">Generating is not releasing</span>
-    <p>You can generate cards as often as you like — to check them, or after a
+    <p>You can generate cards as often as you like: to check them, or after a
     correction. Parents see <strong>nothing</strong> until you press release. That
     is deliberate: a mark a parent saw and then saw change turns every correction
     into an accusation.</p>
@@ -794,7 +828,7 @@ a { color: var(--brand); }
 
   <p>Releasing also prepares a WhatsApp message for each family, waiting under
   <span class="where">Messages</span>, telling them the result can be viewed. One
-  message per child per term — release again after a correction and nobody is
+  message per child per term. Release again after a correction and nobody is
   messaged twice. A result you are <strong>withholding</strong> over unpaid fees is
   never announced, because that family cannot see it yet.</p>
 
@@ -863,7 +897,7 @@ a { color: var(--brand); }
   <div class="note">
     <span class="lbl">A child who has left</span>
     <p>They stop counting in your student numbers and stop being billed, but their
-    whole history stays — fees, attendance, results. You can still print their
+    whole history stays: fees, attendance, results. You can still print their
     certificate next year when they come back asking for it.</p>
   </div>
 </section>
@@ -898,7 +932,7 @@ a { color: var(--brand); }
   <figure class="shot">
     <div class="frame"><img src="{{IMG:portal-statement}}" alt="A printed fee statement showing the school name, the student, three balance boxes, a table of challans with billed, paid and unpaid columns, the payments received from the family, and a box explaining that this is a statement and not a payment voucher"></div>
     <figcaption>The statement a parent can print. It says plainly, in the box at the
-    bottom, that <b>a bank will not accept it</b> — it is a statement of the account,
+    bottom, that <b>a bank will not accept it</b>. It is a statement of the account,
     not a challan. Without that line a parent queues at a bank counter and is turned
     away.</figcaption>
   </figure>
@@ -906,7 +940,7 @@ a { color: var(--brand); }
   <div class="note care">
     <span class="lbl">What a parent can never see</span>
     <p>Another family's children. Any list of your staff. Any of your money records
-    beyond their own bill. This is not a setting you can get wrong — the database
+    beyond their own bill. This is not a setting you can get wrong, because the database
     refuses those reads for a parent account.</p>
   </div>
 </section>
@@ -1020,8 +1054,8 @@ a { color: var(--brand); }
         </tr>
         <tr>
           <td>A number looks wrong</td>
-          <td>Do not correct it by re-entering. Find the entry — Reports → Student
-          Ledger or Day Book — and reverse it, so both the mistake and the fix are
+          <td>Do not correct it by re-entering. Find the entry, in Reports → Student
+          Ledger or Day Book, and reverse it, so both the mistake and the fix are
           on record.</td>
         </tr>
       </tbody>
@@ -1081,8 +1115,8 @@ a { color: var(--brand); }
           <td class="yes">Yes</td><td class="yes">Yes</td><td class="no">No</td>
           <td class="no">No</td><td class="no">No</td><td class="no">No</td><td class="no">No</td></tr>
         <tr><td>See their own children only</td>
-          <td class="no">—</td><td class="no">—</td><td class="no">—</td>
-          <td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="yes">Yes</td></tr>
+          <td class="no">No</td><td class="no">No</td><td class="no">No</td>
+          <td class="no">No</td><td class="no">No</td><td class="no">No</td><td class="yes">Yes</td></tr>
       </tbody>
     </table>
   </div>
@@ -1098,8 +1132,11 @@ a { color: var(--brand); }
 
 <footer class="end">
   <p>This handbook shows real screens from the software, generated from the software
-  itself — not drawings. If a screen in front of you looks different from a picture
+  itself, not drawings. If a screen in front of you looks different from a picture
   here, you have a newer version, and the software is right.</p>
 </footer>
 
 </div>
+
+</body>
+</html>

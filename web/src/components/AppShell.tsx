@@ -4,13 +4,13 @@ import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/auth/AuthProvider'
 import { ROLE_LABELS } from '@/auth/roles'
 import { canAccess, visibleNav } from '@/navigation'
-import { appTitle } from '@/lib/config'
+import { appTitle, guideUrl } from '@/lib/config'
 import { useSchoolName } from '@/hooks/useSchoolName'
 import { OfflineIndicator } from '@/components/OfflineIndicator'
 import { LicenceBanner } from '@/components/LicenceBanner'
 import { OperatorBanner } from './OperatorBanner'
 import { AnnouncementBanner } from './AnnouncementBanner'
-import { NAV_ICONS, IconLogout, IconAlert } from '@/components/icons'
+import { NAV_ICONS, IconBook, IconLogout, IconAlert } from '@/components/icons'
 import { EmptyState } from '@/components/ui'
 import { GlobalSearch } from '@/components/GlobalSearch'
 import { ModuleSearch } from '@/components/ModuleSearch'
@@ -138,6 +138,20 @@ export function AppShell() {
           {/* A staff member could not change their own password anywhere in the
               software. The only remedy was to ask the vendor to set one by hand
               and send it over WhatsApp. */}
+          {/* The handbook, on its own row rather than as a third button beside
+              Password and Sign out: at this width three of them are cramped,
+              and this is the one a new clerk needs in their first week. New
+              tab, because losing half-entered attendance to a Help click is
+              exactly the kind of thing that stops people clicking Help. */}
+          <a
+            href={guideUrl}
+            target="_blank"
+            rel="noopener"
+            className="mt-2 flex items-center justify-center gap-1.5 rounded-lg bg-white/10 px-2 py-1.5 text-xs font-medium text-brand-50 transition hover:bg-white/20"
+          >
+            <IconBook />
+            How to use this
+          </a>
           <div className="mt-2 flex gap-2">
             <NavLink
               to="/password"

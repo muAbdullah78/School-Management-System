@@ -40,9 +40,16 @@ keys empty the contact card says so out loud. Neither can ship silently.
 Any static host. Cloudflare Pages is free and fast from Pakistan: point it at
 this folder, no build command, output directory `site`.
 
-Six files go up: `index.html`, `styles.css`, `config.js`, `wire.js`,
-`robots.txt`, `sitemap.xml`. This README does not need to, and uploading it
-does no harm.
+Seven files go up: `index.html`, `styles.css`, `config.js`, `wire.js`,
+`robots.txt`, `sitemap.xml`, `guide.html`. This README does not need to, and
+uploading it does no harm.
+
+`guide.html` is the school handbook, about 1.4MB because its screenshots are
+embedded so the file can also be emailed or copied onto a memory stick and
+still work with nothing to fetch. It is generated, never hand-edited: run
+`python3 scripts/build-guide.py` after re-capturing the screenshots. The site
+footer and the FAQ link to it, and so do the app shell and the parent portal,
+so if it is missing from the upload those four links 404.
 
 UPLOAD THEM AS A SET. A new `index.html` with an old `styles.css` renders as a
 broken page, because the two are written against each other: the HTML uses

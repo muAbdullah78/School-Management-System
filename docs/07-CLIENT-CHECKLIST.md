@@ -9,7 +9,7 @@
 > blank samples of the school's own challan and result card.
 >
 > For what a school does once it has the software, see
-> [`GUIDE.html`](GUIDE.html). For what YOU still have to do, run
+> [the handbook](../site/guide.html). For what YOU still have to do, run
 > `psql -f supabase/verify.sql`.
 
 These are the concrete, manual things **only you** can provide or do so we can build and launch. Treat it as a checklist. **The pilot cannot start until items 1–10 are done.** Nothing here is technical — it's information about your school and a few business decisions.

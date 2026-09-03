@@ -34,12 +34,13 @@ import {
   IconCheck,
   IconPrint,
 } from '@/components/icons'
+import { guideUrl } from '@/lib/config'
 
 function monthLabel(m: string | null): string {
   if (!m) return 'Other charges'
   const d = new Date(m.length === 10 ? `${m}T00:00:00` : m)
   return isNaN(d.getTime())
-    ? '—'
+    ? m
     : d.toLocaleDateString('en-PK', { month: 'long', year: 'numeric' })
 }
 
@@ -544,10 +545,21 @@ export function PortalPage() {
       {/* At the foot, in words rather than behind an icon: the audience for this
           page includes parents who read slowly, and an unlabelled key symbol
           tells them nothing. */}
-      <div className="mx-auto max-w-3xl px-4 pb-10 text-center">
+      <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-center gap-x-4 gap-y-2 px-4 pb-10 text-center">
         <Link to="/password" className="text-xs font-medium text-brand-700 hover:underline">
           Change your password
         </Link>
+        {/* Three chapters of the handbook are about this page, and a parent had
+            no route to any of them. New tab, so a parent reading it does not
+            lose the fee statement they had open. */}
+        <a
+          href={guideUrl}
+          target="_blank"
+          rel="noopener"
+          className="text-xs font-medium text-brand-700 hover:underline"
+        >
+          How to use the parent portal
+        </a>
       </div>
 
       {/* Rendered outside <main> so the print rule's absolute positioning starts
