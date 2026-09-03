@@ -2,7 +2,6 @@ import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/auth/AuthProvider'
 import { requireSupabase } from '@/lib/supabase'
-import { GateBoard } from '@/components/GateBoard'
 import {
   AuthError,
   AuthLayout,
@@ -22,9 +21,11 @@ import {
  * filling this in on their phone should be inside the app within a minute, not
  * waiting on a confirmation email they may never find.
  *
- * The panel beside it carries the gate board, which echoes whatever is typed
- * into School name. That is the only persuasion on the page and it is the
- * buyer's own input, which is why it can sit on the first field of six.
+ * The mockup beside it carries whatever is typed into School name, so the
+ * owner sees their own school inside the product before they have finished the
+ * form. That is the only persuasion on the page and it is the buyer's own
+ * input, which is why it can sit on the first field of six. Below 1024px the
+ * mockup is not rendered, so on a phone the form is the whole page.
  */
 export function Signup() {
   const navigate = useNavigate()
@@ -67,7 +68,7 @@ export function Signup() {
   return (
     <AuthLayout
       line="Fourteen days free, then from Rs 950 a month."
-      artefact={<GateBoard name={form.school_name} />}
+      schoolName={form.school_name}
     >
       <h1 className="text-2xl font-semibold tracking-[-0.015em] text-slate-900">
         Start your free trial
@@ -88,7 +89,6 @@ export function Signup() {
             className={authField}
           />
         </label>
-          <p id="pw-hint" className={authHint}>At least 8 characters.</p>
         <label className="block">
           <span className={authLabel}>Your name</span>
           <input
@@ -131,14 +131,22 @@ export function Signup() {
             className={authField}
           />
         </label>
-        <label className="block">
-          <span className={authLabel}>Choose a password</span>
-          <input
-            type="password" autoComplete="new-password" required minLength={8}
-            value={form.password} onChange={set('password')} className={authField} aria-describedby="pw-hint"
-          />
-          
-        </label>
+        {/* The hint is a SIBLING of the label, not a child of it. Text inside
+            <label> joins the input's accessible name, so a screen reader would
+            read the field as "Choose a password At least 8 characters"; as a
+            described-by it is announced after the name, which is what a hint
+            is. Both are wrapped so the form's space-y-4 applies to the pair
+            rather than pushing the hint away from its field. */}
+        <div>
+          <label className="block">
+            <span className={authLabel}>Choose a password</span>
+            <input
+              type="password" autoComplete="new-password" required minLength={8}
+              value={form.password} onChange={set('password')} className={authField} aria-describedby="pw-hint"
+            />
+          </label>
+          <p id="pw-hint" className={authHint}>At least 8 characters.</p>
+        </div>
 
         {error && <AuthError>{error}</AuthError>}
 
