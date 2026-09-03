@@ -208,12 +208,23 @@
     return mb >= 1 ? ' · ' + mb.toFixed(0) + ' MB' : ''
   }
 
+  /*
+   * With no release published, hide the ROUTES to the download page but never
+   * the section itself.
+   *
+   * On the one-page site the section sat mid-page, so hiding it was right: an
+   * unpublished installer should not leave a dead block between two live ones.
+   * /download is now a page of its own, and hiding its only section would serve
+   * a visitor who typed the address a heading with nothing under it. The button
+   * already reads "Windows installer: being prepared", which is the honest
+   * state, so the page is correct with the section left alone.
+   *
+   * The selector follows the link, which is now a URL rather than an in-page
+   * anchor. Left as '#download' this matched nothing and the footer entry
+   * stayed hidden for ever, including after a release was published.
+   */
   function hideDownload() {
-    var section = document.getElementById('download')
-    if (section) section.hidden = true
-    // Every route to it goes too, or the nav scrolls to a hidden anchor and
-    // nothing appears to happen.
-    var links = document.querySelectorAll('a[href="#download"]')
+    var links = document.querySelectorAll('a[href="/download"]')
     for (var i = 0; i < links.length; i++) {
       var li = links[i].closest('li')
       if (li) { li.hidden = true } else { links[i].hidden = true }
@@ -228,11 +239,10 @@
         var r = rows && rows[0]
         if (!r || !r.url) { hideDownload(); return }
 
-        var section = document.getElementById('download')
-        if (section) section.hidden = false
-        // The nav entries ship hidden, so a visitor with no JavaScript is never
-        // pointed at a section that is not there. They come back here.
-        var routes = document.querySelectorAll('a[href="#download"]')
+        // The nav and footer entries ship hidden, so a visitor with no
+        // JavaScript is never pointed at a download that does not exist. They
+        // come back here once a release is published.
+        var routes = document.querySelectorAll('a[href="/download"]')
         for (var k = 0; k < routes.length; k++) {
           var host = routes[k].closest('li') || routes[k]
           host.hidden = false

@@ -1,0 +1,69 @@
+{
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What happens to our data if we stop paying?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "It stays yours. Export everything at any time, including after you have cancelled, in a plain readable format. We do not hold records to ransom and there is no charge for taking your own data out."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does it work when the internet goes down?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Attendance does. Teachers can keep marking the register and it syncs when the connection returns. Fee collection needs the connection, because two clerks taking cash offline would issue two receipts with the same number, and a fee book with duplicate numbers is worse than a fee book you have to wait five minutes for."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can a clerk change a receipt after it is printed?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. Nothing is deleted or edited. A mistake is corrected by a reversal entry, so both lines stay in the ledger with a reason and the name of the person who made the correction. Receipt numbers are issued in an unbroken sequence, so a missing number is itself visible."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can parents see other children's information?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "A parent login reaches only that family's own children: their fee balance, their receipts, their attendance and their results once you publish them. It cannot reach any other family, and it cannot reach anything you have not published."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "We already have years of records in Excel. Can we move them?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Students, staff and opening balances import from a spreadsheet. Bring us the file you already keep and we will map it with you rather than asking you to retype a school."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What about results that are not final yet?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Marks stay unpublished until you publish them, and a result card can be withheld for a single student, for example while a fee matter is settled. Parents see nothing until you decide they should."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is there a manual, or do you train us?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Both. The handbook is sixteen chapters with real screenshots taken from the software itself, and it is free to read now, before you buy anything. It covers the office screens, the parent portal and what to do when something is entered wrong. We also walk your clerk through the first month's fee run on a call."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is it in Urdu?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The screens are in English. Anything you type is accepted and printed in Urdu, including names, addresses and remarks, so a certificate or a fee receipt can carry Urdu text. A full Urdu interface is not built yet, and we would rather say so than imply otherwise."
+      }
+    }
+  ]
+}

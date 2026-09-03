@@ -1,0 +1,107 @@
+path: /accounts
+title: School accounts software: expenses, payroll and monthly profit
+description: An expense ledger with your own categories, cash drawer sessions, a day book, staff payroll, and the monthly profit that follows from all of it.
+nav_order: 30
+breadcrumb: Accounts and payroll
+schema: org software
+priority: 0.8
+---
+
+<section class="section">
+  <div class="wrap">
+    <span class="eyebrow">Accounts and payroll</span>
+    <h1>Where the month actually went</h1>
+    <p class="lede" style="margin-top:14px;max-width:62ch">
+      Fee income on one side, salaries and rent and utilities on the other, and a
+      profit figure that is the arithmetic of the two rather than somebody's
+      estimate. No accounting training required to read it.
+    </p>
+    <div class="hero__cta">
+      <a class="btn btn--primary btn--lg" href="/pricing" data-app="signup">Start 14 day free trial</a>
+      <a class="btn btn--ghost btn--lg" href="/guide.html">See the handbook chapters</a>
+    </div>
+  </div>
+</section>
+
+<section class="section section--tint">
+  <div class="wrap">
+    <div class="grid grid--2">
+      <div class="card">
+        <h3>The expense ledger</h3>
+        <p>
+          Your own categories: salaries, rent, utilities, repairs, whatever your
+          school spends on. A category can be retired but never deleted, because
+          deleting one would orphan every old entry filed under it and change
+          last year's figures.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Cash drawer sessions</h3>
+        <p>
+          A collector opens a drawer, takes fees, and closes it by counting what
+          is there. A difference between the counted cash and the receipts is not
+          rounded away: it is recorded with a written reason, which is the whole
+          point of counting.
+        </p>
+      </div>
+      <div class="card">
+        <h3>The day book</h3>
+        <p>
+          Everything that moved today, in one list, with who entered it. It is the
+          screen a principal opens at six o'clock, and the one that makes a
+          question about a particular receipt answerable in seconds.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Staff and payroll</h3>
+        <p>
+          Staff records, salaries, staff attendance with a daily check in code,
+          and printable staff cards. Teacher logins are tied to the classes each
+          teacher actually teaches, and a leaving date closes the login.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <h2>Two honest limits</h2>
+    <p class="lede" style="margin-top:12px;max-width:64ch">
+      Because finding out on a Monday morning is worse than reading it here.
+    </p>
+    <ul class="checklist" style="margin-top:22px">
+      <li>
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>
+        <span><b>This is not a general ledger.</b> There is no double entry, no trial balance and no chart of accounts. It answers what came in, what went out and what is left, which is the question a school office actually has.</span>
+      </li>
+      <li>
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>
+        <span><b>The statement is not a bank document.</b> A printed account statement says so at the bottom, because a parent will one day take it to a bank and be turned away, and it is better that the paper says why.</span>
+      </li>
+    </ul>
+  </div>
+</section>
+
+<section class="section section--tint">
+  <div class="wrap">
+    <h2>What is next to this</h2>
+    <div class="grid grid--3" style="margin-top:26px">
+      <a class="card card--link" href="/fee-management">
+        <h3>Fee management</h3>
+        <p>Where the income side comes from, and how the gap gets found.</p>
+        <span class="card__more">See fees</span>
+      </a>
+      <a class="card card--link" href="/guides/expected-vs-collected">
+        <h3>Guide: the missing money</h3>
+        <p>How to find fee income that was never recorded at all.</p>
+        <span class="card__more">Read the guide</span>
+      </a>
+      <a class="card card--link" href="/faq">
+        <h3>Questions</h3>
+        <p>Data ownership, offline behaviour, and who can change what.</p>
+        <span class="card__more">Read the answers</span>
+      </a>
+    </div>
+  </div>
+</section>

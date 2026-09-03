@@ -158,6 +158,25 @@ jobs:
         working-directory: .
         run: bash supabase/check-site-links.sh
 
+      - name: The built site would index correctly
+        # The site is fifteen generated pages now, not one hand-written one, and
+        # the generated files are COMMITTED because the deployment is a hand
+        # upload to Cloudflare and the person uploading needs files rather than
+        # a toolchain. Which means somebody will one day edit the output and
+        # lose it on the next build, so the first thing this does is rebuild
+        # into a temporary directory and compare.
+        #
+        # The rest is what makes fifteen pages worth having instead of one:
+        # unique titles, descriptions and h1s (two pages claiming the same
+        # subject compete for the same query and neither wins), canonicals that
+        # resolve to a file Cloudflare will actually serve, no broken internal
+        # links, no page orphaned from every other page, valid JSON-LD, and a
+        # sitemap that agrees with the pages in both directions.
+        #
+        # Needs no database and no browser, so it belongs in this job.
+        working-directory: .
+        run: python3 scripts/check-site-seo.py
+
   migrations:
     name: Migrations apply on Postgres 16
     runs-on: ubuntu-latest

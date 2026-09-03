@@ -1,0 +1,56 @@
+path: /guides
+title: Guides for a Pakistani school office
+description: Practical writing for a school office: what a fee challan must contain, how to find fee income nobody recorded, and how to move off paper registers.
+nav: Guides
+nav_order: 8
+breadcrumb: Guides
+schema: org
+priority: 0.7
+---
+
+<section class="section">
+  <div class="wrap">
+    <span class="eyebrow">Guides</span>
+    <h1>Guides for a school office</h1>
+    <p class="lede" style="margin-top:14px;max-width:64ch">
+      Written for the clerk, the accountant and the principal, about the work
+      itself rather than about our software. Every one of them is useful whether
+      or not you ever buy anything from us.
+    </p>
+
+    <div class="grid grid--3" style="margin-top:38px">
+      <a class="card card--link" href="/guides/fee-challan-pakistan">
+        <h3>What a fee challan has to say</h3>
+        <p>
+          The eight things a challan must carry before a parent can be expected
+          to pay it without a phone call, and the two that cause almost every
+          dispute.
+        </p>
+        <span class="card__more">Read the guide</span>
+      </a>
+      <a class="card card--link" href="/guides/expected-vs-collected">
+        <h3>Finding fees that were never recorded</h3>
+        <p>
+          Gapless receipts catch under-recording. They cannot catch cash that was
+          never entered at all. Here is the check that can, and how to run it on
+          paper if you have to.
+        </p>
+        <span class="card__more">Read the guide</span>
+      </a>
+      <a class="card card--link" href="/guides/moving-from-paper-registers">
+        <h3>Moving off paper registers</h3>
+        <p>
+          The order to do it in, what to type up and what to leave alone, and why
+          the two weeks of running both is the part nobody should skip.
+        </p>
+        <span class="card__more">Read the guide</span>
+      </a>
+    </div>
+
+    <p style="margin-top:34px">
+      There is also <a href="/guide.html">the handbook</a>, which is sixteen
+      chapters on running a school on this software specifically, with real
+      screenshots. It is free to read before you buy anything.
+    </p>
+  </div>
+</section>

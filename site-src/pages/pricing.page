@@ -1,0 +1,144 @@
+path: /pricing
+title: School management software price in Pakistan
+description: Three plans by school size, from Rs 950 a month for up to 100 students. Every module in every plan, and payment by bank transfer with no card on file.
+nav: Pricing
+nav_order: 6
+breadcrumb: Pricing
+schema: org software
+priority: 1.0
+changefreq: weekly
+---
+
+<section class="section">
+  <div class="wrap">
+    <span class="eyebrow">Pricing</span>
+    <h1>Priced for a real Pakistani school</h1>
+    <p class="lede" style="margin-top:14px;max-width:64ch">
+      Every plan includes every feature. You pay for size, not for modules. Pay
+      yearly and get two months free.
+    </p>
+
+<div class="prices" style="margin-top:38px">
+      <div class="price" data-plan="starter">
+        <h3>Starter</h3>
+        <div class="price__amt"><span data-price-monthly>Rs 950</span><small>/month</small></div>
+        <p class="price__cap" data-price-cap>Up to 100 students</p>
+        <ul>
+          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Every module included</li>
+          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Unlimited staff logins</li>
+          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Parent portal</li>
+          <li data-price-yearly>Rs 9,500 a year</li>
+        </ul>
+        <a class="btn btn--ghost" href="/contact" data-app="signup"
+           aria-label="Start a free trial on the Starter plan">Start free trial</a>
+      </div>
+      <!-- /plan -->
+
+      <div class="price price--hot" data-plan="growth">
+        <span class="price__tag">Most schools</span>
+        <h3>Growth</h3>
+        <div class="price__amt"><span data-price-monthly>Rs 2,000</span><small>/month</small></div>
+        <p class="price__cap" data-price-cap>Up to 300 students</p>
+        <ul>
+          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Every module included</li>
+          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Unlimited staff logins</li>
+          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Parent portal</li>
+          <li data-price-yearly>Rs 20,000 a year</li>
+        </ul>
+        <a class="btn btn--primary" href="/contact" data-app="signup"
+           aria-label="Start a free trial on the Growth plan">Start free trial</a>
+      </div>
+      <!-- /plan -->
+
+      <div class="price" data-plan="institution">
+        <h3>Institution</h3>
+        <div class="price__amt"><span data-price-monthly>Rs 3,500</span><small>/month</small></div>
+        <p class="price__cap" data-price-cap>Up to 1,000 students</p>
+        <ul>
+          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Every module included</li>
+          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Unlimited staff logins</li>
+          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Parent portal</li>
+          <li data-price-yearly>Rs 35,000 a year</li>
+        </ul>
+        <a class="btn btn--ghost" href="/contact" data-app="signup"
+           aria-label="Start a free trial on the Institution plan">Start free trial</a>
+      </div>
+      <!-- /plan -->
+
+      <div class="price" data-plan="custom">
+        <h3>Larger institutions</h3>
+        <div class="price__amt">Let's talk</div>
+        <p class="price__cap">More than 1,000 students</p>
+        <ul>
+          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Multiple campuses</li>
+          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Migration from your current system</li>
+          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>A direct line for support</li>
+        </ul>
+        <a class="btn btn--ghost" href="/contact">Contact us</a>
+      </div>
+      <!-- /plan -->
+    </div>
+
+    <p class="small muted" style="margin-top:20px;max-width:70ch">
+      Grow past your plan mid year and nothing stops working. Admissions are never
+      blocked by a billing limit. We will call you about moving up at a sensible
+      moment, not in the middle of admission season. Payment is by bank transfer:
+      there is no card on file and no automatic renewal.
+    </p>
+  </div>
+</section>
+
+<section class="section section--tint">
+  <div class="wrap">
+    <h2>What the price includes</h2>
+    <div class="grid grid--3" style="margin-top:28px">
+      <div class="card">
+        <h3>Every module</h3>
+        <p>
+          Fees, attendance, exams and result cards, accounts and payroll,
+          certificates, ID cards, the parent portal and year end rollover. There
+          is no premium tier holding one of them back.
+        </p>
+      </div>
+      <div class="card">
+        <h3>The trial, properly</h3>
+        <p>
+          Fourteen days, no card, and no crippled version. Put one real class in
+          and run a month's challans against your own fee sheet. If the numbers
+          do not agree with your register, do not buy it.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Your data, always</h3>
+        <p>
+          A full export in a plain readable format at any time, including on the
+          day you leave. No lock in and no charge for your own records.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <h2>How paying works</h2>
+    <ul class="checklist" style="margin-top:22px">
+      <li>
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>
+        <span><b>Bank transfer.</b> There is no card on file and no automatic renewal. An invoice carries our business name, NTN and bank account, so your accounts can file it and withhold what they must.</span>
+      </li>
+      <li>
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>
+        <span><b>Growing past your plan does not stop anything.</b> Admissions are never blocked by a billing limit. We call you about moving up at a sensible moment, not in the middle of admission season.</span>
+      </li>
+      <li>
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>
+        <span><b>Stopping payment does not delete your records.</b> The account locks, the export keeps working, and nothing is destroyed on a date we chose.</span>
+      </li>
+    </ul>
+    <p style="margin-top:24px">
+      <a class="btn btn--primary btn--lg" href="/pricing" data-app="signup">Start the 14 day trial</a>
+      <a class="btn btn--ghost btn--lg" href="/contact" style="margin-left:10px">Ask about a bigger school</a>
+    </p>
+  </div>
+</section>

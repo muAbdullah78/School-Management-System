@@ -1,0 +1,123 @@
+path: /exams-and-results
+title: Result card software: marks, grades and tabulation sheets
+description: Marks per paper, practicals kept separate, your own grading scale and weightage, then result cards, tabulation sheets and class positions that agree.
+nav: Exams
+nav_order: 3
+breadcrumb: Exams and results
+schema: org software
+priority: 0.9
+---
+
+<section class="section">
+  <div class="wrap">
+    <span class="eyebrow">Exams and results</span>
+    <h1>Result cards that agree with the marksheet</h1>
+    <p class="lede" style="margin-top:14px;max-width:62ch">
+      Marks go in once, per paper, by the teacher who marked them. Everything
+      printed afterwards, the card, the tabulation sheet, the positions, is
+      computed from that one set of numbers, so the three cannot disagree.
+    </p>
+    <div class="hero__cta">
+      <a class="btn btn--primary btn--lg" href="/pricing" data-app="signup">Start 14 day free trial</a>
+      <a class="btn btn--ghost btn--lg" href="/contact">Ask about your grading scale</a>
+    </div>
+  </div>
+</section>
+
+<section class="section section--tint">
+  <div class="wrap">
+    <h2>The details that decide whether a card is right</h2>
+    <p class="lede" style="margin-top:12px;max-width:64ch">
+      Any software can average some numbers. These are the cases that produce a
+      card a parent can argue with.
+    </p>
+    <div class="grid grid--2" style="margin-top:34px">
+      <div class="card">
+        <h3>A paper not sat is not a zero</h3>
+        <p>
+          A pupil who was absent for one paper and a pupil whose marks have not
+          been entered yet are different situations, and treating either as zero
+          produces a card that is wrong. Both are tracked as what they are, and a
+          card with a paper still outstanding says PROVISIONAL on it.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Practicals kept apart from theory</h3>
+        <p>
+          A practical is marked out of its own maximum, shown separately on the
+          card, and combined with the theory for the pass mark. A subject that
+          has no practical component cannot be given practical marks at all, so
+          the two columns cannot quietly disagree.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Streams: nobody is marked out of the wrong syllabus</h3>
+        <p>
+          Where a class splits into streams, an Arts pupil is not marked against
+          the Science papers and vice versa. The denominator for each pupil is
+          the papers that pupil was actually meant to sit.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Your grading scale, and term weightage</h3>
+        <p>
+          Bands and grade points are yours to set, including a 10 point GPA if
+          that is what your board uses. Term weightage is a setting too: if the
+          final carries 70 per cent, the session mark carries the other 30 and
+          the card says so.
+        </p>
+      </div>
+    </div>
+    <div class="note" style="margin-top:26px">
+      <p>
+        Not built, and worth saying: <b>credit weighted GPA</b>. Every paper counts
+        as one credit. A school running unequal credit hours gets an unweighted
+        mean, which for almost every Pakistani school is the same number.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <h2>Results are released when you say so</h2>
+    <p class="lede" style="margin-top:12px;max-width:64ch">
+      Marks being entered is not the same as results being published. A card is
+      not visible to a parent until it is released, so a teacher can enter marks
+      on Tuesday and the school can hold them until Friday.
+    </p>
+    <p style="margin-top:16px;max-width:66ch">
+      A result can also be withheld for one pupil, which every school
+      occasionally needs and few systems allow without deleting something. And a
+      correction after release is a new version with the change recorded, not a
+      quiet edit: one message per child per term, so a fix does not spam
+      forty parents.
+    </p>
+    <p style="margin-top:20px">
+      <a class="btn btn--ghost" href="/parent-portal">How parents see a result</a>
+    </p>
+  </div>
+</section>
+
+<section class="section section--tint">
+  <div class="wrap">
+    <h2>What is next to this</h2>
+    <div class="grid grid--3" style="margin-top:26px">
+      <a class="card card--link" href="/attendance">
+        <h3>Attendance</h3>
+        <p>The daily register the marks sit beside, offline capable and lockable.</p>
+        <span class="card__more">See attendance</span>
+      </a>
+      <a class="card card--link" href="/fee-management">
+        <h3>Fee management</h3>
+        <p>Challans, arrears and the reconciliation that finds uncollected money.</p>
+        <span class="card__more">See fees</span>
+      </a>
+      <a class="card card--link" href="/pricing">
+        <h3>Pricing</h3>
+        <p>Every module in every plan, from Rs 950 a month.</p>
+        <span class="card__more">See the prices</span>
+      </a>
+    </div>
+  </div>
+</section>

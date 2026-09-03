@@ -1,0 +1,196 @@
+path: /guides/moving-from-paper-registers
+title: Moving a school off paper registers without losing a term
+description: The order to do it in, which records to type up and which to leave alone, and why running both systems for two weeks is the step nobody should skip.
+og_type: article
+breadcrumb: Moving off paper registers
+schema: org
+priority: 0.6
+---
+
+<section class="section">
+  <div class="wrap prose">
+    <span class="eyebrow">Guide</span>
+    <h1>Moving off paper registers without losing a term</h1>
+    <div class="meta">
+      <span>For the principal and the office</span>
+      <span>About 7 minutes</span>
+    </div>
+
+    <p>
+      The failure mode is not the software. It is starting in the wrong month,
+      typing up too much history, and switching everything on the same day. Any
+      of the three can cost a school a term of confidence, after which the staff
+      quietly go back to the register and the software becomes a thing nobody
+      opens.
+    </p>
+
+    <h2>Start at the right point in the year</h2>
+    <p>
+      The best month to start is the <b>first month of a new session</b>, because
+      that is the one month where the opening balances are simple: almost nobody
+      is carrying arrears and the roll has just been settled.
+    </p>
+    <p>
+      The second best is <b>any month, starting with fees only</b>, taking the
+      arrears each family owes as an opening figure and not typing up the history
+      behind it. The worst is the middle of admission season, when the office has
+      no spare attention, or the week before exams.
+    </p>
+
+    <h2>What to type up, and what to leave alone</h2>
+    <p>
+      This is where most of the wasted effort goes. The instinct is to bring
+      everything across. Do not.
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Record</th><th>Bring across</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Current pupils</td>
+            <td>Yes, all of them</td>
+            <td>Nothing works without the roll. This is the one unavoidable job.</td>
+          </tr>
+          <tr>
+            <td>Fee structure per class</td>
+            <td>Yes</td>
+            <td>Small, and every challan depends on it being right.</td>
+          </tr>
+          <tr>
+            <td>What each family owes today</td>
+            <td>Yes, as one opening figure</td>
+            <td>One number per family, not a history. This is the whole trick.</td>
+          </tr>
+          <tr>
+            <td>Old receipts and past months</td>
+            <td>No</td>
+            <td>Weeks of typing to reproduce a book you still own and can still open.</td>
+          </tr>
+          <tr>
+            <td>Past attendance</td>
+            <td>No</td>
+            <td>Nobody will ever query last March from the new system.</td>
+          </tr>
+          <tr>
+            <td>Past exam marks</td>
+            <td>Only the current session, if a result card is due</td>
+            <td>Otherwise it is data entry with no reader.</td>
+          </tr>
+          <tr>
+            <td>Staff records</td>
+            <td>Yes, current staff</td>
+            <td>Needed for logins and for staff attendance.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      Keep the paper. Nothing above says throw it away. It stays in the cupboard
+      and it stays readable, and once a year somebody will be glad of it.
+    </p>
+
+    <h2>What a clean import actually needs</h2>
+    <p>
+      Almost every school has its pupils in Excel already. Whether that file
+      imports in one pass or needs three days of correction comes down to a
+      handful of things:
+    </p>
+    <ul>
+      <li>
+        <b>One row per pupil.</b> Not one row per family with three children in
+        adjacent columns, which is the most common shape we see and the most
+        expensive to unpick.
+      </li>
+      <li>
+        <b>A single column for the class,</b> spelled the same way every time.
+        "Class 5", "5", "V" and "Five" in one column is four classes as far as
+        any importer is concerned.
+      </li>
+      <li>
+        <b>The father's name and one phone number,</b> in their own columns. The
+        phone number is what links siblings into a family and what a reminder is
+        eventually sent to.
+      </li>
+      <li>
+        <b>Dates in one format.</b> Pick one and make the whole column match. A
+        column containing both 03/09/2026 and 9-Mar-26 cannot be read safely,
+        because the first is ambiguous on its own.
+      </li>
+      <li>
+        <b>No merged cells, no colour as meaning.</b> A row highlighted yellow to
+        mean "left the school" carries information no file format preserves.
+        Put it in a column.
+      </li>
+    </ul>
+    <p>
+      An importer that accepts a broken file silently is worse than one that
+      refuses it. If a row cannot be read, the right behaviour is to reject the
+      whole file, say which row and why, and let you fix the sheet: half an
+      import is the hardest state to recover from.
+    </p>
+
+    <h2>Run both for two weeks</h2>
+    <p>
+      This is the step schools want to skip and the one that decides the
+      outcome. For two weeks, the clerk writes the paper receipt <b>and</b>
+      enters it. Yes, it is double work. It buys three things:
+    </p>
+    <ol>
+      <li>
+        <b>Proof.</b> At the end of a fortnight you have two independent totals
+        for the same period. If they agree, the school believes the software. If
+        they do not, you find out now rather than in March.
+      </li>
+      <li>
+        <b>Practice under real conditions.</b> A clerk learns the screen with a
+        parent standing in front of them, which is the only way anybody learns a
+        counter system.
+      </li>
+      <li>
+        <b>A way back.</b> If something is genuinely wrong, you stop, and you
+        have lost two weeks of extra typing rather than a term of records.
+      </li>
+    </ol>
+    <p>
+      After two weeks of agreement, stop writing the paper receipt for fees. Keep
+      the attendance register for another month if the teachers want it. Let them
+      drop it when they trust it, and they will, because the phone is faster than
+      the book.
+    </p>
+
+    <h2>The order, in one list</h2>
+    <ol>
+      <li>Classes and sections.</li>
+      <li>Fee heads and the amount for each class.</li>
+      <li>Pupils, imported from your spreadsheet.</li>
+      <li>Opening arrears, one figure per family.</li>
+      <li>Staff, and logins for the teachers who will mark attendance.</li>
+      <li>One class of attendance, for one week, with one teacher.</li>
+      <li>The whole school's attendance.</li>
+      <li>Fees, in parallel with paper, for two weeks.</li>
+      <li>Fees, on their own.</li>
+      <li>Exams, at the next assessment.</li>
+      <li>The parent portal, once the balances are known to be right.</li>
+    </ol>
+    <p>
+      The portal is last on purpose. The moment parents can see a balance, that
+      balance has to be correct, because a wrong figure in front of four hundred
+      families is a different kind of problem from a wrong figure in an office.
+    </p>
+
+    <h2>How this works in The School Manager</h2>
+    <p>
+      The importer refuses a file it cannot read completely, and names the row
+      and the reason, so a half-finished import is not a state you can reach.
+      Opening arrears are a supported starting figure rather than something you
+      have to fake with a fabricated challan. The parent portal is off until you
+      turn it on. And there are sixteen chapters walking through exactly this
+      order in <a href="/guide.html">the handbook</a>, free to read before you buy
+      anything.
+    </p>
+    <p>
+      <a class="btn btn--primary" href="/contact">Talk to us about your own records</a>
+      <a class="btn btn--ghost" href="/guides" style="margin-left:10px">All guides</a>
+    </p>
+  </div>
+</section>

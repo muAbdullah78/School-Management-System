@@ -1,0 +1,60 @@
+path: /contact
+title: Contact The School Manager: talk to a person in Pakistan
+description: A small team in Pakistan. Ring, message the WhatsApp number or email, and somebody who knows the software answers rather than a sales script.
+nav_order: 20
+breadcrumb: Contact
+schema: org
+priority: 0.7
+---
+
+<section class="section section--tint" id="contact">
+  <div class="wrap">
+    <span class="eyebrow">Contact</span>
+    <h1>Who you are calling</h1>
+    <p class="lede" style="margin-top:12px">
+      A small team in Pakistan. Ring the number and a person who knows the software
+      answers. If you would rather see it than read about it, we will walk one class
+      through with you on a call.
+    </p>
+
+    <div class="grid grid--3" style="margin-top:30px">
+      <div class="card">
+        <h3>Phone</h3>
+        <p><a class="clink" id="contact-phone" hidden href="#"></a></p>
+      </div>
+      <div class="card">
+        <h3>WhatsApp</h3>
+        <p><a class="clink" id="contact-whatsapp" hidden href="#" rel="noopener"></a></p>
+      </div>
+      <div class="card">
+        <h3>Email</h3>
+        <p><a class="clink" id="contact-email" hidden href="#"></a></p>
+      </div>
+    </div>
+    <p id="contact-todo" hidden class="small" style="margin-top:16px;color:var(--due-800)">
+      Set CONTACT_PHONE, CONTACT_WHATSAPP and CONTACT_EMAIL in config.js on the
+      deployment. A page this careful with an unset phone number is worse than a
+      plain page with a real one.
+    </p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <h2>What a first call covers</h2>
+    <ul class="checklist" style="margin-top:22px">
+      <li>
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>
+        <span>Your own fee structure, in your own words, against what the software can hold. If it cannot hold something, you find out on the call.</span>
+      </li>
+      <li>
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>
+        <span>Moving the records you already have. Bring a sample of your spreadsheet and we will tell you honestly how much of it imports cleanly.</span>
+      </li>
+      <li>
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>
+        <span>One month of challans for one class, run beside your existing register, so the decision is made on your numbers rather than on a demonstration.</span>
+      </li>
+    </ul>
+  </div>
+</section>
