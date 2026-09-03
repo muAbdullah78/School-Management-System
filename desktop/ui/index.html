@@ -4,74 +4,254 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>School Manager</title>
+    <!--
+      THE CONNECT SCREEN, and the dead end it used to have.
+
+      This window is the office computer. The shell is a native frame around the
+      hosted web app, so the first thing it needs is the address to open, and
+      once it navigates there this local page is gone.
+
+      IT USED location.replace, WHICH IS THE WHOLE PROBLEM. replace leaves no
+      history entry, so Alt+Left cannot come back. There is no menu bar, no
+      address bar and no reload button in this window. So a clerk who mistyped
+      the address by one character got:
+
+        1. a navigation to a host that does not exist
+        2. the webview's own error page, with no way to type a different address
+        3. the bad address still in localStorage, so relaunching the app
+           splashed for 900ms and went straight back to the same error page
+
+      The only escape was uninstalling the program. On the first screen, on the
+      first day, in front of the person deciding whether to buy this.
+
+      THREE THINGS FIX IT, and the third is the one that actually closes it:
+
+      1. The address is PRE-FILLED. Every school on the hosted service uses the
+         same one, so the office PC should not be asked to remember it, let
+         alone type it. The old placeholder said "https://your-school.pages.dev",
+         which invited a school to invent an address that has never existed.
+      2. The address is CHECKED BEFORE the window commits to it. A no-cors
+         fetch cannot read the response, but it can tell a host that answered
+         from a host that does not resolve, which is exactly the typo case.
+      3. The saved address is checked AGAIN ON EVERY LAUNCH. This is what makes
+         the dead end unreachable: however a bad address got saved, the next
+         launch lands back on this screen with the reason, rather than on an
+         error page with no way out.
+
+      And location.assign rather than replace, so Alt+Left works too.
+    -->
     <style>
       * { box-sizing: border-box; }
       body { font-family: system-ui, -apple-system, Segoe UI, sans-serif; margin: 0; min-height: 100vh;
              display: flex; align-items: center; justify-content: center; background: #0f172a; color: #e2e8f0; }
-      .card { background: #1e293b; padding: 28px; border-radius: 12px; width: 380px; max-width: 90vw; }
+      .card { background: #1e293b; padding: 28px; border-radius: 12px; width: 420px; max-width: 90vw; }
       h1 { font-size: 18px; margin: 0 0 4px; }
-      p { font-size: 13px; color: #94a3b8; margin: 0 0 16px; line-height: 1.5; }
-      input { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #334155; background: #0f172a;
+      p { font-size: 13px; color: #cbd5e1; margin: 0 0 16px; line-height: 1.5; }
+      label { display: block; font-size: 12px; font-weight: 600; color: #cbd5e1; margin-bottom: 6px; }
+      input { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #64748b; background: #0f172a;
               color: #e2e8f0; font-size: 14px; }
+      input:focus { outline: 2px solid #60a5fa; outline-offset: 1px; border-color: #60a5fa; }
       button { margin-top: 12px; width: 100%; padding: 10px; border: 0; border-radius: 8px; background: #1d4ed8;
                color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; }
       button:hover { background: #1e40af; }
-      .err { color: #f87171; font-size: 12px; margin-top: 8px; min-height: 16px; }
-      .link { color: #93c5fd; cursor: pointer; text-decoration: underline; font-size: 12px; }
+      button[disabled] { cursor: progress; }
+      /* #f87171 is 2.9:1 on this card. #fca5a5 is 5.9:1, and this text is the
+         only explanation the clerk gets for why nothing happened. */
+      .err { color: #fca5a5; font-size: 12.5px; margin-top: 8px; min-height: 17px; line-height: 1.45; }
+      .hint { font-size: 12px; color: #94a3b8; margin: 10px 0 0; }
+      .link { color: #93c5fd; cursor: pointer; text-decoration: underline; font-size: 12.5px;
+              background: none; border: 0; padding: 4px; width: auto; margin: 0; font-weight: 400; }
       .center { text-align: center; margin-top: 14px; }
     </style>
   </head>
   <body>
     <div class="card" id="setup" style="display: none">
       <h1>School Manager</h1>
-      <p>Enter this school's app address — the web link teachers open on their phones. You only do this once.</p>
-      <input id="url" type="url" placeholder="https://your-school.pages.dev" autocomplete="off" spellcheck="false" />
-      <div class="err" id="err"></div>
+      <p>
+        This is the office computer's window onto your school's account. The address
+        below is already filled in. Press Open, and you will not be asked again.
+      </p>
+      <label for="url">App address</label>
+      <input
+        id="url"
+        type="url"
+        value="https://app.theschoolmanager.site"
+        autocomplete="off"
+        spellcheck="false"
+        aria-describedby="err"
+      />
+      <p class="err" id="err" role="alert"></p>
       <button id="go">Open</button>
+      <p class="hint">
+        Change it only if your school runs the software at its own address.
+      </p>
     </div>
 
     <div class="card" id="splash" style="display: none">
-      <h1>Connecting…</h1>
+      <h1>Connecting</h1>
       <p id="splashUrl"></p>
-      <div class="center"><span class="link" id="change">Change address</span></div>
+      <div class="center"><button class="link" id="change">Change address</button></div>
     </div>
 
     <script>
       var KEY = 'school_manager_app_url'
+
+      /* localStorage through a try/catch, because every read and write here was
+         bare. If the store throws (site data blocked, a webview profile that
+         could not be created) the exception escapes at the very last line of
+         this script, after both cards have been set to display:none and before
+         either is shown. The result is a BLANK WINDOW with no text, no error and
+         no button. Remembering the address is a convenience; showing a screen is
+         not, so a failing store now just means being asked again next time. */
+      function remembered() {
+        try { return localStorage.getItem(KEY) } catch (e) { return null }
+      }
+      function remember(u) {
+        try { localStorage.setItem(KEY, u) } catch (e) { /* asked again next launch */ }
+      }
+      function forget() {
+        try { localStorage.removeItem(KEY) } catch (e) { /* nothing to undo */ }
+      }
+
+      // The hosted service. One deployment serves every school; which school
+      // you are is decided by who signs in, not by the address. So there is a
+      // right answer here, and the office PC should be given it rather than
+      // asked for it.
+      var DEFAULT_URL = 'https://app.theschoolmanager.site'
+
+      // Long enough for a slow school connection to answer, short enough that
+      // nobody thinks the program has hung.
+      var PROBE_MS = 7000
+
       function normalize(u) {
         u = (u || '').trim()
         if (!u) return ''
         if (!/^https?:\/\//i.test(u)) u = 'https://' + u
-        return u
+        return u.replace(/\/+$/, '')
       }
-      function showSetup(prefill) {
-        document.getElementById('splash').style.display = 'none'
-        var card = document.getElementById('setup')
-        card.style.display = 'block'
-        if (prefill) document.getElementById('url').value = prefill
-        document.getElementById('url').focus()
-      }
-      function submit() {
-        var u = normalize(document.getElementById('url').value)
-        try { new URL(u) } catch (e) { document.getElementById('err').textContent = 'Please enter a valid web address.'; return }
-        localStorage.setItem(KEY, u)
-        location.replace(u)
-      }
-      document.getElementById('go').addEventListener('click', submit)
-      document.getElementById('url').addEventListener('keydown', function (e) { if (e.key === 'Enter') submit() })
 
-      var saved = localStorage.getItem(KEY)
-      if (saved && location.hash !== '#reset') {
-        // Brief splash so there's always a way back to the setup screen.
-        document.getElementById('splash').style.display = 'block'
-        document.getElementById('splashUrl').textContent = saved
-        var timer = setTimeout(function () { location.replace(saved) }, 900)
-        document.getElementById('change').addEventListener('click', function () {
-          clearTimeout(timer); localStorage.removeItem(KEY); showSetup(saved)
+      /**
+       * Did anything answer at this address?
+       *
+       * mode 'no-cors' because the app is a different origin from this shell and
+       * sends no CORS headers, so a readable response is not on offer. An opaque
+       * response is enough: it separates "the host answered" from "the host does
+       * not exist", and a mistyped address is always the second one. An HTTP
+       * error status also resolves here, which is correct, because a 500 from the
+       * right server is not a reason to refuse the address.
+       */
+      function reachable(u) {
+        var ctl = typeof AbortController === 'function' ? new AbortController() : null
+        var timer = setTimeout(function () { if (ctl) ctl.abort() }, PROBE_MS)
+        var opts = { mode: 'no-cors', cache: 'no-store', redirect: 'follow' }
+        if (ctl) opts.signal = ctl.signal
+        return fetch(u, opts).then(
+          function () { clearTimeout(timer); return true },
+          function () { clearTimeout(timer); return false }
+        )
+      }
+
+      function hostOf(u) {
+        try { return new URL(u).host } catch (e) { return u }
+      }
+
+      var el = {
+        setup: document.getElementById('setup'),
+        splash: document.getElementById('splash'),
+        splashUrl: document.getElementById('splashUrl'),
+        url: document.getElementById('url'),
+        err: document.getElementById('err'),
+        go: document.getElementById('go'),
+        change: document.getElementById('change'),
+      }
+
+      function showSetup(prefill, message) {
+        el.splash.style.display = 'none'
+        el.setup.style.display = 'block'
+        if (prefill) el.url.value = prefill
+        el.err.textContent = message || ''
+        el.url.focus()
+        el.url.select()
+      }
+
+      // Pressed once and refused: offer to go anyway rather than lock the clerk
+      // out over a network oddity. Safe to offer, because the launch check
+      // brings them back here if the address really is wrong.
+      var refusedOnce = null
+
+      function submit() {
+        var u = normalize(el.url.value)
+        try {
+          var parsed = new URL(u)
+          if (!/^https?:$/.test(parsed.protocol)) throw new Error('scheme')
+        } catch (e) {
+          el.err.textContent = 'That is not a web address. It should start with https://'
+          return
+        }
+
+        if (refusedOnce === u) {
+          remember(u)
+          location.assign(u)
+          return
+        }
+
+        el.go.disabled = true
+        el.go.textContent = 'Checking the address'
+        el.err.textContent = ''
+        reachable(u).then(function (ok) {
+          el.go.disabled = false
+          el.go.textContent = 'Open'
+          if (ok) {
+            remember(u)
+            // assign, not replace: this leaves a history entry, so Alt+Left is
+            // a second way back to this screen.
+            location.assign(u)
+            return
+          }
+          refusedOnce = u
+          el.err.textContent =
+            'Nothing answered at ' + hostOf(u) + '. Check the spelling and that this ' +
+            'computer is online, then press Open again to try anyway.'
+        })
+      }
+
+      el.go.addEventListener('click', submit)
+      el.url.addEventListener('keydown', function (e) { if (e.key === 'Enter') submit() })
+
+      var saved = remembered()
+
+      if (location.hash === '#reset') {
+        forget()
+        showSetup(saved || DEFAULT_URL, '')
+      } else if (saved) {
+        // Check the saved address BEFORE navigating to it. This is the line that
+        // makes the old dead end impossible: a bad saved address now returns
+        // here with an explanation instead of dropping the window on an error
+        // page it cannot leave.
+        el.splash.style.display = 'block'
+        el.splashUrl.textContent = saved
+        var cancelled = false
+        el.change.addEventListener('click', function () {
+          cancelled = true
+          forget()
+          showSetup(saved, '')
+        })
+        reachable(saved).then(function (ok) {
+          if (cancelled) return
+          if (ok) {
+            location.assign(saved)
+            return
+          }
+          showSetup(
+            saved,
+            'Nothing answered at ' + hostOf(saved) + '. That may be this computer ' +
+              'being offline, or the address being wrong. Fix it here, or press ' +
+              'Open twice to use it anyway.'
+          )
+          refusedOnce = saved
         })
       } else {
-        if (location.hash === '#reset') localStorage.removeItem(KEY)
-        showSetup(saved || '')
+        showSetup(DEFAULT_URL, '')
       }
     </script>
   </body>

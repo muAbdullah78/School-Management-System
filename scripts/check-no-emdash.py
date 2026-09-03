@@ -22,6 +22,8 @@ school actually reads, where the rule earns its keep:
   * everything in site/, which is pure published copy
   * the four authentication pages, which are the highest-intent screens in the
     product and the place a wrong character is read most carefully
+  * the desktop shell's connect screen, which is the first thing a school sees
+    on its office computer, and the shell's README beside it
 
 The rest of web/src and supabase remains a known, separate, mechanical job. It
 is recorded in docs/STATUS.md rather than pretended away. Extend SCOPE below one
@@ -43,6 +45,10 @@ SCOPE = [
     "web/src/pages/ResetPassword.tsx",
     "web/src/components/AuthLayout.tsx",
     "web/src/lib/schoolLabel.ts",
+    # The desktop shell's connect screen and its README. Two files, and the
+    # first is the very first thing a school sees on its office computer.
+    "desktop/ui/index.html",
+    "desktop/README.md",
 ]
 
 # U+2014 em dash, and U+2013 en dash used as a dash rather than in a range.
