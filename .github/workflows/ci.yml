@@ -1459,6 +1459,22 @@ jobs:
         # for a parent, and for another school's rows.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/logins.sql
 
+      - name: Starting again clears everything, or nothing
+        # The dangerous half of a reset is not the deleting. It is a HALF
+        # cleared school: the owner is told it is empty, starts entering real
+        # admissions, and last week's practice data is still underneath in one
+        # table nobody thought about. So the strongest assertion is the sweep,
+        # computed from the catalogue rather than from a list somebody has to
+        # remember to update: after a reset, no table carrying a school_id may
+        # have a single row left for that school.
+        #
+        # Plus the refusals that keep it safe: a clerk cannot, a partial name is
+        # not a confirmation, a PAYING school cannot do it at all, and every
+        # login survives, because an owner who resets themselves out of their own
+        # account cannot get back in and a deleted profile cannot free the email
+        # address for reuse.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/reset.sql
+
       - name: Live student count — does a school outgrowing its plan get noticed?
         # It did not. subscriptions.student_count is a stored number driving the
         # console's count, limit_state, over_limit_flagged_at, suggested_plan and

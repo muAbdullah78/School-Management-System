@@ -2645,6 +2645,30 @@ export async function listSchoolLogins(): Promise<SchoolLogin[]> {
 }
 
 
+/** Clear a trial school's practice data and start again (0096).
+ *
+ *  Trial only, owner only, and the school's own name must be typed. Every one
+ *  of those is enforced in the database: this passes the typed name straight
+ *  through rather than comparing it here, because a confirmation a client can
+ *  skip is not a confirmation.
+ *
+ *  Logins are deliberately kept. The owner would otherwise reset themselves out
+ *  of their own account, and deleting a profile row cannot remove the auth user
+ *  behind it, so the address could never be used again. */
+export async function resetSchoolData(confirmName: string):
+    Promise<{ cleared: boolean; rows_removed: number; school: string }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_reset_school_data', { p_confirm_name: confirmName })
+  if (error) throw new Error(error.message)
+  const o = (data ?? {}) as Record<string, unknown>
+  return {
+    cleared: o.cleared === true,
+    rows_removed: Number(o.rows_removed) || 0,
+    school: String(o.school ?? ''),
+  }
+}
+
+
 // ---- Deleting records (0094) ----
 //
 // Nothing in this app could be deleted before: a name typed in wrong stayed on

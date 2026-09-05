@@ -1322,6 +1322,15 @@ select 'deleting a record',
             else 'FAIL — apply supabase/bundles/11_deletion.sql' end
 
 union all
+-- 0096. Trial only, owner only, and it must type-check the school's name. The
+-- row is about the function existing; the rules inside it are asserted by
+-- supabase/tests/reset.sql.
+select 'a school on trial can start again',
+       case when to_regprocedure('public.fn_reset_school_data(text)') is not null
+            then 'PASS'
+            else 'FAIL - apply supabase/bundles/11_deletion_and_logins.sql' end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS — no schools yet, as expected'

@@ -202,7 +202,20 @@ with sig(migration, object, present) as (values
                                   'fn_may_mark_subject',
                                   'fn_pending_invites',
                                   'fn_checkin_display',
-                                  'fn_support_visits', 'may_view')))),
+                                  'fn_support_visits',
+              -- 0094 and 0095, and the same category as fn_pending_invites: who
+              -- can sign in, what address they use, and what stands in the way
+              -- of removing a person are access management and the gating of a
+              -- destructive act, not a read of the school's records. may_view is
+              -- true for an observer AND during a support visit, so gating these
+              -- on it would hand both of them every staff email in the school
+              -- and let them enumerate which children could be deleted without
+              -- trace.
+                                  'fn_school_logins',
+                                  'fn_student_delete_blockers',
+                                  'fn_staff_delete_blockers',
+                                  'fn_login_delete_blockers',
+                                  'may_view')))),
   -- 0061 REWROTE fn_issue_certificate, which has existed since 0021. Its
   -- presence proves nothing at all, and neither does the new table: the
   -- signature has to be a fact about the body. Two facts, because the two

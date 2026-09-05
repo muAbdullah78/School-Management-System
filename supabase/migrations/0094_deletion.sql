@@ -217,7 +217,11 @@ begin
 
   -- A login that has DONE things blocks the person, because deleting the
   -- person means deleting the login and the login is on their work.
-  select profile_id into v_profile from public.staff where id = p_staff_id;
+  -- school_id on the statement itself, not only on the existence check above.
+  -- SECURITY DEFINER means RLS does not apply, so every statement has to carry
+  -- its own scope: an earlier guard is a guard until somebody moves it.
+  select profile_id into v_profile from public.staff
+   where id = p_staff_id and school_id = v_school;
   if v_profile is not null then
     v_out := v_out || public.fn_login_delete_blockers(v_profile);
   end if;
@@ -263,7 +267,8 @@ begin
   -- that we could not name the reason.
   begin
     delete from public.student_fee_items i using public.enrollments e
-     where i.enrollment_id = e.id and e.student_id = p_student_id;
+     where i.enrollment_id = e.id and e.student_id = p_student_id
+       and i.school_id = v_school and e.school_id = v_school;
     delete from public.enrollments where student_id = p_student_id and school_id = v_school;
     -- guardians, student_links, exam_remarks and deposit_refunds are ON DELETE
     -- CASCADE and go with the row below.
@@ -358,7 +363,8 @@ begin
     return jsonb_build_object('deleted', false, 'blockers', v_block);
   end if;
 
-  update public.staff set profile_id = null where profile_id = p_profile_id;
+  update public.staff set profile_id = null
+   where profile_id = p_profile_id and school_id = v_school;
   delete from public.profiles where id = p_profile_id and school_id = v_school;
 
   perform public.fn__log_operator_action('login.deleted', v_school,

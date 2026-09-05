@@ -1,4 +1,8 @@
 import { useState } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useAuth } from '@/auth/AuthProvider'
+import { resetSchoolData } from '@/lib/db'
+import { useLicence } from '@/hooks/useLicence'
 import { useQuery } from '@tanstack/react-query'
 import { exportAllData, getSchoolSettings, EXPORT_TABLES, type ExportResult } from '@/lib/db'
 import { downloadJSON } from '@/lib/csv'
@@ -75,6 +79,112 @@ export function Backup() {
           permission to read are listed under <code>errors</code> and left out.
         </p>
       </details>
+
+      <StartAgain />
     </div>
+  )
+}
+
+
+
+/**
+ * Clearing the practice data, at the bottom of the page that backs it up.
+ *
+ * Placed here on purpose. Every school's first week is the same: somebody types
+ * in fifteen made-up children to see how it works, and then wants the practice
+ * gone before real admissions start. The thing they should do immediately
+ * beforehand is take the export that sits directly above this, so the two live
+ * together rather than in different corners of Settings.
+ *
+ * It shows at all only during the trial, because that is the period when the
+ * data is known to be practice. A paying school with three years of fee history
+ * has no legitimate use for it, and the database refuses regardless: this only
+ * decides whether an owner is shown a button that would be refused.
+ */
+function StartAgain() {
+  const qc = useQueryClient()
+  const { profile } = useAuth()
+  const settings = useQuery({ queryKey: ['schoolSettings'], queryFn: getSchoolSettings })
+  // The same hook the licence banner uses, so "on trial" means one thing in
+  // this app rather than two.
+  const licence = useLicence()
+  const [open, setOpen] = useState(false)
+  const [typed, setTyped] = useState('')
+  const [done, setDone] = useState<string | null>(null)
+
+  const run = useMutation({
+    mutationFn: () => resetSchoolData(typed),
+    onSuccess: (r) => {
+      setDone(`${r.school} has been cleared. ${r.rows_removed.toLocaleString()} record(s) removed.`)
+      setOpen(false); setTyped('')
+      // Everything on every screen is now stale, so throw the whole cache away
+      // rather than trying to name the parts of it that changed.
+      qc.clear()
+    },
+  })
+
+  const isOwner = profile?.role === 'owner'
+  const onTrial = licence.data && 'status' in licence.data && licence.data.status === 'trialing'
+  const name = settings.data?.name ?? ''
+  if (!isOwner || !onTrial) return null
+
+  return (
+    <section className="mt-8 rounded-lg border border-danger-200 bg-danger-50 p-4">
+      <h3 className="text-sm font-semibold text-danger-900">Start again</h3>
+      <p className="mt-1 text-sm text-danger-800">
+        Clears everything you have entered so far: children, families, staff records,
+        classes, the fee structure, challans, receipts, attendance and marks. Use it
+        once, after the practice week, before the real admissions go in.
+      </p>
+      <p className="mt-2 text-sm text-danger-800">
+        <b>Take the export above first.</b> This cannot be undone and we cannot
+        recover it for you.
+      </p>
+      <p className="mt-2 text-sm text-danger-700">
+        Your logins are kept, including yours. Remove any you do not need from the
+        Staff screen. The school, its settings and its subscription are kept too.
+      </p>
+      <p className="mt-2 text-xs text-danger-700">
+        Only available during the free trial.
+      </p>
+
+      {done && (
+        <p className="mt-3 rounded-lg border border-money-200 bg-money-50 px-3 py-2 text-sm text-money-800">
+          {done}
+        </p>
+      )}
+
+      {!open ? (
+        <button onClick={() => { setOpen(true); setDone(null) }}
+          className="mt-3 rounded-lg border border-danger-300 bg-white px-4 py-2 text-sm font-medium text-danger-700 hover:bg-danger-50">
+          Clear everything and start again
+        </button>
+      ) : (
+        <div className="mt-3 rounded-lg border border-danger-200 bg-white p-3">
+          <p className="text-sm text-slate-700">
+            Type <b>{name}</b> to confirm.
+          </p>
+          <input
+            value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={name} autoFocus
+            className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
+          />
+          {run.isError && (
+            <p className="mt-2 text-sm text-danger-700">{(run.error as Error).message}</p>
+          )}
+          <div className="mt-3 flex gap-2">
+            <button
+              onClick={() => run.mutate()}
+              disabled={run.isPending || typed.trim().toLowerCase() !== name.trim().toLowerCase()}
+              className="rounded-lg bg-danger-600 px-4 py-2 text-sm font-medium text-white hover:bg-danger-700 disabled:cursor-not-allowed disabled:opacity-50">
+              {run.isPending ? 'Clearing…' : 'Clear everything'}
+            </button>
+            <button onClick={() => { setOpen(false); setTyped('') }}
+              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
   )
 }
