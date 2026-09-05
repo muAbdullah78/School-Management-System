@@ -1,16 +1,17 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   getCurrentSession, getDefaulters, listCollections, getClassStrength,
   listClasses, listSections, getAttendanceRegister,
-  listStudents, getStudentInvoices, getStudentPayments, getStudentBalance,
-  getFeeReconciliation, getHeadWiseDues,
+  listStudents, getStudentBalance, getStudentLedger,
+  getFeeReconciliation, getHeadWiseDues, type FeeReconciliation,
   type StudentRow,
 } from '@/lib/db'
 import { useSchoolName } from '@/hooks/useSchoolName'
 import { ATTENDANCE_SHORT } from '@/lib/constants'
 import { fmtPKR, fmtDate, todayISO } from '@/lib/format'
 import { toCSV, downloadCSV } from '@/lib/csv'
+import { FeeStatement } from '@/components/FeeStatement'
 
 const FIELD = 'rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 const TABS = [
@@ -320,8 +321,10 @@ function ReconciliationReport() {
           <div className="mb-4 grid grid-cols-3 gap-3">
             <Stat label="Expected (billed)" value={fmtPKR(r.expected)} tone="slate" />
             <Stat label="Collected" value={fmtPKR(r.collected)} tone="emerald" />
-            <Stat label="Outstanding" value={fmtPKR(r.outstanding)} tone={r.outstanding > 0 ? 'red' : 'emerald'} />
+            <Stat label="Unpaid on challans" value={fmtPKR(r.outstanding)} tone={r.outstanding > 0 ? 'red' : 'emerald'} />
           </div>
+
+          <Bridge r={r} />
 
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -355,6 +358,85 @@ function ReconciliationReport() {
         </>
       )}
     </ReportShell>
+  )
+}
+
+/**
+ * How this screen's total becomes the dashboard's.
+ *
+ * The two count different things and both are right. "Expected minus collected"
+ * is about CHALLANS, and it is the only figure that can tell a school it billed
+ * a class short. The dashboard is about what the children on the roll today owe,
+ * which also includes charges keyed by hand and arrears carried in from an
+ * earlier session.
+ *
+ * Before this, the difference was simply unexplained. An owner who opened both
+ * in one morning saw Rs 8,100 here and Rs 8,350 there, with nothing anywhere to
+ * say which was wrong, and the honest conclusion available to them was that
+ * neither could be trusted. Every line below is a real query rather than a
+ * residual: a row labelled "difference" is how a reconciliation hides the thing
+ * it exists to find.
+ */
+function Bridge({ r }: { r: FeeReconciliation }) {
+  const b = r.bridge
+  const rows: { label: string; hint: string; value: number }[] = [
+    {
+      label: 'Unpaid on this session\u2019s challans',
+      hint: 'For the children on the roll today. The figure above also counts children who have since left.',
+      value: b.on_challans_this_session,
+    },
+    {
+      label: 'Charges and waivers keyed by hand',
+      hint: 'A van fare, a book, a hardship credit. Real money, never on a challan. See any child\u2019s Statement.',
+      value: b.charges_keyed_by_hand,
+    },
+    {
+      label: 'Arrears carried in from an earlier session',
+      hint: 'Billed last year, still owed by a child who is here this year.',
+      value: b.arrears_from_earlier_sessions,
+    },
+  ]
+
+  return (
+    <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        Why the dashboard shows a different number
+      </div>
+      <table className="mt-2 w-full text-sm">
+        <tbody className="divide-y divide-slate-200">
+          {rows.map((x) => (
+            <tr key={x.label}>
+              <td className="py-1.5 pr-3">
+                <div className="text-slate-700">{x.label}</div>
+                <div className="text-xs text-slate-500">{x.hint}</div>
+              </td>
+              <td className="whitespace-nowrap py-1.5 text-right align-top tabular-nums text-slate-800">
+                {fmtPKR(x.value)}
+              </td>
+            </tr>
+          ))}
+          <tr className="border-t-2 border-slate-400 font-semibold">
+            <td className="py-1.5 pr-3 text-slate-800">
+              Total owed by children on the roll
+              <div className="text-xs font-normal text-slate-500">
+                This is the Outstanding figure on the dashboard.
+              </div>
+            </td>
+            <td className="whitespace-nowrap py-1.5 text-right align-top tabular-nums text-slate-900">
+              {fmtPKR(b.student_outstanding)}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      {b.owed_by_children_no_longer_on_the_roll > 0 && (
+        <p className="mt-2 rounded border border-due-200 bg-due-50 px-3 py-2 text-xs text-due-800">
+          A further <span className="font-semibold">{fmtPKR(b.owed_by_children_no_longer_on_the_roll)}</span>{' '}
+          is owed by children who are no longer on the roll. It is on no tile, because the dashboard
+          counts the children who are here, and somebody still has to chase it. Reports &rarr;
+          Students who left lists them.
+        </p>
+      )}
+    </div>
   )
 }
 
@@ -504,40 +586,47 @@ function AttendanceRegisterReport() {
   )
 }
 
+/**
+ * One student's fee account, from the top.
+ *
+ * WHAT THIS REPLACED, AND WHY IT MATTERED
+ *
+ * A ledger assembled IN THE BROWSER out of two queries: every invoice as a
+ * debit, every payment row as a credit, sorted by comparing a period month
+ * against a timestamp as strings. It was the fifth implementation of "what does
+ * this child owe" in the product and it was wrong in four ways at once.
+ *
+ *   * It credited PAYMENT rows, and a family payment carries no student_id. A
+ *     household paying for three children together therefore saw a ledger of
+ *     charges with no payments against them at all.
+ *   * It never saw an adjustment, so a hand-keyed van fare or a waiver moved the
+ *     closing balance and appeared on no line.
+ *   * A pending bank challan was credited as though the money had cleared.
+ *     Nothing else in the product counts one.
+ *   * Its own footer said "(current)" when its total disagreed with
+ *     student_balance, which is an admission printed on the report rather than a
+ *     fix.
+ *
+ * It now reads fn_student_ledger, which is the same function behind the
+ * Statement on the student profile and behind the parent's copy in the portal.
+ * One implementation, three screens, and a running total that closes on
+ * student_balance by construction.
+ */
 function StudentLedgerReport() {
   const [term, setTerm] = useState('')
   const [student, setStudent] = useState<StudentRow | null>(null)
   const results = useQuery({ queryKey: ['ledgerSearch', term], queryFn: () => listStudents(term), enabled: term.trim().length >= 2 && !student })
-  const invoices = useQuery({ queryKey: ['ledgerInv', student?.id], queryFn: () => getStudentInvoices(student!.id), enabled: !!student })
-  const payments = useQuery({ queryKey: ['ledgerPay', student?.id], queryFn: () => getStudentPayments(student!.id), enabled: !!student })
+  const ledger = useQuery({ queryKey: ['ledger', student?.id], queryFn: () => getStudentLedger(student!.id), enabled: !!student })
   const balance = useQuery({ queryKey: ['ledgerBal', student?.id], queryFn: () => getStudentBalance(student!.id), enabled: !!student })
-
-  const rows = useMemo(() => {
-    const items: { date: string; ref: string; debit: number; credit: number }[] = []
-    for (const inv of invoices.data ?? []) {
-      items.push({
-        date: inv.period_month ?? inv.due_date ?? '',
-        ref: `Invoice${inv.period_month ? ' ' + inv.period_month.slice(0, 7) : ''}`,
-        debit: Number(inv.charge), credit: 0,
-      })
-    }
-    for (const p of payments.data ?? []) {
-      items.push({
-        date: p.created_at,
-        ref: p.reversal_of ? 'Payment reversed' : `Payment${p.receipt_no ? ' · receipt #' + p.receipt_no : ''}`,
-        debit: 0, credit: Number(p.amount),
-      })
-    }
-    items.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
-    let bal = 0
-    return items.map((it) => { bal += it.debit - it.credit; return { ...it, balance: bal } })
-  }, [invoices.data, payments.data])
 
   const csv = () => {
     if (!student) return
     downloadCSV(`ledger_${(student.gr_no || student.full_name).replace(/[^a-z0-9]+/gi, '-')}.csv`,
-      toCSV(['Date', 'Particulars', 'Debit', 'Credit', 'Balance'],
-        rows.map((r) => [r.date ? fmtDate(r.date) : '', r.ref, r.debit || '', r.credit || '', r.balance])))
+      toCSV(['Date', 'Kind', 'Particulars', 'Reference', 'Charged', 'Paid or off', 'Balance', 'Recorded by'],
+        (ledger.data ?? []).map((r) => [
+          r.entry_on ? fmtDate(r.entry_on) : '', r.kind, r.particulars, r.reference,
+          r.debit || '', r.credit || '', r.balance_after, r.recorded_by,
+        ])))
   }
 
   return (
@@ -565,34 +654,16 @@ function StudentLedgerReport() {
             <button onClick={() => { setStudent(null); setTerm('') }} className="text-sm text-brand-700 hover:underline">Change student</button>
           </div>
           <ReportShell title="Student Fee Ledger" subtitle={`${student.full_name}${student.gr_no ? ` · ${student.gr_no}` : ''}`} onCSV={csv}>
-            {(invoices.isLoading || payments.isLoading) && <p className="text-sm text-slate-500">Loading…</p>}
-            {!invoices.isLoading && !payments.isLoading && (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                    <tr><th className={TH}>Date</th><th className={TH}>Particulars</th><th className={`${TH} text-right`}>Debit</th><th className={`${TH} text-right`}>Credit</th><th className={`${TH} text-right`}>Balance</th></tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {rows.length === 0 && <tr><td colSpan={5} className={`${TD} text-slate-500`}>No fee activity yet.</td></tr>}
-                    {rows.map((r, i) => (
-                      <tr key={i}>
-                        <td className={TD}>{r.date ? fmtDate(r.date) : '-'}</td>
-                        <td className={TD}>{r.ref}</td>
-                        <td className={`${TD} text-right tabular-nums`}>{r.debit ? fmtPKR(r.debit) : ''}</td>
-                        <td className={`${TD} text-right tabular-nums`}>{r.credit ? fmtPKR(r.credit) : ''}</td>
-                        <td className={`${TD} text-right font-medium tabular-nums`}>{fmtPKR(r.balance)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  {rows.length > 0 && (
-                    <tfoot className="border-t-2 border-slate-300 font-semibold text-slate-800">
-                      <tr><td className={TD} colSpan={4}>Closing balance {balance.data != null && Number(balance.data) !== rows[rows.length - 1].balance ? '(current)' : ''}</td>
-                        <td className={`${TD} text-right tabular-nums`}>{fmtPKR(balance.data ?? rows[rows.length - 1].balance)}</td></tr>
-                    </tfoot>
-                  )}
-                </table>
-                <p className="mt-2 text-xs text-slate-400">Debit = charges billed · Credit = payments received · Balance = amount outstanding.</p>
-              </div>
+            {ledger.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+            {ledger.isError && <p className="text-sm text-red-600">{(ledger.error as Error).message}</p>}
+            {ledger.data && (
+              <>
+                <FeeStatement entries={ledger.data} balance={balance.data ?? 0} showRecordedBy />
+                <p className="mt-2 text-xs text-slate-400">
+                  Charged = what was added to the account · Paid or off = a payment, a discount or a
+                  waiver · Balance = what was owed after that entry.
+                </p>
+              </>
             )}
           </ReportShell>
         </div>
@@ -630,10 +701,16 @@ function HeadWiseDuesReport() {
     enabled: !!sessionId,
   })
   const heads = q.data?.heads ?? []
-  const tot = heads.reduce(
-    (a, h) => ({ charged: a.charged + Number(h.charged), collected: a.collected + Number(h.collected) }),
-    { charged: 0, collected: 0 },
-  )
+  // The totals come from the CHALLANS, not from summing the rows above.
+  // Splitting a payment across heads is a division, and Rs 1,000 divided across
+  // three heads does not add back to Rs 1,000 however the rounding is arranged.
+  // Summing the rows therefore produced a total that missed the reconciliation
+  // screen by a few paisa for no reason a school could ever work out.
+  const tot = {
+    charged: q.data?.total_charged ?? 0,
+    collected: q.data?.total_collected ?? 0,
+    outstanding: q.data?.total_outstanding ?? 0,
+  }
 
   const csv = () => downloadCSV('dues-by-fee-head.csv',
     toCSV(['Fee Head', 'Charged', 'Collected', 'Outstanding'],
@@ -693,7 +770,7 @@ function HeadWiseDuesReport() {
                     <td className={`${TD} text-right tabular-nums`}>{fmtPKR(tot.charged)}</td>
                     <td className={`${TD} text-right tabular-nums`}>{fmtPKR(tot.collected)}</td>
                     <td className={`${TD} text-right tabular-nums`}>
-                      {fmtPKR(tot.charged - tot.collected)}
+                      {fmtPKR(tot.outstanding)}
                     </td>
                     <td className={`${TD} text-right tabular-nums`}>
                       {tot.charged > 0 ? `${Math.round((tot.collected / tot.charged) * 100)}%` : '-'}

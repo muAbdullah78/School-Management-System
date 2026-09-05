@@ -6,6 +6,7 @@ import {
   type Announcement, type Audience, type Severity,
 } from '@/lib/platform'
 import { fmtDateTime } from '@/lib/format'
+import { AskDialog } from '@/components/AskDialog'
 
 const FIELD = 'w-full rounded border border-slate-300 px-2 py-1.5 text-sm'
 
@@ -58,10 +59,13 @@ function Releases() {
     onError: (e) => { setMsg(null); setErr((e as Error).message) },
   })
 
+  // Was window.prompt with the reason dropped silently when blank, so the
+  // button read as broken to anybody who pressed Enter on an empty box.
+  const [pulling, setPulling] = useState<null | { id: string; version: string }>(null)
   const pull = useMutation({
     mutationFn: (v: { id: string; reason: string }) => unpublishRelease(v.id, v.reason),
     onSuccess: (r) => {
-      setErr(null); setMsg(r.note)
+      setErr(null); setMsg(r.note); setPulling(null)
       void qc.invalidateQueries({ queryKey: ['releases'] })
     },
     onError: (e) => setErr((e as Error).message),
@@ -182,12 +186,7 @@ function Releases() {
                   <td className="py-1.5 text-right">
                     {r.is_current && (
                       <button
-                        onClick={() => {
-                          const reason = window.prompt(
-                            'Why is this release being pulled? Six months from now, '
-                            + '"why is 1.4.1 not current" has no other answer.')
-                          if (reason?.trim()) pull.mutate({ id: r.id, reason })
-                        }}
+                        onClick={() => setPulling({ id: r.id, version: r.version })}
                         className="text-xs text-slate-500 hover:underline">
                         Pull it
                       </button>
@@ -198,6 +197,19 @@ function Releases() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {pulling && (
+        <AskDialog
+          title={`Pull ${pulling.version} from the website`}
+          intro="It stops being the download people get. The reason is the only answer anybody will have in six months to why this version is not current."
+          reason={{ label: 'Why is it being pulled?', required: true, minLength: 4,
+                    placeholder: 'e.g. crashes on Windows 10 when printing' }}
+          confirmLabel="Pull release" tone="danger"
+          busy={pull.isPending} error={pull.error ? (pull.error as Error).message : null}
+          onCancel={() => setPulling(null)}
+          onSubmit={(v) => pull.mutate({ id: pulling.id, reason: v.reason })}
+        />
       )}
     </section>
   )

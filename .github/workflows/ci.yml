@@ -143,6 +143,21 @@ jobs:
         working-directory: .
         run: python3 scripts/check-no-emdash.py
 
+      - name: No school action depends on a browser dialog
+        # window.prompt asked for money amounts and audit reasons at twelve call
+        # sites: applying a fine, waiving one, adjusting a balance, reversing a
+        # receipt, an expense or an income entry, cancelling a bounced challan,
+        # skipping a message, pulling a release, restoring a review. window.confirm
+        # guarded locking a day's attendance register.
+        #
+        # Chrome offers "prevent this page from creating additional dialogs" after
+        # the second in a row, which the adjustment flow hit every time because it
+        # asked three questions back to back. Once ticked, prompt() returns null
+        # and confirm() returns false FOR EVER, which the calling code reads as
+        # "cancelled" - so the button silently stops working, with no error and no
+        # log, on the screens that move a school's money.
+        run: python3 scripts/check-no-browser-dialogs.py
+
       - name: The website's buttons lead somewhere
         # Needs no database, so it lives in this job. Every call to action on the
         # marketing site used to be an anchor on the page the visitor was already

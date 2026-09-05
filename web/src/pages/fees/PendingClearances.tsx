@@ -1,10 +1,19 @@
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { listPendingPayments, verifyPayment, cancelPendingPayment } from '@/lib/db'
 import { PAYMENT_METHODS } from '@/lib/constants'
 import { fmtPKR, fmtDate } from '@/lib/format'
+import { AskDialog } from '@/components/AskDialog'
 
 export function PendingClearances() {
   const qc = useQueryClient()
+  // Was window.prompt, whose answer was passed through unchecked: an empty
+  // string reached fn_cancel_pending_payment as the reason for cancelling a
+  // receipt, and pressing Cancel in the browser dialog looked identical to
+  // pressing Cancel in the app.
+  const [cancelling, setCancelling] = useState<
+    null | { id: string; amount: number; receiptNo: number | null }
+  >(null)
   const list = useQuery({ queryKey: ['pendingPayments'], queryFn: listPendingPayments })
 
   const verify = useMutation({
@@ -16,14 +25,8 @@ export function PendingClearances() {
   })
   const cancel = useMutation({
     mutationFn: (v: { id: string; reason: string }) => cancelPendingPayment(v.id, v.reason),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['pendingPayments'] }),
+    onSuccess: () => { setCancelling(null); qc.invalidateQueries({ queryKey: ['pendingPayments'] }) },
   })
-
-  function onCancel(id: string) {
-    const r = window.prompt('Reason for cancelling this pending payment (e.g. challan bounced):')
-    if (r == null) return
-    cancel.mutate({ id, reason: r })
-  }
 
   const total = list.data?.reduce((s, p) => s + p.amount, 0) ?? 0
   const err = (verify.error ?? cancel.error) as Error | null
@@ -63,7 +66,8 @@ export function PendingClearances() {
                     <td className="px-3 py-2 text-right whitespace-nowrap">
                       <button onClick={() => verify.mutate(p.id)} disabled={verify.isPending}
                         className="text-sm text-emerald-700 hover:underline disabled:opacity-50">Verify</button>
-                      <button onClick={() => onCancel(p.id)} disabled={cancel.isPending}
+                      <button onClick={() => setCancelling({ id: p.id, amount: p.amount, receiptNo: p.receipt_no })}
+                        disabled={cancel.isPending}
                         className="ml-3 text-sm text-red-600 hover:underline disabled:opacity-50">Cancel</button>
                     </td>
                   </tr>
@@ -76,6 +80,23 @@ export function PendingClearances() {
           </div>
           {err && <p className="mt-2 text-sm text-red-600">{err.message}</p>}
         </>
+      )}
+
+      {cancelling && (
+        <AskDialog
+          title="Cancel this pending payment"
+          intro={<>
+            Receipt {cancelling.receiptNo != null ? `#${cancelling.receiptNo}` : ''} for{' '}
+            <b>{fmtPKR(cancelling.amount)}</b>. It never counted toward the balance, so nothing is
+            reversed; the record is marked cancelled with the reason you give.
+          </>}
+          reason={{ label: 'Reason for cancelling', required: true, minLength: 4,
+                    placeholder: 'e.g. bank challan bounced' }}
+          confirmLabel="Cancel payment" tone="danger"
+          busy={cancel.isPending} error={cancel.error ? (cancel.error as Error).message : null}
+          onCancel={() => setCancelling(null)}
+          onSubmit={(v) => cancel.mutate({ id: cancelling.id, reason: v.reason })}
+        />
       )}
     </div>
   )

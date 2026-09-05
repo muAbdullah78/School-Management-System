@@ -9,6 +9,7 @@
  */
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { AskDialog } from '@/components/AskDialog'
 import {
   listExpenseCategories, createExpenseCategory, renameExpenseCategory,
   setExpenseCategoryActive,
@@ -137,9 +138,23 @@ export function AccountsPage() {
     },
   })
 
+  /**
+   * Which reversal is being confirmed, if any.
+   *
+   * Both of these asked window.prompt('Why is this being reversed?') and then
+   * dropped the answer on the floor if it was blank, with no message: the button
+   * appeared to do nothing. The dialog names the voucher and the amount, which a
+   * browser prompt cannot, and holds the entry open while the answer is typed.
+   */
+  const [reversing, setReversing] = useState<
+    | null
+    | { kind: 'expense'; id: string; amount: number; what: string }
+    | { kind: 'income'; id: string; amount: number; what: string }
+  >(null)
+
   const undo = useMutation({
     mutationFn: (v: { id: string; reason: string }) => reverseExpense(v.id, v.reason),
-    onSuccess: () => { setFlash('Expense reversed'); refresh() },
+    onSuccess: () => { setFlash('Expense reversed'); setReversing(null); refresh() },
   })
 
   // The twin of `undo`, missing since 0030. fn_reverse_other_income had zero
@@ -147,7 +162,7 @@ export function AccountsPage() {
   // append-only by design, so there was no edit path either.
   const undoIncome = useMutation({
     mutationFn: (v: { id: string; reason: string }) => reverseOtherIncome(v.id, v.reason),
-    onSuccess: () => { setFlash('Income reversed'); refresh() },
+    onSuccess: () => { setFlash('Income reversed'); setReversing(null); refresh() },
   })
 
   const catName = (id: string | null) =>
@@ -311,10 +326,10 @@ export function AccountsPage() {
                           {e.amount > 0 && !e.reversal_of && (
                             <button
                               className="text-xs text-danger-600 hover:underline"
-                              onClick={() => {
-                                const reason = window.prompt('Why is this being reversed?')
-                                if (reason && reason.trim()) undo.mutate({ id: e.id, reason: reason.trim() })
-                              }}
+                              onClick={() => setReversing({
+                                kind: 'expense', id: e.id, amount: e.amount,
+                                what: `voucher #${e.voucher_no} · ${catName(e.category_id)}`,
+                              })}
                             >
                               Reverse
                             </button>
@@ -372,12 +387,9 @@ export function AccountsPage() {
                           {i.amount > 0 && !i.reversal_of && (
                             <button
                               className="text-xs text-danger-600 hover:underline"
-                              onClick={() => {
-                                const reason = window.prompt('Why is this being reversed?')
-                                if (reason && reason.trim()) {
-                                  undoIncome.mutate({ id: i.id, reason: reason.trim() })
-                                }
-                              }}
+                              onClick={() => setReversing({
+                                kind: 'income', id: i.id, amount: i.amount, what: i.source,
+                              })}
                             >
                               Reverse
                             </button>
@@ -500,6 +512,27 @@ export function AccountsPage() {
             </Button>
           </div>
         </Card>
+      )}
+
+      {reversing && (
+        <AskDialog
+          title={reversing.kind === 'expense' ? 'Reverse this expense' : 'Reverse this income'}
+          intro={<>
+            {reversing.what} for <b>{money(reversing.amount)}</b>. The entry is kept and a contra
+            entry is written against it, so the books show what happened rather than hiding it.
+          </>}
+          reason={{ label: 'Reason for reversing', required: true, minLength: 4,
+                    hint: 'Read months later by somebody who was not here.',
+                    placeholder: reversing.kind === 'expense' ? 'e.g. entered twice' : 'e.g. wrong amount keyed' }}
+          confirmLabel="Reverse entry" tone="danger"
+          busy={undo.isPending || undoIncome.isPending}
+          error={((reversing.kind === 'expense' ? undo.error : undoIncome.error) as Error | null)?.message ?? null}
+          onCancel={() => setReversing(null)}
+          onSubmit={(v) => {
+            if (reversing.kind === 'expense') undo.mutate({ id: reversing.id, reason: v.reason })
+            else undoIncome.mutate({ id: reversing.id, reason: v.reason })
+          }}
+        />
       )}
     </div>
   )

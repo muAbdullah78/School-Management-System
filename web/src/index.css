@@ -43,7 +43,9 @@ body {
   #invoice-doc,
   #invoice-doc *,
   #portal-statement,
-  #portal-statement * {
+  #portal-statement *,
+  #fee-statement,
+  #fee-statement * {
     visibility: visible;
   }
   #receipt,
@@ -57,7 +59,8 @@ body {
   #admit-cards,
   #challan,
   #invoice-doc,
-  #portal-statement {
+  #portal-statement,
+  #fee-statement {
     position: absolute;
     left: 0;
     top: 0;

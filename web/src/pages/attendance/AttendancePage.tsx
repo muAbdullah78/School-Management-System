@@ -7,6 +7,7 @@ import {
 } from '@/lib/db'
 import { ATTENDANCE_STATUSES } from '@/lib/constants'
 import { todayISO } from '@/lib/format'
+import { AskDialog } from '@/components/AskDialog'
 import { useAuth } from '@/auth/AuthProvider'
 import { isTeacher } from '@/auth/roles'
 import { enqueueAttendance, isNetworkError, attendanceKey, cachedSchoolId } from '@/lib/offlineQueue'
@@ -186,6 +187,7 @@ export function AttendancePage() {
     mutationFn: () => finalizeAttendance(sessionId!, classId, sectionId, date),
     onSuccess: (n) => {
       setSaveMsg(`Finalized & locked ${n} row${n === 1 ? '' : 's'}.`)
+      setConfirmFinalize(false)
       qc.invalidateQueries({ queryKey: ['roster', sessionId, classId, sectionId ?? 'none', date] })
     },
   })
@@ -201,13 +203,31 @@ export function AttendancePage() {
     })
   }
 
+  /**
+   * The three things that stop a finalize, and why none of them is a browser
+   * dialog any more.
+   *
+   * window.alert and window.confirm are both suppressible: once a browser has
+   * been told to stop showing dialogs from a page, alert() does nothing and
+   * confirm() returns false FOR EVER. This button would then silently refuse to
+   * finalize, with no message, and the teacher's only evidence would be that
+   * pressing it does nothing. The two refusals are now sentences on the page and
+   * the confirmation is a dialog this app draws itself.
+   */
+  const [confirmFinalize, setConfirmFinalize] = useState(false)
+  const [finalizeBlocked, setFinalizeBlocked] = useState<string | null>(null)
+
   function doFinalize() {
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      window.alert('You’re offline. Finalizing locks the day on the server: reconnect first.'); return
+      setFinalizeBlocked('You are offline. Finalizing locks the day on the server, so reconnect first.')
+      return
     }
-    if (dirty) { window.alert('Save your changes before finalizing.'); return }
-    if (!window.confirm('Finalize this day? Attendance will be locked and can no longer be edited.')) return
-    finalize.mutate()
+    if (dirty) {
+      setFinalizeBlocked('Save your changes before finalizing.')
+      return
+    }
+    setFinalizeBlocked(null)
+    setConfirmFinalize(true)
   }
 
   const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine)
@@ -372,6 +392,27 @@ export function AttendancePage() {
                 </span>
               )}
             </div>
+            {finalizeBlocked && (
+              <p className="mt-2 rounded border border-due-200 bg-due-50 px-3 py-2 text-sm text-due-800">
+                {finalizeBlocked}
+              </p>
+            )}
+
+            {confirmFinalize && (
+              <AskDialog
+                title="Finalize this day?"
+                intro={<>
+                  The register for <b>{date}</b> is locked and can no longer be edited by anybody,
+                  including you. Anything wrong after this has to be put right through a correction,
+                  which is recorded.
+                </>}
+                confirmLabel="Finalize and lock" tone="danger"
+                busy={finalize.isPending}
+                error={finalize.error ? (finalize.error as Error).message : null}
+                onCancel={() => setConfirmFinalize(false)}
+                onSubmit={() => finalize.mutate()}
+              />
+            )}
 
             <p className="mt-3 text-xs text-slate-500">
               Tip: click a row, then press <kbd className="rounded border px-1">P</kbd>/<kbd className="rounded border px-1">A</kbd>/<kbd className="rounded border px-1">L</kbd>/<kbd className="rounded border px-1">T</kbd>/<kbd className="rounded border px-1">H</kbd> (or 1–5) to mark and jump to the next student.

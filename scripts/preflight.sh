@@ -45,6 +45,7 @@ echo "== the cheap ones =="
 step "bundles are in sync with the migrations" bash -c \
   './supabase/build-bundles.sh >/dev/null && git diff --exit-code --stat supabase/bundles/'
 step "no em dashes" python3 scripts/check-no-emdash.py
+step "no browser dialogs (prompt/alert/confirm)" python3 scripts/check-no-browser-dialogs.py
 step "PARITY.md rows are evidenced" python3 scripts/check-parity.py
 step "the built site would index correctly" python3 scripts/check-site-seo.py
 step "0059 exemption list agrees across three files" python3 supabase/check-exemption-lists.py

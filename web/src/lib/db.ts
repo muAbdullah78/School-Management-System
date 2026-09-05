@@ -556,15 +556,48 @@ export async function addAdjustment(studentId: string, amount: number, reason: s
 // ---- Fee reconciliation (expected vs collected + ghost check) ----
 export interface ReconClassRow { class_name: string; expected: number; collected: number; outstanding: number }
 export interface ReconStudent { gr_no: string | null; full_name: string; class_name: string }
+/**
+ * How the challan total becomes the dashboard total.
+ *
+ * The two screens count different things and both are right: "expected minus
+ * collected" is about CHALLANS, and it is the only figure that can tell a school
+ * it billed a class short. The dashboard is about what the children on the roll
+ * today owe, which also includes charges keyed by hand and arrears carried from
+ * an earlier session.
+ *
+ * Before 0098 the difference was simply unexplained, and an owner who opened
+ * both in one morning saw Rs 8,100 on one and Rs 8,350 on the other with nothing
+ * anywhere to say which was wrong. Every term here is a real query rather than a
+ * residual: a line labelled "difference" is how a reconciliation hides the thing
+ * it exists to find.
+ */
+export interface ReconBridge {
+  on_challans_this_session: number
+  charges_keyed_by_hand: number
+  arrears_from_earlier_sessions: number
+  /** The dashboard's own figure, computed the dashboard's own way. */
+  student_outstanding: number
+  /** Real money owed by children who are not on the roll, so on no tile. */
+  owed_by_children_no_longer_on_the_roll: number
+}
 export interface FeeReconciliation {
   expected: number; collected: number; outstanding: number
   by_class: ReconClassRow[]; uninvoiced: ReconStudent[]; ghost_suspects: ReconStudent[]
+  basis: string
+  bridge: ReconBridge
 }
 export async function getFeeReconciliation(sessionId: string): Promise<FeeReconciliation> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_fee_reconciliation', { p_session_id: sessionId })
   if (error) throw new Error(error.message)
   const d = data as any
+  // A database that predates 0098 returns no bridge. Refusing here is
+  // deliberate: the screen's whole job after this change is to explain the
+  // difference between two totals, and a version of it that silently drops the
+  // explanation is the confusing screen we started with.
+  if (!d || typeof d !== 'object' || !d.bridge || typeof d.bridge !== 'object') {
+    throw outOfDate('fn_fee_reconciliation')
+  }
   return {
     expected: Number(d.expected), collected: Number(d.collected), outstanding: Number(d.outstanding),
     by_class: (d.by_class ?? []).map((r: any) => ({
@@ -572,6 +605,15 @@ export async function getFeeReconciliation(sessionId: string): Promise<FeeReconc
     })),
     uninvoiced: d.uninvoiced ?? [],
     ghost_suspects: d.ghost_suspects ?? [],
+    basis: String(d.basis ?? ''),
+    bridge: {
+      on_challans_this_session: Number(d.bridge.on_challans_this_session ?? 0),
+      charges_keyed_by_hand: Number(d.bridge.charges_keyed_by_hand ?? 0),
+      arrears_from_earlier_sessions: Number(d.bridge.arrears_from_earlier_sessions ?? 0),
+      student_outstanding: Number(d.bridge.student_outstanding ?? 0),
+      owed_by_children_no_longer_on_the_roll:
+        Number(d.bridge.owed_by_children_no_longer_on_the_roll ?? 0),
+    },
   }
 }
 
@@ -2946,13 +2988,52 @@ export interface DashboardSummary {
   /** False when no current academic session is set, which otherwise makes every
    *  session-scoped figure silently zero. */
   session_set: boolean
+  /**
+   * Active students with no active enrolment in the current session.
+   *
+   * They are on the Students screen and nowhere else: no challan, no register,
+   * no result card, and until 0099 no report named them either, because the one
+   * built to catch a child who is not being billed also walks enrolments. The
+   * usual cause is a rollover that did not carry everybody across.
+   *
+   * This is also what accounts for the Students screen listing more rows than
+   * the tile counts, which previously looked like one of the two being wrong.
+   */
+  students_without_a_class: number
 }
 
 export async function getDashboardSummary(): Promise<DashboardSummary> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_dashboard_summary')
   if (error) throw new Error(error.message)
-  return data as DashboardSummary
+  const d = data as any
+  if (!d || typeof d !== 'object' || typeof d.attendance !== 'object') {
+    throw outOfDate('fn_dashboard_summary')
+  }
+  // `students_without_a_class` is defaulted rather than demanded. Every other
+  // tile on this page works without it, and refusing the whole dashboard over
+  // one advisory count would take a school's morning screen away to tell them
+  // about a migration.
+  return { ...(d as DashboardSummary), students_without_a_class: Number(d.students_without_a_class ?? 0) }
+}
+
+/** The children the roll count cannot see, by name. See DashboardSummary. */
+export interface StudentWithoutAClass {
+  student_id: string
+  full_name: string
+  gr_no: string | null
+  father_name: string | null
+  admission_date: string | null
+  /** Where they were last enrolled, which is what tells the office whether this
+   *  is a new admission or a child a rollover left behind. */
+  last_class: string | null
+  last_session: string | null
+}
+export async function listStudentsWithoutAClass(): Promise<StudentWithoutAClass[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_students_without_a_class')
+  if (error) throw new Error(error.message)
+  return (data as StudentWithoutAClass[]) ?? []
 }
 
 /** The certificate register. Goes through fn_certificate_register rather than
@@ -3231,6 +3312,14 @@ export interface PortalReceipt {
   received_by: string | null
 }
 
+/** A charge or a credit the school keyed by hand: a van fare, a book, a waiver.
+ *  It is part of the balance and until 0098 it appeared on no screen at all. */
+export interface PortalAdjustment {
+  on: string
+  amount: number
+  reason: string
+}
+
 export interface PortalFees {
   student_id: string
   balance: number
@@ -3238,6 +3327,18 @@ export interface PortalFees {
   family_credit: number
   invoices: PortalInvoice[]
   receipts: PortalReceipt[]
+  adjustments: PortalAdjustment[]
+  /**
+   * The sum of those. It is what closes the page's own arithmetic:
+   *
+   *     sum(invoice outstanding) + charges_not_on_a_challan === balance
+   *
+   * Before 0098 the page showed the two challans and the balance and no third
+   * figure, so a parent charged Rs 250 for the van read Rs 2,350 owed above
+   * Rs 2,100 of challans and could only conclude the school was adding money on
+   * quietly.
+   */
+  charges_not_on_a_challan: number
 }
 
 export interface PortalAttendance {
@@ -3313,7 +3414,74 @@ export async function getPortalChildFees(studentId: string): Promise<PortalFees>
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_portal_child_fees', { p_student_id: studentId })
   if (error) throw new Error(error.message)
-  return data as PortalFees
+  const d = data as any
+  if (!d || typeof d !== 'object' || !Array.isArray(d.invoices)) {
+    throw outOfDate('fn_portal_child_fees')
+  }
+  // Defaulted, not demanded: on a database before 0098 there is no adjustments
+  // array, and a parent who is owed nothing unusual should still see their
+  // challans rather than an error about a migration. The page reconciles what
+  // it has and says so when the two sides do not meet.
+  return {
+    ...(d as PortalFees),
+    adjustments: Array.isArray(d.adjustments) ? d.adjustments : [],
+    charges_not_on_a_challan: Number(d.charges_not_on_a_challan ?? 0),
+  }
+}
+
+/**
+ * The fee statement: every entry that moved this child's balance.
+ *
+ * One row per charge, discount, fine, hand-keyed adjustment and payment, in the
+ * order they happened, with a running total whose last row IS the balance. The
+ * office and the parent read the same rows out of the same database function,
+ * so the two cannot drift; the parent's copy leaves out the name of the member
+ * of staff who keyed each entry.
+ */
+export interface LedgerEntry {
+  /** Position in statement order. The closing balance is the highest seq, and
+   *  it is a stable key for the row. */
+  seq: number
+  entry_on: string
+  kind: 'charge' | 'discount' | 'fine' | 'adjustment' | 'payment'
+  particulars: string
+  reference: string
+  debit: number
+  credit: number
+  balance_after: number
+  recorded_by: string
+}
+
+function asLedger(data: unknown, fn: string): LedgerEntry[] {
+  if (!Array.isArray(data)) throw outOfDate(fn)
+  return data.map((r: any) => {
+    if (r == null || typeof r !== 'object' || r.balance_after == null) throw outOfDate(fn)
+    return {
+      seq: Number(r.seq ?? 0),
+      entry_on: String(r.entry_on ?? ''),
+      kind: r.kind,
+      particulars: String(r.particulars ?? ''),
+      reference: String(r.reference ?? ''),
+      debit: Number(r.debit ?? 0),
+      credit: Number(r.credit ?? 0),
+      balance_after: Number(r.balance_after),
+      recorded_by: String(r.recorded_by ?? ''),
+    }
+  })
+}
+
+export async function getStudentLedger(studentId: string): Promise<LedgerEntry[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_student_ledger', { p_student_id: studentId })
+  if (error) throw new Error(error.message)
+  return asLedger(data, 'fn_student_ledger')
+}
+
+export async function getPortalChildLedger(studentId: string): Promise<LedgerEntry[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_portal_child_ledger', { p_student_id: studentId })
+  if (error) throw new Error(error.message)
+  return asLedger(data, 'fn_portal_child_ledger')
 }
 
 export async function getPortalChildAttendance(
@@ -4619,12 +4787,37 @@ export async function findByVoucher(code: string) {
                    family_id: string; period_month: string | null } | null
 }
 
-export async function getHeadWiseDues(sessionId: string) {
+export interface HeadWiseDues {
+  session_id: string
+  basis: string
+  heads: { fee_head: string; charged: number; collected: number }[]
+  /** Taken from the challans directly, NOT by summing the rows above.
+   *  Apportioning a payment across heads is a division, and a division of
+   *  Rs 1,000 across three heads does not add back to Rs 1,000. */
+  total_charged: number
+  total_collected: number
+  total_outstanding: number
+}
+export async function getHeadWiseDues(sessionId: string): Promise<HeadWiseDues> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_head_wise_dues', { p_session_id: sessionId })
   if (error) throw new Error(error.message)
-  return data as { session_id: string; basis: string
-                   heads: { fee_head: string; charged: number; collected: number }[] }
+  const d = data as any
+  if (!d || !Array.isArray(d.heads) || d.total_outstanding == null) {
+    throw outOfDate('fn_head_wise_dues')
+  }
+  return {
+    session_id: String(d.session_id ?? sessionId),
+    basis: String(d.basis ?? ''),
+    heads: d.heads.map((h: any) => ({
+      fee_head: String(h.fee_head ?? 'Other'),
+      charged: Number(h.charged ?? 0),
+      collected: Number(h.collected ?? 0),
+    })),
+    total_charged: Number(d.total_charged ?? 0),
+    total_collected: Number(d.total_collected ?? 0),
+    total_outstanding: Number(d.total_outstanding ?? 0),
+  }
 }
 
 /** One row per time our support team opened this school's account. */

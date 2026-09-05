@@ -8,6 +8,7 @@ import {
   listFamilyParents, createParentLogin, unlinkParent, getChallan, type Challan,
   getStudentMonthlyFee, getEnrollmentDiscounts, addDiscount, setDiscountStatus,
   recordPayment, billStudentMonth, deferInvoice, undoDefer, addAdjustment, voidInvoice,
+  getStudentLedger,
   getStudentMonthTests, getStudentMonthAttendance,
   type StudentProfile as Student, type EnrollmentInfo, type InvoiceBalance, type MonthTestRow,
 } from '@/lib/db'
@@ -27,6 +28,7 @@ import { PhotoUpload } from '@/components/PhotoUpload'
 import { removeStudentPhoto, uploadStudentPhoto } from '@/lib/photos'
 import { LoginFunctionWarning } from '@/components/LoginFunctionWarning'
 import { DeleteRecord } from '@/components/DeleteRecord'
+import { FeeStatement, FeeStatementDoc } from '@/components/FeeStatement'
 import { studentDeleteBlockers, deleteStudent } from '@/lib/db'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
@@ -899,6 +901,11 @@ function FeesTab({
   const payments = useQuery({ queryKey: ['payments', studentId], queryFn: () => getStudentPayments(studentId) })
   const monthlyFee = useQuery({ queryKey: ['monthlyFee', enrollment.enrollment_id], queryFn: () => getStudentMonthlyFee(enrollment.enrollment_id) })
   const discounts = useQuery({ queryKey: ['enrollmentDiscounts', enrollment.enrollment_id], queryFn: () => getEnrollmentDiscounts(enrollment.enrollment_id) })
+  // The statement behind the balance. Fetched with the tab rather than on
+  // demand: it is the answer to the question the tab is opened to ask, and a
+  // clerk with a parent at the counter should not have to press anything to
+  // reach it.
+  const ledger = useQuery({ queryKey: ['ledger', studentId], queryFn: () => getStudentLedger(studentId) })
 
   const [receipt, setReceipt] = useState<ReceiptData | null>(null)
   const feeSchoolName = useSchoolName()
@@ -916,6 +923,7 @@ function FeesTab({
   const [settle, setSettle] = useState(false)
   const [showDiscount, setShowDiscount] = useState(false)
   const [showActivity, setShowActivity] = useState(false)
+  const [printStatement, setPrintStatement] = useState(false)
   const [defer, setDefer] = useState<null | { invoiceId?: string; billMonthISO?: string; label: string }>(null)
   const [cancelCharge, setCancelCharge] =
     useState<null | { invoiceId: string; label: string; amount: number }>(null)
@@ -926,6 +934,7 @@ function FeesTab({
     qc.invalidateQueries({ queryKey: ['payments', studentId] })
     qc.invalidateQueries({ queryKey: ['monthlyFee', enrollment.enrollment_id] })
     qc.invalidateQueries({ queryKey: ['enrollmentDiscounts', enrollment.enrollment_id] })
+    qc.invalidateQueries({ queryKey: ['ledger', studentId] })
   }
 
   const net = monthlyFee.data?.net ?? 0
@@ -1059,6 +1068,40 @@ function FeesTab({
         )}
       </div>
 
+      {/* The statement: how the balance above was arrived at.
+          Placed under the month list on purpose. The month list answers "which
+          months are outstanding", which is what a clerk taking money needs. The
+          statement answers "why is the total that number", which is what a
+          parent asks when the two do not look the same, and until 0098 the
+          product had no answer to it at all. */}
+      <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <div className="text-xs uppercase tracking-wide text-slate-500">Statement</div>
+            <p className="mt-0.5 text-xs text-slate-400">
+              Every charge, discount, late fee, adjustment and payment, in order.
+            </p>
+          </div>
+          {(ledger.data?.length ?? 0) > 0 && (
+            <button onClick={() => setPrintStatement(true)}
+              className="rounded border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50">
+              Print statement
+            </button>
+          )}
+        </div>
+        <div className="mt-3">
+          {ledger.isLoading ? (
+            <p className="text-sm text-slate-400">Loading…</p>
+          ) : ledger.isError ? (
+            <p className="rounded border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+              {(ledger.error as Error).message}
+            </p>
+          ) : (
+            <FeeStatement entries={ledger.data ?? []} balance={bal} showRecordedBy />
+          )}
+        </div>
+      </div>
+
       {/* Activity / ledger (collapsible) */}
       <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
         <button onClick={() => setShowActivity((v) => !v)} className="flex w-full items-center justify-between text-xs uppercase tracking-wide text-slate-500">
@@ -1122,6 +1165,28 @@ function FeesTab({
           amount={cancelCharge.amount}
           onClose={() => setCancelCharge(null)}
           onDone={() => { setCancelCharge(null); refresh() }} />
+      )}
+      {printStatement && (
+        <div className="fixed inset-0 z-50 overflow-auto bg-slate-900/40 p-4">
+          <div className="mx-auto max-w-3xl rounded-lg bg-white shadow-xl">
+            <FeeStatementDoc
+              id="fee-statement"
+              schoolName={feeSchoolName}
+              studentName={student.full_name}
+              grNo={student.gr_no}
+              className={enrollment.class_name}
+              entries={ledger.data ?? []}
+              balance={bal}
+              showRecordedBy
+            />
+            <div className="flex justify-end gap-2 border-t border-slate-200 p-3 print:hidden">
+              <button onClick={() => window.print()}
+                className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Print</button>
+              <button onClick={() => setPrintStatement(false)}
+                className="rounded border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Close</button>
+            </div>
+          </div>
+        </div>
       )}
       {receipt && <Receipt data={receipt} onClose={() => setReceipt(null)} />}
     </div>

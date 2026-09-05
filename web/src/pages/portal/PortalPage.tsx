@@ -273,6 +273,17 @@ export function PortalPage() {
                           automatically to the next challan.
                         </p>
                       )}
+                      {/* The line that closes the page's own arithmetic.
+                          Without it a parent charged for the van read a balance
+                          of Rs 2,350 above two challans totalling Rs 2,100 and
+                          had nothing on the page to ask about. */}
+                      {fees.data.charges_not_on_a_challan !== 0 && (
+                        <p className="mt-3 text-xs text-slate-500">
+                          Of this, {money(Math.abs(fees.data.charges_not_on_a_challan))}{' '}
+                          {fees.data.charges_not_on_a_challan > 0 ? 'is charged' : 'has been taken off'}{' '}
+                          separately from the monthly challans. It is listed under Other charges below.
+                        </p>
+                      )}
                     </Card>
 
                     <Card>
@@ -304,6 +315,33 @@ export function PortalPage() {
                       )}
                     </Card>
 
+                    {fees.data.adjustments.length > 0 && (
+                      <Card>
+                        <CardTitle icon={<IconAlert />}>Other charges and credits</CardTitle>
+                        <p className="text-xs text-slate-500">
+                          Amounts the school added or took off outside the monthly challan, with the
+                          reason they recorded.
+                        </p>
+                        <ul className="mt-2 divide-y divide-slate-100">
+                          {fees.data.adjustments.map((a, i) => (
+                            <li key={i} className="flex items-center justify-between gap-3 py-2.5">
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-slate-800">{a.reason}</p>
+                                <p className="text-xs text-slate-500">
+                                  {new Date(`${a.on}T00:00:00`).toLocaleDateString('en-PK', {
+                                    day: 'numeric', month: 'short', year: 'numeric',
+                                  })}
+                                </p>
+                              </div>
+                              <span className={`shrink-0 text-sm font-semibold tabular-nums ${a.amount < 0 ? 'text-money-700' : 'text-slate-800'}`}>
+                                {a.amount < 0 ? `- ${money(-a.amount)}` : money(a.amount)}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </Card>
+                    )}
+
                     <Card>
                       <CardTitle
                         icon={<IconPrint />}
@@ -316,7 +354,16 @@ export function PortalPage() {
                           </button>
                         }
                       >
-                        Your receipts
+                        {/* "Your receipts" was wrong and the printed version
+                            already knew it: fn_portal_child_fees returns
+                            invoices for THIS CHILD and receipts for the WHOLE
+                            FAMILY. Under a heading carrying one child's name, a
+                            parent of three saw Rs 5,000 of payments above a
+                            child who had paid nothing, and reasonably read it as
+                            that child being settled. PortalStatement.tsx carried
+                            a paragraph about labelling this exactly, and the
+                            label was fixed only on the page nobody prints. */}
+                        Payments from your family
                       </CardTitle>
                       {fees.data.receipts.length === 0 ? (
                         <p className="text-sm text-slate-400">No payments recorded yet.</p>

@@ -161,6 +161,36 @@ export function Dashboard() {
             </div>
           )}
 
+          {/* The children no other screen can see.
+              An active student with no active enrolment in the current session
+              gets no challan, no register and no result card, and the one report
+              built to catch a child who is not being billed also walks
+              enrolments, so it cannot see them either. They show on the Students
+              screen with an empty class, which reads as a formatting gap rather
+              than as a child about to be forgotten for a term. The usual cause
+              is a rollover that did not carry everybody across, and a school
+              finds out in March when a parent asks why no fee slip ever came.
+              It is also what accounts for the Students screen listing more rows
+              than the tile below counts. */}
+          {d && d.students_without_a_class > 0 && (
+            <div className="mb-5 flex items-start gap-3 rounded-xl border border-due-200 bg-due-50 p-4 text-sm text-due-800">
+              <span className="mt-0.5 text-due-600"><IconAlert /></span>
+              <div>
+                <p className="font-medium">
+                  {d.students_without_a_class} student{d.students_without_a_class === 1 ? ' is' : 's are'} not on any class list
+                </p>
+                <p className="mt-0.5 text-due-700">
+                  They get no challan, no attendance register and no result card until they are put
+                  in a class, and they are counted by nothing on this page. Open{' '}
+                  <Link to="/students?no_class=1" className="font-medium underline">
+                    the list of who they are
+                  </Link>{' '}
+                  and admit or enrol each one.
+                </p>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <LinkTile to="/attendance">
               <StatTile
@@ -190,7 +220,19 @@ export function Dashboard() {
                 icon={<IconStudents />}
                 label="Active students"
                 value={loading ? '…' : String(d?.active_students ?? '-')}
-                sub={d ? `${d.new_admissions_month} admitted this month` : undefined}
+                /* This is the same function the plan limit uses. It used to be a
+                   second copy of the rule that counted a removed child and
+                   missed one with no class, so the tile, the Students screen and
+                   the licence gave three answers. */
+                sub={
+                  d
+                    ? [`${d.new_admissions_month} admitted this month`,
+                       d.students_without_a_class
+                         ? `${d.students_without_a_class} not in a class`
+                         : null,
+                      ].filter(Boolean).join(' · ')
+                    : undefined
+                }
               />
             </LinkTile>
 

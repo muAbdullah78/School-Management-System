@@ -14,8 +14,13 @@
  * money and still has to be findable.
  */
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { listStudentPage, listClasses, listSections, getStudentPhotoPaths, type StudentListRow } from '@/lib/db'
+import {
+  listStudentPage, listClasses, listSections, getStudentPhotoPaths,
+  listStudentsWithoutAClass, type StudentListRow,
+} from '@/lib/db'
+import { fmtDate } from '@/lib/format'
 import { DataTable, type Column } from '@/components/DataTable'
 import { fmtPKR } from '@/lib/format'
 import { StudentProfile } from './StudentProfile'
@@ -26,6 +31,10 @@ const SELECT =
   'rounded border border-slate-300 px-2 py-2 text-sm focus:border-brand-500 focus:outline-none'
 
 export function StudentsPage() {
+  // The dashboard links here with ?no_class=1 when it has counted children who
+  // are on no class list. Read from the URL rather than kept in state so the
+  // link works from anywhere, including a bookmark or a message to a colleague.
+  const [params, setParams] = useSearchParams()
   const [term, setTerm] = useState('')
   const [classId, setClassId] = useState('')
   const [sectionId, setSectionId] = useState('')
@@ -183,6 +192,16 @@ export function StudentsPage() {
         The whole roster. Search by name, GR number, admission number or father&rsquo;s name.
       </p>
 
+      <NotInAClass
+        open={params.get('no_class') === '1'}
+        onOpenChange={(v) => {
+          const next = new URLSearchParams(params)
+          if (v) next.set('no_class', '1'); else next.delete('no_class')
+          setParams(next, { replace: true })
+        }}
+        onOpen={setSelectedId}
+      />
+
       <div className="mt-4">
         <DataTable
           rows={q.data?.rows ?? []}
@@ -249,6 +268,98 @@ export function StudentsPage() {
           }
         />
       </div>
+    </div>
+  )
+}
+
+
+/**
+ * The children who are on no class list.
+ *
+ * They are active students with no active enrolment in the current session, and
+ * that state makes them invisible almost everywhere: no challan, no attendance
+ * register, no result card, not in the dashboard count, not in the plan count,
+ * and not in the reconciliation screen's list of children who are not being
+ * billed, because that list also walks enrolments.
+ *
+ * On this screen they were visible, but only as a row with an empty Class cell,
+ * which reads as a formatting gap rather than as a child about to be forgotten
+ * for a term. The usual cause is a rollover that did not carry everybody across.
+ *
+ * The panel renders nothing at all when there are none, which is the normal
+ * case: a standing empty box teaches people to stop reading the top of the page.
+ */
+function NotInAClass({
+  open, onOpenChange, onOpen,
+}: {
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  onOpen: (studentId: string) => void
+}) {
+  const q = useQuery({ queryKey: ['studentsWithoutAClass'], queryFn: listStudentsWithoutAClass })
+  const rows = q.data ?? []
+  // Silent on failure. A database that predates 0099 has no such function, and
+  // an error banner at the top of the roster about a migration would be worse
+  // than the omission it is reporting.
+  if (q.isError || rows.length === 0) return null
+
+  return (
+    <div className="mt-4 rounded-xl border border-due-200 bg-due-50 p-4">
+      <button
+        onClick={() => onOpenChange(!open)}
+        className="flex w-full items-center justify-between gap-3 text-left"
+      >
+        <span className="text-sm font-medium text-due-900">
+          {rows.length} student{rows.length === 1 ? ' is' : 's are'} not on any class list
+        </span>
+        <span className="shrink-0 text-xs font-medium text-due-700 underline">
+          {open ? 'Hide' : 'Show who'}
+        </span>
+      </button>
+      <p className="mt-1 text-xs text-due-800">
+        They get no challan, no attendance register and no result card until they are enrolled in a
+        class for this session.
+      </p>
+      {open && (
+        <div className="mt-3 overflow-x-auto rounded-lg border border-due-200 bg-white">
+          <table className="w-full min-w-[32rem] text-sm">
+            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-3 py-2 font-medium">Student</th>
+                <th className="px-3 py-2 font-medium">Father</th>
+                <th className="px-3 py-2 font-medium">Admitted</th>
+                <th className="px-3 py-2 font-medium">Last seen in</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {rows.map((r) => (
+                <tr
+                  key={r.student_id}
+                  onClick={() => onOpen(r.student_id)}
+                  className="cursor-pointer hover:bg-slate-50"
+                >
+                  <td className="px-3 py-2 text-slate-800">
+                    {r.full_name}
+                    {r.gr_no && <span className="ml-1 text-xs text-slate-400">GR {r.gr_no}</span>}
+                  </td>
+                  <td className="px-3 py-2 text-slate-600">{r.father_name || '-'}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-slate-500">
+                    {r.admission_date ? fmtDate(r.admission_date) : '-'}
+                  </td>
+                  <td className="px-3 py-2 text-slate-500">
+                    {/* Which tells the office what happened: no previous class at
+                        all is a new admission that was never enrolled; a class in
+                        last year's session is a child the rollover left behind. */}
+                    {r.last_class
+                      ? `${r.last_class}${r.last_session ? ` · ${r.last_session}` : ''}`
+                      : 'Never enrolled'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }

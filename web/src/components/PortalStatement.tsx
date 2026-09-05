@@ -179,8 +179,67 @@ export function PortalStatement({
           The table totals the challans listed above: {fmtPKR(billed - paid)} unpaid across{' '}
           {unpaidCount} challan{unpaidCount === 1 ? '' : 's'}. "This student owes"{' '}
           ({fmtPKR(fees.balance)}) is the school's running balance for the student, which also
-          counts any advance held and any adjustment made in the office.
+          counts any advance held and the other charges listed below.
         </p>
+      )}
+
+      {/* --- other charges ------------------------------------------------
+          These are the school's hand-keyed charges and waivers: a van fare, a
+          book, a hardship credit. They are part of the balance printed above and
+          before 0098 they appeared on NO screen and on no printed page, so the
+          statement could show two challans totalling Rs 2,100 above a balance of
+          Rs 2,350 with no line anywhere accounting for the difference. A parent
+          reading that concludes the school is adding money on quietly, and they
+          have no way to find out otherwise. */}
+      {fees.adjustments.length > 0 && (
+        <>
+          <h3 className="mt-5 border-b border-slate-300 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-700">
+            Other charges and credits for this student
+          </h3>
+          <p className="mt-1 text-[11px] text-slate-600">
+            Amounts added or taken off outside the monthly challan, with the reason the school
+            recorded at the time. Ask the office if any of these is not clear.
+          </p>
+          <table className="mt-2 w-full text-sm">
+            <thead>
+              <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
+                <th className="py-1 pr-2 font-medium">Date</th>
+                <th className="py-1 pr-2 font-medium">Reason</th>
+                <th className="py-1 text-right font-medium">Amount (Rs)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {fees.adjustments.map((a, i) => (
+                <tr key={i}>
+                  <td className="whitespace-nowrap py-1.5 pr-2 align-top text-slate-600">{fmtDate(a.on)}</td>
+                  <td className="py-1.5 pr-2 align-top">{a.reason}</td>
+                  <td className="whitespace-nowrap py-1.5 text-right align-top tabular-nums">
+                    {a.amount < 0 ? `- ${fmtAmount(-a.amount)}` : fmtAmount(a.amount)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-slate-800 font-semibold">
+                <td className="py-1.5 pr-2" colSpan={2}>Total</td>
+                <td className="whitespace-nowrap py-1.5 text-right tabular-nums">
+                  {fees.charges_not_on_a_challan < 0
+                    ? `- ${fmtAmount(-fees.charges_not_on_a_challan)}`
+                    : fmtAmount(fees.charges_not_on_a_challan)}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+          {/* The statement proving itself, on the paper the parent is holding.
+              Unpaid challans plus other charges IS the balance; saying so turns
+              three numbers that look unrelated into one sum they can check. */}
+          <p className="mt-2 text-[11px] text-slate-600">
+            {fmtPKR(billed - paid)} unpaid on challans{' '}
+            {fees.charges_not_on_a_challan < 0 ? 'less' : 'plus'}{' '}
+            {fmtPKR(Math.abs(fees.charges_not_on_a_challan))} of other charges ={' '}
+            <span className="font-semibold">{fmtPKR(fees.balance)}</span>, the balance shown above.
+          </p>
+        </>
       )}
 
       {/* --- payments ---------------------------------------------------- */}
