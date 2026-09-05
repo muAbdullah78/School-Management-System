@@ -110,7 +110,7 @@ describe("the father's CNIC column", () => {
     })
   })
 
-  it('is optional — a register with no CNIC column still imports', () => {
+  it('is optional. A register with no CNIC column still imports', () => {
     expect(missingRequiredColumns(['Student Name', 'Grade'])).toEqual([])
   })
 })

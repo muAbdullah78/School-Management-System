@@ -14,16 +14,55 @@
 // =============================================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
+// -----------------------------------------------------------------------------
+// VERSION. Raise this whenever the contract changes: a new role, a new field, a
+// different error.
+//
+// WHY A NUMBER LIVES HERE AT ALL
+//
+// This function is deployed BY HAND, separately from the app, so a school can
+// easily be running a copy of it that is months behind the code that calls it.
+// That is not hypothetical. Role 'parent' was added to the allowlist below in
+// commit 552f7d6; every project deployed before that rejects a parent login
+// with the words "Invalid role" and nothing else. The school sees a form that
+// refuses to work, the app has no idea why, and there is no way to tell a stale
+// deployment from a real bug.
+//
+// Version 2 is the first to report itself. A GET returns this without creating
+// anything, so the app can ask "which one am I talking to?" before it asks for
+// anything. Against a version 1 deployment that GET falls through to the input
+// checks and comes back 400 "A valid email is required", which is itself the
+// answer: no version means old.
+// -----------------------------------------------------------------------------
+const FUNCTION_VERSION = 2
+
+const ALLOWED_ROLES = [
+  'principal', 'admin_clerk', 'accountant',
+  'class_teacher', 'subject_teacher', 'readonly',
+  // 'parent' belongs here even though the function is named create-teacher: a
+  // parent login is created by exactly the same mechanism (service key, email
+  // pre-confirmed) and is then attached to a family by fn_link_parent. Leaving
+  // it out is what made the parent portal impossible to reach.
+  'parent',
+]
+
 const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 }
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
   const json = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } })
+
+  // The version probe. Deliberately before authentication: it reveals nothing
+  // but a number and the list of roles this copy understands, and the app needs
+  // to be able to ask even when it is not about to create anybody.
+  if (req.method === 'GET') {
+    return json({ version: FUNCTION_VERSION, roles: ALLOWED_ROLES })
+  }
 
   try {
     const url = Deno.env.get('SUPABASE_URL')!
@@ -53,19 +92,19 @@ Deno.serve(async (req) => {
     const password = String(body.password ?? '')
     const fullName = String(body.full_name ?? '').trim()
     const role = String(body.role ?? 'class_teacher')
-    // 'parent' belongs here even though the function is named create-teacher:
-    // a parent login is created by exactly the same mechanism (service key,
-    // email pre-confirmed) and is then attached to a family by fn_link_parent.
-    // Leaving it out is what made the parent portal impossible to reach —
-    // asking for one came back "Invalid role".
-    const allowedRoles = [
-      'principal', 'admin_clerk', 'accountant',
-      'class_teacher', 'subject_teacher', 'readonly',
-      'parent',
-    ]
     if (!email || !/^\S+@\S+\.\S+$/.test(email)) return json({ error: 'A valid email is required' }, 400)
     if (password.length < 6) return json({ error: 'Password must be at least 6 characters' }, 400)
-    if (!allowedRoles.includes(role)) return json({ error: 'Invalid role' }, 400)
+    // The version travels with the refusal. A caller that asked for a role this
+    // copy has never heard of needs to know whether it asked for nonsense or is
+    // talking to a deployment older than itself, and those look identical from
+    // the outside.
+    if (!ALLOWED_ROLES.includes(role)) {
+      return json({
+        error: 'Invalid role',
+        version: FUNCTION_VERSION,
+        roles: ALLOWED_ROLES,
+      }, 400)
+    }
 
     // 3) Create the user with the service_role client (email pre-confirmed).
     const admin = createClient(url, service, { auth: { autoRefreshToken: false, persistSession: false } })
@@ -94,7 +133,7 @@ Deno.serve(async (req) => {
     )
     if (upErr) return json({ error: `Login created but its role could not be set: ${upErr.message}` }, 500)
 
-    return json({ id: created.user.id, email, role })
+    return json({ id: created.user.id, email, role, version: FUNCTION_VERSION })
   } catch (e) {
     return json({ error: (e as Error).message }, 500)
   }

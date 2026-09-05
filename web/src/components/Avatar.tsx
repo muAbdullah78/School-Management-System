@@ -4,7 +4,7 @@
  * A missing photograph is a NORMAL state, not an error: most schools will not
  * have photographed every pupil on day one, and a broken-image icon in a class
  * list reads as a fault in the software. So the fallback is deliberate design
- * rather than an afterthought — stable initials on a stable colour, so the same
+ * rather than an afterthought: stable initials on a stable colour, so the same
  * child is always the same colour and a photo-less class list is still scannable.
  *
  * The signed URL is passed IN rather than fetched here. One `signPaths` call
@@ -52,7 +52,7 @@ export function Avatar({
   }
   return (
     <span
-      aria-label={name ? `${name} — no photograph on record` : 'No photograph'}
+      aria-label={name ? `${name}: no photograph on record` : 'No photograph'}
       title={name ?? undefined}
       className={`${base} ${avatarTone(name)} flex items-center justify-center font-semibold select-none`}
     >
@@ -65,7 +65,7 @@ export function Avatar({
  * The school logo, or the school's name.
  *
  * A blank box on a printed challan that a parent takes to the bank looks like a
- * defect in the school, not in the software — so a school with no logo gets its
+ * defect in the school, not in the software, so a school with no logo gets its
  * name set in type instead, which is a perfectly respectable letterhead.
  */
 export function SchoolMark({

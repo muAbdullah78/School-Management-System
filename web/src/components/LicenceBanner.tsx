@@ -20,7 +20,7 @@ const STYLES: Record<Exclude<Urgency, 'none'>, string> = {
  *  - The student-limit notice goes to the OWNER AND PRINCIPAL ONLY. A clerk can
  *    do nothing about the school outgrowing its plan, and showing them a
  *    "you are over your limit" warning while they admit students reads as "stop
- *    admitting students" — the exact behaviour the soft-limit rule exists to
+ *    admitting students". The exact behaviour the soft-limit rule exists to
  *    avoid.
  *
  * WHEN the limit notice appears is decided by the server, not here. 0068 nulls
@@ -28,7 +28,7 @@ const STYLES: Record<Exclude<Urgency, 'none'>, string> = {
  * in grace/locked/cancelled: 0067 made the student count live, so before that
  * change a principal was told they had outgrown their plan the same afternoon
  * they admitted the 101st child. The rule sits in fn_my_licence because a rule
- * living in one screen is a rule the next screen will not have — so this
+ * living in one screen is a rule the next screen will not have, so this
  * component simply renders whatever the server was willing to say.
  */
 export function LicenceBanner() {
@@ -51,7 +51,7 @@ export function LicenceBanner() {
           <span className="font-medium">{expiry}</span>{' '}
           {data.status === 'trialing' ? (
             <span className="opacity-90">
-              Contact us to choose a plan — your data stays exactly as it is.
+              Contact us to choose a plan. Your data stays exactly as it is.
             </span>
           ) : (
             <span className="opacity-90">

@@ -3,8 +3,8 @@
  *
  * `canWrite` exists because `role !== 'readonly'` written out in twenty
  * components is how one component keeps its Save button. These tests assert the
- * boundary from BOTH sides — every writing role writes, and every non-writing
- * role does not — because a helper that returned `true` unconditionally would
+ * boundary from BOTH sides: every writing role writes, and every non-writing
+ * role does not, because a helper that returned `true` unconditionally would
  * pass a test that only checked the writers.
  */
 import { describe, it, expect } from 'vitest'
@@ -40,7 +40,7 @@ describe('isObserver', () => {
 })
 
 describe('readonly is an admin-surface role that cannot write', () => {
-  it('stays IN ADMIN_ROLES — it gets the admin screens on purpose', () => {
+  it('stays IN ADMIN_ROLES. It gets the admin screens on purpose', () => {
     // This is the part that surprises people. `readonly` is meant to see the
     // admin screens; since 0059 those screens return real data to it. What it
     // must never get is a write control, which is canWrite's job and not this

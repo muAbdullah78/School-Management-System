@@ -5,7 +5,7 @@ import { platformSettings, savePlatformSettings, type PlatformSettings } from '@
 const FIELD = 'w-full rounded border border-slate-300 px-2 py-1.5 text-sm'
 
 /**
- * Our own billing details — the seller half of every invoice.
+ * Our own billing details. The seller half of every invoice.
  *
  * This screen exists because the alternative was hardcoding an NTN and a bank
  * account in a migration, which makes changing a bank account a job for a
@@ -36,7 +36,7 @@ export function BillingSettings() {
       const d = q.data
       if (!d) throw new Error('Settings not loaded')
       // Only what actually CHANGED. The database takes a patch, so sending the
-      // whole form would mean a stale field overwriting somebody else's edit —
+      // whole form would mean a stale field overwriting somebody else's edit,
       // and `missing` is not a column, so it must never be sent back.
       const patch: Record<string, unknown> = {}
       for (const k of Object.keys(form) as (keyof PlatformSettings)[]) {
@@ -74,7 +74,7 @@ export function BillingSettings() {
           <p className="mt-1">
             The NTN matters most. Without it a school cannot claim the software as an
             expense, and cannot file the income tax it is legally required to deduct
-            from what it pays you — so it will either pay you late or pay you short.
+            from what it pays you, so it will either pay you late or pay you short.
           </p>
         </div>
       )}
@@ -151,7 +151,7 @@ export function BillingSettings() {
             <input className={FIELD} value={form.invoice_prefix ?? ''}
               onChange={(e) => set('invoice_prefix', e.target.value.toUpperCase())} />
           </Field>
-          <Field label="Credit note prefix" hint="Its own series — a credit note must not use an invoice number">
+          <Field label="Credit note prefix" hint="Its own series. A credit note must not use an invoice number">
             <input className={FIELD} value={form.credit_prefix ?? ''}
               onChange={(e) => set('credit_prefix', e.target.value.toUpperCase())} />
           </Field>
@@ -162,8 +162,8 @@ export function BillingSettings() {
           </Field>
         </div>
         <p className="text-xs text-slate-500">
-          Changing a prefix does not renumber anything already issued — a document a
-          customer is holding must not change its number — and the series keeps
+          Changing a prefix does not renumber anything already issued. A document a
+          customer is holding must not change its number, and the series keeps
           counting, so it stays unbroken.
         </p>
         <Field label="Expected withholding rate (%)"

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Do verify.sql and detect.sql still agree about who is exempt?
+Do all three copies of the 0059 exemption list still agree?
 
 WHY THIS EXISTS
 
@@ -37,13 +37,20 @@ The exemption list is written the same way in both SQL files: a `proname not in
 functions to complain about. This extracts both and requires them to be equal as
 SETS — order and formatting are free, membership is not.
 
-Deliberately NOT compared against check-readonly-writes.py's ALLOWED_VOLATILE:
-that list answers a different question (which VOLATILE functions may name
-`readonly`), and forcing two different rules to share one list is how an
-exemption ends up covering something nobody meant it to.
+check-readonly-writes.py carries the SAME rule in a SQL string, so it is
+compared too. It was not, and the docstring above said "three places" while the
+guard read two of them: adding four exemptions in 0094 and 0095 therefore failed
+CI twice in a row, once for detect.sql and again for the file this guard was not
+looking at. A guard that names three files and checks two is the drift it exists
+to prevent.
+
+Its OTHER list, ALLOWED_VOLATILE, is still deliberately not compared: that one
+answers a different question (which VOLATILE functions may name `readonly`), and
+forcing two different rules to share one list is how an exemption ends up
+covering something nobody meant it to.
 
 Usage:  python3 supabase/check-exemption-lists.py
-Exit:   0 = the two lists match, 1 = they have drifted
+Exit:   0 = all three lists match, 1 = they have drifted
 """
 import os
 import re
@@ -53,6 +60,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FILES = {
     'supabase/verify.sql': None,
     'supabase/repair/detect.sql': None,
+    'supabase/check-readonly-writes.py': None,
 }
 
 # The anchor is the line that SELECTS the offenders. Everything between it and
@@ -112,27 +120,23 @@ def main():
             return 1
         lists[path] = names
 
-    (a_path, a), (b_path, b) = lists.items()
-    if a == b:
+    paths = list(lists)
+    everywhere = set.union(*lists.values())
+    if all(lists[p] == everywhere for p in paths):
         print(f'0059 exemption list matches across {len(lists)} files '
-              f'({len(a)} entries: {", ".join(sorted(a))})')
+              f'({len(everywhere)} entries: {", ".join(sorted(everywhere))})')
         return 0
 
-    print('The 0059 exemption list has drifted. One rule, two files, two '
-          'answers — and the file that is behind reports MISSING on a database '
-          'that is correct.\n')
-    only_a = sorted(a - b)
-    only_b = sorted(b - a)
-    if only_a:
-        print(f'  in {a_path} but NOT in {b_path}:')
-        for n in only_a:
-            print(f'    {n}')
-    if only_b:
-        print(f'  in {b_path} but NOT in {a_path}:')
-        for n in only_b:
-            print(f'    {n}')
-    print('\nDecide which is right — an exemption is a decision, not a typo — '
-          'then make both files say it.')
+    print('The 0059 exemption list has drifted. One rule, three files, and the '
+          'one that is behind reports MISSING on a database that is correct.\n')
+    for p in paths:
+        missing = sorted(everywhere - lists[p])
+        if missing:
+            print(f'  named elsewhere but NOT in {p}:')
+            for n in missing:
+                print(f'    {n}')
+    print('\nDecide which is right: an exemption is a decision, not a typo, '
+          'then make all three files say it.')
     return 1
 
 

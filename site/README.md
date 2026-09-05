@@ -27,9 +27,25 @@ next build. The sources deliberately live OUTSIDE this folder: everything in
 `site/` becomes a public URL, and a template full of `{{TITLE}}` placeholders
 should not be one.
 
-The Open Graph share card is generated too, by `node scripts/build-og.mjs`, and
-the handbook by `python3 scripts/build-guide.py`. Both need a browser or
-screenshots, so neither runs in CI; the committed output is what ships.
+The Open Graph share card is generated too, by `node scripts/build-og.mjs`, the
+icons by `node scripts/build-icons.mjs`, and the handbook by
+`python3 scripts/build-guide.py`. All three need a browser or screenshots, so
+none of them runs in CI; the committed output is what ships.
+
+Two more checks need a browser and are therefore run by hand, not by CI:
+
+```
+python3 scripts/cf-server.py site 8803 &
+node scripts/check-site-render.mjs    16 pages x 7 widths: overflow, clipping,
+                                      contrast, stray text, console errors
+node scripts/check-site-csp.mjs 8803  the pages under the REAL response
+                                      headers: CSP violations, every icon URL
+                                      answering 200, the logo actually loading
+```
+
+Use `cf-server.py` and not the app's `spa-server.py`. The SPA server answers
+every unknown path with `index.html`, so an audit of sixteen URLs once audited
+the home page sixteen times and reported all of them clean.
 
 ## Why fifteen pages and not one
 
@@ -73,10 +89,24 @@ so out loud. Neither can ship silently.
 Any static host. Cloudflare Pages is free and fast from Pakistan: point it at
 this folder, no build command, output directory `site`.
 
-**Upload the whole folder.** It is now a folder rather than a handful of files:
-fifteen pages, `guides/` with three articles inside it, `styles.css`,
-`wire.js`, `config.js`, `og.png`, `robots.txt`, `sitemap.xml`, `guide.html` and
-`404.html`. This README does no harm if it goes up too.
+**Upload the whole folder.** It is a folder rather than a handful of files:
+
+- sixteen pages, and `guides/` with three articles inside it
+- `styles.css`, `wire.js`, `config.js`
+- `og.png`, `guide.html`, `404.html`, `robots.txt`, `sitemap.xml`
+- the icons: `favicon.ico`, `icon.svg`, `icon-48.png`, `icon-96.png`,
+  `icon-192.png`, `icon-512.png`, `icon-maskable-512.png`,
+  `apple-touch-icon.png`, and `site.webmanifest`
+- `_headers`, which is how Cloudflare learns the security headers. It is a
+  plain text file with no extension and it is easy to miss when dragging a
+  folder. Without it the site still works and simply has no Content Security
+  Policy, which is the kind of thing nobody notices for a year.
+
+This README does no harm if it goes up too.
+
+**The icons must keep their names.** Google caches a favicon against its URL, so
+renaming one means waiting for a recrawl before the icon in the search result
+changes. `docs/SEO.md` has the full story of why the icon was a grey globe.
 
 **Upload it as a set.** A new page with an old `styles.css` uses class names the
 old sheet has never heard of, so it falls back to unstyled defaults in places

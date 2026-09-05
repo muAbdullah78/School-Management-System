@@ -25,7 +25,7 @@ export function MyClass() {
       <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
         <div className="text-xs uppercase tracking-wide text-slate-500">Today’s check-in</div>
         {!linked ? (
-          <p className="mt-1 text-sm text-amber-600">Your login isn’t linked to a staff record yet — ask the principal to link it in Staff.</p>
+          <p className="mt-1 text-sm text-amber-600">Your login isn’t linked to a staff record yet: ask the principal to link it in Staff.</p>
         ) : checkin.isLoading ? (
           <p className="mt-1 text-sm text-slate-400">…</p>
         ) : checkin.data ? (

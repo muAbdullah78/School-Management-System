@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { AskDialog } from '@/components/AskDialog'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { requireSupabase } from '@/lib/supabase'
 
@@ -123,17 +124,18 @@ export function Reviews() {
     onError: (e: Error) => setErr(e.message),
   })
 
+  // Was window.prompt, whose answer went straight to a function requiring ten
+  // characters: a shorter note came back as a Postgres error with the typing
+  // already thrown away.
+  const [restoring, setRestoring] = useState<string | null>(null)
   const restore = useMutation({
-    mutationFn: async (id: string) => {
-      const why = window.prompt(
-        'Why is this going back on the website? Recorded in the operator log, at least 10 characters.',
-      )
-      if (!why) return
-      const { error } = await sb.rpc('fn_platform_review_restore', { p_id: id, p_note: why })
+    mutationFn: async (v: { id: string; note: string }) => {
+      const { error } = await sb.rpc('fn_platform_review_restore', { p_id: v.id, p_note: v.note })
       if (error) throw new Error(error.message)
     },
     onSuccess: () => {
       setErr(null)
+      setRestoring(null)
       void qc.invalidateQueries({ queryKey: ['platform-reviews'] })
       void qc.invalidateQueries({ queryKey: ['reviews-summary'] })
     },
@@ -240,7 +242,7 @@ export function Reviews() {
               )}
               {r.status === 'hidden' ? (
                 <button
-                  onClick={() => restore.mutate(r.id)}
+                  onClick={() => setRestoring(r.id)}
                   className="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50"
                 >
                   Put it back
@@ -314,6 +316,19 @@ export function Reviews() {
           ) : null}
         </div>
       ))}
+
+      {restoring && (
+        <AskDialog
+          title="Put this review back on the website"
+          intro="The note goes in the operator log, which is where somebody looks when they ask why a review that was taken down is showing again."
+          reason={{ label: 'Why is it going back?', required: true, minLength: 10,
+                    placeholder: 'e.g. hidden in error, the school confirmed it is genuine' }}
+          confirmLabel="Restore review"
+          busy={restore.isPending} error={restore.error ? (restore.error as Error).message : null}
+          onCancel={() => setRestoring(null)}
+          onSubmit={(v) => restore.mutate({ id: restoring, note: v.reason })}
+        />
+      )}
     </div>
   )
 }

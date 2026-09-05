@@ -4,7 +4,7 @@ import { useSchoolLogo } from '@/hooks/useSchoolLogo'
 
 export interface ReceiptData {
   receiptNo: number
-  /** The student, or — for a family payment — whoever handed the money over. */
+  /** The student, or for a family payment, whoever handed the money over. */
   studentName: string
   grNo?: string | null
   amount: number
@@ -64,7 +64,7 @@ export function Receipt({ data, onClose }: { data: ReceiptData; onClose: () => v
               {/* A row per invoice, amount right-aligned in the same column as
                   every other figure on the receipt. Built from fields rather
                   than from one pre-formatted string, because a string wraps
-                  mid-amount on a receipt-width page — "Rs" on one line and
+                  mid-amount on a receipt-width page: "Rs" on one line and
                   "3,000" on the next is how a figure gets misread. */}
               <ul className="space-y-0.5 text-slate-700">
                 {data.covers.map((c, i) => (

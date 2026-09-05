@@ -143,6 +143,35 @@ jobs:
         working-directory: .
         run: python3 scripts/check-no-emdash.py
 
+      - name: No school action depends on a browser dialog
+        # window.prompt asked for money amounts and audit reasons at twelve call
+        # sites: applying a fine, waiving one, adjusting a balance, reversing a
+        # receipt, an expense or an income entry, cancelling a bounced challan,
+        # skipping a message, pulling a release, restoring a review. window.confirm
+        # guarded locking a day's attendance register.
+        #
+        # Chrome offers "prevent this page from creating additional dialogs" after
+        # the second in a row, which the adjustment flow hit every time because it
+        # asked three questions back to back. Once ticked, prompt() returns null
+        # and confirm() returns false FOR EVER, which the calling code reads as
+        # "cancelled" - so the button silently stops working, with no error and no
+        # log, on the screens that move a school's money.
+        working-directory: .
+        run: python3 scripts/check-no-browser-dialogs.py
+
+      - name: Every CI step can find its own files
+        # The step above shipped without `working-directory: .` and ran from
+        # web/, so it died on "can't open file web/scripts/..." rather than on
+        # anything it checks. The guard was correct and had been negative
+        # tested; it simply never ran.
+        #
+        # Neither preflight nor its gap report could see it: both compare the
+        # COMMAND, which is right, and neither knows where the runner will be
+        # standing. That is a property of this file, so it takes a check that
+        # reads this file.
+        working-directory: .
+        run: python3 scripts/check-ci-workdir.py
+
       - name: The website's buttons lead somewhere
         # Needs no database, so it lives in this job. Every call to action on the
         # marketing site used to be an anchor on the page the visitor was already
@@ -173,7 +202,26 @@ jobs:
         # links, no page orphaned from every other page, valid JSON-LD, and a
         # sitemap that agrees with the pages in both directions.
         #
-        # Needs no database and no browser, so it belongs in this job.
+        # It also covers the icons, after Google spent weeks showing a grey
+        # globe next to a site whose favicon tag was present and correct: the
+        # href was a data: URI, which has no address for Google's separate
+        # favicon fetch to ask for. So: no page may declare a data: URI icon,
+        # every icon and manifest URL must have a file behind it, favicon.ico
+        # must be a real ICO containing a 48, the PNGs Google chooses from must
+        # be square multiples of 48, site/icon.svg must not have drifted from
+        # its source, and it must be well-formed XML. That last one is not
+        # theoretical: the mark is loaded as an external image, where a browser
+        # parses it as XML and rejects the file silently, and it shipped once
+        # with a double hyphen inside an XML comment.
+        #
+        # And _headers, where two mistakes are invisible until production: a
+        # second Content-Security-Policy tightens the first rather than
+        # relaxing it, and two Cache-Control rules on one path are ambiguous.
+        #
+        # Needs no database and no browser, so it belongs in this job. The two
+        # checks that DO need a browser, scripts/check-site-render.mjs and
+        # scripts/check-site-csp.mjs, stay out of CI on purpose so the install
+        # stays cheap; site/README.md says how to run them.
         working-directory: .
         run: python3 scripts/check-site-seo.py
 
@@ -1403,6 +1451,135 @@ jobs:
         # anon reads a view with no author column rather than the table; and
         # nobody signed in can insert, update or delete a row directly.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/reviews.sql
+
+      - name: Deleting a record cannot rewrite the school's books
+        # 0094 exists because nothing in this product could be deleted, so a
+        # name typed in wrong stayed on the roster for ever. The danger in
+        # fixing that is the opposite mistake: deleting a child who has paid
+        # fees would take receipts already handed to a parent out of the books
+        # and change last month's income after it was reported.
+        #
+        # So every assertion is about the LINE between the two: a record with
+        # nothing attached goes completely; one with money, attendance, marks or
+        # issued documents does not, and the refusal names what is in the way
+        # with counts. Plus the ways a school could lock itself out (deleting
+        # your own login, deleting the last owner) and the ways one school could
+        # reach into another's data.
+        #
+        # Two assertions are about the mechanism rather than a rule. The blocker
+        # list for a login WALKS pg_constraint instead of naming twenty-nine
+        # tables, so a table added next year is covered without anybody
+        # remembering this file; a test creates one and proves it. And when the
+        # blocker list is wrong anyway, Postgres still refuses on the foreign
+        # key, so the last test asserts that backstop surfaces as a clean
+        # refusal rather than a raw constraint error in front of a clerk.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/deletion.sql
+
+      - name: A login that belongs to nobody is still visible
+        # The staff roster reads the staff table, so a login never attached to a
+        # staff record appeared on NO screen: it existed, it worked, it could
+        # sign in and read every child's record, and creating one left the
+        # roster saying "No staff yet". That looks exactly like failure, and it
+        # is what the first real school saw.
+        #
+        # fn_school_logins is also the second place in this schema that reads
+        # auth.users on request, so the guards are the whole safety of it: a
+        # leak here is every staff email in the school. Asserted for a clerk and
+        # for a parent, and for another school's rows.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/logins.sql
+
+      - name: Starting again clears everything, or nothing
+        # The dangerous half of a reset is not the deleting. It is a HALF
+        # cleared school: the owner is told it is empty, starts entering real
+        # admissions, and last week's practice data is still underneath in one
+        # table nobody thought about. So the strongest assertion is the sweep,
+        # computed from the catalogue rather than from a list somebody has to
+        # remember to update: after a reset, no table carrying a school_id may
+        # have a single row left for that school.
+        #
+        # Plus the refusals that keep it safe: a clerk cannot, a partial name is
+        # not a confirmation, a PAYING school cannot do it at all, and every
+        # login survives, because an owner who resets themselves out of their own
+        # account cannot get back in and a deleted profile cannot free the email
+        # address for reuse.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/reset.sql
+
+      - name: One attendance percentage, not three
+        # The same fact was computed three ways, and the two that were wrong
+        # were the two most seen: the tile an owner looks at every morning, and
+        # the figure a PARENT reads. On one twelve day register the parent saw
+        # 92% and the school saw 83.3%, because the portal counted a late
+        # arrival and a half day as whole days present. The result card in the
+        # child's hand printed the correct one, so the three disagreed with
+        # each other in front of the family.
+        #
+        # This seeds ONE register containing every status and asserts that the
+        # rule, the student profile and the parent portal all report the same
+        # number, plus the three properties that make the rule the rule: a late
+        # child came in, a half day is half, and an unmarked register has no
+        # percentage rather than zero.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/attendance_rule.sql
+
+      - name: One question, one number — does the app agree with itself about money?
+        # It did not. Seeded with one deliberately awkward child — a sibling
+        # discount, a late fine, a van charge keyed by hand, a part payment, a
+        # cancelled challan and a deferred one — six screens gave three answers
+        # to "what are we owed": Rs 8,350 on the dashboard, the balance sheet and
+        # the defaulters list; Rs 8,100 on reconciliation and unpaid challans;
+        # Rs 8,062.50 in dues by fee head. And "how many children are here" gave
+        # three counts, two of them wrong in opposite directions so that they
+        # collided on a simple fixture and looked like agreement.
+        #
+        # The worst of it was not a number. fn_add_adjustment could charge a
+        # family or waive their whole balance and NOTHING in the product could
+        # display it afterwards, so the parent saw a balance of Rs 2,350 above
+        # two challans totalling Rs 2,100 and no way to ask why.
+        #
+        # This suite asks every money screen the same question in one
+        # transaction and fails if any two disagree, asserts the fee statement
+        # closes exactly on the balance for every child, and proves a pending
+        # payment counts nowhere, a reversal moves every screen together, and a
+        # leaver keeps their arrears somewhere a school can still find them.
+        #
+        # Assertion 0 is not padding: reverting one of the fixes made the whole
+        # suite pass, because a missing JSON key reads as NULL and turns every
+        # comparison against it into "no opinion". It proves every figure the
+        # suite reads exists before any check relies on it.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/one_number.sql
+
+      - name: A payload key the database does not read is refused, not dropped
+        # Found by making the mistake while writing another test: a seed sent
+        # `practical` where fn_enter_marks reads `practical_marks`. The call
+        # succeeded, reported success, and wrote NULL into the practical column
+        # for a whole class.
+        #
+        # Measured rather than assumed, and the first draft of this was wrong
+        # about half of it: fn_mark_attendance and fn_record_bulk_payments
+        # already refused, by a NOT NULL constraint and by an amount check. The
+        # two that were genuinely silent are the mark-entry pair, where `absent`
+        # for `is_absent` records a child who sat no paper as having scored
+        # nothing, which prints as a FAIL on the card that goes home.
+        #
+        # All four now name the key, because "Amount for Ahmed must be more than
+        # zero" to a clerk who typed an amount is a morning wasted, and because
+        # being saved by a constraint is luck rather than a rule.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/payload_keys.sql
+
+      - name: The cash drawer never accuses the clerk
+        # One ordinary morning, seeded and run: open with a Rs 1,000 float, take
+        # Rs 3,000 cash, reverse it when the cheque bounces and hand the money
+        # back, take a Rs 2,000 admission fee in cash. The till expected
+        # Rs 4,000 and the drawer held Rs 3,000, so the clerk could not close
+        # without explaining a shortfall they had not caused, and the variance
+        # went on their record for an owner to sign off.
+        #
+        # 0031 attached cash to the collector's drawer by adding one line to the
+        # two payment entry points. fn_reverse_payment takes money OUT and
+        # fn_admit_student's admission fee, hardcoded 'cash', puts money IN, and
+        # neither got that line. The two partly cancelled, which is worse than
+        # either alone: a Rs 3,000 shortfall and a Rs 2,000 surplus presented as
+        # a Rs 1,000 mystery.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/till_and_the_clerk.sql
 
       - name: Live student count — does a school outgrowing its plan get noticed?
         # It did not. subscriptions.student_count is a stored number driving the

@@ -1,5 +1,5 @@
 /**
- * Platform administration — the product owner's view across all schools.
+ * Platform administration. The product owner's view across all schools.
  *
  * Everything here calls SECURITY DEFINER functions that check
  * `is_platform_admin()` themselves, so the browser never needs (and never has)
@@ -32,7 +32,7 @@ export interface PlatformSchool {
   outstanding: number
   last_paid_on: string | null
   /** `status` reads 'locked' for a suspended school AND for an expired one.
-   *  These two are what tell them apart — which is why 0079 did not add an enum
+   *  These two are what tell them apart, which is why 0079 did not add an enum
    *  value it could not add inside a transaction anyway. */
   suspended: boolean
   suspend_reason: string | null
@@ -47,7 +47,7 @@ export interface LedgerEntry {
   entry_id: string
   entry_date: string
   kind: 'invoice' | 'credit_note' | 'payment'
-  /** Null on a payment — only documents carry a number. */
+  /** Null on a payment: only documents carry a number. */
   doc_no: string | null
   description: string
   /** Signed: negative for a credit note, zero for a voided document. */
@@ -65,16 +65,16 @@ export interface PlatformRevenue {
   invoiced: number
   collected: number
   /** List price minus what was actually charged, over the period. A figure
-   *  nothing could produce before — discounts left no trace. */
+   *  nothing could produce before: discounts left no trace. */
   discounted: number
-  /** Credit notes raised in the period. NOT a discount — a refund and a
+  /** Credit notes raised in the period. NOT a discount. A refund and a
    *  discount are different facts and 0077 keeps them apart. */
   credited: number
   /** Invoices cancelled in the period. Reported rather than silently dropped: a
    *  month where three invoices were voided is a month to look at. */
   voided: number
   net_invoiced: number
-  /** Money that actually reached the bank — collected minus withheld tax. */
+  /** Money that actually reached the bank: collected minus withheld tax. */
   cash_received: number
   /** Income tax the schools deducted at source and paid on our behalf. It is
    *  settled, but it is not cash. */
@@ -138,7 +138,7 @@ export interface ActivationResult {
  * Grant a school time, and write the charge for it in the same transaction.
  *
  * `amount` null means "charge the plan's list price". An amount that differs
- * from list REQUIRES a note — including zero, because a free year that leaves no
+ * from list REQUIRES a note: including zero, because a free year that leaves no
  * trace is how a business loses track of what it has given away.
  *
  * The call REFUSES a school whose student count has outgrown the target plan,
@@ -162,7 +162,7 @@ export async function activateSubscription(
 
 /** Record money a school actually sent us. */
 /**
- * Record what a school paid us — and what it withheld.
+ * Record what a school paid us, and what it withheld.
  *
  * `taxWithheld` is not an optional nicety. Under section 153(1)(b) a Pakistani
  * buyer of services must deduct income tax at source, so a school invoiced
@@ -239,7 +239,7 @@ export async function extendTrial(schoolId: string, days: number): Promise<void>
  * How far has the production database actually got?
  *
  * Until 0069 nothing recorded it. Twice the answer had to be guessed from an
- * error message a school reported — once wrongly, and the repair built on that
+ * error message a school reported: once wrongly, and the repair built on that
  * guess failed on its own first statement. With fifty schools behind one
  * hand-pasted Postgres, "what is applied?" has to be a question with an answer.
  *
@@ -268,7 +268,7 @@ export async function platformSchemaState(): Promise<SchemaState> {
 /**
  * Read-only support access into one school.
  *
- * The owner chose full permanent read over consented, time-boxed access — see
+ * The owner chose full permanent read over consented, time-boxed access: see
  * docs/SUPER-ADMIN-DESIGN.md §2.1 for the argument they overrode. What is fixed
  * is the read-only half: entering a school grants the reach of the `readonly`
  * observer role and nothing more, refused at the database rather than hidden in
@@ -349,29 +349,29 @@ export function describeAction(a: OperatorAction): string {
       if (to.status && to.status !== from.status) bits.push(`status ${String(to.status)}`)
       if (to.period_end && to.period_end !== from.period_end) bits.push(`paid until ${String(to.period_end)}`)
       if (to.trial_ends_on && to.trial_ends_on !== from.trial_ends_on) bits.push(`trial until ${String(to.trial_ends_on)}`)
-      return `Licence changed — ${bits.length ? bits.join(', ') : 'no visible change'}`
+      return `Licence changed: ${bits.length ? bits.join(', ') : 'no visible change'}`
     }
     case 'invoice_raised': {
       const disc = Number(d.discount ?? 0)
       // The discount is the figure worth surfacing: it is the one thing an
       // invoice row alone cannot explain six months later.
       return `Invoiced ${pkr(d.amount)} for ${String(d.months ?? '?')} month(s) on ${String(d.plan_code ?? '?')}`
-        + (disc > 0 ? ` — ${pkr(disc)} off list${d.note ? `: ${String(d.note)}` : ''}` : '')
+        + (disc > 0 ? `: ${pkr(disc)} off list${d.note ? `: ${String(d.note)}` : ''}` : '')
     }
     case 'payment_recorded':
       return `Payment ${pkr(d.amount)} by ${String(d.method ?? 'bank')}`
         + (d.reference ? ` · ${String(d.reference)}` : '')
     case 'school_entered':
-      return `Entered the school (read only) — ${String(d.reason ?? 'no reason given')}`
+      return `Entered the school (read only): ${String(d.reason ?? 'no reason given')}`
     case 'school_left':
       return 'Left the school'
     // --- 0076-0078 ---------------------------------------------------------
     case 'credit_note_raised':
       return `Credit note ${String(d.doc_no ?? '')} for ${pkr(d.total ?? d.amount)}`
-        + (d.note ? ` — ${String(d.note)}` : '')
+        + (d.note ? `: ${String(d.note)}` : '')
     case 'invoice_voided':
     case 'credit_note_voided':
-      return `${String(d.doc_no ?? 'A document')} voided — ${String(d.reason ?? 'no reason recorded')}`
+      return `${String(d.doc_no ?? 'A document')} voided: ${String(d.reason ?? 'no reason recorded')}`
         + (d.licence_untouched ? ' (the licence was left running)' : '')
     case 'invoice_tax_set':
       return `Tax on ${String(d.doc_no ?? 'the invoice')} set to ${String(d.tax_pct ?? 0)}% (${pkr(d.tax_amount)})`
@@ -379,18 +379,18 @@ export function describeAction(a: OperatorAction): string {
       return `Withholding certificate ${String(d.certificate ?? '')} recorded for ${pkr(d.tax_withheld)}`
     case 'renewal_reminder':
       return `Renewal reminder sent by ${String(d.channel ?? 'WhatsApp')} (${String(d.stage ?? '?')} stage)`
-        + (d.note ? ` — ${String(d.note)}` : '')
+        + (d.note ? `: ${String(d.note)}` : '')
     case 'payment_claim_confirmed': {
       // The gap between the two figures is the interesting part: it is usually
       // the withholding tax, and it is what the school will ask about.
       const said = Number(d.claimed_amount ?? 0)
       const got = Number(d.confirmed_amount ?? 0)
-      return `Reported payment confirmed — ${pkr(got)}`
+      return `Reported payment confirmed: ${pkr(got)}`
         + (said && said !== got ? ` (the school reported ${pkr(said)})` : '')
         + (d.reference ? ` · ${String(d.reference)}` : '')
     }
     case 'payment_claim_rejected':
-      return `Reported payment of ${pkr(d.amount)} rejected — ${String(d.reason ?? 'no reason recorded')}`
+      return `Reported payment of ${pkr(d.amount)} rejected: ${String(d.reason ?? 'no reason recorded')}`
     case 'settings_changed': {
       const f = Array.isArray(d.fields) ? (d.fields as unknown[]).map(String) : []
       // The KEYS, never the values: a bank account number does not belong in an
@@ -411,7 +411,7 @@ export function describeAction(a: OperatorAction): string {
  * School?"
  *
  * `readiness` is the part worth reading first. A school that paid and never used
- * the software looks identical, in a list, to one that runs on it daily — until
+ * the software looks identical, in a list, to one that runs on it daily, until
  * it does not renew. And the commonest reason a school stalls is being stuck one
  * step in: until 0066 no school could create a fee head at all, so every one of
  * them was stuck at the same place with no way to say so. The first unfinished
@@ -419,7 +419,7 @@ export function describeAction(a: OperatorAction): string {
  *
  * WHAT IT DELIBERATELY DOES NOT CONTAIN: any child, guardian, family or parent
  * phone number. Counts and dates only. For anything about an individual there is
- * a support visit — read-only, logged, and shown to the school. "How many pupils"
+ * a support visit: read-only, logged, and shown to the school. "How many pupils"
  * is business information; "which pupils" is the school's own affair, and wanting
  * the second should cost you a record saying why.
  */
@@ -515,22 +515,22 @@ export function actionNeeded(s: PlatformSchool): string | null {
   // An unpaid invoice is worth saying whatever the licence status is: a school
   // can be comfortably active and still owe for the year it is halfway through.
   if (s.outstanding > 0 && s.status !== 'locked' && s.status !== 'cancelled') {
-    return `Owes ${s.outstanding.toLocaleString('en-PK')} — unpaid invoice`
+    return `Owes ${s.outstanding.toLocaleString('en-PK')}: unpaid invoice`
   }
   switch (s.status) {
     case 'locked':
-      return 'Locked — chase payment or reactivate'
+      return 'Locked: chase payment or reactivate'
     case 'cancelled':
       return 'Cancelled'
     case 'grace':
-      return `In grace — ${s.days_left ?? 0} day(s) before it locks`
+      return `In grace: ${s.days_left ?? 0} day(s) before it locks`
     case 'trialing':
-      if ((s.days_left ?? 0) <= 3) return `Trial ends in ${s.days_left} day(s) — call them`
+      if ((s.days_left ?? 0) <= 3) return `Trial ends in ${s.days_left} day(s): call them`
       return null
     case 'active':
       if ((s.days_left ?? 999) <= 7) return `Renewal due in ${s.days_left} day(s)`
       if (s.needs_upgrade && s.limit_state === 'over') {
-        return `Over limit — move to ${s.suggested_plan} at renewal`
+        return `Over limit: move to ${s.suggested_plan} at renewal`
       }
       return null
     default:
@@ -539,7 +539,7 @@ export function actionNeeded(s: PlatformSchool): string | null {
 }
 
 // ===========================================================================
-// Phase 3 — billing documents, corrections, renewals and the claim queue.
+// Phase 3: billing documents, corrections, renewals and the claim queue.
 // Migrations 0076, 0077, 0078.
 // ===========================================================================
 
@@ -547,7 +547,7 @@ export function actionNeeded(s: PlatformSchool): string | null {
  * The vendor's own registered details.
  *
  * `missing` is the field the screen exists for. An invoice printed with a blank
- * NTN is useless to the school receiving it and they will not tell us — they
+ * NTN is useless to the school receiving it and they will not tell us. They
  * will simply fail to claim the expense, or phone about it three weeks later.
  */
 export interface PlatformSettings {
@@ -626,7 +626,7 @@ export interface InvoiceDocument {
   lines: {
     description: string
     /** Raw dates. Formatted by the document component so every date on the page
-     *  reads the same way — see the note in fn__invoice_document. */
+     *  reads the same way: see the note in fn__invoice_document. */
     period_start: string; period_end: string
     months: number; cycle: string
     amount: number; list_amount: number | null
@@ -665,7 +665,7 @@ export async function platformInvoice(invoiceId: string): Promise<InvoiceDocumen
 /**
  * Cancel a document that should never have existed.
  *
- * Refused once anything is attached to it — a payment or a credit note — which
+ * Refused once anything is attached to it. A payment or a credit note, which
  * is exactly the case a credit note exists for. `warning` is returned when the
  * licence the invoice paid for is still running: voiding the charge is a
  * correction to the books, not a repossession of the year.
@@ -733,7 +733,7 @@ export type RenewalBucket =
  *
  * With three schools you know them. With fifty, a licence that expired eleven
  * days ago is row 34 of an alphabetical list and the first anyone hears of it is
- * the principal phoning to say the software has locked — which is the worst
+ * the principal phoning to say the software has locked, which is the worst
  * possible moment for a renewal conversation.
  */
 export interface DueSoonRow {
@@ -752,7 +752,7 @@ export interface DueSoonRow {
   suggested_plan: string | null
   needs_upgrade: boolean
   /** Priced on the plan the student count fits, not the plan they are sitting
-   *  on — quoting the old price to a school that has outgrown it is how a
+   *  on: quoting the old price to a school that has outgrown it is how a
    *  renewal becomes an argument. */
   renewal_amount: number | null
   outstanding: number
@@ -788,14 +788,14 @@ export interface RenewalMessage {
   outstanding: number
   text: string
   /** Digits with Pakistan's country code, ready for whatsappLink(). Null when
-   *  the school has no number on record — a wa.me link built on an empty string
+   *  the school has no number on record. A wa.me link built on an empty string
    *  opens a blank contact picker, which reads as the software losing the
    *  message. */
   phone_intl: string | null
   no_phone_reason: string | null
 }
 
-/** Composes the message. Does NOT record anything — see markReminded. */
+/** Composes the message. Does NOT record anything: see markReminded. */
 export async function renewalMessage(
   schoolId: string, stage?: ReminderStage,
 ): Promise<RenewalMessage> {
@@ -826,7 +826,7 @@ export async function markReminded(
  * A school saying it has transferred money.
  *
  * A REQUEST, not a receipt. It changes no total and appears in no revenue
- * figure until the operator has seen the transfer on the bank statement — a
+ * figure until the operator has seen the transfer on the bank statement. A
  * school-writable payment would let a school clear its own balance by typing a
  * number.
  */
@@ -841,7 +841,7 @@ export interface PaymentClaim {
   from_bank: string | null
   note: string | null
   claimed_at: string
-  /** Who at the school reported it — who to ask when a reference does not match. */
+  /** Who at the school reported it, who to ask when a reference does not match. */
   claimed_by_name: string | null
   status: 'pending' | 'confirmed' | 'rejected'
   decided_at: string | null
@@ -895,7 +895,7 @@ export async function rejectClaim(claimId: string, reason: string): Promise<void
 }
 
 // ===========================================================================
-// Phase 4 — lifecycle: start a school, suspend it, and end it.
+// Phase 4: lifecycle: start a school, suspend it, and end it.
 // Migrations 0079, 0080.
 // ===========================================================================
 
@@ -904,7 +904,7 @@ export async function rejectClaim(claimId: string, reason: string): Promise<void
  *
  * The reason is NOT an operator note. fn_my_licence returns it and the school's
  * own banner shows it, because a school whose software stops with no explanation
- * phones in a panic — and the person answering is the person who suspended it.
+ * phones in a panic, and the person answering is the person who suspended it.
  * The database refuses a blank reason for exactly that reason.
  */
 export async function suspendSchool(
@@ -931,7 +931,7 @@ export async function unsuspendSchool(
 
 /**
  * End the commercial relationship. NOT archive (which hides them) and NOT purge
- * (which destroys them) — a school that cancels in June and comes back in August
+ * (which destroys them). A school that cancels in June and comes back in August
  * finds everything as it was, which happens more often than not.
  *
  * `note` in the response says whether money is still owed, because cancelling
@@ -1031,7 +1031,7 @@ export interface ExportManifest {
 
 /** Refuses unless the school is ARCHIVED. A full export of every child's name
  *  and every guardian's phone number is an offboarding step, not a way to pull a
- *  live customer's records — and archiving is reversible, logged and reasoned. */
+ *  live customer's records, and archiving is reversible, logged and reasoned. */
 export async function exportManifest(schoolId: string): Promise<ExportManifest> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_platform_export_manifest', {
@@ -1075,7 +1075,7 @@ export async function recordExport(
  *
  * Five refusals stand in front of it: not the operator, not archived, never
  * exported, the typed name does not match, and money still owed. Only the last
- * is overridable — "they will never pay and I want them gone" is a legitimate
+ * is overridable: "they will never pay and I want them gone" is a legitimate
  * decision; the other four are not.
  */
 export async function purgeSchool(
@@ -1129,7 +1129,7 @@ export async function createSchoolOwner(input: {
   })
   if (!error) return data as { school_name: string; email: string; next: string }
 
-  // The function ran and refused. Its own message is the useful one — "that
+  // The function ran and refused. Its own message is the useful one: "that
   // school already has logins" is an instruction, and replacing it with a
   // generic failure is how a fixable situation becomes a support call.
   if ((error as { name?: string }).name === 'FunctionsHttpError') {
@@ -1150,7 +1150,7 @@ export async function createSchoolOwner(input: {
 }
 
 // ===========================================================================
-// Phase 5 — what the business is worth. Migration 0081.
+// Phase 5: what the business is worth. Migration 0081.
 // ===========================================================================
 
 /**
@@ -1174,7 +1174,7 @@ export interface PlatformMetrics {
     basis: string
   }
   /** Live schools with licence time no invoice covers. They add nothing to MRR
-   *  because nothing was billed — and the count is reported so the zero is
+   *  because nothing was billed, and the count is reported so the zero is
    *  visible rather than silent. */
   unbilled: { schools: number; note: string }
   counts: {
@@ -1227,7 +1227,7 @@ export async function platformGrowth(months = 12): Promise<GrowthPoint[]> {
 }
 
 // ===========================================================================
-// Phase 6 — joining the website, the app and the console. Migration 0082.
+// Phase 6: joining the website, the app and the console. Migration 0082.
 // ===========================================================================
 
 export interface AppRelease {
@@ -1338,7 +1338,7 @@ export async function endAnnouncement(id: string, reason?: string | null): Promi
 //
 // This should never happen through the product: fn_platform_purge_school walks
 // every table before it removes the school row. It happens when a school row is
-// deleted by some other route with foreign keys not being enforced — a restore,
+// deleted by some other route with foreign keys not being enforced. A restore,
 // a point-in-time recovery, or `set session_replication_role = 'replica'`, which
 // is the standard advice people find when a foreign key will not let them delete
 // a row.
@@ -1353,7 +1353,7 @@ export type OrphanRow = {
   school_id: string
   table_name: string
   row_count: number
-  /** 'delete' — the school's own records. 'unlink' — our ledger, which is kept. */
+  /** 'delete'. The school's own records. 'unlink': our ledger, which is kept. */
   treatment: 'delete' | 'unlink'
 }
 

@@ -2,7 +2,7 @@
  * What the school sends to parents, and which of it goes out at all.
  *
  * message_templates has existed since migration 0034 with a body and an
- * `enabled` flag, seeded per school — and nothing in the app ever read or wrote
+ * `enabled` flag, seeded per school, and nothing in the app ever read or wrote
  * it. So the exact words sent to three hundred parents were fixed by a
  * migration, and a school that wanted to stop one of the five message types had
  * no way to do it.
@@ -36,7 +36,7 @@ export function MessageSettings() {
       <h3 className="text-sm font-semibold text-slate-800">Messages sent to parents</h3>
       <p className="mt-1 text-sm text-slate-600">
         Every message the school sends over WhatsApp. Change the wording, or switch one off
-        completely — nothing is sent automatically, so these are the words that appear in the box
+        completely. Nothing is sent automatically, so these are the words that appear in the box
         when a receipt or reminder is opened.
       </p>
       {!canEdit && (
@@ -128,7 +128,7 @@ function TemplateCard({ t, canEdit }: { t: MessageSetting; canEdit: boolean }) {
 
       {!t.enabled && (
         <p className="mt-2 rounded bg-due-50 px-2 py-1 text-xs text-due-800">
-          Switched off — this message is never queued, so it will not appear under WhatsApp at all.
+          Switched off. This message is never queued, so it will not appear under WhatsApp at all.
         </p>
       )}
 
@@ -159,7 +159,7 @@ function TemplateCard({ t, canEdit }: { t: MessageSetting; canEdit: boolean }) {
       {unknown.length > 0 && (
         <p className="mt-2 text-xs text-danger-600">
           {unknown.map((u) => `{${u}}`).join(', ')}{' '}
-          {unknown.length === 1 ? 'is not available here' : 'are not available here'} — the parent
+          {unknown.length === 1 ? 'is not available here' : 'are not available here'}. The parent
           would receive it as written.
         </p>
       )}

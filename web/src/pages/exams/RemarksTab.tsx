@@ -7,7 +7,7 @@
  * board actually need.
  *
  * The remark sheet shows the WHOLE class, with each child's own result beside
- * the box — a remark written without seeing the result is a remark about
+ * the box. A remark written without seeing the result is a remark about
  * nothing, and a screen listing only the remarks already written gives a
  * teacher no way to find who is left.
  */
@@ -145,7 +145,7 @@ function RemarkSheet({ termId, classId }: { termId: string; classId: string }) {
           {written} of {rows.length} written.{' '}
           {written < rows.length && (
             <span className="text-slate-400">
-              Blank is fine — an empty remark simply prints nothing.
+              Blank is fine. An empty remark simply prints nothing.
             </span>
           )}
         </p>
@@ -166,21 +166,21 @@ function RemarkSheet({ termId, classId }: { termId: string; classId: string }) {
           <tbody>
             {rows.map((r) => (
               <tr key={r.student_id} className="border-b border-slate-100 align-top">
-                <td className="py-2 pr-3 tabular-nums text-slate-500">{r.roll_no ?? '—'}</td>
+                <td className="py-2 pr-3 tabular-nums text-slate-500">{r.roll_no ?? '-'}</td>
                 <td className="py-2 pr-3">
                   <div className="text-slate-800">{r.student_name}</div>
-                  <div className="text-xs text-slate-400">{r.gr_no ?? '—'}</div>
+                  <div className="text-xs text-slate-400">{r.gr_no ?? '-'}</div>
                 </td>
                 {/* The child's own result, beside the box. A remark written
                     without it is a remark about nothing. */}
                 <td className="py-2 pr-3 text-right">
                   {r.percentage == null ? (
-                    <span className="text-slate-300">—</span>
+                    <span className="text-slate-300">-</span>
                   ) : (
                     <div>
                       <div className="tabular-nums text-slate-700">{r.percentage}%</div>
                       <div className="text-xs text-slate-400">
-                        {r.grade ?? '—'}
+                        {r.grade ?? '-'}
                         {r.class_position != null && ` · pos ${r.class_position}`}
                       </div>
                     </div>
@@ -197,7 +197,7 @@ function RemarkSheet({ termId, classId }: { termId: string; classId: string }) {
                     placeholder="A hardworking and well-mannered student."
                     className={`block w-full ${FIELD}`}
                   />
-                  {r.remark?.trim() && r.remark_by_name !== '—' && (
+                  {r.remark?.trim() && r.remark_by_name !== '-' && (
                     <div className="mt-0.5 text-xs text-slate-400">
                       by {r.remark_by_name}
                     </div>
@@ -221,7 +221,7 @@ function RemarkSheet({ termId, classId }: { termId: string; classId: string }) {
 
       <p className="mt-3 text-xs leading-relaxed text-slate-500">
         Remarks are kept per exam term, not per printed card, so regenerating the result cards
-        never loses them. Only the class teacher (and the office) may write one — a subject teacher
+        never loses them. Only the class teacher (and the office) may write one. A subject teacher
         sees a single subject, and this is a judgement about the whole child.
       </p>
     </div>
@@ -305,7 +305,7 @@ function PositionHolders({ termId, top }: { termId: string; top: number }) {
                     )}
                   </span>
                   <span className="shrink-0 tabular-nums text-slate-600">
-                    {r.percentage == null ? '—' : `${r.percentage}%`}
+                    {r.percentage == null ? '-' : `${r.percentage}%`}
                     {r.grade && <span className="ml-1 text-xs text-slate-400">{r.grade}</span>}
                   </span>
                 </li>
@@ -318,7 +318,7 @@ function PositionHolders({ termId, top }: { termId: string; top: number }) {
       <div className="mt-4 flex items-center justify-between print:hidden">
         <p className="text-xs leading-relaxed text-slate-500">
           Positions come from the result cards themselves, so this list and the printed card can
-          never disagree. Children on the same percentage <strong>share</strong> a position — two
+          never disagree. Children on the same percentage <strong>share</strong> a position. Two
           firsts means there is no second. A child with no marks entered is not listed.
         </p>
         <button type="button" onClick={() => window.print()}

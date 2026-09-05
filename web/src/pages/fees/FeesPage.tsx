@@ -13,11 +13,11 @@ import { Deposits } from './Deposits'
 
 // "Collect" is the family counter and is the default, because it is the screen
 // that runs two hundred times a day. The per-student screen stays as "Single
-// student" for the cases that genuinely are one child — a one-off charge, a
-// correction — but it is no longer the way a fee is normally taken.
+// student" for the cases that genuinely are one child. A one-off charge, a
+// correction, but it is no longer the way a fee is normally taken.
 // `writes` marks a tab whose whole purpose is to change something. An observer
 // is shown the other tabs and not these, rather than being shown a counter with
-// a dead Take Payment button — a form that cannot submit reads as a fault in the
+// a dead Take Payment button. A form that cannot submit reads as a fault in the
 // software, and its Save button used to report success while doing nothing.
 const TABS = [
   { key: 'collect', label: 'Collect', writes: true },

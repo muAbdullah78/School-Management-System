@@ -16,7 +16,7 @@ export function ResultsTab() {
   const { profile } = useAuth()
   const canGenerate = !!profile && ['owner', 'principal', 'admin_clerk'].includes(profile.role)
   // Releasing results to parents is a separate, narrower permission than
-  // generating the cards — a clerk may prepare them, only the head lets them out.
+  // generating the cards. A clerk may prepare them, only the head lets them out.
   const canRelease = !!profile && ['owner', 'principal'].includes(profile.role)
 
   const session = useQuery({ queryKey: ['currentSession'], queryFn: getCurrentSession })
@@ -55,8 +55,8 @@ export function ResultsTab() {
     },
   })
 
-  const termName = terms.data?.find((t) => t.id === termId)?.name ?? '—'
-  const className = classes.data?.find((c) => c.id === classId)?.name ?? '—'
+  const termName = terms.data?.find((t) => t.id === termId)?.name ?? '-'
+  const className = classes.data?.find((c) => c.id === classId)?.name ?? '-'
 
   return (
     <div>
@@ -102,7 +102,7 @@ export function ResultsTab() {
               </ul>
               <p className="mt-2 text-xs text-amber-700">
                 Enter them and the cards will be complete. You can also generate
-                <strong> provisional</strong> cards now — those pupils are marked out of only
+                <strong> provisional</strong> cards now. Those pupils are marked out of only
                 the papers they have sat, the card says PROVISIONAL, and they take no
                 position in the class.
               </p>
@@ -132,7 +132,7 @@ export function ResultsTab() {
               <span className={generate.data.provisional ? 'text-sm text-amber-700' : 'text-sm text-emerald-700'}>
                 {generate.data.generated} card{generate.data.generated === 1 ? '' : 's'} generated
                 {generate.data.provisional
-                  ? ` — provisional, ${generate.data.missing_marks} mark${generate.data.missing_marks === 1 ? '' : 's'} still missing.`
+                  ? `: provisional, ${generate.data.missing_marks} mark${generate.data.missing_marks === 1 ? '' : 's'} still missing.`
                   : '.'}
               </span>
             )}
@@ -157,7 +157,7 @@ export function ResultsTab() {
                 {cards.data?.length === 0 && !cards.isLoading && <tr><td colSpan={7} className="px-3 py-3 text-slate-500">No result cards yet. Enter marks, then generate.</td></tr>}
                 {cards.data?.map((c) => (
                   <tr key={c.id}>
-                    <td className="px-3 py-2 text-slate-500">{c.position ?? '—'}</td>
+                    <td className="px-3 py-2 text-slate-500">{c.position ?? '-'}</td>
                     <td className="px-3 py-2 text-slate-800">
                       {c.full_name}<span className="text-slate-400"> · {c.gr_no ?? 'no GR'}</span>
                       {c.frozen?.withheld && <span className="ml-1 rounded bg-red-100 px-1.5 py-0.5 text-xs text-red-700">withheld</span>}
@@ -168,9 +168,9 @@ export function ResultsTab() {
                       )}
                       {c.frozen?.stream && <span className="ml-1 text-xs text-slate-400">{c.frozen.stream}</span>}
                     </td>
-                    <td className="px-3 py-2 text-right text-slate-700">{c.total_marks ?? '—'}/{c.total_max ?? '—'}</td>
-                    <td className="px-3 py-2 text-right text-slate-700">{c.percentage == null ? '—' : `${c.percentage}%`}</td>
-                    <td className="px-3 py-2 font-medium text-slate-800">{c.grade ?? '—'}</td>
+                    <td className="px-3 py-2 text-right text-slate-700">{c.total_marks ?? '-'}/{c.total_max ?? '-'}</td>
+                    <td className="px-3 py-2 text-right text-slate-700">{c.percentage == null ? '-' : `${c.percentage}%`}</td>
+                    <td className="px-3 py-2 font-medium text-slate-800">{c.grade ?? '-'}</td>
                     <td className="px-3 py-2">
                       {/* PENDING, not a blank: a card with no verdict is a card
                           whose marks are not all in, and saying so is the point. */}
@@ -218,7 +218,7 @@ export function ResultsTab() {
  * result_cards.published_at was added in migration 0033 and had no writer in
  * the app, so the portal's whole release mechanism was inert: cards were
  * generated and no parent could ever be shown one. Generating and releasing
- * have to stay separate — a clerk prepares the cards, the head decides the day
+ * have to stay separate. A clerk prepares the cards, the head decides the day
  * they go out, usually the morning of the result-day assembly.
  */
 function ReleaseToParents({ termId, classId, cards, canRelease }: {
@@ -244,12 +244,12 @@ function ReleaseToParents({ termId, classId, cards, canRelease }: {
     <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3">
       <div className="flex flex-wrap items-center gap-3">
         <div className="text-sm">
-          {released === 0 && <span className="text-slate-600">Not released — parents cannot see these results.</span>}
+          {released === 0 && <span className="text-slate-600">Not released: parents cannot see these results.</span>}
           {released > 0 && released < total && (
-            <span className="text-amber-700">{released} of {total} released — the rest are still hidden from parents.</span>
+            <span className="text-amber-700">{released} of {total} released. The rest are still hidden from parents.</span>
           )}
           {released === total && total > 0 && (
-            <span className="text-money-700">✓ Released — parents can see these in the portal.</span>
+            <span className="text-money-700">✓ Released: parents can see these in the portal.</span>
           )}
         </div>
 

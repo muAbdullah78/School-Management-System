@@ -55,8 +55,8 @@ export function StaffIdCard({ staff, onClose }: { staff: StaffRow; onClose: () =
               <div className="truncate text-sm font-semibold text-slate-900">{staff.full_name}</div>
               {staff.designation && <div className="truncate text-slate-500">{staff.designation}</div>}
               <div className="mt-1 grid grid-cols-[auto,1fr] gap-x-2">
-                <span className="text-slate-400">Emp #</span><span>{staff.employee_no ?? '—'}</span>
-                <span className="text-slate-400">Mobile</span><span>{staff.mobile ?? '—'}</span>
+                <span className="text-slate-400">Emp #</span><span>{staff.employee_no ?? '-'}</span>
+                <span className="text-slate-400">Mobile</span><span>{staff.mobile ?? '-'}</span>
               </div>
             </div>
           </div>

@@ -2,13 +2,13 @@
  * The parent portal.
  *
  * Built phone-first on purpose. Almost every parent will open this on a
- * mid-range Android over a patchy connection, standing somewhere — not at a
+ * mid-range Android over a patchy connection, standing somewhere: not at a
  * desk. So: one column, large tap targets, no tables that need horizontal
  * scrolling, and the two things a parent actually opens it for (what do I owe,
  * was my child in school) above the fold.
  *
  * Every read goes through fn_portal_* which resolves the caller's own family
- * server-side. The child switcher below is a convenience, not a permission —
+ * server-side. The child switcher below is a convenience, not a permission:
  * passing another family's id gets refused by the database, not by this file.
  */
 import { useState } from 'react'
@@ -20,9 +20,11 @@ import { useAuth } from '@/auth/AuthProvider'
 import {
   getPortalMe,
   getPortalChildFees,
+  getPortalChildLedger,
   getPortalChildAttendance,
   getPortalChildResults,
 } from '@/lib/db'
+import { FeeStatement } from '@/components/FeeStatement'
 import { Card, CardTitle, Badge, EmptyState, Button, money, MiniStat } from '@/components/ui'
 import {
   IconStudents,
@@ -66,8 +68,8 @@ export function PortalPage() {
   const [childId, setChildId] = useState<string | null>(null)
   /* The tab lives in the URL.
    *
-   * Two reasons, neither of them about testing. A parent who reloads the page —
-   * which happens constantly on a patchy connection — was thrown back to Fees
+   * Two reasons, neither of them about testing. A parent who reloads the page,
+   * which happens constantly on a patchy connection, was thrown back to Fees
    * from wherever they were. And a school can now send "open this link to see
    * the result" pointing at /portal?tab=results, which is the difference between
    * a parent finding the marks and phoning the office to ask where they are.
@@ -85,7 +87,7 @@ export function PortalPage() {
   }
   /* The old Print button called window.print() straight from this page. The
      global print rule hides `body *` and reveals only named ids, and the portal
-     had none — so it printed a blank sheet, silently, every time. It now opens a
+     had none, so it printed a blank sheet, silently, every time. It now opens a
      real statement that carries an id the print rule knows. */
   const [statement, setStatement] = useState(false)
 
@@ -104,6 +106,21 @@ export function PortalPage() {
     queryFn: () => getPortalChildFees(active as string),
     enabled: !!active && tab === 'fees',
   })
+  /**
+   * The running statement, off the same database function the office reads.
+   *
+   * The office got this and the parent did not, which is the defect this whole
+   * change was about one level up: a thing that exists and that the person it
+   * concerns cannot open. A parent arguing about a balance and a clerk arguing
+   * about a balance now have the same rows in front of them, which is the only
+   * way that argument ends.
+   */
+  const ledger = useQuery({
+    queryKey: ['portalLedger', active],
+    queryFn: () => getPortalChildLedger(active as string),
+    enabled: !!active && tab === 'fees',
+  })
+
   const attendance = useQuery({
     queryKey: ['portalAtt', active],
     queryFn: () => getPortalChildAttendance(active as string, fmt(from), fmt(today)),
@@ -183,7 +200,7 @@ export function PortalPage() {
           </Card>
         ) : (
           <>
-            {/* Child switcher — only when there is more than one */}
+            {/* Child switcher: only when there is more than one */}
             {children.length > 1 && (
               <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
                 {children.map((c) => (
@@ -273,6 +290,31 @@ export function PortalPage() {
                           automatically to the next challan.
                         </p>
                       )}
+                      {/* Money the school is HOLDING, which is the other
+                          direction from everything else on this page and the
+                          one figure a family has to be told about
+                          unprompted: it is their claim on the school, and
+                          before 0103 it appeared only on an office screen they
+                          cannot open. */}
+                      {fees.data.deposit_held > 0 && (
+                        <p className="mt-3 rounded-lg bg-money-50 px-3 py-2 text-xs text-money-800 ring-1 ring-money-100">
+                          The school is holding {money(fees.data.deposit_held)} as a refundable
+                          deposit. It is not part of what you owe. Ask the office for it back when
+                          your child leaves.
+                        </p>
+                      )}
+
+                      {/* The line that closes the page's own arithmetic.
+                          Without it a parent charged for the van read a balance
+                          of Rs 2,350 above two challans totalling Rs 2,100 and
+                          had nothing on the page to ask about. */}
+                      {fees.data.charges_not_on_a_challan !== 0 && (
+                        <p className="mt-3 text-xs text-slate-500">
+                          Of this, {money(Math.abs(fees.data.charges_not_on_a_challan))}{' '}
+                          {fees.data.charges_not_on_a_challan > 0 ? 'is charged' : 'has been taken off'}{' '}
+                          separately from the monthly challans. It is listed under Other charges below.
+                        </p>
+                      )}
                     </Card>
 
                     <Card>
@@ -304,6 +346,46 @@ export function PortalPage() {
                       )}
                     </Card>
 
+                    {fees.data.adjustments.length > 0 && (
+                      <Card>
+                        <CardTitle icon={<IconAlert />}>Other charges and credits</CardTitle>
+                        <p className="text-xs text-slate-500">
+                          Amounts the school added or took off outside the monthly challan, with the
+                          reason they recorded.
+                        </p>
+                        <ul className="mt-2 divide-y divide-slate-100">
+                          {fees.data.adjustments.map((a, i) => (
+                            <li key={i} className="flex items-center justify-between gap-3 py-2.5">
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-slate-800">{a.reason}</p>
+                                <p className="text-xs text-slate-500">
+                                  {new Date(`${a.on}T00:00:00`).toLocaleDateString('en-PK', {
+                                    day: 'numeric', month: 'short', year: 'numeric',
+                                  })}
+                                </p>
+                              </div>
+                              <span className={`shrink-0 text-sm font-semibold tabular-nums ${a.amount < 0 ? 'text-money-700' : 'text-slate-800'}`}>
+                                {a.amount < 0 ? `- ${money(-a.amount)}` : money(a.amount)}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </Card>
+                    )}
+
+                    {(ledger.data?.length ?? 0) > 0 && (
+                      <Card>
+                        <CardTitle icon={<IconWallet />}>Every entry, in order</CardTitle>
+                        <p className="text-xs text-slate-500">
+                          The same statement the school office sees: every charge, discount, late
+                          fee, other charge and payment, with what was owed after each one.
+                        </p>
+                        <div className="mt-2">
+                          <FeeStatement entries={ledger.data ?? []} balance={fees.data.balance} />
+                        </div>
+                      </Card>
+                    )}
+
                     <Card>
                       <CardTitle
                         icon={<IconPrint />}
@@ -316,7 +398,16 @@ export function PortalPage() {
                           </button>
                         }
                       >
-                        Your receipts
+                        {/* "Your receipts" was wrong and the printed version
+                            already knew it: fn_portal_child_fees returns
+                            invoices for THIS CHILD and receipts for the WHOLE
+                            FAMILY. Under a heading carrying one child's name, a
+                            parent of three saw Rs 5,000 of payments above a
+                            child who had paid nothing, and reasonably read it as
+                            that child being settled. PortalStatement.tsx carried
+                            a paragraph about labelling this exactly, and the
+                            label was fixed only on the page nobody prints. */}
+                        Payments from your family
                       </CardTitle>
                       {fees.data.receipts.length === 0 ? (
                         <p className="text-sm text-slate-400">No payments recorded yet.</p>
@@ -366,7 +457,7 @@ export function PortalPage() {
                             Last 3 months
                           </p>
                           <p className="mt-1 text-3xl font-semibold tabular-nums text-slate-900">
-                            {attendance.data.percent === null ? '—' : `${attendance.data.percent}%`}
+                            {attendance.data.percent === null ? '-' : `${attendance.data.percent}%`}
                           </p>
                           <p className="mt-1 text-xs text-slate-500">
                             {attendance.data.present} present of {attendance.data.marked} days marked
@@ -445,7 +536,7 @@ export function PortalPage() {
                                 "A+" needs no explaining and "Grade A+" on a
                                 phone badge is two words of noise. */}
                             <Badge tone="money">
-                              {r.grade_scale === 'gpa10' ? `GPA ${r.grade ?? '—'}` : (r.grade ?? '—')}
+                              {r.grade_scale === 'gpa10' ? `GPA ${r.grade ?? '-'}` : (r.grade ?? '-')}
                             </Badge>
                           </>
                         )}
@@ -461,11 +552,11 @@ export function PortalPage() {
                         {/* A provisional card SAYS it is provisional. Its
                             percentage is computed over the marked papers only, so
                             a parent shown 78% with no warning has been told
-                            something that is not the final figure — and the card
+                            something that is not the final figure, and the card
                             the school prints carries this line already. */}
                         {r.provisional && (
                           <p className="mt-3 rounded-lg bg-due-50 px-3 py-2 text-xs text-due-800 ring-1 ring-due-100">
-                            Not final — {r.unmarked_subjects ?? 0} paper(s) are still
+                            Not final: {r.unmarked_subjects ?? 0} paper(s) are still
                             being marked. The marks below are out of what has been
                             marked so far.
                           </p>
@@ -474,10 +565,10 @@ export function PortalPage() {
                         <div className="mt-3 grid grid-cols-3 gap-2">
                           <MiniStat
                             label="Marks"
-                            value={`${r.obtained_marks ?? '—'}/${r.total_marks ?? '—'}`}
+                            value={`${r.obtained_marks ?? '-'}/${r.total_marks ?? '-'}`}
                           />
-                          <MiniStat label="Percent" value={`${r.percentage ?? '—'}%`} tone="brand" />
-                          <MiniStat label="Position" value={r.position ?? '—'} tone="info" />
+                          <MiniStat label="Percent" value={`${r.percentage ?? '-'}%`} tone="brand" />
+                          <MiniStat label="Position" value={r.position ?? '-'} tone="info" />
                         </div>
 
                         {(r.pass_percent !== undefined || (r.failed_subjects ?? 0) > 0) && (
@@ -498,15 +589,15 @@ export function PortalPage() {
                                   <span className="text-slate-700">{s.subject}</span>
                                   {/* Broken out when the paper has one. This was
                                       the real defect: the row showed `marks / max`
-                                      — THEORY against the THEORY maximum — so a
+                                     : THEORY against the THEORY maximum, so a
                                       pupil with 40/75 theory and 20/25 practical
                                       was shown "40 / 75" when they had scored
                                       60 out of 100. Understated, not merely
                                       incomplete. */}
                                   {s.practical_max > 0 && !s.is_absent && (
                                     <span className="block text-xs text-slate-400">
-                                      Written {s.marks ?? '—'}/{s.max} · Practical{' '}
-                                      {s.practical ?? '—'}/{s.practical_max}
+                                      Written {s.marks ?? '-'}/{s.max} · Practical{' '}
+                                      {s.practical ?? '-'}/{s.practical_max}
                                     </span>
                                   )}
                                 </span>
@@ -518,7 +609,7 @@ export function PortalPage() {
                                   ) : (
                                     <>
                                       <span className="text-slate-700">
-                                        {s.obtained ?? '—'} / {s.out_of}
+                                        {s.obtained ?? '-'} / {s.out_of}
                                       </span>
                                       {s.passed === false && (
                                         <span className="block text-xs text-danger-600">
@@ -566,7 +657,7 @@ export function PortalPage() {
           at the top of the sheet rather than inside the page's layout.
 
           items-start with overflow-y-auto, not items-center: on a 360×640 phone
-          — which is most of the parents — a centred dialog taller than the
+         , which is most of the parents. A centred dialog taller than the
           viewport puts its own buttons off both edges of the screen with nothing
           to scroll. The statement is long by nature, so this one would always
           have been in that state. */}

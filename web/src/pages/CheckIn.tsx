@@ -92,12 +92,12 @@ export function CheckIn() {
           <div className="mt-6 text-center">
             <div className="text-3xl">{result.status === 'office_marked' ? 'ℹ️' : result.status === 'out' ? '👋' : '✓'}</div>
             <p className={`mt-2 text-sm font-medium ${result.status === 'office_marked' ? 'text-sky-700' : 'text-emerald-700'}`}>
-              {result.status === 'out' ? 'Checked out — see you tomorrow.'
+              {result.status === 'out' ? 'Checked out: see you tomorrow.'
                 : result.status === 'already' ? 'You were already checked in today.'
                 : result.status === 'office_marked'
                   ? 'The office has already recorded today for you.'
-                  : result.attendance_status === 'late' ? 'Checked in — marked late.'
-                  : 'Checked in — have a great day!'}
+                  : result.attendance_status === 'late' ? 'Checked in: marked late.'
+                  : 'Checked in: have a great day!'}
             </p>
 
             {/* A late mark is the school's, not a punishment from the software:
@@ -112,7 +112,7 @@ export function CheckIn() {
             {result.status === 'office_marked' && (
               <p className="mt-1 text-xs text-slate-600">
                 Recorded as <span className="font-medium">{(result.attendance_status ?? '').replace('_', ' ')}</span>
-                {result.reason ? ` — ${result.reason}` : ''}. Speak to the office if that is wrong.
+                {result.reason ? `: ${result.reason}` : ''}. Speak to the office if that is wrong.
               </p>
             )}
 

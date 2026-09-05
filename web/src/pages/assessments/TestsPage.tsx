@@ -129,7 +129,7 @@ function NewTest({ sessionId, classId, forcedSectionIds }: { sessionId: string; 
         <label className="block">
           <span className="text-sm text-slate-600">Subject</span>
           <select value={subjectId} onChange={(e) => setSubjectId(e.target.value)} className={FIELD}>
-            <option value="">—</option>
+            <option value="">-</option>
             {subjects.data?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </label>
@@ -217,7 +217,7 @@ function MarksGrid({ test, onBack }: { test: AssessmentRow; onBack: () => void }
                   const dis = e.is_absent || r.is_locked || locked
                   return (
                     <tr key={r.enrollment_id} className={r.is_locked ? 'opacity-60' : ''}>
-                      <td className="px-3 py-2 text-slate-500">{r.roll_no ?? '—'}</td>
+                      <td className="px-3 py-2 text-slate-500">{r.roll_no ?? '-'}</td>
                       <td className="px-3 py-2 text-slate-800">{r.full_name}{r.section_name ? <span className="text-slate-400"> · {r.section_name}</span> : ''}{r.is_locked && <span className="ml-1 text-xs">🔒</span>}</td>
                       <td className="px-3 py-2">
                         <input type="number" min="0" max={r.max_marks} step="0.5" disabled={dis}

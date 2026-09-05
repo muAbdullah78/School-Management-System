@@ -371,6 +371,27 @@ select 'the observer role (0059)',
                                            -- true DURING a support visit, which
                                            -- would make the gate circular.
                                            'fn_support_visits',
+                                           -- 0094 and 0095: the same category as
+                                           -- fn_pending_invites above. Who can
+                                           -- sign in, what address they use, and
+                                           -- what stands in the way of removing a
+                                           -- person are ACCESS MANAGEMENT and the
+                                           -- gating of a destructive act, not a
+                                           -- read of the school's records.
+                                           --
+                                           -- may_view is true for an observer and
+                                           -- during an operator support visit.
+                                           -- Gating these on it would hand both of
+                                           -- them every staff email in the school
+                                           -- (fn_school_logins reads auth.users)
+                                           -- and let them enumerate which children
+                                           -- could be deleted without trace, which
+                                           -- is reconnaissance for exactly the act
+                                           -- 0094 exists to make impossible.
+                                           'fn_school_logins',
+                                           'fn_student_delete_blockers',
+                                           'fn_staff_delete_blockers',
+                                           'fn_login_delete_blockers',
                                            'may_view'))
                  -- THE ONE THAT MATTERS. An observer must not be able to write.
                  -- A write policy consulting may_view would let one change a
@@ -1285,6 +1306,183 @@ select 'reviews are wired, and the published average matches the rows',
          else 'PASS — ' || pg_temp.ask('select total::text from public.reviews_summary')
               || ' published, average '
               || pg_temp.ask('select average::text from public.reviews_summary')
+       end
+
+union all
+-- 0094. All six or none: a screen that can ask what is blocking a delete but
+-- cannot perform one, or the reverse, is worse than neither, because the button
+-- appears and then fails.
+select 'deleting a record',
+       case when (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                   where n.nspname = 'public'
+                     and p.proname in ('fn_student_delete_blockers', 'fn_staff_delete_blockers',
+                                       'fn_login_delete_blockers', 'fn_delete_student',
+                                       'fn_delete_staff', 'fn_delete_login')) = 6
+            then 'PASS — records with no history can be removed, records with history cannot'
+            else 'FAIL — apply supabase/bundles/11_deletion.sql' end
+
+union all
+-- 0096. Trial only, owner only, and it must type-check the school's name. The
+-- row is about the function existing; the rules inside it are asserted by
+-- supabase/tests/reset.sql.
+select 'a school on trial can start again',
+       case when to_regprocedure('public.fn_reset_school_data(text)') is not null
+            then 'PASS'
+            else 'FAIL - apply supabase/bundles/11_deletion_and_logins.sql' end
+
+union all
+-- 0097. The same attendance percentage was computed three ways and a parent saw
+-- 92% where the result card printed 83.3%. This checks the shared rule exists
+-- AND still gives the documented answer: a function that is present but has
+-- been quietly changed back is the failure worth catching.
+select 'one attendance percentage, not three (0097)',
+       case
+         when to_regprocedure('public.fn__attendance_pct(integer,integer,integer,integer)') is null
+           then 'FAIL - apply supabase/bundles/11_deletion_and_logins.sql'
+         when public.fn__attendance_pct(8, 1, 2, 12) <> 83.3
+           then 'FAIL - the attendance rule gives '
+                || public.fn__attendance_pct(8, 1, 2, 12)::text
+                || ' where it should give 83.3 (present + late + half a half day, over marked days)'
+         else 'PASS'
+       end
+
+union all
+-- 0098. The application gave three different answers to "what are we owed":
+-- Rs 8,350 on the dashboard, Rs 8,100 on the reconciliation screen, Rs 8,062.50
+-- in dues by fee head. This checks the two halves of the fix that a school can
+-- see: the fee statement exists, and the reconciliation screen carries the
+-- bridge that explains the remaining difference in basis.
+select 'one answer to what a family owes (0098)',
+       case
+         when to_regprocedure('public.fn_student_ledger(uuid)') is null
+           then 'FAIL - apply supabase/bundles/12_one_number.sql'
+         when to_regprocedure('public.fn_portal_child_ledger(uuid)') is null
+           then 'FAIL - the parent cannot see the statement the office sees; '
+                || 'apply supabase/bundles/12_one_number.sql'
+         when not (public.fn_head_wise_dues(
+                     (select id from public.academic_sessions limit 1)) ? 'total_outstanding')
+           and (select count(*) from public.academic_sessions) > 0
+           then 'FAIL - dues by fee head still totals itself by summing '
+                || 'apportioned rows; apply supabase/bundles/12_one_number.sql'
+         else 'PASS'
+       end
+
+union all
+-- 0099. Three definitions of "how many children are here". The tile is now the
+-- same function as the plan limit, so this asks whether the field that only the
+-- new version returns is there.
+select 'one headcount, on the tile and the licence (0099)',
+       case
+         when to_regprocedure('public.fn_students_without_a_class()') is null
+           then 'FAIL - apply supabase/bundles/12_one_number.sql'
+         when not (public.fn_dashboard_summary() ? 'students_without_a_class')
+           then 'FAIL - the dashboard still keeps its own headcount; '
+                || 'apply supabase/bundles/12_one_number.sql'
+         else 'PASS'
+       end
+
+union all
+-- 0100. The attendance percentage existed in four places, all correct when
+-- written, two of them wrong by the time a parent compared the portal with the
+-- result card. This asks the catalogue rather than the output, because the
+-- copies agreeing today is exactly what was true the week before that.
+select 'one attendance rule, in one function (0100)',
+       case
+         when exists (
+           select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname <> 'fn__attendance_pct'
+             and p.prosrc like '%0.5 * count(*) filter (where status = ''half_day'')%')
+           then 'FAIL - the formula is still written out in '
+                || (select string_agg(p.proname, ', ' order by p.proname)
+                      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                     where n.nspname = 'public' and p.proname <> 'fn__attendance_pct'
+                       and p.prosrc like '%0.5 * count(*) filter (where status = ''half_day'')%')
+                || '; apply supabase/bundles/12_one_number.sql'
+         when (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                where n.nspname = 'public' and p.proname <> 'fn__attendance_pct'
+                  and p.prosrc like '%fn__attendance_pct%') < 4
+           then 'FAIL - fewer than four surfaces call the shared rule; '
+                || 'apply supabase/bundles/12_one_number.sql'
+         else 'PASS'
+       end
+
+union all
+-- 0101. Two of the four list-of-rows functions dropped a key they did not read
+-- without a word: a practical mark became NULL, and a misspelt absence flag
+-- recorded a child who sat no paper as having scored nothing.
+select 'a payload key that is not read is refused (0101)',
+       case
+         when to_regprocedure('public.fn__only_these_keys(jsonb,text[],text)') is null
+           then 'FAIL - apply supabase/bundles/12_one_number.sql'
+         when exists (
+           select 1 from (values ('fn_enter_marks'), ('fn_enter_assessment_marks'),
+                                 ('fn_mark_attendance'), ('fn_record_bulk_payments')) as x(name)
+           where not exists (
+             select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+             where n.nspname = 'public' and p.proname = x.name
+               and p.prosrc like '%fn__only_these_keys%'))
+           then 'FAIL - one of the four still accepts a key it does not read; '
+                || 'apply supabase/bundles/12_one_number.sql'
+         else 'PASS'
+       end
+
+union all
+-- 0102. Two functions moved cash without telling the till, so an honest clerk
+-- who reversed a receipt and took an admission fee was Rs 1,000 short of a
+-- drawer they had counted correctly.
+select 'every payment says which drawer it came from (0102)',
+       case
+         when to_regprocedure('public.fn__reversal_till(uuid,payment_method)') is null
+           then 'FAIL - apply supabase/bundles/12_one_number.sql'
+         when exists (
+           select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public'
+             and p.prosrc like '%insert into public.payments%'
+             and p.prosrc not like '%till_session_id%')
+           then 'FAIL - '
+                || (select string_agg(p.proname, ', ' order by p.proname)
+                      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                     where n.nspname = 'public'
+                       and p.prosrc like '%insert into public.payments%'
+                       and p.prosrc not like '%till_session_id%')
+                || ' still write cash without a drawer; '
+                || 'apply supabase/bundles/12_one_number.sql'
+         else 'PASS'
+       end
+
+union all
+-- 0103. A refundable deposit is the family's money. It was on the office's
+-- Deposits screen and on the balance sheet as a liability, and on nothing a
+-- family could open.
+select 'the family can see the deposit the school holds (0103)',
+       case
+         when to_regprocedure('public.fn__deposit_held(uuid)') is null
+           then 'FAIL - apply supabase/bundles/12_one_number.sql'
+         when not exists (
+           select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = 'fn_portal_child_fees'
+             and p.prosrc like '%deposit_held%')
+           then 'FAIL - the parent portal does not report the deposit; '
+                || 'apply supabase/bundles/12_one_number.sql'
+         when has_function_privilege('authenticated', 'public.fn__deposit_held(uuid)', 'execute')
+           then 'FAIL - the ungated deposit figure is reachable by any signed-in '
+                || 'account; apply supabase/bundles/12_one_number.sql'
+         else 'PASS'
+       end
+
+union all
+-- 0104. A parent login whose family link was never written appeared on no
+-- screen: "Who can sign in" excluded every parent, and the family page lists
+-- parents BY family. The parent could sign in to an empty portal and the office
+-- had nothing to look at.
+select 'a parent login with no family is visible (0104)',
+       case
+         when not exists (
+           select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = 'fn_school_logins'
+             and p.prosrc like '%p.family_id is null%')
+           then 'FAIL - apply supabase/bundles/12_one_number.sql'
+         else 'PASS'
        end
 
 union all

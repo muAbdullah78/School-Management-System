@@ -202,7 +202,20 @@ with sig(migration, object, present) as (values
                                   'fn_may_mark_subject',
                                   'fn_pending_invites',
                                   'fn_checkin_display',
-                                  'fn_support_visits', 'may_view')))),
+                                  'fn_support_visits',
+              -- 0094 and 0095, and the same category as fn_pending_invites: who
+              -- can sign in, what address they use, and what stands in the way
+              -- of removing a person are access management and the gating of a
+              -- destructive act, not a read of the school's records. may_view is
+              -- true for an observer AND during a support visit, so gating these
+              -- on it would hand both of them every staff email in the school
+              -- and let them enumerate which children could be deleted without
+              -- trace.
+                                  'fn_school_logins',
+                                  'fn_student_delete_blockers',
+                                  'fn_staff_delete_blockers',
+                                  'fn_login_delete_blockers',
+                                  'may_view')))),
   -- 0061 REWROTE fn_issue_certificate, which has existed since 0021. Its
   -- presence proves nothing at all, and neither does the new table: the
   -- signature has to be a fact about the body. Two facts, because the two
@@ -674,7 +687,55 @@ with sig(migration, object, present) as (values
   -- outside the school can see, which looks like an empty page rather than an
   -- error and is exactly the state worth naming.
   ('0093_reviews', 'the website can read published reviews with no login',
-     to_regclass('public.reviews_public') is not null)
+     to_regclass('public.reviews_public') is not null),
+  -- The blocker function rather than the delete function: it is the half that
+  -- decides, and a screen calls it before showing the button. Without it every
+  -- Delete on the roster refuses with a function-not-found error.
+  ('0094_deletion', 'a record with no history can be deleted',
+     to_regprocedure('public.fn_student_delete_blockers(uuid)') is not null),
+  -- The login list rather than the delete: it is the half that makes an
+  -- unattached login visible at all, and without it the staff screen cannot
+  -- show a login that belongs to nobody.
+  ('0095_who_can_sign_in', 'every login is visible, with the address it uses',
+     to_regprocedure('public.fn_school_logins()') is not null),
+  ('0096_start_again', 'a school on trial can clear its practice data',
+     to_regprocedure('public.fn_reset_school_data(text)') is not null),
+  -- The shared rule, not the portal function: the portal function existed
+  -- before and simply computed the wrong number, so its presence proves
+  -- nothing. This one only exists if 0097 was applied.
+  ('0097_one_attendance_rule', 'one attendance percentage, shared by every screen',
+     to_regprocedure('public.fn__attendance_pct(integer,integer,integer,integer)') is not null),
+  -- The statement, not the reconciliation screen: fn_fee_reconciliation existed
+  -- before 0098 and simply left adjustments out, so its presence proves nothing.
+  -- fn_student_ledger is new, and it is the half a school actually opens.
+  ('0098_one_number', 'the fee statement behind the balance',
+     to_regprocedure('public.fn_student_ledger(uuid)') is not null),
+  ('0099_one_headcount', 'the children who are on no class list',
+     to_regprocedure('public.fn_students_without_a_class()') is not null),
+  -- Not "does fn__attendance_pct exist" (0097 created it), but "has the last
+  -- inline copy of the formula gone". That is the thing 0100 changes.
+  ('0100_the_attendance_rule_is_one_place', 'the attendance formula in one function only',
+     not exists (
+       select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname <> 'fn__attendance_pct'
+         and p.prosrc like '%0.5 * count(*) filter (where status = ''half_day'')%')),
+  ('0101_a_dropped_key_is_lost_data', 'mark entry refuses a key it does not read',
+     exists (
+       select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'fn_enter_marks'
+         and p.prosrc like '%fn__only_these_keys%')),
+  ('0102_the_drawer_and_the_clerk', 'a reversal knows which drawer it came out of',
+     to_regprocedure('public.fn__reversal_till(uuid,payment_method)') is not null),
+  ('0103_the_familys_money', 'the parent can see the deposit the school holds',
+     exists (
+       select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'fn_portal_child_fees'
+         and p.prosrc like '%deposit_held%')),
+  ('0104_the_parent_nobody_can_see', 'a parent login with no family is listed',
+     exists (
+       select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'fn_school_logins'
+         and p.prosrc like '%p.family_id is null%'))
 )
 select migration,
        object                                   as looked_for,

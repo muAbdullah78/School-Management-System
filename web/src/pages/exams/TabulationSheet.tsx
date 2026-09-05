@@ -3,7 +3,7 @@ import { fmtDate } from '@/lib/format'
 import { gradeLabel, type ResultCardRow } from '@/lib/db'
 
 /** A printable tabulation / consolidation sheet: every student in a class for a
- *  term on one grid — subjects across, students down, with totals, %, grade,
+ *  term on one grid: subjects across, students down, with totals, %, grade,
  *  position and pass/fail. Built from the same frozen snapshots the result cards
  *  print from, so it always agrees with them. Prints best in landscape. */
 export function TabulationSheet({
@@ -23,7 +23,7 @@ export function TabulationSheet({
   const sheetGradeLabel = gradeLabel(cards[0]?.frozen ?? {})
 
   // Column subjects, in first-seen order across all cards. In a streamed class
-  // this is the UNION — Physics and Civics both get a column — because a
+  // this is the UNION: Physics and Civics both get a column, because a
   // consolidated sheet is meant to cover the whole class. Which is exactly why
   // "this pupil does not take it" has to look different from "not marked":
   // otherwise half a class-9 grid is identical dashes carrying two meanings.
@@ -40,15 +40,15 @@ export function TabulationSheet({
 
   function cell(card: ResultCardRow, subject: string): { text: string; muted?: boolean } {
     const s = card.frozen?.subjects.find((x) => x.subject === subject)
-    // Not on this pupil's card at all — a different stream. Blank and greyed,
+    // Not on this pupil's card at all. A different stream. Blank and greyed,
     // never a dash.
     if (!s) return { text: '·', muted: true }
-    if (s.marked === false) return { text: '—' }
+    if (s.marked === false) return { text: '-' }
     if (s.is_absent) return { text: 'ABS' }
     // The combined figure when there is a practical, so the column agrees with
     // the /max in its own header.
     const v = s.obtained ?? s.marks
-    return { text: v == null ? '—' : String(v) }
+    return { text: v == null ? '-' : String(v) }
   }
 
   /**
@@ -57,7 +57,7 @@ export function TabulationSheet({
    * This used to recompute it here, and got a different answer: it failed any
    * pupil who was absent for a paper regardless of the pass mark, and ignored
    * the aggregate entirely. A tabulation sheet that disagrees with the result
-   * cards it was built from is worse than no tabulation sheet — and this file's
+   * cards it was built from is worse than no tabulation sheet, and this file's
    * own comment claims it always agrees with them.
    *
    * Cards generated before 0058 carry no `result`, so the old computation stays
@@ -78,7 +78,7 @@ export function TabulationSheet({
       <div className="w-full max-w-6xl rounded-lg bg-white p-6 shadow-lg print:max-w-none print:shadow-none" id="tabulation">
         <div className="text-center">
           <div className="text-xl font-semibold text-slate-800">{schoolName}</div>
-          <div className="text-xs uppercase tracking-wide text-slate-500">Tabulation Sheet — {termName} · {className}</div>
+          <div className="text-xs uppercase tracking-wide text-slate-500">Tabulation Sheet: {termName} · {className}</div>
         </div>
 
         <div className="mt-4 overflow-x-auto">
@@ -97,8 +97,8 @@ export function TabulationSheet({
                 {/* One column heading for a whole class, so it follows the
                     scale the CARDS were generated under rather than the school's
                     current setting (0089). Mixed scales in one class cannot
-                    happen — fn_generate_result_cards reads the scale once per
-                    run — but a class regenerated after a switch would otherwise
+                    happen: fn_generate_result_cards reads the scale once per
+                    run, but a class regenerated after a switch would otherwise
                     print the old heading over new figures. */}
                 <th className="px-1.5 py-1">{sheetGradeLabel}</th>
                 <th className="px-1.5 py-1 text-right">Pos</th>
@@ -110,22 +110,22 @@ export function TabulationSheet({
                 const r = result(c)
                 return (
                   <tr key={c.id} className="border-b border-slate-100">
-                    <td className="px-1.5 py-1 text-right text-slate-500">{c.roll_no ?? '—'}</td>
+                    <td className="px-1.5 py-1 text-right text-slate-500">{c.roll_no ?? '-'}</td>
                     <td className="px-1.5 py-1 text-slate-800">{c.full_name}</td>
                     {subjects.map((s) => {
                       const v = cell(c, s.name)
                       return (
                         <td key={s.name}
                           className={`px-1.5 py-1 text-right ${v.muted ? 'text-slate-300' : 'text-slate-700'}`}
-                          title={v.muted ? 'Not taken — different stream' : undefined}>
+                          title={v.muted ? 'Not taken: different stream' : undefined}>
                           {v.text}
                         </td>
                       )
                     })}
-                    <td className="px-1.5 py-1 text-right text-slate-800">{c.total_marks ?? '—'}/{c.total_max ?? '—'}</td>
-                    <td className="px-1.5 py-1 text-right text-slate-700">{c.percentage == null ? '—' : c.percentage}</td>
-                    <td className="px-1.5 py-1 font-medium text-slate-800">{c.grade ?? '—'}</td>
-                    <td className="px-1.5 py-1 text-right text-slate-700">{c.position ?? '—'}</td>
+                    <td className="px-1.5 py-1 text-right text-slate-800">{c.total_marks ?? '-'}/{c.total_max ?? '-'}</td>
+                    <td className="px-1.5 py-1 text-right text-slate-700">{c.percentage == null ? '-' : c.percentage}</td>
+                    <td className="px-1.5 py-1 font-medium text-slate-800">{c.grade ?? '-'}</td>
+                    <td className="px-1.5 py-1 text-right text-slate-700">{c.position ?? '-'}</td>
                     <td className={`px-1.5 py-1 font-medium ${r.fail ? 'text-red-600' : 'text-emerald-700'}`}>{r.label}</td>
                   </tr>
                 )

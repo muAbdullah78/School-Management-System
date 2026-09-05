@@ -4,7 +4,7 @@
  * downscale() and the upload paths need a browser and a Supabase project, so
  * they are covered by supabase/tests/photos.sql on the server side and by the
  * manual checklist for the storage API. What IS testable here is every piece of
- * logic that decides what the user sees when something is missing — which is
+ * logic that decides what the user sees when something is missing, which is
  * the case that will actually occur, in every school, for most pupils, for a
  * long time.
  */
@@ -39,7 +39,7 @@ describe('initials', () => {
 })
 
 describe('avatarTone', () => {
-  it('gives the same person the same colour every time — the whole point, since a\n'
+  it('gives the same person the same colour every time. The whole point, since a\n'
      + 'colour that changed on each render would make a photo-less list unscannable', () => {
     expect(avatarTone('Muhammad Ali')).toBe(avatarTone('Muhammad Ali'))
   })

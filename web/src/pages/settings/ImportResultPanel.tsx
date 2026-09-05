@@ -23,7 +23,7 @@ export function ImportResultPanel({
     <div className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="flex items-center gap-2">
         <span className={`rounded px-2 py-0.5 text-xs font-medium ${dry ? 'bg-sky-100 text-sky-700' : 'bg-emerald-100 text-emerald-700'}`}>
-          {dry ? 'Dry run — nothing was saved' : 'Import complete'}
+          {dry ? 'Dry run. Nothing was saved' : 'Import complete'}
         </span>
         <span className="text-sm text-slate-600">{data.total} row{data.total === 1 ? '' : 's'} processed</span>
       </div>
@@ -52,8 +52,8 @@ export function ImportResultPanel({
                 {problemRows.slice(0, 300).map((r) => (
                   <tr key={r.row} className="border-t border-slate-100">
                     <td className="py-1 pr-3 text-slate-500">{r.row}</td>
-                    <td className="py-1 pr-3 text-slate-700">{r.name || <span className="text-slate-400">—</span>}</td>
-                    {showAmount && <td className="py-1 pr-3 text-slate-600">{r.amount == null ? '—' : fmtPKR(r.amount)}</td>}
+                    <td className="py-1 pr-3 text-slate-700">{r.name || <span className="text-slate-400">-</span>}</td>
+                    {showAmount && <td className="py-1 pr-3 text-slate-600">{r.amount == null ? '-' : fmtPKR(r.amount)}</td>}
                     <td className="py-1 pr-3">
                       <span className={r.status === 'error' ? 'text-red-600' : 'text-amber-600'}>{r.status}</span>
                     </td>

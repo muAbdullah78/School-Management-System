@@ -9,7 +9,7 @@
  *
  * WHAT IS DELIBERATE HERE
  *
- * Sorting is client-side, over the rows currently loaded — and the component
+ * Sorting is client-side, over the rows currently loaded, and the component
  * SAYS SO when there are more rows than that. A table that silently sorts one
  * page of fifty and presents it as "sorted by highest balance" is the same
  * class of lie as a dashboard reporting Rs 0 owed because nothing was billed.
@@ -44,7 +44,7 @@ const PAGE_SIZES = [25, 50, 100, 250]
  * Compare two cell values for sorting.
  *
  * Exported because the null rule is the part worth testing: nulls sort LAST in
- * both directions. An empty cell is not "the smallest value" — it is missing,
+ * both directions. An empty cell is not "the smallest value". It is missing,
  * and burying the rows you asked to see under a pile of blanks is the usual way
  * a sortable table becomes useless. Numbers compare numerically; text uses a
  * numeric-aware locale compare so "Class 10" follows "Class 9".
@@ -272,7 +272,7 @@ export function DataTable<T>({
                     >
                       {c.render
                         ? c.render(r)
-                        : String((r as Record<string, unknown>)[c.key] ?? '—')}
+                        : String((r as Record<string, unknown>)[c.key] ?? '-')}
                     </td>
                   ))}
                 </tr>
@@ -286,14 +286,14 @@ export function DataTable<T>({
       {!loading && !error && rows.length > 0 && (
         <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-500 print:hidden">
           <span>
-            Showing {from}–{to} of {knownTotal}
+            Showing {from} to {to} of {knownTotal}
           </span>
 
           {sortKey && partial && (
             // The honest caveat. Without it, "sorted by highest balance" over
             // one page of fifty out of eight hundred is simply false.
             <span className="text-amber-700">
-              Sorted within these {rows.length} rows only — narrow the search or raise the page size
+              Sorted within these {rows.length} rows only: narrow the search or raise the page size
               to sort the whole list.
             </span>
           )}

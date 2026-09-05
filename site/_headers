@@ -1,0 +1,81 @@
+# Response headers for the marketing site on Cloudflare.
+#
+# This is a plain text file that Cloudflare reads when you upload the folder.
+# Nothing to configure in the dashboard, nothing to install. If the site ever
+# moves off Cloudflare this file stops doing anything and whatever serves it
+# has to set the headers instead.
+#
+# TWO THINGS ABOUT HOW MATCHING WORKS, both of which are easy to get wrong:
+#
+#  1. Patterns match the REQUEST path, not the file that ends up being served.
+#     The canonical URLs here are extensionless (/pricing, not /pricing.html),
+#     so a rule written as /*.html would never match a single real page view.
+#
+#  2. Every matching rule contributes. Two rules that both set Cache-Control on
+#     the same request are ambiguous, and two Content-Security-Policy headers
+#     are enforced together, so the strictest wins and a per-page relaxation
+#     silently does nothing. So: one CSP for the whole site, and no path is
+#     given Cache-Control by more than one rule.
+#
+# HTML deliberately gets no Cache-Control here. Cloudflare already serves it
+# must-revalidate, which is what a hand-uploaded site needs: the failure that
+# matters is a school still seeing yesterday's page after a fix.
+
+/*
+  # The handbook loads two fonts from Google and embeds its screenshots as
+  # data: URIs, and wire.js reads prices and the current release from Supabase.
+  # Everything else is served from this domain, so the policy says so.
+  #
+  # connect-src names *.supabase.co because that is what a Supabase project URL
+  # looks like. If SUPABASE_URL in config.js is ever pointed at a custom domain
+  # instead, this blocks it, and the symptom is mild rather than obvious: the
+  # live price and release lookups fail and wire.js falls back to the prices
+  # baked into the HTML, which a CI check keeps correct anyway. Add the host
+  # here if that day comes.
+  #
+  # There is no 'unsafe-inline' in script-src, which is the part that usually
+  # gets given away. It is affordable here because the pages carry no inline
+  # <script> other than application/ld+json data blocks, which browsers neither
+  # execute nor check against script-src, and because wire.js contains no eval,
+  # no new Function and no innerHTML. All four of those are verified rather
+  # than assumed: scripts/cf-server.py applies this file and
+  # scripts/check-site-render.mjs fails the build on any console error, which
+  # is exactly what a resource blocked by CSP produces.
+  Content-Security-Policy: default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://*.supabase.co; manifest-src 'self'; upgrade-insecure-requests
+  # frame-ancestors above already says this. X-Frame-Options is for the
+  # browsers that never learned frame-ancestors.
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), interest-cohort=()
+  # One year of HTTPS-only for this hostname. Deliberately without
+  # includeSubDomains and without preload: includeSubDomains binds every
+  # present and future subdomain to the same promise, and preload is close to
+  # irreversible. Add them on purpose later, not by accident.
+  Strict-Transport-Security: max-age=31536000
+
+# APP_URL lives in this file. A stale copy sends a school to the wrong address,
+# which is the one piece of staleness here that actually hurts.
+/config.js
+  Cache-Control: no-cache
+
+# Artwork changes about once a year. A day of staleness costs nothing and saves
+# a request on every page view.
+/favicon.ico
+  Cache-Control: public, max-age=86400
+/icon.svg
+  Cache-Control: public, max-age=86400
+/icon-48.png
+  Cache-Control: public, max-age=86400
+/icon-96.png
+  Cache-Control: public, max-age=86400
+/icon-192.png
+  Cache-Control: public, max-age=86400
+/icon-512.png
+  Cache-Control: public, max-age=86400
+/icon-maskable-512.png
+  Cache-Control: public, max-age=86400
+/apple-touch-icon.png
+  Cache-Control: public, max-age=86400
+/og.png
+  Cache-Control: public, max-age=86400

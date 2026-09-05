@@ -175,6 +175,22 @@ def main() -> int:
                                  -- operator session anyway, which would make the
                                  -- gate circular.
                                  'fn_support_visits',
+                                 -- 0094 and 0095, the same category as
+                                 -- fn_pending_invites: who can sign in, what
+                                 -- address they use, and what stands in the way
+                                 -- of removing a person are access management
+                                 -- and the gating of a destructive act, not a
+                                 -- read of the school's records. may_view is
+                                 -- true for an observer AND during a support
+                                 -- visit, so gating these on it would hand both
+                                 -- every staff email in the school
+                                 -- (fn_school_logins reads auth.users) and let
+                                 -- them enumerate which children could be
+                                 -- deleted without trace.
+                                 'fn_school_logins',
+                                 'fn_student_delete_blockers',
+                                 'fn_staff_delete_blockers',
+                                 'fn_login_delete_blockers',
                                  'may_view')
          order by 1
     """)

@@ -50,7 +50,7 @@ export function AttendanceSheet({ data, onClose }: { data: AttendanceSheetData; 
           <tbody>
             {data.rows.map((r, i) => (
               <tr key={i} className="border-b border-slate-100">
-                <td className="py-1.5 pr-2 text-slate-600">{r.roll_no ?? '—'}</td>
+                <td className="py-1.5 pr-2 text-slate-600">{r.roll_no ?? '-'}</td>
                 <td className="py-1.5 pr-2 text-slate-800">{r.full_name}</td>
                 <td className="py-1.5 pr-2 font-medium">{ATTENDANCE_SHORT[r.status] ?? r.status}</td>
                 <td className="py-1.5 text-slate-400">&nbsp;</td>

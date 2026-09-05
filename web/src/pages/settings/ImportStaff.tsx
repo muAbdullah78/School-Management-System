@@ -73,7 +73,7 @@ export function ImportStaff() {
         {loaded && (
           <div className="mt-4 space-y-3 text-sm">
             <div className="text-slate-700">
-              <span className="font-medium">{loaded.fileName}</span> — {loaded.rows.length.toLocaleString()} row{loaded.rows.length === 1 ? '' : 's'} detected.
+              <span className="font-medium">{loaded.fileName}</span>: {loaded.rows.length.toLocaleString()} row{loaded.rows.length === 1 ? '' : 's'} detected.
             </div>
             <div>
               <span className="text-slate-500">Recognised columns:</span>

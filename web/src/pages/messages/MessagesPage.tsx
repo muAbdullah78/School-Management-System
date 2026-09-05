@@ -1,5 +1,5 @@
 /**
- * WhatsApp — click to chat.
+ * WhatsApp: click to chat.
  *
  * No paid API and no SMS credits: the button opens WhatsApp with the message
  * already written and the clerk presses send. Free, and it is the channel
@@ -8,7 +8,7 @@
  * The queue is the point. Every payment writes a receipt message whether or
  * not anyone sends it, so "40 payments taken, 12 receipts sent" becomes a
  * number an owner can see. A parent who expects a receipt and does not get one
- * walks back to the office — which is a same-day check on cash handling that
+ * walks back to the office, which is a same-day check on cash handling that
  * no month-end report can match.
  */
 import { useState } from 'react'
@@ -20,6 +20,7 @@ import {
   Card, PageHeader, Button, Badge, EmptyState, StatTile,
 } from '@/components/ui'
 import { IconWhatsApp, IconCheck, IconAlert } from '@/components/icons'
+import { AskDialog } from '@/components/AskDialog'
 
 const todayStr = () => new Date().toISOString().slice(0, 10)
 const monthStart = () => {
@@ -38,6 +39,9 @@ const LABELS: Record<string, string> = {
 export function MessagesPage() {
   const qc = useQueryClient()
   const [status, setStatus] = useState<'queued' | 'sent' | 'skipped'>('queued')
+  // Was window.prompt, and an empty answer was dropped without a word, so the
+  // Skip button appeared to be broken for anyone who pressed Enter on it.
+  const [skipping, setSkipping] = useState<null | { id: string; who: string }>(null)
 
   const list = useQuery({ queryKey: ['outbox', status], queryFn: () => listOutbox(status) })
   const stats = useQuery({
@@ -53,7 +57,7 @@ export function MessagesPage() {
   const sent = useMutation({ mutationFn: markMessageSent, onSuccess: refresh })
   const skip = useMutation({
     mutationFn: (v: { id: string; reason: string }) => skipMessage(v.id, v.reason),
-    onSuccess: refresh,
+    onSuccess: () => { setSkipping(null); refresh() },
   })
 
   return (
@@ -116,7 +120,7 @@ export function MessagesPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge tone="brand">{LABELS[m.template_key] ?? m.template_key}</Badge>
-                    <span className="text-sm font-medium text-slate-800">{m.to_name ?? '—'}</span>
+                    <span className="text-sm font-medium text-slate-800">{m.to_name ?? '-'}</span>
                     <span className="text-xs text-slate-400">{m.to_phone ?? 'no number'}</span>
                   </div>
                   <p className="mt-2 whitespace-pre-wrap rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700">
@@ -138,10 +142,7 @@ export function MessagesPage() {
                       <Badge tone="due">No phone number</Badge>
                     )}
                     <Button size="sm" variant="ghost"
-                            onClick={() => {
-                              const r = window.prompt('Why skip this message?') ?? ''
-                              if (r.trim()) skip.mutate({ id: m.id, reason: r.trim() })
-                            }}>
+                            onClick={() => setSkipping({ id: m.id, who: m.to_name ?? m.to_phone ?? 'this family' })}>
                       Skip
                     </Button>
                   </div>
@@ -160,9 +161,23 @@ export function MessagesPage() {
 
       <p className="mt-6 rounded-xl bg-slate-50 px-4 py-3 text-xs text-slate-500">
         Pressing <b>Send</b> opens WhatsApp with the message ready and marks it sent here.
-        If WhatsApp does not open, the number is missing or malformed — fix it on the
+        If WhatsApp does not open, the number is missing or malformed: fix it on the
         family record and the next message will work.
       </p>
+
+      {skipping && (
+        <AskDialog
+          title="Skip this message"
+          intro={<>It will not be sent to {skipping.who}. The reason is kept, so
+            &ldquo;40 receipts due, 12 sent&rdquo; stays a number somebody can explain.</>}
+          reason={{ label: 'Why skip it?', required: true, minLength: 3,
+                    placeholder: 'e.g. father was told at the counter' }}
+          confirmLabel="Skip message"
+          busy={skip.isPending} error={skip.error ? (skip.error as Error).message : null}
+          onCancel={() => setSkipping(null)}
+          onSubmit={(v) => skip.mutate({ id: skipping.id, reason: v.reason })}
+        />
+      )}
     </div>
   )
 }

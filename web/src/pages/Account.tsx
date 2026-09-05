@@ -6,15 +6,15 @@ import { supabase } from '@/lib/supabase'
 /**
  * Change my own password.
  *
- * Every role reaches this page — owner, principal, clerk, teacher, parent — so
+ * Every role reaches this page: owner, principal, clerk, teacher, parent, so
  * it deliberately lives OUTSIDE both the staff shell and the portal rather than
  * being a tab in Settings. Settings is staff-only, and a parent who wants to
  * change their password after sharing it with a relative is the commonest case
  * of all.
  *
  * IT RE-CHECKS THE CURRENT PASSWORD FIRST, which Supabase's updateUser() does
- * not. Without that, an unattended browser at a school office — the machine at
- * the fee counter, logged in all day — is a machine on which anybody walking
+ * not. Without that, an unattended browser at a school office. The machine at
+ * the fee counter, logged in all day: is a machine on which anybody walking
  * past can lock out the account whose session is open. Re-authenticating with
  * signInWithPassword before the change costs one round trip and removes that.
  *
@@ -55,7 +55,7 @@ export function Account() {
     }
     setBusy(true)
     // Re-authenticate. On the wrong password this returns an error and, on
-    // Supabase, leaves the existing session intact — so a passer-by guessing
+    // Supabase, leaves the existing session intact, so a passer-by guessing
     // gets nowhere and the real user is not signed out of their own session.
     if (supabase && email) {
       const { error: reauth } = await supabase.auth.signInWithPassword({

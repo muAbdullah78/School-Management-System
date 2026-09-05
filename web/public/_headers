@@ -9,6 +9,12 @@
   Referrer-Policy: strict-origin-when-cross-origin
   # Nothing here needs a camera, microphone or location.
   Permissions-Policy: camera=(), microphone=(), geolocation=(), interest-cohort=()
+  # This is a sign-in screen. There is nothing here for a searcher, and an
+  # indexed app.theschoolmanager.site would compete with the website for the
+  # company's own name. index.html carries <meta name="robots" content="noindex">
+  # for a crawler that renders the page; this header says the same thing to one
+  # that does not, and covers every non-HTML response as well.
+  X-Robots-Tag: noindex
 
 # Vite fingerprints these filenames, so a changed file gets a changed name and
 # can be cached permanently.
@@ -23,3 +29,20 @@
   Cache-Control: no-cache
 /manifest.webmanifest
   Cache-Control: no-cache
+
+# Artwork, and the one file a crawler reads before anything else. Neither is
+# fingerprinted, so neither can be cached permanently, but a day is safe.
+/favicon.ico
+  Cache-Control: public, max-age=86400
+/icon.svg
+  Cache-Control: public, max-age=86400
+/icon-192.png
+  Cache-Control: public, max-age=86400
+/icon-512.png
+  Cache-Control: public, max-age=86400
+/icon-maskable-512.png
+  Cache-Control: public, max-age=86400
+/apple-touch-icon.png
+  Cache-Control: public, max-age=86400
+/robots.txt
+  Cache-Control: public, max-age=3600

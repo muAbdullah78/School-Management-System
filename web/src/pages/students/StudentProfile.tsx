@@ -5,9 +5,11 @@ import {
   getStudentBalance, getStudentInvoices, getStudentPayments, attendanceSummary,
   getSiblings, getStudentLinks, removeStudentLink, studentJoinFamily, getStudentFamilyId,
   linkStudents, searchStudentsForLink,
-  listFamilyParents, createParentLogin, unlinkParent, getChallan, type Challan,
+  listFamilyParents, createParentLogin, unlinkParent, linkParent, listSchoolLogins,
+  getChallan, type Challan,
   getStudentMonthlyFee, getEnrollmentDiscounts, addDiscount, setDiscountStatus,
   recordPayment, billStudentMonth, deferInvoice, undoDefer, addAdjustment, voidInvoice,
+  getStudentLedger, getDepositHeld,
   getStudentMonthTests, getStudentMonthAttendance,
   type StudentProfile as Student, type EnrollmentInfo, type InvoiceBalance, type MonthTestRow,
 } from '@/lib/db'
@@ -16,6 +18,7 @@ import {
   ATTENDANCE_STATUSES, ATTENDANCE_SHORT, DISCOUNT_TYPES, RELATIONS,
 } from '@/lib/constants'
 import { fmtPKR, fmtDate, waLink, todayISO } from '@/lib/format'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/auth/AuthProvider'
 import { APPROVER_ROLES, ADMIN_ROLES, canWrite, type Role } from '@/auth/roles'
 import { ObserverNotice } from '@/components/ObserverNotice'
@@ -24,6 +27,10 @@ import { useSchoolName } from '@/hooks/useSchoolName'
 import { ChallanPrint } from '@/pages/fees/ChallanPrint'
 import { PhotoUpload } from '@/components/PhotoUpload'
 import { removeStudentPhoto, uploadStudentPhoto } from '@/lib/photos'
+import { LoginFunctionWarning } from '@/components/LoginFunctionWarning'
+import { DeleteRecord } from '@/components/DeleteRecord'
+import { FeeStatement, FeeStatementDoc } from '@/components/FeeStatement'
+import { studentDeleteBlockers, deleteStudent } from '@/lib/db'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 const FINANCE_ROLES: Role[] = ['owner', 'principal', 'admin_clerk', 'accountant']
@@ -60,12 +67,12 @@ export function StudentProfile({ studentId, onBack, onOpen }: { studentId: strin
   const role = profile?.role
   // canWrite() rather than `role !== 'readonly'` spelled out here: the scattered
   // form is how one screen keeps its Save button. The accountant exclusion is a
-  // separate rule — they handle money, not bio-data.
+  // separate rule. They handle money, not bio-data.
   const mayWrite = canWrite(role)
   const canEdit = !!role && ADMIN_ROLES.includes(role) && mayWrite && role !== 'accountant'
   const canStatus = !!role && APPROVER_ROLES.includes(role)
-  // Two different questions. An observer READS the fee ledger — that is the
-  // point of the role since 0059 — and takes no payment, waives no fine and
+  // Two different questions. An observer READS the fee ledger. That is the
+  // point of the role since 0059, and takes no payment, waives no fine and
   // proposes no discount.
   const canFinanceView = !!role && (FINANCE_ROLES.includes(role) || role === 'readonly')
   const canFinance = !!role && FINANCE_ROLES.includes(role) && mayWrite
@@ -78,7 +85,35 @@ export function StudentProfile({ studentId, onBack, onOpen }: { studentId: strin
 
   if (student.isLoading) return <p className="text-sm text-slate-500">Loading…</p>
   if (student.isError) return <p className="text-sm text-red-600">{(student.error as Error).message}</p>
-  const s = student.data!
+  /* A successful read that found NOBODY.
+   *
+   * This was `student.data!`, and the exclamation mark was the whole bug: the
+   * read succeeds, returns no row, and the next line asks null for its WhatsApp
+   * number. The page throws during render, which before the error boundary
+   * meant the entire application went white.
+   *
+   * It is not a rare case and it is about to get commoner, because a student
+   * can now be deleted: anybody holding the page open, or following a link from
+   * a message, arrives here after the row has gone. Row Level Security produces
+   * the same shape for a student belonging to another school. */
+  if (!student.data) {
+    return (
+      <div className="max-w-md">
+        <button onClick={onBack} className="text-sm text-brand-700 hover:underline">
+          &larr; Back to students
+        </button>
+        <div className="mt-4 rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="text-base font-semibold text-slate-900">This student is no longer here</h2>
+          <p className="mt-2 text-sm text-slate-600">
+            The record has been removed, or it belongs to a different school. Nothing
+            has been lost from anywhere else: fee receipts and registers keep their own
+            copies of what they recorded.
+          </p>
+        </div>
+      </div>
+    )
+  }
+  const s = student.data
   const cur = enroll.data?.[0]
   const wa = waLink(s.whatsapp || s.phone)
 
@@ -108,7 +143,7 @@ export function StudentProfile({ studentId, onBack, onOpen }: { studentId: strin
               <StatusBadge status={s.status} />
             </div>
             <div className="mt-0.5 text-sm text-slate-500">
-              GR {s.gr_no ?? '—'}{s.father_name ? ` · ${s.father_name}` : ''}
+              GR {s.gr_no ?? '-'}{s.father_name ? ` · ${s.father_name}` : ''}
               {cur ? ` · ${cur.class_name}${cur.section_name ? ` (${cur.section_name})` : ''}${cur.roll_no ? ` · Roll ${cur.roll_no}` : ''}` : ''}
             </div>
           </div>
@@ -145,7 +180,7 @@ export function StudentProfile({ studentId, onBack, onOpen }: { studentId: strin
             : cur
               ? <FeesTab studentId={studentId} student={s} enrollment={cur}
                           canApprove={canStatus} canCollect={canFinance} />
-              : <p className="text-sm text-slate-500">No current enrolment — nothing to bill yet.</p>
+              : <p className="text-sm text-slate-500">No current enrolment. Nothing to bill yet.</p>
         )}
         {tab === 'Attendance & Tests' && (
           cur
@@ -174,16 +209,23 @@ function StatusBadge({ status }: { status: string }) {
 /* Leaving, and coming back.
  *
  * This used to be a single "Strike off" button. student_status has four values,
- * and 'withdrawn' — a family moving city, which is the ORDINARY reason a child
- * leaves — could not be reached from anywhere in the app. So an ordinary
+ * and 'withdrawn'. A family moving city, which is the ORDINARY reason a child
+ * leaves: could not be reached from anywhere in the app. So an ordinary
  * departure was recorded as removal for non-payment or misconduct, which is
  * what goes in the register and what a parent would read on a leaving
  * certificate. It is a different thing and it needed its own door.
  */
 function StatusAction({ student }: { student: Student }) {
   const qc = useQueryClient()
+  const nav = useNavigate()
+  const { profile } = useAuth()
+  // The database refuses anyone else, so this only decides whether the button
+  // is worth showing. A clerk seeing a Remove that always fails is worse than
+  // not seeing one.
+  const mayDelete = !!profile && ['owner', 'principal'].includes(profile.role)
   const active = student.status === 'active'
   const [leaving, setLeaving] = useState(false)
+  const [removing, setRemoving] = useState(false)
   const [note, setNote] = useState<string | null>(null)
 
   const refresh = () => {
@@ -200,10 +242,25 @@ function StatusAction({ student }: { student: Student }) {
     <>
       <div className="flex flex-col items-end gap-1">
         {active ? (
-          <button onClick={() => setLeaving(true)}
-            className="rounded border border-red-300 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50">
-            Record leaving
-          </button>
+          <div className="flex gap-2">
+            <button onClick={() => setLeaving(true)}
+              className="rounded border border-red-300 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50">
+              Record leaving
+            </button>
+            {/* Two different actions that people confuse, kept side by side and
+                worded so the difference is obvious. "Record leaving" is for a
+                child who really left and keeps every receipt and register
+                intact. "Remove" is for a row typed in by mistake, and the
+                dialog refuses the moment anything is attached to it. Only an
+                owner or principal sees it; the database refuses anyone else
+                anyway. */}
+            {mayDelete && (
+              <button onClick={() => setRemoving(true)}
+                className="rounded border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50">
+                Remove
+              </button>
+            )}
+          </div>
         ) : (
           <button onClick={() => back.mutate()} disabled={back.isPending}
             className="rounded border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60">
@@ -226,6 +283,22 @@ function StatusAction({ student }: { student: Student }) {
         <LeavingDialog student={student} onClose={() => setLeaving(false)}
           onDone={(msg) => { setLeaving(false); setNote(msg); refresh() }} />
       )}
+      {removing && (
+        <DeleteRecord
+          kind="student"
+          name={student.full_name}
+          blockers={() => studentDeleteBlockers(student.id)}
+          remove={() => deleteStudent(student.id)}
+          onDeleted={() => { setRemoving(false); nav('/students') }}
+          onCancel={() => setRemoving(false)}
+          archive={{
+            label: 'Record them as having left instead',
+            explain: 'Their fee history, attendance and results stay exactly as they '
+                   + 'are, and they come off the active roll.',
+            run: () => { setRemoving(false); setLeaving(true) },
+          }}
+        />
+      )}
     </>
   )
 }
@@ -234,12 +307,12 @@ const LEAVING_KINDS = [
   {
     value: 'withdrawn',
     label: 'Withdrawn',
-    blurb: 'The family chose to leave — moved city, changed school, any ordinary reason.',
+    blurb: 'The family chose to leave: moved city, changed school, any ordinary reason.',
   },
   {
     value: 'struck_off',
     label: 'Struck off',
-    blurb: 'The school removed them — long non-payment, or a disciplinary decision.',
+    blurb: 'The school removed them: long non-payment, or a disciplinary decision.',
   },
   {
     value: 'graduated',
@@ -304,7 +377,7 @@ function LeavingDialog({ student, onClose, onDone }: {
           <ul className="mt-1 space-y-1">
             <li>• stop next month&rsquo;s challan for this child</li>
             <li>• take them off your student count, so they stop using up your plan</li>
-            <li>• keep every past record — fees already billed, payments, attendance and marks</li>
+            <li>• keep every past record: fees already billed, payments, attendance and marks</li>
           </ul>
           <p className="mt-2 text-slate-500">
             Anything still owed on their last day stays owed and stays on the arrears
@@ -356,7 +429,7 @@ function Overview({
   })
 
   // Which family this student bills under. Needed to tell a sibling who shares
-  // the family from one who only shares a father's name — before migration 0036
+  // the family from one who only shares a father's name: before migration 0036
   // every child had a family to themselves, so "linked" meant nothing to the
   // money, and any student admitted before then is still in that state.
   const myFamily = useQuery({
@@ -387,7 +460,7 @@ function Overview({
           <L label="Mother's name"><input value={f.mother_name ?? ''} onChange={(e) => upd('mother_name', e.target.value)} className={FIELD} /></L>
           <L label="Gender">
             <select value={f.gender ?? ''} onChange={(e) => upd('gender', e.target.value)} className={FIELD}>
-              <option value="">—</option>{GENDERS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
+              <option value="">-</option>{GENDERS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
             </select>
           </L>
           <L label="Date of birth"><input type="date" max={todayISO()} value={f.dob ?? ''} onChange={(e) => upd('dob', e.target.value)} className={FIELD} /></L>
@@ -512,7 +585,7 @@ function Overview({
               it literally: fn_link_students had a wrapper in db.ts that nothing
               called after the admission form, so a sibling admitted a year later
               could never be linked to the child already here. The school could
-              UNLINK from this card and not link — which is the wrong half of the
+              UNLINK from this card and not link, which is the wrong half of the
               pair to have shipped. */}
           {canEdit && <AddSibling studentId={student.id} />}
         </div>
@@ -531,14 +604,14 @@ function Overview({
  * and every portal read refused. This panel is the missing link.
  *
  * It lives on the student profile rather than in Settings because that is where
- * the school is already standing when a father asks for access — looking at his
+ * the school is already standing when a father asks for access: looking at his
  * child. Access is granted to the FAMILY, so it covers every sibling at once.
  */
 /**
  * Link a sibling or relative to this child, after admission.
  *
  * WHY THIS WAS MISSING AND WHY IT MATTERS. The admission form can record links,
- * and this card could REMOVE one — so the only half of the pair that shipped was
+ * and this card could REMOVE one, so the only half of the pair that shipped was
  * the destructive one. A second child admitted next year, or a link the clerk
  * skipped in the rush of admission day, could never be added. And the links are
  * not decoration: the family sheet, the sibling discount and the "possible
@@ -547,7 +620,7 @@ function Overview({
  * LINKING IS NOT THE SAME AS SHARING A BILL, and the note says so. A link records
  * a relationship; joining a FAMILY is what makes one payment cover both children.
  * Conflating them is how a school links two brothers, expects one challan, and
- * gets two — so the button that does the other thing is right there on the same
+ * gets two, so the button that does the other thing is right there on the same
  * row, which is where it was already.
  */
 function AddSibling({ studentId }: { studentId: string }) {
@@ -634,7 +707,7 @@ function AddSibling({ studentId }: { studentId: string }) {
           </div>
           <p className="mt-2 text-xs text-slate-500">
             This records the relationship. To make ONE payment cover both children, use
-            "Put in one family" on the row it adds — a link on its own does not
+            "Put in one family" on the row it adds. A link on its own does not
             merge the bills.
           </p>
         </>
@@ -710,7 +783,7 @@ function ParentAccess({ familyId, canEdit }: { familyId: string | null; canEdit:
       // Shown once, deliberately: the password is not stored anywhere we can
       // read back, so if the clerk does not write it down now it has to be
       // reset. Saying so is better than a silent success.
-      setDone(`${r.email} — password: ${password}`)
+      setDone(`${r.email}: password: ${password}`)
       setFullName(''); setEmail(''); setPassword(''); setOpen(false)
       qc.invalidateQueries({ queryKey: ['familyParents', familyId] })
     },
@@ -719,6 +792,43 @@ function ParentAccess({ familyId, canEdit }: { familyId: string | null; canEdit:
   const revoke = useMutation({
     mutationFn: (profileId: string) => unlinkParent(profileId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['familyParents', familyId] }),
+  })
+
+  /**
+   * Parent logins that belong to no family, and attaching one here.
+   *
+   * THE REPAIR HAS TO EXIST, and the first version of this change did not check
+   * that it did. createParentLogin creates the login and then links it, in two
+   * awaits; when the second fails the login exists with no family. 0104 made
+   * that state visible on the Staff screen, and the wording there told the
+   * office to "add the parent again from the child's profile", which DOES NOT
+   * WORK: the edge function calls auth.admin.createUser, and a second call with
+   * the same address fails because the address is taken. So the advice was a
+   * loop, and the school's only remaining option was to delete the login and
+   * start over with the parent's password changed underneath them.
+   *
+   * fn_link_parent is the actual repair and had no caller anywhere in the app.
+   * It has one now, on the screen where somebody is already looking at the
+   * child whose parent cannot get in.
+   *
+   * Owner and principal only, because listing logins reads auth.users and is
+   * gated to them. A clerk sees the rest of this panel and not this part, which
+   * is right: a clerk can create a parent login, and repairing a broken one is
+   * an owner's job.
+   */
+  const orphans = useQuery({
+    queryKey: ['schoolLogins'],
+    queryFn: listSchoolLogins,
+    enabled: canEdit,
+    retry: false,
+  })
+  const loose = (orphans.data ?? []).filter((l) => l.role === 'parent')
+  const attach = useMutation({
+    mutationFn: (profileId: string) => linkParent(profileId, familyId!),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['familyParents', familyId] })
+      qc.invalidateQueries({ queryKey: ['schoolLogins'] })
+    },
   })
 
   const valid = /^\S+@\S+\.\S+$/.test(email.trim()) && password.length >= 6
@@ -758,9 +868,43 @@ function ParentAccess({ familyId, canEdit }: { familyId: string | null; canEdit:
         </ul>
       )}
 
+      {/* A parent login that belongs to no family. Attaching it here is the ONLY
+          repair: creating it again fails because the address is taken. */}
+      {canEdit && loose.length > 0 && (
+        <div className="mt-3 rounded border border-danger-200 bg-danger-50 p-2 text-xs text-danger-800">
+          <div className="font-medium">
+            {loose.length === 1
+              ? 'A parent login belongs to no family'
+              : `${loose.length} parent logins belong to no family`}
+          </div>
+          <p className="mt-0.5 text-danger-700">
+            They can sign in and see an empty page. It happens when a login is created and the
+            family link does not get written. If one of these is this family&rsquo;s parent, attach
+            it here: making it again will not work, because the address is already taken.
+          </p>
+          <ul className="mt-2 space-y-1">
+            {loose.map((l) => (
+              <li key={l.profile_id} className="flex items-center justify-between gap-2 rounded bg-white px-2 py-1">
+                <span className="min-w-0 truncate">
+                  <span className="font-medium text-slate-800">{l.full_name || '(no name)'}</span>
+                  <span className="ml-1.5 text-slate-500">{l.email}</span>
+                </span>
+                <button onClick={() => attach.mutate(l.profile_id)} disabled={attach.isPending}
+                  className="shrink-0 rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                  Attach to this family
+                </button>
+              </li>
+            ))}
+          </ul>
+          {attach.isError && (
+            <p className="mt-1 text-danger-700">{(attach.error as Error).message}</p>
+          )}
+        </div>
+      )}
+
       {done && (
         <div className="mt-3 rounded border border-money-200 bg-money-50 p-2 text-xs text-money-800">
-          <div className="font-medium">Login created — write this down now</div>
+          <div className="font-medium">Login created: write this down now</div>
           <div className="mt-0.5 break-all font-mono">{done}</div>
           <div className="mt-1 text-money-700">
             The password is not saved anywhere you can read it back. If it is lost the parent has to
@@ -778,6 +922,9 @@ function ParentAccess({ familyId, canEdit }: { familyId: string | null; canEdit:
 
       {canEdit && open && (
         <form className="mt-3 space-y-2" onSubmit={(e) => { e.preventDefault(); if (valid) create.mutate() }}>
+          {/* Parent logins are the exact case a stale create-teacher refuses,
+              so the warning belongs here more than anywhere else. */}
+          <LoginFunctionWarning />
           <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Parent's name"
             className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-brand-500 focus:outline-none" />
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="father@example.com"
@@ -804,7 +951,7 @@ function ParentAccess({ familyId, canEdit }: { familyId: string | null; canEdit:
 }
 
 // =============================================================================
-// Fees tab — monthly-fee header, month-by-month list, settle/waive, discounts
+// Fees tab: monthly-fee header, month-by-month list, settle/waive, discounts
 // =============================================================================
 type MonthState = 'paid' | 'partial' | 'unpaid' | 'unbilled' | 'deferred' | 'free'
 interface MonthRow {
@@ -826,6 +973,15 @@ function FeesTab({
   const payments = useQuery({ queryKey: ['payments', studentId], queryFn: () => getStudentPayments(studentId) })
   const monthlyFee = useQuery({ queryKey: ['monthlyFee', enrollment.enrollment_id], queryFn: () => getStudentMonthlyFee(enrollment.enrollment_id) })
   const discounts = useQuery({ queryKey: ['enrollmentDiscounts', enrollment.enrollment_id], queryFn: () => getEnrollmentDiscounts(enrollment.enrollment_id) })
+  // The statement behind the balance. Fetched with the tab rather than on
+  // demand: it is the answer to the question the tab is opened to ask, and a
+  // clerk with a parent at the counter should not have to press anything to
+  // reach it.
+  const ledger = useQuery({ queryKey: ['ledger', studentId], queryFn: () => getStudentLedger(studentId) })
+  // Refundable money the school is holding for this child. It was on the office
+  // Deposits screen, on the balance sheet as a liability, and on neither the
+  // child's page nor anything the family could open.
+  const deposit = useQuery({ queryKey: ['depositHeld', studentId], queryFn: () => getDepositHeld(studentId) })
 
   const [receipt, setReceipt] = useState<ReceiptData | null>(null)
   const feeSchoolName = useSchoolName()
@@ -843,6 +999,7 @@ function FeesTab({
   const [settle, setSettle] = useState(false)
   const [showDiscount, setShowDiscount] = useState(false)
   const [showActivity, setShowActivity] = useState(false)
+  const [printStatement, setPrintStatement] = useState(false)
   const [defer, setDefer] = useState<null | { invoiceId?: string; billMonthISO?: string; label: string }>(null)
   const [cancelCharge, setCancelCharge] =
     useState<null | { invoiceId: string; label: string; amount: number }>(null)
@@ -853,6 +1010,8 @@ function FeesTab({
     qc.invalidateQueries({ queryKey: ['payments', studentId] })
     qc.invalidateQueries({ queryKey: ['monthlyFee', enrollment.enrollment_id] })
     qc.invalidateQueries({ queryKey: ['enrollmentDiscounts', enrollment.enrollment_id] })
+    qc.invalidateQueries({ queryKey: ['ledger', studentId] })
+    qc.invalidateQueries({ queryKey: ['depositHeld', studentId] })
   }
 
   const net = monthlyFee.data?.net ?? 0
@@ -909,7 +1068,7 @@ function FeesTab({
             </div>
           )}
           {grossFee === 0 && !monthlyFee.isLoading && (
-            <p className="mt-1 text-xs text-amber-600">No monthly fee set for this class — set it in Settings → Fee structure.</p>
+            <p className="mt-1 text-xs text-amber-600">No monthly fee set for this class: set it in Settings → Fee structure.</p>
           )}
         </div>
         <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
@@ -917,6 +1076,12 @@ function FeesTab({
           <div className={`mt-1 text-2xl font-semibold ${bal > 0 ? 'text-red-600' : bal < 0 ? 'text-sky-600' : 'text-emerald-600'}`}>
             {balance.isLoading ? '…' : fmtPKR(bal)}
           </div>
+          {(deposit.data ?? 0) > 0 && (
+            <p className="mt-2 rounded bg-money-50 px-2.5 py-1.5 text-xs text-money-800">
+              Plus {fmtPKR(deposit.data ?? 0)} held as a refundable deposit. Not owed, and repayable
+              when the child leaves.
+            </p>
+          )}
           {canCollect && (
             <div className="mt-2 flex flex-wrap gap-2">
               <button onClick={() => setPay({ defaultAmount: bal > 0 ? bal : 0, note: '' })}
@@ -986,6 +1151,40 @@ function FeesTab({
         )}
       </div>
 
+      {/* The statement: how the balance above was arrived at.
+          Placed under the month list on purpose. The month list answers "which
+          months are outstanding", which is what a clerk taking money needs. The
+          statement answers "why is the total that number", which is what a
+          parent asks when the two do not look the same, and until 0098 the
+          product had no answer to it at all. */}
+      <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <div className="text-xs uppercase tracking-wide text-slate-500">Statement</div>
+            <p className="mt-0.5 text-xs text-slate-400">
+              Every charge, discount, late fee, adjustment and payment, in order.
+            </p>
+          </div>
+          {(ledger.data?.length ?? 0) > 0 && (
+            <button onClick={() => setPrintStatement(true)}
+              className="rounded border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50">
+              Print statement
+            </button>
+          )}
+        </div>
+        <div className="mt-3">
+          {ledger.isLoading ? (
+            <p className="text-sm text-slate-400">Loading…</p>
+          ) : ledger.isError ? (
+            <p className="rounded border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+              {(ledger.error as Error).message}
+            </p>
+          ) : (
+            <FeeStatement entries={ledger.data ?? []} balance={bal} showRecordedBy />
+          )}
+        </div>
+      </div>
+
       {/* Activity / ledger (collapsible) */}
       <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
         <button onClick={() => setShowActivity((v) => !v)} className="flex w-full items-center justify-between text-xs uppercase tracking-wide text-slate-500">
@@ -998,7 +1197,7 @@ function FeesTab({
             <tbody>
               {payments.data?.map((p) => (
                 <tr key={p.id} className="border-t border-slate-100">
-                  <td className="py-1.5">{p.receipt_no != null ? `#${p.receipt_no}` : '—'}</td>
+                  <td className="py-1.5">{p.receipt_no != null ? `#${p.receipt_no}` : '-'}</td>
                   <td>{fmtDate(p.created_at)}</td>
                   <td className={p.amount < 0 ? 'text-red-600' : ''}>{fmtPKR(p.amount)}</td>
                   <td>{PAYMENT_METHODS.find((m) => m.value === p.method)?.label ?? p.method}</td>
@@ -1050,6 +1249,28 @@ function FeesTab({
           onClose={() => setCancelCharge(null)}
           onDone={() => { setCancelCharge(null); refresh() }} />
       )}
+      {printStatement && (
+        <div className="fixed inset-0 z-50 overflow-auto bg-slate-900/40 p-4">
+          <div className="mx-auto max-w-3xl rounded-lg bg-white shadow-xl">
+            <FeeStatementDoc
+              id="fee-statement"
+              schoolName={feeSchoolName}
+              studentName={student.full_name}
+              grNo={student.gr_no}
+              className={enrollment.class_name}
+              entries={ledger.data ?? []}
+              balance={bal}
+              showRecordedBy
+            />
+            <div className="flex justify-end gap-2 border-t border-slate-200 p-3 print:hidden">
+              <button onClick={() => window.print()}
+                className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Print</button>
+              <button onClick={() => setPrintStatement(false)}
+                className="rounded border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
       {receipt && <Receipt data={receipt} onClose={() => setReceipt(null)} />}
     </div>
   )
@@ -1060,7 +1281,7 @@ function MonthLine({
 }: {
   row: MonthRow; enrollment: EnrollmentInfo
   onPay: () => void; onDelay: () => void; onUndoDefer?: () => void
-  /** Present only for a month that has actually been billed — there is no
+  /** Present only for a month that has actually been billed. There is no
    *  challan to reprint for a month the school has not issued one for. */
   onPrint?: () => void
   /** Present only for an owner or principal, and only while nothing has been
@@ -1106,8 +1327,8 @@ function MonthLine({
           <button onClick={onPrint} className="rounded border border-slate-300 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50">Print challan</button>
         )}
         {/* Last, and the only one in red. "Delay" and "Cancel" sit two buttons
-            apart and mean opposite things — one keeps the debt, the other says
-            it never existed — so the destructive one is the one that looks
+            apart and mean opposite things. One keeps the debt, the other says
+            it never existed, so the destructive one is the one that looks
             destructive and asks for a reason before it does anything. */}
         {onCancel && (
           <button onClick={onCancel}
@@ -1169,11 +1390,11 @@ function PaymentModal({
       </label>
       <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
         <input type="checkbox" className="h-4 w-4" checked={pending} onChange={(e) => setPending(e.target.checked)} />
-        Not cleared yet (pending — e.g. bank challan). Won’t count until verified.
+        Not cleared yet (pending: e.g. bank challan). Won’t count until verified.
       </label>
       {olderUnpaidWarning && !pending && (
         <p className="mt-3 rounded bg-amber-50 p-2 text-xs text-amber-700">
-          Older months are still unpaid — this payment clears the oldest dues first (standard accounting).
+          Older months are still unpaid. This payment clears the oldest dues first (standard accounting).
         </p>
       )}
       {m.isError && <p className="mt-2 text-sm text-red-600">{(m.error as Error).message}</p>}
@@ -1234,9 +1455,9 @@ function SettleModal({
         <>
           <label className="mt-3 block">
             <span className="text-sm text-slate-600">Reason for waiving (required)</span>
-            <input value={reason} onChange={(e) => setReason(e.target.value)} className={FIELD} placeholder="e.g. hardship — owner approved" />
+            <input value={reason} onChange={(e) => setReason(e.target.value)} className={FIELD} placeholder="e.g. hardship: owner approved" />
           </label>
-          <p className="mt-2 text-xs text-amber-600">A waiver writes off what the family owes — it is not income and won’t appear in collections. Owner/principal only.</p>
+          <p className="mt-2 text-xs text-amber-600">A waiver writes off what the family owes. It is not income and won’t appear in collections. Owner/principal only.</p>
         </>
       )}
       {m.isError && <p className="mt-2 text-sm text-red-600">{(m.error as Error).message}</p>}
@@ -1332,7 +1553,7 @@ function DeferModal({
   })
   return (
     <Modal title={`Delay ${label}`} onClose={onClose}>
-      <p className="text-sm text-slate-600">The family still owes this month — the reminder is paused and the reason is logged.</p>
+      <p className="text-sm text-slate-600">The family still owes this month. The reminder is paused and the reason is logged.</p>
       <label className="mt-3 block">
         <span className="text-sm text-slate-600">Pay by (optional)</span>
         <input type="date" value={until} onChange={(e) => setUntil(e.target.value)} className={FIELD} />
@@ -1382,7 +1603,7 @@ function CancelChargeModal({
       <div className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
         <p className="font-medium">This says the family never owed {fmtPKR(amount)}.</p>
         <p className="mt-1">
-          Use it for a challan raised by mistake — the wrong month, the wrong class, a
+          Use it for a challan raised by mistake. The wrong month, the wrong class, a
           child who had already left. If the family <em>does</em> owe it and simply
           cannot pay yet, close this and use <strong>Delay</strong> instead.
         </p>
@@ -1398,7 +1619,7 @@ function CancelChargeModal({
           placeholder="e.g. generated for Class 5 by mistake" />
       </label>
       {tooShort && reason.length > 0 && (
-        <p className="mt-1 text-xs text-slate-500">A few words at least — somebody reads this months later.</p>
+        <p className="mt-1 text-xs text-slate-500">A few words at least: somebody reads this months later.</p>
       )}
       {m.isError && <p className="mt-2 text-sm text-red-600">{(m.error as Error).message}</p>}
       <div className="mt-4 flex gap-2">
@@ -1467,7 +1688,7 @@ function AttendanceTestsTab({ student, enrollment }: { student: Student; enrollm
       {/* Attendance stats for the month */}
       <div>
         <div className="flex flex-wrap items-baseline gap-2">
-          <div className="text-3xl font-semibold text-slate-800">{d?.present_pct == null ? '—' : `${d.present_pct}%`}</div>
+          <div className="text-3xl font-semibold text-slate-800">{d?.present_pct == null ? '-' : `${d.present_pct}%`}</div>
           <div className="text-sm text-slate-500">
             present over {d?.marked_days ?? 0} marked day{(d?.marked_days ?? 0) === 1 ? '' : 's'} · {monthLabel(effMonth)}{isCurrent ? ' (so far)' : ''}
           </div>
@@ -1505,15 +1726,15 @@ function AttendanceTestsTab({ student, enrollment }: { student: Student; enrollm
 }
 
 function TestRow({ t }: { t: MonthTestRow }) {
-  const marksText = t.is_absent ? 'Absent' : t.marks == null ? '—' : `${t.marks} / ${t.max_marks}`
+  const marksText = t.is_absent ? 'Absent' : t.marks == null ? '-' : `${t.marks} / ${t.max_marks}`
   return (
     <tr className="border-t border-slate-100">
       <td className="py-1.5">{t.title}{t.subject_name ? <span className="text-slate-400"> · {t.subject_name}</span> : ''}</td>
       <td>{fmtDate(t.assessment_date)}</td>
       <td>{marksText}</td>
-      <td className="text-slate-500">{t.class_avg == null ? '—' : `${t.class_avg} / ${t.max_marks}`}</td>
+      <td className="text-slate-500">{t.class_avg == null ? '-' : `${t.class_avg} / ${t.max_marks}`}</td>
       <td>
-        {t.is_absent ? <span className="text-slate-400">—</span>
+        {t.is_absent ? <span className="text-slate-400">-</span>
           : t.marks == null ? <span className="text-slate-400">Not marked</span>
           : t.passed ? <span className="text-emerald-600">Pass</span>
           : <span className="text-red-600">Fail</span>}
@@ -1547,7 +1768,7 @@ function StudentMonthReport({ data, onClose }: { data: MonthReportData; onClose:
 
         <div className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">Attendance</div>
         <div className="mt-1 text-sm text-slate-700">
-          {d?.present_pct == null ? '—' : `${d.present_pct}% present`} over {d?.marked_days ?? 0} marked days ·
+          {d?.present_pct == null ? '-' : `${d.present_pct}% present`} over {d?.marked_days ?? 0} marked days ·
           {' '}P {d?.present ?? 0} · A {d?.absent ?? 0} · L {d?.leave ?? 0} · Lt {d?.late ?? 0} · ½ {d?.half_day ?? 0}
         </div>
 
@@ -1562,9 +1783,9 @@ function StudentMonthReport({ data, onClose }: { data: MonthReportData; onClose:
                 <tr key={t.assessment_id} className="border-b border-slate-100">
                   <td className="py-1 pr-2">{t.title}{t.subject_name ? ` · ${t.subject_name}` : ''}</td>
                   <td className="py-1 pr-2">{fmtDate(t.assessment_date)}</td>
-                  <td className="py-1 pr-2">{t.is_absent ? 'Absent' : t.marks == null ? '—' : `${t.marks}/${t.max_marks}`}</td>
-                  <td className="py-1 pr-2">{t.class_avg == null ? '—' : `${t.class_avg}/${t.max_marks}`}</td>
-                  <td className="py-1">{t.is_absent ? '—' : t.marks == null ? '—' : t.passed ? 'Pass' : 'Fail'}</td>
+                  <td className="py-1 pr-2">{t.is_absent ? 'Absent' : t.marks == null ? '-' : `${t.marks}/${t.max_marks}`}</td>
+                  <td className="py-1 pr-2">{t.class_avg == null ? '-' : `${t.class_avg}/${t.max_marks}`}</td>
+                  <td className="py-1">{t.is_absent ? '-' : t.marks == null ? '-' : t.passed ? 'Pass' : 'Fail'}</td>
                 </tr>
               ))}
             </tbody>
@@ -1624,7 +1845,7 @@ function Info({ label, value }: { label: string; value: string | null }) {
   return (
     <div className="flex justify-between gap-4">
       <dt className="text-slate-500">{label}</dt>
-      <dd className="text-right text-slate-700">{value || '—'}</dd>
+      <dd className="text-right text-slate-700">{value || '-'}</dd>
     </div>
   )
 }
@@ -1634,7 +1855,7 @@ function Info({ label, value }: { label: string; value: string | null }) {
  *
  * This exists because the old panel showed "Qabi e Momin · Brother" and stopped
  * there, which read as "these two are one family" while the billing engine had
- * them completely separate — the fees never pooled and nobody could tell from
+ * them completely separate. The fees never pooled and nobody could tell from
  * looking. The relationship and the money are two different facts, so the panel
  * now states the money one, and offers the fix when they disagree.
  */

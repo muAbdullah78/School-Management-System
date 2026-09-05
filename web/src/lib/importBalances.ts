@@ -1,4 +1,4 @@
-/** Header canonicalisation for the opening fee-balance importer — sibling of
+/** Header canonicalisation for the opening fee-balance importer: sibling of
  *  importStudents.ts. Maps the school's own headings ("Balance", "Arrears",
  *  "Outstanding", "Dues") to the canonical keys fn_import_opening_balances reads.
  *

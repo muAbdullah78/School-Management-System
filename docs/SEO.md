@@ -58,6 +58,12 @@ technical work is time, links and reputation, and those cannot be shipped.
 - **A generated sitemap** that cannot list a page which does not exist or miss
   one that does, and a `robots.txt` that names it at the live domain.
 - **A real 404 page** with links on it.
+- **A favicon Google can actually fetch**, which is a longer story than it
+  sounds. See the section below.
+- **Response headers** (`site/_headers`): a Content Security Policy, HSTS,
+  nosniff, a referrer policy, and no framing. Not a ranking factor, but the
+  site now renders reviews written by other people, and that is the one place
+  a stored script could ever have reached another school owner's browser.
 - **Clean extensionless URLs**, canonical to the exact URL Cloudflare serves
   with a 200 and no redirect.
 - **Internal linking**: every page links to its siblings and to pricing, and no
@@ -65,6 +71,81 @@ technical work is time, links and reputation, and those cannot be shipped.
 - **Speed and mobile**, which are ranking factors and were already fine: static
   HTML, one small stylesheet, no blocking JavaScript, no web fonts on the
   product pages, verified with no horizontal overflow from 320px up.
+
+### Why the search result showed a grey globe, and what fixed it
+
+This is worth reading once, because the page looked completely correct.
+
+Every page carried this in its head:
+
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,...">
+
+The tab icon worked in the browser, so nothing looked wrong. But **Google
+fetches the favicon in a separate request from the page**, which means it needs
+an address to ask for, and a `data:` URI is not an address. There was nothing
+to fetch. Google's other route is `/favicon.ico` at the root of the domain, and
+that file did not exist either. Both paths dead-ended, and the grey globe is
+what Google shows when they do.
+
+What is there now, generated from one file (`site-src/icon.svg`) by
+`node scripts/build-icons.mjs`:
+
+| File | What it is for |
+| --- | --- |
+| `/favicon.ico` | The address Google tries when a page declares nothing. Contains 16, 32 and 48 pixel versions. |
+| `/icon.svg` | Modern browser tabs, and the logo in the site's own header and footer. |
+| `/icon-48.png`, `/icon-96.png`, `/icon-192.png` | For Google. It asks for a square whose side is a multiple of 48. |
+| `/icon-512.png` | Android home screen, and the `logo` in the structured data. |
+| `/icon-maskable-512.png` | Android again. It crops an icon to a circle 80% of the width, so this one has the mark shrunk to fit inside that. |
+| `/apple-touch-icon.png` | iPhone and iPad home screens. Square and opaque, because iOS puts a transparent corner on black. |
+
+**Do not rename any of these.** Google caches a favicon against its URL, so a
+new filename means waiting for a recrawl before the icon changes.
+
+Three things to know about the timing and the traps:
+
+1. **It is not instant.** Google recrawls the favicon separately from the page,
+   and it usually takes days, sometimes a few weeks. There is no "submit
+   favicon" button. Requesting indexing of the home page in Search Console is
+   the closest thing, and it does help.
+2. **Cloudflare Bot Fight Mode can break it.** Google fetches the favicon with
+   its own crawler, and Bot Fight Mode has been known to challenge it, which
+   looks to Google like the file is unavailable. If the icon has not appeared
+   after a few weeks, open Cloudflare, go to **Security**, and check whether
+   Bot Fight Mode is on. If it is, turn it off, or add an exception, and give
+   it another fortnight.
+3. **`robots.txt` must not block it.** Ours allows everything, and
+   `scripts/check-site-seo.py` fails the build if a `Disallow` ever covers the
+   icon files, because that is a silent way back to the grey globe.
+
+The mark itself changed slightly. It is now the graduation cap that the app
+already used, in the brand indigo rather than the blue it was drawn in, and the
+gap between the cap and the base below it was widened. That gap used to be 7
+units out of 512, which is a fifth of a pixel at the 16 pixel size Google
+renders, so it closed and the whole mark became a white blob. The website's
+header, the app, the Android and iPhone icons and the search result are now all
+the same picture from the same file.
+
+### Telling Google that your other listings are you
+
+`site-src/data/profiles.json` holds a `sameAs` list. This is how you tell Google
+that the Google Business Profile, the G2 listing, the Capterra listing and this
+website are **one company** rather than four similarly named things. It is one
+of the stronger signals behind a Knowledge Panel.
+
+It ships empty on purpose. A `sameAs` pointing at a listing that does not exist
+is a claim Google can check and find false, so a guess is worse than nothing.
+
+To fill it in: open each listing in a browser, copy the address bar exactly,
+and paste it into the list. Then run `python3 scripts/build-site.py` and
+re-upload `site/`. Leave out anything still "in review" and add it once you can
+open it yourself. The build refuses any entry that is not an `https://` URL, so
+a typo stops the build instead of shipping.
+
+The same file holds the public contact address, which goes into the structured
+data. It is separate from `config.js` because `config.js` is read by the
+browser at runtime, and structured data has to already be in the HTML that
+Google fetches.
 
 ### A note on FAQ rich results
 
@@ -110,13 +191,34 @@ Once it exists, a search for your business name shows a panel with your phone,
 your website and your reviews, and it is the only reliable route to stars beside
 your name. See the note on stars below.
 
-### 3. Bing Webmaster Tools, ten minutes
+### 3. Make sure there is only one address, five minutes
+
+Check what `www.theschoolmanager.site` does. Type it into a browser.
+
+- If it does not resolve at all, there is nothing to do.
+- If it loads the site and the address bar **stays** on `www.`, you have the
+  same site at two addresses. Google treats those as two sites and has to guess
+  which one is real, and any links people give you get split between them.
+
+The fix is a redirect, not a second deployment. In Cloudflare, open
+**Rules**, then **Redirect Rules**, and create one: when the hostname equals
+`www.theschoolmanager.site`, do a **301 permanent** redirect to the same path
+on `theschoolmanager.site`.
+
+Every canonical tag on the site already points at the version without `www.`,
+which limits the damage either way, but a canonical is a hint and a 301 is not.
+
+While you are there, the same is true of `http://`. Cloudflare's **Always Use
+HTTPS** setting handles it, and the site now sends an HSTS header as well, so a
+browser that has visited once will not try `http://` again for a year.
+
+### 4. Bing Webmaster Tools, ten minutes
 
 `bing.com/webmasters`. It can import everything from Search Console in one
 click. Bing is a small share of Pakistani search, but it is ten minutes and it
 also feeds some AI assistants.
 
-### 4. Links, slowly and honestly
+### 5. Links, slowly and honestly
 
 Ranking beyond the first month is mostly about who links to you. In order of
 value for your business:
@@ -137,7 +239,7 @@ value for your business:
 **Never buy links.** Paid link schemes are the one thing Google acts on
 manually, and a manual action is much harder to recover from than a bad ranking.
 
-### 5. What to measure, monthly
+### 6. What to measure, monthly
 
 In Search Console, look at **Performance** and write down four numbers:
 

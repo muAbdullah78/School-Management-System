@@ -26,8 +26,8 @@ export interface PendingAttendance {
 /** Drop batches that belong to a different school than the one signed in now.
  *
  *  The queue lives in localStorage on a shared office computer, so a batch can
- *  outlive the login that made it. Its enrolment ids would be meaningless — and
- *  rejected by the server — under the next login, leaving a queue that can
+ *  outlive the login that made it. Its enrolment ids would be meaningless, and
+ *  rejected by the server: under the next login, leaving a queue that can
  *  never drain and an error the user cannot act on. */
 export function ownedBy(list: PendingAttendance[], schoolId: string): PendingAttendance[] {
   return list.filter((e) => e.school_id === schoolId)
@@ -92,7 +92,7 @@ export function subscribe(l: Listener): () => void { listeners.add(l); return ()
 
 /** Try to send every queued batch belonging to the signed-in school. Successful
  *  ones are removed; failures stay for the next attempt. Batches belonging to a
- *  different school are discarded — see ownedBy(). `send` and `schoolId` are
+ *  different school are discarded: see ownedBy(). `send` and `schoolId` are
  *  injectable for testing. */
 export async function flushQueue(
   send: (date: string, marks: PendingMark[]) => Promise<unknown> = markAttendance,

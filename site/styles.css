@@ -240,7 +240,7 @@ main:focus { outline: none; }
   font-weight: 700; font-size: 16.5px; letter-spacing: -0.015em;
   color: var(--ink); text-decoration: none;
 }
-.brand svg { display: block; }
+.brand svg, .brand img { display: block; }
 .nav__links { display: flex; margin-left: auto; }
 .nav__links ul { display: flex; gap: 4px; list-style: none; margin: 0; padding: 0; align-items: center; }
 .nav__links a {

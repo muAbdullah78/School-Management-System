@@ -13,7 +13,7 @@ import { fmtPKR, fmtDate, todayISO } from '@/lib/format'
  *
  * fn_fee_increment shipped with the fee-operations work and had a wrapper in
  * db.ts that NOTHING CALLED. So the one bulk fee operation every Pakistani
- * school performs — "everything up 10% from April" — had to be done by hand,
+ * school performs: "everything up 10% from April": had to be done by hand,
  * class by class and head by head, in the Fee Structure grid. Twelve classes and
  * five heads is sixty edits, done in one sitting, by somebody who will lose
  * count. That is not a missing convenience; it is the reason a school ends the
@@ -26,14 +26,14 @@ import { fmtPKR, fmtDate, todayISO } from '@/lib/format'
  *
  * WHAT THE PREVIEW IS FOR is reading the FROM column. A school that has already
  * raised fees once this year, or that set one class's tuition by hand, sees it
- * here — and "from 4,500 to 4,950" against a class the principal thought was on
+ * here, and "from 4,500 to 4,950" against a class the principal thought was on
  * 4,000 is the moment to stop, not after sixty rows have been written.
  *
  * IT DOES NOT TOUCH CHALLANS ALREADY RAISED. fee_structures is versioned by
  * effective_from, and fn_student_monthly_fee reads the row in force on the day
  * it bills. So a challan for August, issued in August, keeps the August amount
  * even after an increase dated April is entered in September. The screen says so
- * out loud, because the opposite belief — that this reprices history — is the
+ * out loud, because the opposite belief. That this reprices history: is the
  * reason a principal would be afraid to use it.
  */
 export function FeeIncrement() {
@@ -122,7 +122,7 @@ export function FeeIncrement() {
                 <option key={s.id} value={s.id}>
                   {s.name}
                   {s.is_current ? ' (current)' : ''}
-                  {s.is_closed ? ' — closed' : ''}
+                  {s.is_closed ? ': closed' : ''}
                 </option>
               ))}
             </select>
@@ -163,7 +163,7 @@ export function FeeIncrement() {
           <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
             {mode === 'percent'
               ? 'Each amount is multiplied and rounded to the nearest rupee.'
-              : 'The same number of rupees is added to every amount selected — a flat '
+              : 'The same number of rupees is added to every amount selected. A flat '
                 + 'increase hits a Rs 1,500 charge much harder than a Rs 6,000 one.'}
             {' '}To REDUCE a fee, set the new amount directly in Fee Structure; this
             screen only goes up.
@@ -211,7 +211,7 @@ export function FeeIncrement() {
             tone="money"
             icon={<IconCheck />}
             // Only ever enabled by a preview that was produced from the form as
-            // it stands now — change() clears it on every keystroke.
+            // it stands now: change() clears it on every keystroke.
             disabled={!preview || preview.changes === 0 || run.isPending}
             onClick={() => run.mutate(true)}
           >
@@ -243,13 +243,13 @@ export function FeeIncrement() {
       {(preview ?? applied) && (
         <Card>
           <CardTitle icon={preview ? <IconAlert /> : <IconCheck />}>
-            {preview ? 'Preview — nothing has been saved yet' : 'What changed'}
+            {preview ? 'Preview. Nothing has been saved yet' : 'What changed'}
           </CardTitle>
 
           {(preview ?? applied)!.changes === 0 ? (
             <p className="text-sm text-slate-500">
               Nothing matched. That session has no fee amounts set for the classes and
-              charges you chose — set them in Fee Structure first.
+              charges you chose: set them in Fee Structure first.
             </p>
           ) : (
             <>
@@ -268,7 +268,7 @@ export function FeeIncrement() {
               </div>
               {/* Per PUPIL, not per school: these are the amounts on the fee
                   structure, so summing them across classes gives the extra a
-                  single child in every class would pay — which is not a revenue
+                  single child in every class would pay, which is not a revenue
                   figure and must not be labelled as one. */}
               <p className="mt-2 text-xs text-slate-500">
                 The middle figure is the sum of the increases on the fee structure itself.

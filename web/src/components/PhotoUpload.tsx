@@ -5,7 +5,7 @@
  * reasoning, with the argument against each choice, is in docs/PHOTOS-DESIGN.md;
  * the four that shape this file:
  *
- *  * The upload starts the moment a file is chosen — no "confirm" step. The
+ *  * The upload starts the moment a file is chosen: no "confirm" step. The
  *    objection is obvious: pick the wrong file and the wrong face is on the
  *    record. What makes it safe is that the path is DERIVED from the pupil, so
  *    re-uploading overwrites in place. A wrong photo is one click from being the
@@ -38,8 +38,8 @@ export function PhotoUpload({
   /**
    * A signed URL for `path`, when the caller already has one.
    *
-   * Pass this on any screen showing MANY of these controls — a class photo
-   * sheet of forty, say — where one batched `signPaths` beats forty individual
+   * Pass this on any screen showing MANY of these controls. A class photo
+   * sheet of forty, say, where one batched `signPaths` beats forty individual
    * ones. Leave it undefined and the control signs its own, which is right for
    * a single profile page.
    */
@@ -205,7 +205,7 @@ export function PhotoUpload({
           ? <p className="max-w-xs text-xs text-red-600">{err}</p>
           : (
             <p className="max-w-xs text-xs text-slate-500">
-              JPEG, PNG or WebP. Taken on a phone is fine — it is resized automatically.
+              JPEG, PNG or WebP. Taken on a phone is fine. It is resized automatically.
             </p>
           )}
         {disabled && !err && (

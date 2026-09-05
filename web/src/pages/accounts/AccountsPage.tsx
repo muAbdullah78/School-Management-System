@@ -1,5 +1,5 @@
 /**
- * Accounts — money out, and the profit figure.
+ * Accounts: money out, and the profit figure.
  *
  * This is the screen the owner opens. Fee income is NOT editable here and
  * never will be: it is computed from receipts actually issued, so the income
@@ -9,6 +9,7 @@
  */
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { AskDialog } from '@/components/AskDialog'
 import {
   listExpenseCategories, createExpenseCategory, renameExpenseCategory,
   setExpenseCategoryActive,
@@ -83,7 +84,7 @@ export function AccountsPage() {
   const snap = useQuery({ queryKey: ['profitSnapshot'], queryFn: getProfitSnapshot })
   /* Wrapped in an arrow, not passed by reference. React Query calls queryFn with
      a context object, so `queryFn: listExpenseCategories` would hand that object
-     to the includeInactive parameter — truthy — and quietly list retired
+     to the includeInactive parameter: truthy, and quietly list retired
      categories in the picker. */
   const cats = useQuery({
     queryKey: ['expenseCategories'],
@@ -122,7 +123,7 @@ export function AccountsPage() {
     mutationFn: () =>
       recordExpense(Number(amount), category || null, spentOn, payee || undefined, method, note || undefined),
     onSuccess: (r) => {
-      setFlash(`Expense recorded — voucher #${r.voucher_no}`)
+      setFlash(`Expense recorded: voucher #${r.voucher_no}`)
       setAmount(''); setPayee(''); setNote('')
       refresh()
     },
@@ -131,23 +132,37 @@ export function AccountsPage() {
   const addIncome = useMutation({
     mutationFn: () => recordOtherIncome(Number(inAmount), source, spentOn, method, note || undefined),
     onSuccess: (r) => {
-      setFlash(`Income recorded — voucher #${r.voucher_no}`)
+      setFlash(`Income recorded: voucher #${r.voucher_no}`)
       setInAmount(''); setSource(''); setNote('')
       refresh()
     },
   })
 
+  /**
+   * Which reversal is being confirmed, if any.
+   *
+   * Both of these asked window.prompt('Why is this being reversed?') and then
+   * dropped the answer on the floor if it was blank, with no message: the button
+   * appeared to do nothing. The dialog names the voucher and the amount, which a
+   * browser prompt cannot, and holds the entry open while the answer is typed.
+   */
+  const [reversing, setReversing] = useState<
+    | null
+    | { kind: 'expense'; id: string; amount: number; what: string }
+    | { kind: 'income'; id: string; amount: number; what: string }
+  >(null)
+
   const undo = useMutation({
     mutationFn: (v: { id: string; reason: string }) => reverseExpense(v.id, v.reason),
-    onSuccess: () => { setFlash('Expense reversed'); refresh() },
+    onSuccess: () => { setFlash('Expense reversed'); setReversing(null); refresh() },
   })
 
   // The twin of `undo`, missing since 0030. fn_reverse_other_income had zero
-  // callers, so a mistyped income entry was permanent — the ledger is
+  // callers, so a mistyped income entry was permanent. The ledger is
   // append-only by design, so there was no edit path either.
   const undoIncome = useMutation({
     mutationFn: (v: { id: string; reason: string }) => reverseOtherIncome(v.id, v.reason),
-    onSuccess: () => { setFlash('Income reversed'); refresh() },
+    onSuccess: () => { setFlash('Income reversed'); setReversing(null); refresh() },
   })
 
   const catName = (id: string | null) =>
@@ -239,7 +254,7 @@ export function AccountsPage() {
               <ProfitRow s={snap.data.year} label="This year" />
               <p className="mt-4 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
                 Fee income is calculated from receipts actually issued. There is no way to
-                type it in — which is exactly why this figure is worth trusting.
+                type it in, which is exactly why this figure is worth trusting.
               </p>
             </Card>
           )}
@@ -302,7 +317,7 @@ export function AccountsPage() {
                         <td className="py-2 pr-3 tabular-nums text-slate-500">#{e.voucher_no}</td>
                         <td className="py-2 pr-3 text-slate-600">{e.spent_on}</td>
                         <td className="py-2 pr-3">{catName(e.category_id)}</td>
-                        <td className="py-2 pr-3 text-slate-600">{e.payee ?? '—'}</td>
+                        <td className="py-2 pr-3 text-slate-600">{e.payee ?? '-'}</td>
                         <td className={`py-2 pr-3 text-right tabular-nums font-medium ${
                           e.amount < 0 ? 'text-money-700' : 'text-slate-800'}`}>
                           {money(e.amount)}
@@ -311,10 +326,10 @@ export function AccountsPage() {
                           {e.amount > 0 && !e.reversal_of && (
                             <button
                               className="text-xs text-danger-600 hover:underline"
-                              onClick={() => {
-                                const reason = window.prompt('Why is this being reversed?')
-                                if (reason && reason.trim()) undo.mutate({ id: e.id, reason: reason.trim() })
-                              }}
+                              onClick={() => setReversing({
+                                kind: 'expense', id: e.id, amount: e.amount,
+                                what: `voucher #${e.voucher_no} · ${catName(e.category_id)}`,
+                              })}
                             >
                               Reverse
                             </button>
@@ -338,7 +353,7 @@ export function AccountsPage() {
             )}
           </Card>
 
-          {/* Other income register — the mirror of the expense register above,
+          {/* Other income register. The mirror of the expense register above,
               and absent until now. Recording other income fed the totals while
               nothing ever listed the entries, so a Rs 50,000 typo for Rs 5,000
               of hall rent could not be found, let alone reversed. */}
@@ -372,12 +387,9 @@ export function AccountsPage() {
                           {i.amount > 0 && !i.reversal_of && (
                             <button
                               className="text-xs text-danger-600 hover:underline"
-                              onClick={() => {
-                                const reason = window.prompt('Why is this being reversed?')
-                                if (reason && reason.trim()) {
-                                  undoIncome.mutate({ id: i.id, reason: reason.trim() })
-                                }
-                              }}
+                              onClick={() => setReversing({
+                                kind: 'income', id: i.id, amount: i.amount, what: i.source,
+                              })}
                             >
                               Reverse
                             </button>
@@ -413,14 +425,14 @@ export function AccountsPage() {
                      onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))}
                      placeholder="0" className={`${inputClass} text-lg font-semibold tabular-nums`} />
             </Field>
-            <Field label="Category" hint="Salaries go here too — that keeps profit honest without a payroll module">
+            <Field label="Category" hint="Salaries go here too. That keeps profit honest without a payroll module">
               <select value={category} onChange={(e) => setCategory(e.target.value)} className={inputClass}>
                 <option value="">Uncategorised</option>
                 {cats.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
               {/* Right here, not in Settings. The moment a school needs a new
                   category is the moment it is typing an expense that does not fit
-                  one — and a screen that makes them abandon the entry, navigate
+                  one, and a screen that makes them abandon the entry, navigate
                   away and come back is a screen that trains them to pick
                   "Other". Which is how the by-category report became useless. */}
               <ManageCategories />
@@ -465,7 +477,7 @@ export function AccountsPage() {
         <Card className="max-w-xl">
           <CardTitle icon={<IconWallet />}>Record non-fee income</CardTitle>
           <p className="mb-4 rounded-lg bg-due-50 px-3 py-2 text-xs text-due-800 ring-1 ring-due-100">
-            This is for money that is <b>not</b> a student fee — canteen rent, a van hire, a
+            This is for money that is <b>not</b> a student fee: canteen rent, a van hire, a
             book sale. Fee income comes from receipts and is never entered by hand.
           </p>
           <div className="space-y-3">
@@ -476,7 +488,7 @@ export function AccountsPage() {
             </Field>
             <Field label="Source">
               <input value={source} onChange={(e) => setSource(e.target.value)}
-                     placeholder="e.g. Canteen rent — August" className={inputClass} />
+                     placeholder="e.g. Canteen rent: August" className={inputClass} />
             </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Date">
@@ -501,6 +513,27 @@ export function AccountsPage() {
           </div>
         </Card>
       )}
+
+      {reversing && (
+        <AskDialog
+          title={reversing.kind === 'expense' ? 'Reverse this expense' : 'Reverse this income'}
+          intro={<>
+            {reversing.what} for <b>{money(reversing.amount)}</b>. The entry is kept and a contra
+            entry is written against it, so the books show what happened rather than hiding it.
+          </>}
+          reason={{ label: 'Reason for reversing', required: true, minLength: 4,
+                    hint: 'Read months later by somebody who was not here.',
+                    placeholder: reversing.kind === 'expense' ? 'e.g. entered twice' : 'e.g. wrong amount keyed' }}
+          confirmLabel="Reverse entry" tone="danger"
+          busy={undo.isPending || undoIncome.isPending}
+          error={((reversing.kind === 'expense' ? undo.error : undoIncome.error) as Error | null)?.message ?? null}
+          onCancel={() => setReversing(null)}
+          onSubmit={(v) => {
+            if (reversing.kind === 'expense') undo.mutate({ id: reversing.id, reason: v.reason })
+            else undoIncome.mutate({ id: reversing.id, reason: v.reason })
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -510,8 +543,8 @@ export function AccountsPage() {
  *
  * 0030 seeded eight and there was NO WAY to change them. A school whose real
  * costs include generator diesel, van fuel or a security guard filed all three
- * under "Other", and the by-category expense report — the one a proprietor opens
- * to ask where the money went — answered "Other: Rs 380,000".
+ * under "Other", and the by-category expense report. The one a proprietor opens
+ * to ask where the money went: answered "Other: Rs 380,000".
  *
  * NOTHING IS DELETED. expenses.category_id points at these rows, so removing one
  * would either fail on the foreign key or rewrite what a past voucher was filed
@@ -634,7 +667,7 @@ function ManageCategories() {
                 >
                   rename
                 </button>
-                {/* "Retire", never "delete" — and the label says which, because a
+                {/* "Retire", never "delete", and the label says which, because a
                     button labelled Delete that does not delete is worse than
                     either. */}
                 <button

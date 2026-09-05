@@ -15,13 +15,13 @@ export interface NavItem {
  * the separation-of-duties model; the database enforces it for real via RLS.
  *
  * ON `readonly`: it appears in most lists here, because since 0059 it can read
- * what those screens show and the role exists for oversight — a trustee, an
+ * what those screens show and the role exists for oversight. A trustee, an
  * auditor, the proprietor's second-in-command. It is kept OUT of two kinds of
  * module on purpose:
  *
  *   * Settings, which is configuration rather than information.
  *   * Attendance, Tests and WhatsApp, which are *doing* screens with no reading
- *     to offer — an observer sees attendance through Reports -> Attendance
+ *     to offer. An observer sees attendance through Reports -> Attendance
  *     Register instead, which is a report rather than a marking grid.
  *
  * Every screen it can reach hides its write controls behind `canWrite(role)`,
@@ -41,7 +41,7 @@ export const NAV: NavItem[] = [
   { path: '/staff', label: 'Staff', roles: ['owner', 'principal', 'admin_clerk', 'readonly'], blurb: 'Staff records and the link to teacher logins.' },
   { path: '/birthdays', label: 'Birthdays', roles: ['owner', 'principal', 'admin_clerk', 'class_teacher', 'readonly'], blurb: "Children and staff with a birthday today or soon, with a WhatsApp wish." },
   { path: '/enquiries', label: 'Enquiries', roles: ['owner', 'principal', 'admin_clerk', 'readonly'], blurb: 'Every parent who asked about admission, and who is still waiting for a call back.' },
-  { path: '/certificates', label: 'Certificates', roles: ['owner', 'principal', 'admin_clerk', 'readonly'], blurb: 'Leaving certificate, character certificate, bonafide, ID cards — with serial tracking.' },
+  { path: '/certificates', label: 'Certificates', roles: ['owner', 'principal', 'admin_clerk', 'readonly'], blurb: 'Leaving certificate, character certificate, bonafide, ID cards: with serial tracking.' },
   { path: '/reports', label: 'Reports', roles: ['owner', 'principal', 'accountant', 'readonly'], blurb: 'Student, class, financial and staff reports; PDF/Excel export.' },
   { path: '/settings', label: 'Settings', roles: ['owner', 'principal'], blurb: 'School profile & branding, sessions, classes, fee structure, users & roles, data export.' },
 ]

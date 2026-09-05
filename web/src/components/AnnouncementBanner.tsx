@@ -17,7 +17,7 @@ const SEEN_KEY = 'sms.announcements.dismissed'
  *
  * Dismissal is per BROWSER and per announcement id, in localStorage. Not in the
  * database: an "I have read it" table would be a row per user per notice, and
- * the question it answers — did they read it — is one localStorage cannot honestly
+ * the question it answers, did they read it, is one localStorage cannot honestly
  * answer either. What it can do is stop nagging the same person, which is all
  * this needs.
  *

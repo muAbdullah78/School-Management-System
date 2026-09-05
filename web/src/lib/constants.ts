@@ -1,4 +1,4 @@
-/** Payment methods — values must match the `payment_method` enum in the DB. */
+/** Payment methods: values must match the `payment_method` enum in the DB. */
 export const PAYMENT_METHODS: { value: string; label: string }[] = [
   { value: 'cash', label: 'Cash' },
   { value: 'bank_challan', label: 'Bank Challan' },
@@ -16,7 +16,7 @@ export const INVOICE_STATUS_LABELS: Record<string, string> = {
   void: 'Void',
 }
 
-/** Payment clearance state — `status` on the payments row. */
+/** Payment clearance state: `status` on the payments row. */
 export const PAYMENT_STATUS_LABELS: Record<string, string> = {
   verified: 'Cleared',
   pending: 'Pending clearance',
@@ -30,7 +30,7 @@ export const RELATIONS: string[] = [
 ]
 
 /**
- * Attendance statuses — `value` must match the `attendance_status` enum in the DB.
+ * Attendance statuses: `value` must match the `attendance_status` enum in the DB.
  * `on`/`off` are the Tailwind classes for a selected vs. unselected toggle chip;
  * `key` is the single-key keyboard shortcut for fast marking.
  */
@@ -53,14 +53,14 @@ export const ATTENDANCE_LABELS: Record<string, string> = Object.fromEntries(
   ATTENDANCE_STATUSES.map((s) => [s.value, s.label]),
 )
 
-/** Gender options — values must match the `gender` enum in the DB. */
+/** Gender options: values must match the `gender` enum in the DB. */
 export const GENDERS: { value: string; label: string }[] = [
   { value: 'male', label: 'Male' },
   { value: 'female', label: 'Female' },
   { value: 'other', label: 'Other' },
 ]
 
-/** Discount types — values must match the `discount_type` enum in the DB. */
+/** Discount types: values must match the `discount_type` enum in the DB. */
 export const DISCOUNT_TYPES: { value: string; label: string }[] = [
   { value: 'sibling', label: 'Sibling' },
   { value: 'merit', label: 'Merit' },
@@ -73,7 +73,7 @@ export const DISCOUNT_STATUS_LABELS: Record<string, string> = {
   pending: 'Pending', approved: 'Approved', rejected: 'Rejected', revoked: 'Revoked',
 }
 
-/** Student status — values must match the `student_status` enum in the DB. */
+/** Student status: values must match the `student_status` enum in the DB. */
 export const STUDENT_STATUS_LABELS: Record<string, string> = {
   active: 'Active',
   struck_off: 'Struck off',
@@ -81,7 +81,7 @@ export const STUDENT_STATUS_LABELS: Record<string, string> = {
   graduated: 'Graduated',
 }
 
-/** Exam term types — values must match the `term_type` enum in the DB. */
+/** Exam term types: values must match the `term_type` enum in the DB. */
 export const TERM_TYPES: { value: string; label: string }[] = [
   { value: 'first', label: 'First Term' },
   { value: 'mid', label: 'Mid Term' },
@@ -91,7 +91,7 @@ export const TERM_TYPES: { value: string; label: string }[] = [
   { value: 'other', label: 'Other' },
 ]
 
-/** Certificate types — values must match the `certificate_type` enum in the DB. */
+/** Certificate types: values must match the `certificate_type` enum in the DB. */
 export const CERT_TYPES: { value: string; label: string }[] = [
   { value: 'leaving', label: 'Leaving Certificate' },
   { value: 'character', label: 'Character Certificate' },

@@ -27,7 +27,7 @@ const SECTIONS = [
   { key: 'fees', label: 'Fee Structure' },
   // Right after the grid it operates on. fn_fee_increment shipped with a wrapper
   // in db.ts and no caller, so the one bulk fee operation every school performs
-  // — "everything up 10% from April" — meant sixty hand edits in that grid.
+  //: "everything up 10% from April": meant sixty hand edits in that grid.
   { key: 'increase', label: 'Fee Increase' },
   { key: 'checkin', label: 'Staff Check-in' },
   { key: 'import', label: 'Import' },

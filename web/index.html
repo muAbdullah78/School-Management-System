@@ -3,12 +3,28 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#1d4ed8" />
+    <!-- brand-700. This was #1d4ed8, which is Tailwind blue and not a colour
+         used anywhere else in this app: every screen is indigo. The manifest
+         already said #4338ca, so the address bar and the installed app
+         disagreed with each other. -->
+    <meta name="theme-color" content="#4338ca" />
     <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="/icon.svg" />
+    <!-- iOS composites a home-screen icon onto black, so an SVG with
+         transparent corners showed black corners. This PNG has a square
+         opaque plate. -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="School" />
+    <!-- Every URL in this app serves this one file, so this one tag keeps the
+         whole app out of the index. It is a sign-in screen: there is nothing
+         here for a searcher, and an indexed app.theschoolmanager.site would
+         compete with theschoolmanager.site for the company's own name. Links
+         are still followed, which is why this is not "noindex, nofollow".
+         web/public/_headers sends X-Robots-Tag as well, for the responses a
+         crawler takes without rendering the page. -->
+    <meta name="robots" content="noindex" />
     <title>The School Manager</title>
   </head>
   <body>

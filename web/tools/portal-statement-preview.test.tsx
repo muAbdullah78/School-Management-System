@@ -57,6 +57,39 @@ const ordinary: PortalFees = {
     { receipt_no: 2955, amount: 4500, method: 'bank_transfer', paid_on: '2026-06-09T11:05:00Z', received_by: 'Nadia Khan' },
     { receipt_no: 2410, amount: 12000, method: 'cash', paid_on: '2026-04-12T08:40:00Z', received_by: 'Imran Sheikh' },
   ],
+  adjustments: [],
+  charges_not_on_a_challan: 0,
+  deposit_held: 0,
+}
+
+/**
+ * The one with a hand-keyed charge, which is the case the statement was blind
+ * to. Rs 4,500 unpaid on the challan plus Rs 800 for the van is Rs 5,300, and
+ * before 0098 the page showed the Rs 4,500 and the Rs 5,300 with nothing
+ * between them. Worth a preview of its own: if the Other charges block ever
+ * stops rendering, the page silently goes back to accusing the school of adding
+ * money on quietly.
+ */
+const withHandKeyedCharges: PortalFees = {
+  student_id: 'st1',
+  balance: 5300,
+  family_outstanding: 5300,
+  family_credit: 0,
+  invoices: [
+    { period_month: '2026-08-01', due_date: '2026-08-10', charge: 4500, paid: 0, outstanding: 4500, status: 'unpaid' },
+    { period_month: '2026-07-01', due_date: '2026-07-10', charge: 4500, paid: 4500, outstanding: 0, status: 'paid' },
+  ],
+  receipts: [
+    { receipt_no: 3182, amount: 4500, method: 'cash', paid_on: '2026-07-08T09:20:00Z', received_by: 'Nadia Khan' },
+  ],
+  adjustments: [
+    { on: '2026-08-02', amount: 1200, reason: 'Van fare, August' },
+    { on: '2026-08-14', amount: -400, reason: 'Hardship: half the van fare waived' },
+  ],
+  charges_not_on_a_challan: 800,
+  // A security deposit the school is holding. Money that is NOT owed and NOT
+  // the school's, which appeared on no page a parent could open until 0103.
+  deposit_held: 5000,
 }
 
 /**
@@ -77,6 +110,9 @@ const withAdvance: PortalFees = {
   receipts: [
     { receipt_no: 3301, amount: 2500, method: 'easypaisa', paid_on: '2026-08-20T13:00:00Z', received_by: null },
   ],
+  adjustments: [],
+  charges_not_on_a_challan: 0,
+  deposit_held: 0,
 }
 
 /** Admitted last week. Nothing billed, nothing paid — and it must not look broken. */
@@ -87,6 +123,9 @@ const brandNew: PortalFees = {
   family_credit: 0,
   invoices: [],
   receipts: [],
+  adjustments: [],
+  charges_not_on_a_challan: 0,
+  deposit_held: 0,
 }
 
 /** Three children. The family total is the number that frightens people. */
@@ -126,6 +165,14 @@ it('writes a parent fee statement preview', () => {
           + 'Rs 4,500, and the payment list is family-wide. Without the label, a '
           + 'parent reads one child’s statement and concludes this child is clear.',
         node: <PortalStatement schoolName="Al Qalam Public School" parentName="Muhammad Aslam" child={CHILD} fees={bigFamily} />,
+      },
+      {
+        caption: 'A van fare keyed by hand and half of it later waived. Rs 4,500 '
+          + 'unpaid on the challan plus Rs 800 of other charges is the Rs 5,300 '
+          + 'balance, and the page says so. Before 0098 these existed only inside '
+          + 'the balance, so the statement showed Rs 4,500 of challans above '
+          + 'Rs 5,300 owed with nothing between them.',
+        node: <PortalStatement schoolName="Al Qalam Public School" parentName="Muhammad Aslam" child={CHILD} fees={withHandKeyedCharges} />,
       },
       {
         caption: 'The school name has not come back from fn_portal_me and the child '

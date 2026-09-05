@@ -23,7 +23,7 @@ export function ResultCardPrint({
   const logo = useSchoolLogo()
   const f = card.frozen
   // Whether ANY subject on this card carries a practical. Cards from before 0058
-  // have no practical_max at all, so the columns simply do not appear — a
+  // have no practical_max at all, so the columns simply do not appear. A
   // reprint of last term's card must not gain empty columns.
   const anyPractical = (f.subjects ?? []).some((s) => (s.practical_max ?? 0) > 0)
 
@@ -35,7 +35,7 @@ export function ResultCardPrint({
             <img src={logo} alt="" className="mx-auto mb-1 max-h-16 max-w-[10rem] object-contain" />
           )}
           <div className="text-xl font-semibold text-slate-800">{schoolName}</div>
-          <div className="text-xs uppercase tracking-wide text-slate-500">Result Card — {termName}</div>
+          <div className="text-xs uppercase tracking-wide text-slate-500">Result Card: {termName}</div>
         </div>
 
         {/* A provisional card SAYS so, in the place nobody can miss. The whole
@@ -54,9 +54,9 @@ export function ResultCardPrint({
 
         <div className="mt-4 grid grid-cols-2 gap-y-1 text-sm text-slate-700">
           <span><span className="text-slate-500">Student:</span> {card.full_name}</span>
-          <span className="text-right"><span className="text-slate-500">GR No:</span> {card.gr_no ?? '—'}</span>
+          <span className="text-right"><span className="text-slate-500">GR No:</span> {card.gr_no ?? '-'}</span>
           <span><span className="text-slate-500">Class:</span> {className}{sectionName ? ` · ${sectionName}` : ''}{f.stream ? ` · ${f.stream}` : ''}</span>
-          <span className="text-right"><span className="text-slate-500">Roll No:</span> {card.roll_no ?? '—'}</span>
+          <span className="text-right"><span className="text-slate-500">Roll No:</span> {card.roll_no ?? '-'}</span>
           {/* Only when there is one. A primary class has no board number and a
               blank labelled field on a printed card looks like a mistake. */}
           {f.bise_reg_no && (
@@ -66,7 +66,7 @@ export function ResultCardPrint({
 
         {f.withheld && (
           <div className="mt-4 rounded border border-red-300 bg-red-50 px-3 py-2 text-center text-sm font-semibold text-red-700">
-            RESULT WITHHELD — outstanding dues must be cleared.
+            RESULT WITHHELD: outstanding dues must be cleared.
           </div>
         )}
 
@@ -79,7 +79,7 @@ export function ResultCardPrint({
               {anyPractical && <th className="py-1.5 pr-2 w-20 text-right">Practical</th>}
               {anyPractical && <th className="py-1.5 pr-2 w-20 text-right">Total</th>}
               {/* "Grade" or "GPA", from the scale FROZEN onto this card (0089)
-                  rather than from the school's current setting — a card issued
+                  rather than from the school's current setting. A card issued
                   under letters must still say Grade after the school switches. */}
               <th className="py-1.5 pr-2 w-20 text-right">{gradeLabel(f)}</th>
               <th className="py-1.5 w-16 text-right">Result</th>
@@ -91,30 +91,30 @@ export function ResultCardPrint({
                 <td className="py-1.5 pr-2 text-slate-800">{s.subject}</td>
                 <td className="py-1.5 pr-2 text-right text-slate-600">{s.max}</td>
                 {/* Three states, not two. "ABS" for a pupil who did not sit it,
-                    a dash for a paper NOT MARKED YET, and a number otherwise —
+                    a dash for a paper NOT MARKED YET, and a number otherwise:
                     the distinction the old card could not make, which is why an
                     unmarked pupil printed as having scored zero. */}
                 <td className="py-1.5 pr-2 text-right text-slate-800">
-                  {s.marked === false ? '—' : (s.is_absent ? 'ABS' : (s.marks ?? '—'))}
+                  {s.marked === false ? '-' : (s.is_absent ? 'ABS' : (s.marks ?? '-'))}
                 </td>
                 {anyPractical && (
                   <td className="py-1.5 pr-2 text-right text-slate-800">
                     {(s.practical_max ?? 0) === 0
-                      ? <span className="text-slate-300">—</span>
-                      : (s.marked === false ? '—' : (s.is_absent ? 'ABS' : (s.practical ?? '—')))}
+                      ? <span className="text-slate-300">-</span>
+                      : (s.marked === false ? '-' : (s.is_absent ? 'ABS' : (s.practical ?? '-')))}
                   </td>
                 )}
                 {anyPractical && (
                   <td className="py-1.5 pr-2 text-right font-medium text-slate-800">
-                    {s.marked === false ? '—' : (s.obtained ?? '—')}
+                    {s.marked === false ? '-' : (s.obtained ?? '-')}
                     <span className="text-slate-400">/{s.out_of ?? s.max}</span>
                   </td>
                 )}
-                <td className="py-1.5 pr-2 text-right font-medium">{s.grade ?? '—'}</td>
+                <td className="py-1.5 pr-2 text-right font-medium">{s.grade ?? '-'}</td>
                 <td className="py-1.5 text-right text-xs font-semibold">
                   {s.passed === true && <span className="text-money-700">Pass</span>}
                   {s.passed === false && <span className="text-danger-600">Fail</span>}
-                  {s.passed == null && <span className="text-slate-400">—</span>}
+                  {s.passed == null && <span className="text-slate-400">-</span>}
                 </td>
               </tr>
             ))}
@@ -130,7 +130,7 @@ export function ResultCardPrint({
                   {f.total_marks}<span className="text-slate-400">/{f.total_max}</span>
                 </td>
               )}
-              <td className="py-1.5 pr-2 text-right">{f.grade ?? '—'}</td>
+              <td className="py-1.5 pr-2 text-right">{f.grade ?? '-'}</td>
               <td className="py-1.5 text-right text-xs">
                 {f.result === 'PASS' && <span className="text-money-700">PASS</span>}
                 {f.result === 'FAIL' && <span className="text-danger-600">FAIL</span>}
@@ -152,10 +152,10 @@ export function ResultCardPrint({
         )}
 
         <div className="mt-4 flex flex-wrap justify-between gap-2 text-sm text-slate-700">
-          <span><span className="text-slate-500">Percentage:</span> {f.percentage == null ? '—' : `${f.percentage}%`}</span>
-          <span><span className="text-slate-500">{gradeLabel(f)}:</span> {f.grade ?? '—'}</span>
-          <span><span className="text-slate-500">Position:</span> {f.position ?? '—'}</span>
-          <span><span className="text-slate-500">Attendance:</span> {f.attendance_pct == null ? '—' : `${f.attendance_pct}%`}</span>
+          <span><span className="text-slate-500">Percentage:</span> {f.percentage == null ? '-' : `${f.percentage}%`}</span>
+          <span><span className="text-slate-500">{gradeLabel(f)}:</span> {f.grade ?? '-'}</span>
+          <span><span className="text-slate-500">Position:</span> {f.position ?? '-'}</span>
+          <span><span className="text-slate-500">Attendance:</span> {f.attendance_pct == null ? '-' : `${f.attendance_pct}%`}</span>
         </div>
 
         {/* The verdict, and the fact behind it. Both, so a school that promotes

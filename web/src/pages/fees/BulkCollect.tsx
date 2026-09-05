@@ -9,7 +9,7 @@
  * DESIGN DECISIONS THAT MATTER HERE
  *
  * The list shows the WHOLE class, including children who have already paid. A
- * clerk working down a register needs to see "Ahmed — paid" to know they have
+ * clerk working down a register needs to see "Ahmed: paid" to know they have
  * not skipped him; a list that hides the paid students makes that impossible
  * and is how a child gets chased for money they handed over yesterday.
  *
@@ -18,7 +18,7 @@
  *
  * Nothing is submitted per row. One button, one transaction: if any row is bad
  * the whole batch is refused and nothing is written. A half-applied batch of
- * forty is unrecoverable — the clerk cannot tell which twenty went through.
+ * forty is unrecoverable. The clerk cannot tell which twenty went through.
  */
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -76,7 +76,7 @@ export function BulkCollect() {
   const rows = dues.data ?? []
 
   // Only rows the clerk has actually typed an amount into are submitted. There
-  // is deliberately no "select all and pay everything" — that would let one
+  // is deliberately no "select all and pay everything". That would let one
   // keystroke issue forty receipts for money nobody handed over.
   const batch = useMemo(
     () =>
@@ -253,9 +253,9 @@ export function BulkCollect() {
               <div className="mt-1 text-xs text-money-700">
                 Receipts{' '}
                 {result.receipts
-                  .map((x) => (x.receipt_no == null ? '—' : `#${x.receipt_no}`))
+                  .map((x) => (x.receipt_no == null ? '-' : `#${x.receipt_no}`))
                   .join(', ')}
-                . Each one is a normal receipt — reprint any of them from the student&rsquo;s profile.
+                . Each one is a normal receipt: reprint any of them from the student&rsquo;s profile.
               </div>
             </div>
           )}
@@ -272,7 +272,7 @@ export function BulkCollect() {
           )}
 
           <p className="mt-4 text-xs text-slate-500">
-            One reminder per family, not per child — a father with three children owing gets a single
+            One reminder per family, not per child. A father with three children owing gets a single
             message. Pressing it again later escalates the wording rather than repeating it.
           </p>
         </>
@@ -290,19 +290,19 @@ function Row({
 }) {
   const settled = r.total_due <= 0
   const typed = Number(value)
-  // Flag an overpayment as it is typed. It is allowed — it becomes family
-  // credit — but a clerk who has mistyped 12000 for 1200 should see it before
+  // Flag an overpayment as it is typed. It is allowed. It becomes family
+  // credit, but a clerk who has mistyped 12000 for 1200 should see it before
   // pressing the button, not afterwards in the day book.
   const over = Number.isFinite(typed) && typed > r.total_due && r.total_due > 0
 
   return (
     <tr className={settled ? 'bg-slate-50/60' : 'hover:bg-slate-50/70'}>
-      <td className="whitespace-nowrap px-3 py-1.5 tabular-nums text-slate-500">{r.roll_no ?? '—'}</td>
+      <td className="whitespace-nowrap px-3 py-1.5 tabular-nums text-slate-500">{r.roll_no ?? '-'}</td>
       <td className="px-3 py-1.5">
         <div className="text-slate-800">{r.full_name}</div>
         {r.gr_no && <div className="text-xs text-slate-400">{r.gr_no}</div>}
       </td>
-      <td className="px-3 py-1.5 text-slate-600">{r.father_name ?? r.family_head ?? '—'}</td>
+      <td className="px-3 py-1.5 text-slate-600">{r.father_name ?? r.family_head ?? '-'}</td>
       <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">
         {r.month_charge === 0 ? (
           // Not the same as "paid". A class with no fee structure produces
@@ -317,7 +317,7 @@ function Row({
       </td>
       <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">
         <span className={settled ? 'text-money-700' : 'font-semibold text-danger-600'}>
-          {settled ? '—' : fmtPKR(r.total_due)}
+          {settled ? '-' : fmtPKR(r.total_due)}
         </span>
       </td>
       <td className="whitespace-nowrap px-3 py-1.5 text-xs text-slate-500">
@@ -330,7 +330,7 @@ function Row({
           step="1"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="—"
+          placeholder="-"
           className={`w-24 rounded border px-2 py-1 text-right text-sm tabular-nums focus:outline-none ${
             over ? 'border-amber-400 bg-amber-50' : 'border-slate-300 focus:border-brand-500'
           }`}

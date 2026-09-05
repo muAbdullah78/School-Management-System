@@ -1,0 +1,37 @@
+{
+  "_what_this_is": [
+    "Where else this same business exists on the web, and how to reach it.",
+    "",
+    "sameAs is how you tell Google that the Google Business Profile, the G2",
+    "listing, the Capterra listing and this website are ONE company rather than",
+    "four unrelated things with similar names. It is one of the stronger signals",
+    "behind a Knowledge Panel, and it is worth filling in properly.",
+    "",
+    "It is only worth anything if every URL is real and resolves. A sameAs",
+    "pointing at a listing that does not exist is a claim Google can check and",
+    "find false. So this file ships EMPTY rather than with plausible guesses,",
+    "and the build refuses any entry that is not an https:// URL.",
+    "",
+    "HOW TO FILL IT IN: open each listing in a browser, copy the address bar",
+    "exactly, and paste it into the list below. Do not shorten it, do not remove",
+    "the query string if the site put one there. Then rebuild:",
+    "",
+    "    python3 scripts/build-site.py",
+    "",
+    "and re-upload site/. Leave out any listing that is still 'in review': add",
+    "it once it is live and you can open it yourself.",
+    "",
+    "Keys starting with an underscore are ignored by the build."
+  ],
+
+  "_email_note": [
+    "The public contact address for the business, e.g. admin@theschoolmanager.site.",
+    "This one is baked into the page's structured data, which is why it is here",
+    "and not in config.js: config.js is read by the browser at runtime and the",
+    "structured data has to exist in the HTML that Google fetches.",
+    "Leave it empty and no email is claimed."
+  ],
+  "email": "",
+
+  "sameAs": []
+}

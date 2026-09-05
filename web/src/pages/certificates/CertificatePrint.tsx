@@ -21,8 +21,8 @@ export interface CertificatePrintData {
    *  each of two schools, and leave the school unable to say which is real. */
   isDuplicate?: boolean
   originalSerialNo?: number | null
-  /** A cancelled certificate can still be reprinted — somebody may need to see
-   *  what was cancelled — but it must never come off the printer looking valid. */
+  /** A cancelled certificate can still be reprinted: somebody may need to see
+   *  what was cancelled, but it must never come off the printer looking valid. */
   cancelledAt?: string | null
 }
 
@@ -46,7 +46,7 @@ function bodyText(certType: string, d: Record<string, any>): string {
       // student of this school from ___ to ___, last studying in class ___, and
       // his conduct was ___". Those dates were on the pupil's record all along
       // and were never copied onto the document.
-      return `This is to certify that ${name}${father} bearing GR No. ${d.gr_no ?? '—'} `
+      return `This is to certify that ${name}${father} bearing GR No. ${d.gr_no ?? '-'} `
         + `was a bonafide student of this school`
         + (d.attended_from
             ? ` from ${fmtDate(d.attended_from)} to ${fmtDate(d.attended_to ?? d.date_of_leaving)}`
@@ -58,22 +58,22 @@ function bodyText(certType: string, d: Record<string, any>): string {
         // "No dues are outstanding" is the line a receiving school reads, and it
         // must not appear on a certificate the school released WITH fees
         // outstanding. `dues_cleared` is absent on pre-0061 certificates, and
-        // absence is not a clearance — so the sentence needs an explicit true.
+        // absence is not a clearance, so the sentence needs an explicit true.
         + (d.dues_cleared === true ? ` No dues are outstanding against ${p.poss.toLowerCase()} name.` : '')
         + (d.remarks ? ` ${d.remarks}` : '')
     case 'character':
-      return `This is to certify that ${name}${father} bearing GR No. ${d.gr_no ?? '—'} `
+      return `This is to certify that ${name}${father} bearing GR No. ${d.gr_no ?? '-'} `
         + `is/was a bonafide student of this school. `
         + `To the best of our knowledge, ${p.poss.toLowerCase()} character and conduct remained ${d.conduct ?? 'good'} `
         + `throughout ${p.poss.toLowerCase()} association with the school.`
         + (d.remarks ? ` ${d.remarks}` : '')
     case 'bonafide':
-      return `This is to certify that ${name}${father} bearing GR No. ${d.gr_no ?? '—'} `
+      return `This is to certify that ${name}${father} bearing GR No. ${d.gr_no ?? '-'} `
         + `is a bonafide student of this school, currently studying in class ${cls}. `
         + `This certificate is issued${d.purpose ? ` for the purpose of ${d.purpose}` : ''} on ${p.poss.toLowerCase()} request.`
         + (d.remarks ? ` ${d.remarks}` : '')
     default:
-      return `This is to certify that ${name}${father} bearing GR No. ${d.gr_no ?? '—'} `
+      return `This is to certify that ${name}${father} bearing GR No. ${d.gr_no ?? '-'} `
         + `is associated with this school${d.class_name ? `, class ${cls}` : ''}.`
         + (d.purpose ? ` Issued for: ${d.purpose}.` : '')
         + (d.remarks ? ` ${d.remarks}` : '')
@@ -82,7 +82,7 @@ function bodyText(certType: string, d: Record<string, any>): string {
 
 /** The facts a receiving school or a bank actually checks off the document.
  *  Rendered as a table because a paragraph is what a clerk skim-reads past, and
- *  only for the fields the snapshot holds — a row reading "—" makes a school
+ *  only for the fields the snapshot holds. A row reading "-" makes a school
  *  look like it does not know its own pupil. */
 function FactTable({ certType, d }: { certType: string; d: Record<string, any> }) {
   const rows: [string, string][] = []
@@ -136,8 +136,8 @@ export function CertificatePrint({ cert, onClose }: { cert: CertificatePrintData
       <div className="w-full max-w-2xl rounded-lg bg-white p-8 shadow-lg print:max-w-none print:shadow-none" id="certificate">
         <div className="text-center">
           {/* A leaving certificate is presented to another school, so the
-              letterhead does real work. No logo means no line here — the name
-              below carries it — never an empty box. */}
+              letterhead does real work. No logo means no line here. The name
+              below carries it: never an empty box. */}
           {logo && (
             <img src={logo} alt="" className="mx-auto mb-2 max-h-20 max-w-[12rem] object-contain" />
           )}
@@ -162,12 +162,12 @@ export function CertificatePrint({ cert, onClose }: { cert: CertificatePrintData
           </div>
         )}
 
-        {/* A cancelled certificate can still be reprinted — somebody may need to
-            see what was cancelled — but it must never come off the printer
+        {/* A cancelled certificate can still be reprinted: somebody may need to
+            see what was cancelled, but it must never come off the printer
             looking valid. */}
         {cert.cancelledAt && (
           <div className="mt-4 border-2 border-red-600 px-3 py-1.5 text-center text-sm font-bold uppercase tracking-[0.2em] text-red-700">
-            Cancelled {fmtDate(cert.cancelledAt)} — not valid
+            Cancelled {fmtDate(cert.cancelledAt)}: not valid
           </div>
         )}
 
@@ -179,7 +179,7 @@ export function CertificatePrint({ cert, onClose }: { cert: CertificatePrintData
         <p className="mt-6 text-justify text-[15px] leading-8 text-slate-800">{bodyText(cert.certType, cert.data)}</p>
 
         {/* The facts a receiving school checks, laid out rather than buried in the
-            paragraph. Only what the snapshot actually holds — an empty row here
+            paragraph. Only what the snapshot actually holds. An empty row here
             would look like a school that does not know its own pupil. */}
         <FactTable certType={cert.certType} d={cert.data} />
 
@@ -189,7 +189,7 @@ export function CertificatePrint({ cert, onClose }: { cert: CertificatePrintData
         {cert.data.dues_cleared === false && cert.data.dues_override_reason && (
           <p className="mt-4 rounded border border-slate-300 px-3 py-2 text-xs text-slate-700">
             Issued with {fmtPKR(Number(cert.data.balance_at_issue ?? 0))} outstanding, released on the
-            authority of {cert.data.dues_override_by || 'the school'} — {cert.data.dues_override_reason}.
+            authority of {cert.data.dues_override_by || 'the school'}: {cert.data.dues_override_reason}.
           </p>
         )}
 
@@ -223,7 +223,7 @@ function IdCardModal({
   logo: string | null; onClose: () => void
 }) {
   const d = cert.data
-  const cls = d.class_name ? `${d.class_name}${d.section_name ? ` · ${d.section_name}` : ''}` : '—'
+  const cls = d.class_name ? `${d.class_name}${d.section_name ? ` · ${d.section_name}` : ''}` : '-'
   const qrText = d.gr_no ? `GR:${d.gr_no}` : `CERT:${cert.serialNo}`
   const photo = useQuery({
     queryKey: ['signedPhoto', cert.photoPath],
@@ -257,12 +257,12 @@ function IdCardModal({
               size="lg" square className="!h-24 !w-20 border border-slate-200"
             />
             <div className="min-w-0 flex-1 text-[11px] leading-5 text-slate-700">
-              <div className="truncate text-sm font-semibold text-slate-900">{d.student_name ?? '—'}</div>
+              <div className="truncate text-sm font-semibold text-slate-900">{d.student_name ?? '-'}</div>
               {d.father_name && <div className="truncate text-slate-500">c/o {d.father_name}</div>}
               <div className="mt-1 grid grid-cols-[auto,1fr] gap-x-2">
                 <span className="text-slate-400">Class</span><span className="truncate">{cls}</span>
-                <span className="text-slate-400">Roll</span><span>{d.roll_no ?? '—'}</span>
-                <span className="text-slate-400">GR No</span><span>{d.gr_no ?? '—'}</span>
+                <span className="text-slate-400">Roll</span><span>{d.roll_no ?? '-'}</span>
+                <span className="text-slate-400">GR No</span><span>{d.gr_no ?? '-'}</span>
                 {d.dob && <><span className="text-slate-400">DOB</span><span>{fmtDate(d.dob)}</span></>}
               </div>
             </div>

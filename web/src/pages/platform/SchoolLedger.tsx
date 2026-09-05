@@ -14,18 +14,18 @@ const FIELD = 'w-full rounded border border-slate-300 px-2 py-1.5 text-sm'
  * One school's statement, and the three things you can do to a document on it.
  *
  * Before 0077 this table had no document numbers, so a line could not be pointed
- * at — "the Rs 38,000 one" was the only way to name it, and two renewals of the
+ * at: "the Rs 38,000 one" was the only way to name it, and two renewals of the
  * same plan in a year made that ambiguous. It also had no way to correct
  * anything: a wrong charge sat in the books forever and every total was wrong
  * with it.
  *
  * VOID AND CREDIT ARE NOT THE SAME THING, and the buttons say which is which:
  *
- *   Void        the document should never have existed — wrong school, wrong
+ *   Void        the document should never have existed: wrong school, wrong
  *               plan, raised twice by a double click. Excluded from every total.
  *               Refused once a payment or a credit note is attached, because
  *               that is exactly the case a credit note exists for.
- *   Credit      the document was RIGHT and part of it is being given back — a
+ *   Credit      the document was RIGHT and part of it is being given back. A
  *               school that paid for twelve months, used four and left. Voiding
  *               that would erase a real sale and unbalance the books against a
  *               payment genuinely received.
@@ -221,7 +221,7 @@ function DocActionDialog({ entry, mode, settings, onClose }: {
 
   if (warn) {
     return (
-      <Shell title="Voided — one thing is left to decide" onClose={onClose}>
+      <Shell title="Voided. One thing is left to decide" onClose={onClose}>
         <p className="text-sm text-amber-900">{warn}</p>
         <button onClick={onClose}
           className="mt-4 w-full rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
@@ -239,22 +239,22 @@ function DocActionDialog({ entry, mode, settings, onClose }: {
       onClose={onClose}>
       {mode === 'void' && (
         <p className="text-xs text-slate-500">
-          For a document that should never have existed. It stays on the statement —
-          deleting history is how a business loses an audit — but it stops adding up to
+          For a document that should never have existed. It stays on the statement:
+          deleting history is how a business loses an audit, but it stops adding up to
           anything. If the invoice was right and you are giving part of it back, use
           Credit instead.
         </p>
       )}
       {mode === 'credit' && (
         <p className="text-xs text-slate-500">
-          For an invoice that was correct where part of it is no longer due — a school
+          For an invoice that was correct where part of it is no longer due. A school
           that paid for a year, used four months and left. It gets its own document
           number and reduces the balance. At most {formatPkr(charged)} can be credited.
         </p>
       )}
       {mode === 'tax' && (
         <p className="text-xs text-slate-500">
-          Provincial sales tax on services — PRA, SRB, KPRA or BRA depending on where
+          Provincial sales tax on services: PRA, SRB, KPRA or BRA depending on where
           you are registered. Left at zero unless you are registered to charge it: a
           tax printed confidently on an invoice from an unregistered business invents a
           liability. Refused once anything has been paid against this invoice.
@@ -289,7 +289,7 @@ function DocActionDialog({ entry, mode, settings, onClose }: {
         {mode !== 'tax' && (
           <label className="block">
             <span className="text-xs font-medium text-slate-600">
-              Reason — printed on the document
+              Reason: printed on the document
             </span>
             <textarea rows={2} className={FIELD} value={reason}
               onChange={(e) => setReason(e.target.value)}

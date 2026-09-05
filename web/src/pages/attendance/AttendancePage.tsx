@@ -7,11 +7,13 @@ import {
 } from '@/lib/db'
 import { ATTENDANCE_STATUSES } from '@/lib/constants'
 import { todayISO } from '@/lib/format'
+import { AskDialog } from '@/components/AskDialog'
 import { useAuth } from '@/auth/AuthProvider'
 import { isTeacher } from '@/auth/roles'
 import { enqueueAttendance, isNetworkError, attendanceKey, cachedSchoolId } from '@/lib/offlineQueue'
 import { offlineFirst } from '@/lib/offlineCache'
 import { AttendanceSheet, type AttendanceSheetData } from './AttendanceSheet'
+import { LoadError } from '@/components/ui'
 
 type Marks = Record<string, AttendanceStatus>
 
@@ -69,7 +71,7 @@ export function AttendancePage() {
     enabled: ready,
   })
 
-  // Local, optimistic marking state — reset whenever a fresh roster loads.
+  // Local, optimistic marking state: reset whenever a fresh roster loads.
   const [marks, setMarks] = useState<Marks>({})
   const [activeIdx, setActiveIdx] = useState(0)
   const [sheet, setSheet] = useState<AttendanceSheetData | null>(null)
@@ -144,7 +146,7 @@ export function AttendancePage() {
   }, [ready, dayLocked])
 
   function queueOffline(payload: { enrollment_id: string; status: AttendanceStatus }[]) {
-    const cls = classes.data?.find((c) => c.id === classId)?.name ?? '—'
+    const cls = classes.data?.find((c) => c.id === classId)?.name ?? '-'
     const sec = sections.data?.find((s) => s.id === sectionId)?.name
     enqueueAttendance({
       key: attendanceKey(date, classId, sectionId),
@@ -173,7 +175,7 @@ export function AttendancePage() {
     },
     onSuccess: (res) => {
       if (res.queued) {
-        setSaveMsg('Saved offline — will sync automatically when you’re back online.')
+        setSaveMsg('Saved offline: will sync automatically when you’re back online.')
       } else {
         setSaveMsg(`Saved ${res.marked}${res.skipped ? ` · ${res.skipped} locked, skipped` : ''}.`)
         qc.invalidateQueries({ queryKey: ['roster', sessionId, classId, sectionId ?? 'none', date] })
@@ -185,6 +187,7 @@ export function AttendancePage() {
     mutationFn: () => finalizeAttendance(sessionId!, classId, sectionId, date),
     onSuccess: (n) => {
       setSaveMsg(`Finalized & locked ${n} row${n === 1 ? '' : 's'}.`)
+      setConfirmFinalize(false)
       qc.invalidateQueries({ queryKey: ['roster', sessionId, classId, sectionId ?? 'none', date] })
     },
   })
@@ -193,20 +196,38 @@ export function AttendancePage() {
     const cls = classes.data?.find((c) => c.id === classId)
     const sec = sections.data?.find((s) => s.id === sectionId)
     setSheet({
-      className: cls?.name ?? '—',
+      className: cls?.name ?? '-',
       sectionName: sec?.name ?? null,
       date,
       rows: rows.map((r) => ({ roll_no: r.roll_no, full_name: r.full_name, status: marks[r.enrollment_id] ?? 'present' })),
     })
   }
 
+  /**
+   * The three things that stop a finalize, and why none of them is a browser
+   * dialog any more.
+   *
+   * window.alert and window.confirm are both suppressible: once a browser has
+   * been told to stop showing dialogs from a page, alert() does nothing and
+   * confirm() returns false FOR EVER. This button would then silently refuse to
+   * finalize, with no message, and the teacher's only evidence would be that
+   * pressing it does nothing. The two refusals are now sentences on the page and
+   * the confirmation is a dialog this app draws itself.
+   */
+  const [confirmFinalize, setConfirmFinalize] = useState(false)
+  const [finalizeBlocked, setFinalizeBlocked] = useState<string | null>(null)
+
   function doFinalize() {
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      window.alert('You’re offline. Finalizing locks the day on the server — reconnect first.'); return
+      setFinalizeBlocked('You are offline. Finalizing locks the day on the server, so reconnect first.')
+      return
     }
-    if (dirty) { window.alert('Save your changes before finalizing.'); return }
-    if (!window.confirm('Finalize this day? Attendance will be locked and can no longer be edited.')) return
-    finalize.mutate()
+    if (dirty) {
+      setFinalizeBlocked('Save your changes before finalizing.')
+      return
+    }
+    setFinalizeBlocked(null)
+    setConfirmFinalize(true)
   }
 
   const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine)
@@ -223,6 +244,8 @@ export function AttendancePage() {
 
   return (
     <div>
+      <LoadError of={[session, classes, sections, roster]} what="The attendance register" />
+
       <div className="flex flex-wrap items-end justify-between gap-3">
         <h1 className="text-xl font-semibold text-slate-800">Attendance</h1>
         {rows.length > 0 && (
@@ -282,7 +305,7 @@ export function AttendancePage() {
       <div className="mt-5">
         {!online && rows.length > 0 && (
           <p className="mb-3 rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            You’re offline — showing your saved copy of this class. Marks you save will sync when you reconnect.
+            You’re offline: showing your saved copy of this class. Marks you save will sync when you reconnect.
           </p>
         )}
         {!ready && (
@@ -327,7 +350,7 @@ export function AttendancePage() {
                   onMouseDown={() => setActiveIdx(i)}
                   className={`flex flex-wrap items-center gap-3 px-3 py-2 ${i === activeIdx && !dayLocked ? 'bg-brand-50/60' : ''}`}
                 >
-                  <div className="w-8 text-right text-xs text-slate-400">{r.roll_no ?? '—'}</div>
+                  <div className="w-8 text-right text-xs text-slate-400">{r.roll_no ?? '-'}</div>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-medium text-slate-800">
                       {r.full_name}
@@ -369,6 +392,27 @@ export function AttendancePage() {
                 </span>
               )}
             </div>
+            {finalizeBlocked && (
+              <p className="mt-2 rounded border border-due-200 bg-due-50 px-3 py-2 text-sm text-due-800">
+                {finalizeBlocked}
+              </p>
+            )}
+
+            {confirmFinalize && (
+              <AskDialog
+                title="Finalize this day?"
+                intro={<>
+                  The register for <b>{date}</b> is locked and can no longer be edited by anybody,
+                  including you. Anything wrong after this has to be put right through a correction,
+                  which is recorded.
+                </>}
+                confirmLabel="Finalize and lock" tone="danger"
+                busy={finalize.isPending}
+                error={finalize.error ? (finalize.error as Error).message : null}
+                onCancel={() => setConfirmFinalize(false)}
+                onSubmit={() => finalize.mutate()}
+              />
+            )}
 
             <p className="mt-3 text-xs text-slate-500">
               Tip: click a row, then press <kbd className="rounded border px-1">P</kbd>/<kbd className="rounded border px-1">A</kbd>/<kbd className="rounded border px-1">L</kbd>/<kbd className="rounded border px-1">T</kbd>/<kbd className="rounded border px-1">H</kbd> (or 1–5) to mark and jump to the next student.

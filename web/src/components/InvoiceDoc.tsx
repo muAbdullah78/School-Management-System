@@ -35,7 +35,7 @@ export function InvoiceDoc({ d }: { d: InvoiceDocument }) {
         <div className="mb-4 border-2 border-red-600 px-3 py-2 text-center">
           <div className="text-lg font-bold tracking-widest text-red-700">VOID</div>
           <div className="text-sm text-red-700">
-            Cancelled {d.voided_at ? fmtDate(d.voided_at) : ''} — {d.void_reason}
+            Cancelled {d.voided_at ? fmtDate(d.voided_at) : ''}: {d.void_reason}
           </div>
         </div>
       )}
@@ -121,7 +121,7 @@ export function InvoiceDoc({ d }: { d: InvoiceDocument }) {
                     list price. */}
                 {l.list_amount !== null && (
                   <div className="text-xs text-slate-600">
-                    List price {money(l.list_amount)} — discount{' '}
+                    List price {money(l.list_amount)}: discount{' '}
                     {money(l.list_amount - l.amount)}
                     {d.note ? ` (${d.note})` : ''}
                   </div>
@@ -160,7 +160,7 @@ export function InvoiceDoc({ d }: { d: InvoiceDocument }) {
         <span className="font-medium">{d.amount_in_words}</span>
       </div>
 
-      {/* On a CREDIT NOTE the reason is the whole content of the document — the
+      {/* On a CREDIT NOTE the reason is the whole content of the document. The
           school is being told money is no longer due and why. It rendered
           nowhere until the harness put a credit note on screen: the note only
           appeared beside a discounted line, and a credit note has no discount.
@@ -198,7 +198,7 @@ export function InvoiceDoc({ d }: { d: InvoiceDocument }) {
 
       {/* --- the withholding instruction ------------------------------------ */}
       {/* Suppressed on a voided document. The stamp at the top says VOID and the
-          foot of the page was still saying "deduct 8% and remit the balance" —
+          foot of the page was still saying "deduct 8% and remit the balance":
           instructions for paying a cancelled invoice. A school that prints this
           and follows the bottom half has been actively misled, which is worse
           than a document with no stamp at all. */}
@@ -215,7 +215,7 @@ export function InvoiceDoc({ d }: { d: InvoiceDocument }) {
           <div className="text-xs uppercase tracking-wide text-slate-500">Payment details</div>
           {/* An empty section under a "Payment details" heading reads as a
               rendering fault, and worse, it leaves a school with an invoice and
-              nowhere to send the money — so they guess, or they wait. Said
+              nowhere to send the money, so they guess, or they wait. Said
               plainly instead. */}
           {d.bank.account ? (
             <>
@@ -258,7 +258,7 @@ export function InvoiceDoc({ d }: { d: InvoiceDocument }) {
                   <td className="py-1 text-right text-slate-600">
                     {p.tax_withheld > 0
                       ? `+ ${money(p.tax_withheld)} tax withheld${
-                          p.tax_certificate ? ` (${p.tax_certificate})` : ' — CPR awaited'}`
+                          p.tax_certificate ? ` (${p.tax_certificate})` : ': CPR awaited'}`
                       : ''}
                   </td>
                 </tr>
@@ -316,7 +316,7 @@ function BankRow({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
 }
 
 /**
- * Plain digits with thousands separators and two decimals — no "Rs" prefix,
+ * Plain digits with thousands separators and two decimals: no "Rs" prefix,
  * because the column heading already says PKR and repeating it on every line is
  * how an invoice starts looking like a web page.
  */

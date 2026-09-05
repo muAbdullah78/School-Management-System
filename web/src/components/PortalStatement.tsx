@@ -8,7 +8,7 @@ import type { PortalChild, PortalFees } from '@/lib/db'
  *
  * The portal's Fees tab had a "Print" button that called window.print() on a
  * page with no printable id. The global print rule in index.css hides `body *`
- * and reveals only named ids, so the button produced a BLANK SHEET of paper —
+ * and reveals only named ids, so the button produced a BLANK SHEET of paper:
  * every time, on every browser. Nothing threw, nothing logged, the dialog opened
  * normally and the preview was empty. A parent standing at a shop counter paying
  * for a print-out got a blank page and no explanation.
@@ -17,7 +17,7 @@ import type { PortalChild, PortalFees } from '@/lib/db'
  *
  * It is not a challan and it is not a receipt, and it says so on its face. A
  * printed page with a school's name, an amount and a due date is exactly what a
- * bank cashier accepts — and this one carries no bank account, no voucher
+ * bank cashier accepts, and this one carries no bank account, no voucher
  * number, no barcode and no school signature, so a parent who took it to a
  * counter would be turned away after queuing. Worse, a parent who paid against
  * it in cash at the school would have no numbered document to hold. So the
@@ -44,8 +44,8 @@ import type { PortalChild, PortalFees } from '@/lib/db'
  * design, so that hook would silently fall back to the build-time name and print
  * the wrong school on the page.
  *
- * This is the DOCUMENT only, the way InvoiceDoc is. The dialog around it — the
- * backdrop, the Print button, the Close button — belongs to the page, so the
+ * This is the DOCUMENT only, the way InvoiceDoc is. The dialog around it. The
+ * backdrop, the Print button, the Close button: belongs to the page, so the
  * rendering harness can put five of these on one sheet without five fixed
  * overlays stacking on top of one another.
  */
@@ -84,15 +84,15 @@ export function PortalStatement({
 
       {/* --- who --------------------------------------------------------- */}
       <div className="mt-4 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
-        <Field label="Student" value={child?.full_name ?? '—'} />
-        <Field label="GR No" value={child?.gr_no ?? '—'} />
+        <Field label="Student" value={child?.full_name ?? '-'} />
+        <Field label="GR No" value={child?.gr_no ?? '-'} />
         <Field
           label="Class"
           value={
             [child?.class_name, child?.section_name].filter(Boolean).join(' · ') || 'Not enrolled'
           }
         />
-        <Field label="Parent / guardian" value={parentName ?? '—'} />
+        <Field label="Parent / guardian" value={parentName ?? '-'} />
       </div>
 
       {/* --- the numbers ------------------------------------------------- */}
@@ -107,6 +107,16 @@ export function PortalStatement({
           challan, so the amount asked for next month will be lower by that much.
         </p>
       )}
+      {/* On the PAPER especially. A parent keeps a printed statement, and this is
+          the line they will need years later when the child leaves and they ask
+          for the deposit back. It appeared on no page a family could open. */}
+      {fees.deposit_held > 0 && (
+        <p className="mt-2 rounded border border-slate-300 px-3 py-2 text-[11px] text-slate-800">
+          <span className="font-semibold">Refundable deposit held: {fmtPKR(fees.deposit_held)}.</span>{' '}
+          This is your money, held by the school and repayable when the child leaves. It is not part
+          of the balance above and it is not counted as fees paid.
+        </p>
+      )}
 
       {/* --- challans ---------------------------------------------------- */}
       <h3 className="mt-5 border-b border-slate-300 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-700">
@@ -116,8 +126,8 @@ export function PortalStatement({
         <p className="mt-2 text-sm text-slate-500">Nothing has been billed yet.</p>
       ) : (
         /* Four columns, not five, and the due date sits UNDER the month rather
-           than in a column of its own. On a 360px phone — which is most of the
-           parents — five columns pushed Outstanding off the right edge into a
+           than in a column of its own. On a 360px phone, which is most of the
+           parents. Five columns pushed Outstanding off the right edge into a
            sideways scroll the parent had no reason to know was there. The one
            number they opened the page for was the one they could not see. */
         <table className="mt-2 w-full text-sm">
@@ -176,11 +186,70 @@ export function PortalStatement({
           will assume one of them is wrong. Said out loud instead. */}
       {billed - paid !== Number(fees.balance) && (
         <p className="mt-2 text-[11px] text-slate-600">
-          The table totals the challans listed above — {fmtPKR(billed - paid)} unpaid across{' '}
+          The table totals the challans listed above: {fmtPKR(billed - paid)} unpaid across{' '}
           {unpaidCount} challan{unpaidCount === 1 ? '' : 's'}. "This student owes"{' '}
           ({fmtPKR(fees.balance)}) is the school's running balance for the student, which also
-          counts any advance held and any adjustment made in the office.
+          counts any advance held and the other charges listed below.
         </p>
+      )}
+
+      {/* --- other charges ------------------------------------------------
+          These are the school's hand-keyed charges and waivers: a van fare, a
+          book, a hardship credit. They are part of the balance printed above and
+          before 0098 they appeared on NO screen and on no printed page, so the
+          statement could show two challans totalling Rs 2,100 above a balance of
+          Rs 2,350 with no line anywhere accounting for the difference. A parent
+          reading that concludes the school is adding money on quietly, and they
+          have no way to find out otherwise. */}
+      {fees.adjustments.length > 0 && (
+        <>
+          <h3 className="mt-5 border-b border-slate-300 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-700">
+            Other charges and credits for this student
+          </h3>
+          <p className="mt-1 text-[11px] text-slate-600">
+            Amounts added or taken off outside the monthly challan, with the reason the school
+            recorded at the time. Ask the office if any of these is not clear.
+          </p>
+          <table className="mt-2 w-full text-sm">
+            <thead>
+              <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
+                <th className="py-1 pr-2 font-medium">Date</th>
+                <th className="py-1 pr-2 font-medium">Reason</th>
+                <th className="py-1 text-right font-medium">Amount (Rs)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {fees.adjustments.map((a, i) => (
+                <tr key={i}>
+                  <td className="whitespace-nowrap py-1.5 pr-2 align-top text-slate-600">{fmtDate(a.on)}</td>
+                  <td className="py-1.5 pr-2 align-top">{a.reason}</td>
+                  <td className="whitespace-nowrap py-1.5 text-right align-top tabular-nums">
+                    {a.amount < 0 ? `- ${fmtAmount(-a.amount)}` : fmtAmount(a.amount)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-slate-800 font-semibold">
+                <td className="py-1.5 pr-2" colSpan={2}>Total</td>
+                <td className="whitespace-nowrap py-1.5 text-right tabular-nums">
+                  {fees.charges_not_on_a_challan < 0
+                    ? `- ${fmtAmount(-fees.charges_not_on_a_challan)}`
+                    : fmtAmount(fees.charges_not_on_a_challan)}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+          {/* The statement proving itself, on the paper the parent is holding.
+              Unpaid challans plus other charges IS the balance; saying so turns
+              three numbers that look unrelated into one sum they can check. */}
+          <p className="mt-2 text-[11px] text-slate-600">
+            {fmtPKR(billed - paid)} unpaid on challans{' '}
+            {fees.charges_not_on_a_challan < 0 ? 'less' : 'plus'}{' '}
+            {fmtPKR(Math.abs(fees.charges_not_on_a_challan))} of other charges ={' '}
+            <span className="font-semibold">{fmtPKR(fees.balance)}</span>, the balance shown above.
+          </p>
+        </>
       )}
 
       {/* --- payments ---------------------------------------------------- */}
@@ -273,13 +342,13 @@ function Box({ label, value, strong }: { label: string; value: string; strong?: 
   )
 }
 
-/** "Other charges" is the honest label for an invoice with no month — an
+/** "Other charges" is the honest label for an invoice with no month. An
  *  admission fee or a one-off, which is not a monthly challan at all. */
 function monthName(m: string | null): string {
   if (!m) return 'Other charges'
   const d = new Date(m.length === 10 ? `${m}T00:00:00` : m)
   return isNaN(d.getTime())
-    ? '—'
+    ? '-'
     : d.toLocaleDateString('en-PK', { month: 'long', year: 'numeric' })
 }
 

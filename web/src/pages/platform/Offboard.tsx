@@ -19,7 +19,7 @@ const PAGE = 1000
  *   Step 1 EXPORT   downloads everything they own as one JSON file. Refused by
  *                   the database unless the school is archived, so this is not a
  *                   route to a live customer's records. Recording it is what
- *                   unlocks step 2 — and it is the answer if they ever say we
+ *                   unlocks step 2, and it is the answer if they ever say we
  *                   deleted their records without warning.
  *
  *   Step 2 DELETE   refused unless the export exists, refused unless the typed
@@ -126,7 +126,7 @@ export function OffboardDialog({ school, onClose }: {
   }
 
   // The database refuses the manifest on a school that is not archived, and the
-  // message it returns says so — shown as an instruction rather than an error.
+  // message it returns says so: shown as an instruction rather than an error.
   if (q.error) {
     return (
       <Shell title={`Offboard ${school.school_name}`} onClose={onClose}>
@@ -135,7 +135,7 @@ export function OffboardDialog({ school, onClose }: {
         </div>
         <p className="mt-3 text-xs text-slate-500">
           Archiving is on the Manage screen. It hides them, kills the licence, deletes
-          nothing, and can be undone in one click — which is why it comes first.
+          nothing, and can be undone in one click, which is why it comes first.
         </p>
       </Shell>
     )
@@ -154,7 +154,7 @@ export function OffboardDialog({ school, onClose }: {
           1. Hand over their data
         </div>
         <p className="mt-1 text-xs text-slate-500">
-          One JSON file with every row they own — pupils, guardians, fees, payments,
+          One JSON file with every row they own: pupils, guardians, fees, payments,
           marks, attendance, staff, certificates. Give it to them. It is also the
           answer if they ever say their records were deleted without warning.
         </p>
@@ -167,7 +167,7 @@ export function OffboardDialog({ school, onClose }: {
         )}
         {already.length > 0 && (
           <p className="mt-1 text-xs text-slate-500">
-            Already exported {fmtDateTime(already[0].taken_at)} —{' '}
+            Already exported {fmtDateTime(already[0].taken_at)},{' '}
             {already[0].total_rows.toLocaleString()} rows
             {already[0].by && ` by ${already[0].by}`}.
           </p>
@@ -177,7 +177,7 @@ export function OffboardDialog({ school, onClose }: {
         )}
         {exported && (
           <p className="mt-2 rounded bg-emerald-50 px-2 py-1 text-sm text-emerald-800">
-            Downloaded and recorded — {exported.rows.toLocaleString()} rows.
+            Downloaded and recorded: {exported.rows.toLocaleString()} rows.
           </p>
         )}
         <button onClick={() => doExport.mutate()} disabled={doExport.isPending || !m}
@@ -211,7 +211,7 @@ export function OffboardDialog({ school, onClose }: {
                   onChange={(e) => setForce(e.target.checked)} />
                 <span>
                   They still owe {formatPkr(school.outstanding)}. Deleting them does not
-                  collect it and does not write it off — raise a credit note if you are
+                  collect it and does not write it off: raise a credit note if you are
                   forgiving it. Tick to delete anyway.
                 </span>
               </label>

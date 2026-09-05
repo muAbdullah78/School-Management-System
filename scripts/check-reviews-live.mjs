@@ -25,7 +25,16 @@
 import { createRequire } from 'node:module'
 const require = createRequire('/opt/node22/lib/node_modules/')
 const { chromium } = require('playwright')
+import { mkdirSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, resolve } from 'node:path'
 const ORIGIN = 'http://127.0.0.1:8803'
+// scratch/ is gitignored. This used to be process.env.SP with no fallback, so
+// running it from the repo root wrote the screenshot into a directory called
+// literally "undefined", which git add -A then staged. The same bug was fixed
+// in check-site-render.mjs and left here.
+const OUT = process.env.SP || resolve(dirname(fileURLToPath(import.meta.url)), '../scratch/site-render')
+mkdirSync(OUT, { recursive: true })
 const b = await chromium.launch()
 let fails = 0
 const ok = (l, c, d = '') => { if (!c) fails++; console.log(`${c ? 'PASS' : 'FAIL'}  ${l}${d ? '  ' + d : ''}`) }
@@ -98,7 +107,7 @@ ok('the body renders as literal text including its tags',
    r.bodyText.includes('<img src=x') && r.bodyText.includes('<script>'), r.bodyText.slice(0, 50))
 ok('no page errors', errs.length === 0, errs.join(' | '))
 
-await page.screenshot({ path: process.env.SP + '/reviews-live-1280.png', fullPage: false })
+await page.screenshot({ path: OUT + '/reviews-live-1280.png', fullPage: false })
 await ctx.close()
 await b.close()
 console.log(fails === 0 ? '\nLIVE REVIEWS SAFE' : `\n${fails} FAILURES`)

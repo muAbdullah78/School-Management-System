@@ -47,7 +47,7 @@ export function ExamSetup() {
             {terms.data?.map((t) => (
               <li key={t.id} className="flex items-center justify-between px-3 py-2 text-sm">
                 <span className="font-medium text-slate-800">{t.name}</span>
-                <span className="text-slate-500">{fmtDate(t.starts_on)} – {fmtDate(t.ends_on)}{t.result_withheld_for_defaulters ? ' · withholds for defaulters' : ''}</span>
+                <span className="text-slate-500">{fmtDate(t.starts_on)} to {fmtDate(t.ends_on)}{t.result_withheld_for_defaulters ? ' · withholds for defaulters' : ''}</span>
               </li>
             ))}
           </ul>
@@ -104,8 +104,8 @@ export function ExamSetup() {
         {termId && classId && (
           <PaperSetup
             termId={termId} classId={classId} sessionId={sessionId}
-            termName={terms.data?.find((t) => t.id === termId)?.name ?? '—'}
-            className={classes.data?.find((c) => c.id === classId)?.name ?? '—'}
+            termName={terms.data?.find((t) => t.id === termId)?.name ?? '-'}
+            className={classes.data?.find((c) => c.id === classId)?.name ?? '-'}
           />
         )}
       </section>
@@ -151,7 +151,7 @@ function PaperSetup({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {subjects.data?.length === 0 && <tr><td colSpan={8} className="px-3 py-3 text-slate-500">No subjects for this class yet — add one below.</td></tr>}
+            {subjects.data?.length === 0 && <tr><td colSpan={8} className="px-3 py-3 text-slate-500">No subjects for this class yet: add one below.</td></tr>}
             {subjects.data?.map((s) => (
               <PaperRow key={s.id} subject={s} termId={termId} classId={classId} existing={byId.get(s.id)} />
             ))}
@@ -260,7 +260,7 @@ function PaperRow({ subject, termId, classId, existing }: { subject: SubjectRow;
         <td className="px-3 py-2">
           {subject.is_practical
             ? <input type="number" min="0" value={pmax} onChange={(e) => setPmax(e.target.value)} className="w-16 rounded border border-slate-300 px-2 py-1 text-sm" />
-            : <span className="text-xs text-slate-400">—</span>}
+            : <span className="text-xs text-slate-400">-</span>}
         </td>
         <td className="px-3 py-2">
           <input type="number" min="0" value={pass} onChange={(e) => setPass(e.target.value)} className="w-16 rounded border border-slate-300 px-2 py-1 text-sm" />

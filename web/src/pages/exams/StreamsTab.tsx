@@ -9,7 +9,7 @@
  * docs/EXAM-COMPUTATION-DESIGN.md.
  *
  * So this screen is the other half of that fix, and it is built as ONE LIST the
- * school works down — not a field buried in each pupil's profile. Setting a
+ * school works down: not a field buried in each pupil's profile. Setting a
  * stream for forty pupils one profile at a time is why these columns stayed
  * empty, and a half-filled stream column is worse than an empty one: generation
  * refuses on an empty one and cannot detect a wrong one.
@@ -42,7 +42,7 @@ export function StreamsTab() {
   })
   // The streams this class's subjects actually use. Offered as a datalist so a
   // school picks the spelling it already used rather than inventing a second
-  // one — 'Science' and 'Sciences' are two streams as far as any computer is
+  // one: 'Science' and 'Sciences' are two streams as far as any computer is
   // concerned, and the pupils in the second one would quietly lose subjects.
   const subjects = useQuery({
     queryKey: ['subjects', classId], queryFn: () => listSubjects(classId), enabled: !!classId,
@@ -138,7 +138,7 @@ export function StreamsTab() {
       {!classId && (
         <p className="mt-5 text-sm text-slate-500">
           Choose a class. Streams matter for classes 9 to 12, where pupils take different
-          subjects — and a pupil with no stream in a streamed class cannot have a result card
+          subjects, and a pupil with no stream in a streamed class cannot have a result card
           generated at all, on purpose.
         </p>
       )}
@@ -158,7 +158,7 @@ export function StreamsTab() {
             {knownStreams.length > 0 && noStream > 0 && canEdit && (
               <>
                 <span className="text-xs text-slate-500">
-                  {noStream} pupil{noStream === 1 ? '' : 's'} with no stream — set them all to:
+                  {noStream} pupil{noStream === 1 ? '' : 's'} with no stream: set them all to:
                 </span>
                 {knownStreams.map((st) => (
                   <button key={st} onClick={() => applyToAllBlank(st)}
@@ -237,7 +237,7 @@ function StreamRow({ pupil, edit, known, canEdit, onChange }: {
   const missing = known.length > 0 && !edit.stream.trim()
   return (
     <tr className={missing ? 'bg-amber-50/60' : ''}>
-      <td className="px-3 py-2 text-slate-500">{pupil.roll_no ?? '—'}</td>
+      <td className="px-3 py-2 text-slate-500">{pupil.roll_no ?? '-'}</td>
       <td className="px-3 py-2 text-slate-800">
         {pupil.full_name}
         <span className="text-slate-400">

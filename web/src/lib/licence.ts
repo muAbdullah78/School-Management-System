@@ -2,8 +2,8 @@
  * Subscription state for the signed-in school.
  *
  * Everything here comes from one server call (`fn_my_licence`). The server is
- * the authority — it refuses writes from a locked school regardless of what the
- * UI does — so this is only about showing the school an honest, early warning
+ * the authority. It refuses writes from a locked school regardless of what the
+ * UI does, so this is only about showing the school an honest, early warning
  * rather than letting them discover it when a Save fails.
  */
 import { requireSupabase } from './supabase'

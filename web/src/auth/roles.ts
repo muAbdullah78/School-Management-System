@@ -36,14 +36,14 @@ export const ADMIN_ROLES: Role[] = ['owner', 'principal', 'admin_clerk', 'accoun
 /**
  * `readonly` may look at everything and change nothing.
  *
- * It is deliberately IN `ADMIN_ROLES` — it gets the admin screens, because the
+ * It is deliberately IN `ADMIN_ROLES`. It gets the admin screens, because the
  * whole point of the role is oversight and since 0059 those screens actually
  * return data to it. What it must never get is a write control.
  *
  * This exists as a named helper rather than `role !== 'readonly'` scattered
  * across twenty components, because the scattered form is how one screen keeps
  * its Save button. The database refuses the write either way; this only stops
- * offering a button that cannot work — and since RLS makes a refused UPDATE
+ * offering a button that cannot work, and since RLS makes a refused UPDATE
  * affect zero rows *without raising*, a Save button that is offered and pressed
  * used to report success and change nothing.
  *
@@ -74,7 +74,7 @@ export function isAdmin(role: Role | null | undefined): boolean {
 
 /**
  * A parent account. This is NOT a staff role and must never be added to
- * ADMIN_ROLES or TEACHER_ROLES — the database closes every table to it and
+ * ADMIN_ROLES or TEACHER_ROLES. The database closes every table to it and
  * serves the portal through scoped functions, so a parent who reached a staff
  * screen would see an empty, broken page rather than data. The check exists so
  * routing can send them to the portal instead.
