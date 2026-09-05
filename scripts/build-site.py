@@ -66,6 +66,49 @@ PLANS = [
     ('Institution', '3500', 'Up to 1,000 students'),
 ]
 
+def load_profiles() -> dict:
+    """site-src/data/profiles.json: where this business exists elsewhere.
+
+    sameAs tells Google that the Google Business Profile, the G2 listing and
+    this website are one company rather than several with similar names. It is
+    only worth anything if every URL resolves, because a sameAs is a claim
+    Google can check, so the file ships empty and anything that is not an
+    https:// URL stops the build rather than being quietly dropped. A silently
+    dropped entry would look filled in and do nothing.
+    """
+    path = SRC / 'data' / 'profiles.json'
+    if not path.exists():
+        return {}
+    raw = json.loads(path.read_text(encoding='utf-8'))
+    data = {k: v for k, v in raw.items() if not k.startswith('_')}
+    for url in data.get('sameAs') or []:
+        if not isinstance(url, str) or not url.startswith('https://'):
+            sys.exit(f'profiles.json: sameAs entries must be https:// URLs, got {url!r}')
+    if len(set(data.get('sameAs') or [])) != len(data.get('sameAs') or []):
+        sys.exit('profiles.json: the same URL is listed twice in sameAs')
+    email = data.get('email') or ''
+    if email and ('@' not in email or email.startswith('@') or ' ' in email):
+        sys.exit(f'profiles.json: email does not look like an address: {email!r}')
+    return data
+
+
+PROFILES = load_profiles()
+
+# The logo, as its own node so Organization and anything else can point at it
+# by @id instead of repeating it. Google's logo guidance asks for a crawlable
+# image of at least 112x112; this is the 512 icon that scripts/build-icons.mjs
+# generates from the one mark, so the logo in a Knowledge Panel and the favicon
+# in a search result cannot end up being different pictures.
+LOGO = {
+    '@type': 'ImageObject',
+    '@id': f'{SITE}/#logo',
+    'url': f'{SITE}/icon-512.png',
+    'contentUrl': f'{SITE}/icon-512.png',
+    'width': 512,
+    'height': 512,
+    'caption': 'The School Manager',
+}
+
 ORGANISATION = {
     '@type': 'Organization',
     '@id': f'{SITE}/#org',
@@ -74,7 +117,13 @@ ORGANISATION = {
     'description': 'School management software built in Pakistan for Pakistani private schools.',
     'areaServed': {'@type': 'Country', 'name': 'Pakistan'},
     'knowsLanguage': ['en', 'ur'],
+    'logo': LOGO,
+    'image': {'@id': f'{SITE}/#logo'},
 }
+if PROFILES.get('sameAs'):
+    ORGANISATION['sameAs'] = PROFILES['sameAs']
+if PROFILES.get('email'):
+    ORGANISATION['email'] = PROFILES['email']
 
 SOFTWARE = {
     '@type': 'SoftwareApplication',

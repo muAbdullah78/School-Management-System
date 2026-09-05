@@ -43,6 +43,7 @@ Usage:  python3 scripts/check-site-seo.py
 """
 import html
 import json
+import xml.dom.minidom
 import re
 import subprocess
 import sys
@@ -210,6 +211,47 @@ def main() -> int:
             fail(f'{rel}: declares a large share card but site/og.png does not exist. '
                  'Run node scripts/build-og.mjs')
 
+        # --- the favicon, which is why Google showed a grey globe ---
+        #
+        # The tag was present and the icon still did not appear, because the
+        # href was a data: URI. Google fetches the favicon in its own request,
+        # separate from the page, so it needs an address. A data: URI is not an
+        # address. Nothing about the page looks wrong, which is what makes this
+        # worth a guard rather than a comment.
+        # Comments are stripped first. A browser does not act on a tag inside a
+        # comment and neither should this: the comment above these links quotes
+        # the old data: URI as an example, and scanning it flagged every page.
+        head_live = re.sub(r'<!--.*?-->', '', head, flags=re.S)
+        icon_links = re.findall(r'<link[^>]*rel="(?:icon|apple-touch-icon)"[^>]*>',
+                                head_live, re.I)
+        if not icon_links:
+            fail(f'{rel}: no <link rel="icon">, so the browser tab and the search '
+                 'result both fall back to a generic icon')
+        for link in icon_links:
+            href = one(r'href="([^"]+)"', link)
+            if not href:
+                fail(f'{rel}: an icon link has no href: {link}')
+            elif href.startswith('data:'):
+                fail(f'{rel}: the favicon is a data: URI. It has no URL, and Google '
+                     'fetches the favicon separately from the page, so there is '
+                     'nothing for it to fetch. Use a real file.')
+            elif href.startswith('/') and not (SITE / href.lstrip('/')).exists():
+                fail(f'{rel}: icon link points at {href}, which does not exist. '
+                     'Run node scripts/build-icons.mjs')
+        manifest_href = one(r'<link[^>]*rel="manifest"[^>]*href="([^"]+)"', head_live)
+        if manifest_href and manifest_href.startswith('/') \
+                and not (SITE / manifest_href.lstrip('/')).exists():
+            fail(f'{rel}: manifest link points at {manifest_href}, which does not exist')
+
+        # --- every image the page loads must exist ---
+        # The brand mark in the nav and the footer is an <img> pointing at the
+        # shared icon file, precisely so it cannot drift away from the favicon.
+        # That trade needs this check, or a rename breaks the logo on all
+        # sixteen pages at once and nothing says so.
+        for src in re.findall(r'<img[^>]*src="(/[^"]+)"', text):
+            if not (SITE / src.lstrip('/')).exists():
+                fail(f'{rel}: <img src="{src}"> has no file behind it')
+
         # --- exactly one h1, and no two pages sharing one ---
         h1s = re.findall(r'<h1[^>]*>(.*?)</h1>', text, re.I | re.S)
         if len(h1s) != 1:
@@ -244,13 +286,21 @@ def main() -> int:
 
         # --- internal links: they must resolve, and they feed the orphan check ---
         for href in re.findall(r'href="(/[^"#?]*)"', text):
-            if href in ('/styles.css', '/wire.js', '/config.js', '/og.png', '/robots.txt',
-                        '/sitemap.xml'):
-                continue
+            # The handbook is the one page that really is a .html URL, because
+            # it is built by a different script and never had a clean path.
             if href == '/guide.html':
                 if not (SITE / 'guide.html').exists():
                     fail(f'{rel}: links to /guide.html which does not exist')
                 linked_to.add(href)
+                continue
+            # Anything else with an extension is a FILE: /styles.css,
+            # /favicon.ico, /og.png, /site.webmanifest. It must exist, but it is
+            # not a page and it plays no part in the orphan check. This used to
+            # be a hand-kept list of six names, so every asset added afterwards
+            # was reported as a missing page.
+            if '.' in href.rsplit('/', 1)[-1]:
+                if not (SITE / href.lstrip('/')).exists():
+                    fail(f'{rel}: links to {href}, which does not exist')
                 continue
             target = SITE / 'index.html' if href == '/' else SITE / (href.lstrip('/') + '.html')
             if not target.exists():
@@ -336,6 +386,158 @@ def main() -> int:
                 page_avg = str((data.get('summary') or {}).get('average'))
                 if avg and avg.group(1) != page_avg:
                     fail(f'the marked-up rating is {avg.group(1)} and the data says {page_avg}')
+
+    # --- the icon set itself ---
+    #
+    # Google will use a favicon only if it can fetch it, and it prefers a square
+    # whose side is a multiple of 48. These are generated from one source by
+    # scripts/build-icons.mjs; the checks are here so that a hand edit, a
+    # rename or a half-finished regeneration is caught before it is uploaded.
+    src_icon = ROOT / 'site-src' / 'icon.svg'
+    if not src_icon.exists():
+        fail('site-src/icon.svg is missing: it is the source of every icon')
+    elif not (SITE / 'icon.svg').exists():
+        fail('site/icon.svg is missing. Run node scripts/build-icons.mjs')
+    elif src_icon.read_bytes() != (SITE / 'icon.svg').read_bytes():
+        # The nav logo, the footer logo and the favicon all point at
+        # site/icon.svg. If it stops matching its source, the site is showing a
+        # mark that no longer comes from the file everything is generated from,
+        # which is how the website and the app ended up with two different logos.
+        fail('site/icon.svg has drifted from site-src/icon.svg. '
+             'Run node scripts/build-icons.mjs')
+
+    # icon.svg is loaded as an EXTERNAL image by the nav and the footer, so a
+    # browser parses it as XML and rejects the whole file if it is not well
+    # formed, silently: the logo is just missing. Inline SVG in a page is
+    # parsed as HTML, which is lenient, so the icon generator will happily
+    # produce perfect PNGs from a file no browser will load as an image.
+    # This shipped once with "--brand" inside an XML comment, which is illegal
+    # because XML forbids a double hyphen there, and every page lost its logo.
+    for svg in (src_icon, SITE / 'icon.svg'):
+        if svg.exists():
+            try:
+                xml.dom.minidom.parse(str(svg))
+            except Exception as e:
+                fail(f'{svg.relative_to(ROOT)} is not well-formed XML: {e}. A browser '
+                     'will refuse to render it as an image, and say nothing.')
+
+    ico = SITE / 'favicon.ico'
+    if not ico.exists():
+        fail('site/favicon.ico is missing. It is the address Google tries when a '
+             'page declares no icon, and the last line of defence against a grey '
+             'globe. Run node scripts/build-icons.mjs')
+    else:
+        raw = ico.read_bytes()
+        if len(raw) < 22 or raw[0:4] != b'\x00\x00\x01\x00':
+            fail('site/favicon.ico is not an ICO file')
+        else:
+            count = int.from_bytes(raw[4:6], 'little')
+            sizes = {raw[6 + i * 16] or 256 for i in range(count)}
+            if 48 not in sizes:
+                fail(f'site/favicon.ico carries {sorted(sizes)} and no 48. Google asks '
+                     'for a multiple of 48 and may skip anything smaller.')
+
+    # PNG dimensions come out of the IHDR chunk, which is always the first
+    # chunk and always at a fixed offset. No image library needed.
+    def png_size(path):
+        raw = path.read_bytes()
+        if raw[:8] != b'\x89PNG\r\n\x1a\n':
+            return None
+        return int.from_bytes(raw[16:20], 'big'), int.from_bytes(raw[20:24], 'big')
+
+    # The three Google may choose from must be multiples of 48. icon-512 is the
+    # Android home-screen size referenced from the manifest, where no such rule
+    # applies, so it is checked for squareness only.
+    for name, side, google_facing in (('icon-48.png', 48, True), ('icon-96.png', 96, True),
+                                      ('icon-192.png', 192, True), ('icon-512.png', 512, False),
+                                      ('icon-maskable-512.png', 512, False),
+                                      ('apple-touch-icon.png', 180, False)):
+        f = SITE / name
+        if not f.exists():
+            fail(f'site/{name} is missing. Run node scripts/build-icons.mjs')
+            continue
+        got = png_size(f)
+        if got is None:
+            fail(f'site/{name} is not a PNG')
+        elif got != (side, side):
+            fail(f'site/{name} is {got[0]}x{got[1]}, expected {side}x{side}')
+        elif google_facing and side % 48:
+            fail(f'site/{name} is {side}px, which is not a multiple of 48')
+
+    manifest = SITE / 'site.webmanifest'
+    if not manifest.exists():
+        fail('site/site.webmanifest is missing')
+    else:
+        try:
+            mdata = json.loads(manifest.read_text(encoding='utf-8'))
+        except json.JSONDecodeError as e:
+            fail(f'site/site.webmanifest does not parse: {e}')
+        else:
+            for icon in mdata.get('icons') or []:
+                src = icon.get('src', '')
+                if src.startswith('/') and not (SITE / src.lstrip('/')).exists():
+                    fail(f'site.webmanifest lists {src}, which does not exist')
+            # Android crops a maskable icon to a circle 80% of the width. The
+            # app's manifest used to declare the SAME artwork as "any" and
+            # "maskable", which put the tassel inside the crop zone on every
+            # Android phone.
+            purposes = {}
+            for icon in mdata.get('icons') or []:
+                purposes.setdefault(icon.get('purpose', 'any'), set()).add(icon.get('src'))
+            shared = purposes.get('any', set()) & purposes.get('maskable', set())
+            if shared:
+                fail(f'site.webmanifest declares {sorted(shared)} as both "any" and '
+                     '"maskable". A maskable icon needs its own artwork with the '
+                     'mark inside the safe area, or Android crops it.')
+
+    # robots.txt must not put the icons out of reach. Google fetches a favicon
+    # as a separate request and obeys robots.txt when it does, so a Disallow
+    # covering the icons is another way to end up with a grey globe.
+    robots = SITE / 'robots.txt'
+    if robots.exists():
+        for line in robots.read_text(encoding='utf-8').splitlines():
+            if line.lower().startswith('disallow:'):
+                rule = line.split(':', 1)[1].strip()
+                if rule and any(
+                    p.startswith(rule) for p in ('/favicon.ico', '/icon.svg', '/icon-192.png')
+                ):
+                    fail(f'robots.txt has "Disallow: {rule}", which blocks the favicon')
+
+    # --- _headers: one CSP, and no path given Cache-Control twice ---
+    #
+    # Two Content-Security-Policy headers are enforced together, so a second
+    # rule meant to relax the policy for one page tightens it everywhere
+    # instead, silently. Two Cache-Control rules on one path is simply
+    # ambiguous. Both are invisible until something breaks in production.
+    headers = SITE / '_headers'
+    if not headers.exists():
+        fail('site/_headers is missing: the site would ship with no CSP and no '
+             'X-Content-Type-Options')
+    else:
+        rules, cur = [], None
+        for line in headers.read_text(encoding='utf-8').splitlines():
+            if not line.strip() or line.lstrip().startswith('#'):
+                continue
+            if line.startswith('/'):
+                cur = (line.strip(), [])
+                rules.append(cur)
+            elif line.startswith((' ', '\t')) and cur is not None:
+                cur[1].append(line.strip().split(':', 1)[0].lower())
+        csps = [pat for pat, names in rules if 'content-security-policy' in names]
+        if len(csps) != 1:
+            fail(f'site/_headers has {len(csps)} Content-Security-Policy rules '
+                 f'({csps}). A browser enforces every CSP header it receives, so a '
+                 'second one can only ever tighten the first.')
+        cc = [pat for pat, names in rules if 'cache-control' in names]
+        if '/*' in cc and len(cc) > 1:
+            fail('site/_headers sets Cache-Control on /* and on specific paths, so '
+                 'those paths get two values')
+        if len(cc) != len(set(cc)):
+            fail('site/_headers sets Cache-Control twice for the same path')
+        required = {'content-security-policy', 'x-content-type-options', 'referrer-policy'}
+        catchall = {n for pat, names in rules if pat == '/*' for n in names}
+        for missing in sorted(required - catchall):
+            fail(f'site/_headers does not set {missing} for /*')
 
     # --- robots.txt must point at the sitemap, or nothing reads it ---
     robots = SITE / 'robots.txt'

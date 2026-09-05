@@ -1,0 +1,11 @@
+# This is the APP, not the website. It is a sign-in screen and every URL behind
+# it needs an account, so there is nothing here worth putting in a search index.
+#
+# Crawling is deliberately ALLOWED. Keeping a page out of the index is done with
+# noindex, and a crawler has to be able to fetch the page to see the noindex.
+# Disallow here would hide the noindex and could leave the URL listed with no
+# description, which is the outcome this is trying to avoid.
+#
+# The website's own robots.txt and sitemap are at https://theschoolmanager.site/.
+User-agent: *
+Allow: /

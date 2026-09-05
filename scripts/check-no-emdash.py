@@ -54,6 +54,8 @@ SCOPE = [
     # first is the very first thing a school sees on its office computer.
     "desktop/ui/index.html",
     "desktop/README.md",
+    # Served at app.theschoolmanager.site/robots.txt, so a person can read it.
+    "web/public/robots.txt",
 ]
 
 # U+2014 em dash, and U+2013 en dash used as a dash rather than in a range.

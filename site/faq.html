@@ -25,7 +25,22 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#FFFFFF">
 
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'><rect%20width='24'%20height='24'%20rx='6'%20fill='%234F46E5'/><g%20fill='%23fff'><circle%20cx='12'%20cy='7.5'%20r='1.4'/><path%20fill-rule='evenodd'%20d='M5.5%2012.5h13v6h-13zm2.5%201.5h8v1h-8zm0%202h8v1h-8z'/></g></svg>">
+<!-- FAVICON. These are real files at fixed URLs, and that is the whole point.
+     This used to be a single <link rel="icon" href="data:image/svg+xml,...">.
+     A data: URI has no address, and Google fetches the favicon in a separate
+     request from the page, so there was nothing for it to ask for. There was
+     no /favicon.ico either, so Google's fallback route dead-ended too, and a
+     grey globe is what it shows when both fail.
+
+     Do NOT rename these files. Google caches a favicon against its URL, and a
+     new name means a recrawl before the icon changes. Generated from one
+     source by scripts/build-icons.mjs; scripts/check-site-seo.py refuses a
+     build where any of them is missing, is not square, or is a data: URI. -->
+<link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="icon" type="image/png" href="/icon-192.png" sizes="192x192">
+<link rel="icon" type="image/svg+xml" href="/icon.svg">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180">
+<link rel="manifest" href="/site.webmanifest">
 
 <link rel="stylesheet" href="/styles.css">
 <script type="application/ld+json">
@@ -45,7 +60,19 @@
       "knowsLanguage": [
         "en",
         "ur"
-      ]
+      ],
+      "logo": {
+        "@type": "ImageObject",
+        "@id": "https://theschoolmanager.site/#logo",
+        "url": "https://theschoolmanager.site/icon-512.png",
+        "contentUrl": "https://theschoolmanager.site/icon-512.png",
+        "width": 512,
+        "height": 512,
+        "caption": "The School Manager"
+      },
+      "image": {
+        "@id": "https://theschoolmanager.site/#logo"
+      }
     },
     {
       "@type": "BreadcrumbList",
@@ -144,13 +171,7 @@
 <div class="nav">
   <div class="wrap nav__in">
     <a class="brand" href="/">
-      <svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true">
-        <rect width="24" height="24" rx="6" fill="#4F46E5"/>
-        <g fill="#fff">
-          <circle cx="12" cy="7.5" r="1.4"/>
-          <path fill-rule="evenodd" d="M5.5 12.5h13v6h-13zm2.5 1.5h8v1h-8zm0 2h8v1h-8z"/>
-        </g>
-      </svg>
+      <img src="/icon.svg" width="26" height="26" alt="" decoding="async">
       <span>The School Manager</span>
     </a>
 
@@ -332,10 +353,7 @@
     <div class="foot__grid">
       <div>
         <div class="brand" style="margin-bottom:14px">
-          <svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true">
-            <rect width="24" height="24" rx="6" fill="#4F46E5"/>
-            <g fill="#fff"><circle cx="12" cy="7.5" r="1.4"/><path fill-rule="evenodd" d="M5.5 12.5h13v6h-13zm2.5 1.5h8v1h-8zm0 2h8v1h-8z"/></g>
-          </svg>
+          <img src="/icon.svg" width="26" height="26" alt="" decoding="async">
           <span>The School Manager</span>
         </div>
         <p style="max-width:34ch">

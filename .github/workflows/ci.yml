@@ -173,7 +173,26 @@ jobs:
         # links, no page orphaned from every other page, valid JSON-LD, and a
         # sitemap that agrees with the pages in both directions.
         #
-        # Needs no database and no browser, so it belongs in this job.
+        # It also covers the icons, after Google spent weeks showing a grey
+        # globe next to a site whose favicon tag was present and correct: the
+        # href was a data: URI, which has no address for Google's separate
+        # favicon fetch to ask for. So: no page may declare a data: URI icon,
+        # every icon and manifest URL must have a file behind it, favicon.ico
+        # must be a real ICO containing a 48, the PNGs Google chooses from must
+        # be square multiples of 48, site/icon.svg must not have drifted from
+        # its source, and it must be well-formed XML. That last one is not
+        # theoretical: the mark is loaded as an external image, where a browser
+        # parses it as XML and rejects the file silently, and it shipped once
+        # with a double hyphen inside an XML comment.
+        #
+        # And _headers, where two mistakes are invisible until production: a
+        # second Content-Security-Policy tightens the first rather than
+        # relaxing it, and two Cache-Control rules on one path are ambiguous.
+        #
+        # Needs no database and no browser, so it belongs in this job. The two
+        # checks that DO need a browser, scripts/check-site-render.mjs and
+        # scripts/check-site-csp.mjs, stay out of CI on purpose so the install
+        # stays cheap; site/README.md says how to run them.
         working-directory: .
         run: python3 scripts/check-site-seo.py
 
