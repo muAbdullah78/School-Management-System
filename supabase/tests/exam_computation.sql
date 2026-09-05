@@ -653,6 +653,58 @@ select pg_temp.ok(
   || 'cards in circulation after a correction can be told apart');
 
 -- =============================================================================
+-- 14b. The card explains its attendance percentage (0105)
+--
+-- A day marked `Leave` counts against the percentage in the same way as
+-- absence, and that is the decision: the figure has to answer "how much of the
+-- year was this child here" to carry the 75% rule that decides who may sit the
+-- board exams. What was wrong is that the card printed the percentage and
+-- nothing else, so a school that GRANTED fifteen days then sent home a card
+-- reading as though the child had not turned up, and the clerk at the counter
+-- had nothing printed to settle it with.
+--
+-- So the counts are asserted, and the percentage is asserted to be the one that
+-- counts leave against the child. Both halves matter: without the second, a
+-- later "fix" that quietly forgave leave would pass this suite.
+-- =============================================================================
+do $att$
+-- Inside the exam term's own window (2026-02-01 to 2026-02-15), because that is
+-- what fn_generate_result_cards measures attendance over. Ten days outside it
+-- would have produced a card with no attendance at all, which is how the first
+-- run of this assertion failed and is worth leaving written down.
+declare v_enr uuid := pg_temp.enr('Science Child'); d date := date '2026-02-02';
+begin
+  -- Ten marked days: 6 present, 3 leave, 1 absent.
+  --   counting leave against:  6 / 10 = 60.0
+  --   forgiving leave:         6 /  7 = 85.7
+  insert into public.attendance_daily (school_id, enrollment_id, attendance_date, status, marked_by)
+  select public.current_school_id(), v_enr, d + g, 'present', auth.uid() from generate_series(0, 5) g;
+  insert into public.attendance_daily (school_id, enrollment_id, attendance_date, status, marked_by)
+  values (public.current_school_id(), v_enr, d + 6, 'leave',  auth.uid()),
+         (public.current_school_id(), v_enr, d + 7, 'leave',  auth.uid()),
+         (public.current_school_id(), v_enr, d + 8, 'leave',  auth.uid()),
+         (public.current_school_id(), v_enr, d + 9, 'absent', auth.uid());
+end $att$;
+
+select public.fn_generate_result_cards(
+  (select id from public.exam_terms where school_id = public.current_school_id()),
+  (select id from public.classes  where school_id = public.current_school_id()));
+
+select pg_temp.ok(
+  (pg_temp.card('Science Child')->'attendance'->>'leave')::int = 3
+  and (pg_temp.card('Science Child')->'attendance'->>'present')::int = 6
+  and (pg_temp.card('Science Child')->'attendance'->>'marked_days')::int = 10,
+  '45a. the frozen card carries the register behind the percentage, so the leave the '
+  || 'school approved is printed instead of read as absence');
+
+select pg_temp.ok(
+  (pg_temp.card('Science Child')->>'attendance_pct')::numeric = 60.0
+  and (pg_temp.card('Science Child')->'attendance'->>'present_pct')::numeric = 60.0,
+  '45b. approved leave still counts against the percentage (6 of 10 days, not 6 of 7). '
+  || 'A number that forgave it could not carry the 75% board-exam rule, and this pins '
+  || 'that decision so a later change has to argue with it');
+
+-- =============================================================================
 -- 15. Nothing crosses a school boundary, in BOTH directions
 -- =============================================================================
 select pg_temp.ok(

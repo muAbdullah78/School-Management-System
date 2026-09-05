@@ -735,7 +735,16 @@ with sig(migration, object, present) as (values
      exists (
        select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
        where n.nspname = 'public' and p.proname = 'fn_school_logins'
-         and p.prosrc like '%p.family_id is null%'))
+         and p.prosrc like '%p.family_id is null%')),
+  ('0105_the_leave_the_school_approved', 'a parent can see the leave the school granted',
+     exists (
+       select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'fn_generate_result_cards'
+         and p.prosrc like '%fn__attendance_counts%')
+     and exists (
+       select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'fn_portal_child_attendance'
+         and p.prosrc like '%''leave''%'))
 )
 select migration,
        object                                   as looked_for,

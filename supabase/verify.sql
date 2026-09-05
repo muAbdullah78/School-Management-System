@@ -1554,6 +1554,45 @@ select 'a parent login with no family is visible (0104)',
        end
 
 union all
+-- 0105. A day marked `Leave` counts against the percentage exactly as absence
+-- does, which is correct: the figure has to answer "how much of the year was
+-- this child here" to carry the 75% board-exam rule. What was wrong is that
+-- neither surface a PARENT looks at ever said so, so a school granted fifteen
+-- days of leave and then sent home a card reading 88.9% with nothing to explain
+-- it, and the clerk at the counter had nothing printed to settle it with.
+--
+-- Catalogue, not a call: fn_generate_result_cards and fn_portal_child_attendance
+-- both refuse a connection with no profile, and one exception in this file
+-- prints no rows at all. The 0098 row above records what that cost.
+select 'a parent can see the leave the school granted (0105)',
+       case
+         when to_regprocedure('public.fn__attendance_counts(uuid,uuid,date,date)') is null
+           then 'FAIL - apply supabase/bundles/13_the_leave_the_school_approved.sql'
+         when not exists (
+           select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = 'fn_generate_result_cards'
+             and p.prosrc like '%fn__attendance_counts%')
+           then 'FAIL - the result card still prints a percentage with nothing '
+                || 'to explain it; apply supabase/bundles/13_the_leave_the_school_approved.sql'
+         when not exists (
+           select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = 'fn_portal_child_attendance'
+             and p.prosrc like '%''leave''%')
+           then 'FAIL - the portal still does not report the leave it granted; '
+                || 'apply supabase/bundles/13_the_leave_the_school_approved.sql'
+         -- The rule itself still lives in one place. Adding a counts function
+         -- that CALLED the formula again rather than fn__attendance_pct would
+         -- have undone 0100 on the same day it was finished.
+         when exists (
+           select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = 'fn__attendance_counts'
+             and p.prosrc not like '%fn__attendance_pct%')
+           then 'FAIL - fn__attendance_counts computes its own percentage '
+                || 'instead of calling the shared rule'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS — no schools yet, as expected'

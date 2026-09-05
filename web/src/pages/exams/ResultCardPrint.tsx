@@ -158,6 +158,21 @@ export function ResultCardPrint({
           <span><span className="text-slate-500">Attendance:</span> {f.attendance_pct == null ? '-' : `${f.attendance_pct}%`}</span>
         </div>
 
+        {/* 0105. The register behind that percentage, printed only when there is
+            leave to account for. The school approved those days and the card
+            used to read as though the child had simply not turned up, which is
+            an argument at the counter that nothing printed could settle. The
+            percentage is unchanged: it counts every day the school was open,
+            because that is the figure the 75% board-exam rule needs. */}
+        {(f.attendance?.leave ?? 0) > 0 && (
+          <div className="mt-2 text-xs text-slate-600">
+            <span className="font-medium text-slate-700">Attendance: </span>
+            {f.attendance!.present} present of {f.attendance!.marked_days} days marked, of which
+            {' '}{f.attendance!.leave} {f.attendance!.leave === 1 ? 'day was' : 'days were'} leave
+            {' '}approved by the school. The percentage counts every day the school was open.
+          </div>
+        )}
+
         {/* The verdict, and the fact behind it. Both, so a school that promotes
             on aggregate alone can still apply its own rule from what is printed. */}
         <div className="mt-3 flex flex-wrap items-baseline justify-between gap-2 border-t border-slate-200 pt-3">

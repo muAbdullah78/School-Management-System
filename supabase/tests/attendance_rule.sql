@@ -233,5 +233,130 @@ begin
   raise notice 'ok: a teacher and a pupil are measured the same way (%)', v_expected;
 end $staff$;
 
+-- =============================================================================
+-- The leave the school approved (0105)
+--
+-- Leave counts against the percentage in the same way as absence. That is the
+-- decision, not an oversight: the figure has to answer "how much of the year
+-- was this child here" to carry the 75% rule that decides who may sit the board
+-- exams, and a number that quietly forgave granted leave would put a child with
+-- two months off at 100%.
+--
+-- What was wrong is that neither surface a PARENT looks at ever said so. The
+-- office profile has printed `P 160 · A 5 · L 15` for a long time; the portal
+-- showed a percentage and a present count, and the card showed a percentage
+-- alone. So a school granted the leave and then sent home a card that reads as
+-- though the child did not turn up, and the only person available to argue with
+-- was the clerk at the counter.
+--
+-- A SECOND PUPIL, deliberately, so the 83.3 fixture above is untouched. Its
+-- register is the one every assertion in this file so far is written against.
+-- =============================================================================
+do $leave$
+declare
+  v_s1 uuid := (select v from ids where k='s1');
+  v_own uuid := (select v from ids where k='own');
+  v_fam uuid;
+  v_ses uuid; v_cls uuid; v_sec uuid; v_stu uuid; v_enr uuid;
+  d date := date '2026-04-06';
+  j jsonb;
+  v_counted numeric; v_forgiven numeric;
+begin
+  select family_id into v_fam from public.profiles where id = (select v from ids where k='par');
+  select id into v_ses from public.academic_sessions where school_id = v_s1 and is_current;
+  select id into v_cls from public.classes  where school_id = v_s1 limit 1;
+  select id into v_sec from public.sections where school_id = v_s1 limit 1;
+
+  insert into public.students (school_id, gr_no, full_name, family_id, admission_date, status)
+    values (v_s1, 'GR-2', 'Leave Child', v_fam, d - 40, 'active') returning id into v_stu;
+  insert into public.enrollments (school_id, student_id, session_id, class_id, section_id, roll_no)
+    values (v_s1, v_stu, v_ses, v_cls, v_sec, '2') returning id into v_enr;
+
+  -- TWENTY marked days: 12 present, 5 leave, 3 absent.
+  --   counting leave against:  12 / 20 = 60.0
+  --   forgiving leave:         12 / 15 = 80.0
+  insert into public.attendance_daily (school_id, enrollment_id, attendance_date, status, marked_by)
+  select v_s1, v_enr, d + g, 'present', v_own from generate_series(0, 11) g;
+  insert into public.attendance_daily (school_id, enrollment_id, attendance_date, status, marked_by)
+  select v_s1, v_enr, d + 12 + g, 'leave', v_own from generate_series(0, 4) g;
+  insert into public.attendance_daily (school_id, enrollment_id, attendance_date, status, marked_by)
+  select v_s1, v_enr, d + 17 + g, 'absent', v_own from generate_series(0, 2) g;
+
+  v_counted  := public.fn__attendance_pct(12, 0, 0, 20);   -- 60.0
+  v_forgiven := public.fn__attendance_pct(12, 0, 0, 15);   -- 80.0
+  if v_counted is distinct from 60.0 or v_forgiven is distinct from 80.0 then
+    raise exception 'FAIL: the fixture is wrong before anything is measured: '
+                    'counted % and forgiven %, expected 60.0 and 80.0',
+                    v_counted, v_forgiven;
+  end if;
+
+  -- 1. The shared counts function: every status, the marked total, and the
+  --    percentage taken from the shared rule rather than computed again.
+  j := public.fn__attendance_counts(v_enr, v_s1, d - 5, d + 30);
+  if (j->>'leave')::int <> 5 or (j->>'present')::int <> 12
+     or (j->>'absent')::int <> 3 or (j->>'marked_days')::int <> 20 then
+    raise exception 'FAIL: fn__attendance_counts breaks the register down wrongly: %', j;
+  end if;
+  if (j->>'present_pct')::numeric is distinct from v_counted then
+    raise exception 'FAIL: fn__attendance_counts says %, the shared rule says %',
+      j->>'present_pct', v_counted;
+  end if;
+
+  -- 2. THE DECISION, pinned. Leave is in the denominator. Without this
+  --    assertion a later change that quietly forgave approved leave would pass
+  --    every other test in this file, and the number would stop being able to
+  --    carry the 75% board-exam rule without anybody noticing.
+  if (j->>'present_pct')::numeric = v_forgiven then
+    raise exception 'FAIL: approved leave is no longer counted against the '
+                    'percentage (% of 15 days rather than of 20). That number '
+                    'cannot carry the 75%% rule that decides who may sit the '
+                    'board exams: a child granted two months off would read '
+                    '100%%. If this is a deliberate change, argue with this '
+                    'assertion rather than deleting it.', j->>'present';
+  end if;
+
+  -- 3. The parent's own screen now reports the leave, and still reports the
+  --    percentage that counts it.
+  perform set_config('test.uid', (select v::text from ids where k='par'), false);
+  j := public.fn_portal_child_attendance(v_stu, d - 5, d + 30);
+  if (j->>'leave')::int <> 5 then
+    raise exception 'FAIL: the portal reports % days of leave, not 5. A parent '
+                    'shown a lower percentage with no way to see the days the '
+                    'school itself approved has a complaint nobody at the '
+                    'counter can settle.', coalesce(j->>'leave', 'nothing');
+  end if;
+  if (j->>'percent')::numeric is distinct from v_counted then
+    raise exception 'FAIL: the portal says %, the rule says %', j->>'percent', v_counted;
+  end if;
+
+  -- 4. And the office profile, which had the breakdown all along, still agrees
+  --    with the parent's screen. Two surfaces disagreeing about this exact
+  --    number is what 0097 and 0100 were about.
+  perform set_config('test.uid', (select v::text from ids where k='own'), false);
+  j := public.fn_attendance_summary(v_enr, d - 5, d + 30);
+  if (j->>'leave')::int <> 5
+     or (j->>'present_pct')::numeric is distinct from v_counted then
+    raise exception 'FAIL: the office profile and the parent portal disagree: %', j;
+  end if;
+
+  raise notice 'ok: leave is counted against the percentage (%) and reported on '
+    'every surface that shows it', v_counted;
+end $leave$;
+
+-- The counts function edits nobody's data and reads one school's register, but
+-- it takes the school id as an ARGUMENT, so it must not be reachable from a
+-- browser session: a caller who could choose the school id would choose
+-- somebody else's.
+do $reach$
+begin
+  if has_function_privilege('anon', 'public.fn__attendance_counts(uuid,uuid,date,date)', 'execute')
+     or has_function_privilege('authenticated', 'public.fn__attendance_counts(uuid,uuid,date,date)', 'execute')
+  then
+    raise exception 'FAIL: fn__attendance_counts is reachable from the browser, '
+                    'and it takes the school id as an argument';
+  end if;
+  raise notice 'ok: the counts function is not reachable from a browser session';
+end $reach$;
+
 rollback;
 \echo 'ATTENDANCE RULE: ALL TESTS PASSED'
