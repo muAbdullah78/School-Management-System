@@ -461,6 +461,8 @@ export function PortalPage() {
                           </p>
                           <p className="mt-1 text-xs text-slate-500">
                             {attendance.data.present} present of {attendance.data.marked} days marked
+                            {(attendance.data.leave ?? 0) > 0
+                              && ` · ${attendance.data.leave} on approved leave`}
                           </p>
                         </div>
                         <span
@@ -473,6 +475,24 @@ export function PortalPage() {
                           <IconAttendance />
                         </span>
                       </div>
+                      {/* 0105. WHY THIS SENTENCE IS HERE AT ALL. Leave counts
+                          against the percentage in the same way as absence,
+                          which is right: the figure has to answer "how much of
+                          the year was this child here" to carry the 75% rule
+                          that decides who may sit the board exams. But the
+                          school GRANTED those days, and a parent shown a lower
+                          number with no explanation has a fair complaint and
+                          nobody to settle it with except the clerk at the
+                          counter. So the number stays honest and says what it
+                          counts. Shown only when there is leave to explain. */}
+                      {(attendance.data.leave ?? 0) > 0 && (
+                        <p className="mt-3 border-t border-slate-200 pt-3 text-xs text-slate-600">
+                          The percentage counts every day the school was open, so
+                          the {attendance.data.leave} day{attendance.data.leave === 1 ? '' : 's'}
+                          {' '}of leave the school approved {attendance.data.leave === 1 ? 'is' : 'are'}
+                          {' '}counted as days your child was not present.
+                        </p>
+                      )}
                     </Card>
 
                     <Card>

@@ -257,11 +257,29 @@ emit supabase/bundles/11_deletion_and_logins.sql \
 # parent-side twin of 0095: a parent login whose family link was never written
 # appeared on no screen at all, so the parent saw an empty portal with their own
 # name on it and the office had nothing to look at.
+#
+# NOW FROZEN. Bundle 12 has been pasted into a live school, so its glob stays
+# the closed list below and its line stays in the MANIFEST. New work goes in
+# bundle 13. This one shipped with a closed list from the start, which is the
+# first time in this repository that has been true of a bundle at the moment it
+# was handed over.
 emit supabase/bundles/12_one_number.sql \
      supabase/migrations/0098*.sql supabase/migrations/0099*.sql \
      supabase/migrations/0100*.sql supabase/migrations/0101*.sql \
      supabase/migrations/0102*.sql supabase/migrations/0103*.sql \
      supabase/migrations/0104*.sql
+
+# A THIRTEENTH bundle, because bundle 12 is frozen above.
+#
+# 0105 is the parent's half of the attendance number. A day marked `Leave`
+# counts against the percentage exactly as absence does, which is right -- the
+# figure has to answer "how much of the year was this child here" to carry the
+# 75% board-exam rule -- but neither surface a parent looks at ever said so. The
+# school granted fifteen days and then sent home a card reading 88.9% with no
+# explanation, and the clerk at the counter had nothing printed to settle it
+# with. Both parent surfaces now carry the leave figure.
+emit supabase/bundles/13_the_leave_the_school_approved.sql \
+     supabase/migrations/0105*.sql
 
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
