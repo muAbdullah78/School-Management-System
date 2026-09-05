@@ -81,19 +81,19 @@ In Supabase, click **SQL Editor** in the left sidebar. Then choose one of the tw
 ways below — the bundles are the fast way, and the numbered files are the same SQL
 in smaller pieces.
 
-### Load the eleven bundles
+### Load the twelve bundles
 
 Use the ready-made bundles in **`supabase/bundles/`**. They contain exactly the
 same SQL as the numbered migration files, just joined up, and CI checks that
 every migration is in exactly one bundle so none can be left out.
 
 Run them **in this order, one at a time**, waiting for each to say Success. Read
-the numbers, not the filenames sorted alphabetically: `11_deletion_and_logins.sql`
-comes LAST, even though a computer listing the folder puts 10 and 11 between 1
+the numbers, not the filenames sorted alphabetically: `12_one_number.sql` comes
+LAST, even though a computer listing the folder puts 10, 11 and 12 between 1
 and 2.
 
 Once a bundle has been pasted into a live database it never changes. New work
-goes in a new bundle, which is why there are eleven and not one, and why a school
+goes in a new bundle, which is why there are twelve and not one, and why a school
 only ever has to run the ones it has not run before.
 
 | Order | File | What it is |
@@ -110,7 +110,9 @@ only ever has to run the ones it has not run before.
 | 10 | `10_reviews.sql` | Customer reviews: the table, the rules that decide who may write one (the owner or principal of a school 21 days old with 20 real receipts, one review per school), the two views the website reads with **no login**, and the operator's narrow power to hide one for abuse. Nothing in it touches an existing table, so a school that skips it loses the reviews page and nothing else |
 | 11 | `11_deletion_and_logins.sql` | Three things a school asked for on its first day. **Deleting**: a record with nothing attached to it can be removed properly, and one with money, attendance, marks or issued documents cannot, with the refusal naming exactly what is in the way. Before this nothing in the product could be deleted at all, so a name typed in wrong stayed on the roster for ever. **Seeing who can sign in**: a login that was never attached to a staff record used to appear on no screen, so creating a teacher login left the roster saying "No staff yet", and no screen anywhere could tell you which email address a login used. **Starting again**: a school still on trial can clear its practice data and begin properly, keeping its logins, its settings and its subscription. Also one number: the attendance percentage was computed three different ways, and a parent could see 92% where the result card printed 83.3% |
 
-**When all eleven say Success, check the install:** open a new query, paste
+| 12 | `12_one_number.sql` | The application had stopped agreeing with itself. Asked "what are we owed" on one school's data, six screens gave three answers: Rs 8,350 on the dashboard, the balance sheet and the defaulters list, Rs 8,100 on the reconciliation screen and the unpaid-challan report, Rs 8,062.50 in dues by fee head. **The fee statement**: every charge, discount, late fee, hand-keyed adjustment and payment for a child, in order, with a running total that closes on the balance. A manual charge or a waiver used to move the balance and appear on no screen at all, which is why a parent could see Rs 2,350 owed above two challans totalling Rs 2,100. The office and the parent now read the same statement. **Dues by fee head** counts the late fee, which lived on the challan rather than on a line of it and so vanished from "charged" while still reducing what a payment appeared to cover. **Reconciliation** keeps its own basis and shows the bridge to the dashboard's. **One headcount**: the dashboard tile is now the same function as the plan limit, and it reports the children who are on no class list, who get no challan, no register and no result card and appeared on no report. **One attendance rule** in one function instead of four copies. **A payload key the database does not read is refused** instead of dropped: a practical mark or an absence flag sent under the wrong name used to vanish in silence |
+
+**When all twelve say Success, check the install:** open a new query, paste
 [`supabase/verify.sql`](../supabase/verify.sql) and Run. Every row should say
 **PASS**, except two saying **ACTION NEEDED** — those are your billing details
 (Step 9) and publishing a Windows installer (Step 11).
