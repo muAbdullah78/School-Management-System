@@ -46,6 +46,14 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 CI = (ROOT / '.github/workflows/ci.yml').read_text(encoding='utf-8')
 PRE = (ROOT / 'scripts/preflight.sh').read_text(encoding='utf-8')
 
+# Workflows this file does not read at all, with the reason. Named rather than
+# ignored: a whole workflow silently out of scope is the same fault as a step
+# silently out of scope, one size larger.
+OTHER_WORKFLOWS = {
+    'desktop.yml': 'builds and signs the Windows installer on a Windows runner, '
+                   'which cannot be reproduced here at all',
+}
+
 # Steps preflight performs by a DIFFERENT route than the command in ci.yml, so a
 # textual match will never find them. Each entry says how.
 COVERED = {
@@ -98,7 +106,16 @@ def commands(text: str):
     for m in re.finditer(r'-\s+name:\s*(.+?)\n((?:.*\n)*?\s+run:\s*(\|?)[^\n]*\n(?:(?:\s{10,}.*|\s*)\n)*?)', text):
         name = m.group(1).strip()
         block = m.group(2)
-        run = re.search(r'\brun:\s*(\|?)(.*)', block)
+        # ANCHORED TO THE START OF A LINE, and not inside a comment.
+        #
+        # `\brun:` matched the word "run:" in a step's own prose. The comment on
+        # the cash-drawer step reads "One ordinary morning, seeded and run: open
+        # with a Rs 1,000 float", so the parser took "open with a Rs 1,000
+        # float, take" as the command, found no file in it, and reported a step
+        # preflight does run as one it does not. Wrong in the safe direction
+        # this time, and wrong in the unsafe direction the moment the prose
+        # happens to name a file that preflight does run.
+        run = re.search(r'^[^\S\n]*run:[^\S\n]*(\|?)(.*)$', block, re.M)
         if not run:
             continue
         if run.group(1) == '|':
@@ -144,6 +161,17 @@ def main() -> int:
             print(f'      partially: {PARTIAL[name]}')
     if not left:
         print('  none: every CI step has an equivalent here')
+
+    for wf in sorted(ROOT.glob('.github/workflows/*.y*ml')):
+        if wf.name == 'ci.yml':
+            continue
+        why = OTHER_WORKFLOWS.get(wf.name)
+        if why:
+            print(f'  (all of {wf.name}: {why})')
+        else:
+            print(f'  (all of {wf.name}: this file does not read it, and nobody '
+                  'has said why. Add it to OTHER_WORKFLOWS in '
+                  'scripts/preflight-gaps.py with the reason.)')
 
     names = {n for n, _ in steps}
     for m in sorted(set(COVERED) - names):

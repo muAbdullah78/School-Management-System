@@ -1565,6 +1565,22 @@ jobs:
         # being saved by a constraint is luck rather than a rule.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/payload_keys.sql
 
+      - name: The cash drawer never accuses the clerk
+        # One ordinary morning, seeded and run: open with a Rs 1,000 float, take
+        # Rs 3,000 cash, reverse it when the cheque bounces and hand the money
+        # back, take a Rs 2,000 admission fee in cash. The till expected
+        # Rs 4,000 and the drawer held Rs 3,000, so the clerk could not close
+        # without explaining a shortfall they had not caused, and the variance
+        # went on their record for an owner to sign off.
+        #
+        # 0031 attached cash to the collector's drawer by adding one line to the
+        # two payment entry points. fn_reverse_payment takes money OUT and
+        # fn_admit_student's admission fee, hardcoded 'cash', puts money IN, and
+        # neither got that line. The two partly cancelled, which is worse than
+        # either alone: a Rs 3,000 shortfall and a Rs 2,000 surplus presented as
+        # a Rs 1,000 mystery.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/till_and_the_clerk.sql
+
       - name: Live student count — does a school outgrowing its plan get noticed?
         # It did not. subscriptions.student_count is a stored number driving the
         # console's count, limit_state, over_limit_flagged_at, suggested_plan and

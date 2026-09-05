@@ -723,7 +723,9 @@ with sig(migration, object, present) as (values
      exists (
        select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
        where n.nspname = 'public' and p.proname = 'fn_enter_marks'
-         and p.prosrc like '%fn__only_these_keys%'))
+         and p.prosrc like '%fn__only_these_keys%')),
+  ('0102_the_drawer_and_the_clerk', 'a reversal knows which drawer it came out of',
+     to_regprocedure('public.fn__reversal_till(uuid,payment_method)') is not null)
 )
 select migration,
        object                                   as looked_for,

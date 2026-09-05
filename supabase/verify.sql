@@ -1427,6 +1427,30 @@ select 'a payload key that is not read is refused (0101)',
        end
 
 union all
+-- 0102. Two functions moved cash without telling the till, so an honest clerk
+-- who reversed a receipt and took an admission fee was Rs 1,000 short of a
+-- drawer they had counted correctly.
+select 'every payment says which drawer it came from (0102)',
+       case
+         when to_regprocedure('public.fn__reversal_till(uuid,payment_method)') is null
+           then 'FAIL - apply supabase/bundles/12_one_number.sql'
+         when exists (
+           select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public'
+             and p.prosrc like '%insert into public.payments%'
+             and p.prosrc not like '%till_session_id%')
+           then 'FAIL - '
+                || (select string_agg(p.proname, ', ' order by p.proname)
+                      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                     where n.nspname = 'public'
+                       and p.prosrc like '%insert into public.payments%'
+                       and p.prosrc not like '%till_session_id%')
+                || ' still write cash without a drawer; '
+                || 'apply supabase/bundles/12_one_number.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS — no schools yet, as expected'

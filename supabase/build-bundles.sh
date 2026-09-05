@@ -248,10 +248,14 @@ emit supabase/bundles/11_deletion_and_logins.sql \
 # correct on the day they were written and two of them later were not. 0101
 # makes the four functions that take a list of rows refuse a key they do not
 # read, instead of dropping it: two of them were losing a practical mark or an
-# absence flag in silence.
+# absence flag in silence. 0102 is the same fault in the cash drawer: two
+# functions moved cash without telling the till, so a clerk who reversed a
+# receipt and took an admission fee could not close their drawer without
+# explaining a shortfall the software had created.
 emit supabase/bundles/12_one_number.sql \
      supabase/migrations/0098*.sql supabase/migrations/0099*.sql \
-     supabase/migrations/0100*.sql supabase/migrations/0101*.sql
+     supabase/migrations/0100*.sql supabase/migrations/0101*.sql \
+     supabase/migrations/0102*.sql
 
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
