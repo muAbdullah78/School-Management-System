@@ -36,6 +36,7 @@ import { NotConfigured } from '@/pages/NotConfigured'
 import { PortalPage } from '@/pages/portal/PortalPage'
 import { PortalRoute } from '@/components/PortalRoute'
 import { NAV } from '@/navigation'
+import { ErrorBoundary, RouteBoundary } from '@/components/ErrorBoundary'
 import { isConfigured } from '@/lib/config'
 
 // Modules with real screens; the rest render a placeholder for now.
@@ -63,10 +64,15 @@ export default function App() {
   }
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <BrowserRouter>
-          <Routes>
+    /* The outer net, outside the providers so it also catches a throw from
+       AuthProvider or the query client. RouteBoundary further down keeps a
+       broken SCREEN from taking the sidebar with it; this one is the last
+       thing between any other error and a blank white page. */
+    <ErrorBoundary where="the app">
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <BrowserRouter>
+            <Routes>
             {/* Wrapped so a signed-in user is never shown a sign-in form. See
                 RedirectIfSignedIn for why /reset is deliberately not wrapped. */}
             <Route
@@ -141,15 +147,19 @@ export default function App() {
                 </ProtectedRoute>
               }
             >
-              <Route path="/" element={<Dashboard />} />
+              <Route path="/" element={<RouteBoundary><Dashboard /></RouteBoundary>} />
               {/* NOT in NAV, on purpose. Writing a review is a once-a-term
                   action, and a permanent sidebar entry for it would be both
                   clutter and a nag. It is reached from the dashboard card that
                   appears when the school becomes eligible, and stays reachable
                   by address afterwards so somebody can come back and edit. */}
-              <Route path="/feedback" element={<FeedbackPage />} />
+              <Route path="/feedback" element={<RouteBoundary><FeedbackPage /></RouteBoundary>} />
               {NAV.filter((n) => n.path !== '/').map((n) => (
-                <Route key={n.path} path={n.path} element={IMPLEMENTED[n.path] ?? <ModulePlaceholder />} />
+                <Route
+                  key={n.path}
+                  path={n.path}
+                  element={<RouteBoundary>{IMPLEMENTED[n.path] ?? <ModulePlaceholder />}</RouteBoundary>}
+                />
               ))}
             </Route>
             <Route
@@ -161,9 +171,10 @@ export default function App() {
               }
             />
             <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </BrowserRouter>
-      </AuthProvider>
-    </QueryClientProvider>
+            </Routes>
+          </BrowserRouter>
+        </AuthProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   )
 }
