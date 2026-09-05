@@ -28,9 +28,14 @@ import { fmtDate } from '@/lib/format'
  *                    the plan the count fits, or the conversation happens twice.
  */
 const BUCKETS: { key: RenewalBucket; label: string; tone: string }[] = [
-  { key: 'locked',    label: 'Stopped',        tone: 'border-red-300 bg-red-50 text-red-900' },
-  { key: 'grace',     label: 'In grace',       tone: 'border-red-200 bg-red-50 text-red-800' },
-  { key: 'overdue',   label: 'Overdue',        tone: 'border-red-200 bg-red-50 text-red-800' },
+  // 'grace' and 'overdue' were both border-red-200 bg-red-50 text-red-800:
+  // pixel-identical, for the two states an operator most needs to tell apart. In
+  // grace the school is still working and a call saves them; overdue means the
+  // licence has run past its invoice. Stopped is the one where the phone is
+  // already ringing.
+  { key: 'locked',    label: 'Stopped working', tone: 'border-red-400 bg-red-100 text-red-900' },
+  { key: 'grace',     label: 'In grace',        tone: 'border-orange-300 bg-orange-50 text-orange-900' },
+  { key: 'overdue',   label: 'Overdue',         tone: 'border-red-300 bg-red-50 text-red-800' },
   { key: 'today',     label: 'Expires today',  tone: 'border-amber-300 bg-amber-50 text-amber-900' },
   { key: 'week',      label: 'This week',      tone: 'border-amber-200 bg-amber-50 text-amber-900' },
   { key: 'fortnight', label: 'Two weeks',      tone: 'border-slate-200 bg-white text-slate-800' },
@@ -40,7 +45,14 @@ const BUCKETS: { key: RenewalBucket; label: string; tone: string }[] = [
   { key: 'unknown',   label: 'No expiry set',  tone: 'border-slate-200 bg-slate-50 text-slate-500' },
 ]
 
-export function Renewals({ onOpenSchool }: { onOpenSchool: (schoolId: string) => void }) {
+export function Renewals({ onOpenSchool, onTakePayment }: {
+  onOpenSchool: (schoolId: string) => void
+  /** THE THING THIS SCREEN COULD NOT DO. It is the call list, and the only
+   *  button on a row was "Remind on WhatsApp". When the school said yes on the
+   *  phone, the operator had to remember the name, switch to Schools, find the
+   *  row and act there. A worklist you cannot work is a report. */
+  onTakePayment: (schoolId: string) => void
+}) {
   const [days, setDays] = useState(45)
   const [remind, setRemind] = useState<DueSoonRow | null>(null)
   const q = useQuery({ queryKey: ['dueSoon', days], queryFn: () => dueSoon(days) })
@@ -109,6 +121,7 @@ export function Renewals({ onOpenSchool }: { onOpenSchool: (schoolId: string) =>
             {g.rows.map((r) => (
               <Row key={r.school_id} r={r} tone={g.tone}
                 onOpen={() => onOpenSchool(r.school_id)}
+                onTake={() => onTakePayment(r.school_id)}
                 onRemind={() => setRemind(r)} />
             ))}
           </div>
@@ -120,8 +133,8 @@ export function Renewals({ onOpenSchool }: { onOpenSchool: (schoolId: string) =>
   )
 }
 
-function Row({ r, tone, onOpen, onRemind }: {
-  r: DueSoonRow; tone: string; onOpen: () => void; onRemind: () => void
+function Row({ r, tone, onOpen, onTake, onRemind }: {
+  r: DueSoonRow; tone: string; onOpen: () => void; onTake: () => void; onRemind: () => void
 }) {
   const reminded = r.last_reminded_at
     ? Math.floor((Date.now() - new Date(r.last_reminded_at).getTime()) / 86_400_000)
@@ -177,10 +190,22 @@ function Row({ r, tone, onOpen, onRemind }: {
             <div className="text-sm font-semibold">{formatPkr(r.renewal_amount)}</div>
           )}
           <div className="text-xs opacity-70">to renew</div>
-          <button onClick={onRemind}
-            className="mt-1 rounded border border-current px-2 py-1 text-xs font-medium hover:opacity-80">
-            Remind on WhatsApp
-          </button>
+          <div className="mt-1 flex flex-wrap justify-end gap-1">
+            {/* The two things that happen after the call, in the order they
+                happen: they say yes and pay, or they need chasing again. */}
+            <button onClick={onTake}
+              className="rounded bg-brand-600 px-2 py-1 text-xs font-medium text-white hover:bg-brand-700">
+              Record payment
+            </button>
+            <button onClick={onOpen}
+              className="rounded border border-current px-2 py-1 text-xs font-medium hover:opacity-80">
+              Renew
+            </button>
+            <button onClick={onRemind}
+              className="rounded border border-current px-2 py-1 text-xs font-medium hover:opacity-80">
+              Remind
+            </button>
+          </div>
           {reminded !== null && (
             <div className="mt-1 text-xs opacity-70">
               {reminded === 0 ? 'reminded today' : `reminded ${reminded}d ago`}
