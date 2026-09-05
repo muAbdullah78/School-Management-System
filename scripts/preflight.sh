@@ -148,6 +148,59 @@ SQL
     else printf '%-52s FAIL (%s rows)\n' "$mode: detect.sql has no MISSING row" "$d"; fails=$((fails + 1)); fi
   done
 
+  # THE UPGRADE A SCHOOL ACTUALLY PERFORMS.
+  #
+  # Every check above installs from nothing. That is not what a running school
+  # does: it already has the earlier bundles and pastes the new one on top. That
+  # difference is not academic here, it is the shape of the incident that cost a
+  # real school fifteen migrations, and CI carries a step reproducing that exact
+  # historical cutoff.
+  #
+  # This is the simpler, current question: does the NEWEST bundle apply cleanly
+  # to a database that already has all the others, and does verify.sql still
+  # come back clean afterwards? That is the instruction being handed to a school
+  # today, so it is the one worth failing on.
+  newest=$(ls supabase/bundles/*.sql | sort -V | tail -1)
+  dropdb --if-exists preflight_upgrade >/dev/null 2>&1
+  createdb preflight_upgrade >/dev/null 2>&1
+  psql -q -d preflight_upgrade -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+create schema if not exists auth;
+create table if not exists auth.users (id uuid primary key, email text,
+  raw_user_meta_data jsonb default '{}'::jsonb, raw_app_meta_data jsonb default '{}'::jsonb,
+  last_sign_in_at timestamptz, created_at timestamptz default now());
+create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
+do $$ begin
+  if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
+  if not exists (select 1 from pg_roles where rolname='authenticated') then create role authenticated nologin; end if;
+  if not exists (select 1 from pg_roles where rolname='service_role') then create role service_role nologin; end if;
+end $$;
+alter default privileges in schema public grant all on tables to postgres, anon, authenticated, service_role;
+SQL
+  ok=1
+  for b in $(ls supabase/bundles/*.sql | sort -V); do
+    [ "$b" = "$newest" ] && continue
+    psql -q -d preflight_upgrade -v ON_ERROR_STOP=1 -f "$b" >/dev/null 2>/tmp/pf.err || {
+      printf '%-52s FAIL\n' "upgrade: the school as it was (${b##*/})"
+      head -3 /tmp/pf.err | sed 's/^/      /'; fails=$((fails + 1)); ok=0; break
+    }
+  done
+  if [ "$ok" = 1 ]; then
+    # ONE transaction, exactly as the SQL Editor runs a pasted file. A bundle
+    # that only works statement by statement fails for the school.
+    if psql -q -d preflight_upgrade -v ON_ERROR_STOP=1 --single-transaction \
+         -f "$newest" >/dev/null 2>/tmp/pf.err; then
+      printf '%-52s ok\n' "upgrade: ${newest##*/} onto an existing school"
+    else
+      printf '%-52s FAIL\n' "upgrade: ${newest##*/} onto an existing school"
+      head -5 /tmp/pf.err | sed 's/^/      /'; fails=$((fails + 1)); ok=0
+    fi
+  fi
+  if [ "$ok" = 1 ]; then
+    v=$(psql -q -d preflight_upgrade -f supabase/verify.sql 2>&1 | grep -c 'FAIL')
+    if [ "$v" = 0 ]; then printf '%-52s ok\n' "upgrade: verify.sql has no FAIL row"
+    else printf '%-52s FAIL (%s rows)\n' "upgrade: verify.sql has no FAIL row" "$v"; fails=$((fails + 1)); fi
+  fi
+
   echo
   echo "== every SQL suite, on the fresh migrations database =="
   bad=0

@@ -36,10 +36,24 @@ multi = [n.strip() for n, bar in steps if bar == '|']
 # A name in COVERED that no longer exists in ci.yml means the step was renamed
 # or removed, and this file is now claiming to cover something imaginary.
 stale = COVERED - set(multi)
+# Partially covered: preflight checks something RELATED but not the same thing.
+# Listed with the difference spelled out, because "we test upgrades" and "we
+# test the upgrade that broke a school in March" are not the same claim.
+PARTIAL = {
+    'An EXISTING school can upgrade':
+        'preflight applies the NEWEST bundle onto a database holding all the '
+        'others, which is the instruction handed to a school today. CI '
+        'additionally replays the historical 0037 cutoff and the detect-driven '
+        'repair, which this does not.',
+}
+
 left = [m for m in multi if m not in COVERED]
 
 for m in left:
+    note = PARTIAL.get(m)
     print(f'  {m}')
+    if note:
+        print(f'      partially: {note}')
 if not left:
     print('  none: every multi-line CI step has an equivalent here')
 for m in sorted(stale):
