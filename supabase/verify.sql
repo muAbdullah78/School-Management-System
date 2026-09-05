@@ -1593,6 +1593,61 @@ select 'a parent can see the leave the school granted (0105)',
        end
 
 union all
+-- 0106. Two ways an unpaid school stayed profitable for nobody. The console's
+-- "+14d trial" button added a fortnight per press with no ceiling and no
+-- confirmation, and the parent portal answered for a school that had stopped
+-- paying, forever, because it is a separate route outside the browser's licence
+-- gate and every portal function is SECURITY DEFINER.
+select 'an unpaid school is closed to its parents (0106)',
+       case
+         when to_regprocedure('public.fn__licence_permits_use()') is null
+           then 'FAIL - apply supabase/bundles/14_the_unpaid_school.sql'
+         when not exists (
+           select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = 'fn__assert_my_child'
+             and p.prosrc like '%fn__require_live_licence%')
+           then 'FAIL - the parent portal still answers for a school that has '
+                || 'stopped paying; apply supabase/bundles/14_the_unpaid_school.sql'
+         when not exists (
+           select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = 'fn_portal_me'
+             and p.prosrc like '%fn__require_live_licence%')
+           then 'FAIL - the portal entry point still answers for a school that '
+                || 'has stopped paying; apply supabase/bundles/14_the_unpaid_school.sql'
+         when exists (
+           select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = 'fn_extend_trial'
+             and p.prosrc not like '%Trials are not extended%')
+           then 'FAIL - the trial can still be extended, a fortnight per press; '
+                || 'apply supabase/bundles/14_the_unpaid_school.sql'
+         else 'PASS'
+       end
+
+union all
+-- 0107. fn_staff_check_in has always dated the school day in Asia/Karachi,
+-- because a Pakistani school's today is Karachi's today. The table constraint
+-- and the office's own correction function measured it from the server, which
+-- is UTC. Pakistan is UTC+5, so from midnight to 5am every day nobody could
+-- scan in and the office could not mark them either.
+select 'the school day is measured in Karachi, not UTC (0107)',
+       case
+         when not exists (
+           select 1 from pg_constraint
+           where conname = 'staff_attendance_not_future'
+             and conrelid = 'public.staff_attendance'::regclass
+             and pg_get_constraintdef(oid) like '%Asia/Karachi%')
+           then 'FAIL - staff cannot check in between midnight and 5am; '
+                || 'apply supabase/bundles/14_the_unpaid_school.sql'
+         when not exists (
+           select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = 'fn_set_staff_attendance'
+             and p.prosrc like '%Asia/Karachi'')::date%')
+           then 'FAIL - the office cannot mark today between midnight and 5am; '
+                || 'apply supabase/bundles/14_the_unpaid_school.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS — no schools yet, as expected'

@@ -229,11 +229,12 @@ export async function platformOutstanding(schoolId: string): Promise<number> {
   return Number(data ?? 0)
 }
 
-export async function extendTrial(schoolId: string, days: number): Promise<void> {
-  const sb = requireSupabase()
-  const { error } = await sb.rpc('fn_extend_trial', { p_school_id: schoolId, p_days: days })
-  if (error) throw new Error(error.message)
-}
+// extendTrial is GONE, and its absence is the point. fn_extend_trial capped one
+// call at 30 days and capped nothing else, so the console's "+14d trial" button
+// was fourteen free days per press with no confirmation and no ceiling. A school
+// that needs more time is activated on a plan instead, which is an invoice and a
+// conversation. 0106 makes the database refuse the call outright, so nothing
+// here can quietly bring it back by calling the RPC directly.
 
 /**
  * How far has the production database actually got?
