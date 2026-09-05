@@ -59,6 +59,8 @@ import {
   type FamilyPaymentResult,
 } from '@/lib/db'
 import { Receipt, type ReceiptData } from '@/components/Receipt'
+import { Avatar } from '@/components/Avatar'
+import { useStudentFaces } from '@/hooks/useStudentFaces'
 import {
   Card,
   CardTitle,
@@ -129,6 +131,11 @@ export function FamilyCollect() {
     queryFn: () => listStudents(sQuery),
     enabled: !familyId,
   })
+
+  // A face beside each name, for the same reason the roster has one: four boys
+  // called Muhammad Ali in one school is ordinary here, and this list is the one
+  // where choosing the wrong one opens another family's account.
+  const faces = useStudentFaces((students.data ?? []).map((st) => st.id))
 
   // Collection is family-based, so picking a child opens their family sheet.
   // Every sibling's balance is on it, which is the whole point of 0036.
@@ -310,6 +317,7 @@ export function FamilyCollect() {
                       disabled={openStudent.isPending}
                       className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition hover:bg-brand-50/50 disabled:opacity-60"
                     >
+                      <Avatar name={st.full_name} url={faces.data?.get(st.id) ?? null} size="sm" />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-medium text-slate-800">
                           {st.full_name}

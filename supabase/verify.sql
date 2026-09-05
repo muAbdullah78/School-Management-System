@@ -1382,6 +1382,31 @@ select 'one headcount, on the tile and the licence (0099)',
        end
 
 union all
+-- 0100. The attendance percentage existed in four places, all correct when
+-- written, two of them wrong by the time a parent compared the portal with the
+-- result card. This asks the catalogue rather than the output, because the
+-- copies agreeing today is exactly what was true the week before that.
+select 'one attendance rule, in one function (0100)',
+       case
+         when exists (
+           select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname <> 'fn__attendance_pct'
+             and p.prosrc like '%0.5 * count(*) filter (where status = ''half_day'')%')
+           then 'FAIL - the formula is still written out in '
+                || (select string_agg(p.proname, ', ' order by p.proname)
+                      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                     where n.nspname = 'public' and p.proname <> 'fn__attendance_pct'
+                       and p.prosrc like '%0.5 * count(*) filter (where status = ''half_day'')%')
+                || '; apply supabase/bundles/12_one_number.sql'
+         when (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                where n.nspname = 'public' and p.proname <> 'fn__attendance_pct'
+                  and p.prosrc like '%fn__attendance_pct%') < 4
+           then 'FAIL - fewer than four surfaces call the shared rule; '
+                || 'apply supabase/bundles/12_one_number.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS — no schools yet, as expected'

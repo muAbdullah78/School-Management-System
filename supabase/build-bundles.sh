@@ -243,9 +243,12 @@ emit supabase/bundles/11_deletion_and_logins.sql \
 # children are here" as three counts, two of which were wrong in opposite
 # directions. Both add functions and rewrite existing ones; neither alters a
 # table, so applying them changes what the screens SAY and nothing that is
-# stored.
+# stored. 0100 finishes what 0097 started: the attendance percentage now exists
+# in exactly one function instead of four correct copies, because all four were
+# correct on the day they were written and two of them later were not.
 emit supabase/bundles/12_one_number.sql \
-     supabase/migrations/0098*.sql supabase/migrations/0099*.sql
+     supabase/migrations/0098*.sql supabase/migrations/0099*.sql \
+     supabase/migrations/0100*.sql
 
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen

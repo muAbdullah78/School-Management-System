@@ -10,6 +10,8 @@ import { useAuth } from '@/auth/AuthProvider'
 import { APPROVER_ROLES, type Role } from '@/auth/roles'
 import { Receipt, type ReceiptData } from '@/components/Receipt'
 import { AskDialog } from '@/components/AskDialog'
+import { Avatar } from '@/components/Avatar'
+import { useStudentFaces } from '@/hooks/useStudentFaces'
 
 export function CollectPayment() {
   const [term, setTerm] = useState('')
@@ -42,6 +44,24 @@ export function CollectPayment() {
     queryFn: () => searchStudents(term),
     enabled: term.trim().length >= 2 && !selected,
   })
+
+  /**
+   * Faces, on the screen where getting the wrong child costs the most.
+   *
+   * The roster has shown a photograph for a while, with the reason written on
+   * it: four boys called Muhammad Ali in one school is ordinary here. This
+   * screen searches the same pupils, shows the same three lines of text, and
+   * had no face on it, and it is the one where picking the wrong one credits
+   * another family's account and sends the receipt home with them.
+   *
+   * The selected child is included, not just the search results, so the face
+   * stays visible while the money is being keyed rather than disappearing at
+   * the moment it matters.
+   */
+  const faces = useStudentFaces([
+    ...(results.data ?? []).map((r) => r.id),
+    ...(selected ? [selected.id] : []),
+  ])
 
   const sid = selected?.id
   const balance = useQuery({ queryKey: ['balance', sid], queryFn: () => getStudentBalance(sid!), enabled: !!sid })
@@ -117,10 +137,14 @@ export function CollectPayment() {
             <div className="p-3 text-sm text-slate-500">No students found.</div>
           )}
           {results.data?.map((s) => (
-            <button key={s.id} onClick={() => setSelected(s)} className="block w-full px-3 py-2 text-left text-sm hover:bg-slate-50">
-              <span className="font-medium text-slate-800">{s.full_name}</span>
-              {s.father_name && <span className="text-slate-500"> · {s.father_name}</span>}
-              {s.gr_no && <span className="text-slate-400"> · {s.gr_no}</span>}
+            <button key={s.id} onClick={() => setSelected(s)}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-slate-50">
+              <Avatar name={s.full_name} url={faces.data?.get(s.id) ?? null} size="sm" />
+              <span className="min-w-0">
+                <span className="font-medium text-slate-800">{s.full_name}</span>
+                {s.father_name && <span className="text-slate-500"> · {s.father_name}</span>}
+                {s.gr_no && <span className="text-slate-400"> · {s.gr_no}</span>}
+              </span>
             </button>
           ))}
         </div>
@@ -130,12 +154,15 @@ export function CollectPayment() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-base font-semibold text-slate-800">{selected.full_name}</div>
-          <div className="text-xs text-slate-500">{selected.father_name} · {selected.gr_no ?? 'no GR'}</div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <Avatar name={selected.full_name} url={faces.data?.get(selected.id) ?? null} size="md" />
+          <div className="min-w-0">
+            <div className="text-base font-semibold text-slate-800">{selected.full_name}</div>
+            <div className="text-xs text-slate-500">{selected.father_name} · {selected.gr_no ?? 'no GR'}</div>
+          </div>
         </div>
-        <button onClick={reset} className="text-sm text-brand-700 hover:underline">Change student</button>
+        <button onClick={reset} className="shrink-0 text-sm text-brand-700 hover:underline">Change student</button>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">

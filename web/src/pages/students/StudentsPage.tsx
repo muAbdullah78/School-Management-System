@@ -17,15 +17,15 @@ import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
-  listStudentPage, listClasses, listSections, getStudentPhotoPaths,
+  listStudentPage, listClasses, listSections,
   listStudentsWithoutAClass, type StudentListRow,
 } from '@/lib/db'
+import { useStudentFaces } from '@/hooks/useStudentFaces'
 import { fmtDate } from '@/lib/format'
 import { DataTable, type Column } from '@/components/DataTable'
 import { fmtPKR } from '@/lib/format'
 import { StudentProfile } from './StudentProfile'
 import { Avatar } from '@/components/Avatar'
-import { signPaths } from '@/lib/photos'
 
 const SELECT =
   'rounded border border-slate-300 px-2 py-2 text-sm focus:border-brand-500 focus:outline-none'
@@ -63,31 +63,11 @@ export function StudentsPage() {
       }),
   })
 
-  /**
-   * Faces for the fifty rows on screen, in two requests regardless of page size.
-   *
-   * Worth the round trips: four boys called Muhammad Ali in one school is
-   * ordinary here, and a face is how a clerk knows they opened the right one.
-   * Both steps degrade to nothing rather than failing the page.
-   */
-  const ids = (q.data?.rows ?? []).map((r) => r.student_id)
-  const idKey = ids.join('|')
-  const faces = useQuery({
-    queryKey: ['studentFaces', idKey],
-    queryFn: async () => {
-      const paths = await getStudentPhotoPaths(ids)
-      const signed = await signPaths([...paths.values()])
-      // Re-keyed by student id: the table has a pupil in hand, not a path.
-      const byStudent = new Map<string, string>()
-      for (const [studentId, path] of paths) {
-        const url = signed.get(path)
-        if (url) byStudent.set(studentId, url)
-      }
-      return byStudent
-    },
-    enabled: ids.length > 0,
-    staleTime: 20 * 60 * 1000,
-  })
+  // Faces for the fifty rows on screen, in two requests regardless of page size.
+  // Lives in a hook now because the cash counter needed the same thing and had
+  // no face at all, which is the screen where picking the wrong Muhammad Ali
+  // moves money between two families.
+  const faces = useStudentFaces((q.data?.rows ?? []).map((r) => r.student_id))
 
   if (selectedId) {
     return (

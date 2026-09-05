@@ -711,7 +711,14 @@ with sig(migration, object, present) as (values
   ('0098_one_number', 'the fee statement behind the balance',
      to_regprocedure('public.fn_student_ledger(uuid)') is not null),
   ('0099_one_headcount', 'the children who are on no class list',
-     to_regprocedure('public.fn_students_without_a_class()') is not null)
+     to_regprocedure('public.fn_students_without_a_class()') is not null),
+  -- Not "does fn__attendance_pct exist" (0097 created it), but "has the last
+  -- inline copy of the formula gone". That is the thing 0100 changes.
+  ('0100_the_attendance_rule_is_one_place', 'the attendance formula in one function only',
+     not exists (
+       select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname <> 'fn__attendance_pct'
+         and p.prosrc like '%0.5 * count(*) filter (where status = ''half_day'')%'))
 )
 select migration,
        object                                   as looked_for,

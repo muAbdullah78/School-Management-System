@@ -144,5 +144,94 @@ begin
   raise notice 'ok: late counts, a half day is half, and an empty register has no percentage';
 end $props$;
 
+-- =============================================================================
+-- One rule, one implementation, and a check that stays true
+--
+-- 0097 created the shared rule and pointed the two BROKEN callers at it. It left
+-- the three correct copies alone, which is how this bug happened in the first
+-- place: every one of the four copies was correct on the day it was written.
+-- 0100 removed the last three.
+--
+-- This is deliberately a catalogue query rather than a comparison of two
+-- numbers. Comparing outputs proves the copies agree TODAY; that was true of
+-- all four of them the week before a parent read 92% and the card printed
+-- 83.3%. What has to hold is that there is only one copy to be wrong.
+-- =============================================================================
+do $one$
+declare v_bad text; v_users text;
+begin
+  select string_agg(p.proname, ', ' order by p.proname) into v_bad
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public'
+    and p.proname <> 'fn__attendance_pct'
+    and p.prosrc like '%0.5 * count(*) filter (where status = ''half_day'')%';
+  if v_bad is not null then
+    raise exception 'FAIL: the attendance formula is written out inside %. It '
+                    'belongs only in fn__attendance_pct. Four copies of a rule '
+                    'is not four checks on it, it is four chances to diverge, '
+                    'and this one has already diverged twice.', v_bad;
+  end if;
+
+  -- And the shared rule has to be REACHED, not merely present. A caller that
+  -- stopped using it would pass the check above by having no formula at all.
+  select string_agg(p.proname, ', ' order by p.proname) into v_users
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.prosrc like '%fn__attendance_pct%'
+    and p.proname <> 'fn__attendance_pct';
+  foreach v_bad in array array['fn_attendance_summary', 'fn_staff_attendance_summary',
+                               'fn_generate_result_cards', 'fn_portal_child_attendance'] loop
+    if coalesce(v_users, '') not like '%' || v_bad || '%' then
+      raise exception 'FAIL: % no longer calls the shared attendance rule. It '
+                      'now reports a percentage from somewhere this suite '
+                      'cannot see. Callers found: %', v_bad, coalesce(v_users, 'none');
+    end if;
+  end loop;
+
+  raise notice 'ok: the rule exists once and all four surfaces call it';
+end $one$;
+
+-- =============================================================================
+-- A teacher's percentage and a pupil's are computed the same way
+--
+-- Different table, same rule. A school that docks pay on attendance will put
+-- the two side by side, and there is no argument for a late teacher and a late
+-- pupil counting differently.
+-- =============================================================================
+do $staff$
+declare
+  v_school uuid; v_staff uuid; v_owner uuid := '00000000-0000-0000-0000-0000000000a9';
+  j jsonb; v_expected numeric;
+begin
+  select school_id into v_school from public.profiles
+   where id = nullif(current_setting('test.uid', true), '')::uuid;
+
+  insert into auth.users (id, email) values (v_owner, 'a9@att.test') on conflict (id) do nothing;
+  insert into public.staff (school_id, full_name, designation, status)
+    values (v_school, 'Attendance Test Teacher', 'Teacher', 'active')
+    returning id into v_staff;
+
+  -- The same twelve day register the pupil above has: 8 present, 1 late,
+  -- 2 half days, 1 absent.
+  insert into public.staff_attendance (school_id, staff_id, attendance_date, status)
+  select v_school, v_staff, (date '2026-03-02' + n)::date,
+         (case when n < 8 then 'present' when n = 8 then 'late'
+               when n < 11 then 'half_day' else 'absent' end)::public.attendance_status
+  from generate_series(0, 11) as n;
+
+  j := public.fn_staff_attendance_summary(v_staff, date '2026-03-01', date '2026-03-31');
+  v_expected := public.fn__attendance_pct(8, 1, 2, 12);
+
+  if (j->>'present_pct')::numeric is distinct from v_expected then
+    raise exception 'FAIL: the staff record says %, the rule says %',
+      j->>'present_pct', v_expected;
+  end if;
+  if (j->>'present')::int <> 8 or (j->>'late')::int <> 1
+     or (j->>'half_day')::int <> 2 or (j->>'absent')::int <> 1 then
+    raise exception 'FAIL: the staff summary does not break the register down correctly: %', j;
+  end if;
+
+  raise notice 'ok: a teacher and a pupil are measured the same way (%)', v_expected;
+end $staff$;
+
 rollback;
 \echo 'ATTENDANCE RULE: ALL TESTS PASSED'
