@@ -2615,6 +2615,36 @@ export async function unlinkParent(profileId: string): Promise<void> {
 }
 
 
+/** Every login in the school, INCLUDING ones nobody has attached to a person.
+ *
+ *  The staff roster reads the staff table, so a login with no staff row was
+ *  invisible: it existed, it worked, it could read every child's record, and it
+ *  appeared on no screen. Creating a teacher login left the roster still saying
+ *  "No staff yet", which looks exactly like the creation having failed.
+ *
+ *  Owner and principal only, and the database enforces that: this is the one
+ *  function in the schema that reads auth.users on request, so a leak here
+ *  would be every staff email in the school. */
+export interface SchoolLogin {
+  profile_id: string
+  full_name: string | null
+  email: string | null
+  role: string
+  active: boolean
+  /** null when nobody has attached this login to a person. */
+  staff_id: string | null
+  staff_name: string | null
+  last_sign_in_at: string | null
+}
+
+export async function listSchoolLogins(): Promise<SchoolLogin[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_school_logins')
+  if (error) throw new Error(error.message)
+  return (data ?? []) as SchoolLogin[]
+}
+
+
 // ---- Deleting records (0094) ----
 //
 // Nothing in this app could be deleted before: a name typed in wrong stayed on

@@ -23,6 +23,7 @@ import { LoadError } from '@/components/ui'
 import { LoginFunctionWarning } from '@/components/LoginFunctionWarning'
 import { DeleteRecord } from '@/components/DeleteRecord'
 import { staffDeleteBlockers, deleteStaff } from '@/lib/db'
+import { listSchoolLogins, loginDeleteBlockers, deleteLogin, type SchoolLogin } from '@/lib/db'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 const TABS = [{ key: 'staff', label: 'Staff' }, { key: 'attendance', label: 'Attendance' },
@@ -80,11 +81,22 @@ function StaffTab() {
   const canLink = mayWrite && !!profile && ['owner', 'principal'].includes(profile.role)
   const staff = useQuery({ queryKey: ['staff'], queryFn: getStaffRoster })
   const profiles = useQuery({ queryKey: ['profiles'], queryFn: listProfiles })
+  // The same query UnattachedLogins uses, shared by key. It carries the email
+  // address, which listProfiles cannot: profiles has no email column, so until
+  // 0095 no screen in this app could say which address a login belonged to.
+  // Two staff both called Muhammad Ali appeared in the dropdown below as
+  // "Muhammad Ali" twice, and picking the wrong one gives the wrong person
+  // access to the wrong class.
+  const schoolLogins = useQuery({
+    queryKey: ['schoolLogins'], queryFn: listSchoolLogins, enabled: canLink, retry: false,
+  })
+  const emailOf = (id: string | null) =>
+    id ? (schoolLogins.data ?? []).find((l) => l.profile_id === id)?.email ?? null : null
   const [editing, setEditing] = useState<string | null>(null) // staff id, or 'new'
   const [form, setForm] = useState<StaffInput>(BLANK)
   const [idCard, setIdCard] = useState<StaffRow | null>(null)
   const [attFor, setAttFor] = useState<StaffRow | null>(null)
-  const [showLogin, setShowLogin] = useState(false)
+  const [adding, setAdding] = useState(false)
   const [leaving, setLeaving] = useState<StaffRosterRow | null>(null)
   const [removing, setRemoving] = useState<StaffRow | null>(null)
   const [flash, setFlash] = useState<string | null>(null)
@@ -165,22 +177,31 @@ function StaffTab() {
 
       {!mayWrite && <ObserverNotice what="staff records" />}
 
-      {!editing && mayWrite && (
+      {/* ONE button, where there were two. "+ Add staff" wrote a staff row and
+          "+ Add teacher login" wrote a profiles row, and the office was left to
+          work out that a teacher needs both and then join them by hand. */}
+      {!editing && !adding && mayWrite && (
         <div className="flex flex-wrap gap-2">
-          <button onClick={() => { setEditing('new'); setForm(BLANK) }}
-            className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">+ Add staff</button>
-          {canLink && (
-            <button onClick={() => setShowLogin((v) => !v)}
-              className="rounded border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-              {showLogin ? 'Close' : '+ Add teacher login'}
-            </button>
-          )}
+          <button onClick={() => setAdding(true)}
+            className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
+            + Add someone
+          </button>
         </div>
       )}
 
-      {showLogin && canLink && (
-        <AddLogin onDone={() => { setShowLogin(false); qc.invalidateQueries({ queryKey: ['profiles'] }) }} />
+      {adding && mayWrite && (
+        <AddPerson
+          onDone={() => {
+            setAdding(false)
+            invalidate()
+            qc.invalidateQueries({ queryKey: ['profiles'] })
+            qc.invalidateQueries({ queryKey: ['schoolLogins'] })
+          }}
+          onFlash={setFlash}
+        />
       )}
+
+      <UnattachedLogins canLink={canLink} staff={staff.data ?? []} />
 
       {editing && (
         <form className="rounded-lg border border-slate-200 bg-white p-4" onSubmit={(e) => { e.preventDefault(); if (form.full_name.trim()) save.mutate() }}>
@@ -323,7 +344,13 @@ function StaffTab() {
                       <select value={s.profile_id ?? ''} onChange={(e) => link.mutate({ id: s.id, profileId: e.target.value || null })}
                         className="w-full rounded border border-slate-300 px-2 py-1 text-sm focus:border-brand-500 focus:outline-none">
                         <option value="">— no login —</option>
-                        {logins.map((p) => <option key={p.id} value={p.id}>{p.full_name || '(unnamed)'} · {ROLE_LABELS[p.role as Role] ?? p.role}</option>)}
+                        {logins.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.full_name || '(unnamed)'}
+                            {emailOf(p.id) ? ` · ${emailOf(p.id)}` : ''}
+                            {' · '}{ROLE_LABELS[p.role as Role] ?? p.role}
+                          </option>
+                        ))}
                       </select>
                     ) : (
                       <span className="text-slate-500">{profiles.data?.find((p) => p.id === s.profile_id)?.full_name ?? '—'}</span>
@@ -331,6 +358,11 @@ function StaffTab() {
                     {/* null and false are different facts and the old screen
                         could see neither: it read the staff table, and this
                         lives in profiles. */}
+                    {s.profile_id && emailOf(s.profile_id) && (
+                      <div className="mt-0.5 truncate text-xs text-slate-500">
+                        {emailOf(s.profile_id)}
+                      </div>
+                    )}
                     <LoginState row={s} canLink={canLink}
                       onOpen={() => login.mutate({ id: s.id, active: true, reason: null })}
                       onClose={() => login.mutate({ id: s.id, active: false, reason: null })} />
@@ -580,41 +612,303 @@ function StaffAttendanceModal({ staff, onClose }: { staff: StaffRow; onClose: ()
   )
 }
 
-function AddLogin({ onDone }: { onDone: () => void }) {
-  const [fullName, setFullName] = useState('')
+/**
+ * Logins that belong to nobody.
+ *
+ * THE BUG THIS EXISTS FOR. The roster reads the staff table. A login that was
+ * never attached to a staff record therefore appeared on NO screen in the
+ * application: it existed, it worked, it could sign in and read every child's
+ * record, and nothing showed it. Create a teacher login and the roster still
+ * said "No staff yet", which looks exactly like the creation having failed.
+ * That is what the first real school saw, and they were right to think
+ * something was broken.
+ *
+ * It renders nothing when there are none, which is the normal state now that
+ * adding somebody makes both halves at once. It is here for the ones already
+ * created, and for a login made from Settings that nobody has claimed.
+ *
+ * Every row offers the two things worth doing: attach it to a person who is
+ * already on the roster, or remove it. Removing goes through the same rules as
+ * everything else, so one that has taken a payment or marked a register is
+ * refused with the reason.
+ */
+function UnattachedLogins({ canLink, staff }: { canLink: boolean; staff: StaffRow[] }) {
+  const qc = useQueryClient()
+  const [removing, setRemoving] = useState<SchoolLogin | null>(null)
+  const logins = useQuery({
+    queryKey: ['schoolLogins'],
+    queryFn: listSchoolLogins,
+    enabled: canLink,
+    retry: false,
+  })
+
+  const attach = useMutation({
+    mutationFn: (v: { staffId: string; profileId: string }) =>
+      linkStaffProfile(v.staffId, v.profileId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['schoolLogins'] })
+      qc.invalidateQueries({ queryKey: ['staff'] })
+      qc.invalidateQueries({ queryKey: ['profiles'] })
+    },
+  })
+
+  if (!canLink) return null
+  const loose = (logins.data ?? []).filter((l) => !l.staff_id)
+  if (logins.isError) {
+    return (
+      <p className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-800">
+        Could not check for unattached logins: {(logins.error as Error).message}
+      </p>
+    )
+  }
+  if (!loose.length) return null
+
+  const free = staff.filter((s) => !s.profile_id && s.status === 'active')
+
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+      <p className="text-sm font-medium text-amber-900">
+        {loose.length === 1
+          ? 'One login is not attached to anybody on the staff list'
+          : `${loose.length} logins are not attached to anybody on the staff list`}
+      </p>
+      <p className="mt-1 text-sm text-amber-800">
+        They can sign in and see the school&rsquo;s records, but they have no staff
+        record, so they do not appear on the roster below, cannot be given a class,
+        and have no attendance or ID card. Attach each one to a person, or remove it.
+      </p>
+      <ul className="mt-3 space-y-2">
+        {loose.map((l) => (
+          <li key={l.profile_id}
+              className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white px-3 py-2">
+            <div className="min-w-0">
+              <span className="text-sm font-medium text-slate-800">
+                {l.full_name || '(no name)'}
+              </span>
+              {/* The address, which no screen in this app could show before. */}
+              <span className="ml-2 text-xs text-slate-500">{l.email}</span>
+              <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600">
+                {ROLE_LABELS[l.role as Role] ?? l.role}
+              </span>
+              {!l.active && (
+                <span className="ml-2 rounded bg-slate-200 px-1.5 py-0.5 text-[11px] text-slate-600">closed</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {free.length > 0 ? (
+                <select defaultValue=""
+                  onChange={(e) => {
+                    if (e.target.value) attach.mutate({ staffId: e.target.value, profileId: l.profile_id })
+                  }}
+                  className="rounded border border-slate-300 px-2 py-1 text-sm focus:border-brand-500 focus:outline-none">
+                  <option value="">Attach to…</option>
+                  {free.map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
+                </select>
+              ) : (
+                <span className="text-xs text-slate-500">
+                  Add them with &ldquo;Add someone&rdquo; first, then attach this login
+                </span>
+              )}
+              <button onClick={() => setRemoving(l)}
+                className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50">
+                Remove
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+      {attach.isError && (
+        <p className="mt-2 text-sm text-danger-700">{(attach.error as Error).message}</p>
+      )}
+      {removing && (
+        <DeleteRecord
+          kind="login"
+          name={removing.full_name || removing.email || 'this login'}
+          blockers={() => loginDeleteBlockers(removing.profile_id)}
+          remove={() => deleteLogin(removing.profile_id)}
+          onDeleted={() => {
+            setRemoving(null)
+            qc.invalidateQueries({ queryKey: ['schoolLogins'] })
+            qc.invalidateQueries({ queryKey: ['profiles'] })
+          }}
+          onCancel={() => setRemoving(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+/**
+ * Adding somebody to the school. One screen, one form, one decision at a time.
+ *
+ * WHAT WAS WRONG BEFORE
+ *
+ * A person and a login were two separate records joined by a manual step, and
+ * the screen showed that plumbing to the office. Two forms sat open side by
+ * side, each with its own "Full name" field: "New teacher login" wrote a
+ * profiles row, "New staff member" wrote a staff row, and neither mentioned the
+ * other. To get one working teacher you had to fill in the first, fill in the
+ * second, find the new row in the roster, and pick the login out of a dropdown.
+ * Nothing said so, and nothing warned you when you stopped after step one.
+ *
+ * There were also THREE places to create access: this screen, Settings > Users
+ * and Roles, and the parent panel on a student. Settings even advised against
+ * the button this screen put front and centre.
+ *
+ * WHAT IT IS NOW
+ *
+ * The person first, because that is what the office came to do. Then one plain
+ * question, "Should they be able to sign in?", which opens the login fields
+ * only if the answer is yes. Same form, same screen, and the clerk never sees a
+ * field they do not need.
+ *
+ * WHY THE PERSON IS SAVED FIRST
+ *
+ * The staff record is cheap, local and always works. The login needs an Edge
+ * Function that may be out of date or not deployed. Doing the durable half
+ * first means a failure at the second step leaves a correct staff record and a
+ * clear message, rather than a login floating with nobody attached to it, which
+ * is the exact state that made logins invisible in the first place.
+ */
+function AddPerson({ onDone, onFlash }: { onDone: () => void; onFlash: (m: string) => void }) {
+  const [form, setForm] = useState<StaffInput>(BLANK)
+  const [wantsLogin, setWantsLogin] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [role, setRole] = useState('class_teacher')
-  const [ok, setOk] = useState<string | null>(null)
-  const create = useMutation({
-    mutationFn: () => createTeacherLogin({ email: email.trim(), password, full_name: fullName.trim(), role }),
-    onSuccess: (r) => { setOk(`Login created for ${r.email}. Link it to a staff record below, then assign a class in Class Teachers.`); setFullName(''); setEmail(''); setPassword(''); onDone() },
-  })
-  const valid = /^\S+@\S+\.\S+$/.test(email.trim()) && password.length >= 6
+  const [partial, setPartial] = useState<string | null>(null)
+
+  const nameOk = form.full_name.trim().length > 0
+  const loginOk = !wantsLogin
+    || (/^\S+@\S+\.\S+$/.test(email.trim()) && password.length >= 6)
+  const valid = nameOk && loginOk
   const roleChoices = ROLES.filter((r) => r !== 'owner')
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const staffId = await createStaff({ ...form, full_name: form.full_name.trim() })
+      if (!wantsLogin) return { name: form.full_name.trim(), login: null as string | null }
+
+      // From here the person exists. If the login fails, say so precisely and
+      // leave the person alone: they are a correct record either way, and the
+      // login can be added later from the same row.
+      try {
+        const created = await createTeacherLogin({
+          email: email.trim(), password, full_name: form.full_name.trim(), role,
+        })
+        await linkStaffProfile(staffId, created.id)
+        return { name: form.full_name.trim(), login: created.email }
+      } catch (e) {
+        throw new Error(
+          `${form.full_name.trim()} has been added to the staff list, but their login `
+          + `could not be created: ${(e as Error).message}`,
+        )
+      }
+    },
+    onSuccess: (r) => {
+      onFlash(
+        r.login
+          ? `${r.name} has been added, and can sign in as ${r.login}.`
+          : `${r.name} has been added. They cannot sign in yet; use "Give them a login" on their row when they need to.`,
+      )
+      setForm(BLANK); setEmail(''); setPassword(''); setWantsLogin(false); setPartial(null)
+      onDone()
+    },
+    onError: (e) => setPartial((e as Error).message),
+  })
+
   return (
-    <form className="rounded-lg border border-slate-200 bg-white p-4" onSubmit={(e) => { e.preventDefault(); if (valid) create.mutate() }}>
-      <LoginFunctionWarning />
-      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">New teacher login</div>
-      <div className="mt-2 grid gap-3 sm:grid-cols-2">
-        <label className="block"><span className="text-sm text-slate-600">Full name</span>
-          <input value={fullName} onChange={(e) => setFullName(e.target.value)} className={FIELD} /></label>
-        <label className="block"><span className="text-sm text-slate-600">Role</span>
-          <select value={role} onChange={(e) => setRole(e.target.value)} className={FIELD}>
-            {roleChoices.map((r) => <option key={r} value={r}>{ROLE_LABELS[r as Role]}</option>)}
-          </select></label>
-        <label className="block"><span className="text-sm text-slate-600">Email</span>
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={FIELD} placeholder="teacher@school.pk" /></label>
-        <label className="block"><span className="text-sm text-slate-600">Password (min 6)</span>
-          <input type="text" value={password} onChange={(e) => setPassword(e.target.value)} className={FIELD} placeholder="temporary password" /></label>
+    <form
+      className="rounded-lg border border-slate-200 bg-white p-4"
+      onSubmit={(e) => { e.preventDefault(); if (valid) save.mutate() }}
+    >
+      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        Add someone to the school
       </div>
-      {create.isError && <p className="mt-2 text-sm text-red-600">{(create.error as Error).message}</p>}
-      {ok && <p className="mt-2 text-sm text-emerald-600">{ok}</p>}
-      <button type="submit" disabled={!valid || create.isPending}
-        className="mt-3 rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
-        {create.isPending ? 'Creating…' : 'Create login'}
-      </button>
-      <p className="mt-2 text-xs text-slate-400">Share the email &amp; password with the teacher; they can sign in and check in immediately.</p>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <label className="block sm:col-span-2">
+          <span className="text-sm text-slate-600">Full name</span>
+          <input value={form.full_name} autoFocus
+            onChange={(e) => setForm({ ...form, full_name: e.target.value })} className={FIELD} />
+        </label>
+        <label className="block"><span className="text-sm text-slate-600">Designation</span>
+          <input value={form.designation ?? ''} placeholder="e.g. Senior Teacher"
+            onChange={(e) => setForm({ ...form, designation: e.target.value })} className={FIELD} /></label>
+        <label className="block"><span className="text-sm text-slate-600">Mobile</span>
+          <input value={form.mobile ?? ''}
+            onChange={(e) => setForm({ ...form, mobile: e.target.value })} className={FIELD} /></label>
+        <label className="block"><span className="text-sm text-slate-600">Employee #</span>
+          <input value={form.employee_no ?? ''}
+            onChange={(e) => setForm({ ...form, employee_no: e.target.value })} className={FIELD} /></label>
+        <label className="block"><span className="text-sm text-slate-600">CNIC</span>
+          <input value={form.cnic ?? ''}
+            onChange={(e) => setForm({ ...form, cnic: e.target.value })} className={FIELD} /></label>
+        <label className="block"><span className="text-sm text-slate-600">Joined on</span>
+          <input type="date" value={form.joined_on ?? ''}
+            onChange={(e) => setForm({ ...form, joined_on: e.target.value })} className={FIELD} /></label>
+        <label className="block"><span className="text-sm text-slate-600">Date of birth</span>
+          <input type="date" value={form.dob ?? ''}
+            onChange={(e) => setForm({ ...form, dob: e.target.value })} className={FIELD} /></label>
+      </div>
+
+      {/* The one question that used to be a whole second form on a different
+          part of the screen. */}
+      <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <label className="flex cursor-pointer items-start gap-2.5">
+          <input type="checkbox" checked={wantsLogin} className="mt-0.5 h-4 w-4"
+            onChange={(e) => setWantsLogin(e.target.checked)} />
+          <span>
+            <span className="text-sm font-medium text-slate-800">
+              Should they be able to sign in to the app?
+            </span>
+            <span className="mt-0.5 block text-xs text-slate-500">
+              A teacher needs this to mark attendance and enter marks. An office
+              record with no login is perfectly normal for a driver, a guard or an
+              ayah. You can add one later.
+            </span>
+          </span>
+        </label>
+
+        {wantsLogin && (
+          <div className="mt-3 border-t border-slate-200 pt-3">
+            <LoginFunctionWarning />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block"><span className="text-sm text-slate-600">Email they sign in with</span>
+                <input type="email" value={email} placeholder="teacher@school.pk"
+                  onChange={(e) => setEmail(e.target.value)} className={FIELD} /></label>
+              <label className="block"><span className="text-sm text-slate-600">What they can do</span>
+                <select value={role} onChange={(e) => setRole(e.target.value)} className={FIELD}>
+                  {roleChoices.map((r) => <option key={r} value={r}>{ROLE_LABELS[r as Role]}</option>)}
+                </select></label>
+              <label className="block sm:col-span-2">
+                <span className="text-sm text-slate-600">First password (at least 6 characters)</span>
+                <input type="text" value={password} placeholder="they can change it after signing in"
+                  onChange={(e) => setPassword(e.target.value)} className={FIELD} /></label>
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              Give them the address and this password. They can sign in straight away
+              and change it from their own account.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Deliberately not the generic mutation error: the message above says
+          which half succeeded, and that distinction is the whole point of doing
+          the durable half first. */}
+      {partial && <p className="mt-3 text-sm text-danger-700">{partial}</p>}
+
+      <div className="mt-4 flex gap-2">
+        <button type="submit" disabled={!valid || save.isPending}
+          className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
+          {save.isPending ? 'Saving…' : wantsLogin ? 'Add them and make their login' : 'Add them'}
+        </button>
+        <button type="button" onClick={onDone}
+          className="rounded border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+          Cancel
+        </button>
+      </div>
     </form>
   )
 }

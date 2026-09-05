@@ -1446,6 +1446,19 @@ jobs:
         # refusal rather than a raw constraint error in front of a clerk.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/deletion.sql
 
+      - name: A login that belongs to nobody is still visible
+        # The staff roster reads the staff table, so a login never attached to a
+        # staff record appeared on NO screen: it existed, it worked, it could
+        # sign in and read every child's record, and creating one left the
+        # roster saying "No staff yet". That looks exactly like failure, and it
+        # is what the first real school saw.
+        #
+        # fn_school_logins is also the second place in this schema that reads
+        # auth.users on request, so the guards are the whole safety of it: a
+        # leak here is every staff email in the school. Asserted for a clerk and
+        # for a parent, and for another school's rows.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/logins.sql
+
       - name: Live student count — does a school outgrowing its plan get noticed?
         # It did not. subscriptions.student_count is a stored number driving the
         # console's count, limit_state, over_limit_flagged_at, suggested_plan and
