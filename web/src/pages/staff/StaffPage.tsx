@@ -890,12 +890,18 @@ function AddPerson({ onDone, onFlash }: { onDone: () => void; onFlash: (m: strin
           + `anybody on the staff list" above. Do not create the login again.`,
         )
       }
-      return { name, login: created.email }
+      return { name, login: created.email, repaired: created.repaired === true }
     },
     onSuccess: (r) => {
       onFlash(
         r.login
           ? `${r.name} has been added, and can sign in as ${r.login}.`
+            + (r.repaired
+              ? ' Note: the signup trigger on this database did not attach their'
+                + ' profile, so the server finished the job. This login is fine,'
+                + ' but a school signing up on your website goes through the same'
+                + ' trigger with nothing to fall back on. Run supabase/verify.sql.'
+              : '')
           : `${r.name} has been added. They cannot sign in yet; use "Give them a login" on their row when they need to.`,
       )
       setForm(BLANK); setEmail(''); setPassword(''); setWantsLogin(false); setPartial(null)

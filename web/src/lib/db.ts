@@ -2485,7 +2485,16 @@ const CLIENT_KNOWN_ROLES = [
 export const REQUIRED_CREATE_TEACHER_VERSION = 3
 
 export interface CreateTeacherInput { email: string; password: string; full_name: string; role?: string }
-export async function createTeacherLogin(input: CreateTeacherInput): Promise<{ id: string; email: string; role: string }> {
+export interface CreatedLogin {
+  id: string; email: string; role: string
+  /** True when the Edge Function had to write the profile itself because the
+   *  signup trigger did not. The login is fine; the trigger is not, and PUBLIC
+   *  signup goes through the same trigger with no such fallback. Surfaced to
+   *  the office in one sentence so a school that sees it knows to check,
+   *  rather than finding out when a new school cannot sign up. */
+  repaired?: boolean
+}
+export async function createTeacherLogin(input: CreateTeacherInput): Promise<CreatedLogin> {
   const sb = requireSupabase()
   const role = input.role ?? 'class_teacher'
   const email = input.email.trim().toLowerCase()
@@ -2496,7 +2505,7 @@ export async function createTeacherLogin(input: CreateTeacherInput): Promise<{ i
   const { data, error } = await sb.functions.invoke('create-teacher', {
     body: { email, password: input.password, full_name: fullName, role },
   })
-  if (!error) return data as { id: string; email: string; role: string }
+  if (!error) return data as CreatedLogin
 
   // The function is deployed but rejected the request → surface its real reason.
   if ((error as any).name === 'FunctionsHttpError') {
@@ -3563,7 +3572,14 @@ export interface FinanceSummary {
   from: string; to: string
   fee_income: number; other_income: number; total_income: number
   expenses: number; profit: number
-  by_category: { category: string; total: number }[]
+  /** NAMED AS THE DATABASE NAMES IT. 0030 emitted `by_category`; 0060 renamed
+   *  it to `expenses_by_category` and nothing on this side was changed, so from
+   *  the day bundle 6 was applied the Accounts screen threw on every school.
+   *  The runtime guard below then reported it as "your database is behind the
+   *  app", which was backwards and sent schools to re-apply bundles that were
+   *  already applied. Reading the legacy name is handled at the boundary, in
+   *  asFinanceSummary, so exactly one name exists above it. */
+  expenses_by_category: { category: string; total: number }[]
 }
 export interface ProfitSnapshot { today: FinanceSummary; month: FinanceSummary; year: FinanceSummary }
 
@@ -3697,14 +3713,23 @@ function outOfDate(fn: string): Error {
 
 function asFinanceSummary(v: unknown, fn: string): FinanceSummary {
   const o = v as Record<string, unknown> | null
+  // BOTH NAMES, and the legacy one second. 0030 called this `by_category` and
+  // 0060 renamed it to `expenses_by_category`. A school part-way through the
+  // bundles is legitimately on either, and this is the one place in the app
+  // that has to know that. Accepting only the new name would break exactly the
+  // schools this guard exists to help; accepting only the old one is what was
+  // shipped, and it broke every school that was up to date.
+  const cats = Array.isArray(o?.expenses_by_category) ? o!.expenses_by_category
+    : Array.isArray(o?.by_category) ? o!.by_category
+    : null
   if (
     !o || typeof o !== 'object'
     || typeof o.total_income !== 'number'
     || typeof o.expenses !== 'number'
     || typeof o.profit !== 'number'
-    || !Array.isArray(o.by_category)
+    || cats === null
   ) throw outOfDate(fn)
-  return o as unknown as FinanceSummary
+  return { ...o, expenses_by_category: cats } as unknown as FinanceSummary
 }
 
 export async function getFinanceSummary(from: string, to: string): Promise<FinanceSummary> {

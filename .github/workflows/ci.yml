@@ -1761,6 +1761,20 @@ jobs:
         # editor runs a paste as ONE transaction, so that one raise rolled back
         # all seven migrations in bundle 12.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/patch_anchors.sql
+      - name: Do the app and the database agree about the Accounts field names?
+        # 0030 emitted `by_category`; 0060 renamed it to `expenses_by_category`
+        # and nothing on the app side was changed. From the day a school applied
+        # bundle 6, the Accounts screen threw while rendering and the runtime
+        # guard reported "this school's database is behind the app" -- backwards,
+        # because the database was AHEAD. Schools re-applied bundles they had
+        # already applied and the screen still did not work.
+        #
+        # check-rpc-contract.sh could not see it: it checks that a function
+        # exists and that the parameters sent are real, and cannot see the shape
+        # of what comes back. `data as FinanceSummary` is a cast that checks
+        # nothing at runtime. So this asserts, against the real functions, that
+        # every key web/src/lib/db.ts requires is actually emitted.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/accounts_shape.sql
 
       - name: The cash drawer never accuses the clerk
         # One ordinary morning, seeded and run: open with a Rs 1,000 float, take
