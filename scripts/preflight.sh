@@ -30,6 +30,52 @@ QUICK=0
 [ "${1:-}" = "--quick" ] && QUICK=1
 
 fails=0
+
+# ---------------------------------------------------------------------------
+# verify.sql, checked properly.
+#
+# WHY THIS IS A FUNCTION AND NOT `grep -c FAIL`, WHICH IS WHAT IT WAS
+#
+# verify.sql is ONE `select ... union all` statement, so an exception anywhere
+# in it prints an error and NO ROWS AT ALL. The old check was
+#
+#     v=$(psql -f supabase/verify.sql 2>&1 | grep -c 'FAIL')
+#     [ "$v" = 0 ] && echo ok
+#
+# and an error message contains no "FAIL", so a report that rendered nothing
+# counted as clean. Three checks were reporting ok on empty output.
+#
+# That was not hypothetical. Two rows in verify.sql called functions that refuse
+# a connection with no staff profile -- which is every connection here, and
+# every connection from the Supabase SQL editor. They were reached only once a
+# bundle had been applied, so the checker went green on exactly the databases it
+# was supposed to be watching.
+#
+# So all three questions are asked: did it error, did it produce the number of
+# rows the file contains checks for, and does any row say FAIL.
+verify_clean() {                       # verify_clean <db> <label>
+  local db="$1" label="$2" out want got errs bad
+  out=$(psql -q -d "$db" -f supabase/verify.sql 2>&1)
+  want=$(( $(grep -c '^union all' supabase/verify.sql) + 1 ))
+  got=$(printf '%s\n' "$out" | sed -n 's/^(\([0-9]\+\) rows\?)$/\1/p' | tail -1)
+  errs=$(printf '%s\n' "$out" | grep -c 'ERROR')
+  bad=$(printf '%s\n' "$out" | grep -c 'FAIL')
+  if [ "$errs" != 0 ]; then
+    printf '%-52s FAIL (verify.sql raised, so it printed nothing)\n' "$label"
+    printf '%s\n' "$out" | grep -A2 'ERROR' | head -6 | sed 's/^/      /'
+    fails=$((fails + 1)); return 1
+  fi
+  if [ "${got:-0}" != "$want" ]; then
+    printf '%-52s FAIL (%s rows, expected %s)\n' "$label" "${got:-0}" "$want"
+    fails=$((fails + 1)); return 1
+  fi
+  if [ "$bad" != 0 ]; then
+    printf '%-52s FAIL (%s rows)\n' "$label" "$bad"
+    printf '%s\n' "$out" | grep 'FAIL' | head -5 | sed 's/^/      /'
+    fails=$((fails + 1)); return 1
+  fi
+  printf '%-52s ok (%s rows, none failing)\n' "$label" "$got"
+}
 step() {
   printf '%-52s ' "$1"; shift
   if out=$("$@" 2>&1); then
@@ -74,11 +120,16 @@ step "verify.sql and detect.sql cover every migration" bash -c '
 # A suite nothing runs is a suite that rots. CI asserts every file in
 # supabase/tests has a step; so does this, or a new suite can be written, pass
 # here, and never run again.
-step "every SQL suite has a CI step" bash -c '
+# MATCHED ON THE INVOCATION, NOT THE NAME. This used to grep for the bare
+# basename anywhere in ci.yml, so a suite merely MENTIONED in another step's
+# comment counted as covered. That is the "the artefact exists, nothing runs it"
+# failure the check was written to catch, reproduced inside the check itself.
+step "every SQL suite has a CI step that runs it" bash -c '
   fail=0
   for t in supabase/tests/*.sql; do
-    grep -q "$(basename "$t")" .github/workflows/ci.yml || {
-      echo "no CI step runs $(basename "$t")"; fail=1; }
+    b=$(basename "$t")
+    grep -qE "^ *run:.*-f +supabase/tests/$b( |$)" .github/workflows/ci.yml || {
+      echo "no CI step runs $b"; fail=1; }
   done
   exit $fail'
 
@@ -107,7 +158,7 @@ step "check-ledger-baseline.sh" bash supabase/check-ledger-baseline.sh
 step "check-site-prices.sh" bash supabase/check-site-prices.sh
 for g in check-definer-queries.py check-import-keys.py check-readonly-writes.py \
          check-definer-idor.py check-metadata-trust.py check-orphan-queries.py \
-         check-print-ids.py; do
+         check-print-ids.py check-patch-anchors.py; do
   step "$g" python3 "./supabase/$g"
 done
 
@@ -151,14 +202,93 @@ SQL
     if [ "${n:-1}" = 0 ]; then printf '%-52s ok\n' "$mode: anon can execute nothing"
     else printf '%-52s FAIL (%s open)\n' "$mode: anon can execute nothing" "$n"; fails=$((fails + 1)); fi
 
-    v=$(psql -q -d "$db" -f supabase/verify.sql 2>&1 | grep -c 'FAIL')
-    if [ "$v" = 0 ]; then printf '%-52s ok\n' "$mode: verify.sql has no FAIL row"
-    else printf '%-52s FAIL (%s rows)\n' "$mode: verify.sql has no FAIL row" "$v"; fails=$((fails + 1)); fi
+    verify_clean "$db" "$mode: verify.sql renders and has no FAIL row"
 
     d=$(psql -q -d "$db" -f supabase/repair/detect.sql 2>&1 | grep -c 'MISSING')
     if [ "$d" = 0 ]; then printf '%-52s ok\n' "$mode: detect.sql has no MISSING row"
     else printf '%-52s FAIL (%s rows)\n' "$mode: detect.sql has no MISSING row" "$d"; fails=$((fails + 1)); fi
   done
+
+  # THE LINE ENDINGS A SCHOOL ACTUALLY HAS.
+  #
+  # Both installs above feed LF files to the psql CLI. No school does that. A
+  # school opens the Supabase SQL editor in a browser and pastes, and what ends
+  # up in pg_proc.prosrc is whatever the paste contained -- CRLF, on Windows.
+  #
+  # A migration that edits a function it did not write has to find its place in
+  # that stored text. 0101 found it with position(E'\n  end if;\n' in ...):
+  # one line feed, two spaces, `end if;`, one line feed. On an LF database that
+  # matches. On a CRLF database it is not there at all, and because the SQL
+  # editor runs a pasted file as ONE transaction, the raise took all seven
+  # migrations of bundle 12 with it. Twelve bundles, ten CI jobs and this script
+  # all said clean, because every one of them was LF end to end.
+  echo
+  echo "== the same bundles, on a database whose bodies are CRLF =="
+  dropdb --if-exists preflight_crlf >/dev/null 2>&1
+  createdb preflight_crlf >/dev/null 2>&1
+  psql -q -d preflight_crlf -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+create schema if not exists auth;
+create table if not exists auth.users (id uuid primary key, email text,
+  raw_user_meta_data jsonb default '{}'::jsonb, raw_app_meta_data jsonb default '{}'::jsonb,
+  last_sign_in_at timestamptz, created_at timestamptz default now());
+create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
+do $$ begin
+  if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
+  if not exists (select 1 from pg_roles where rolname='authenticated') then create role authenticated nologin; end if;
+  if not exists (select 1 from pg_roles where rolname='service_role') then create role service_role nologin; end if;
+end $$;
+alter default privileges in schema public grant all on tables to postgres, anon, authenticated, service_role;
+SQL
+  rm -rf /tmp/pf-crlf && mkdir -p /tmp/pf-crlf
+  for b in supabase/bundles/*.sql; do sed 's/$/\r/' "$b" > "/tmp/pf-crlf/$(basename "$b")"; done
+  ok=1
+  for b in $(ls /tmp/pf-crlf/*.sql | sort -V); do
+    psql -q -d preflight_crlf -v ON_ERROR_STOP=1 --single-transaction -f "$b" >/dev/null 2>/tmp/pf.err || {
+      printf '%-52s FAIL\n' "crlf: applying ${b##*/}"; head -4 /tmp/pf.err | sed 's/^/      /'
+      fails=$((fails + 1)); ok=0; break
+    }
+  done
+  if [ "$ok" = 1 ]; then
+    # The bodies really have to have landed CRLF, or this proves nothing and
+    # goes green for the wrong reason.
+    stored=$(psql -tA -d preflight_crlf -c "select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and position(chr(13) in p.prosrc) > 0" 2>/dev/null)
+    if [ "${stored:-0}" -lt 100 ]; then
+      printf '%-52s FAIL (%s bodies)\n' "crlf: the bodies are actually stored CRLF" "${stored:-0}"
+      fails=$((fails + 1)); ok=0
+    else
+      printf '%-52s ok (%s bodies)\n' "crlf: bundles apply, bodies stored CRLF" "$stored"
+    fi
+  fi
+  [ "$ok" = 1 ] && verify_clean preflight_crlf "crlf: verify.sql renders and has no FAIL row"
+
+  # WHAT A SCHOOL DOES WHEN IT IS NOT SURE THE PASTE TOOK: paste it again.
+  #
+  # Bundles that create a type or a table refuse the second paste and roll back
+  # whole, which is harmless. What is NOT harmless is a bundle that applies
+  # again and leaves a DIFFERENT function behind, because a patch made from a
+  # function's own text can append itself twice. That is not theoretical: this
+  # check is what found 0042 appending
+  # `and school_id = public.current_school_id()` to fn_import_staff's duplicate
+  # lookups once per paste, forever.
+  #
+  # So every body is fingerprinted, every bundle is pasted again, and the
+  # fingerprints have to match. A bundle that rolls back is fine; a bundle that
+  # succeeds and changes a body is not.
+  if [ "$ok" = 1 ]; then
+    psql -tA -d preflight_bundles -c "select p.proname||'|'||md5(p.prosrc) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' order by 1" > /tmp/pf-paste1.txt 2>/dev/null
+    for b in $(ls supabase/bundles/*.sql | sort -V); do
+      psql -q -d preflight_bundles -v ON_ERROR_STOP=1 --single-transaction -f "$b" >/dev/null 2>&1 || true
+    done
+    psql -tA -d preflight_bundles -c "select p.proname||'|'||md5(p.prosrc) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' order by 1" > /tmp/pf-paste2.txt 2>/dev/null
+    if diff -q /tmp/pf-paste1.txt /tmp/pf-paste2.txt >/dev/null; then
+      printf '%-52s ok (%s bodies)\n' "re-pasting every bundle changes no function" \
+        "$(wc -l < /tmp/pf-paste1.txt | tr -d ' ')"
+    else
+      printf '%-52s FAIL\n' "re-pasting every bundle changes no function"
+      diff /tmp/pf-paste1.txt /tmp/pf-paste2.txt | grep '^[<>]' | head -8 | sed 's/^/      /'
+      fails=$((fails + 1))
+    fi
+  fi
 
   # THE UPGRADE A SCHOOL ACTUALLY PERFORMS.
   #
@@ -208,9 +338,7 @@ SQL
     fi
   fi
   if [ "$ok" = 1 ]; then
-    v=$(psql -q -d preflight_upgrade -f supabase/verify.sql 2>&1 | grep -c 'FAIL')
-    if [ "$v" = 0 ]; then printf '%-52s ok\n' "upgrade: verify.sql has no FAIL row"
-    else printf '%-52s FAIL (%s rows)\n' "upgrade: verify.sql has no FAIL row" "$v"; fails=$((fails + 1)); fi
+    verify_clean preflight_upgrade "upgrade: verify.sql renders, no FAIL row"
   fi
 
   echo

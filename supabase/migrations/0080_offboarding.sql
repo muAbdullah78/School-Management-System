@@ -132,25 +132,25 @@ do $stamp$
 declare v_src text; v_new text;
 begin
   v_src := pg_get_functiondef('public.fn__assign_doc_no()'::regprocedure);
-  v_new := replace(v_src,
-    E'  if new.doc_no is not null and new.serial is not null then
-    return new;
-  end if;',
-    E'  -- The school''s name, kept on the document itself. 0080 lets an invoice
-'
-    || E'  -- outlive the school it was raised against, and an invoice that cannot say
-'
-    || E'  -- who it was for is not a business record.
-'
-    || E'  if new.school_name is null then
-'
-    || E'    select s.name into new.school_name from public.schools s where s.id = new.school_id;
-'
-    || E'  end if;
-'
-    || E'  if new.doc_no is not null and new.serial is not null then
-    return new;
-  end if;');
+  -- WHITESPACE-BLIND, and it was not. The pattern used to be an E'...' string
+  -- carrying this file's own line endings, so it matched only a stored body
+  -- that had arrived by the same route. 0101 shipped the same assumption in a
+  -- form that could not agree with anything and took all seven migrations of
+  -- bundle 12 down on a live school. Line breaks in the pattern are `\s+` now;
+  -- supabase/check-patch-anchors.py fails the build if this is written the old
+  -- way again.
+  v_new := regexp_replace(v_src,
+    'if new\.doc_no is not null and new\.serial is not null then\s+'
+      || 'return new;\s+end if;',
+    '-- The school''s name, kept on the document itself. 0080 lets an invoice'
+    || chr(10) || '  -- outlive the school it was raised against, and an invoice that cannot say'
+    || chr(10) || '  -- who it was for is not a business record.'
+    || chr(10) || '  if new.school_name is null then'
+    || chr(10) || '    select s.name into new.school_name from public.schools s where s.id = new.school_id;'
+    || chr(10) || '  end if;'
+    || chr(10) || '  if new.doc_no is not null and new.serial is not null then'
+    || chr(10) || '    return new;'
+    || chr(10) || '  end if;');
   if v_new <> v_src then
     execute v_new;
   end if;

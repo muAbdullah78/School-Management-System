@@ -5385,25 +5385,25 @@ do $stamp$
 declare v_src text; v_new text;
 begin
   v_src := pg_get_functiondef('public.fn__assign_doc_no()'::regprocedure);
-  v_new := replace(v_src,
-    E'  if new.doc_no is not null and new.serial is not null then
-    return new;
-  end if;',
-    E'  -- The school''s name, kept on the document itself. 0080 lets an invoice
-'
-    || E'  -- outlive the school it was raised against, and an invoice that cannot say
-'
-    || E'  -- who it was for is not a business record.
-'
-    || E'  if new.school_name is null then
-'
-    || E'    select s.name into new.school_name from public.schools s where s.id = new.school_id;
-'
-    || E'  end if;
-'
-    || E'  if new.doc_no is not null and new.serial is not null then
-    return new;
-  end if;');
+  -- WHITESPACE-BLIND, and it was not. The pattern used to be an E'...' string
+  -- carrying this file's own line endings, so it matched only a stored body
+  -- that had arrived by the same route. 0101 shipped the same assumption in a
+  -- form that could not agree with anything and took all seven migrations of
+  -- bundle 12 down on a live school. Line breaks in the pattern are `\s+` now;
+  -- supabase/check-patch-anchors.py fails the build if this is written the old
+  -- way again.
+  v_new := regexp_replace(v_src,
+    'if new\.doc_no is not null and new\.serial is not null then\s+'
+      || 'return new;\s+end if;',
+    '-- The school''s name, kept on the document itself. 0080 lets an invoice'
+    || chr(10) || '  -- outlive the school it was raised against, and an invoice that cannot say'
+    || chr(10) || '  -- who it was for is not a business record.'
+    || chr(10) || '  if new.school_name is null then'
+    || chr(10) || '    select s.name into new.school_name from public.schools s where s.id = new.school_id;'
+    || chr(10) || '  end if;'
+    || chr(10) || '  if new.doc_no is not null and new.serial is not null then'
+    || chr(10) || '    return new;'
+    || chr(10) || '  end if;');
   if v_new <> v_src then
     execute v_new;
   end if;
@@ -7245,11 +7245,20 @@ begin
   if v_old like '%fn_may_mark_subject%' then
     raise notice '0085: fn_enter_assessment_marks already checks the subject';
   else
-    v_new := replace(v_old,
-      '    if not public.fn_may_manage_class(v_a.session_id, v_a.class_id, v_a.section_id) then
-      raise exception ''You can only enter marks for your assigned class'';
-    end if;',
-      '    -- 0085: class AND subject. The class check alone let the Physics
+    -- WHITESPACE-BLIND, and this was not always so. The pattern used to be a
+    -- literal string spanning three lines of THIS FILE, which means it carried
+    -- this file's line endings and matched only a stored body that had arrived
+    -- by the same route. 0101 shipped the same class of assumption in a form
+    -- that could not agree with anything -- E'\n', which is always a bare line
+    -- feed -- and it took all seven migrations of bundle 12 down on a live
+    -- school. Every line break in the pattern is `\s+` now, so a space, a tab,
+    -- an LF and a CRLF are all the same to it. supabase/check-patch-anchors.py
+    -- fails the build if this is written the old way again.
+    v_new := regexp_replace(v_old,
+      'if not public\.fn_may_manage_class\(v_a\.session_id, v_a\.class_id, v_a\.section_id\) then\s+'
+        || 'raise exception ''You can only enter marks for your assigned class'';\s+'
+        || 'end if;',
+      '-- 0085: class AND subject. The class check alone let the Physics
     -- teacher of Class 9 enter Class 9''s Islamiat marks.
     if not public.fn_may_mark_subject(
              v_a.session_id, v_a.class_id, v_a.section_id, v_a.subject_id) then

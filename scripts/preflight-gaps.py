@@ -72,6 +72,9 @@ COVERED = {
         'preflight carries the same check',
     'Every suite again, in reverse order':
         'preflight runs every suite forward and in reverse',
+    'Bundles apply to a database whose function bodies are CRLF':
+        'preflight converts the bundles to CRLF, installs from those, checks '
+        'the bodies really stored CRLF, and runs verify.sql against them',
 }
 
 # Partially covered: preflight checks something RELATED but not the same thing.

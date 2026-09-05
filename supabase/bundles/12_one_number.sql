@@ -1041,12 +1041,17 @@ begin
     return;
   end if;
 
-  -- Whitespace-tolerant, because the same expression is laid out differently in
-  -- 0005 and 0058 and a school may be on either.
+  -- Whitespace-BLIND, not merely tolerant, because the same expression is laid
+  -- out differently in 0005 and 0058 and a school may be on either -- and
+  -- because 0101 shipped an anchor that assumed one exact indentation, matched
+  -- on every database built here, missed on the first real school, and took the
+  -- other six migrations in the bundle down with it. Every gap where the source
+  -- has whitespace is `\s*` here, so indentation and line endings cannot decide
+  -- whether a result card prints the same percentage as the portal.
   v_new := regexp_replace(
     v_src,
-    'round\(100\.0 \* \(count\(\*\) filter \(where status in \(''present'',''late''\)\)\s*'
-      || '\+ 0\.5 \* count\(\*\) filter \(where status = ''half_day''\)\) / count\(\*\), 1\)',
+    'round\(\s*100\.0\s*\*\s*\(\s*count\(\*\)\s*filter\s*\(\s*where\s+status\s+in\s*\(\s*''present''\s*,\s*''late''\s*\)\s*\)\s*'
+      || '\+\s*0\.5\s*\*\s*count\(\*\)\s*filter\s*\(\s*where\s+status\s*=\s*''half_day''\s*\)\s*\)\s*/\s*count\(\*\)\s*,\s*1\s*\)',
     'public.fn__attendance_pct('
       || '(count(*) filter (where status = ''present''))::int, '
       || '(count(*) filter (where status = ''late''))::int, '
@@ -1065,13 +1070,26 @@ begin
     -- Adjacent string literals, not `||`. RAISE takes a literal format string
     -- and a concatenation expression is a syntax error there, which is how the
     -- first version of this file failed to apply at all.
-    raise exception '0100: could not find the attendance formula in '
+    --
+    -- A WARNING and not an exception. This file is pasted as part of a bundle
+    -- that the Supabase SQL editor runs as ONE transaction, so raising here
+    -- reverts the fee total, the headcount, the till, the family's deposit and
+    -- the parent login as well -- which is exactly what 0101's anchor did on
+    -- the first real school. The card keeping its own copy of the rule is a
+    -- real problem; taking six unrelated fixes with it is a bigger one.
+    -- supabase/verify.sql names every function still carrying the formula.
+    raise warning '0100: could not find the attendance formula in '
       'fn_generate_result_cards. It has been reworded, so this substitution '
-      'no longer matches and the card would keep its own copy of the rule. '
-      'Update the pattern in this migration.';
+      'no longer matches, nothing was changed, the rest of this bundle still '
+      'applied, and the card keeps its own copy of the rule. Run '
+      'supabase/verify.sql; it names what is outstanding.';
+    return;
   end if;
 
   execute v_new;
+exception when others then
+  raise warning '0100: fn_generate_result_cards was left as it was: %. The '
+    'rest of this bundle still applied.', sqlerrm;
 end $rewrite$;
 
 -- ---------------------------------------------------------------------------
@@ -1098,11 +1116,16 @@ begin
     and p.proname <> 'fn__attendance_pct'
     and p.prosrc like '%0.5 * count(*) filter (where status = ''half_day'')%';
 
-  if v_bad is not null then
-    raise exception '0100: the attendance rule is written out inside: %. '
+  if v_bad is null then
+    raise notice '0100: the attendance rule now exists in one place';
+  else
+    -- A WARNING, for the reason given in section 3: an exception here reverts
+    -- six migrations that have nothing to do with attendance.
+    raise warning '0100: the attendance rule is still written out inside: %. '
       'It must exist only in fn__attendance_pct, because the last time it '
       'existed in four places two of them were wrong and a parent read 92%% '
-      'where the result card printed 83.3%%.', v_bad;
+      'where the result card printed 83.3%%. Everything else in this bundle '
+      'applied. Send the output of supabase/verify.sql.', v_bad;
   end if;
 end $assert$;
 
@@ -1172,9 +1195,16 @@ end $assert$;
 -- function body to add one statement to it is how a stack of earlier fixes gets
 -- silently reverted, which this repository has recorded happening twice.
 -- Each definition is read from the catalogue, one `perform` is inserted directly
--- after the function's own permission gate, and the result is executed. The
--- insertion point is located rather than assumed, and the block refuses loudly
--- rather than guessing if it cannot find the gate.
+-- after the function's own permission gate, and the result is executed.
+--
+-- THE FIRST VERSION OF THAT INSERTION IS WHY THIS FILE READS THE WAY IT DOES.
+-- It located the gate with an anchor that assumed two-space indentation and LF
+-- line endings, which held on every database built here and failed on the first
+-- real school. Because the Supabase SQL editor runs a pasted file as one
+-- transaction, one raise in this file rolled back all seven migrations in the
+-- bundle. Section 2 records the measurement, moves the anchor into a single
+-- tested function, and makes an anchor that cannot find its footing report
+-- itself and step aside rather than take six unrelated fixes with it.
 --
 -- WHAT IS DELIBERATELY LEFT ALONE
 --
@@ -1245,7 +1275,121 @@ revoke all on function public.fn__only_these_keys(jsonb, text[], text)
   from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
--- 2. The four callers, patched from their own definitions
+-- 2. Where a check like this belongs in somebody else's function
+--
+-- WHY THIS IS A FUNCTION AND NOT FOUR LINES OF STRING SURGERY
+--
+-- The first version of this migration found its insertion point with
+--
+--     position(E'\n  end if;\n' in substr(v_src, v_at))
+--
+-- which requires the gate to close with a newline, exactly two spaces, `end
+-- if;`, and a newline. That held on every database built here and failed on the
+-- first real school, with
+--
+--     0101: could not find the end of fn_enter_marks's permission gate.
+--
+-- and because the Supabase SQL editor runs a pasted file as ONE transaction,
+-- that single raise rolled back all seven migrations in the bundle. Six
+-- unrelated fixes -- the fee total, the headcount, the attendance rule, the
+-- till, the family's deposit, the parent login -- were lost to a whitespace
+-- assumption in the seventh.
+--
+-- Measured afterwards, on four spellings of the same gate:
+--
+--   shape                              E'\n  end if;\n'   end\s+if\s*;
+--   multi-line, two spaces, LF               matches         matches
+--   the same with CRLF line endings          NO              matches
+--   the whole gate on one line               NO              matches
+--   four-space indentation                   NO              matches
+--
+-- So the anchor is now whitespace-blind, it lives in ONE place rather than
+-- being retyped per function, and supabase/tests/patch_anchors.sql runs it
+-- against all four shapes. Any later migration that needs to add a statement to
+-- a function it did not write must call this rather than inventing its own
+-- anchor, which is the mistake this file made.
+--
+-- IF THE GATE CANNOT BE FOUND AT ALL, it falls back to the first line that is
+-- exactly `begin`, which is where pg_get_functiondef always puts the start of
+-- the body. The cost of the fallback is ordering: the payload is checked before
+-- the caller is authorised, so an unauthorised caller is told the key list
+-- rather than only "Not permitted". Those key names are already in the
+-- browser bundle as TypeScript payload types, so nothing is disclosed that a
+-- reader of the app does not already have; the check still refuses, and a
+-- refusal in the wrong order beats a class of marks written as NULL.
+--
+-- Returns null when neither anchor is found, so the caller decides what that
+-- means instead of this function aborting a transaction it knows nothing about.
+-- ---------------------------------------------------------------------------
+create or replace function public.fn__patch_after_gate(p_src text, p_stmt text)
+returns table (patched text, anchor text)
+language plpgsql immutable as $$
+declare
+  v_at   int;
+  v_tail text;
+  v_new  text;
+begin
+  patched := null;
+  anchor  := 'none';
+
+  if p_src is null or p_stmt is null or p_stmt = '' then
+    return next;
+    return;
+  end if;
+
+  -- 1. Immediately after the close of the function's own permission gate,
+  --    taken as the first `end if;` following the first 'Not permitted' it
+  --    raises. Every gate in this schema is a flat two-line if, checked; a
+  --    nested one would put the statement inside the inner branch, which is
+  --    why the four callers are inspected rather than assumed.
+  v_at := position('Not permitted' in p_src);
+  if v_at > 0 then
+    v_tail := substr(p_src, v_at);
+    v_new  := regexp_replace(v_tail, 'end\s+if\s*;',
+                             'end if;' || chr(10) || p_stmt, 'i');
+    if v_new <> v_tail then
+      patched := substr(p_src, 1, v_at - 1) || v_new;
+      anchor  := 'gate';
+      return next;
+      return;
+    end if;
+  end if;
+
+  -- 2. Otherwise the body's opening `begin`, which pg_get_functiondef always
+  --    emits in column one. Indented `begin`s are nested blocks and are
+  --    deliberately not matched.
+  v_new := regexp_replace(p_src, '^begin[ \t\r]*$',
+                          'begin' || chr(10) || p_stmt, 'n');
+  if v_new <> p_src then
+    patched := v_new;
+    anchor  := 'begin';
+    return next;
+    return;
+  end if;
+
+  return next;
+end $$;
+
+revoke all on function public.fn__patch_after_gate(text, text)
+  from public, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 3. The four callers, patched from their own definitions
+--
+-- Every overload carrying the payload argument is patched, not the first row
+-- pg_proc happens to return. The earlier version did
+--
+--     select pg_get_functiondef(p.oid) into v_src ... where p.proname = v_name
+--
+-- which on a database that still carries a superseded signature picks one of
+-- them arbitrarily and hardens whichever it got.
+--
+-- Each patch runs inside its own block with an exception handler, so it is its
+-- own subtransaction. A surprise in one function -- a shape neither anchor
+-- fits, a definition that no longer compiles -- leaves that one function alone
+-- and says so, and the other six migrations in this bundle still apply. That is
+-- the whole lesson of the failure recorded in section 2: a hardening that
+-- cannot find its footing must not take correctness fixes down with it.
 -- ---------------------------------------------------------------------------
 do $patch$
 declare
@@ -1262,9 +1406,11 @@ declare
   ];
   v_i int;
   v_name text; v_arg text; v_what text; v_keys text;
-  v_src text; v_new text;
-  v_at int; v_end int;
+  v_proc oid;
+  v_src text; v_new text; v_anchor text;
   v_call text;
+  v_found int;
+  v_done int;
 begin
   for v_i in 1 .. array_length(v_targets, 1) loop
     v_name := v_targets[v_i][1];
@@ -1272,59 +1418,77 @@ begin
     v_what := v_targets[v_i][3];
     v_keys := v_targets[v_i][4];
 
-    select pg_get_functiondef(p.oid) into v_src
-    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-    where n.nspname = 'public' and p.proname = v_name;
-
-    if v_src is null then
-      raise exception '0101: % is not present. This migration expects the four '
-        'payload functions to exist; apply the earlier bundles first.', v_name;
-    end if;
-
-    if v_src like '%fn__only_these_keys%' then
-      raise notice '0101: % already refuses unknown keys', v_name;
-      continue;
-    end if;
-
-    -- AFTER THE PERMISSION CHECK, not at the top of the body.
-    --
-    -- The first draft inserted after `begin`, which put payload validation
-    -- ahead of "Not permitted". That is the wrong order on principle: a caller
-    -- who may not do the thing should be told that and nothing else, and every
-    -- other function in this schema authorises first. So the anchor is the
-    -- closing `end if;` of the function's own permission gate, found by taking
-    -- the first `end if;` that follows the first 'Not permitted' it raises.
-    v_at := position('Not permitted' in v_src);
-    if v_at = 0 then
-      raise exception '0101: % has no "Not permitted" gate, so this migration '
-        'cannot tell where the permission check ends. Nothing was changed.', v_name;
-    end if;
-    v_end := position(E'\n  end if;\n' in substr(v_src, v_at));
-    if v_end = 0 then
-      raise exception '0101: could not find the end of %''s permission gate. '
-        'Nothing was changed.', v_name;
-    end if;
-    v_at := v_at + v_end + length(E'\n  end if;\n') - 1;
-
     v_call := format(
-      E'  perform public.fn__only_these_keys(%I, %L::text[], %L);\n',
+      '  perform public.fn__only_these_keys(%I, %L::text[], %L);',
       v_arg, '{' || v_keys || '}', v_what);
 
-    v_new := substr(v_src, 1, v_at - 1) || v_call || substr(v_src, v_at);
-    if v_new = v_src then
-      raise exception '0101: the insertion into % changed nothing', v_name;
+    v_found := 0;
+    v_done  := 0;
+
+    for v_proc in
+      select p.oid
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public'
+        and p.proname = v_name
+        and p.proargnames @> array[v_arg]
+      order by p.oid
+    loop
+      v_found := v_found + 1;
+      begin
+        v_src := pg_get_functiondef(v_proc);
+        if v_src like '%fn__only_these_keys%' then
+          raise notice '0101: % already refuses unknown keys', v_proc::regprocedure;
+          v_done := v_done + 1;
+        else
+          select t.patched, t.anchor into v_new, v_anchor
+          from public.fn__patch_after_gate(v_src, v_call) t;
+
+          if v_new is null then
+            raise warning '0101: % has neither a "Not permitted" gate this '
+              'migration can find the end of nor a body opening on its own '
+              '`begin` line, so it was left exactly as it was and the rest of '
+              'this bundle still applied. It still accepts a key it does not '
+              'read. Run supabase/verify.sql; it names what is outstanding.',
+              v_proc::regprocedure;
+          else
+            execute v_new;
+            if v_anchor = 'begin' then
+              raise notice '0101: the permission gate in % was not where this '
+                'migration looks, so the key check went at the top of the body '
+                'instead of after it. It refuses correctly; it just answers '
+                'before "Not permitted" does.', v_proc::regprocedure;
+            end if;
+            v_done := v_done + 1;
+          end if;
+        end if;
+      exception when others then
+        raise warning '0101: % was left as it was: %. The rest of this bundle '
+          'still applied. Run supabase/verify.sql for what is outstanding.',
+          v_proc::regprocedure, sqlerrm;
+      end;
+    end loop;
+
+    if v_found = 0 then
+      raise warning '0101: no function public.% takes a % argument, so nothing '
+        'was hardened for it. Apply the earlier bundles first.', v_name, v_arg;
+    elsif v_done = 0 then
+      raise warning '0101: nothing could be hardened for public.%', v_name;
     end if;
-    execute v_new;
   end loop;
 end $patch$;
 
 -- ---------------------------------------------------------------------------
--- 3. Did it take?
+-- 4. Did it take?
 --
--- Narrow, like 0100's: this runs straight after the patch, so what it catches
--- is THIS FILE failing on a school whose function shapes differ. The lasting
--- check is supabase/tests/payload_keys.sql, which proves the refusal actually
--- happens rather than that the text is present.
+-- A WARNING and not an exception, deliberately, and this is the second half of
+-- the lesson in section 2. Raising here aborts the pasted bundle and undoes six
+-- migrations that have nothing to do with unknown keys. So the shortfall is
+-- reported by name and the transaction is allowed to commit.
+--
+-- It does not become invisible by being non-fatal. supabase/verify.sql asks the
+-- same catalogue question on the finished database and prints a FAIL naming the
+-- functions still outstanding, and supabase/tests/payload_keys.sql proves the
+-- refusal actually happens rather than that the text is present.
 -- ---------------------------------------------------------------------------
 do $assert$
 declare v_missing text;
@@ -1337,8 +1501,13 @@ begin
     where n.nspname = 'public' and p.proname = x.name
       and p.prosrc like '%fn__only_these_keys%');
 
-  if v_missing is not null then
-    raise exception '0101: these still accept a key they do not read: %', v_missing;
+  if v_missing is null then
+    raise notice '0101: all four now refuse a key they do not read';
+  else
+    raise warning '0101: these still accept a key they do not read: %. '
+      'Everything else in this bundle applied. Send the output of '
+      'supabase/verify.sql so the gate shape on this database can be handled.',
+      v_missing;
   end if;
 end $assert$;
 
@@ -1454,67 +1623,113 @@ revoke all on function public.fn__reversal_till(uuid, public.payment_method)
 -- ---------------------------------------------------------------------------
 -- 2. The two writers that never learned about the drawer
 -- ---------------------------------------------------------------------------
+--
+-- EVERY PATTERN HERE IS WHITESPACE-BLIND, AND EVERY PATCH IS ITS OWN
+-- SUBTRANSACTION. 0101 shipped an anchor that assumed a fixed indentation and
+-- LF line endings; it matched on every database built here, missed on the first
+-- real school, and because the Supabase SQL editor runs a pasted file as ONE
+-- transaction, that one raise rolled back all seven migrations in the bundle.
+-- The admission-fee pattern below had the same flaw -- it matched an exact
+-- newline followed by exactly six spaces -- and the two `raise exception`s had
+-- the same blast radius. So:
+--
+--   * the two patterns match `\s+` wherever the source has whitespace, so
+--     indentation and line endings cannot decide whether a school's drawer
+--     balances;
+--   * each patch runs in a block with an exception handler, so a definition
+--     neither pattern fits leaves that one function alone;
+--   * a miss is a WARNING naming the function, not an exception. The drawer
+--     staying wrong for one of the two paths is bad. Reverting the fee total,
+--     the headcount, the attendance rule, the family's deposit and the parent
+--     login as well is worse, and it is what raising here does.
+--
+-- Nothing becomes invisible by being non-fatal: supabase/verify.sql names every
+-- function that still writes to `payments` without a drawer, and
+-- supabase/tests/till_and_the_clerk.sql runs the morning above and asserts the
+-- drawer balances.
 do $patch$
 declare
   v_src text; v_new text;
 begin
   -- ---- the contra receipt --------------------------------------------------
-  select pg_get_functiondef(p.oid) into v_src
-  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-  where n.nspname = 'public' and p.proname = 'fn_reverse_payment';
-  if v_src is null then
-    raise exception '0102: fn_reverse_payment is not present; apply the earlier bundles first';
-  end if;
+  begin
+    select pg_get_functiondef(p.oid) into v_src
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'fn_reverse_payment';
 
-  if v_src like '%fn__reversal_till%' then
-    raise notice '0102: fn_reverse_payment already attributes the drawer';
-  else
-    v_new := regexp_replace(
-      v_src,
-      '(insert into public\.payments\(student_id, family_id, amount, method, receipt_no,\s*'
-        || 'status, received_by, reversal_of, note\)\s*'
-        || 'values \(v_orig\.student_id, v_orig\.family_id, -v_orig\.amount, v_orig\.method, v_receipt,\s*'
-        || '''verified'', v_actor, p_payment_id, coalesce\(p_reason, ''reversal''\))\)',
-      '\1, public.fn__reversal_till(v_orig.till_session_id, v_orig.method))');
-    -- The column list needs the new name at the END, where the value was
-    -- appended. The first version of this put the column after `receipt_no` and
-    -- the value last, so the columns and the values no longer lined up and
-    -- Postgres tried to write 'verified' into a uuid. Caught by re-running the
-    -- morning above, which is why that fixture exists.
-    v_new := replace(v_new,
-      'status, received_by, reversal_of, note)',
-      'status, received_by, reversal_of, note, till_session_id)');
-    if v_new = v_src or v_new not like '%fn__reversal_till%' then
-      raise exception '0102: could not find the contra-receipt insert in '
-        'fn_reverse_payment. It has been reworded, so nothing was changed and '
-        'the drawer would keep being wrong. Update the pattern in this migration.';
+    if v_src is null then
+      raise warning '0102: fn_reverse_payment is not present, so nothing was '
+        'attributed for it. Apply the earlier bundles first.';
+    elsif v_src like '%fn__reversal_till%' then
+      raise notice '0102: fn_reverse_payment already attributes the drawer';
+    else
+      v_new := regexp_replace(
+        v_src,
+        '(insert\s+into\s+public\.payments\s*\(\s*student_id,\s*family_id,\s*amount,\s*method,\s*receipt_no,\s*'
+          || 'status,\s*received_by,\s*reversal_of,\s*note\s*\)\s*'
+          || 'values\s*\(\s*v_orig\.student_id,\s*v_orig\.family_id,\s*-v_orig\.amount,\s*v_orig\.method,\s*v_receipt,\s*'
+          || '''verified'',\s*v_actor,\s*p_payment_id,\s*coalesce\(\s*p_reason,\s*''reversal''\s*\))\s*\)',
+        '\1, public.fn__reversal_till(v_orig.till_session_id, v_orig.method))');
+      -- The column list needs the new name at the END, where the value was
+      -- appended. The first version of this put the column after `receipt_no`
+      -- and the value last, so the columns and the values no longer lined up
+      -- and Postgres tried to write 'verified' into a uuid. Caught by
+      -- re-running the morning above, which is why that fixture exists.
+      v_new := regexp_replace(v_new,
+        'status,(\s*)received_by,(\s*)reversal_of,(\s*)note\s*\)',
+        'status,\1received_by,\2reversal_of,\3note, till_session_id)');
+      if v_new = v_src or v_new not like '%fn__reversal_till%' then
+        raise warning '0102: could not find the contra-receipt insert in '
+          'fn_reverse_payment. It has been reworded, so nothing was changed, '
+          'the rest of this bundle still applied, and a reversal still leaves '
+          'the drawer short. Run supabase/verify.sql; it names what is '
+          'outstanding.';
+      else
+        execute v_new;
+      end if;
     end if;
-    execute v_new;
-  end if;
+  exception when others then
+    raise warning '0102: fn_reverse_payment was left as it was: %. The rest of '
+      'this bundle still applied.', sqlerrm;
+  end;
 
   -- ---- the admission fee ---------------------------------------------------
-  select pg_get_functiondef(p.oid) into v_src
-  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-  where n.nspname = 'public' and p.proname = 'fn_admit_student';
-  if v_src is null then
-    raise exception '0102: fn_admit_student is not present; apply the earlier bundles first';
-  end if;
+  begin
+    select pg_get_functiondef(p.oid) into v_src
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'fn_admit_student';
 
-  if v_src like '%fn__ensure_till%' then
-    raise notice '0102: fn_admit_student already attributes the drawer';
-  else
-    v_new := replace(v_src,
-      'insert into public.payments(student_id, family_id, amount, method, receipt_no, status, received_by, note)'
-        || E'\n      values (v_student, v_family, v_af_amt, ''cash'', v_af_receipt, ''verified'', v_actor, ''Admission fee'')',
-      'insert into public.payments(student_id, family_id, amount, method, receipt_no, status, received_by, note, till_session_id)'
-        || E'\n      values (v_student, v_family, v_af_amt, ''cash'', v_af_receipt, ''verified'', v_actor, ''Admission fee'', public.fn__ensure_till())');
-    if v_new = v_src then
-      raise exception '0102: could not find the admission-fee insert in '
-        'fn_admit_student. It has been reworded, so nothing was changed and the '
-        'drawer would keep being over. Update the pattern in this migration.';
+    if v_src is null then
+      raise warning '0102: fn_admit_student is not present, so nothing was '
+        'attributed for it. Apply the earlier bundles first.';
+    elsif v_src like '%fn__ensure_till%' then
+      raise notice '0102: fn_admit_student already attributes the drawer';
+    else
+      -- Two separate whitespace-blind substitutions rather than one match over
+      -- the column list AND the value list together, because the two are on
+      -- different lines and the amount of space between them is exactly what
+      -- the earlier version got wrong.
+      v_new := regexp_replace(
+        v_src,
+        '(insert\s+into\s+public\.payments\s*\(\s*student_id,\s*family_id,\s*amount,\s*method,\s*'
+          || 'receipt_no,\s*status,\s*received_by,\s*note\s*)\)(\s*)'
+          || '(values\s*\(\s*v_student,\s*v_family,\s*v_af_amt,\s*''cash'',\s*v_af_receipt,\s*'
+          || '''verified'',\s*v_actor,\s*''Admission fee''\s*)\)',
+        '\1, till_session_id)\2\3, public.fn__ensure_till())');
+      if v_new = v_src or v_new not like '%fn__ensure_till%' then
+        raise warning '0102: could not find the admission-fee insert in '
+          'fn_admit_student. It has been reworded, so nothing was changed, the '
+          'rest of this bundle still applied, and an admission fee still leaves '
+          'the drawer over. Run supabase/verify.sql; it names what is '
+          'outstanding.';
+      else
+        execute v_new;
+      end if;
     end if;
-    execute v_new;
-  end if;
+  exception when others then
+    raise warning '0102: fn_admit_student was left as it was: %. The rest of '
+      'this bundle still applied.', sqlerrm;
+  end;
 end $patch$;
 
 -- ---------------------------------------------------------------------------
@@ -1535,9 +1750,14 @@ begin
     where n.nspname = 'public' and p.proname = x.name
       and p.prosrc like '%till_session_id%');
 
-  if v_bad is not null then
-    raise exception '0102: these still write cash without saying which drawer '
-      'it came from or went into: %', v_bad;
+  if v_bad is null then
+    raise notice '0102: both writers now say which drawer the cash came from';
+  else
+    -- A WARNING and not an exception, for the reason recorded above section 2:
+    -- raising here undoes six migrations that have nothing to do with the till.
+    raise warning '0102: these still write cash without saying which drawer '
+      'it came from or went into: %. Everything else in this bundle applied. '
+      'Send the output of supabase/verify.sql.', v_bad;
   end if;
 end $assert$;
 

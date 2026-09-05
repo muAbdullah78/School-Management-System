@@ -126,6 +126,29 @@ jobs:
         working-directory: .
         run: python3 supabase/check-orphan-queries.py
 
+      - name: No migration anchors on whitespace it cannot control
+        # 0101 added one statement to four functions it did not write, and found
+        # the insertion point with position(E'\n  end if;\n' in ...). That is a
+        # line feed, two spaces, `end if;`, a line feed, exactly. It matched on
+        # every database built in CI and missed on the first real school, whose
+        # stored function bodies carry CRLF because they were created by pasting
+        # a file into a browser SQL editor.
+        #
+        # The Supabase SQL editor runs a pasted file as ONE transaction, so that
+        # single raise rolled back all seven migrations in bundle 12: the fee
+        # total, the headcount, the attendance rule, the till, the family's
+        # deposit and the parent login, none of them anything to do with
+        # unknown keys.
+        #
+        # Nothing in CI could have caught it, because CI only ever built LF
+        # databases from LF files. Two things now do: this guard reads the
+        # migration files and refuses any pattern matched against a function
+        # definition that carries a newline in any form, and
+        # supabase/tests/patch_anchors.sql runs the shared anchor against five
+        # spellings of the same permission gate, CRLF among them.
+        working-directory: .
+        run: python3 supabase/check-patch-anchors.py
+
       - name: No em dash on a surface a school reads
         # The em dash is banned in this project's writing and it is the single
         # easiest character to reintroduce, because every editor and every model
@@ -370,12 +393,138 @@ jobs:
           # fee counter, challan, reports and enquiry book were all absent.
           echo "── verify.sql, as a school runs it"
           PGDATABASE=bundlecheck psql -v ON_ERROR_STOP=1 -f supabase/verify.sql \
-            | tee /tmp/verify.out
+            > /tmp/verify.out 2>&1 || true
+          cat /tmp/verify.out
+          # THREE QUESTIONS, NOT ONE. verify.sql is a single `select ... union
+          # all`, so one exception prints an error and NO ROWS AT ALL -- and an
+          # error message contains no "FAIL", so `grep -q FAIL` on empty output
+          # said the database was clean. This step was piped through `tee`, and
+          # GitHub runs `run:` blocks under `bash -e` with no pipefail, so
+          # psql's non-zero exit was swallowed by tee's zero as well. Two rows
+          # in verify.sql called functions that refuse a caller with no staff
+          # profile, and they were only reached once a bundle had been applied,
+          # so the checker went green on exactly the install it was watching.
+          want=$(( $(grep -c '^union all' supabase/verify.sql) + 1 ))
+          got=$(sed -n 's/^(\([0-9]\+\) rows\?)$/\1/p' /tmp/verify.out | tail -1)
+          if grep -q 'ERROR' /tmp/verify.out; then
+            echo "::error::verify.sql raised against a fresh bundle install, so it reported nothing"
+            exit 1
+          fi
+          if [ "${got:-0}" != "$want" ]; then
+            echo "::error::verify.sql printed ${got:-0} rows against a fresh bundle install, expected $want"
+            exit 1
+          fi
           if grep -q 'FAIL' /tmp/verify.out; then
             echo "::error::verify.sql reports a FAIL against a fresh bundle install"
             exit 1
           fi
-          echo "verify.sql is all PASS on a bundle-only install"
+          echo "verify.sql is all PASS on a bundle-only install ($got rows)"
+
+          # WHAT A SCHOOL DOES WHEN IT IS NOT SURE THE PASTE TOOK: paste again.
+          #
+          # A bundle that creates a type or a table refuses the second paste and
+          # rolls back whole, which is harmless. What is not harmless is a
+          # bundle that applies again and leaves a DIFFERENT function behind: a
+          # patch built from a function's own text can append itself once per
+          # paste. This check found 0042 doing exactly that, adding another
+          # `and school_id = public.current_school_id()` to fn_import_staff's
+          # duplicate lookups every time.
+          echo "── every bundle again, as a school re-pastes"
+          fp() {
+            PGDATABASE=bundlecheck psql -tA -c \
+              "select p.proname||'|'||md5(p.prosrc) from pg_proc p
+                 join pg_namespace n on n.oid = p.pronamespace
+                where n.nspname = 'public' order by 1"
+          }
+          fp > /tmp/paste1.txt
+          for b in $(ls supabase/bundles/*.sql | sort -V); do
+            PGDATABASE=bundlecheck psql -v ON_ERROR_STOP=1 -q --single-transaction -f "$b" \
+              >/dev/null 2>&1 || echo "   $b rolled back on the second paste, which is fine"
+          done
+          fp > /tmp/paste2.txt
+          if ! diff -q /tmp/paste1.txt /tmp/paste2.txt >/dev/null; then
+            echo "::error::re-pasting the bundles changed a function body"
+            diff /tmp/paste1.txt /tmp/paste2.txt | grep '^[<>]' | head -20
+            exit 1
+          fi
+          echo "re-pasting every bundle leaves all $(wc -l < /tmp/paste1.txt) function bodies identical"
+      - name: Bundles apply to a database whose function bodies are CRLF
+        # THE INSTALL A SCHOOL ACTUALLY PERFORMS, ON THE LINE ENDINGS A SCHOOL
+        # ACTUALLY HAS. Everything above this line builds a database by feeding
+        # LF files to the psql CLI. No school does that. A school opens the
+        # Supabase SQL editor in a browser and pastes, and what is stored in
+        # pg_proc.prosrc is whatever that paste contained -- CRLF, on Windows.
+        #
+        # That difference is not cosmetic. A migration that edits a function it
+        # did not write has to find its place in the stored text, and 0101 found
+        # it with position(E'\n  end if;\n' in ...): one line feed, two spaces,
+        # `end if;`, one line feed. On an LF database that matches. On a CRLF
+        # database it is simply not present, and because the SQL editor runs a
+        # pasted file as ONE transaction, the raise took all seven migrations of
+        # bundle 12 down with it -- the fee total, the headcount, the attendance
+        # rule, the till, the family's deposit and the parent login, none of
+        # them anything to do with unknown keys.
+        #
+        # Twelve bundles, ten CI jobs and a preflight script all said clean,
+        # because every one of them was LF end to end. So this job converts the
+        # bundles to CRLF first and installs from those. It is the only place
+        # the product is tested the way it is delivered.
+        run: |
+          psql -v ON_ERROR_STOP=1 -c "create database crlfcheck;"
+          PGDATABASE=crlfcheck psql -v ON_ERROR_STOP=1 -q <<'SQL'
+          create schema if not exists auth;
+          create table if not exists auth.users (
+            id uuid primary key, email text, raw_user_meta_data jsonb default '{}'::jsonb,
+            raw_app_meta_data jsonb default '{}'::jsonb,
+            last_sign_in_at timestamptz, created_at timestamptz default now());
+          create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
+          do $$ begin
+            if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
+            if not exists (select 1 from pg_roles where rolname='authenticated') then create role authenticated nologin; end if;
+            if not exists (select 1 from pg_roles where rolname='service_role') then create role service_role nologin; end if;
+          end $$;
+          alter default privileges in schema public
+            grant all on tables to postgres, anon, authenticated, service_role;
+          SQL
+          mkdir -p /tmp/crlf
+          for b in supabase/bundles/*.sql; do
+            sed 's/$/\r/' "$b" > "/tmp/crlf/$(basename "$b")"
+          done
+          for b in $(ls /tmp/crlf/*.sql | sort -V); do
+            echo "── $b (CRLF)"
+            PGDATABASE=crlfcheck psql -v ON_ERROR_STOP=1 -q --single-transaction -f "$b"
+          done
+
+          # The bodies really have to have landed as CRLF, or this job proves
+          # nothing at all and would go green for the wrong reason.
+          stored=$(PGDATABASE=crlfcheck psql -tA -c \
+            "select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+              where n.nspname = 'public' and position(chr(13) in p.prosrc) > 0")
+          if [ "${stored:-0}" -lt 100 ]; then
+            echo "::error::only ${stored:-0} function bodies stored CRLF, so this job is not testing what it claims"
+            exit 1
+          fi
+          echo "$stored function bodies are stored with CRLF line endings"
+
+          echo "── verify.sql, on the CRLF install"
+          PGDATABASE=crlfcheck psql -v ON_ERROR_STOP=1 -f supabase/verify.sql \
+            > /tmp/crlf-verify.out 2>&1 || true
+          cat /tmp/crlf-verify.out
+          want=$(( $(grep -c '^union all' supabase/verify.sql) + 1 ))
+          got=$(sed -n 's/^(\([0-9]\+\) rows\?)$/\1/p' /tmp/crlf-verify.out | tail -1)
+          if grep -q 'ERROR' /tmp/crlf-verify.out; then
+            echo "::error::verify.sql raised on a CRLF install, so it reported nothing"
+            exit 1
+          fi
+          if [ "${got:-0}" != "$want" ]; then
+            echo "::error::verify.sql printed ${got:-0} rows on a CRLF install, expected $want"
+            exit 1
+          fi
+          if grep -q 'FAIL' /tmp/crlf-verify.out; then
+            echo "::error::a school whose function bodies are CRLF cannot reach a green verify.sql"
+            exit 1
+          fi
+          echo "a CRLF install reaches all PASS ($got rows)"
       - name: verify.sql and detect.sql cover the same migrations
         # They are two lists of the same facts, maintained by hand, and they drifted
         # once already: verify.sql checked 0033 then jumped to 0038-0046, so a real
@@ -550,12 +699,25 @@ jobs:
           done
 
           echo "── verify.sql, as the school runs it"
-          psql -v ON_ERROR_STOP=1 -f supabase/verify.sql | tee /tmp/upgrade.out
+          psql -v ON_ERROR_STOP=1 -f supabase/verify.sql > /tmp/upgrade.out 2>&1 || true
+          cat /tmp/upgrade.out
+          # Same three questions as the fresh-install step above, and for the
+          # same reason: an errored report prints no rows and no "FAIL".
+          want=$(( $(grep -c '^union all' supabase/verify.sql) + 1 ))
+          got=$(sed -n 's/^(\([0-9]\+\) rows\?)$/\1/p' /tmp/upgrade.out | tail -1)
+          if grep -q 'ERROR' /tmp/upgrade.out; then
+            echo "::error::verify.sql raised on an upgraded school, so it reported nothing"
+            exit 1
+          fi
+          if [ "${got:-0}" != "$want" ]; then
+            echo "::error::verify.sql printed ${got:-0} rows on an upgraded school, expected $want"
+            exit 1
+          fi
           if grep -q 'FAIL' /tmp/upgrade.out; then
             echo "::error::an existing school cannot reach a green verify.sql"
             exit 1
           fi
-          echo "an existing school upgrades to all PASS"
+          echo "an existing school upgrades to all PASS ($got rows)"
 
           # And the ledger it ends up with must be ACCURATE, which is the whole
           # point of adding it. This database took the ugliest possible route to
@@ -1564,6 +1726,19 @@ jobs:
         # zero" to a clerk who typed an amount is a morning wasted, and because
         # being saved by a constraint is luck rather than a rule.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/payload_keys.sql
+      - name: Patch anchors, on every spelling of a permission gate
+        # The anchor that inserts a statement into a function this project did
+        # not write, asked about five spellings of the same permission gate:
+        # two-space LF, the same with CRLF, the whole gate on one line,
+        # four-space indentation, and END IF ; in capitals.
+        #
+        # 0101 shipped an anchor that only matched the first of those. It went
+        # green here, in preflight and on twelve bundles, and failed on the
+        # first real school -- whose function bodies are CRLF because they were
+        # created by pasting a file into a browser SQL editor. The Supabase SQL
+        # editor runs a paste as ONE transaction, so that one raise rolled back
+        # all seven migrations in bundle 12.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/patch_anchors.sql
 
       - name: The cash drawer never accuses the clerk
         # One ordinary morning, seeded and run: open with a Rs 1,000 float, take
@@ -1861,10 +2036,17 @@ jobs:
         # in the repo, it passes on a laptop, and CI never opens it. Comparing
         # the directory against this file is the only thing that notices.
         run: |
+          # MATCHED ON THE INVOCATION, NOT THE NAME. This used to grep for
+          # "tests/<name>" anywhere in this file, and a comment mentioning a
+          # suite satisfied it -- which is exactly what happened when
+          # patch_anchors.sql was named in the prose of another step before it
+          # had a step of its own. A guard that a comment can satisfy is a guard
+          # that says "the artefact exists", which is the failure it was written
+          # to catch.
           missing=0
           for f in supabase/tests/*.sql; do
             b=$(basename "$f")
-            if ! grep -q -F "tests/$b" .github/workflows/ci.yml; then
+            if ! grep -qE "^ *run:.*-f +supabase/tests/$b( |$)" .github/workflows/ci.yml; then
               echo "NO CI STEP RUNS supabase/tests/$b"
               missing=1
             fi

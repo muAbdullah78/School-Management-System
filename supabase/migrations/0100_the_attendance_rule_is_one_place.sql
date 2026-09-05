@@ -125,12 +125,17 @@ begin
     return;
   end if;
 
-  -- Whitespace-tolerant, because the same expression is laid out differently in
-  -- 0005 and 0058 and a school may be on either.
+  -- Whitespace-BLIND, not merely tolerant, because the same expression is laid
+  -- out differently in 0005 and 0058 and a school may be on either -- and
+  -- because 0101 shipped an anchor that assumed one exact indentation, matched
+  -- on every database built here, missed on the first real school, and took the
+  -- other six migrations in the bundle down with it. Every gap where the source
+  -- has whitespace is `\s*` here, so indentation and line endings cannot decide
+  -- whether a result card prints the same percentage as the portal.
   v_new := regexp_replace(
     v_src,
-    'round\(100\.0 \* \(count\(\*\) filter \(where status in \(''present'',''late''\)\)\s*'
-      || '\+ 0\.5 \* count\(\*\) filter \(where status = ''half_day''\)\) / count\(\*\), 1\)',
+    'round\(\s*100\.0\s*\*\s*\(\s*count\(\*\)\s*filter\s*\(\s*where\s+status\s+in\s*\(\s*''present''\s*,\s*''late''\s*\)\s*\)\s*'
+      || '\+\s*0\.5\s*\*\s*count\(\*\)\s*filter\s*\(\s*where\s+status\s*=\s*''half_day''\s*\)\s*\)\s*/\s*count\(\*\)\s*,\s*1\s*\)',
     'public.fn__attendance_pct('
       || '(count(*) filter (where status = ''present''))::int, '
       || '(count(*) filter (where status = ''late''))::int, '
@@ -149,13 +154,26 @@ begin
     -- Adjacent string literals, not `||`. RAISE takes a literal format string
     -- and a concatenation expression is a syntax error there, which is how the
     -- first version of this file failed to apply at all.
-    raise exception '0100: could not find the attendance formula in '
+    --
+    -- A WARNING and not an exception. This file is pasted as part of a bundle
+    -- that the Supabase SQL editor runs as ONE transaction, so raising here
+    -- reverts the fee total, the headcount, the till, the family's deposit and
+    -- the parent login as well -- which is exactly what 0101's anchor did on
+    -- the first real school. The card keeping its own copy of the rule is a
+    -- real problem; taking six unrelated fixes with it is a bigger one.
+    -- supabase/verify.sql names every function still carrying the formula.
+    raise warning '0100: could not find the attendance formula in '
       'fn_generate_result_cards. It has been reworded, so this substitution '
-      'no longer matches and the card would keep its own copy of the rule. '
-      'Update the pattern in this migration.';
+      'no longer matches, nothing was changed, the rest of this bundle still '
+      'applied, and the card keeps its own copy of the rule. Run '
+      'supabase/verify.sql; it names what is outstanding.';
+    return;
   end if;
 
   execute v_new;
+exception when others then
+  raise warning '0100: fn_generate_result_cards was left as it was: %. The '
+    'rest of this bundle still applied.', sqlerrm;
 end $rewrite$;
 
 -- ---------------------------------------------------------------------------
@@ -182,10 +200,15 @@ begin
     and p.proname <> 'fn__attendance_pct'
     and p.prosrc like '%0.5 * count(*) filter (where status = ''half_day'')%';
 
-  if v_bad is not null then
-    raise exception '0100: the attendance rule is written out inside: %. '
+  if v_bad is null then
+    raise notice '0100: the attendance rule now exists in one place';
+  else
+    -- A WARNING, for the reason given in section 3: an exception here reverts
+    -- six migrations that have nothing to do with attendance.
+    raise warning '0100: the attendance rule is still written out inside: %. '
       'It must exist only in fn__attendance_pct, because the last time it '
       'existed in four places two of them were wrong and a parent read 92%% '
-      'where the result card printed 83.3%%.', v_bad;
+      'where the result card printed 83.3%%. Everything else in this bundle '
+      'applied. Send the output of supabase/verify.sql.', v_bad;
   end if;
 end $assert$;

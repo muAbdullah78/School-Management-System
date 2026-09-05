@@ -266,21 +266,63 @@ $$;
 --
 -- Only the two exists() clauses change; the rest of the function is untouched.
 -- ---------------------------------------------------------------------------
+--
+-- THE GUARD AND THE ASSERTION WERE BOTH MISSING, and each absence was its own
+-- fault. Measured by pasting the bundles a second time, which is what a school
+-- does when it is not sure the first paste took:
+--
+--   * without the guard, the clause was appended AGAIN, giving
+--     `... and school_id = current_school_id() and school_id = current_school_id()`
+--     and one more copy on every paste after that. Harmless to the answer and
+--     unbounded in the text, which is how a function body becomes unreadable
+--     to the next person who has to patch it.
+--   * without the assertion, a `replace()` that matches nothing succeeds
+--     silently. This is the only thing that scopes two SECURITY DEFINER
+--     lookups to the importing school, so the failure mode was a tenant
+--     isolation hole reporting success.
+--
+-- supabase/check-patch-anchors.py now refuses a whitespace-dependent pattern,
+-- and the bundles are re-pasted in CI with every function body compared, which
+-- is what found this.
 do $$
-declare v_def text;
+declare v_def text; v_new text;
 begin
   select pg_get_functiondef(p.oid) into v_def
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'public' and p.proname = 'fn_import_staff';
 
-  v_def := replace(v_def,
-    'from public.staff where employee_no = v_emp and deleted_at is null',
-    'from public.staff where employee_no = v_emp and deleted_at is null'
-      || ' and school_id = public.current_school_id()');
-  v_def := replace(v_def,
-    'from public.staff where cnic = v_cnic and deleted_at is null',
-    'from public.staff where cnic = v_cnic and deleted_at is null'
-      || ' and school_id = public.current_school_id()');
+  if v_def is null then
+    raise exception '0042: fn_import_staff is not present; apply the earlier bundles first';
+  end if;
 
-  execute v_def;
+  if v_def like '%employee_no = v_emp and deleted_at is null and school_id = public.current_school_id()%' then
+    raise notice '0042: fn_import_staff already scopes its duplicate checks';
+  else
+    v_new := replace(v_def,
+      'from public.staff where employee_no = v_emp and deleted_at is null',
+      'from public.staff where employee_no = v_emp and deleted_at is null'
+        || ' and school_id = public.current_school_id()');
+    v_new := replace(v_new,
+      'from public.staff where cnic = v_cnic and deleted_at is null',
+      'from public.staff where cnic = v_cnic and deleted_at is null'
+        || ' and school_id = public.current_school_id()');
+
+    if v_new = v_def then
+      raise exception '0042: could not find the duplicate-employee and '
+        'duplicate-CNIC lookups in fn_import_staff. It has been reworded, so '
+        'nothing was changed and the import would keep reading other schools'' '
+        'staff. Update the patterns in this migration.';
+    end if;
+    execute v_new;
+  end if;
+
+  -- The end state, not the edit. Both lookups, or neither counts.
+  select pg_get_functiondef(p.oid) into v_def
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'fn_import_staff';
+  if v_def not like '%employee_no = v_emp and deleted_at is null and school_id = public.current_school_id()%'
+     or v_def not like '%cnic = v_cnic and deleted_at is null and school_id = public.current_school_id()%' then
+    raise exception '0042: fn_import_staff still checks for duplicates across '
+      'every school on the platform';
+  end if;
 end $$;
