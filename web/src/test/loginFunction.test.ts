@@ -29,10 +29,25 @@ const { checkLoginFunction, createParentLogin, REQUIRED_CREATE_TEACHER_VERSION }
 
 describe('which copy of create-teacher is live', () => {
   it('reads the version from a copy new enough to report one', async () => {
-    current.opts = { fn: { 'create-teacher': { data: { version: 2, roles: ['parent'] } } } }
+    // The version here is DERIVED from what the app requires, not written as a
+    // number. It was `version: 2, ok: true` while the requirement was also 2,
+    // so bumping the requirement to 3 turned a passing test red for no reason
+    // anybody could act on: the test was asserting "2 is current", which is a
+    // fact with an expiry date rather than the behaviour being checked.
+    const live = REQUIRED_CREATE_TEACHER_VERSION
+    current.opts = { fn: { 'create-teacher': { data: { version: live, roles: ['parent'] } } } }
     const s = await checkLoginFunction()
-    expect(s).toMatchObject({ deployed: true, version: 2, ok: true })
+    expect(s).toMatchObject({ deployed: true, version: live, ok: true })
     expect(s.roles).toContain('parent')
+  })
+
+  it('accepts a copy NEWER than this app requires', async () => {
+    // An app deployed behind the function is fine and must not nag. Only the
+    // other direction is a problem, and the comparison is >=, not ===.
+    current.opts = {
+      fn: { 'create-teacher': { data: { version: REQUIRED_CREATE_TEACHER_VERSION + 1, roles: ['parent'] } } },
+    }
+    expect(await checkLoginFunction()).toMatchObject({ deployed: true, ok: true })
   })
 
   it('treats a copy that complains about the request body as deployed but old', async () => {

@@ -201,4 +201,122 @@ begin
   raise notice 'ok: a parent login with no family is visible, one with a family is not';
 end $t$;
 
+-- =============================================================================
+-- WHAT create-teacher IS ALLOWED TO ASSUME, AND WHAT IT MUST NOT DO
+--
+-- Adding a member of staff with a login failed on a live school with
+--
+--     new row violates row-level security policy for table "profiles"
+--
+-- reported to the office as "their login could not be created", which was not
+-- even true: the account existed and could sign in.
+--
+-- The function was doing this, as the signed-in owner, straight after minting
+-- the account with the service key:
+--
+--     caller.from('profiles').upsert({ id, full_name, role }, { onConflict: 'id' })
+--
+-- PostgREST turns .upsert() into INSERT ... ON CONFLICT DO UPDATE, and the
+-- payload has no school_id, so the row being PROPOSED has NULL there. Postgres
+-- refuses it TWICE OVER, and both refusals carry the identical message:
+--
+--   1. profiles_insert's WITH CHECK is applied to the proposed row before any
+--      conflict is resolved, and it requires school_id = current_school_id().
+--   2. ON CONFLICT DO UPDATE applies profiles_select to that same proposed row,
+--      which requires the same equality.
+--
+-- Established by loosening them one at a time against this fixture: with only
+-- one relaxed the upsert is still refused, and it succeeds only when both are.
+-- That is why the assertion below is written against the pair. Somebody
+-- checking just profiles_insert would conclude the rule was somewhere else.
+--
+-- The step was a leftover from before 0065, when handle_new_user always wrote
+-- 'readonly' and somebody had to correct it afterwards. These two assertions
+-- are the contract that replaced it, and they are worth pinning in opposite
+-- directions:
+--
+--   1. the trigger really does set the role from app_metadata, so there is
+--      nothing left to correct. If that stops being true, create-teacher's
+--      read-back check starts failing and this says why.
+--   2. an owner really cannot insert a profile without a school_id, so nobody
+--      re-introduces the upsert believing it "should work". It is not a
+--      permissions accident; it is the tenancy rule doing its job.
+-- =============================================================================
+do $t$
+declare
+  v_s1 uuid := (select v from ids where k='s1');
+  v_new uuid := '00000000-0000-0000-0000-0000000f0009';
+  v_role text; v_active boolean; v_school uuid; v_name text;
+begin
+  -- 1. What step 3 of create-teacher does: the service role mints the account
+  --    with school_id and role in APP metadata, which a browser cannot write.
+  insert into auth.users (id, email, raw_user_meta_data, raw_app_meta_data)
+  values (v_new, 'ali@alqalam.test',
+          jsonb_build_object('full_name', 'ali'),
+          jsonb_build_object('school_id', v_s1, 'role', 'class_teacher'));
+
+  select role::text, active, school_id, full_name
+    into v_role, v_active, v_school, v_name
+    from public.profiles where id = v_new;
+
+  if v_role is null then
+    raise exception 'FAIL: handle_new_user attached no profile at all, so the '
+                    'new login could sign in and see nothing';
+  end if;
+  if v_role <> 'class_teacher' then
+    raise exception 'FAIL: the trigger recorded % where app_metadata asked for '
+                    'class_teacher. create-teacher no longer corrects the role '
+                    'afterwards, because the correction was impossible under '
+                    'RLS, so the trigger is the only thing setting it.', v_role;
+  end if;
+  if v_active is not true then
+    raise exception 'FAIL: the new login was recorded closed, so the teacher '
+                    'cannot sign in and nothing on the Staff screen says why';
+  end if;
+  if v_school is distinct from v_s1 then
+    raise exception 'FAIL: the new login landed in school % rather than %',
+      v_school, v_s1;
+  end if;
+  if v_name <> 'ali' then
+    raise exception 'FAIL: the trigger recorded the name as %, not the one the '
+                    'office typed', v_name;
+  end if;
+
+  raise notice 'ok: the signup trigger sets role, name, school and active from '
+    'app_metadata, so create-teacher has nothing left to write';
+end $t$;
+
+-- 2. And the write that used to be attempted is refused, on purpose.
+--
+--    `set local role authenticated` matters: RLS does not apply to the table
+--    owner, so without it this block would pass by not being subject to the
+--    rule it is asserting.
+do $t$
+declare v_own uuid := (select v from ids where k='own'); v_msg text;
+begin
+  perform set_config('test.uid', v_own::text, false);
+  begin
+    set local role authenticated;
+    insert into public.profiles (id, full_name, role)
+    values ('00000000-0000-0000-0000-0000000f0009', 'ali', 'class_teacher')
+    on conflict (id) do update
+      set full_name = excluded.full_name, role = excluded.role;
+    reset role;
+    raise exception 'FAIL: an owner inserted a profile with no school_id. Both '
+                    'profiles_insert and profiles_select have been weakened -- '
+                    'either one alone still refuses this -- and a row with a '
+                    'null school_id is a record no school can see and no school '
+                    'owns.';
+  exception when insufficient_privilege or others then
+    get stacked diagnostics v_msg = message_text;
+    reset role;
+    if v_msg like 'FAIL:%' then raise exception '%', v_msg; end if;
+    if v_msg not like '%row-level security%' then
+      raise exception 'FAIL: the upsert was refused for the wrong reason: %', v_msg;
+    end if;
+  end;
+  raise notice 'ok: an owner cannot upsert a profile without a school_id, which '
+    'is why create-teacher verifies instead of writing (%)', v_msg;
+end $t$;
+
 rollback;
