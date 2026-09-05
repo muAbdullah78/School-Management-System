@@ -7,6 +7,7 @@ import {
 import { QrCode } from '@/components/QrCode'
 import { useSchoolName } from '@/hooks/useSchoolName'
 import { fmtDate, todayISO } from '@/lib/format'
+import { LoadError } from '@/components/ui'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 
@@ -47,6 +48,7 @@ export function StaffCheckin() {
 
   return (
     <div className="max-w-2xl space-y-6">
+      <LoadError of={[codes, settings]} what="The check-in settings" />
       <p className="text-sm text-slate-600">
         A teacher records their own attendance by scanning a code, signing in, and the server writes the
         time. A second scan later in the day is their check-out. Nothing else can write the staff register

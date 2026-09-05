@@ -82,7 +82,35 @@ export function StudentProfile({ studentId, onBack, onOpen }: { studentId: strin
 
   if (student.isLoading) return <p className="text-sm text-slate-500">Loading…</p>
   if (student.isError) return <p className="text-sm text-red-600">{(student.error as Error).message}</p>
-  const s = student.data!
+  /* A successful read that found NOBODY.
+   *
+   * This was `student.data!`, and the exclamation mark was the whole bug: the
+   * read succeeds, returns no row, and the next line asks null for its WhatsApp
+   * number. The page throws during render, which before the error boundary
+   * meant the entire application went white.
+   *
+   * It is not a rare case and it is about to get commoner, because a student
+   * can now be deleted: anybody holding the page open, or following a link from
+   * a message, arrives here after the row has gone. Row Level Security produces
+   * the same shape for a student belonging to another school. */
+  if (!student.data) {
+    return (
+      <div className="max-w-md">
+        <button onClick={onBack} className="text-sm text-brand-700 hover:underline">
+          &larr; Back to students
+        </button>
+        <div className="mt-4 rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="text-base font-semibold text-slate-900">This student is no longer here</h2>
+          <p className="mt-2 text-sm text-slate-600">
+            The record has been removed, or it belongs to a different school. Nothing
+            has been lost from anywhere else: fee receipts and registers keep their own
+            copies of what they recorded.
+          </p>
+        </div>
+      </div>
+    )
+  }
+  const s = student.data
   const cur = enroll.data?.[0]
   const wa = waLink(s.whatsapp || s.phone)
 

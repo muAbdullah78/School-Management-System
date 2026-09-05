@@ -97,7 +97,7 @@ function onUncaught(e: ErrorEvent) {
   e.preventDefault()
 }
 
-async function mount(Comp: ComponentType, route = '/') {
+async function mount(Comp: ComponentType, route = '/', props: Record<string, unknown> = {}) {
   uncaught.length = 0
   window.addEventListener('error', onUncaught)
   const qc = new QueryClient({
@@ -107,7 +107,7 @@ async function mount(Comp: ComponentType, route = '/') {
     createElement(MemoryRouter, { initialEntries: [route] },
       createElement(AuthContext.Provider, { value: authValue(OWNER) },
         createElement(QueryClientProvider, { client: qc },
-          createElement(Comp)))),
+          createElement(Comp as ComponentType<Record<string, unknown>>, props)))),
   )
   // Let every query settle. A screen that crashes only once its data arrives
   // is the exact failure this file exists to catch, so waiting matters more
@@ -141,7 +141,48 @@ const SCREENS: [string, () => Promise<Record<string, unknown>>, string][] = [
   ['Settings', () => import('@/pages/SettingsPage'), 'SettingsPage'],
   ['Till', () => import('@/pages/till/TillPage'), 'TillPage'],
   ['Messages', () => import('@/pages/messages/MessagesPage'), 'MessagesPage'],
+  // Settings renders its FIRST tab, so the others were never opened by
+  // anything. Subscription is the one a school looks at when it is deciding
+  // whether to pay.
+  ['Settings/Subscription', () => import('@/pages/settings/Subscription'), 'Subscription'],
+  ['Settings/Users', () => import('@/pages/settings/Users'), 'Users'],
+  ['Settings/Backup', () => import('@/pages/settings/Backup'), 'Backup'],
+  ['Settings/StaffCheckin', () => import('@/pages/settings/StaffCheckin'), 'StaffCheckin'],
+  ['Feedback', () => import('@/pages/FeedbackPage'), 'FeedbackPage'],
 ]
+
+/**
+ * Screens that need props, so they cannot go in the list above.
+ *
+ * StudentProfile is the largest page in this application at 84KB and had never
+ * been rendered by anything. It is also the one the first real school spent
+ * most of its time on, and the one they reported errors from.
+ */
+describe('screens that take props', () => {
+  const CASES: [string, () => Promise<{ default?: unknown; [k: string]: unknown }>, string, Record<string, unknown>][] = [
+    ['StudentProfile', () => import('@/pages/students/StudentProfile'), 'StudentProfile',
+      { studentId: '33333333-3333-3333-3333-333333333333', onBack: () => {} }],
+  ]
+  for (const [label, importer, name, props] of CASES) {
+    it(`${label}: opens for a school with no data`, async () => {
+      current.opts = {}
+      const mod = await importer()
+      const Comp = (mod[name] ?? mod.default) as ComponentType
+      expect(Comp, `${label} has no export named ${name}`).toBeTruthy()
+      await mount(Comp, '/', props)
+    })
+    it(`${label}: says so when every read fails`, async () => {
+      current.opts = { failEverything: FAIL_MARKER }
+      const mod = await importer()
+      const Comp = (mod[name] ?? mod.default) as ComponentType
+      const { container } = await mount(Comp, '/', props)
+      expect(
+        container.textContent ?? '',
+        `${label} rendered without showing why its data is missing.`,
+      ).toContain(FAIL_MARKER)
+    })
+  }
+})
 
 async function load(entry: typeof SCREENS[number]): Promise<ComponentType | null> {
   const [, importer, name] = entry

@@ -244,7 +244,17 @@ export function FeedbackPage() {
     return <div className="p-2 text-sm text-danger-700">{(elig.error as Error).message}</div>
   }
 
-  const e = elig.data!
+  // Not `elig.data!`. If the eligibility read comes back empty the honest
+  // answer is that we cannot tell yet, not a blank screen.
+  const e = elig.data
+  if (!e) {
+    return (
+      <div className="p-2 text-sm text-slate-500">
+        We could not check whether this school can write a review yet. Try again in
+        a moment.
+      </div>
+    )
+  }
   const review = existing.data ?? null
   const inWindow = review ? new Date(review.publish_at).getTime() > Date.now() : false
   const tooShort = title.trim().length < 4 || body.trim().length < 40 || rating < 1

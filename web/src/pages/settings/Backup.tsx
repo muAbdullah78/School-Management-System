@@ -6,6 +6,7 @@ import { useLicence } from '@/hooks/useLicence'
 import { useQuery } from '@tanstack/react-query'
 import { exportAllData, getSchoolSettings, EXPORT_TABLES, type ExportResult } from '@/lib/db'
 import { downloadJSON } from '@/lib/csv'
+import { LoadError } from '@/components/ui'
 
 export function Backup() {
   const settings = useQuery({ queryKey: ['schoolSettings'], queryFn: getSchoolSettings })
@@ -34,6 +35,7 @@ export function Backup() {
 
   return (
     <div className="max-w-2xl space-y-4">
+      <LoadError of={[settings]} what="The school profile" />
       <div className="rounded-lg border border-slate-200 bg-white p-4">
         <div className="text-sm font-medium text-slate-800">Export all data</div>
         <p className="mt-1 text-sm text-slate-600">

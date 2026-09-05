@@ -42,8 +42,11 @@ export function Subscription() {
       </div>
     )
   }
-  const b = q.data!
-  if (!b.ok) {
+  // Not `q.data!`. A read that succeeds and returns nothing is a real state,
+  // not an impossible one, and the exclamation mark turned it into a crash on
+  // the screen a school opens to decide whether to pay us.
+  const b = q.data
+  if (!b || !b.ok) {
     return <p className="text-sm text-slate-500">No subscription is set up for this school yet.</p>
   }
 

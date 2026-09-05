@@ -7,6 +7,7 @@ import {
 import { ROLES, ROLE_LABELS, type Role } from '@/auth/roles'
 import { useAuth } from '@/auth/AuthProvider'
 import { fmtDate } from '@/lib/format'
+import { LoadError } from '@/components/ui'
 
 const FIELD = 'rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-brand-500 focus:outline-none'
 
@@ -51,6 +52,7 @@ export function Users() {
 
   return (
     <div className="max-w-3xl space-y-4">
+      <LoadError of={[profiles, invites]} what="The list of logins" />
       {!canManage && (
         <p className="rounded bg-slate-50 p-3 text-sm text-slate-500">
           Only the owner or principal can invite people or change roles. You can view the user list.
