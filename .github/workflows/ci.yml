@@ -1547,6 +1547,24 @@ jobs:
         # suite reads exists before any check relies on it.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/one_number.sql
 
+      - name: A payload key the database does not read is refused, not dropped
+        # Found by making the mistake while writing another test: a seed sent
+        # `practical` where fn_enter_marks reads `practical_marks`. The call
+        # succeeded, reported success, and wrote NULL into the practical column
+        # for a whole class.
+        #
+        # Measured rather than assumed, and the first draft of this was wrong
+        # about half of it: fn_mark_attendance and fn_record_bulk_payments
+        # already refused, by a NOT NULL constraint and by an amount check. The
+        # two that were genuinely silent are the mark-entry pair, where `absent`
+        # for `is_absent` records a child who sat no paper as having scored
+        # nothing, which prints as a FAIL on the card that goes home.
+        #
+        # All four now name the key, because "Amount for Ahmed must be more than
+        # zero" to a clerk who typed an amount is a morning wasted, and because
+        # being saved by a constraint is luck rather than a rule.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/payload_keys.sql
+
       - name: Live student count — does a school outgrowing its plan get noticed?
         # It did not. subscriptions.student_count is a stored number driving the
         # console's count, limit_state, over_limit_flagged_at, suggested_plan and

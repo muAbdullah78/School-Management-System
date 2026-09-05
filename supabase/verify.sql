@@ -1407,6 +1407,26 @@ select 'one attendance rule, in one function (0100)',
        end
 
 union all
+-- 0101. Two of the four list-of-rows functions dropped a key they did not read
+-- without a word: a practical mark became NULL, and a misspelt absence flag
+-- recorded a child who sat no paper as having scored nothing.
+select 'a payload key that is not read is refused (0101)',
+       case
+         when to_regprocedure('public.fn__only_these_keys(jsonb,text[],text)') is null
+           then 'FAIL - apply supabase/bundles/12_one_number.sql'
+         when exists (
+           select 1 from (values ('fn_enter_marks'), ('fn_enter_assessment_marks'),
+                                 ('fn_mark_attendance'), ('fn_record_bulk_payments')) as x(name)
+           where not exists (
+             select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+             where n.nspname = 'public' and p.proname = x.name
+               and p.prosrc like '%fn__only_these_keys%'))
+           then 'FAIL - one of the four still accepts a key it does not read; '
+                || 'apply supabase/bundles/12_one_number.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS — no schools yet, as expected'

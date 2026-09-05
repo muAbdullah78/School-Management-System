@@ -718,7 +718,12 @@ with sig(migration, object, present) as (values
      not exists (
        select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
        where n.nspname = 'public' and p.proname <> 'fn__attendance_pct'
-         and p.prosrc like '%0.5 * count(*) filter (where status = ''half_day'')%'))
+         and p.prosrc like '%0.5 * count(*) filter (where status = ''half_day'')%')),
+  ('0101_a_dropped_key_is_lost_data', 'mark entry refuses a key it does not read',
+     exists (
+       select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'fn_enter_marks'
+         and p.prosrc like '%fn__only_these_keys%'))
 )
 select migration,
        object                                   as looked_for,
