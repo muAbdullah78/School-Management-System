@@ -81,18 +81,19 @@ In Supabase, click **SQL Editor** in the left sidebar. Then choose one of the tw
 ways below — the bundles are the fast way, and the numbered files are the same SQL
 in smaller pieces.
 
-### Load the ten bundles
+### Load the eleven bundles
 
 Use the ready-made bundles in **`supabase/bundles/`**. They contain exactly the
 same SQL as the numbered migration files, just joined up, and CI checks that
 every migration is in exactly one bundle so none can be left out.
 
 Run them **in this order, one at a time**, waiting for each to say Success. Read
-the numbers, not the filenames sorted alphabetically: `10_reviews.sql` comes
-LAST, even though a computer listing the folder puts it between 1 and 2.
+the numbers, not the filenames sorted alphabetically: `11_deletion_and_logins.sql`
+comes LAST, even though a computer listing the folder puts 10 and 11 between 1
+and 2.
 
 Once a bundle has been pasted into a live database it never changes. New work
-goes in a new bundle, which is why there are ten and not one, and why a school
+goes in a new bundle, which is why there are eleven and not one, and why a school
 only ever has to run the ones it has not run before.
 
 | Order | File | What it is |
@@ -107,8 +108,9 @@ only ever has to run the ones it has not run before.
 | 8 | `8_counter_repair.sql` | A repair. 0067's closing step recounted every school's pupils by walking `subscriptions`, and one subscription naming a school that no longer existed made the whole of bundle 6 fail — so a project that hit that error has none of bundle 6. This restates the counter's machinery, puts back the foreign key that should have made the bad row impossible, and cannot be stopped by one school |
 | 9 | `9_validate_constraints.sql` | Two things. It validates the `subscriptions -> schools` foreign key if that was ever left **NOT VALID** (refusing every new bad row while never checking the rows already there). And it repairs a fault that made the records of a deleted school impossible to remove: the audit trigger files an entry against the school of the row being written, `audit_log.school_id` is NOT NULL pointing at `schools`, so once a school row is missing, **every write to any of the seventeen audited tables belonging to it fails** — with an error naming `audit_log` that explains nothing. It also adds the console panel for clearing what such a school left behind |
 | 10 | `10_reviews.sql` | Customer reviews: the table, the rules that decide who may write one (the owner or principal of a school 21 days old with 20 real receipts, one review per school), the two views the website reads with **no login**, and the operator's narrow power to hide one for abuse. Nothing in it touches an existing table, so a school that skips it loses the reviews page and nothing else |
+| 11 | `11_deletion_and_logins.sql` | Three things a school asked for on its first day. **Deleting**: a record with nothing attached to it can be removed properly, and one with money, attendance, marks or issued documents cannot, with the refusal naming exactly what is in the way. Before this nothing in the product could be deleted at all, so a name typed in wrong stayed on the roster for ever. **Seeing who can sign in**: a login that was never attached to a staff record used to appear on no screen, so creating a teacher login left the roster saying "No staff yet", and no screen anywhere could tell you which email address a login used. **Starting again**: a school still on trial can clear its practice data and begin properly, keeping its logins, its settings and its subscription. Also one number: the attendance percentage was computed three different ways, and a parent could see 92% where the result card printed 83.3% |
 
-**When all nine say Success, check the install:** open a new query, paste
+**When all eleven say Success, check the install:** open a new query, paste
 [`supabase/verify.sql`](../supabase/verify.sql) and Run. Every row should say
 **PASS**, except two saying **ACTION NEEDED** — those are your billing details
 (Step 9) and publishing a Windows installer (Step 11).
