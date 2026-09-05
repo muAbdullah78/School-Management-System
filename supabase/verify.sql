@@ -1347,6 +1347,41 @@ select 'one attendance percentage, not three (0097)',
        end
 
 union all
+-- 0098. The application gave three different answers to "what are we owed":
+-- Rs 8,350 on the dashboard, Rs 8,100 on the reconciliation screen, Rs 8,062.50
+-- in dues by fee head. This checks the two halves of the fix that a school can
+-- see: the fee statement exists, and the reconciliation screen carries the
+-- bridge that explains the remaining difference in basis.
+select 'one answer to what a family owes (0098)',
+       case
+         when to_regprocedure('public.fn_student_ledger(uuid)') is null
+           then 'FAIL - apply supabase/bundles/12_one_number.sql'
+         when to_regprocedure('public.fn_portal_child_ledger(uuid)') is null
+           then 'FAIL - the parent cannot see the statement the office sees; '
+                || 'apply supabase/bundles/12_one_number.sql'
+         when not (public.fn_head_wise_dues(
+                     (select id from public.academic_sessions limit 1)) ? 'total_outstanding')
+           and (select count(*) from public.academic_sessions) > 0
+           then 'FAIL - dues by fee head still totals itself by summing '
+                || 'apportioned rows; apply supabase/bundles/12_one_number.sql'
+         else 'PASS'
+       end
+
+union all
+-- 0099. Three definitions of "how many children are here". The tile is now the
+-- same function as the plan limit, so this asks whether the field that only the
+-- new version returns is there.
+select 'one headcount, on the tile and the licence (0099)',
+       case
+         when to_regprocedure('public.fn_students_without_a_class()') is null
+           then 'FAIL - apply supabase/bundles/12_one_number.sql'
+         when not (public.fn_dashboard_summary() ? 'students_without_a_class')
+           then 'FAIL - the dashboard still keeps its own headcount; '
+                || 'apply supabase/bundles/12_one_number.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS — no schools yet, as expected'

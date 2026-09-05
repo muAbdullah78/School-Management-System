@@ -704,7 +704,14 @@ with sig(migration, object, present) as (values
   -- before and simply computed the wrong number, so its presence proves
   -- nothing. This one only exists if 0097 was applied.
   ('0097_one_attendance_rule', 'one attendance percentage, shared by every screen',
-     to_regprocedure('public.fn__attendance_pct(integer,integer,integer,integer)') is not null)
+     to_regprocedure('public.fn__attendance_pct(integer,integer,integer,integer)') is not null),
+  -- The statement, not the reconciliation screen: fn_fee_reconciliation existed
+  -- before 0098 and simply left adjustments out, so its presence proves nothing.
+  -- fn_student_ledger is new, and it is the half a school actually opens.
+  ('0098_one_number', 'the fee statement behind the balance',
+     to_regprocedure('public.fn_student_ledger(uuid)') is not null),
+  ('0099_one_headcount', 'the children who are on no class list',
+     to_regprocedure('public.fn_students_without_a_class()') is not null)
 )
 select migration,
        object                                   as looked_for,

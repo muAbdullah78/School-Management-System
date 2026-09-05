@@ -237,6 +237,16 @@ emit supabase/bundles/11_deletion_and_logins.sql \
      supabase/migrations/0094*.sql supabase/migrations/0095*.sql \
      supabase/migrations/0096*.sql supabase/migrations/0097*.sql
 
+# 0098 and 0099 are the same complaint twice: the application answered one
+# question with several numbers. "What are we owed" came back as Rs 8,350,
+# Rs 8,100 or Rs 8,062.50 depending on which screen was open, and "how many
+# children are here" as three counts, two of which were wrong in opposite
+# directions. Both add functions and rewrite existing ones; neither alters a
+# table, so applying them changes what the screens SAY and nothing that is
+# stored.
+emit supabase/bundles/12_one_number.sql \
+     supabase/migrations/0098*.sql supabase/migrations/0099*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

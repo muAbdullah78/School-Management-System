@@ -1491,6 +1491,33 @@ jobs:
         # percentage rather than zero.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/attendance_rule.sql
 
+      - name: One question, one number — does the app agree with itself about money?
+        # It did not. Seeded with one deliberately awkward child — a sibling
+        # discount, a late fine, a van charge keyed by hand, a part payment, a
+        # cancelled challan and a deferred one — six screens gave three answers
+        # to "what are we owed": Rs 8,350 on the dashboard, the balance sheet and
+        # the defaulters list; Rs 8,100 on reconciliation and unpaid challans;
+        # Rs 8,062.50 in dues by fee head. And "how many children are here" gave
+        # three counts, two of them wrong in opposite directions so that they
+        # collided on a simple fixture and looked like agreement.
+        #
+        # The worst of it was not a number. fn_add_adjustment could charge a
+        # family or waive their whole balance and NOTHING in the product could
+        # display it afterwards, so the parent saw a balance of Rs 2,350 above
+        # two challans totalling Rs 2,100 and no way to ask why.
+        #
+        # This suite asks every money screen the same question in one
+        # transaction and fails if any two disagree, asserts the fee statement
+        # closes exactly on the balance for every child, and proves a pending
+        # payment counts nowhere, a reversal moves every screen together, and a
+        # leaver keeps their arrears somewhere a school can still find them.
+        #
+        # Assertion 0 is not padding: reverting one of the fixes made the whole
+        # suite pass, because a missing JSON key reads as NULL and turns every
+        # comparison against it into "no opinion". It proves every figure the
+        # suite reads exists before any check relies on it.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/one_number.sql
+
       - name: Live student count — does a school outgrowing its plan get noticed?
         # It did not. subscriptions.student_count is a stored number driving the
         # console's count, limit_state, over_limit_flagged_at, suggested_plan and
