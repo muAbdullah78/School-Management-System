@@ -124,6 +124,7 @@ step "verify.sql and detect.sql cover every migration" bash -c '
 # basename anywhere in ci.yml, so a suite merely MENTIONED in another step's
 # comment counted as covered. That is the "the artefact exists, nothing runs it"
 # failure the check was written to catch, reproduced inside the check itself.
+step "every Edge Function is called, and deployable" python3 scripts/check-edge-functions.py
 step "every SQL suite has a CI step that runs it" bash -c '
   fail=0
   for t in supabase/tests/*.sql; do

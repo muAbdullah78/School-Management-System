@@ -149,6 +149,28 @@ jobs:
         working-directory: .
         run: python3 supabase/check-patch-anchors.py
 
+      - name: Every Edge Function is called, and somebody is told to deploy it
+        # A real school ran for ten days with two of the three Edge Functions
+        # deployed, and nothing reported it.
+        #
+        # Not because the operator forgot. docs/SETUP.md listed three functions
+        # in a table and then the numbered step under it said "Name it exactly
+        # signup-school, then repeat for create-teacher", and the command-line
+        # block deployed the same two. Following the instructions correctly got
+        # you two of three. create-school-owner was added ten days after that
+        # page was written and only the table was updated.
+        #
+        # The failure is silent by nature: a school added from the operator
+        # console has nobody who can sign in to it, and in the console it looks
+        # exactly like an ordinary trialing customer.
+        #
+        # So this asks the files what a person cannot be relied on to re-ask:
+        # is every invoked function written, is every written function invoked,
+        # and does every one appear in the DEPLOY STEPS rather than merely
+        # somewhere on the page.
+        working-directory: .
+        run: python3 scripts/check-edge-functions.py
+
       - name: No em dash on a surface a school reads
         # The em dash is banned in this project's writing and it is the single
         # easiest character to reintroduce, because every editor and every model
