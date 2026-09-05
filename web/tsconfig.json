@@ -21,5 +21,17 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src"]
+  // tools/ IS TYPECHECKED, and was not.
+  //
+  // web/tools/ holds the rendering harnesses: they import the real components
+  // and hand them fixture objects typed as the real interfaces. Excluded from
+  // the typecheck, those annotations were decoration. Adding two required fields
+  // to PortalFees left three fixtures missing them, `tsc --noEmit` said nothing,
+  // `npm test` does not run tools/, and CI failed at the harness step with
+  // "Cannot read properties of undefined (reading 'length')" inside the
+  // component under test.
+  //
+  // A fixture typed as the real interface is the cheapest contract test there
+  // is. It only works if something checks it.
+  "include": ["src", "tools"]
 }

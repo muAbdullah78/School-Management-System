@@ -86,6 +86,16 @@ echo "== the app =="
 step "typecheck" bash -c 'cd web && npx tsc --noEmit'
 step "unit and page tests" bash -c 'cd web && npm test --silent'
 step "production build" bash -c 'cd web && npm run build'
+# THE RENDERING HARNESSES. This step was missing, and it is the second time this
+# script has printed PREFLIGHT CLEAN on a commit CI then failed.
+#
+# web/tools/ hands the real components fixture objects typed as the real
+# interfaces, and `npm test` deliberately does not run them. Adding two required
+# fields to PortalFees left four fixtures missing them; `tsc` said nothing
+# because web/tsconfig.json included only src/, and CI failed inside the
+# component with "Cannot read properties of undefined (reading 'length')".
+# tools/ is typechecked now AND the harnesses run here.
+step "rendering harnesses still render" bash -c 'cd web && npm run harness:node20'
 
 echo
 echo "== the database, against \$PGDATABASE =="

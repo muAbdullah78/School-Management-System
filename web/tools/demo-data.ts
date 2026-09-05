@@ -93,12 +93,25 @@ export const DEMO_RECEIPTS = [
 
 export const DEMO_FEES = {
   student_id: 'demo-st-1',
-  balance: 4500,
-  // Three children, August unpaid for each: 4,500 + 6,200 + 3,400 = 14,100.
-  family_outstanding: 14_100,
+  // Rs 4,500 unpaid on the August challan plus the Rs 900 van fare below. The
+  // demo has to add up on its own face: the guide screenshots are the first
+  // thing a school reads, and the whole point of the Other charges block is
+  // that the balance stops being a number with no workings.
+  balance: 5400,
+  // Three children, August unpaid for each: 4,500 + 6,200 + 3,400 = 14,100,
+  // plus this child's Rs 900 van fare.
+  family_outstanding: 15_000,
   family_credit: 0,
   invoices: DEMO_CHALLANS,
   receipts: DEMO_RECEIPTS,
+  // The guide screenshots are what a school sees before they buy, so the demo
+  // carries the case the statement was blind to: a charge the office keyed by
+  // hand. Without it the Other charges block never appears in any shot and
+  // nobody reviewing the guides would notice it had stopped rendering.
+  adjustments: [
+    { on: '2026-08-04', amount: 900, reason: 'Van fare, August' },
+  ],
+  charges_not_on_a_challan: 900,
 }
 
 /**
