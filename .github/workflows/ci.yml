@@ -156,7 +156,21 @@ jobs:
         # and confirm() returns false FOR EVER, which the calling code reads as
         # "cancelled" - so the button silently stops working, with no error and no
         # log, on the screens that move a school's money.
+        working-directory: .
         run: python3 scripts/check-no-browser-dialogs.py
+
+      - name: Every CI step can find its own files
+        # The step above shipped without `working-directory: .` and ran from
+        # web/, so it died on "can't open file web/scripts/..." rather than on
+        # anything it checks. The guard was correct and had been negative
+        # tested; it simply never ran.
+        #
+        # Neither preflight nor its gap report could see it: both compare the
+        # COMMAND, which is right, and neither knows where the runner will be
+        # standing. That is a property of this file, so it takes a check that
+        # reads this file.
+        working-directory: .
+        run: python3 scripts/check-ci-workdir.py
 
       - name: The website's buttons lead somewhere
         # Needs no database, so it lives in this job. Every call to action on the
