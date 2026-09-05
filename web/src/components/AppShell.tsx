@@ -36,7 +36,7 @@ export function AppShell() {
   // WHY IT IS WORTH A QUERY ON EVERY SCREEN. There is no session picker
   // anywhere in this app: every screen calls getCurrentSession() and works on
   // whichever row has is_current. That is a good design and it has one failure
-  // it cannot show — a school rolls over in April, nobody moves is_current, and
+  // it cannot show. A school rolls over in April, nobody moves is_current, and
   // from then on attendance, marks and challans all go into LAST YEAR while
   // every screen looks completely normal. Nothing anywhere says which year you
   // are in.
@@ -206,7 +206,7 @@ export function AppShell() {
         <OfflineIndicator />
 
         {/* Top bar: where you are, and the one search box.
-            Always rendered — the breadcrumb half is conditional, the search is
+            Always rendered. The breadcrumb half is conditional, the search is
             not, because "reachable from anywhere" is the whole point of it. */}
         <div className="border-b border-slate-200 bg-white/80 px-6 py-2.5 backdrop-blur print:hidden">
           <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3">

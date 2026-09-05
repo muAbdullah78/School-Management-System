@@ -37,7 +37,7 @@ interface AuthState {
  * Exported so the rendering harnesses in web/tools/ can supply a signed-in
  * profile without a Supabase client.
  *
- * They render real PAGES — not just printables — to check layout and to capture
+ * They render real PAGES, not just printables, to check layout and to capture
  * the screenshots that go in the user guide, and every page calls useAuth(),
  * which throws outside a provider. Rendering the real <AuthProvider> is not an
  * option: with no client it settles on profile = null, so every page would
@@ -175,7 +175,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * Send a password reset link.
    *
    * WHY THIS EXISTS AT ALL. There was no way back into this software for anyone
-   * who forgot a password — not a principal, not a clerk, not a parent. The only
+   * who forgot a password: not a principal, not a clerk, not a parent. The only
    * remedy was to ask the vendor to reset it by hand, which means the vendor
    * setting a password for a school's owner and telling it to them over
    * WhatsApp. For a product sold to fifty schools that is not a support burden,
@@ -195,7 +195,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/reset`,
     })
-    // Reported only when the request itself failed — no network, or the address
+    // Reported only when the request itself failed: no network, or the address
     // is rate-limited. Not "no such user", which this must not disclose.
     return { error: error?.message ?? null }
   }

@@ -11,7 +11,7 @@ const FIELD = 'w-full rounded border border-slate-300 px-2 py-1.5 text-sm'
  * is the point: the state it describes is invisible from every other screen in
  * the console. A school with no `schools` row does not appear in the school
  * list, has no detail page and no purge button, so before this panel there was
- * no way to see the records or to remove them — only a subscription count that
+ * no way to see the records or to remove them: only a subscription count that
  * quietly disagreed with the number of schools.
  *
  * WHY THE OPERATOR IS TOLD SO MUCH HERE
@@ -49,8 +49,8 @@ export function LeftBehind() {
         </h2>
         <p className="mt-1 text-sm text-slate-600">
           Deleting a school through this console removes everything it owns first.
-          Rows show up here when a school was removed some other way — a database
-          restore, or a delete run with foreign keys switched off — which leaves
+          Rows show up here when a school was removed some other way. A database
+          restore, or a delete run with foreign keys switched off, which leaves
           its settings, its fee records and its licence behind with nothing to
           attach them to.
         </p>

@@ -1,5 +1,5 @@
 /**
- * Refundable deposits — what the school is holding, and giving it back.
+ * Refundable deposits: what the school is holding, and giving it back.
  *
  * A security deposit is the one kind of money a school takes that is NOT its
  * own. Before migration 0060 it counted as profit: Rs 5,000 held made the
@@ -10,7 +10,7 @@
  * Two things shape this screen:
  *
  *  * The list includes pupils who have LEFT and not been refunded. That is the
- *    whole point — it is the money still owed. A list that dropped them would
+ *    whole point. It is the money still owed. A list that dropped them would
  *    make the liability shrink the moment a child left.
  *  * Refunding NETS the arrears first, because that is what a clerk says at the
  *    counter: "you owe 3,000, your deposit is 5,000, here is 2,000 back." The
@@ -61,7 +61,7 @@ export function Deposits() {
         <div>
           <div className="font-medium text-slate-800">{r.full_name}</div>
           <div className="text-xs text-slate-400">
-            {r.gr_no ?? '—'}
+            {r.gr_no ?? '-'}
             {r.father_name ? ` · ${r.father_name}` : ''}
           </div>
         </div>
@@ -69,7 +69,7 @@ export function Deposits() {
     },
     {
       key: 'class_name', header: 'Class', value: (r) => r.class_name,
-      render: (r) => <span className="text-slate-600">{r.class_name ?? '—'}</span>,
+      render: (r) => <span className="text-slate-600">{r.class_name ?? '-'}</span>,
     },
     {
       key: 'status', header: 'On roll', value: (r) => r.status,
@@ -94,7 +94,7 @@ export function Deposits() {
     {
       key: 'refunded', header: 'Refunded', align: 'right', sortable: true,
       value: (r) => r.refunded, secondary: true,
-      render: (r) => <span className="text-slate-500">{r.refunded ? fmtPKR(r.refunded) : '—'}</span>,
+      render: (r) => <span className="text-slate-500">{r.refunded ? fmtPKR(r.refunded) : '-'}</span>,
     },
     {
       key: 'held', header: 'Held', align: 'right', sortable: true, value: (r) => r.held,
@@ -122,7 +122,7 @@ export function Deposits() {
       {refundable.length === 0 && (
         <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
           No fee head is marked <strong>refundable</strong> yet, so the school is holding
-          nothing. Mark a head refundable under <strong>Settings → Fee structure</strong> —
+          nothing. Mark a head refundable under <strong>Settings → Fee structure</strong>:
           typically &ldquo;Security Deposit&rdquo;. Until then nothing on this screen changes,
           and no figure anywhere else changes either.
         </div>
@@ -147,7 +147,7 @@ export function Deposits() {
           </div>
           <div className="mt-1 text-xs text-slate-500">
             {leavers.length
-              ? 'Money still owed to families who have gone — refund or net it off.'
+              ? 'Money still owed to families who have gone: refund or net it off.'
               : 'Nobody who has left is still owed a deposit.'}
           </div>
         </div>
@@ -175,7 +175,7 @@ export function Deposits() {
           </div>
           {done.was_enrolled && (
             <div className="mt-1 text-xs">
-              This pupil is still enrolled — the refund is recorded as an early one.
+              This pupil is still enrolled. The refund is recorded as an early one.
             </div>
           )}
         </div>

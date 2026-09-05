@@ -14,7 +14,7 @@ const FIELD = 'w-full rounded border border-slate-300 px-2 py-1.5 text-sm'
  *
  * TWO THINGS JOINED UP HERE THAT WERE NEVER JOINED UP.
  *
- * The desktop build has always been a CI artifact — a GitHub login and a 90-day
+ * The desktop build has always been a CI artifact. A GitHub login and a 90-day
  * expiry stand between a school and the file. So the one thing a Pakistani school
  * office actually asks for, "give me the installer for the front-desk computer",
  * could not be given. Publishing a release makes the website's download button
@@ -122,7 +122,7 @@ function Releases() {
             <span className="mt-0.5 block text-xs text-slate-400">
               Must be https. An installer fetched over plain HTTP on a café connection
               is the easiest thing in this product to tamper with, and the school would
-              have no way to know — so the database refuses it.
+              have no way to know, so the database refuses it.
             </span>
           </label>
           <label className="block">
@@ -133,13 +133,13 @@ function Releases() {
             <span className="mt-0.5 block text-xs text-slate-400">
               On the machine that built it:{' '}
               <code className="rounded bg-slate-200 px-1">certutil -hashfile &lt;file&gt; SHA256</code>.
-              Not optional — it is the only way a school can check the file is really
+              Not optional. It is the only way a school can check the file is really
               yours.
             </span>
           </label>
           <label className="block">
             <span className="text-xs font-medium text-slate-600">
-              What changed — shown to schools
+              What changed: shown to schools
             </span>
             <input className={FIELD} value={notes} onChange={(e) => setNotes(e.target.value)}
               placeholder="Faster fee counter, fixes printing on thermal printers" />
@@ -298,7 +298,7 @@ function Announcements() {
               placeholder="The software will be unavailable on Sunday between 6 and 7am while we upgrade the server. Nothing will be lost." />
             <span className="mt-0.5 block text-xs text-slate-400">
               Written as the school will read it. Say what it means for them and whether
-              anything of theirs is at risk — that is the question they will have.
+              anything of theirs is at risk. That is the question they will have.
             </span>
           </label>
           <button onClick={() => post.mutate()}

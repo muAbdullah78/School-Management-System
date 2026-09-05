@@ -5,7 +5,7 @@ import { whatsappLink } from './db'
  * wa.me rejects a leading zero, and every phone number a Pakistani school has
  * on file starts with one. Getting this wrong means the Send button silently
  * opens WhatsApp on a nonexistent number, which looks like the message went
- * out when it did not — the exact failure the outbox exists to prevent.
+ * out when it did not. The exact failure the outbox exists to prevent.
  */
 describe('whatsappLink', () => {
   it('converts a local 03xx number to international form', () => {

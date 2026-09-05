@@ -1,5 +1,5 @@
 /**
- * WhatsApp — click to chat.
+ * WhatsApp: click to chat.
  *
  * No paid API and no SMS credits: the button opens WhatsApp with the message
  * already written and the clerk presses send. Free, and it is the channel
@@ -8,7 +8,7 @@
  * The queue is the point. Every payment writes a receipt message whether or
  * not anyone sends it, so "40 payments taken, 12 receipts sent" becomes a
  * number an owner can see. A parent who expects a receipt and does not get one
- * walks back to the office — which is a same-day check on cash handling that
+ * walks back to the office, which is a same-day check on cash handling that
  * no month-end report can match.
  */
 import { useState } from 'react'
@@ -116,7 +116,7 @@ export function MessagesPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge tone="brand">{LABELS[m.template_key] ?? m.template_key}</Badge>
-                    <span className="text-sm font-medium text-slate-800">{m.to_name ?? '—'}</span>
+                    <span className="text-sm font-medium text-slate-800">{m.to_name ?? '-'}</span>
                     <span className="text-xs text-slate-400">{m.to_phone ?? 'no number'}</span>
                   </div>
                   <p className="mt-2 whitespace-pre-wrap rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700">
@@ -160,7 +160,7 @@ export function MessagesPage() {
 
       <p className="mt-6 rounded-xl bg-slate-50 px-4 py-3 text-xs text-slate-500">
         Pressing <b>Send</b> opens WhatsApp with the message ready and marks it sent here.
-        If WhatsApp does not open, the number is missing or malformed — fix it on the
+        If WhatsApp does not open, the number is missing or malformed: fix it on the
         family record and the next message will work.
       </p>
     </div>

@@ -36,7 +36,7 @@ import type { DeleteBlocker, DeleteResult } from '@/lib/db'
 export function DeleteRecord({
   kind, name, blockers, remove, onDeleted, onCancel, archive,
 }: {
-  /** "student", "staff member", "login" — used in the sentences below. */
+  /** "student", "staff member", "login": used in the sentences below. */
   kind: string
   name: string
   blockers: () => Promise<DeleteBlocker[]>

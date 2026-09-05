@@ -2,7 +2,7 @@
  * "Search a module…" in the sidebar.
  *
  * Their sidebar has one, and with twenty-odd modules it is how staff actually
- * navigate — faster than reading the list, and it survives the list growing.
+ * navigate: faster than reading the list, and it survives the list growing.
  *
  * Entirely client-side over the nav items the current user can already see, so
  * it cannot reveal a module their role does not have: the filtering happens over

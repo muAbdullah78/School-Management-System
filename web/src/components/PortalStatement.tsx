@@ -8,7 +8,7 @@ import type { PortalChild, PortalFees } from '@/lib/db'
  *
  * The portal's Fees tab had a "Print" button that called window.print() on a
  * page with no printable id. The global print rule in index.css hides `body *`
- * and reveals only named ids, so the button produced a BLANK SHEET of paper —
+ * and reveals only named ids, so the button produced a BLANK SHEET of paper:
  * every time, on every browser. Nothing threw, nothing logged, the dialog opened
  * normally and the preview was empty. A parent standing at a shop counter paying
  * for a print-out got a blank page and no explanation.
@@ -17,7 +17,7 @@ import type { PortalChild, PortalFees } from '@/lib/db'
  *
  * It is not a challan and it is not a receipt, and it says so on its face. A
  * printed page with a school's name, an amount and a due date is exactly what a
- * bank cashier accepts — and this one carries no bank account, no voucher
+ * bank cashier accepts, and this one carries no bank account, no voucher
  * number, no barcode and no school signature, so a parent who took it to a
  * counter would be turned away after queuing. Worse, a parent who paid against
  * it in cash at the school would have no numbered document to hold. So the
@@ -44,8 +44,8 @@ import type { PortalChild, PortalFees } from '@/lib/db'
  * design, so that hook would silently fall back to the build-time name and print
  * the wrong school on the page.
  *
- * This is the DOCUMENT only, the way InvoiceDoc is. The dialog around it — the
- * backdrop, the Print button, the Close button — belongs to the page, so the
+ * This is the DOCUMENT only, the way InvoiceDoc is. The dialog around it. The
+ * backdrop, the Print button, the Close button: belongs to the page, so the
  * rendering harness can put five of these on one sheet without five fixed
  * overlays stacking on top of one another.
  */
@@ -84,15 +84,15 @@ export function PortalStatement({
 
       {/* --- who --------------------------------------------------------- */}
       <div className="mt-4 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
-        <Field label="Student" value={child?.full_name ?? '—'} />
-        <Field label="GR No" value={child?.gr_no ?? '—'} />
+        <Field label="Student" value={child?.full_name ?? '-'} />
+        <Field label="GR No" value={child?.gr_no ?? '-'} />
         <Field
           label="Class"
           value={
             [child?.class_name, child?.section_name].filter(Boolean).join(' · ') || 'Not enrolled'
           }
         />
-        <Field label="Parent / guardian" value={parentName ?? '—'} />
+        <Field label="Parent / guardian" value={parentName ?? '-'} />
       </div>
 
       {/* --- the numbers ------------------------------------------------- */}
@@ -116,8 +116,8 @@ export function PortalStatement({
         <p className="mt-2 text-sm text-slate-500">Nothing has been billed yet.</p>
       ) : (
         /* Four columns, not five, and the due date sits UNDER the month rather
-           than in a column of its own. On a 360px phone — which is most of the
-           parents — five columns pushed Outstanding off the right edge into a
+           than in a column of its own. On a 360px phone, which is most of the
+           parents. Five columns pushed Outstanding off the right edge into a
            sideways scroll the parent had no reason to know was there. The one
            number they opened the page for was the one they could not see. */
         <table className="mt-2 w-full text-sm">
@@ -176,7 +176,7 @@ export function PortalStatement({
           will assume one of them is wrong. Said out loud instead. */}
       {billed - paid !== Number(fees.balance) && (
         <p className="mt-2 text-[11px] text-slate-600">
-          The table totals the challans listed above — {fmtPKR(billed - paid)} unpaid across{' '}
+          The table totals the challans listed above: {fmtPKR(billed - paid)} unpaid across{' '}
           {unpaidCount} challan{unpaidCount === 1 ? '' : 's'}. "This student owes"{' '}
           ({fmtPKR(fees.balance)}) is the school's running balance for the student, which also
           counts any advance held and any adjustment made in the office.
@@ -273,13 +273,13 @@ function Box({ label, value, strong }: { label: string; value: string; strong?: 
   )
 }
 
-/** "Other charges" is the honest label for an invoice with no month — an
+/** "Other charges" is the honest label for an invoice with no month. An
  *  admission fee or a one-off, which is not a monthly challan at all. */
 function monthName(m: string | null): string {
   if (!m) return 'Other charges'
   const d = new Date(m.length === 10 ? `${m}T00:00:00` : m)
   return isNaN(d.getTime())
-    ? '—'
+    ? '-'
     : d.toLocaleDateString('en-PK', { month: 'long', year: 'numeric' })
 }
 

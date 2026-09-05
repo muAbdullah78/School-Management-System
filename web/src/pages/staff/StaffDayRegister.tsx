@@ -19,14 +19,14 @@ const STATUSES: { value: AttendanceStatus; label: string }[] = [
 ]
 
 function hhmm(ts: string | null): string {
-  if (!ts) return '—'
+  if (!ts) return '-'
   return new Date(ts).toLocaleTimeString('en-GB', {
     hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Karachi',
   })
 }
 
 function hours(mins: number | null): string {
-  if (mins == null) return '—'
+  if (mins == null) return '-'
   const h = Math.floor(mins / 60)
   const m = mins % 60
   return h > 0 ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`
@@ -36,7 +36,7 @@ function hours(mins: number | null): string {
  * The day's staff register.
  *
  * This screen is the reason the check-in mechanism is worth anything. The old
- * loophole — a teacher writing her own row with `source = 'qr'` and no code —
+ * loophole. A teacher writing her own row with `source = 'qr'` and no code:
  * survived because NOTHING displayed whether a code had actually been presented.
  * So the "How" column is not decoration: it is the audit.
  */
@@ -114,12 +114,12 @@ export function StaffDayRegister() {
                 <td className="px-3 py-2 text-slate-600">{hhmm(r.checked_at)}</td>
                 <td className="px-3 py-2 text-slate-600">{hhmm(r.checked_out_at)}</td>
                 <td className="px-3 py-2 text-slate-600">
-                  {r.late_minutes == null ? '—' : r.late_minutes > 0 ? `${r.late_minutes}m` : '—'}
+                  {r.late_minutes == null ? '-' : r.late_minutes > 0 ? `${r.late_minutes}m` : '-'}
                 </td>
                 <td className="px-3 py-2 text-slate-600">{hours(r.worked_minutes)}</td>
                 <td className="px-3 py-2 text-xs">
                   {r.status === 'not marked' ? (
-                    <span className="text-slate-400">—</span>
+                    <span className="text-slate-400">-</span>
                   ) : r.scanned ? (
                     <span className="text-slate-600">
                       Scanned{r.code_label ? ` · ${r.code_label}` : ''}
@@ -212,8 +212,8 @@ function MarkDialog({
 
         {overridingAScan && (
           <p className="mt-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-            This day was recorded by a check-in at {hhmm(row.checked_at)}. You can change the status — a
-            principal who knows somebody left at nine outranks the machine — but the reason is required and
+            This day was recorded by a check-in at {hhmm(row.checked_at)}. You can change the status. A
+            principal who knows somebody left at nine outranks the machine, but the reason is required and
             goes in the audit log. The arrival time itself is kept.
           </p>
         )}

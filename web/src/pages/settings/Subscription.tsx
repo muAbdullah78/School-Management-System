@@ -9,7 +9,7 @@ import { fmtDate, fmtDateTime } from '@/lib/format'
 const FIELD = 'w-full rounded border border-slate-300 px-2 py-1.5 text-sm'
 
 /**
- * Your subscription — the school's own view of what it owes us.
+ * Your subscription. The school's own view of what it owes us.
  *
  * Every element of this page exists to remove one phone call:
  *
@@ -26,7 +26,7 @@ const FIELD = 'w-full rounded border border-slate-300 px-2 py-1.5 text-sm'
  *
  * The one thing this screen must never do is look like it took a payment. The
  * form creates a REPORT the vendor checks against a bank statement, and it says
- * so twice — before the button and after it. A form that looks like it settled
+ * so twice: before the button and after it. A form that looks like it settled
  * the bill and did not is worse than no form at all.
  */
 export function Subscription() {
@@ -60,7 +60,7 @@ export function Subscription() {
         <h1 className="text-base font-semibold text-slate-800">Your subscription</h1>
         <p className="text-sm text-slate-500">
           What you pay for this software, and how to pay it. Your own fee collection is
-          under Fees — this page is only about our invoice to you.
+          under Fees. This page is only about our invoice to you.
         </p>
       </div>
 
@@ -70,13 +70,13 @@ export function Subscription() {
           <div>
             <div className="text-xs uppercase tracking-wide text-slate-500">Your plan</div>
             <div className="text-lg font-semibold text-slate-800">
-              {String(lic.plan_name ?? lic.plan_code ?? '—')}
+              {String(lic.plan_name ?? lic.plan_code ?? '-')}
             </div>
             <div className="text-sm text-slate-600">
               {status === 'trialing' && 'Free trial'}
               {status === 'active' && 'Active'}
-              {status === 'grace' && 'Expired — still working while we wait for payment'}
-              {status === 'locked' && 'Expired — new entries are paused'}
+              {status === 'grace' && 'Expired: still working while we wait for payment'}
+              {status === 'locked' && 'Expired: new entries are paused'}
               {status === 'cancelled' && 'Cancelled'}
               {lic.expires_on ? ` until ${fmtDate(String(lic.expires_on))}` : ''}
               {daysLeft !== null && (
@@ -137,7 +137,7 @@ export function Subscription() {
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <button onClick={() => setReporting(true)}
             className="rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
-            I have paid — tell them the reference
+            I have paid: tell them the reference
           </button>
           {(b.pay_to.support_phone || b.pay_to.support_email) && (
             <span className="text-xs text-slate-500">
@@ -219,7 +219,7 @@ export function Subscription() {
                     <div className="max-w-xs text-red-700">
                       <span className="rounded bg-red-50 px-2 py-0.5 font-medium">Not found</span>
                       {/* The reason, verbatim. A school that cannot see why is a
-                          school that phones — and this is the sentence they need. */}
+                          school that phones, and this is the sentence they need. */}
                       {r.decision_note && <div className="mt-0.5">{r.decision_note}</div>}
                     </div>
                   )}
@@ -251,13 +251,13 @@ function DocRow({ d, onPrint }: { d: MyBillingDocument; onPrint: () => void }) {
       </td>
       <td className="py-1.5">{fmtDate(d.issued_on)}</td>
       <td className="py-1.5 text-slate-600">
-        {fmtDate(d.period_start)} – {fmtDate(d.period_end)}
+        {fmtDate(d.period_start)} to {fmtDate(d.period_end)}
       </td>
       <td className="py-1.5 text-right tabular-nums">
         {isCredit ? `− ${formatPkr(d.total)}` : formatPkr(d.total)}
       </td>
       <td className="py-1.5 text-right tabular-nums text-slate-500">
-        {isCredit || d.voided ? '—' : formatPkr(d.paid)}
+        {isCredit || d.voided ? '-' : formatPkr(d.paid)}
       </td>
       <td className="py-1.5 text-right">
         <button onClick={onPrint} className="text-xs text-brand-700 hover:underline">

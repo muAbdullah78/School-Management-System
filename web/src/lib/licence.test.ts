@@ -35,7 +35,7 @@ describe('expiryUrgency', () => {
     expect(expiryUrgency(lic({ status: 'active', days_left: 3 }))).toBe('critical')
   })
 
-  it('treats grace as critical — the app stops accepting entries at the end of it', () => {
+  it('treats grace as critical. The app stops accepting entries at the end of it', () => {
     expect(expiryUrgency(lic({ status: 'grace', days_left: 10 }))).toBe('critical')
   })
 

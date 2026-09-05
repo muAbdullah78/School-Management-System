@@ -15,7 +15,7 @@ export interface SessionRow {
 export interface ClassRow { id: string; name: string; level_order: number }
 export interface FeeHead {
   id: string; name: string; type: string; is_recurring: boolean; active: boolean; sort_order: number
-  /** Money the school HOLDS and must give back — a security deposit. It is a
+  /** Money the school HOLDS and must give back. A security deposit. It is a
    *  liability, not income, and is billed on its own challan. See
    *  docs/DEPOSITS-DESIGN.md. */
   is_refundable: boolean
@@ -37,7 +37,7 @@ export interface Defaulter {
   class_name: string; section_name: string | null; roll_no: string | null; balance: number
 }
 /**
- * One entry per invoice a payment cleared — 0084.
+ * One entry per invoice a payment cleared: 0084.
  *
  * The receipt has to be able to say where the money went. Family allocation is
  * oldest-month-first ACROSS SIBLINGS, so a father paying Rs 9,000 for three
@@ -85,7 +85,7 @@ function unwrap<T>(res: { data: T | null; error: { message: string } | null }): 
  *   UPDATE / DELETE with no matching policy -> ZERO ROWS, and no error at all
  *
  * So every direct-table write in this file used to be written as
- * `const { error } = await sb.from(x).update(patch).eq('id', id)` — and `error`
+ * `const { error } = await sb.from(x).update(patch).eq('id', id)`, and `error`
  * is null when nothing matched. Demonstrated: as a `readonly` login,
  * `update students set full_name` returned success with zero rows. The app said
  * "Saved.", the value was unchanged, and reopening the record showed the old one.
@@ -100,8 +100,8 @@ function unwrap<T>(res: { data: T | null; error: { message: string } | null }): 
  * are indistinguishable.
  *
  * NOT for RPCs. A SECURITY DEFINER function raises its own errors and reports
- * what it did, which is why every write that really matters — payments, marks,
- * leavings, rollovers — goes through one.
+ * what it did, which is why every write that really matters: payments, marks,
+ * leavings, rollovers: goes through one.
  */
 async function mustWrite(
   res: { data: unknown[] | null; error: { message: string } | null },
@@ -159,7 +159,7 @@ export interface FeeHeadRow {
   sort_order: number
   active: boolean
   /** Already referenced by a fee structure or an invoice line. Such a head can
-   *  be switched off but never deleted — a past challan names it, and removing
+   *  be switched off but never deleted. A past challan names it, and removing
    *  it would rewrite what a parent was charged for. */
   in_use: boolean
 }
@@ -201,7 +201,7 @@ export interface FeeStructureRow {
   fee_head_id: string
   fee_head: string
   is_recurring: boolean
-  /** The amount in force TODAY — what will actually be billed. Null means no
+  /** The amount in force TODAY: what will actually be billed. Null means no
    *  price has been set for this head and class. */
   amount: number | null
   effective_from: string | null
@@ -216,7 +216,7 @@ export interface FeeStructureRow {
  *
  * Selecting fee_structures directly returns EVERY dated row for a head, so once
  * a school had used the fee-increment tool the grid showed whichever row came
- * back last — an arbitrary price. The function returns the one in force today
+ * back last. An arbitrary price. The function returns the one in force today
  * plus whatever is scheduled next.
  */
 export async function getFeeStructure(
@@ -235,7 +235,7 @@ export async function getFeeStructure(
  *
  * Goes through fn_set_fee_amount because fee_structures' unique key gained
  * `effective_from` in 0035 and the direct upsert still named the old three
- * columns — so every save raised 42P10 ("no unique or exclusion constraint
+ * columns, so every save raised 42P10 ("no unique or exclusion constraint
  * matching the ON CONFLICT specification") and no school could set a fee at all.
  *
  * `effectiveFrom` null means "from today", and the first amount for a head is
@@ -334,7 +334,7 @@ export async function cancelPendingPayment(paymentId: string, reason: string): P
   if (error) throw new Error(error.message)
 }
 
-/** School-wide pending (un-cleared) payments, newest first — the "Pending
+/** School-wide pending (un-cleared) payments, newest first. The "Pending
  *  clearances" queue for bank challans / wallet transfers awaiting verification. */
 export interface PendingPaymentRow {
   id: string; amount: number; method: string; receipt_no: number | null; created_at: string
@@ -391,7 +391,7 @@ export interface VoidedInvoice {
 /**
  * Cancel a challan raised by mistake (0087).
  *
- * Owner or principal only, and the reason is not optional — it is what the
+ * Owner or principal only, and the reason is not optional. It is what the
  * Cancelled charges register shows a month later. The function refuses a challan
  * with money against it and says to reverse the payment first, so the error
  * message is worth showing verbatim rather than replacing with "Could not
@@ -483,7 +483,7 @@ export async function getCurrentEnrollment(studentId: string): Promise<CurrentEn
       .eq('student_id', studentId).eq('academic_sessions.is_current', true).limit(1),
   )
   if (!rows.length) return null
-  return { enrollment_id: rows[0].id, class_name: rows[0].classes?.name ?? '—', section_name: rows[0].sections?.name ?? null }
+  return { enrollment_id: rows[0].id, class_name: rows[0].classes?.name ?? '-', section_name: rows[0].sections?.name ?? null }
 }
 
 export async function listDiscounts(): Promise<DiscountRow[]> {
@@ -641,7 +641,7 @@ export async function getAttendanceRegister(
     return Number.isNaN(n) ? Number.MAX_SAFE_INTEGER : n
   }
   const students: RegisterStudent[] = enr
-    .map((e) => ({ enrollment_id: e.id, full_name: e.students?.full_name ?? '—', roll_no: e.roll_no ?? null, marks: {} as Record<string, string> }))
+    .map((e) => ({ enrollment_id: e.id, full_name: e.students?.full_name ?? '-', roll_no: e.roll_no ?? null, marks: {} as Record<string, string> }))
     .sort((a, b) => rollNum(a.roll_no) - rollNum(b.roll_no) || a.full_name.localeCompare(b.full_name))
 
   if (students.length > 0) {
@@ -674,7 +674,7 @@ export async function getClassStrength(sessionId: string): Promise<ClassStrength
     let row = map.get(key)
     if (!row) {
       row = {
-        class_name: r.classes?.name ?? '—', level_order: r.classes?.level_order ?? 1e9,
+        class_name: r.classes?.name ?? '-', level_order: r.classes?.level_order ?? 1e9,
         section_name: r.sections?.name ?? null, boys: 0, girls: 0, other: 0, total: 0,
       }
       map.set(key, row)
@@ -712,7 +712,7 @@ export async function getRoster(
 
 /**
  * `reason` is recorded only against rows whose status actually CHANGED, and it
- * is what makes the corrections report readable — see getAttendanceCorrections.
+ * is what makes the corrections report readable: see getAttendanceCorrections.
  */
 export async function markAttendance(
   date: string, marks: { enrollment_id: string; status: AttendanceStatus }[],
@@ -755,7 +755,7 @@ export interface AdmitInput {
   address?: string; phone?: string; whatsapp?: string
   /**
    * The father's (or guardian's) CNIC. This is what puts siblings in the SAME
-   * family, so a single payment covers all of them — see migration 0036. It is
+   * family, so a single payment covers all of them: see migration 0036. It is
    * optional on purpose: a walk-in without their card must still be admitted,
    * and the sibling checkbox below covers that case.
    */
@@ -777,11 +777,11 @@ export interface StudentProfile {
   father_name: string | null; mother_name: string | null; b_form: string | null
   dob: string | null; gender: string | null; address: string | null; phone: string | null
   whatsapp: string | null; status: string; admission_date: string | null; notes: string | null
-  /** Added in 0057. A PATH inside the school-files bucket, never a URL — a
+  /** Added in 0057. A PATH inside the school-files bucket, never a URL. A
    *  signed URL expires and a persisted one becomes a broken image. */
   photo_path: string | null
   /** Added in 0054. Null for a child who is here, and null for one who left
-   *  before 0054 existed — the migration deliberately did not invent dates. */
+   *  before 0054 existed. The migration deliberately did not invent dates. */
   left_on: string | null; leaving_reason: string | null
 }
 
@@ -815,9 +815,9 @@ export async function admitStudent(input: AdmitInput): Promise<AdmitResult> {
 /**
  * Move a student into a sibling's family, merging the two.
  *
- * The repair path for the 0036 bug. No automatic rule catches every case — a
+ * The repair path for the 0036 bug. No automatic rule catches every case. A
  * father with two phone numbers, a name spelled two ways, or anything admitted
- * before 0036 existed — so the counter needs a way to fix it without SQL.
+ * before 0036 existed, so the counter needs a way to fix it without SQL.
  * Returns the surviving family id.
  */
 export async function studentJoinFamily(studentId: string, siblingStudentId: string): Promise<string> {
@@ -931,7 +931,7 @@ export async function importStaff(
 }
 
 /**
- * A short list of students for a picker. Capped at 50 BY DESIGN — it feeds
+ * A short list of students for a picker. Capped at 50 BY DESIGN. It feeds
  * type-ahead boxes, not the roster.
  *
  * For the roster use listStudentPage(), which pages properly and reports the
@@ -960,7 +960,7 @@ export interface StudentListRow {
   roll_no: string | null
   family_id: string | null
   /** Everything this student owes. Computed set-based in SQL and asserted equal
-   *  to student_balance() — see supabase/tests/student_list.sql. */
+   *  to student_balance(): see supabase/tests/student_list.sql. */
   balance: number
 }
 
@@ -1043,7 +1043,7 @@ export async function getStudentLinks(studentId: string): Promise<LinkedStudent[
     const otherId = isA ? r.related_student_id : r.student_id
     const other = isA ? r.b : r.a
     return {
-      link_id: r.id, student_id: otherId, full_name: other?.full_name ?? '—',
+      link_id: r.id, student_id: otherId, full_name: other?.full_name ?? '-',
       gr_no: other?.gr_no ?? null, relation: r.relation ?? null, class_name: null,
       family_id: other?.family_id ?? null,
     }
@@ -1169,13 +1169,13 @@ export async function setStudentStatus(
     student_name: r.student_name ?? '',
     status: r.status ?? status,
     left_on: r.left_on ?? null,
-    class_name: r.class_name ?? '—',
+    class_name: r.class_name ?? '-',
   }
 }
 
 /** Children who have left, with what they left owing.
  *
- *  Without this, left_on would be one more column written and never shown —
+ *  Without this, left_on would be one more column written and never shown:
  *  the bug class documented in migration 0047. Office roles only: it carries
  *  arrears. */
 export async function getStudentsLeft(from: string | null, to: string | null): Promise<StudentLeftRow[]> {
@@ -1210,10 +1210,10 @@ export async function getStudentEnrollments(studentId: string): Promise<Enrollme
   return rows.map((r) => ({
     enrollment_id: r.id,
     session_id: r.session_id,
-    session_name: r.academic_sessions?.name ?? '—',
+    session_name: r.academic_sessions?.name ?? '-',
     session_starts: r.academic_sessions?.starts_on ?? null,
     session_ends: r.academic_sessions?.ends_on ?? null,
-    class_name: r.classes?.name ?? '—',
+    class_name: r.classes?.name ?? '-',
     section_name: r.sections?.name ?? null,
     roll_no: r.roll_no,
     status: r.status,
@@ -1285,7 +1285,7 @@ export interface ResultCardFrozen {
   total_marks: number; total_max: number; percentage: number | null; grade: string | null
   position: number | null; attendance_pct: number | null; withheld: boolean; balance: number
   /** Present on cards generated by 0058 onward. Older frozen snapshots have
-   *  none of these, so every reader must tolerate undefined — a reprint of last
+   *  none of these, so every reader must tolerate undefined. A reprint of last
    *  term's card must not break because this term's card gained fields. */
   exam_percentage?: number | null
   assessment_percentage?: number | null
@@ -1373,7 +1373,7 @@ export async function listSubjects(classId: string): Promise<SubjectRow[]> {
  *
  *  An RPC rather than a direct update because turning the practical flag OFF
  *  while papers still carry practical marks would leave those marks unreachable
- *  and silently out of every total — the function refuses that. */
+ *  and silently out of every total. The function refuses that. */
 export async function setSubjectDetails(
   subjectId: string, stream: string | null, isPractical: boolean,
 ): Promise<void> {
@@ -1399,7 +1399,7 @@ export async function listExamSubjects(termId: string, classId: string): Promise
   )
   return rows
     .map((r) => ({
-      id: r.id, subject_id: r.subject_id, subject_name: r.subjects?.name ?? '—',
+      id: r.id, subject_id: r.subject_id, subject_name: r.subjects?.name ?? '-',
       max_marks: Number(r.max_marks), pass_marks: Number(r.pass_marks),
       practical_max: Number(r.practical_max ?? 0),
       exam_date: r.exam_date ?? null, paper_time: r.paper_time ?? null,
@@ -1416,7 +1416,7 @@ export async function listExamSubjects(termId: string, classId: string): Promise
  *
  * An RPC rather than a direct upsert. The upsert it replaced could not check
  * anything: it accepted a pass mark higher than the paper's total, a paper
- * against a locked term, and — once practicals existed — practical marks on a
+ * against a locked term, and, once practicals existed, practical marks on a
  * subject that has no practical, which is how a practical mark ends up
  * somewhere nobody looks.
  */
@@ -1449,7 +1449,7 @@ export async function listClassRoster(sessionId: string, classId: string): Promi
   return rows
     .map((r) => ({
       enrollment_id: r.id, student_id: r.student_id,
-      full_name: r.students?.full_name ?? '—', father_name: r.students?.father_name ?? null,
+      full_name: r.students?.full_name ?? '-', father_name: r.students?.father_name ?? null,
       gr_no: r.students?.gr_no ?? null, roll_no: r.roll_no ?? null,
       section_name: r.sections?.name ?? null, _sort: r.sections?.sort_order ?? 0,
     }))
@@ -1557,7 +1557,7 @@ export async function lockAssessment(assessmentId: string): Promise<void> {
  *
  * Read BEFORE offering the Generate button, so a school sees "Chemistry is
  * missing for 12 pupils" on the screen rather than as an exception after
- * clicking. The generator checks the same rules again itself — this is the
+ * clicking. The generator checks the same rules again itself. This is the
  * courtesy, not the enforcement.
  */
 export async function getResultReadiness(
@@ -1575,8 +1575,8 @@ export async function getResultReadiness(
  * Generate the class's result cards.
  *
  * `allowIncomplete` is a deliberate act, not a retry. Without it the generator
- * refuses while any pupil has an unmarked paper, because the alternative —
- * which is what it used to do — is printing a child nobody had marked as having
+ * refuses while any pupil has an unmarked paper, because the alternative,
+ * which is what it used to do, is printing a child nobody had marked as having
  * failed. With it, the affected cards are stamped provisional and their
  * denominators exclude what is missing.
  */
@@ -1639,7 +1639,7 @@ export async function listResultCards(termId: string, classId: string): Promise<
     seen.add(r.enrollment_id)
     out.push({
       id: r.id, enrollment_id: r.enrollment_id, student_id: r.student_id,
-      full_name: r.students?.full_name ?? '—', gr_no: r.students?.gr_no ?? null,
+      full_name: r.students?.full_name ?? '-', gr_no: r.students?.gr_no ?? null,
       roll_no: r.enrollments?.roll_no ?? null,
       total_marks: r.total_marks, total_max: r.total_max, percentage: r.percentage,
       grade: r.grade, position: r.position, attendance_pct: r.attendance_pct,
@@ -1657,10 +1657,10 @@ export interface SchoolSettings {
   gr_prefix: string | null; receipt_prefix: string | null; current_session_id: string | null
   geofence_enabled: boolean; geo_lat: number | null; geo_lng: number | null; geo_radius_m: number
   /** The school day, for staff lateness. With `day_starts_at` unset NOTHING is
-   *  ever late — a default start time would mark a whole staff room late on the
+   *  ever late. A default start time would mark a whole staff room late on the
    *  day the school upgraded. */
   day_starts_at: string | null; day_ends_at: string | null; late_grace_minutes: number
-  /** A storage PATH, never a URL — see docs/PHOTOS-DESIGN.md. Read-only here;
+  /** A storage PATH, never a URL: see docs/PHOTOS-DESIGN.md. Read-only here;
    *  written only by fn_set_school_logo, which derives the path itself. */
   logo_path: string | null
 }
@@ -1714,7 +1714,7 @@ export async function getSchoolLogoPath(): Promise<string | null> {
 export async function updateSchoolSettings(patch: Partial<SchoolSettingsPatch>): Promise<void> {
   const sb = requireSupabase()
   // An UPDATE, not an upsert: the settings row is created with the school, so
-  // there is nothing to insert — and an upsert here could only ever write a row
+  // there is nothing to insert, and an upsert here could only ever write a row
   // RLS would reject anyway.
   await mustWrite(
     await sb.from('school_settings').update(patch)
@@ -1744,7 +1744,7 @@ export async function setCurrentSession(sessionId: string): Promise<void> {
 
 /**
  * First-run setup for a brand-new school: the academic session, the class
- * ladder, and one section per class — the minimum needed before a student can
+ * ladder, and one section per class. The minimum needed before a student can
  * be admitted.
  *
  * Done as one call so a half-finished wizard cannot leave a school with a
@@ -1824,7 +1824,7 @@ export async function updateProfileRole(id: string, role: string): Promise<void>
   // The one that made a broken teacher login look like a working one: when the
   // create-teacher Edge Function is not deployed, the fallback used to create the
   // auth user with no school_id, so no profile row existed and this update matched
-  // nothing — silently. The signUp now passes school_id; this makes the failure
+  // nothing: silently. The signUp now passes school_id; this makes the failure
   // loud if it ever happens again.
   await mustWrite(
     await sb.from('profiles').update({ role }).eq('id', id).select('id'),
@@ -1857,7 +1857,7 @@ export interface StaffInput {
 export interface SectionTeacherRow { id: string; name: string; class_teacher_id: string | null }
 
 /** A staff row as the roster returns it: the record, plus the two things the
- *  old screen could not see — whether the login works, and what the person
+ *  old screen could not see: whether the login works, and what the person
  *  still holds. */
 export interface StaffRosterRow extends StaffRow {
   left_on: string | null
@@ -1882,7 +1882,7 @@ export interface ClassPhotoRow {
  * re-typing that body by hand is how a stack of earlier fixes gets silently
  * reverted. RLS scopes the select, so it cannot return another school's rows.
  *
- * Returns an empty map on failure — a roster without faces is still a roster,
+ * Returns an empty map on failure. A roster without faces is still a roster,
  * and a page that refuses to load because a photograph could not be looked up
  * would be a far worse defect than a missing face.
  */
@@ -1927,7 +1927,7 @@ export interface StaffLeaveResult {
 /** Staff WITH their login state and what they still hold.
  *
  *  Replaced a plain `from('staff')` select, which could not see whether a
- *  "deactivated" member of staff could still log in — that fact lives in
+ *  "deactivated" member of staff could still log in. That fact lives in
  *  profiles, and PostgREST cannot embed it unambiguously because staff and
  *  profiles reference each other twice (staff.profile_id, profiles.staff_id).
  *  The screen was therefore unable to show the one thing that mattered. */
@@ -2011,7 +2011,7 @@ export async function staffRejoin(
   }
 }
 
-/** The access switch on its own — suspension without falsifying the employment
+/** The access switch on its own: suspension without falsifying the employment
  *  record, and the remedy for staff the old Deactivate button left able to
  *  log in. */
 export async function staffSetLoginActive(
@@ -2102,8 +2102,8 @@ export async function listTeacherAssignments(sessionId: string): Promise<Teacher
       .eq('session_id', sessionId),
   )
   return rows.map((r) => ({
-    id: r.id, staff_id: r.staff_id, staff_name: r.staff?.full_name ?? '—',
-    class_id: r.class_id, class_name: r.classes?.name ?? '—',
+    id: r.id, staff_id: r.staff_id, staff_name: r.staff?.full_name ?? '-',
+    class_id: r.class_id, class_name: r.classes?.name ?? '-',
     section_id: r.section_id ?? null, section_name: r.sections?.name ?? null,
   })).sort((a, b) => a.staff_name.localeCompare(b.staff_name))
 }
@@ -2136,7 +2136,7 @@ export async function setClassTeacher(
 }
 
 /**
- * Who teaches which subject, this session — 0085.
+ * Who teaches which subject, this session: 0085.
  *
  * The register exists because `subject_teacher` has been a role since 0001 and
  * nothing recorded WHICH subjects, so the Physics teacher of Class 9 could enter
@@ -2172,7 +2172,7 @@ export async function getSubjectTeachers(sessionId: string): Promise<SubjectTeac
 /**
  * REPLACE the teachers of one class+subject. An empty array clears it.
  *
- * Replace rather than add, so the screen can remove a teacher — an add-only
+ * Replace rather than add, so the screen can remove a teacher. An add-only
  * function would make the list one-way, and a school would be stuck with a
  * teacher who left still holding the subject.
  */
@@ -2211,7 +2211,7 @@ export async function listCheckinCodes(): Promise<CheckinCode[]> {
   const sb = requireSupabase()
   // Deliberately NOT selecting `secret`. The column is readable by the office
   // through RLS, and a rotating code whose seed reaches a browser is not a
-  // rotating code — so the seed must never be in a network response the school's
+  // rotating code, so the seed must never be in a network response the school's
   // own screen renders.
   return unwrap(
     await sb.from('staff_checkin_codes')
@@ -2222,7 +2222,7 @@ export async function listCheckinCodes(): Promise<CheckinCode[]> {
 
 /** What the screen at the gate should render right now. Polled, because the token
  *  changes every 30 seconds and the secret it is derived from stays in the
- *  database. `status: 'none'` means no active code — the school has not set one up. */
+ *  database. `status: 'none'` means no active code. The school has not set one up. */
 export interface CheckinDisplay {
   status: 'none' | 'static' | 'rotating'
   code?: string
@@ -2282,7 +2282,7 @@ export interface StaffDayRow {
   source: string | null
   /** Whether a check-in code was actually presented. The forged rows the old
    *  policy allowed said source 'qr' with no code at all, and nothing displayed
-   *  it — which is why the loophole survived. */
+   *  it, which is why the loophole survived. */
   scanned: boolean
   code_label: string | null
   code_window: number | null
@@ -2500,7 +2500,7 @@ export async function createTeacherLogin(input: CreateTeacherInput): Promise<{ i
   // This used to create the login here with a throwaway client, passing
   // school_id AND role in signUp's user_metadata. That was the hole 0065
   // closed: user_metadata is written by the browser, so handle_new_user
-  // believing a role in it meant ANY signed-in user — a parent — could sign up
+  // believing a role in it meant ANY signed-in user. A parent: could sign up
   // again asking for 'principal' and get it, active. The trigger no longer reads
   // that field for authorisation, so this path cannot work and must not pretend
   // to.
@@ -2511,7 +2511,7 @@ export async function createTeacherLogin(input: CreateTeacherInput): Promise<{ i
   // out over the phone.
   throw new Error(
     'The create-teacher function is not deployed, so a login cannot be made here. '
-    + `Invite ${email} instead — they set their own password, and the role you choose is `
+    + `Invite ${email} instead. They set their own password, and the role you choose is `
     + 'applied when they sign up. (Deploy the create-teacher function once if you would '
     + 'rather create logins directly.)',
   )
@@ -2531,7 +2531,7 @@ export interface PendingInvite {
 /**
  * Invite somebody to this school with a role of your choosing.
  *
- * The role is stored on the invitation, not sent by the browser at signup — that
+ * The role is stored on the invitation, not sent by the browser at signup. That
  * is the whole point. When they sign up with this address the trigger reads the
  * role from the invitation row an owner or principal created.
  *
@@ -2568,7 +2568,7 @@ export async function revokeInvite(id: string): Promise<void> {
  *
  * Two separate things have to happen and both can fail, so the order matters:
  * the login is created first, then linked. If the link fails the login still
- * exists — which is recoverable (link it from the family sheet) — whereas
+ * exists, which is recoverable (link it from the family sheet): whereas
  * linking a login that was never created is not.
  *
  * Before migration 0037 this was impossible in two ways: the Edge Function
@@ -2727,7 +2727,7 @@ export interface IssueCertResult {
   is_duplicate: boolean; original_serial_no: number | null
 }
 
-/** What the database will do if this certificate is asked for right now —
+/** What the database will do if this certificate is asked for right now:
  *  fetched BEFORE the form is submitted so the clerk sees the refusal as a
  *  condition to resolve rather than as an error after pressing Issue. */
 export interface CertReadiness {
@@ -2735,7 +2735,7 @@ export interface CertReadiness {
   balance: number
   status: string | null
   left_on: string | null
-  /** Whether dues are checked for this type at all — only `leaving` is gated. */
+  /** Whether dues are checked for this type at all: only `leaving` is gated. */
   dues_gate: boolean
   blocked_by_dues: boolean
   would_be_duplicate: boolean
@@ -2748,7 +2748,7 @@ export interface CertificateRow {
   student_name: string | null; gr_no: string | null; data: Record<string, any>
   /** Read LIVE, not from the frozen snapshot. A certificate's wording must never
    *  drift on a reprint, but an ID card exists to let somebody recognise the
-   *  child holding it — so it shows the photograph on file today, not the one
+   *  child holding it, so it shows the photograph on file today, not the one
    *  that was on file the day the card was first issued. */
   photo_path: string | null
   is_duplicate: boolean
@@ -2785,7 +2785,7 @@ export async function certificateReadiness(
 }
 
 /** Issue a certificate. For `leaving`, `leavingOn` and `leavingReason` are
- *  REQUIRED by the database — issuing one records the child as having left, so
+ *  REQUIRED by the database: issuing one records the child as having left, so
  *  there is deliberately no way to produce one without stating when and why. */
 export async function issueCertificate(
   certType: string, studentId: string, data: Record<string, any>,
@@ -2816,7 +2816,7 @@ export async function issueCertificate(
 }
 
 /** Mark a certificate cancelled. Owner or principal only, and the reason is
- *  required — a cancelled serial is a fact somebody may later have to explain.
+ *  required. A cancelled serial is a fact somebody may later have to explain.
  *  `certificates` itself is append-only; this writes a separate row. */
 export async function cancelCertificate(certificateId: string, reason: string): Promise<void> {
   const sb = requireSupabase()
@@ -2912,8 +2912,8 @@ export interface DashboardSummary {
    *
    * Exists because "outstanding: 0" is ambiguous: it means both "everyone has
    * paid" and "nobody was ever billed", and the second was being rendered as
-   * good news in green. Zero-value challans — which a class with no fee
-   * structure produces — do not count.
+   * good news in green. Zero-value challans, which a class with no fee
+   * structure produces: do not count.
    */
   billed_students_month: number | null
   /** Classes with active students and no fee structure: the root cause of a
@@ -2934,7 +2934,7 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
 /** The certificate register. Goes through fn_certificate_register rather than
  *  selecting the table, because a register that does not show which serials were
  *  cancelled, which are duplicates and which were released over unpaid dues is
- *  not a register — it is a list. */
+ *  not a register. It is a list. */
 export async function listCertificates(limit = 50): Promise<CertificateRow[]> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_certificate_register', { p_limit: limit })
@@ -2973,7 +2973,7 @@ export interface DepositRefundResult {
   refund_id: string
   student_name: string
   amount: number
-  /** Netted against what the family owed, as an ADJUSTMENT — so no cash report
+  /** Netted against what the family owed, as an ADJUSTMENT, so no cash report
    *  gains money that never crossed the counter. */
   applied_to_dues: number
   paid_out: number
@@ -2982,7 +2982,7 @@ export interface DepositRefundResult {
 }
 
 /** Refundable money the school is holding for one pupil. Derived from
- *  allocations against deposit invoices, less refunds — never stored, so it
+ *  allocations against deposit invoices, less refunds: never stored, so it
  *  cannot drift from the ledger. */
 export async function getDepositHeld(studentId: string): Promise<number> {
   const sb = requireSupabase()
@@ -2996,7 +2996,7 @@ export async function getDepositHeld(studentId: string): Promise<number> {
  *
  * Not a choice of layout: `payment_allocations` allocates to an invoice, not a
  * line, so on a mixed challan a part-payment could not be split into "deposit"
- * and "tuition" — and any splitting rule would be one a parent could argue with
+ * and "tuition", and any splitting rule would be one a parent could argue with
  * and the school could not defend.
  */
 export async function chargeDeposit(
@@ -3048,7 +3048,7 @@ export async function refundDeposit(input: {
   }
 }
 
-/** Everyone the school is holding refundable money for — INCLUDING pupils who
+/** Everyone the school is holding refundable money for: INCLUDING pupils who
  *  have left and not been refunded, because that is exactly what is still owed. */
 export async function listDepositsHeld(): Promise<DepositHeldRow[]> {
   const sb = requireSupabase()
@@ -3118,7 +3118,7 @@ export interface FamilyPaymentResult {
   credit: number
   family_outstanding?: number
   pending: boolean
-  /** Which child, which month, how much — 0084. Absent on a pending payment,
+  /** Which child, which month, how much: 0084. Absent on a pending payment,
    *  because nothing has been allocated yet. */
   applied?: PaymentApplied[]
 }
@@ -3153,7 +3153,7 @@ export async function recordFamilyPayment(
   return data as FamilyPaymentResult
 }
 
-/** The family a student belongs to — used to jump from a profile to the till. */
+/** The family a student belongs to: used to jump from a profile to the till. */
 export async function getStudentFamilyId(studentId: string): Promise<string | null> {
   const sb = requireSupabase()
   const { data, error } = await sb
@@ -3234,13 +3234,13 @@ export interface PortalResult {
   total_marks?: number
   percentage?: number
   grade?: string | null
-  /** Which scale `grade` is on — 'letter' or 'gpa10' (0089), from the card's
+  /** Which scale `grade` is on: 'letter' or 'gpa10' (0089), from the card's
    *  frozen snapshot. Without it a parent under the GPA scale sees a bare badge
    *  reading "8.5" with nothing to read it against. */
   grade_scale?: 'letter' | 'gpa10'
   position?: number | null
   attendance_pct?: number | null
-  /** PASS / FAIL / PENDING, read out of the frozen card rather than recomputed —
+  /** PASS / FAIL / PENDING, read out of the frozen card rather than recomputed:
    *  0083. Before that the portal showed a percentage and a grade and left the
    *  parent to work out whether 41% passes at a school whose threshold is 40 or
    *  50, which is the one thing they opened it for. */
@@ -3254,7 +3254,7 @@ export interface PortalResult {
   provisional?: boolean
   unmarked_subjects?: number
   stream?: string | null
-  /** On a board class this is the field a parent checks hardest — a wrong one is
+  /** On a board class this is the field a parent checks hardest. A wrong one is
    *  a real problem in March. */
   bise_reg_no?: string | null
   /** The exact shape 0058 freezes onto the card. `marks` is the THEORY mark and
@@ -3344,7 +3344,7 @@ export interface ProfitSnapshot { today: FinanceSummary; month: FinanceSummary; 
  * The expense categories.
  *
  * `includeInactive` matters more than it looks. The picker on the expense form
- * must offer only live categories — otherwise a school keeps filing costs under
+ * must offer only live categories: otherwise a school keeps filing costs under
  * a head it retired. But NAMING a past expense needs the retired ones too: with
  * the active-only list, an expense recorded last year under a category since
  * retired renders as "Uncategorised", which is a silent misreport of the
@@ -3359,11 +3359,11 @@ export async function listExpenseCategories(includeInactive = false): Promise<Ex
 }
 
 /**
- * Add, rename and retire — the three things a school needs and could not do.
+ * Add, rename and retire. The three things a school needs and could not do.
  *
  * 0030 seeds eight categories and there has never been a way to change them, so
  * a school whose real costs include generator diesel, van fuel or a security
- * guard had to file all three under "Other" — which makes the by-category
+ * guard had to file all three under "Other", which makes the by-category
  * expense report answer nothing. The table has carried `active` and `sort_order`
  * since 0030 and an ALL policy for owner/principal/accountant, so only the
  * screen was missing.
@@ -3371,7 +3371,7 @@ export async function listExpenseCategories(includeInactive = false): Promise<Ex
  * There is NO delete, deliberately. expenses.category_id references these rows;
  * removing one would either fail on the foreign key or rewrite what a past
  * voucher was filed under. Retiring hides it from the picker and leaves history
- * intact — the same rule as a fee head that has been charged.
+ * intact. The same rule as a fee head that has been charged.
  */
 export async function createExpenseCategory(name: string, sortOrder = 50): Promise<void> {
   const sb = requireSupabase()
@@ -3430,7 +3430,7 @@ export async function recordOtherIncome(
  *
  * fn_reverse_other_income has existed since 0030 with zero callers, so a clerk
  * who typed Rs 50,000 of hall rent instead of Rs 5,000 had no way to correct
- * it — the ledger is append-only by design, so there was no edit either. The
+ * it. The ledger is append-only by design, so there was no edit either. The
  * error sat in the income figure, the profit, the day book and the balance
  * sheet permanently. Found by supabase/check-reachable.sh.
  */
@@ -3526,7 +3526,7 @@ export interface OtherIncomeRow {
  * Other income had no read path at all until now, only a write one.
  *
  * recordOtherIncome existed and fed the totals, but nothing ever listed the
- * individual entries, so a wrong one could not be found — let alone reversed.
+ * individual entries, so a wrong one could not be found: let alone reversed.
  * A write-only money ledger is not a ledger. Same shape as listExpenses; the
  * table's own RLS policy already restricts it to owner/principal/accountant.
  */
@@ -3625,7 +3625,7 @@ export async function getUnsentReceipts(from: string, to: string) {
 }
 
 /**
- * A wa.me link with the message pre-filled. Free, no API, no credits — the
+ * A wa.me link with the message pre-filled. Free, no API, no credits. The
  * clerk presses send in WhatsApp. Pakistani numbers are normalised to
  * international form because wa.me rejects a leading 0.
  */
@@ -3656,7 +3656,7 @@ export interface LedgerRow {
 
 /**
  * Debit & credit statement. `kind` narrows it to a detailed income or expense
- * report — one function rather than three, because they are the same rows.
+ * report. One function rather than three, because they are the same rows.
  *
  * Asserted in supabase/tests/reports.sql to net to the same profit the Accounts
  * screen shows. Two screens disagreeing about one month is the fastest way to
@@ -3694,7 +3694,7 @@ export interface UnpaidInvoiceRow {
   due: number
 }
 
-/** Per CHALLAN, not per student — which is what the defaulter report cannot say. */
+/** Per CHALLAN, not per student, which is what the defaulter report cannot say. */
 export async function getUnpaidInvoices(sessionId: string): Promise<UnpaidInvoiceRow[]> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_report_unpaid_invoices', { p_session_id: sessionId })
@@ -3769,7 +3769,7 @@ export interface BalanceSheet {
   cash_in: number
   cash_out: number
   cash_position: number
-  /** Fees taken for a month not yet billed — a liability, not income. */
+  /** Fees taken for a month not yet billed. A liability, not income. */
   advance_held: number
   fee_receipts: number
   other_income: number
@@ -3786,7 +3786,7 @@ export interface BalanceSheet {
  *
  * Every other report here answers "what happened between two dates". This one
  * answers "where did we stand", which cannot be served by summing
- * student_balance() — that is always today's figure, whatever date you print
+ * student_balance(). That is always today's figure, whatever date you print
  * above it. See supabase/migrations/0045_balance_sheet.sql.
  */
 export async function getBalanceSheet(asAt: string | null): Promise<BalanceSheet> {
@@ -3850,7 +3850,7 @@ export interface BirthdayRow {
   /** The age they are turning on that birthday. */
   turning: number
   birthday: string
-  /** 0 is today. Never negative — a past birthday rolls to next year. */
+  /** 0 is today. Never negative. A past birthday rolls to next year. */
   days_away: number
   class_name: string
   detail: string
@@ -3884,7 +3884,7 @@ export interface ExamRemarkRow {
   class_position: number | null
 }
 
-/** Every child in the class, remark or not — a teacher needs to see who is left. */
+/** Every child in the class, remark or not. A teacher needs to see who is left. */
 export async function listExamRemarks(
   examTermId: string, classId: string,
 ): Promise<ExamRemarkRow[]> {
@@ -3925,7 +3925,7 @@ export interface PositionHolder {
   total_max: number | null
   percentage: number | null
   grade: string | null
-  /** Result held back over unpaid fees — worth knowing BEFORE the announcement. */
+  /** Result held back over unpaid fees: worth knowing BEFORE the announcement. */
   withheld: boolean
   remark: string | null
   /** How many children share this position. 1 means outright. */
@@ -3980,7 +3980,7 @@ export interface MarkCorrection {
 }
 
 /**
- * Every mark changed since it was first entered — what it was, what it is, who
+ * Every mark changed since it was first entered: what it was, what it is, who
  * changed it and why.
  *
  * mark_entries has recorded `corrected_from` all along and NOTHING ever read
@@ -4054,7 +4054,7 @@ export interface EnquiryRow {
   created_by_name: string
   admitted_student_id: string | null
   admitted_gr_no: string | null
-  /** Full match count, not the page — see fn_enquiry_list. */
+  /** Full match count, not the page: see fn_enquiry_list. */
   total_count: number
 }
 
@@ -4070,7 +4070,7 @@ export interface EnquiryListArgs {
 }
 
 /**
- * Ordered by who has waited longest, not by who called most recently —
+ * Ordered by who has waited longest, not by who called most recently:
  * newest-first buries the parent who has been waiting nine days.
  */
 export async function listEnquiries(a: EnquiryListArgs = {}): Promise<EnquiryRow[]> {
@@ -4133,7 +4133,7 @@ export interface AddEnquiryResult {
   message_queued: boolean
   /**
    * Set when the same child name already exists on the same phone number. A
-   * WARNING, not a rejection — the same number enquiring again is usually a
+   * WARNING, not a rejection. The same number enquiring again is usually a
    * second child.
    */
   possible_duplicate: {
@@ -4170,7 +4170,7 @@ export async function logEnquiryContact(
   if (error) throw new Error(error.message)
 }
 
-/** 'admitted' is not settable here — use admitEnquiry, which creates the student. */
+/** 'admitted' is not settable here: use admitEnquiry, which creates the student. */
 export async function setEnquiryStatus(
   enquiryId: string, status: Exclude<EnquiryStatus, 'admitted'>,
   lostReason: string | null = null, nextFollowUp: string | null = null,
@@ -4203,7 +4203,7 @@ export interface EnquirySummary {
   open: number
   due_today: number
   overdue: number
-  /** Open enquiries with no follow-up date — should always be 0. */
+  /** Open enquiries with no follow-up date: should always be 0. */
   open_no_date: number
   this_month: number
   admitted: number
@@ -4261,7 +4261,7 @@ export interface MessageSetting {
   body: string
   enabled: boolean
   /** Merge tags this template may use. Comes from SQL because it is a fact
-   *  about the call site — {receipt} only resolves for payment_received. */
+   *  about the call site: {receipt} only resolves for payment_received. */
   tags: string[]
   is_default: boolean
 }
@@ -4303,7 +4303,7 @@ export async function resetMessageTemplate(templateKey: string): Promise<string>
 
 /**
  * Fill merge tags with sample values so the editor can show what a parent will
- * actually receive. Mirrors fn__render_template's simple {tag} replacement —
+ * actually receive. Mirrors fn__render_template's simple {tag} replacement:
  * deliberately not a second templating engine, just the same substitution.
  */
 export function previewMessage(body: string, schoolName: string): string {
@@ -4344,7 +4344,7 @@ export interface ClassDue {
   last_paid_at: string | null
 }
 
-/** The whole class and what each child owes — paid ones included, so a clerk
+/** The whole class and what each child owes: paid ones included, so a clerk
  *  working down a register can see they have not skipped anybody. */
 export async function getClassDues(
   sessionId: string, classId: string, sectionId: string | null, periodMonth: string,
@@ -4373,7 +4373,7 @@ export interface BulkPaymentResult {
 /**
  * Record many payments as ONE transaction.
  *
- * If any row is bad the whole batch is refused and nothing is written — a clerk
+ * If any row is bad the whole batch is refused and nothing is written. A clerk
  * who cannot tell which of forty rows went through has no way to recover.
  */
 export async function recordBulkPayments(
@@ -4442,7 +4442,7 @@ export interface CounterSummary {
 }
 
 /**
- * The four figures the fee counter opens on. One round trip on purpose — the
+ * The four figures the fee counter opens on. One round trip on purpose. The
  * clerk reloads this screen all morning and the numbers have to agree with each
  * other, so they are computed together.
  */
@@ -4476,7 +4476,7 @@ export interface RecentPayment {
   paid_for: string | null
   amount: number
   method: string
-  /** Fine on the challans this receipt paid — not a share apportioned to it. */
+  /** Fine on the challans this receipt paid: not a share apportioned to it. */
   late_fee: number
   /** Discount on those same challans, same caveat. */
   discount: number
@@ -4524,7 +4524,7 @@ export interface Challan {
   this_month: number
   already_paid: number
   this_month_due: number
-  /** Computed live, not the generation-time snapshot — see migration 0039. */
+  /** Computed live, not the generation-time snapshot: see migration 0039. */
   previous_dues: number
   /** Equals student_balance(). The paper and the ledger are the same number. */
   total_payable: number
@@ -4615,7 +4615,7 @@ export interface SupportVisit {
  * The visits our support team made to THIS school.
  *
  * Owner and principal only, enforced by the database (fn_support_visits gates on
- * has_role, not may_view — a readonly observer has no business in it, and
+ * has_role, not may_view. A readonly observer has no business in it, and
  * may_view is true during a support visit anyway, which would make the gate
  * circular).
  */
@@ -4629,7 +4629,7 @@ export async function listSupportVisits(limit = 50): Promise<SupportVisit[]> {
 import type { InvoiceDocument } from './platform'
 
 // ===========================================================================
-// The school's own subscription bill — migration 0078.
+// The school's own subscription bill: migration 0078.
 //
 // Every one of these calls is about THIS school's relationship with the vendor,
 // and every one is gated at the database on owner/principal. They exist because
@@ -4652,7 +4652,7 @@ export interface MyBillingDocument {
   tax_amount: number
   total: number
   voided: boolean
-  /** Cash plus any tax withheld — what actually settled this document. */
+  /** Cash plus any tax withheld: what actually settled this document. */
   paid: number
   note: string | null
 }
@@ -4669,7 +4669,7 @@ export interface MyBilling {
     paid_on: string; amount: number; method: string; reference: string | null
     tax_withheld: number; tax_certificate: string | null
   }[]
-  /** What this school has told us, and what came of it — including WHY a report
+  /** What this school has told us, and what came of it: including WHY a report
    *  was rejected. A school that cannot see the reason is a school that phones. */
   reports: {
     id: string; amount: number; paid_on: string; method: string
@@ -4701,7 +4701,7 @@ export async function myBilling(): Promise<MyBilling> {
  *
  * Their accountant needs it with our NTN on it: without that they cannot claim
  * the expense and cannot file the tax they are obliged to withhold. The shape is
- * identical to the operator's copy — one document, rendered by one component.
+ * identical to the operator's copy. One document, rendered by one component.
  */
 export async function myPlatformInvoice(invoiceId: string): Promise<InvoiceDocument> {
   const sb = requireSupabase()
@@ -4714,7 +4714,7 @@ export async function myPlatformInvoice(invoiceId: string): Promise<InvoiceDocum
  * Tell the vendor a transfer has been made.
  *
  * This does NOT reduce the balance. It creates a report the operator checks
- * against the bank statement — and the screen says so, because a form that looks
+ * against the bank statement, and the screen says so, because a form that looks
  * like it settled the bill and did not is worse than no form.
  */
 export async function reportSubscriptionPayment(input: {
@@ -4735,7 +4735,7 @@ export async function reportSubscriptionPayment(input: {
  * Vendor notices for THIS user, from platform_announcements (0082).
  *
  * Read straight from the table rather than through a function: the policy already
- * says which rows — live window, and audience matching the caller's role — and a
+ * says which rows: live window, and audience matching the caller's role, and a
  * definer function would only restate it in a second place that could disagree.
  *
  * Not in message_outbox, deliberately. That table is the school's own outbox to

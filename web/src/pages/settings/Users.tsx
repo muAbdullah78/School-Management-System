@@ -11,7 +11,7 @@ import { fmtDate } from '@/lib/format'
 const FIELD = 'rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-brand-500 focus:outline-none'
 
 // An owner is never invited. The first account of a school becomes owner at
-// signup, and later owners are promoted on this screen by an existing owner —
+// signup, and later owners are promoted on this screen by an existing owner,
 // so the school's top privilege never sits behind an email address.
 const INVITABLE = ROLES.filter((r) => r !== 'owner')
 
@@ -65,7 +65,7 @@ export function Users() {
           </div>
           <p className="mt-1 text-xs text-slate-500">
             They sign up with this email address and choose their own password. The role you pick
-            here is what they get — nothing they type at signup can change it.
+            here is what they get. Nothing they type at signup can change it.
           </p>
           <div className="mt-3 flex flex-wrap items-end gap-2">
             <label className="block">
@@ -119,7 +119,7 @@ export function Users() {
                   <td className="px-3 py-2 text-slate-600">{ROLE_LABELS[i.role as Role] ?? i.role}</td>
                   <td className="px-3 py-2 text-xs text-slate-500">
                     {i.expired
-                      ? <span className="text-amber-700">Expired {fmtDate(i.expires_at)} — invite again</span>
+                      ? <span className="text-amber-700">Expired {fmtDate(i.expires_at)}: invite again</span>
                       : <>Expires {fmtDate(i.expires_at)}</>}
                     {i.invited_by && <span className="text-slate-400"> · by {i.invited_by}</span>}
                   </td>

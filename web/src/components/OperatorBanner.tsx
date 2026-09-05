@@ -6,7 +6,7 @@ import { operatorCurrent, operatorLeave } from '@/lib/platform'
  *
  * Shown whenever the operator has an open support session, on every screen, and
  * NOT DISMISSABLE. That is the whole design: the failure mode of impersonation is
- * not a leak, it is forgetting — reading a school's records for twenty minutes
+ * not a leak, it is forgetting: reading a school's records for twenty minutes
  * while believing you are looking at a demo, or worse, telling a principal
  * something about another school's figures.
  *
@@ -15,8 +15,8 @@ import { operatorCurrent, operatorLeave } from '@/lib/platform'
  * a Save would go through. It would: it would be refused by the database. The
  * banner saying so up front is cheaper than finding out.
  *
- * Polled rather than pushed. A session expires on its own — 60 minutes by
- * default — and when it does the reach ends whether anybody pressed Leave or
+ * Polled rather than pushed. A session expires on its own: 60 minutes by
+ * default, and when it does the reach ends whether anybody pressed Leave or
  * not, so the banner has to stop on its own too. A stale banner claiming access
  * that has lapsed is its own small lie.
  */
@@ -55,13 +55,13 @@ export function OperatorBanner() {
       <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <span className="font-semibold">
-            Support visit — you are viewing {s.school_name}
+            Support visit. You are viewing {s.school_name}
           </span>
           <span className="ml-2 rounded bg-white/20 px-1.5 py-0.5 text-xs font-medium uppercase tracking-wide">
             read only
           </span>
           <div className="mt-0.5 text-xs text-red-50">
-            This is not your data. Nothing you do here can change it — the database
+            This is not your data. Nothing you do here can change it. The database
             refuses every write from a support visit.
             {' '}Reason on record: “{s.reason}”.
             {' '}Ends in {minsLeft} minute{minsLeft === 1 ? '' : 's'}, and the school

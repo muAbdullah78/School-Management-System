@@ -115,8 +115,8 @@ export function CertificatesPage() {
   const needsPurpose = certType === 'bonafide' || certType === 'other'
   const r = ready.data
   const blocked = !!r?.blocked_by_dues && !override
-  // The leaving date and reason are not optional extras — the database refuses
-  // without them — so the button has to refuse too, rather than surfacing the
+  // The leaving date and reason are not optional extras. The database refuses
+  // without them, so the button has to refuse too, rather than surfacing the
   // refusal as a database error.
   const missingLeaving = certType === 'leaving' && (!dateOfLeaving || !reason.trim())
   const overrideIncomplete = override && !overrideReason.trim()
@@ -209,7 +209,7 @@ export function CertificatesPage() {
                 {r.blocked_by_dues ? (
                   <div className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-amber-900">
                     <div className="font-medium">
-                      {fmtPKR(r.balance)} outstanding — a leaving certificate is withheld until fees are cleared.
+                      {fmtPKR(r.balance)} outstanding. A leaving certificate is withheld until fees are cleared.
                     </div>
                     <div className="mt-0.5 text-xs">
                       Take the payment at the fee counter, or have the owner or principal release it below.
@@ -231,20 +231,20 @@ export function CertificatesPage() {
                     )}
                   </div>
                 ) : r.dues_gate && (
-                  <div className="text-xs text-emerald-700">Fees cleared — nothing outstanding.</div>
+                  <div className="text-xs text-emerald-700">Fees cleared. Nothing outstanding.</div>
                 )}
 
                 {certType === 'leaving' && r.left_on == null && (
                   <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
                     Issuing this records {r.student_name || 'the pupil'} as having left on the date above:
                     off the attendance register, out of the class strength, and not billed next month.
-                    That is deliberate — a child holding a leaving certificate who is still on the roll
+                    That is deliberate. A child holding a leaving certificate who is still on the roll
                     is the drift this replaces.
                   </div>
                 )}
                 {certType === 'leaving' && r.left_on != null && (
                   <div className="text-xs text-slate-500">
-                    Already recorded as having left on {fmtDate(r.left_on)} — that date is used and nothing changes.
+                    Already recorded as having left on {fmtDate(r.left_on)}. That date is used and nothing changes.
                   </div>
                 )}
 
@@ -314,17 +314,17 @@ export function CertificatesPage() {
                     )}
                   </td>
                   <td className="px-3 py-2 text-slate-700">
-                    {c.student_name ?? '—'}<span className="text-slate-400">{c.gr_no ? ` · ${c.gr_no}` : ''}</span>
+                    {c.student_name ?? '-'}<span className="text-slate-400">{c.gr_no ? ` · ${c.gr_no}` : ''}</span>
                     {/* A cancelled serial is a fact somebody may have to explain,
                         so the reason is shown rather than the row hidden. */}
                     {c.cancelled_at && (
                       <div className="text-xs text-red-600">
-                        Cancelled {fmtDate(c.cancelled_at)}{c.cancel_reason ? ` — ${c.cancel_reason}` : ''}
+                        Cancelled {fmtDate(c.cancelled_at)}{c.cancel_reason ? `: ${c.cancel_reason}` : ''}
                       </div>
                     )}
                   </td>
                   <td className="px-3 py-2 text-slate-500">{fmtDate(c.issued_on)}</td>
-                  <td className="px-3 py-2 text-slate-500">{c.issued_by_name ?? '—'}</td>
+                  <td className="px-3 py-2 text-slate-500">{c.issued_by_name ?? '-'}</td>
                   <td className="px-3 py-2 text-right whitespace-nowrap">
                     <button onClick={() => setPrint(toPrint(c))}
                       className="rounded border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">Reprint</button>
@@ -372,7 +372,7 @@ function CancelDialog({
           {cert.student_name}{cert.gr_no ? ` · ${cert.gr_no}` : ''}
         </p>
         <p className="mt-2 text-xs text-slate-500">
-          The certificate is not deleted — the serial stays in the register, struck through, with this
+          The certificate is not deleted. The serial stays in the register, struck through, with this
           reason against it. If the family is holding the printed copy, ask for it back.
         </p>
         <label className="mt-3 block">

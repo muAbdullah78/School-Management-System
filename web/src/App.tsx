@@ -95,7 +95,7 @@ export default function App() {
                 has forgotten their password is signed out by definition, and the
                 recovery link lands on /reset before the user has any credentials
                 to offer. Putting either behind the guard would redirect them to
-                the login screen they came from — with the recovery token stripped
+                the login screen they came from: with the recovery token stripped
                 out of the URL on the way. */}
             <Route
               path="/forgot"
@@ -109,7 +109,7 @@ export default function App() {
             <Route path="/checkin" element={<CheckIn />} />
             {/* Signed in, but outside both the staff shell and the portal: every
                 role reaches this page, and a parent has no shell to render. It
-                also stays reachable when the licence has lapsed — locking a
+                also stays reachable when the licence has lapsed: locking a
                 school out of its own password change would be indefensible. */}
             <Route
               path="/password"
@@ -132,7 +132,7 @@ export default function App() {
             />
             {/* A parent account never reaches the staff shell. The database
                 closes every table to it, so a parent who landed on an admin
-                screen would see an empty broken page rather than data — this
+                screen would see an empty broken page rather than data. This
                 just routes them somewhere that works. Enforcement is in RLS. */}
             <Route
               element={

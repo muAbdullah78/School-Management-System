@@ -2,7 +2,7 @@
  * The four reports a head teacher asks for at month end.
  *
  * Their Reporting Area lists thirteen; we had five. These are the four that
- * close the gap on the money side — debit & credit statement (which also serves
+ * close the gap on the money side: debit & credit statement (which also serves
  * as the detailed income and detailed expense reports via its filter), unpaid
  * invoices per challan, the discount register with its approver, and admissions
  * by date.
@@ -11,7 +11,7 @@
  * searches, exports to CSV and prints without any of that being written four
  * times. That is the payoff for having built the component.
  *
- * The fifth, added after, is the balance sheet — the only one here that is a
+ * The fifth, added after, is the balance sheet. The only one here that is a
  * position AS AT a day rather than a range, and so the only one that is not a
  * table.
  */
@@ -83,11 +83,11 @@ export function LedgerReport() {
     { key: 'reference', header: 'Ref', secondary: true, value: (r) => r.reference },
     {
       key: 'debit', header: 'In', align: 'right', sortable: true, value: (r) => r.debit,
-      render: (r) => (r.debit ? <span className="text-money-700">{fmtPKR(r.debit)}</span> : <span className="text-slate-300">—</span>),
+      render: (r) => (r.debit ? <span className="text-money-700">{fmtPKR(r.debit)}</span> : <span className="text-slate-300">-</span>),
     },
     {
       key: 'credit', header: 'Out', align: 'right', sortable: true, value: (r) => r.credit,
-      render: (r) => (r.credit ? <span className="text-danger-600">{fmtPKR(r.credit)}</span> : <span className="text-slate-300">—</span>),
+      render: (r) => (r.credit ? <span className="text-danger-600">{fmtPKR(r.credit)}</span> : <span className="text-slate-300">-</span>),
     },
     { key: 'recorded_by', header: 'By', secondary: true, value: (r) => r.recorded_by },
   ]
@@ -185,7 +185,7 @@ export function UnpaidInvoicesReport() {
         <div>
           <div className="text-slate-800">{r.student_name}</div>
           <div className="text-xs text-slate-400">
-            {r.gr_no ?? '—'}
+            {r.gr_no ?? '-'}
             {r.class_name ? ` · ${r.class_name}${r.section_name ? `-${r.section_name}` : ''}` : ''}
           </div>
         </div>
@@ -194,7 +194,7 @@ export function UnpaidInvoicesReport() {
     { key: 'father_name', header: 'Father', sortable: true, secondary: true, value: (r) => r.father_name },
     {
       key: 'voucher_code', header: 'Challan', secondary: true, value: (r) => r.voucher_code,
-      render: (r) => <span className="font-mono text-xs text-slate-500">{r.voucher_code ?? '—'}</span>,
+      render: (r) => <span className="font-mono text-xs text-slate-500">{r.voucher_code ?? '-'}</span>,
     },
     {
       key: 'days_overdue', header: 'Overdue', align: 'right', sortable: true,
@@ -241,7 +241,7 @@ export function UnpaidInvoicesReport() {
       />
 
       <p className="mt-3 text-xs text-slate-500">
-        One row per challan, not per student — so you can see which months are outstanding and which
+        One row per challan, not per student, so you can see which months are outstanding and which
         slip to reprint. Sort by Overdue to find the ones that have been sitting longest.
       </p>
     </div>
@@ -265,7 +265,7 @@ export function DiscountsReport() {
         <div>
           <div className="text-slate-800">{r.student_name}</div>
           <div className="text-xs text-slate-400">
-            {r.gr_no ?? '—'}{r.class_name ? ` · ${r.class_name}` : ''}
+            {r.gr_no ?? '-'}{r.class_name ? ` · ${r.class_name}` : ''}
           </div>
         </div>
       ),
@@ -337,7 +337,7 @@ export function AdmissionsReport() {
         <div>
           <div className="text-slate-800">{r.student_name}</div>
           <div className="text-xs text-slate-400">
-            {r.gr_no ?? '—'}{r.admission_no ? ` · ${r.admission_no}` : ''}
+            {r.gr_no ?? '-'}{r.admission_no ? ` · ${r.admission_no}` : ''}
           </div>
         </div>
       ),
@@ -348,7 +348,7 @@ export function AdmissionsReport() {
       value: (r) => `${r.class_name ?? ''}${r.section_name ?? ''}`,
       render: (r) => (
         <span className="whitespace-nowrap text-slate-600">
-          {r.class_name ?? '—'}{r.section_name ? `-${r.section_name}` : ''}
+          {r.class_name ?? '-'}{r.section_name ? `-${r.section_name}` : ''}
         </span>
       ),
     },
@@ -407,7 +407,7 @@ export function AdmissionsReport() {
  *
  * Every other tab answers "what happened between two dates" and so renders as
  * rows. This answers "where did the school stand on this day", which is five
- * figures and the relationships between them — so it is laid out as a statement,
+ * figures and the relationships between them, so it is laid out as a statement,
  * with the arithmetic shown rather than asserted. A principal who cannot see
  * how a total was reached does not trust the total.
  */
@@ -507,8 +507,8 @@ export function BalanceSheetReport() {
 /**
  * The statement itself, with no data fetching in it.
  *
- * Split out so the layout can be rendered to a file and LOOKED AT — see
- * web/tools/balance-sheet-preview.test.tsx. The challan printed "PAST DUE — PAY
+ * Split out so the layout can be rendered to a file and LOOKED AT: see
+ * web/tools/balance-sheet-preview.test.tsx. The challan printed "PAST DUE: PAY
  * IMMEDIATELY" across fully-paid reprints for a while, and no assertion about
  * markup caught it; rendering it and looking did.
  */
@@ -525,7 +525,7 @@ export function BalanceSheetView({ b }: { b: BalanceSheet }) {
 
           {/* The one thing on this page a school could act on wrongly if it
               were left implicit. If the advance fees being held exceed the cash
-              actually in hand, that money has already been spent — and it may
+              actually in hand, that money has already been spent, and it may
               have to be given back. Both figures are in the tiles either way;
               saying nothing about the relationship between them is what makes a
               statement technically true and practically misleading. */}
@@ -541,7 +541,7 @@ export function BalanceSheetView({ b }: { b: BalanceSheet }) {
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Figure
               label="Receivable" big
-              // Never billed is NOT the same as nothing owed — a green zero on a
+              // Never billed is NOT the same as nothing owed. A green zero on a
               // school that has not issued a single challan reads as "all
               // collected". This is the same trap fn_dashboard_summary fell into.
               tone={b.charges_raised === 0 ? 'plain' : b.receivable > 0 ? 'bad' : 'good'}
@@ -579,7 +579,7 @@ export function BalanceSheetView({ b }: { b: BalanceSheet }) {
             />
           </div>
 
-          {/* The workings. Not decoration — this is what makes the four tiles
+          {/* The workings. Not decoration. This is what makes the four tiles
               above checkable rather than something the software just asserts. */}
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
             <div className="rounded border border-slate-200 p-4">
@@ -626,7 +626,7 @@ export function BalanceSheetView({ b }: { b: BalanceSheet }) {
   )
 }
 
-/** Last day of the previous month — the date a monthly close is dated. */
+/** Last day of the previous month. The date a monthly close is dated. */
 function lastDayOfPrevMonth(): string {
   const d = new Date()
   // Day 0 of this month is the last day of the previous one.
@@ -635,7 +635,7 @@ function lastDayOfPrevMonth(): string {
 }
 
 /**
- * 30 June — the Pakistani financial year end, and the date a school's accounts
+ * 30 June. The Pakistani financial year end, and the date a school's accounts
  * are actually closed on. If we are already past it this year it means this
  * year's; before it, last year's, because that is the close you would still be
  * working on.
@@ -680,7 +680,7 @@ export function MarkCorrectionsReport() {
         <div>
           <div className="text-slate-800">{r.student_name}</div>
           <div className="text-xs text-slate-400">
-            {r.gr_no ?? '—'}
+            {r.gr_no ?? '-'}
             {r.class_name ? ` · ${r.class_name}` : ''}{r.section_name ? `-${r.section_name}` : ''}
           </div>
         </div>
@@ -691,8 +691,8 @@ export function MarkCorrectionsReport() {
       value: (r) => `${r.subject_name ?? ''} ${r.paper ?? ''}`,
       render: (r) => (
         <div>
-          <div className="text-slate-700">{r.subject_name ?? '—'}</div>
-          <div className="text-xs text-slate-400">{r.kind} · {r.paper ?? '—'}</div>
+          <div className="text-slate-700">{r.subject_name ?? '-'}</div>
+          <div className="text-xs text-slate-400">{r.kind} · {r.paper ?? '-'}</div>
         </div>
       ),
     },
@@ -702,12 +702,12 @@ export function MarkCorrectionsReport() {
       key: 'was', header: 'Was → is', align: 'right', sortable: true, value: (r) => r.was,
       render: (r) => (
         <span className="whitespace-nowrap tabular-nums">
-          <span className="text-slate-400 line-through">{r.was ?? '—'}</span>
+          <span className="text-slate-400 line-through">{r.was ?? '-'}</span>
           <span className="mx-1 text-slate-300">→</span>
           <span className={`font-medium ${
             r.was != null && r.now_is != null && r.now_is < r.was
               ? 'text-danger-700' : 'text-money-700'}`}>
-            {r.now_is ?? '—'}
+            {r.now_is ?? '-'}
           </span>
           {r.max_marks != null && (
             <span className="ml-1 text-xs text-slate-400">/{r.max_marks}</span>
@@ -759,7 +759,7 @@ export function MarkCorrectionsReport() {
       />
 
       <p className="mt-3 text-xs leading-relaxed text-slate-500">
-        A mark appears here only if it was changed <em>after</em> being entered — a first entry is
+        A mark appears here only if it was changed <em>after</em> being entered. A first entry is
         not a correction. The previous mark has always been recorded; until now nothing could show
         it. Rows marked <span className="text-danger-600">none given</span> were changed without a
         reason, which is worth asking about.
@@ -801,7 +801,7 @@ export function AttendanceCorrectionsReport() {
         <div>
           <div className="text-slate-800">{r.student_name}</div>
           <div className="text-xs text-slate-400">
-            {r.gr_no ?? '—'}
+            {r.gr_no ?? '-'}
             {r.class_name ? ` · ${r.class_name}` : ''}{r.section_name ? `-${r.section_name}` : ''}
           </div>
         </div>
@@ -811,9 +811,9 @@ export function AttendanceCorrectionsReport() {
       key: 'was', header: 'Was → is', sortable: true, value: (r) => r.was,
       render: (r) => (
         <span className="whitespace-nowrap capitalize">
-          <span className="text-slate-400 line-through">{r.was ?? '—'}</span>
+          <span className="text-slate-400 line-through">{r.was ?? '-'}</span>
           <span className="mx-1 text-slate-300">→</span>
-          <span className="font-medium text-slate-800">{r.now_is ?? '—'}</span>
+          <span className="font-medium text-slate-800">{r.now_is ?? '-'}</span>
         </span>
       ),
     },
@@ -859,7 +859,7 @@ export function AttendanceCorrectionsReport() {
 
       <p className="mt-3 text-xs leading-relaxed text-slate-500">
         &ldquo;For the day&rdquo; is the day being marked; &ldquo;changed on&rdquo; is when somebody
-        altered it. A gap between the two is the thing worth looking at — an absence rewritten
+        altered it. A gap between the two is the thing worth looking at. An absence rewritten
         weeks later is different from one corrected the same afternoon.
       </p>
     </div>
@@ -871,8 +871,8 @@ export function AttendanceCorrectionsReport() {
  *
  * The counterpart of the Admissions report, and it could not exist until 0054:
  * before that there was no leaving DATE anywhere. A child leaving left one
- * trace, free text appended to students.notes — "Status → withdrawn: Family
- * moved to Karachi" — with no date, a reason only if the clerk typed one, and
+ * trace, free text appended to students.notes: "Status → withdrawn: Family
+ * moved to Karachi": with no date, a reason only if the clerk typed one, and
  * both buried in a blob holding every other note. A school could not answer
  * "how many children left this term", which is the number a proprietor watches
  * more closely than admissions.
@@ -904,7 +904,7 @@ export function StudentsLeftReport() {
         <div>
           <div className="text-slate-800">{r.student_name}</div>
           <div className="text-xs text-slate-400">
-            {r.gr_no ?? '—'}{r.father_name ? ` · ${r.father_name}` : ''}
+            {r.gr_no ?? '-'}{r.father_name ? ` · ${r.father_name}` : ''}
           </div>
         </div>
       ),
@@ -914,7 +914,7 @@ export function StudentsLeftReport() {
       value: (r) => `${r.class_name ?? ''}${r.section_name ?? ''}`,
       render: (r) => (
         <span className="whitespace-nowrap text-slate-600">
-          {r.class_name ?? '—'}{r.section_name ? `-${r.section_name}` : ''}
+          {r.class_name ?? '-'}{r.section_name ? `-${r.section_name}` : ''}
         </span>
       ),
     },
@@ -940,20 +940,20 @@ export function StudentsLeftReport() {
       key: 'months_here', header: 'Months here', secondary: true, sortable: true,
       value: (r) => r.months_here ?? -1,
       render: (r) => (
-        <span className="tabular-nums text-slate-600">{r.months_here ?? '—'}</span>
+        <span className="tabular-nums text-slate-600">{r.months_here ?? '-'}</span>
       ),
     },
     {
       key: 'phone', header: 'Phone', secondary: true, sortable: true, value: (r) => r.phone ?? '',
       render: (r) => r.phone
         ? <span className="whitespace-nowrap text-slate-600">{r.phone}</span>
-        : <span className="text-xs text-slate-400">—</span>,
+        : <span className="text-xs text-slate-400">-</span>,
     },
     {
       key: 'balance', header: 'Left owing', sortable: true, value: (r) => r.balance,
       render: (r) => (
         <span className={`tabular-nums ${r.balance > 0 ? 'font-medium text-danger-600' : 'text-slate-400'}`}>
-          {r.balance > 0 ? fmtPKR(r.balance) : '—'}
+          {r.balance > 0 ? fmtPKR(r.balance) : '-'}
         </span>
       ),
     },
@@ -1009,7 +1009,7 @@ export function StudentsLeftReport() {
  *
  * OurSchoolSoftware calls this "Deleted Fees" and the name is the giveaway: a
  * register whose entries can be deleted is not a register. Nothing here is
- * deleted — the challan keeps its row, its lines and its voucher code, and stops
+ * deleted. The challan keeps its row, its lines and its voucher code, and stops
  * counting towards any figure.
  *
  * Defaults to the last ninety days rather than to everything. A school looking
@@ -1047,7 +1047,7 @@ export function VoidedChargesReport() {
         <div>
           <div className="text-slate-800">{r.student_name}</div>
           <div className="text-xs text-slate-400">
-            {r.gr_no ?? '—'}
+            {r.gr_no ?? '-'}
             {r.class_name ? ` · ${r.class_name}${r.section_name ? `-${r.section_name}` : ''}` : ''}
           </div>
         </div>
@@ -1062,7 +1062,7 @@ export function VoidedChargesReport() {
     { key: 'reason', header: 'Reason', value: (r) => r.reason },
     {
       key: 'voucher_code', header: 'Voucher', secondary: true, value: (r) => r.voucher_code ?? '',
-      render: (r) => <span className="font-mono text-xs text-slate-400">{r.voucher_code ?? '—'}</span>,
+      render: (r) => <span className="font-mono text-xs text-slate-400">{r.voucher_code ?? '-'}</span>,
     },
   ]
 

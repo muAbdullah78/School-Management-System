@@ -163,7 +163,7 @@ export function Business() {
                         left no trace anywhere; this is that number, monthly. */}
                     <td className={`py-1.5 text-right tabular-nums ${
                       gap > 0 ? 'font-medium text-amber-800' : 'text-slate-300'}`}>
-                      {gap > 0 ? formatPkr(gap) : '—'}
+                      {gap > 0 ? formatPkr(gap) : '-'}
                     </td>
                   </tr>
                 )
@@ -173,7 +173,7 @@ export function Business() {
         </div>
         {givenAway > 0 && (
           <p className="mt-2 text-xs text-amber-800">
-            {formatPkr(givenAway)} a month below list — {formatPkr(givenAway * 12)} a year.
+            {formatPkr(givenAway)} a month below list: {formatPkr(givenAway * 12)} a year.
             Every rupee of it was a decision somebody made with a reason recorded on the
             invoice.
           </p>
@@ -263,7 +263,7 @@ function Growth({ points }: { points: GrowthPoint[] }) {
           <g key={`p${i}`}>
             <circle cx={x(i)} cy={y(p.students)} r="3" fill="#0f766e" />
             <title>
-              {p.month} — {p.students.toLocaleString()} pupils across {p.schools} school(s)
+              {p.month}: {p.students.toLocaleString()} pupils across {p.schools} school(s)
             </title>
           </g>
         ))}

@@ -7,7 +7,7 @@
  *
  * IT OPENS ON TODAY'S WORK, not on an empty box. Four figures, both ways of
  * finding a payer, and the day's receipts already listed. The previous version
- * rendered a single text input and nothing else — there was no way to see what
+ * rendered a single text input and nothing else. There was no way to see what
  * had been collected today without leaving for a report, which is the
  * difference between a counter and a lookup form.
  *
@@ -25,8 +25,8 @@
  * what causes arguments at the counter.
  *
  * THAT LAST PARAGRAPH WAS FALSE FOR A LONG TIME, and it is worth recording how.
- * fn_record_family_payment returned four numbers — payment_id, receipt_no,
- * allocated, credit — and no detail, so the panel could only say "Rs 9,000
+ * fn_record_family_payment returned four numbers: payment_id, receipt_no,
+ * allocated, credit, and no detail, so the panel could only say "Rs 9,000
  * applied to outstanding fees". A father paying for three children could not
  * tell which child's dues had moved: exactly the argument the comment claimed to
  * prevent. The allocations were in payment_allocations the whole time and
@@ -37,7 +37,7 @@
  *
  *   * "Print receipt" called window.print() on this page. The print rule in
  *     index.css hides `body *` and reveals only named ids, and this screen has
- *     none — so it printed a BLANK SHEET, at the counter, two hundred times a
+ *     none, so it printed a BLANK SHEET, at the counter, two hundred times a
  *     day. It now opens the real Receipt component.
  *
  *   * It offered that button for a PENDING payment too. A printed receipt for a
@@ -109,7 +109,7 @@ export function FamilyCollect() {
   const [pending, setPending] = useState(false)
   const [result, setResult] = useState<FamilyPaymentResult | null>(null)
   /* The receipt is a real document now, not window.print() on this page.
-     "Print receipt" used to call window.print() directly — and the print rule in
+     "Print receipt" used to call window.print() directly, and the print rule in
      index.css hides `body *` and reveals only named ids, so it printed a BLANK
      SHEET at a counter that runs two hundred times a day. */
   const [receipt, setReceipt] = useState<ReceiptData | null>(null)
@@ -136,7 +136,7 @@ export function FamilyCollect() {
     mutationFn: (studentId: string) => getStudentFamilyId(studentId),
     onSuccess: (famId) => {
       if (famId) { setFamilyId(famId); setResult(null); setScanErr(null) }
-      else setScanErr('That student is not attached to a family — open their profile to fix it.')
+      else setScanErr('That student is not attached to a family: open their profile to fix it.')
     },
   })
 
@@ -203,7 +203,7 @@ export function FamilyCollect() {
       <PageHeader
         icon={<IconWallet />}
         title="Collect a fee"
-        subtitle="One payment covers every child in the family — one receipt, one entry in the day book."
+        subtitle="One payment covers every child in the family. One receipt, one entry in the day book."
         actions={
           familyId ? (
             <Button variant="soft" tone="neutral" onClick={reset}>
@@ -218,14 +218,14 @@ export function FamilyCollect() {
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <StatTile
             label="Unpaid challans"
-            value={summary.data?.unpaid_invoices ?? '—'}
+            value={summary.data?.unpaid_invoices ?? '-'}
             sub="still owing"
             tone="due"
             icon={<IconFees />}
           />
           <StatTile
             label="Collected today"
-            value={summary.data ? money(summary.data.income_today) : '—'}
+            value={summary.data ? money(summary.data.income_today) : '-'}
             sub={
               summary.data && summary.data.pending_count > 0
                 ? `+ ${money(summary.data.pending_amount)} awaiting clearance`
@@ -236,14 +236,14 @@ export function FamilyCollect() {
           />
           <StatTile
             label="Spent today"
-            value={summary.data ? money(summary.data.expense_today) : '—'}
+            value={summary.data ? money(summary.data.expense_today) : '-'}
             sub="from Accounts"
             tone="info"
             icon={<IconAlert />}
           />
           <StatTile
             label="Balance today"
-            value={summary.data ? money(summary.data.balance_today) : '—'}
+            value={summary.data ? money(summary.data.balance_today) : '-'}
             sub="collected − spent"
             tone="brand"
             icon={<IconCheck />}
@@ -265,7 +265,7 @@ export function FamilyCollect() {
               const t = sQuery.trim()
               if (!t) return
               // Order matters. An unambiguous student match wins, because a
-              // clerk typing a GR number means that child — an earlier version
+              // clerk typing a GR number means that child. An earlier version
               // tried the voucher lookup first and answered "no challan with
               // that code" while the matching student sat in the list below.
               // Only when nothing matches is it treated as a scanned code,
@@ -315,7 +315,7 @@ export function FamilyCollect() {
                           {st.full_name}
                         </span>
                         <span className="block truncate text-xs text-slate-500">
-                          {st.father_name ?? '—'}
+                          {st.father_name ?? '-'}
                           {st.gr_no ? ` · ${st.gr_no}` : ''}
                         </span>
                       </span>
@@ -448,14 +448,14 @@ export function FamilyCollect() {
                   {recent.data.map((r) => (
                     <tr key={r.payment_id} className="hover:bg-slate-50/70">
                       <td className="whitespace-nowrap px-3 py-2 tabular-nums text-slate-500">
-                        {r.receipt_no ?? '—'}
+                        {r.receipt_no ?? '-'}
                         {r.is_reversal && <Badge tone="danger">reversed</Badge>}
                         {r.status === 'pending' && <Badge tone="due">pending</Badge>}
                       </td>
                       <td className="px-3 py-2 text-slate-800">{r.student_name}</td>
-                      <td className="px-3 py-2 text-slate-600">{r.parent_name ?? '—'}</td>
+                      <td className="px-3 py-2 text-slate-600">{r.parent_name ?? '-'}</td>
                       <td className="whitespace-nowrap px-3 py-2 text-slate-600">
-                        {r.class_name ?? '—'}{r.section_name ? `-${r.section_name}` : ''}
+                        {r.class_name ?? '-'}{r.section_name ? `-${r.section_name}` : ''}
                       </td>
                       <td className="px-3 py-2 text-slate-600">{r.paid_for ?? 'held as advance'}</td>
                       <td className="whitespace-nowrap px-3 py-2 text-right font-semibold tabular-nums text-slate-800">
@@ -470,7 +470,7 @@ export function FamilyCollect() {
             </div>
           )}
           <p className="mt-3 text-xs text-slate-400">
-            Newest first, this school only. A pending row is money accepted but not yet cleared — it is
+            Newest first, this school only. A pending row is money accepted but not yet cleared. It is
             not in “collected today” until you verify it under Pending.
           </p>
         </Card>
@@ -565,7 +565,7 @@ export function FamilyCollect() {
               )}
             </Card>
 
-            {/* Result — what the money actually did */}
+            {/* Result: what the money actually did */}
             {result && (
               <Card className="border-money-100 bg-money-50/40">
                 <div className="flex items-start gap-3">
@@ -588,7 +588,7 @@ export function FamilyCollect() {
                         across siblings, so "Rs 9,000 applied" does not tell a
                         father paying for three what moved. This screen's own
                         header has claimed since it was written that allocation
-                        "is NOT silent" — until 0084 it was: the function
+                        "is NOT silent", until 0084 it was: the function
                         returned four numbers and no detail. */}
                     {result.applied && result.applied.length > 0 && (
                       <ul className="mt-3 space-y-0.5 text-xs text-money-800">
@@ -722,7 +722,7 @@ export function FamilyCollect() {
                   className="mt-0.5"
                 />
                 <span>
-                  <span className="font-medium text-slate-700">Not cleared yet</span> — log it with a
+                  <span className="font-medium text-slate-700">Not cleared yet</span>: log it with a
                   receipt number but do not count it until the bank confirms.
                 </span>
               </label>

@@ -23,7 +23,7 @@ export function SchoolProfile() {
   const [saved, setSaved] = useState(false)
 
   // The logo lands on every printed challan and result card, so it is an
-  // owner/principal decision — not something a clerk changes mid-term. The
+  // owner/principal decision: not something a clerk changes mid-term. The
   // database agrees (fn_set_school_logo checks the same two roles); this only
   // keeps a clerk from being shown a button that would refuse them.
   const mayChangeLogo = profile?.role === 'owner' || profile?.role === 'principal'
@@ -56,7 +56,7 @@ export function SchoolProfile() {
         <h3 className="text-sm font-semibold text-slate-800">School logo</h3>
         <p className="mb-3 mt-0.5 text-xs text-slate-500">
           Printed on fee challans, receipts and result cards. A PNG with a transparent
-          background prints best. A school with no logo gets its name in type instead —
+          background prints best. A school with no logo gets its name in type instead:
           nothing is left blank.
         </p>
         <PhotoUpload

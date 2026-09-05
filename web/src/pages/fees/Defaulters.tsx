@@ -3,13 +3,13 @@
  *
  * The previous version was a read-only dead end: six unsortable columns, no
  * search, no export, no way to act on a row. The single most valuable thing an
- * owner wants from this screen — "who owes the most" — was impossible, because
+ * owner wants from this screen: "who owes the most": was impossible, because
  * not one column in the app was sortable.
  *
  * Now it is the shared DataTable: sort by balance, filter by class, search by
  * name, export to CSV. The whole set is loaded (defaulters are a small slice of
  * a school, not the roster), so the sort covers everything rather than one page
- * — which is why no page size is passed.
+ *, which is why no page size is passed.
  */
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -73,7 +73,7 @@ export function Defaulters() {
       render: (r) => (
         <div>
           <div className="font-medium text-slate-800">{r.full_name}</div>
-          <div className="text-xs text-slate-400">{r.gr_no ?? '—'}</div>
+          <div className="text-xs text-slate-400">{r.gr_no ?? '-'}</div>
         </div>
       ),
     },
@@ -84,7 +84,7 @@ export function Defaulters() {
       value: (r) => `${r.class_name ?? ''}${r.section_name ?? ''}`,
       render: (r) => (
         <span className="whitespace-nowrap text-slate-600">
-          {r.class_name ?? '—'}
+          {r.class_name ?? '-'}
           {r.section_name ? `-${r.section_name}` : ''}
         </span>
       ),
@@ -96,7 +96,7 @@ export function Defaulters() {
       sortable: true,
       secondary: true,
       value: (r) => (r.roll_no ? Number(r.roll_no.replace(/\D/g, '')) || null : null),
-      render: (r) => <span className="text-slate-500">{r.roll_no ?? '—'}</span>,
+      render: (r) => <span className="text-slate-500">{r.roll_no ?? '-'}</span>,
     },
     {
       key: 'balance',
@@ -118,7 +118,7 @@ export function Defaulters() {
           {fmtPKR(shown)} outstanding
         </span>
         {/* When a filter is on, the school still needs the real school-wide
-            figure — otherwise a class filter silently shrinks "total
+            figure: otherwise a class filter silently shrinks "total
             outstanding" and someone reports the smaller number. */}
         {(klass || term) && shown !== everything && (
           <span className="text-xs text-slate-500">
@@ -160,7 +160,7 @@ export function Defaulters() {
       />
 
       <p className="mt-3 text-xs text-slate-500">
-        To collect from a whole class, use <strong>Bulk collect</strong> — it lists everyone with what
+        To collect from a whole class, use <strong>Bulk collect</strong>. It lists everyone with what
         they owe and can WhatsApp all of them at once.
       </p>
     </div>

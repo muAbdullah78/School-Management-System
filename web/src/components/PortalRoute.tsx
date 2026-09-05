@@ -8,7 +8,7 @@ import { isParent } from '@/auth/roles'
  * This is routing, not security. The database closes every table to a parent
  * account and serves the portal through scoped SECURITY DEFINER functions, so
  * a parent who bypassed this would land on a staff screen showing nothing at
- * all. Deleting this component would be a usability bug, not a breach — which
+ * all. Deleting this component would be a usability bug, not a breach, which
  * is exactly the property we want.
  */
 export function PortalRoute({ children }: { children: JSX.Element }) {

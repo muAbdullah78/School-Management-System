@@ -1,12 +1,12 @@
 /**
  * The cash drawer.
  *
- * A drawer opens automatically on the first cash payment of the day — taking
+ * A drawer opens automatically on the first cash payment of the day: taking
  * money is never blocked by bookkeeping. The discipline lives here, at closing:
  * count what is physically in the drawer, and explain any difference.
  *
  * A difference in EITHER direction needs a reason. Extra cash is as suspicious
- * as missing cash — it usually means a receipt was never written.
+ * as missing cash. It usually means a receipt was never written.
  */
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -142,7 +142,7 @@ export function TillPage() {
                     {variance === 0
                       ? 'Balances exactly.'
                       : variance > 0
-                        ? `${money(variance)} MORE than expected — usually a receipt that was never written.`
+                        ? `${money(variance)} MORE than expected: usually a receipt that was never written.`
                         : `${money(Math.abs(variance))} SHORT.`}
                   </div>
                 )}
@@ -214,13 +214,13 @@ export function TillPage() {
                     </td>
                     <td className="py-2 pr-3 text-right tabular-nums">{money(r.cash_taken)}</td>
                     <td className="py-2 pr-3 text-right tabular-nums text-slate-500">
-                      {r.expected_cash === null ? '—' : money(r.expected_cash)}
+                      {r.expected_cash === null ? '-' : money(r.expected_cash)}
                     </td>
                     <td className="py-2 pr-3 text-right tabular-nums">
-                      {r.counted_cash === null ? '—' : money(r.counted_cash)}
+                      {r.counted_cash === null ? '-' : money(r.counted_cash)}
                     </td>
                     <td className="py-2 pr-3 text-right tabular-nums">
-                      {r.variance === null ? '—' : (
+                      {r.variance === null ? '-' : (
                         <span className={r.variance === 0 ? 'text-money-700' : 'font-semibold text-danger-600'}>
                           {money(r.variance)}
                         </span>

@@ -70,7 +70,7 @@ export function AttendancePage() {
     enabled: ready,
   })
 
-  // Local, optimistic marking state — reset whenever a fresh roster loads.
+  // Local, optimistic marking state: reset whenever a fresh roster loads.
   const [marks, setMarks] = useState<Marks>({})
   const [activeIdx, setActiveIdx] = useState(0)
   const [sheet, setSheet] = useState<AttendanceSheetData | null>(null)
@@ -145,7 +145,7 @@ export function AttendancePage() {
   }, [ready, dayLocked])
 
   function queueOffline(payload: { enrollment_id: string; status: AttendanceStatus }[]) {
-    const cls = classes.data?.find((c) => c.id === classId)?.name ?? '—'
+    const cls = classes.data?.find((c) => c.id === classId)?.name ?? '-'
     const sec = sections.data?.find((s) => s.id === sectionId)?.name
     enqueueAttendance({
       key: attendanceKey(date, classId, sectionId),
@@ -174,7 +174,7 @@ export function AttendancePage() {
     },
     onSuccess: (res) => {
       if (res.queued) {
-        setSaveMsg('Saved offline — will sync automatically when you’re back online.')
+        setSaveMsg('Saved offline: will sync automatically when you’re back online.')
       } else {
         setSaveMsg(`Saved ${res.marked}${res.skipped ? ` · ${res.skipped} locked, skipped` : ''}.`)
         qc.invalidateQueries({ queryKey: ['roster', sessionId, classId, sectionId ?? 'none', date] })
@@ -194,7 +194,7 @@ export function AttendancePage() {
     const cls = classes.data?.find((c) => c.id === classId)
     const sec = sections.data?.find((s) => s.id === sectionId)
     setSheet({
-      className: cls?.name ?? '—',
+      className: cls?.name ?? '-',
       sectionName: sec?.name ?? null,
       date,
       rows: rows.map((r) => ({ roll_no: r.roll_no, full_name: r.full_name, status: marks[r.enrollment_id] ?? 'present' })),
@@ -203,7 +203,7 @@ export function AttendancePage() {
 
   function doFinalize() {
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      window.alert('You’re offline. Finalizing locks the day on the server — reconnect first.'); return
+      window.alert('You’re offline. Finalizing locks the day on the server: reconnect first.'); return
     }
     if (dirty) { window.alert('Save your changes before finalizing.'); return }
     if (!window.confirm('Finalize this day? Attendance will be locked and can no longer be edited.')) return
@@ -285,7 +285,7 @@ export function AttendancePage() {
       <div className="mt-5">
         {!online && rows.length > 0 && (
           <p className="mb-3 rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            You’re offline — showing your saved copy of this class. Marks you save will sync when you reconnect.
+            You’re offline: showing your saved copy of this class. Marks you save will sync when you reconnect.
           </p>
         )}
         {!ready && (
@@ -330,7 +330,7 @@ export function AttendancePage() {
                   onMouseDown={() => setActiveIdx(i)}
                   className={`flex flex-wrap items-center gap-3 px-3 py-2 ${i === activeIdx && !dayLocked ? 'bg-brand-50/60' : ''}`}
                 >
-                  <div className="w-8 text-right text-xs text-slate-400">{r.roll_no ?? '—'}</div>
+                  <div className="w-8 text-right text-xs text-slate-400">{r.roll_no ?? '-'}</div>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-medium text-slate-800">
                       {r.full_name}

@@ -1,5 +1,5 @@
 /**
- * The printed fee challan — three parts, bank-payable.
+ * The printed fee challan. Three parts, bank-payable.
  *
  * This is the artefact the whole fee module exists to produce. A parent is
  * handed a slip, takes it to the bank, the bank stamps it, one copy comes back
@@ -12,7 +12,7 @@
  * Because that is what the bank expects and what a school's photocopier budget
  * allows. Left to right: BANK COPY (the bank keeps it), SCHOOL COPY (comes back
  * stamped, and is what the clerk reconciles against), PARENT COPY (the
- * receipt). Identical figures on all three, and the voucher code on each — a
+ * receipt). Identical figures on all three, and the voucher code on each. A
  * clerk holding any one of them can scan it at the counter and pull the family
  * up.
  *
@@ -20,8 +20,8 @@
  *
  * Every figure comes from fn_challan already totalled. A print view that does
  * its own arithmetic is how a slip ends up disagreeing with the ledger, and the
- * slip is the thing a parent argues with. total_payable is student_balance() —
- * the same number the counter shows — by construction, not by coincidence.
+ * slip is the thing a parent argues with. total_payable is student_balance(),
+ * the same number the counter shows, by construction and not by coincidence.
  */
 import { QrCode } from '@/components/QrCode'
 import { fmtPKR } from '@/lib/format'
@@ -55,7 +55,7 @@ export function ChallanPrint({
               One sheet each · bank, school and parent copies
             </span>
             <span className="mt-0.5 block text-xs text-slate-500">
-              Choose <strong>Landscape</strong> in the print dialog — three copies sit side by side.
+              Choose <strong>Landscape</strong> in the print dialog. Three copies sit side by side.
             </span>
           </div>
           <div className="flex gap-2">
@@ -119,7 +119,7 @@ function Copy({
 }) {
   const settled = c.total_payable <= 0
   // Past due only if something is actually OWED. Checking the date alone
-  // printed "PAST DUE — PAY IMMEDIATELY" across a fully paid reprint, which is
+  // printed "PAST DUE: PAY IMMEDIATELY" across a fully paid reprint, which is
   // the single worst thing this slip could say to a parent who has paid.
   const overdue =
     !settled && c.due_date
@@ -131,7 +131,7 @@ function Copy({
       {/* header */}
       <div className="border-b border-slate-400 pb-1 text-center">
         {/* The logo above the name, centred, so all three copies read as one
-            slip. A school with no logo simply has no line here — never a gap
+            slip. A school with no logo simply has no line here: never a gap
             or a broken-image box on something a parent takes to a bank. */}
         {logo && (
           <img src={logo} alt="" className="mx-auto mb-0.5 max-h-8 max-w-[6rem] object-contain" />
@@ -146,17 +146,17 @@ function Copy({
 
       {/* who */}
       <div className="mt-1 space-y-0.5">
-        <Row label="Challan" value={c.voucher_code ?? '—'} strong />
+        <Row label="Challan" value={c.voucher_code ?? '-'} strong />
         <Row label="Month" value={c.period_label} />
         <Row label="Student" value={c.student_name} strong />
-        <Row label="Father" value={c.father_name ?? c.family_head ?? '—'} />
+        <Row label="Father" value={c.father_name ?? c.family_head ?? '-'} />
         <Row
           label="Class"
-          value={`${c.class_name ?? '—'}${c.section_name ? `-${c.section_name}` : ''}${
+          value={`${c.class_name ?? '-'}${c.section_name ? `-${c.section_name}` : ''}${
             c.roll_no ? ` · Roll ${c.roll_no}` : ''
           }`}
         />
-        <Row label="GR No" value={c.gr_no ?? '—'} />
+        <Row label="GR No" value={c.gr_no ?? '-'} />
       </div>
 
       {/* what */}
@@ -205,20 +205,20 @@ function Copy({
           <tr className="border-y-2 border-slate-600 font-bold">
             <td className="py-1">{settled ? 'PAID IN FULL' : 'TOTAL PAYABLE'}</td>
             <td className="py-1 text-right tabular-nums">
-              {settled ? '—' : fmtPKR(c.total_payable)}
+              {settled ? '-' : fmtPKR(c.total_payable)}
             </td>
           </tr>
         </tbody>
       </table>
 
       <div className="mt-1 space-y-0.5">
-        <Row label="Due date" value={c.due_date ?? '—'} strong={overdue} />
+        <Row label="Due date" value={c.due_date ?? '-'} strong={overdue} />
         {overdue && (
-          <div className="text-[9px] font-semibold uppercase">Past due — pay immediately</div>
+          <div className="text-[9px] font-semibold uppercase">Past due: pay immediately</div>
         )}
         {settled && (
           <div className="border border-slate-600 py-0.5 text-center text-[10px] font-bold uppercase tracking-wide">
-            Paid — no payment due
+            Paid: no payment due
           </div>
         )}
       </div>

@@ -4,7 +4,7 @@
  * What this replaced: a <ul> of buttons showing name, father's name and GR
  * number, capped at fifty rows with no count and no notice. An 800-student
  * school saw the first fifty names alphabetically and was never told the other
- * 750 existed — silent truncation on the flagship list of the product. No
+ * 750 existed: silent truncation on the flagship list of the product. No
  * class, no section, no roll number, and no balance, on a product whose entire
  * purpose is students and money.
  *
@@ -105,7 +105,7 @@ export function StudentsPage() {
       sortable: true,
       secondary: true,
       value: (r) => (r.roll_no ? Number(r.roll_no.replace(/\D/g, '')) || null : null),
-      render: (r) => <span className="text-slate-500">{r.roll_no ?? '—'}</span>,
+      render: (r) => <span className="text-slate-500">{r.roll_no ?? '-'}</span>,
     },
     {
       key: 'full_name',
@@ -114,7 +114,7 @@ export function StudentsPage() {
       value: (r) => r.full_name,
       render: (r) => (
         <div className="flex items-center gap-2">
-          {/* print:hidden — signed URLs do not survive a printed page reliably,
+          {/* print:hidden: signed URLs do not survive a printed page reliably,
               and a printed roster with forty broken image boxes is worse than a
               printed roster of names. */}
           <Avatar
@@ -124,7 +124,7 @@ export function StudentsPage() {
           <div className="min-w-0">
             <div className="font-medium text-slate-800">{r.full_name}</div>
             <div className="text-xs text-slate-400">
-              {r.gr_no ?? '—'}
+              {r.gr_no ?? '-'}
               {r.status !== 'active' ? ` · ${r.status.replace('_', ' ')}` : ''}
             </div>
           </div>
@@ -136,7 +136,7 @@ export function StudentsPage() {
       header: 'Father',
       sortable: true,
       value: (r) => r.father_name,
-      render: (r) => <span className="text-slate-600">{r.father_name ?? '—'}</span>,
+      render: (r) => <span className="text-slate-600">{r.father_name ?? '-'}</span>,
     },
     {
       key: 'class_name',
@@ -145,7 +145,7 @@ export function StudentsPage() {
       value: (r) => `${r.class_name ?? ''}${r.section_name ?? ''}`,
       render: (r) => (
         <span className="whitespace-nowrap text-slate-600">
-          {r.class_name ?? '—'}
+          {r.class_name ?? '-'}
           {r.section_name ? `-${r.section_name}` : ''}
         </span>
       ),
@@ -155,7 +155,7 @@ export function StudentsPage() {
       header: 'Phone',
       secondary: true,
       value: (r) => r.phone,
-      render: (r) => <span className="text-slate-500">{r.phone ?? '—'}</span>,
+      render: (r) => <span className="text-slate-500">{r.phone ?? '-'}</span>,
     },
     {
       key: 'balance',
@@ -171,7 +171,7 @@ export function StudentsPage() {
           // "clear" and must not be shown as a debt.
           <span className="text-money-700">{fmtPKR(-r.balance)} advance</span>
         ) : (
-          <span className="text-slate-400">—</span>
+          <span className="text-slate-400">-</span>
         ),
     },
   ]

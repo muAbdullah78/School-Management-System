@@ -50,7 +50,7 @@ export function StaffCheckin() {
       <p className="text-sm text-slate-600">
         A teacher records their own attendance by scanning a code, signing in, and the server writes the
         time. A second scan later in the day is their check-out. Nothing else can write the staff register
-        except the office — see the register on the Staff page for which rows were scanned and which were typed.
+        except the office: see the register on the Staff page for which rows were scanned and which were typed.
       </p>
 
       {/* The choice, stated honestly. A school that does not know which mode it
@@ -82,7 +82,7 @@ export function StaffCheckin() {
           <label className="flex items-start gap-2">
             <input type="radio" checked={rotating} onChange={() => setRotating(true)} className="mt-1" />
             <span className="text-sm text-slate-700">
-              <span className="font-medium">Rotating code on a screen</span> — recommended.
+              <span className="font-medium">Rotating code on a screen</span>: recommended.
               The QR changes every 30 seconds, so a photograph stops working almost immediately.
               Needs a device at the gate with the page open.
             </span>
@@ -90,7 +90,7 @@ export function StaffCheckin() {
           <label className="flex items-start gap-2">
             <input type="radio" checked={!rotating} onChange={() => setRotating(false)} className="mt-1" />
             <span className="text-sm text-slate-700">
-              <span className="font-medium">Printed poster</span> — no device needed, but a teacher who
+              <span className="font-medium">Printed poster</span>: no device needed, but a teacher who
               photographs the poster can check in from home for as long as the code lasts. Set a
               “valid to” date, and turn on the location check below, if you use this.
             </span>
@@ -139,7 +139,7 @@ export function StaffCheckin() {
             <div className="text-sm">
               <div className="font-medium text-slate-800">{activeCode.label ?? 'Check-in'}</div>
               <div className="text-slate-500">
-                {activeCode.rotating ? 'Rotating — shown on a screen' : 'Printed poster — static code'}
+                {activeCode.rotating ? 'Rotating: shown on a screen' : 'Printed poster: static code'}
               </div>
               <div className="text-slate-500">
                 {activeCode.valid_from ? `From ${fmtDate(activeCode.valid_from)}` : 'No start limit'}
@@ -223,7 +223,7 @@ function GateScreen({ schoolName, base, onClose }: { schoolName: string; base: s
         )}
         {d?.status === 'static' && (
           <div className="mt-4 text-sm text-amber-300">
-            This is a static code — a photograph of it keeps working. Switch to a rotating code if you
+            This is a static code. A photograph of it keeps working. Switch to a rotating code if you
             want that closed.
           </div>
         )}
@@ -269,7 +269,7 @@ function SchoolDay({ settings, onSaved }: { settings: SchoolSettings | null | un
       <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">School day</div>
       <p className="mt-1 text-sm text-slate-600">
         Used to mark a late arrival. <span className="font-medium">Leave the start time empty and nothing is
-        ever late</span> — attendance is just present or absent. Setting it applies from now on; it does not
+        ever late</span>: attendance is just present or absent. Setting it applies from now on; it does not
         re-mark days already recorded.
       </p>
       <div className="mt-3 grid gap-3 sm:grid-cols-3">
@@ -331,7 +331,7 @@ function Geofence({ settings, onSaved }: { settings: SchoolSettings | null | und
       {/* Said plainly, because a school that believes this is proof will trust a
           register it should be checking. The coordinates come from the phone. */}
       <p className="mt-1 text-sm text-slate-600">
-        When on, a check-in is only accepted within the set distance of the school. Worth having — but it is
+        When on, a check-in is only accepted within the set distance of the school. Worth having, but it is
         a <span className="font-medium">deterrent, not proof</span>: the location comes from the teacher’s
         phone, and a phone can be told to report a different one. The rotating code above is the stronger
         protection.
@@ -367,7 +367,7 @@ function Geofence({ settings, onSaved }: { settings: SchoolSettings | null | und
 }
 
 /** Somebody trying an old photograph forty times is only visible if the school
- *  can see it. Collapsed by default — this is a place to look when something
+ *  can see it. Collapsed by default. This is a place to look when something
  *  seems wrong, not a number to watch all day. */
 function RefusedAttempts() {
   const [open, setOpen] = useState(false)
@@ -395,9 +395,9 @@ function RefusedAttempts() {
                       <td className="py-1 pr-3 whitespace-nowrap text-slate-500">
                         {new Date(a.created_at).toLocaleString('en-GB', { timeZone: 'Asia/Karachi' })}
                       </td>
-                      <td className="py-1 pr-3 text-slate-700">{a.staff_name ?? '—'}</td>
+                      <td className="py-1 pr-3 text-slate-700">{a.staff_name ?? '-'}</td>
                       <td className="py-1 pr-3 text-slate-700">{a.reason}</td>
-                      <td className="py-1 max-w-[14rem] truncate text-slate-400">{a.device ?? '—'}</td>
+                      <td className="py-1 max-w-[14rem] truncate text-slate-400">{a.device ?? '-'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -415,7 +415,7 @@ function Poster({ schoolName, url, label, onClose }: { schoolName: string; url: 
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 print:static print:block print:bg-white print:p-0">
       <div className="w-full max-w-md rounded-lg bg-white p-8 text-center shadow-lg print:max-w-none print:shadow-none" id="report">
         <div className="text-xl font-semibold text-slate-800">{schoolName}</div>
-        <div className="mt-1 text-sm uppercase tracking-wide text-slate-500">Staff Check-in — {label}</div>
+        <div className="mt-1 text-sm uppercase tracking-wide text-slate-500">Staff Check-in: {label}</div>
         <div className="mt-6 flex justify-center"><QrCode text={url} size={280} /></div>
         <ol className="mx-auto mt-6 max-w-xs list-decimal pl-5 text-left text-sm text-slate-600">
           <li>Scan this code with your phone camera.</li>

@@ -1,12 +1,12 @@
 /**
- * Birthdays — children and staff.
+ * Birthdays: children and staff.
  *
  * A small thing that schools care about disproportionately: a card in assembly,
  * a WhatsApp wish to the parent. Their software has separate Student Birthdays
  * and Staff Birthdays screens; one screen with both is the same information
  * without the second click.
  *
- * The WhatsApp link is click-to-chat, consistent with the rest of this product —
+ * The WhatsApp link is click-to-chat, consistent with the rest of this product:
  * nothing is sent on the school's behalf without somebody pressing send.
  */
 import { useState } from 'react'

@@ -20,7 +20,7 @@ describe('fmtPKR', () => {
 
   // The sign belongs to the quantity, not the unit. "Rs -33,500" is what
   // toLocaleString gives by default, and a minus buried after "Rs " is easy to
-  // skim past — on a balance sheet that is the difference between a school
+  // skim past: on a balance sheet that is the difference between a school
   // reading "we hold 33,500" and "we are 33,500 short".
   it('puts the minus sign before the currency, not inside it', () => {
     expect(fmtPKR(-33500)).toBe('−Rs 33,500')
@@ -56,14 +56,14 @@ describe('fmtAmount', () => {
 
 describe('fmtDate', () => {
   it('renders an em dash for empty/invalid input', () => {
-    expect(fmtDate(null)).toBe('—')
-    expect(fmtDate(undefined)).toBe('—')
-    expect(fmtDate('')).toBe('—')
-    expect(fmtDate('not-a-date')).toBe('—')
+    expect(fmtDate(null)).toBe('-')
+    expect(fmtDate(undefined)).toBe('-')
+    expect(fmtDate('')).toBe('-')
+    expect(fmtDate('not-a-date')).toBe('-')
   })
   it('renders a real date containing the year', () => {
     const out = fmtDate('2025-08-02')
-    expect(out).not.toBe('—')
+    expect(out).not.toBe('-')
     expect(out).toContain('2025')
   })
 })

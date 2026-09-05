@@ -2,8 +2,8 @@
  * "You can look at this and not change it."
  *
  * Shown on every screen an observer (`readonly`) can reach that would normally
- * offer write controls. It exists because the alternative — a screen that simply
- * has no buttons — reads as a broken or half-loaded page, and the user's next
+ * offer write controls. It exists because the alternative. A screen that simply
+ * has no buttons: reads as a broken or half-loaded page, and the user's next
  * move is to report a fault.
  *
  * The database refuses these writes regardless, and since 0059 a refused write

@@ -1,5 +1,5 @@
 /**
- * Generate a month's challans, and — new — actually print them.
+ * Generate a month's challans, and: new: actually print them.
  *
  * The previous version ended at a count: "40 challans generated", with nothing
  * to hand anybody. That is the whole point of the screen for a Pakistani
@@ -7,8 +7,8 @@
  * printing is half a feature, and the half that produces nothing.
  *
  * A month that has already been billed is now printable without re-generating.
- * A clerk reprints constantly — a slip is lost, a parent wants a duplicate, the
- * class teacher never handed them out — and forcing a re-generate to reprint is
+ * A clerk reprints constantly. A slip is lost, a parent wants a duplicate, the
+ * class teacher never handed them out, and forcing a re-generate to reprint is
  * how duplicate challans get created.
  */
 import { useState } from 'react'
@@ -44,7 +44,7 @@ export function GenerateChallans() {
 
   // Which months this class has actually been billed for. Offering these
   // instead of a bare month input means the clerk can reprint without guessing
-  // — and can see at a glance which month still has money outstanding.
+  //, and can see at a glance which month still has money outstanding.
   const months = useQuery({
     queryKey: ['challanMonths', session.data?.id, classId],
     queryFn: () => listChallanMonths(session.data!.id, classId),
@@ -190,7 +190,7 @@ export function GenerateChallans() {
           )}
 
           <p className="text-xs text-slate-500">
-            Three copies per sheet — bank, school and parent — with the challan code on each, so any copy
+            Three copies per sheet (bank, school and parent) with the challan code on each, so any copy
             can be scanned at the counter. Reprinting never creates a new challan.
           </p>
         </div>

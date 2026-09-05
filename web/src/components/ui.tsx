@@ -5,11 +5,11 @@
  * button markup, so a change to "what a card looks like" lands everywhere at
  * once. Colour carries meaning and is used consistently:
  *
- *   money (emerald) — money received, credit, paid in full
- *   due   (amber)   — outstanding, needs attention, not yet wrong
- *   danger(rose)    — overdue, failed, destructive
- *   info  (sky)     — neutral information
- *   brand (indigo)  — navigation, primary actions, identity
+ *   money (emerald): money received, credit, paid in full
+ *   due   (amber)  : outstanding, needs attention, not yet wrong
+ *   danger(rose)   : overdue, failed, destructive
+ *   info  (sky)    : neutral information
+ *   brand (indigo) : navigation, primary actions, identity
  *
  * A screen that needs a sixth meaning should argue for it rather than reach
  * for an unused hue, because the moment green stops meaning "money in" the
@@ -123,7 +123,7 @@ export function CardTitle({
 
 /**
  * The headline number. Gradient-filled because these are the tiles a school
- * owner looks at from across a desk — this is the one place loud is correct.
+ * owner looks at from across a desk. This is the one place loud is correct.
  */
 export function StatTile({
   label,
@@ -276,7 +276,7 @@ export function EmptyState({
 }
 
 /**
- * Currency lives in lib/format — re-exported here only so a screen can pull
+ * Currency lives in lib/format: re-exported here only so a screen can pull
  * its whole visual vocabulary from one import. Deliberately NOT a second
  * implementation: two money formatters is how "Rs 1,200" and "Rs 1200" end up
  * on the same receipt.

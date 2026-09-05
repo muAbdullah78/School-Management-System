@@ -7,13 +7,13 @@ import { useAuth } from '@/auth/AuthProvider'
  * First-run setup, shown once to a brand-new school.
  *
  * A school that signs up and lands in an empty app has nothing it can actually
- * do — no session means no admissions, no attendance, no fees — and will spend
+ * do: no session means no admissions, no attendance, no fees, and will spend
  * its trial confused rather than convinced. This asks the four things the app
  * genuinely cannot guess, pre-filled with the common Pakistani school shape so
  * most owners can read it, change nothing, and press one button.
  */
 
-// The usual ladder in Pakistani private schools. Pre-filled, fully editable —
+// The usual ladder in Pakistani private schools. Pre-filled, fully editable:
 // a school with only primary sections deletes the rest in one edit.
 const DEFAULT_CLASSES = [
   'Play Group', 'Nursery', 'Prep', 'Class 1', 'Class 2', 'Class 3', 'Class 4',
@@ -21,7 +21,7 @@ const DEFAULT_CLASSES = [
 ]
 
 function defaultSessionName(): string {
-  // Pakistani academic years run roughly April–March, so before April the
+  // Pakistani academic years run roughly April to March, so before April the
   // current session started the previous calendar year.
   const now = new Date()
   const start = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1
@@ -105,7 +105,7 @@ export function SetupWizard({ onDone }: { onDone: () => void }) {
             <label className="block">
               <span className="text-sm font-medium text-slate-700">Sections in each class</span>
               <span className="block text-xs text-slate-500">
-                Separated by commas — for example <span className="font-mono">A, B</span>. Just “A” is fine if you
+                Separated by commas: for example <span className="font-mono">A, B</span>. Just “A” is fine if you
                 have one section per class.
               </span>
               <input value={sectionText} onChange={(e) => setSectionText(e.target.value)} className={field} />
@@ -116,7 +116,7 @@ export function SetupWizard({ onDone }: { onDone: () => void }) {
             <div className="rounded border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
               This creates <span className="font-medium">{classNames.length}</span> classes with{' '}
               <span className="font-medium">{sectionNames.length || 1}</span> section
-              {(sectionNames.length || 1) === 1 ? '' : 's'} each —{' '}
+              {(sectionNames.length || 1) === 1 ? '' : 's'} each,{' '}
               <span className="font-medium">{classNames.length * (sectionNames.length || 1)}</span> in total.
             </div>
 

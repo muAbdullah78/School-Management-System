@@ -55,9 +55,9 @@ export function PendingClearances() {
               <tbody>
                 {list.data.map((p) => (
                   <tr key={p.id} className="border-t border-slate-100">
-                    <td className="px-3 py-2 text-slate-500">{p.receipt_no != null ? `#${p.receipt_no}` : '—'}</td>
+                    <td className="px-3 py-2 text-slate-500">{p.receipt_no != null ? `#${p.receipt_no}` : '-'}</td>
                     <td className="px-3 py-2 text-slate-500">{fmtDate(p.created_at)}</td>
-                    <td className="px-3 py-2 text-slate-800">{p.student_name ?? '—'}<span className="text-slate-400">{p.gr_no ? ` · ${p.gr_no}` : ''}</span></td>
+                    <td className="px-3 py-2 text-slate-800">{p.student_name ?? '-'}<span className="text-slate-400">{p.gr_no ? ` · ${p.gr_no}` : ''}</span></td>
                     <td className="px-3 py-2 text-slate-600">{PAYMENT_METHODS.find((m) => m.value === p.method)?.label ?? p.method}</td>
                     <td className="px-3 py-2 text-right font-semibold text-slate-800">{fmtPKR(p.amount)}</td>
                     <td className="px-3 py-2 text-right whitespace-nowrap">
@@ -69,7 +69,7 @@ export function PendingClearances() {
                   </tr>
                 ))}
                 {list.data.length === 0 && (
-                  <tr><td colSpan={6} className="px-3 py-4 text-center text-slate-400">Nothing pending — all payments are cleared.</td></tr>
+                  <tr><td colSpan={6} className="px-3 py-4 text-center text-slate-400">Nothing pending: all payments are cleared.</td></tr>
                 )}
               </tbody>
             </table>

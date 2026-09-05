@@ -7,14 +7,14 @@ import { fmtDateTime } from '@/lib/format'
  * When did the software company look at our records, and why?
  *
  * This screen is the mitigation the operator's access is paid for with. They can
- * enter any school at any time without asking — that was the owner's decision,
+ * enter any school at any time without asking. That was the owner's decision,
  * against my recommendation, and docs/SUPER-ADMIN-DESIGN.md §2.1 carries the
  * argument. What this screen changes is that they cannot do it invisibly.
  *
  * It is worth being clear about why that is in the vendor's own interest rather
  * than a concession. A principal is being asked to put every child's name,
  * father's name, B-Form, home address and fee history into a database somebody
- * else controls. Sooner or later — probably from a competitor — they will hear
+ * else controls. Sooner or later: probably from a competitor. They will hear
  * that the vendor can read all of it. "We would never look" is the answer
  * everybody gives. Being able to say "we can look when you call us, every single
  * time is recorded, and here is the page where you read that record yourself" is
@@ -52,7 +52,7 @@ export function SupportVisits() {
         <p className="mt-1.5 text-slate-600">
           When you call us about a problem, we can open your account and see exactly
           what you are seeing. We <span className="font-medium">cannot change anything</span>{' '}
-          while we are in there — not a fee, not a mark, not a payment. The software
+          while we are in there: not a fee, not a mark, not a payment. The software
           refuses it.
         </p>
         <p className="mt-1.5 text-slate-600">

@@ -112,11 +112,11 @@ export function Discounts() {
               {register.data?.length === 0 && <tr><td colSpan={7} className="px-3 py-3 text-slate-500">No discounts yet.</td></tr>}
               {register.data?.map((d) => (
                 <tr key={d.id}>
-                  <td className="px-3 py-2 text-slate-800">{d.student_name ?? '—'}<span className="text-slate-400">{d.gr_no ? ` · ${d.gr_no}` : ''}</span></td>
-                  <td className="px-3 py-2 text-slate-600">{d.class_name ?? '—'}</td>
+                  <td className="px-3 py-2 text-slate-800">{d.student_name ?? '-'}<span className="text-slate-400">{d.gr_no ? ` · ${d.gr_no}` : ''}</span></td>
+                  <td className="px-3 py-2 text-slate-600">{d.class_name ?? '-'}</td>
                   <td className="px-3 py-2 text-slate-600">{DISCOUNT_TYPES.find((t) => t.value === d.type)?.label ?? d.type}</td>
                   <td className="px-3 py-2 text-slate-700">{d.is_percent ? `${d.amount}%` : fmtPKR(d.amount)}</td>
-                  <td className="px-3 py-2 text-slate-500">{d.reason ?? '—'}</td>
+                  <td className="px-3 py-2 text-slate-500">{d.reason ?? '-'}</td>
                   <td className="px-3 py-2"><span className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_TONE[d.status] ?? ''}`}>{DISCOUNT_STATUS_LABELS[d.status] ?? d.status}</span></td>
                   <td className="px-3 py-2 text-right">
                     {canApprove && d.status === 'pending' && (

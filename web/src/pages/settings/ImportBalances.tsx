@@ -61,12 +61,12 @@ export function ImportBalances() {
         <div className="text-sm font-medium text-slate-800">Import opening fee balances</div>
         <p className="mt-1 text-sm text-slate-600">
           Load each student’s <span className="font-medium">arrears (money already owed)</span> from before they
-          moved onto the system — so Fees, receipts and the defaulter list start from reality instead of zero.
+          moved onto the system, so Fees, receipts and the defaulter list start from reality instead of zero.
           Do this <span className="font-medium">once</span>, right after importing students and before the first
           monthly challan run.
         </p>
         <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-600">
-          <li>Each row needs an <span className="font-medium">amount</span> and a way to find the student — <span className="font-medium">GR No</span> is best (Admission No or Name also work).</li>
+          <li>Each row needs an <span className="font-medium">amount</span> and a way to find the student: <span className="font-medium">GR No</span> is best (Admission No or Name also work).</li>
           <li>Students must already be imported and enrolled in the <span className="font-medium">current session</span>.</li>
           <li>The balance becomes an “opening balance” charge that’s settled first when the parent next pays.</li>
           <li>Amounts like <code>12,000</code> or <code>Rs 12000</code> are fine. Always <span className="font-medium">Validate</span> first.</li>
@@ -96,7 +96,7 @@ export function ImportBalances() {
         {loaded && (
           <div className="mt-4 space-y-3 text-sm">
             <div className="text-slate-700">
-              <span className="font-medium">{loaded.fileName}</span> — {loaded.rows.length.toLocaleString()} row{loaded.rows.length === 1 ? '' : 's'} detected.
+              <span className="font-medium">{loaded.fileName}</span>: {loaded.rows.length.toLocaleString()} row{loaded.rows.length === 1 ? '' : 's'} detected.
             </div>
             <div>
               <span className="text-slate-500">Recognised columns:</span>
@@ -147,7 +147,7 @@ export function ImportBalances() {
           result={result}
           successDry="Every row is valid and ready to import. Click “Import” to save them."
           successReal="Opening balances imported. They now show in each student’s fee ledger and on the defaulter list."
-          footer="Tip: re-running this file is safe — a student who already has an opening balance for the session is skipped, so balances are never double-counted."
+          footer="Tip: re-running this file is safe. A student who already has an opening balance for the session is skipped, so balances are never double-counted."
         />
       )}
     </div>

@@ -60,7 +60,7 @@ function today(): string {
  * The product owner's console: every school, what they owe, and what needs
  * doing today.
  *
- * Ordered by what needs action rather than alphabetically — the whole point is
+ * Ordered by what needs action rather than alphabetically. The whole point is
  * to answer "who do I call this morning?" without reading the list.
  */
 export function PlatformPage() {
@@ -83,7 +83,7 @@ export function PlatformPage() {
 
   const isAdmin = useQuery({ queryKey: ['amPlatformAdmin', session?.user?.id], queryFn: amPlatformAdmin })
   // Counts for the tab badges. Loaded whatever tab is showing, because the whole
-  // point of a badge is to be seen from the tab you are already on — a queue you
+  // point of a badge is to be seen from the tab you are already on. A queue you
   // have to open in order to discover is a queue nobody works.
   const claimCount = useQuery({
     queryKey: ['paymentClaims', 'pending'], queryFn: () => paymentClaims('pending'),
@@ -95,14 +95,14 @@ export function PlatformPage() {
   })
   // A warning dot on the tab rather than a banner on every screen. An invoice
   // printed without an NTN is useless to the school receiving it and they will
-  // not tell us — so the console has to keep asking until it is filled in.
+  // not tell us, so the console has to keep asking until it is filled in.
   const settings = useQuery({
     queryKey: ['platformSettings'], queryFn: platformSettings,
     enabled: isAdmin.data === true,
   })
   const settingsIncomplete = (settings.data?.missing.length ?? 0) > 0
   // Distinct school ids with records but no school row. Normally zero, and then
-  // the tab is not rendered at all — but when it is not zero, nothing else in
+  // the tab is not rendered at all, but when it is not zero, nothing else in
   // this console would ever show it: those ids are absent from the school list
   // by definition.
   const orphanCount = useQuery({
@@ -215,7 +215,7 @@ export function PlatformPage() {
 
         {/* Tabs rather than routes: the console is one page behind one gate, and
             a router here would mean four more ProtectedRoute wrappers guarding the
-            same thing. The badges are the reason the nav exists at all — a queue
+            same thing. The badges are the reason the nav exists at all. A queue
             you have to open in order to discover is a queue nobody works. */}
         <nav className="flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-1">
           <TabButton now={tab} me="schools" set={setTab} label="Schools" />
@@ -259,8 +259,8 @@ export function PlatformPage() {
 
         {tab === 'schools' && <>
 
-        {/* The books. `Outstanding` is deliberately NOT period-scoped — a
-            receivable does not belong to the month it was raised in — and the
+        {/* The books. `Outstanding` is deliberately NOT period-scoped. A
+            receivable does not belong to the month it was raised in, and the
             label says so, because a figure next to two dates reads as being
             about those dates. */}
         <div className="rounded-lg border border-slate-200 bg-white p-3">
@@ -274,7 +274,7 @@ export function PlatformPage() {
           </div>
           {revenue.error && <p className="mt-2 text-sm text-red-600">{(revenue.error as Error).message}</p>}
           <div className="mt-3 grid gap-3 sm:grid-cols-4">
-            <Tile label="Invoiced" value={rev ? formatPkr(rev.net_invoiced) : '—'}
+            <Tile label="Invoiced" value={rev ? formatPkr(rev.net_invoiced) : '-'}
               hint={rev && rev.credited > 0
                 ? `after ${formatPkr(rev.credited)} credited back`
                 : 'in the dates above'} />
@@ -283,14 +283,14 @@ export function PlatformPage() {
                 the FBR in our name: that money IS paid, and counting it as
                 outstanding is how a paid school shows as owing. "In the bank" is
                 the cash-flow figure, and it is smaller. */}
-            <Tile label="Settled" value={rev ? formatPkr(rev.collected) : '—'}
+            <Tile label="Settled" value={rev ? formatPkr(rev.collected) : '-'}
               hint={rev && rev.tax_withheld > 0
                 ? `${formatPkr(rev.cash_received)} in the bank + ${formatPkr(rev.tax_withheld)} tax withheld`
                 : 'money that actually arrived'} />
-            <Tile label="Given away" value={rev ? formatPkr(rev.discounted) : '—'}
+            <Tile label="Given away" value={rev ? formatPkr(rev.discounted) : '-'}
               hint="list price minus what we charged"
               tone={rev && rev.discounted > 0 ? 'warn' : undefined} />
-            <Tile label="Owed to us" value={rev ? formatPkr(rev.outstanding_total) : '—'}
+            <Tile label="Owed to us" value={rev ? formatPkr(rev.outstanding_total) : '-'}
               hint="all time, not just these dates"
               tone={rev && rev.outstanding_total > 0 ? 'warn' : undefined} />
           </div>
@@ -307,7 +307,7 @@ export function PlatformPage() {
               {rev.tax_certificates_awaited > 0 && (
                 <span className="rounded bg-amber-50 px-2 py-0.5 text-amber-900">
                   {formatPkr(rev.tax_certificates_awaited)} of withheld tax with no CPR on
-                  record — we cannot claim it until the certificate arrives
+                  record. We cannot claim it until the certificate arrives
                 </span>
               )}
             </div>
@@ -412,7 +412,7 @@ export function PlatformPage() {
                         History
                       </button>
                       {/* The support tool. Read-only, refused at the database,
-                          logged, and shown to the school in its own settings —
+                          logged, and shown to the school in its own settings,
                           so this button is not a back door, it is the front one
                           with a bell on it. */}
                       <button onClick={() => { setErr(null); setMsg(null); setVisiting(s) }}
@@ -424,7 +424,7 @@ export function PlatformPage() {
                         Manage
                       </button>
                       {/* Only offered on an archived school, because that is the
-                          only school the database will export or delete — and a
+                          only school the database will export or delete, and a
                           button that always refuses teaches people to ignore
                           buttons. */}
                       {s.archived && (
@@ -571,7 +571,7 @@ function SchemaStrip({ state, error }: { state?: SchemaState; error: Error | nul
         <div className="mt-1 font-medium">
           {state.gaps_total} missing in the middle: {state.gaps.join(', ')}
           {state.gaps_total > state.gaps.length && ` … and ${state.gaps_total - state.gaps.length} more`}.
-          {' '}A bundle rolled back halfway — apply those migrations before anything else.
+          {' '}A bundle rolled back halfway: apply those migrations before anything else.
         </div>
       )}
     </div>
@@ -655,7 +655,7 @@ function SchoolActions({
         <div className="max-w-sm rounded border border-amber-300 bg-amber-50 px-2 py-1 text-right text-xs text-amber-900">
           {school.student_count.toLocaleString()} students against {plan}&rsquo;s limit of{' '}
           {chosen?.student_limit?.toLocaleString()}. {school.suggested_plan !== plan
-            ? <>Pick <span className="font-semibold">{school.suggested_plan}</span>, or renew on {plan} anyway — the breach is recorded on the invoice.</>
+            ? <>Pick <span className="font-semibold">{school.suggested_plan}</span>, or renew on {plan} anyway. The breach is recorded on the invoice.</>
             : <>Renewing anyway records the breach on the invoice.</>}
         </div>
       )}
@@ -670,7 +670,7 @@ function SchoolActions({
           </div>
           {needsNote && (
             <span className="text-xs text-amber-700">
-              A price that is not the list price needs a reason — including zero.
+              A price that is not the list price needs a reason: including zero.
             </span>
           )}
         </div>
@@ -713,7 +713,7 @@ function PaymentDialog({ school, busy, onClose, onSave }: {
           {school.school_name}
           {school.outstanding > 0
             ? <> · owes {formatPkr(school.outstanding)}</>
-            : <> · nothing outstanding — this will show as credit</>}
+            : <> · nothing outstanding. This will show as credit</>}
         </p>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <label className="block">
@@ -749,7 +749,7 @@ function PaymentDialog({ school, busy, onClose, onSave }: {
               invoiced Rs 38,000 transfers Rs 34,960 and sends a CPR for the
               Rs 3,040 it deducted. Record only the transfer and Rs 3,040 sits as
               outstanding forever, and we chase a school for money it has already
-              paid — in our name. */}
+              paid: in our name. */}
           <label className="block">
             <span className="text-sm text-slate-600">Tax they withheld</span>
             <input value={wht} onChange={(e) => setWht(e.target.value)} inputMode="decimal"
@@ -759,7 +759,7 @@ function PaymentDialog({ school, busy, onClose, onSave }: {
             <span className="text-sm text-slate-600">CPR / certificate no.</span>
             <input value={cert} onChange={(e) => setCert(e.target.value)}
               disabled={t <= 0}
-              placeholder={t > 0 ? 'blank if not received yet' : '—'}
+              placeholder={t > 0 ? 'blank if not received yet' : '-'}
               className={`${FIELD} mt-1 w-full disabled:bg-slate-50`} />
           </label>
           <label className="block sm:col-span-2">
@@ -769,7 +769,7 @@ function PaymentDialog({ school, busy, onClose, onSave }: {
         </div>
         {t > 0 && (
           <p className="mt-2 rounded bg-slate-50 px-3 py-2 text-xs text-slate-600">
-            {formatPkr(n)} received plus {formatPkr(t)} paid to the FBR on our behalf —
+            {formatPkr(n)} received plus {formatPkr(t)} paid to the FBR on our behalf:
             this settles <span className="font-medium">{formatPkr(settles)}</span>.
             {cert.trim() === '' && ' The CPR can be attached from the statement when it arrives.'}
           </p>
@@ -902,7 +902,7 @@ function VisitDialog({ school, onClose, onError }: {
         <div className="mt-3 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-900">
           <div className="font-medium">Read only, and they will see it.</div>
           <ul className="mt-1 list-disc space-y-0.5 pl-4 text-red-800">
-            <li>You cannot change anything — the database refuses every write.</li>
+            <li>You cannot change anything. The database refuses every write.</li>
             <li>
               This visit and your reason appear in the school&rsquo;s own Settings →
               Support Visits.

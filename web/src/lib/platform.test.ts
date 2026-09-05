@@ -25,7 +25,7 @@ describe('actionNeeded', () => {
   it('names the plan to move an over-limit school onto', () => {
     const msg = actionNeeded(s({ limit_state: 'over', needs_upgrade: true, suggested_plan: 'growth' }))
     expect(msg).toMatch(/growth/)
-    // Phrased as a renewal-time change, never as something to enforce now —
+    // Phrased as a renewal-time change, never as something to enforce now:
     // the whole rule is that going over does not interrupt the school.
     expect(msg).toMatch(/at renewal/i)
   })
@@ -42,7 +42,7 @@ describe('actionNeeded', () => {
     expect(actionNeeded(s({ status: 'trialing', days_left: 12, outstanding: 9500 }))).toMatch(/owes/i)
   })
 
-  it('does not say "owes" about a locked school — that message is chase payment', () => {
+  it('does not say "owes" about a locked school. That message is chase payment', () => {
     // Two messages competing for one line. Locked is the stronger statement:
     // the school cannot use the software at all, which is what to lead with.
     expect(actionNeeded(s({ status: 'locked', outstanding: 9500 }))).toMatch(/chase payment/i)

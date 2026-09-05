@@ -1,7 +1,7 @@
 /** Read-through offline cache for reference data the attendance screen needs.
  *
  *  The offline queue (offlineQueue.ts) covers *writing* attendance while offline.
- *  This covers *reading* — it stashes the last successful result of a fetch and,
+ *  This covers *reading*. It stashes the last successful result of a fetch and,
  *  if a later fetch fails because the device is offline, serves the stashed copy.
  *  That lets a teacher open the app with no connection and still see the class
  *  list and roster (not just keep marking a page that was already open). */

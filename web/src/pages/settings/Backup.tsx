@@ -33,7 +33,7 @@ export function Backup() {
       <div className="rounded-lg border border-slate-200 bg-white p-4">
         <div className="text-sm font-medium text-slate-800">Export all data</div>
         <p className="mt-1 text-sm text-slate-600">
-          Download a complete copy of your school’s data as a single JSON file — students, fees, attendance,
+          Download a complete copy of your school’s data as a single JSON file: students, fees, attendance,
           marks, certificates and settings. This is <span className="font-medium">your</span> data; keep periodic
           backups somewhere safe (a USB drive or your own cloud storage). It complements Supabase’s own automatic backups.
         </p>
@@ -55,7 +55,7 @@ export function Backup() {
 
         {result && (
           <div className="mt-3 rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
-            Backup downloaded — {totalRows.toLocaleString()} rows across {Object.keys(result.counts).length} tables.
+            Backup downloaded: {totalRows.toLocaleString()} rows across {Object.keys(result.counts).length} tables.
             {errorCount > 0 && (
               <span className="text-amber-700"> {errorCount} table{errorCount === 1 ? '' : 's'} skipped (no permission): {Object.keys(result.errors).join(', ')}.</span>
             )}

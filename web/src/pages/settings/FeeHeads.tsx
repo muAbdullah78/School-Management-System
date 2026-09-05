@@ -10,10 +10,10 @@ const FIELD = 'rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-
 // The fee_head_type enum, with the words a Pakistani school office uses.
 const TYPES: { value: string; label: string; recurring: boolean }[] = [
   { value: 'monthly', label: 'Monthly (tuition, and anything billed every month)', recurring: true },
-  { value: 'admission', label: 'Admission — charged once when a child joins', recurring: false },
-  { value: 'annual', label: 'Annual — charged once a year', recurring: false },
+  { value: 'admission', label: 'Admission: charged once when a child joins', recurring: false },
+  { value: 'annual', label: 'Annual: charged once a year', recurring: false },
   { value: 'exam', label: 'Exam fee', recurring: false },
-  { value: 'security_deposit', label: 'Security deposit — refundable', recurring: false },
+  { value: 'security_deposit', label: 'Security deposit: refundable', recurring: false },
   { value: 'transport', label: 'Transport', recurring: true },
   { value: 'misc', label: 'Other', recurring: false },
 ]
@@ -22,7 +22,7 @@ const TYPES: { value: string; label: string; recurring: boolean }[] = [
  * Managing what the school charges for.
  *
  * This screen did not exist. `fee_heads` has had a write policy since the first
- * migration, but nothing in the app ever inserted one — so a new school had no
+ * migration, but nothing in the app ever inserted one, so a new school had no
  * 'Tuition' to put an amount against, Settings → Fee Structure showed an empty
  * list with a Save button, and the school could never bill a monthly fee. It is
  * the first thing a school must do and it was the one thing it could not.
@@ -53,7 +53,7 @@ export function FeeHeads() {
   return (
     <div className="max-w-3xl space-y-4">
       <p className="text-sm text-slate-600">
-        A fee head is a thing the school charges for — Tuition, Admission Fee, Exam Fee, Security
+        A fee head is a thing the school charges for: Tuition, Admission Fee, Exam Fee, Security
         Deposit. Create them here, then set the amount per class under{' '}
         <span className="font-medium">Fee Structure</span>.
       </p>
@@ -110,7 +110,7 @@ export function FeeHeads() {
                         disabled={toggle.isPending}
                         className="ml-1 rounded border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                         title={h.in_use
-                          ? 'This head has already been billed, so it cannot be deleted — switching it off stops it being charged and keeps past challans readable.'
+                          ? 'This head has already been billed, so it cannot be deleted: switching it off stops it being charged and keeps past challans readable.'
                           : 'Stop charging this head'}>
                         {h.active ? 'Switch off' : 'Switch on'}
                       </button>
@@ -138,7 +138,7 @@ export function FeeHeads() {
       </div>
 
       <p className="text-xs text-slate-500">
-        A fee head that has already been billed cannot be deleted — an issued challan names it, and
+        A fee head that has already been billed cannot be deleted. An issued challan names it, and
         removing it would change what a parent was charged for. Switch it off instead: nothing new is
         charged against it and every past challan still reads correctly.
       </p>
@@ -178,7 +178,7 @@ function FeeHeadDialog({
   })
 
   // Picking a type sets the sensible default for how often it is charged, and
-  // marks a security deposit refundable — the school should not have to know
+  // marks a security deposit refundable. The school should not have to know
   // that a deposit is the one head 0060 treats as a liability rather than income.
   function pickType(v: string) {
     setType(v)
@@ -226,7 +226,7 @@ function FeeHeadDialog({
           {refundable && (
             <p className="rounded border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
               A refundable head is money the school <span className="font-medium">holds</span>, not
-              income — it appears as a liability on the balance sheet and can be refunded or netted
+              income. It appears as a liability on the balance sheet and can be refunded or netted
               against arrears when the child leaves. It cannot also be charged monthly.
             </p>
           )}

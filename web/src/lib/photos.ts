@@ -30,7 +30,7 @@ const SIGNED_URL_TTL_SECONDS = 60 * 30
 const MAX_EDGE = 512
 const JPEG_QUALITY = 0.82
 
-/** What the bucket itself will accept. Kept in step with migration 0057 — if
+/** What the bucket itself will accept. Kept in step with migration 0057: if
  *  these disagree, the browser lets a file through and the server rejects it,
  *  which reads to the user as "the upload is broken". */
 export const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp']
@@ -42,7 +42,7 @@ export class PhotoError extends Error {}
  * Shrink an image in the browser before it is uploaded.
  *
  * Returns a JPEG blob. Transparency is lost, which is correct for a photograph
- * and wrong for a logo — so the logo path skips this (see uploadLogo).
+ * and wrong for a logo, so the logo path skips this (see uploadLogo).
  */
 export async function downscale(file: File, maxEdge = MAX_EDGE): Promise<Blob> {
   if (!ACCEPTED_TYPES.includes(file.type)) {
@@ -122,7 +122,7 @@ export async function uploadLogo(file: File, previousPath?: string | null): Prom
   }
   if (file.size > MAX_UPLOAD_BYTES) {
     throw new PhotoError(
-      `That logo is ${(file.size / 1024 / 1024).toFixed(1)} MB. The limit is 2 MB — please use a smaller file.`)
+      `That logo is ${(file.size / 1024 / 1024).toFixed(1)} MB. The limit is 2 MB: please use a smaller file.`)
   }
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_set_school_logo', { p_path: file.name })
@@ -133,7 +133,7 @@ export async function uploadLogo(file: File, previousPath?: string | null): Prom
   })
   if (up.error) throw new PhotoError(up.error.message)
   // The logo keeps the uploader's extension, so replacing a PNG with a JPEG
-  // writes a NEW object and leaves the old one behind — the one path in this
+  // writes a NEW object and leaves the old one behind. The one path in this
   // layer where an upsert does not overwrite. Pupil and staff photographs are
   // always stored as .jpg and so cannot drift this way.
   if (previousPath && previousPath !== path) {
@@ -207,7 +207,7 @@ export async function removeLogo(path: string | null): Promise<void> {
  * A class list of forty pupils signed one at a time is forty round trips, which
  * is the whole objection to a private bucket. `createSignedUrls` answers it.
  *
- * Nulls and blanks are filtered out first — a pupil with no photograph is a
+ * Nulls and blanks are filtered out first. A pupil with no photograph is a
  * normal state, and asking Supabase to sign an empty path returns an error that
  * would take the whole class list down with it.
  */

@@ -19,7 +19,7 @@ import { fmtDate, fmtDateTime } from '@/lib/format'
  *   3. Who ARE they?       contact, licence, money.
  *   4. Who can sign in?    and has the accountant you set up ever bothered.
  *
- * Nothing here names a child, a guardian or a family — see the note at the foot
+ * Nothing here names a child, a guardian or a family: see the note at the foot
  * of the page, which says so to the operator as well, because a screen that
  * quietly omits something reads as a screen that is missing it.
  */
@@ -85,7 +85,7 @@ function Body({ d, onClose, onVisit }: { d: Detail; onClose: () => void; onVisit
       {/* 1. ARE THEY LIVE? */}
       <section className="mt-4">
         <SectionTitle>
-          Getting started — {done} of {d.readiness.length} done
+          Getting started: {done} of {d.readiness.length} done
         </SectionTitle>
         {stuckAt ? (
           <div className="mt-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
@@ -208,7 +208,7 @@ function Body({ d, onClose, onVisit }: { d: Detail; onClose: () => void; onVisit
       </section>
 
       <div className="mt-4 border-t border-slate-100 pt-2 text-xs text-slate-400">
-        Counts and dates only — nothing here names a child, a guardian or a family.
+        Counts and dates only. Nothing here names a child, a guardian or a family.
         Use <span className="font-medium">View as school</span> for that: it is
         read-only, recorded, and the school can see the visit.
         {d.not_recorded.length > 0 && (
@@ -233,7 +233,7 @@ function ReadyRow({ r }: { r: ReadinessItem }) {
       </span>
       <span className={r.done ? 'text-slate-600' : 'font-medium text-slate-800'}>
         {r.label}
-        {r.detail && <span className="ml-1 font-normal text-slate-400">— {r.detail}</span>}
+        {r.detail && <span className="ml-1 font-normal text-slate-400">· {r.detail}</span>}
       </span>
     </li>
   )

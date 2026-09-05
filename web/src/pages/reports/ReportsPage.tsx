@@ -22,7 +22,7 @@ const TABS = [
   { key: 'unpaid', label: 'Unpaid Challans' },
   // Which CHARGE is not being paid, as opposed to which family is not paying.
   // fn_head_wise_dues shipped in the fee-operations work and had a wrapper in
-  // db.ts with no caller anywhere — so a school could see that Rs 400,000 was
+  // db.ts with no caller anywhere, so a school could see that Rs 400,000 was
   // outstanding and never that Rs 380,000 of it was the transport charge nobody
   // agreed to.
   { key: 'headwise', label: 'Dues by Fee Head' },
@@ -35,7 +35,7 @@ const TABS = [
   // The counterpart of Admissions, and impossible before 0054 gave a leaving a
   // date. "How many left this term" is the number a proprietor watches hardest.
   { key: 'left', label: 'Children Who Left' },
-  // A position as at one day, not a range — which is why it sits apart from
+  // A position as at one day, not a range, which is why it sits apart from
   // the four above and is the only report here that is not a table.
   { key: 'balancesheet', label: 'Balance Sheet' },
   // Oversight, not money. mark_entries has recorded the previous mark since the
@@ -148,7 +148,7 @@ function CollectionReport() {
         <label className="block"><span className="text-sm text-slate-600">From</span><br /><input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={`mt-1 ${FIELD}`} /></label>
         <label className="block"><span className="text-sm text-slate-600">To</span><br /><input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={`mt-1 ${FIELD}`} /></label>
       </div>
-      <ReportShell title="Fee Collection Report" subtitle={`${fmtDate(from)} – ${fmtDate(to)}`} onCSV={csv}>
+      <ReportShell title="Fee Collection Report" subtitle={`${fmtDate(from)} to ${fmtDate(to)}`} onCSV={csv}>
         {q.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
         {q.isError && <p className="text-sm text-red-600">{(q.error as Error).message}</p>}
         {!q.isLoading && (
@@ -168,8 +168,8 @@ function CollectionReport() {
                   {rows.map((r) => (
                     <tr key={r.id} className={r.is_reversal ? 'text-red-600' : ''}>
                       <td className={TD}>{fmtDate(r.created_at)}</td>
-                      <td className={TD}>{r.receipt_no ?? '—'}</td>
-                      <td className={TD}>{r.student_name ?? '—'}{r.gr_no ? <span className="text-slate-400"> · {r.gr_no}</span> : ''}{r.is_reversal ? ' (reversal)' : ''}</td>
+                      <td className={TD}>{r.receipt_no ?? '-'}</td>
+                      <td className={TD}>{r.student_name ?? '-'}{r.gr_no ? <span className="text-slate-400"> · {r.gr_no}</span> : ''}{r.is_reversal ? ' (reversal)' : ''}</td>
                       <td className={TD}>{r.method}</td>
                       <td className={`${TD} text-right tabular-nums`}>{fmtPKR(r.amount)}</td>
                     </tr>
@@ -210,10 +210,10 @@ function DefaultersReport() {
                 {rows.length === 0 && <tr><td colSpan={5} className={`${TD} text-slate-500`}>No defaulters. 🎉</td></tr>}
                 {rows.map((r) => (
                   <tr key={r.student_id}>
-                    <td className={TD}>{r.gr_no ?? '—'}</td>
+                    <td className={TD}>{r.gr_no ?? '-'}</td>
                     <td className={TD}>{r.full_name}</td>
                     <td className={TD}>{r.class_name}{r.section_name ? ` · ${r.section_name}` : ''}</td>
-                    <td className={TD}>{r.roll_no ?? '—'}</td>
+                    <td className={TD}>{r.roll_no ?? '-'}</td>
                     <td className={`${TD} text-right tabular-nums`}>{fmtPKR(r.balance)}</td>
                   </tr>
                 ))}
@@ -281,8 +281,8 @@ function DayBookReport() {
                   {rows.length === 0 && <tr><td colSpan={4} className={`${TD} text-slate-500`}>No payments on this day.</td></tr>}
                   {rows.map((r) => (
                     <tr key={r.id} className={r.is_reversal ? 'text-red-600' : ''}>
-                      <td className={TD}>#{r.receipt_no ?? '—'}</td>
-                      <td className={TD}>{r.student_name ?? '—'}{r.gr_no ? <span className="text-slate-400"> · {r.gr_no}</span> : ''}{r.is_reversal ? ' (reversal)' : ''}</td>
+                      <td className={TD}>#{r.receipt_no ?? '-'}</td>
+                      <td className={TD}>{r.student_name ?? '-'}{r.gr_no ? <span className="text-slate-400"> · {r.gr_no}</span> : ''}{r.is_reversal ? ' (reversal)' : ''}</td>
                       <td className={TD}>{r.method}</td>
                       <td className={`${TD} text-right tabular-nums`}>{fmtPKR(r.amount)}</td>
                     </tr>
@@ -312,7 +312,7 @@ function ReconciliationReport() {
   }
 
   return (
-    <ReportShell title="Fee Reconciliation — expected vs collected" subtitle={session.data?.name} onCSV={csv}>
+    <ReportShell title="Fee Reconciliation: expected vs collected" subtitle={session.data?.name} onCSV={csv}>
       {q.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
       {q.isError && <p className="text-sm text-red-600">{(q.error as Error).message}</p>}
       {r && (
@@ -344,12 +344,12 @@ function ReconciliationReport() {
 
           <FlagList
             title={`Active students never billed this session (${r.uninvoiced.length})`}
-            hint="A billing gap — every active student should have a challan. Investigate any names here."
+            hint="A billing gap: every active student should have a challan. Investigate any names here."
             rows={r.uninvoiced} tone="amber"
           />
           <FlagList
             title={`Possible ghost students (${r.ghost_suspects.length})`}
-            hint="Active, never billed, AND never marked present — a name on the roll that may not be a real, attending child."
+            hint="Active, never billed, AND never marked present. A name on the roll that may not be a real, attending child."
             rows={r.ghost_suspects} tone="red"
           />
         </>
@@ -362,7 +362,7 @@ function FlagList({ title, hint, rows, tone }: {
   title: string; hint: string; rows: { gr_no: string | null; full_name: string; class_name: string }[]; tone: 'amber' | 'red'
 }) {
   if (rows.length === 0) return (
-    <p className="mt-4 rounded bg-emerald-50 px-3 py-2 text-sm text-emerald-800">✓ {title.replace(/\(\d+\)/, '')}— none found.</p>
+    <p className="mt-4 rounded bg-emerald-50 px-3 py-2 text-sm text-emerald-800">✓ {title.replace(/\(\d+\)/, '')}: none found.</p>
   )
   const c = tone === 'red' ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'
   return (
@@ -481,7 +481,7 @@ function AttendanceRegisterReport() {
                     const sm = summary(s.marks)
                     return (
                       <tr key={s.enrollment_id}>
-                        <td className="border border-slate-200 px-1 py-0.5 text-right text-slate-500">{s.roll_no ?? '—'}</td>
+                        <td className="border border-slate-200 px-1 py-0.5 text-right text-slate-500">{s.roll_no ?? '-'}</td>
                         <td className="border border-slate-200 px-1 py-0.5 whitespace-nowrap text-slate-800">{s.full_name}</td>
                         {reg.dates.map((d) => {
                           const v = s.marks[d]
@@ -489,7 +489,7 @@ function AttendanceRegisterReport() {
                         })}
                         <td className="border border-slate-200 px-1 py-0.5 text-right text-slate-700">{sm.present}</td>
                         <td className="border border-slate-200 px-1 py-0.5 text-right text-slate-700">{sm.absent}</td>
-                        <td className="border border-slate-200 px-1 py-0.5 text-right font-medium">{sm.pct == null ? '—' : `${sm.pct}`}</td>
+                        <td className="border border-slate-200 px-1 py-0.5 text-right font-medium">{sm.pct == null ? '-' : `${sm.pct}`}</td>
                       </tr>
                     )
                   })}
@@ -576,7 +576,7 @@ function StudentLedgerReport() {
                     {rows.length === 0 && <tr><td colSpan={5} className={`${TD} text-slate-500`}>No fee activity yet.</td></tr>}
                     {rows.map((r, i) => (
                       <tr key={i}>
-                        <td className={TD}>{r.date ? fmtDate(r.date) : '—'}</td>
+                        <td className={TD}>{r.date ? fmtDate(r.date) : '-'}</td>
                         <td className={TD}>{r.ref}</td>
                         <td className={`${TD} text-right tabular-nums`}>{r.debit ? fmtPKR(r.debit) : ''}</td>
                         <td className={`${TD} text-right tabular-nums`}>{r.credit ? fmtPKR(r.credit) : ''}</td>
@@ -604,7 +604,7 @@ function StudentLedgerReport() {
 /**
  * Charged and collected, per fee head.
  *
- * The question this answers is not "who owes us" — Defaulters does that — but
+ * The question this answers is not "who owes us": Defaulters does that, but
  * "WHICH CHARGE is not being paid". A school with Rs 400,000 outstanding needs
  * to know whether it is spread across the tuition of eighty families or is
  * almost entirely the transport fee that thirty parents never agreed to, because
@@ -612,7 +612,7 @@ function StudentLedgerReport() {
  *
  * THE APPORTIONMENT IS STATED ON THE PAGE. A payment is made against an invoice,
  * not against a line of it, so "collected per head" cannot be read off the
- * ledger — it is each head's share of the invoice multiplied by how much of that
+ * ledger. It is each head's share of the invoice multiplied by how much of that
  * invoice has been paid. That is a reasonable convention and it is not the only
  * one, so the basis sentence the function returns is printed rather than
  * dropped. A figure whose derivation is invisible is a figure somebody will
@@ -680,7 +680,7 @@ function HeadWiseDuesReport() {
                       <td className={`${TD} text-right tabular-nums ${
                         pct !== null && pct < 60 ? 'text-red-600' : 'text-slate-600'
                       }`}>
-                        {pct === null ? '—' : `${pct}%`}
+                        {pct === null ? '-' : `${pct}%`}
                       </td>
                     </tr>
                   )
@@ -696,7 +696,7 @@ function HeadWiseDuesReport() {
                       {fmtPKR(tot.charged - tot.collected)}
                     </td>
                     <td className={`${TD} text-right tabular-nums`}>
-                      {tot.charged > 0 ? `${Math.round((tot.collected / tot.charged) * 100)}%` : '—'}
+                      {tot.charged > 0 ? `${Math.round((tot.collected / tot.charged) * 100)}%` : '-'}
                     </td>
                   </tr>
                 </tfoot>
@@ -737,7 +737,7 @@ function StrengthReport() {
               {rows.map((r, i) => (
                 <tr key={i}>
                   <td className={TD}>{r.class_name}</td>
-                  <td className={TD}>{r.section_name ?? '—'}</td>
+                  <td className={TD}>{r.section_name ?? '-'}</td>
                   <td className={`${TD} text-right tabular-nums`}>{r.boys}</td>
                   <td className={`${TD} text-right tabular-nums`}>{r.girls}</td>
                   <td className={`${TD} text-right font-medium tabular-nums`}>{r.total}</td>

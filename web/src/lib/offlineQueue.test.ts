@@ -44,8 +44,8 @@ describe('attendanceKey', () => {
 
 describe('queue ownership', () => {
   // The office PC is shared and the queue outlives a logout. A batch queued by
-  // one school carries enrolment ids the next school cannot use — the server
-  // rejects them — so it must be discarded, not retried forever.
+  // one school carries enrolment ids the next school cannot use. The server
+  // rejects them, so it must be discarded, not retried forever.
   it('keeps only the signed-in school’s batches', () => {
     const list = [mk('a', 1, 'school-1'), mk('b', 1, 'school-2'), mk('c', 1, 'school-1')]
     expect(ownedBy(list, 'school-1').map((e) => e.key)).toEqual(['a', 'c'])

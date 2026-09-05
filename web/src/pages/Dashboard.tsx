@@ -152,7 +152,7 @@ export function Dashboard() {
                 tone={pct !== null && pct < 75 ? 'due' : 'info'}
                 icon={<IconAttendance />}
                 label="Attendance today"
-                value={loading ? '…' : att && att.marked > 0 ? `${pct}%` : '—'}
+                value={loading ? '…' : att && att.marked > 0 ? `${pct}%` : '-'}
                 sub={
                   att && att.marked > 0
                     ? `${att.present + att.half_day} present of ${att.marked} · ${att.absent} absent`
@@ -166,7 +166,7 @@ export function Dashboard() {
                 tone="brand"
                 icon={<IconStudents />}
                 label="Active students"
-                value={loading ? '…' : String(d?.active_students ?? '—')}
+                value={loading ? '…' : String(d?.active_students ?? '-')}
                 sub={d ? `${d.new_admissions_month} admitted this month` : undefined}
               />
             </LinkTile>
@@ -185,8 +185,8 @@ export function Dashboard() {
 
                 <LinkTile to="/fees">
                   {/* "Nothing owed" and "nothing billed" are different facts.
-                      This tile used to render the second as the first — Rs 0 in
-                      green — so a school that had never generated a challan was
+                      This tile used to render the second as the first: Rs 0 in
+                      green, so a school that had never generated a challan was
                       told it was fully paid up. */}
                   {d && d.finance_visible && (d.billed_students_month ?? 0) === 0 ? (
                     <StatTile

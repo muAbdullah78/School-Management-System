@@ -8,7 +8,7 @@
  * whether that is a Students question, a Families question or a Fee question.
  *
  * What it searches, and what it will not show a given user, is decided in SQL
- * (fn_global_search) — a class teacher finds pupils and not the receipt book.
+ * (fn_global_search). A class teacher finds pupils and not the receipt book.
  * Doing that here would be decoration over an open door.
  */
 import { useEffect, useRef, useState } from 'react'
@@ -67,7 +67,7 @@ export function GlobalSearch() {
   }, [])
 
   // "/" focuses the box from anywhere, which is how anybody who uses a keyboard
-  // expects a search to work — but not while they are typing in another field.
+  // expects a search to work, but not while they are typing in another field.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const el = e.target as HTMLElement | null

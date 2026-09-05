@@ -24,7 +24,7 @@ export function DateSheet({
       <div className="w-full max-w-xl rounded-lg bg-white p-6 shadow-lg print:max-w-none print:shadow-none" id="date-sheet">
         <div className="text-center">
           <div className="text-xl font-semibold text-slate-800">{schoolName}</div>
-          <div className="text-xs uppercase tracking-wide text-slate-500">Date Sheet — {termName} · {className}</div>
+          <div className="text-xs uppercase tracking-wide text-slate-500">Date Sheet: {termName} · {className}</div>
         </div>
 
         <table className="mt-5 w-full border-collapse text-sm">
@@ -40,8 +40,8 @@ export function DateSheet({
             {ordered.map((p) => (
               <tr key={p.id} className="border-b border-slate-100">
                 <td className="py-1.5 pr-2 text-slate-800">{p.subject_name}</td>
-                <td className="py-1.5 pr-2 text-slate-700">{p.exam_date ? fmtDate(p.exam_date) : '—'}</td>
-                <td className="py-1.5 pr-2 text-slate-700">{p.paper_time || '—'}</td>
+                <td className="py-1.5 pr-2 text-slate-700">{p.exam_date ? fmtDate(p.exam_date) : '-'}</td>
+                <td className="py-1.5 pr-2 text-slate-700">{p.paper_time || '-'}</td>
                 <td className="py-1.5 text-right text-slate-600">{p.max_marks}</td>
               </tr>
             ))}

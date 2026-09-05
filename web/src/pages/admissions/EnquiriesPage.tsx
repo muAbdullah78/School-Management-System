@@ -1,5 +1,5 @@
 /**
- * Admission enquiries — their "Admission Inquiries".
+ * Admission enquiries. Their "Admission Inquiries".
  *
  * The screen is built around one question: WHO DO I RING TODAY. Everything else
  * is secondary, because a lead list nobody calls is a list nobody reads, and a
@@ -7,7 +7,7 @@
  *
  * So the page opens on the overdue-and-due-today worklist, not on the full
  * history. The full history is one click away and is where the source
- * breakdown lives — "the banner on the main road produced four enquiries and
+ * breakdown lives: "the banner on the main road produced four enquiries and
  * one admission" is the only marketing data a school this size will ever have.
  */
 import { useState } from 'react'
@@ -63,7 +63,7 @@ function Pill({ status }: { status: EnquiryStatus }) {
 export function EnquiriesPage() {
   const qc = useQueryClient()
   const { profile } = useAuth()
-  // An observer reads the enquiry book and does not record calls on it — the
+  // An observer reads the enquiry book and does not record calls on it. The
   // follow-up trail is a record of who actually spoke to the parent.
   const mayWrite = canWrite(profile?.role)
   const [tab, setTab] = useState<'worklist' | 'all' | 'sources'>('worklist')
@@ -110,7 +110,7 @@ export function EnquiriesPage() {
         <div>
           <div className="text-slate-800">{r.child_name}</div>
           <div className="text-xs text-slate-400">
-            {r.father_name ?? '—'}
+            {r.father_name ?? '-'}
             {r.class_name ? ` · ${r.class_name}` : r.class_wanted ? ` · ${r.class_wanted}` : ''}
           </div>
         </div>
@@ -142,7 +142,7 @@ export function EnquiriesPage() {
         ) : r.follow_up_on ? (
           <span className="whitespace-nowrap text-slate-600">{fmtDate(r.follow_up_on)}</span>
         ) : (
-          <span className="text-slate-300">—</span>
+          <span className="text-slate-300">-</span>
         ),
     },
     {
@@ -173,7 +173,7 @@ export function EnquiriesPage() {
         ) : r.lost_reason ? (
           <span className="text-slate-500">{r.lost_reason}</span>
         ) : (
-          <span className="text-slate-300">—</span>
+          <span className="text-slate-300">-</span>
         ),
     },
   ]
@@ -209,7 +209,7 @@ export function EnquiriesPage() {
           <Tile
             label="Converted"
             // null, not 0%. A school that has decided nothing has not failed.
-            value={s.conversion_rate == null ? '—' : `${s.conversion_rate}%`}
+            value={s.conversion_rate == null ? '-' : `${s.conversion_rate}%`}
             tone={s.conversion_rate == null ? 'plain'
                   : s.conversion_rate >= 50 ? 'good' : 'warn'}
             note={s.decided === 0
@@ -290,7 +290,7 @@ export function EnquiriesPage() {
       )}
       {/* The drawer is where a call is logged and an outcome recorded, both of
           which are writes. An observer sees the list and the summary and does not
-          get the drawer — a drawer full of dead buttons is worse than no drawer. */}
+          get the drawer. A drawer full of dead buttons is worse than no drawer. */}
       {open && mayWrite && (
         <EnquiryDrawer
           enquiry={open}
@@ -371,16 +371,16 @@ function SourceBreakdown({ rows, loading, error }: {
               <td className="py-2 text-right tabular-nums text-slate-500">{r.lost}</td>
               <td className="py-2 text-right tabular-nums text-slate-500">{r.open}</td>
               <td className="py-2 text-right tabular-nums font-medium text-slate-800">
-                {r.conversion_rate == null ? '—' : `${r.conversion_rate}%`}
+                {r.conversion_rate == null ? '-' : `${r.conversion_rate}%`}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
       <p className="mt-3 text-xs text-slate-500">
-        &ldquo;Converted&rdquo; counts only enquiries that have been decided — admitted or lost.
+        &ldquo;Converted&rdquo; counts only enquiries that have been decided: admitted or lost.
         An enquiry still being followed up is neither, so it does not drag the figure down, and a
-        source with nothing decided shows &ldquo;—&rdquo; rather than a misleading 0%.
+        source with nothing decided shows &ldquo;-&rdquo; rather than a misleading 0%.
       </p>
     </div>
   )
@@ -388,7 +388,7 @@ function SourceBreakdown({ rows, loading, error }: {
 
 /**
  * Recording an enquiry. Two required fields and nothing else, because a clerk
- * taking a phone call cannot stop to fill a form — and a form that demands a
+ * taking a phone call cannot stop to fill a form, and a form that demands a
  * date of birth is how the record ends up not being made at all.
  */
 function AddEnquiryDialog({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
@@ -418,7 +418,7 @@ function AddEnquiryDialog({ onClose, onDone }: { onClose: () => void; onDone: ()
       session_id: session.data?.id ?? null,
     }),
     onSuccess: (r) => {
-      // A duplicate is shown, not swallowed — but the enquiry IS saved, because
+      // A duplicate is shown, not swallowed, but the enquiry IS saved, because
       // the same number asking again is usually a second child.
       if (r.possible_duplicate) setDup(r.possible_duplicate)
       else onDone()
@@ -437,7 +437,7 @@ function AddEnquiryDialog({ onClose, onDone }: { onClose: () => void; onDone: ()
         {dup ? (
           <div className="mt-4">
             <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-              <strong>Saved — but this may be a repeat.</strong> Enquiry #{dup.enquiry_no} on the
+              <strong>Saved, but this may be a repeat.</strong> Enquiry #{dup.enquiry_no} on the
               same number is also for &ldquo;{dup.child_name}&rdquo; ({dup.status}), recorded{' '}
               {fmtDate(dup.created_at)}. If that was the same conversation, mark one of them lost
               with the reason &ldquo;duplicate&rdquo;.
@@ -622,7 +622,7 @@ function EnquiryDrawer({ enquiry, onClose, onChanged }: {
             ) : (
               <>
                 Marked lost: <strong>{enquiry.lost_reason}</strong>. Reopen it if the family comes
-                back — that keeps the history rather than starting a fresh enquiry.
+                back. That keeps the history rather than starting a fresh enquiry.
                 <button type="button"
                   onClick={() => run(() => setEnquiryStatus(enquiry.id, 'contacted', null, daysFromNow(1)))}
                   className="ml-2 text-brand-700 underline">Reopen</button>
@@ -669,7 +669,7 @@ function EnquiryDrawer({ enquiry, onClose, onChanged }: {
               <div>
                 <h3 className="text-sm font-semibold text-money-800">Admit this child</h3>
                 <p className="mt-1 text-xs text-slate-500">
-                  Creates the student record, GR number and family link — nothing is retyped.
+                  Creates the student record, GR number and family link. Nothing is retyped.
                 </p>
                 <select value={classId} onChange={(e) => setClassId(e.target.value)}
                         className={`mt-2 block w-full ${FIELD}`}>
@@ -692,7 +692,7 @@ function EnquiryDrawer({ enquiry, onClose, onChanged }: {
               <div>
                 <h3 className="text-sm font-semibold text-slate-700">They are not coming</h3>
                 <p className="mt-1 text-xs text-slate-500">
-                  The reason is the point — it is the only way to learn why admissions are lost.
+                  The reason is the point. It is the only way to learn why admissions are lost.
                 </p>
                 <input value={lostReason} onChange={(e) => setLostReason(e.target.value)}
                   placeholder="Fee too high / chose another school / moved away"

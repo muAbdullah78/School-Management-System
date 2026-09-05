@@ -58,7 +58,7 @@ export function FeeStructure({ onSetUpHeads }: { onSetUpHeads?: () => void }) {
       </p>
       {!session.data && !session.isLoading && (
         <p className="mt-3 rounded bg-amber-50 p-3 text-sm text-amber-700">
-          No current session set yet — set one under Settings → Sessions first.
+          No current session set yet: set one under Settings → Sessions first.
         </p>
       )}
 
@@ -79,7 +79,7 @@ export function FeeStructure({ onSetUpHeads }: { onSetUpHeads?: () => void }) {
         <div className="mt-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
           <div className="font-medium">There are no fee heads yet.</div>
           <div className="mt-1">
-            A fee head is a thing you charge for — Tuition, Admission Fee, Exam Fee. Create them
+            A fee head is a thing you charge for: Tuition, Admission Fee, Exam Fee. Create them
             first, then set an amount for each class here.
           </div>
           {onSetUpHeads && (

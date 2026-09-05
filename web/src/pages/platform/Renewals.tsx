@@ -13,7 +13,7 @@ import { fmtDate } from '@/lib/format'
  *
  * With three schools you know them by name. With fifty, a licence that expired
  * eleven days ago is row 34 of an alphabetical list, and the first anyone hears
- * of it is the principal phoning to say the software has locked — which is the
+ * of it is the principal phoning to say the software has locked, which is the
  * worst possible moment to open a renewal conversation: the school is angry, the
  * office is full of parents, and the vendor is the reason nobody can take a fee.
  *
@@ -62,7 +62,7 @@ export function Renewals({ onOpenSchool }: { onOpenSchool: (schoolId: string) =>
           </h2>
           <p className="text-xs text-slate-500">
             Expiring within {days} days, plus everything already in grace, stopped or
-            cancelled — those are on the list whatever the window says.
+            cancelled. Those are on the list whatever the window says.
           </p>
         </div>
         <label className="flex items-center gap-2 text-sm">
@@ -151,18 +151,18 @@ function Row({ r, tone, onOpen, onRemind }: {
           {/* The two facts that change what you say on the phone. */}
           {r.needs_upgrade && r.suggested_plan && (
             <div className="mt-1 text-xs font-medium">
-              Outgrown {r.plan_code} — renew on {r.suggested_plan}
+              Outgrown {r.plan_code}: renew on {r.suggested_plan}
             </div>
           )}
           {(r.unbilled_days ?? 0) > 0 && (
             <div className="mt-1 text-xs font-medium">
               {r.unbilled_days} day(s) of licence were never invoiced
-              {r.invoiced_to && ` — invoices only reach ${fmtDate(r.invoiced_to)}`}
+              {r.invoiced_to && `: invoices only reach ${fmtDate(r.invoiced_to)}`}
             </div>
           )}
           {r.never_invoiced && (
             <div className="mt-1 text-xs font-medium">
-              Never invoiced at all — a trial, or a year given away
+              Never invoiced at all. A trial, or a year given away
             </div>
           )}
           {r.outstanding > 0 && (
@@ -197,8 +197,8 @@ function Row({ r, tone, onOpen, onRemind }: {
  * The message, before it is sent.
  *
  * Shown rather than sent blind, and editable in the sense that the operator can
- * see exactly what the school will read. The stage is chosen from the licence —
- * a school in grace gets a different sentence from one a month out — and the
+ * see exactly what the school will read. The stage is chosen from the licence:
+ * a school in grace gets a different sentence from one a month out, and the
  * operator can override it, because sometimes you know something the dates do
  * not.
  *
@@ -259,8 +259,8 @@ function RemindDialog({ row, onClose }: { row: DueSoonRow; onClose: () => void }
               <select value={stage} onChange={(e) => setStage(e.target.value as ReminderStage | '')}
                 className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1.5 text-sm">
                 <option value="">Chosen from the licence ({m.stage})</option>
-                <option value="ahead">A month out — no urgency</option>
-                <option value="due">Due soon — names the date and amount</option>
+                <option value="ahead">A month out: no urgency</option>
+                <option value="due">Due soon: names the date and amount</option>
                 <option value="today">Expires today</option>
                 <option value="grace">Expired, still working</option>
                 <option value="locked">Stopped</option>

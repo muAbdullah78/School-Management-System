@@ -84,7 +84,7 @@ export function CollectPayment() {
     waiveM.mutate({ invoiceId, reason: r })
   }
   function onAdjust() {
-    const a = window.prompt('Adjustment amount — negative for a credit/waiver, positive to add a charge (Rs):')
+    const a = window.prompt('Adjustment amount: negative for a credit/waiver, positive to add a charge (Rs):')
     if (a == null) return
     const amt = Number(a)
     if (!amt) { window.alert('Enter a non-zero number.'); return }
@@ -179,7 +179,7 @@ export function CollectPayment() {
             </label>
             <label className="flex items-center gap-2 text-sm text-slate-700">
               <input type="checkbox" className="h-4 w-4" checked={pending} onChange={(e) => setPending(e.target.checked)} />
-              Not cleared yet (pending — e.g. bank challan)
+              Not cleared yet (pending: e.g. bank challan)
             </label>
             {pay.isError && <p className="text-sm text-red-600">{(pay.error as Error).message}</p>}
             {pendingMsg && <p className="rounded bg-amber-50 p-2 text-sm text-amber-700">{pendingMsg}</p>}
@@ -210,7 +210,7 @@ export function CollectPayment() {
                   <tr key={i.invoice_id} className="border-t border-slate-100">
                     <td className="py-1.5">{fmtDate(i.period_month)}</td>
                     <td>{fmtPKR(i.charge)}</td>
-                    <td className={i.fine > 0 ? 'text-amber-700' : 'text-slate-400'}>{i.fine > 0 ? fmtPKR(i.fine) : '—'}</td>
+                    <td className={i.fine > 0 ? 'text-amber-700' : 'text-slate-400'}>{i.fine > 0 ? fmtPKR(i.fine) : '-'}</td>
                     <td className={i.charge - i.allocated > 0 ? 'text-red-600' : ''}>{fmtPKR(i.charge - i.allocated)}</td>
                     <td className="text-right whitespace-nowrap">
                       {i.status !== 'void' && (
@@ -241,7 +241,7 @@ export function CollectPayment() {
           <tbody>
             {payments.data?.map((p) => (
               <tr key={p.id} className="border-t border-slate-100">
-                <td className="py-1.5">{p.receipt_no != null ? `#${p.receipt_no}` : '—'}</td>
+                <td className="py-1.5">{p.receipt_no != null ? `#${p.receipt_no}` : '-'}</td>
                 <td>{fmtDate(p.created_at)}</td>
                 <td className={p.amount < 0 ? 'text-red-600' : ''}>{fmtPKR(p.amount)}</td>
                 <td>{PAYMENT_METHODS.find((m) => m.value === p.method)?.label ?? p.method}</td>

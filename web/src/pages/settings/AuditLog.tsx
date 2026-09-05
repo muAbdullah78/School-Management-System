@@ -30,7 +30,7 @@ export function AuditLog() {
       <div className="rounded-lg border border-slate-200 bg-white p-4">
         <div className="text-sm font-medium text-slate-800">Audit log</div>
         <p className="mt-1 text-sm text-slate-600">
-          A tamper-evident trail of every change to money, marks, attendance, discounts and permissions —
+          A tamper-evident trail of every change to money, marks, attendance, discounts and permissions:
           who did what, when, and (where given) why. Visible only to the owner and principal.
         </p>
         <label className="mt-3 inline-block">
@@ -60,7 +60,7 @@ export function AuditLog() {
                 </td>
                 <td className={`px-3 py-2 font-medium ${ACTION_TONE[r.action] ?? 'text-slate-600'}`}>{r.action}</td>
                 <td className="px-3 py-2 text-slate-600">{r.entity}</td>
-                <td className="px-3 py-2 text-slate-500">{r.reason ?? '—'}</td>
+                <td className="px-3 py-2 text-slate-500">{r.reason ?? '-'}</td>
               </tr>
             ))}
           </tbody>

@@ -2,13 +2,13 @@
  * The parent portal.
  *
  * Built phone-first on purpose. Almost every parent will open this on a
- * mid-range Android over a patchy connection, standing somewhere — not at a
+ * mid-range Android over a patchy connection, standing somewhere: not at a
  * desk. So: one column, large tap targets, no tables that need horizontal
  * scrolling, and the two things a parent actually opens it for (what do I owe,
  * was my child in school) above the fold.
  *
  * Every read goes through fn_portal_* which resolves the caller's own family
- * server-side. The child switcher below is a convenience, not a permission —
+ * server-side. The child switcher below is a convenience, not a permission:
  * passing another family's id gets refused by the database, not by this file.
  */
 import { useState } from 'react'
@@ -66,8 +66,8 @@ export function PortalPage() {
   const [childId, setChildId] = useState<string | null>(null)
   /* The tab lives in the URL.
    *
-   * Two reasons, neither of them about testing. A parent who reloads the page —
-   * which happens constantly on a patchy connection — was thrown back to Fees
+   * Two reasons, neither of them about testing. A parent who reloads the page,
+   * which happens constantly on a patchy connection, was thrown back to Fees
    * from wherever they were. And a school can now send "open this link to see
    * the result" pointing at /portal?tab=results, which is the difference between
    * a parent finding the marks and phoning the office to ask where they are.
@@ -85,7 +85,7 @@ export function PortalPage() {
   }
   /* The old Print button called window.print() straight from this page. The
      global print rule hides `body *` and reveals only named ids, and the portal
-     had none — so it printed a blank sheet, silently, every time. It now opens a
+     had none, so it printed a blank sheet, silently, every time. It now opens a
      real statement that carries an id the print rule knows. */
   const [statement, setStatement] = useState(false)
 
@@ -183,7 +183,7 @@ export function PortalPage() {
           </Card>
         ) : (
           <>
-            {/* Child switcher — only when there is more than one */}
+            {/* Child switcher: only when there is more than one */}
             {children.length > 1 && (
               <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
                 {children.map((c) => (
@@ -366,7 +366,7 @@ export function PortalPage() {
                             Last 3 months
                           </p>
                           <p className="mt-1 text-3xl font-semibold tabular-nums text-slate-900">
-                            {attendance.data.percent === null ? '—' : `${attendance.data.percent}%`}
+                            {attendance.data.percent === null ? '-' : `${attendance.data.percent}%`}
                           </p>
                           <p className="mt-1 text-xs text-slate-500">
                             {attendance.data.present} present of {attendance.data.marked} days marked
@@ -445,7 +445,7 @@ export function PortalPage() {
                                 "A+" needs no explaining and "Grade A+" on a
                                 phone badge is two words of noise. */}
                             <Badge tone="money">
-                              {r.grade_scale === 'gpa10' ? `GPA ${r.grade ?? '—'}` : (r.grade ?? '—')}
+                              {r.grade_scale === 'gpa10' ? `GPA ${r.grade ?? '-'}` : (r.grade ?? '-')}
                             </Badge>
                           </>
                         )}
@@ -461,11 +461,11 @@ export function PortalPage() {
                         {/* A provisional card SAYS it is provisional. Its
                             percentage is computed over the marked papers only, so
                             a parent shown 78% with no warning has been told
-                            something that is not the final figure — and the card
+                            something that is not the final figure, and the card
                             the school prints carries this line already. */}
                         {r.provisional && (
                           <p className="mt-3 rounded-lg bg-due-50 px-3 py-2 text-xs text-due-800 ring-1 ring-due-100">
-                            Not final — {r.unmarked_subjects ?? 0} paper(s) are still
+                            Not final: {r.unmarked_subjects ?? 0} paper(s) are still
                             being marked. The marks below are out of what has been
                             marked so far.
                           </p>
@@ -474,10 +474,10 @@ export function PortalPage() {
                         <div className="mt-3 grid grid-cols-3 gap-2">
                           <MiniStat
                             label="Marks"
-                            value={`${r.obtained_marks ?? '—'}/${r.total_marks ?? '—'}`}
+                            value={`${r.obtained_marks ?? '-'}/${r.total_marks ?? '-'}`}
                           />
-                          <MiniStat label="Percent" value={`${r.percentage ?? '—'}%`} tone="brand" />
-                          <MiniStat label="Position" value={r.position ?? '—'} tone="info" />
+                          <MiniStat label="Percent" value={`${r.percentage ?? '-'}%`} tone="brand" />
+                          <MiniStat label="Position" value={r.position ?? '-'} tone="info" />
                         </div>
 
                         {(r.pass_percent !== undefined || (r.failed_subjects ?? 0) > 0) && (
@@ -498,15 +498,15 @@ export function PortalPage() {
                                   <span className="text-slate-700">{s.subject}</span>
                                   {/* Broken out when the paper has one. This was
                                       the real defect: the row showed `marks / max`
-                                      — THEORY against the THEORY maximum — so a
+                                     : THEORY against the THEORY maximum, so a
                                       pupil with 40/75 theory and 20/25 practical
                                       was shown "40 / 75" when they had scored
                                       60 out of 100. Understated, not merely
                                       incomplete. */}
                                   {s.practical_max > 0 && !s.is_absent && (
                                     <span className="block text-xs text-slate-400">
-                                      Written {s.marks ?? '—'}/{s.max} · Practical{' '}
-                                      {s.practical ?? '—'}/{s.practical_max}
+                                      Written {s.marks ?? '-'}/{s.max} · Practical{' '}
+                                      {s.practical ?? '-'}/{s.practical_max}
                                     </span>
                                   )}
                                 </span>
@@ -518,7 +518,7 @@ export function PortalPage() {
                                   ) : (
                                     <>
                                       <span className="text-slate-700">
-                                        {s.obtained ?? '—'} / {s.out_of}
+                                        {s.obtained ?? '-'} / {s.out_of}
                                       </span>
                                       {s.passed === false && (
                                         <span className="block text-xs text-danger-600">
@@ -566,7 +566,7 @@ export function PortalPage() {
           at the top of the sheet rather than inside the page's layout.
 
           items-start with overflow-y-auto, not items-center: on a 360×640 phone
-          — which is most of the parents — a centred dialog taller than the
+         , which is most of the parents. A centred dialog taller than the
           viewport puts its own buttons off both edges of the screen with nothing
           to scroll. The statement is long by nature, so this one would always
           have been in that state. */}

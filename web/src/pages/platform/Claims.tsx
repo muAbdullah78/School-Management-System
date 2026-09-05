@@ -12,7 +12,7 @@ const FIELD = 'w-full rounded border border-slate-300 px-2 py-1.5 text-sm'
  * Payments the schools say they have made.
  *
  * A bank transfer arrives with a reference and no name we recognise, and
- * matching it to a school used to be guesswork — so the school phoned, and the
+ * matching it to a school used to be guesswork, so the school phoned, and the
  * operator wrote it in a notebook. This is the other end of the school's "I have
  * paid" form.
  *
@@ -22,7 +22,7 @@ const FIELD = 'w-full rounded border border-slate-300 px-2 py-1.5 text-sm'
  * balance by typing a number.
  *
  * Confirming goes through the ordinary receipt path, so a confirmed report and a
- * payment the operator typed in are indistinguishable afterwards — one shape of
+ * payment the operator typed in are indistinguishable afterwards. One shape of
  * truth in the books, with the claim keeping the story of where it came from.
  */
 export function Claims() {
@@ -44,7 +44,7 @@ export function Claims() {
           </h2>
           <p className="text-xs text-slate-500">
             What schools have told us they transferred. Check each against your bank
-            statement — nothing here has changed a balance yet.
+            statement. Nothing here has changed a balance yet.
           </p>
         </div>
         <div className="flex gap-1 rounded border border-slate-300 bg-white p-0.5 text-sm">
@@ -99,7 +99,7 @@ export function Claims() {
                     c.status === 'confirmed' ? 'text-emerald-700' : 'text-red-700'}`}>
                     {c.status === 'confirmed' ? 'Confirmed' : 'Rejected'}{' '}
                     {c.decided_at && fmtDate(c.decided_at)}
-                    {c.decision_note && ` — ${c.decision_note}`}
+                    {c.decision_note && `: ${c.decision_note}`}
                   </div>
                 )}
               </div>
@@ -207,7 +207,7 @@ function ActDialog({ claim, mode, onClose }: {
                 onChange={(e) => setWht(e.target.value)} />
               <span className="mt-0.5 block text-xs text-slate-400">
                 Money they paid to the FBR in our name. It settles the invoice just as
-                cash does — leaving it out is how a paid school shows as owing.
+                cash does: leaving it out is how a paid school shows as owing.
               </span>
             </label>
 
@@ -234,7 +234,7 @@ function ActDialog({ claim, mode, onClose }: {
               <p className="rounded bg-amber-50 px-3 py-2 text-xs text-amber-900">
                 They reported {formatPkr(said)} and this settles {formatPkr(gets)}.
                 {gets < said
-                  ? ' The difference will stay outstanding — check whether they withheld tax.'
+                  ? ' The difference will stay outstanding: check whether they withheld tax.'
                   : ' The extra will show as a credit on their account.'}
               </p>
             )}
@@ -242,11 +242,11 @@ function ActDialog({ claim, mode, onClose }: {
         ) : (
           <label className="mt-3 block">
             <span className="text-xs font-medium text-slate-600">
-              Why — the school is shown this
+              Why. The school is shown this
             </span>
             <textarea rows={3} className={FIELD} value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="No transfer of this amount on our statement — please check the reference" />
+              placeholder="No transfer of this amount on our statement: please check the reference" />
             <span className="mt-0.5 block text-xs text-slate-400">
               &ldquo;Rejected&rdquo; with nothing else is how a customer relationship breaks over a
               typo in a reference number.

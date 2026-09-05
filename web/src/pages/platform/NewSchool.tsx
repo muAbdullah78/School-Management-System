@@ -9,7 +9,7 @@ const FIELD = 'w-full rounded border border-slate-300 px-2 py-1.5 text-sm'
  * Add a school from the console.
  *
  * The first fifty customers do not sign themselves up. They are schools somebody
- * met, demonstrated to, and typed in — and until now the only way to create one
+ * met, demonstrated to, and typed in, and until now the only way to create one
  * was the public signup form, which means asking a principal to do it on the
  * phone while you wait.
  *
@@ -17,7 +17,7 @@ const FIELD = 'w-full rounded border border-slate-300 px-2 py-1.5 text-sm'
  * does not create a login: nobody can sign in, and in the console the result is
  * indistinguishable from an ordinary trialing customer. Minting an auth user
  * needs the service_role key, which must never reach a browser, so the owner
- * login goes through the create-school-owner Edge Function — and the panel below
+ * login goes through the create-school-owner Edge Function, and the panel below
  * stays amber until that is done.
  *
  * The first version of this offered the /signup link instead, which was wrong:
@@ -81,7 +81,7 @@ export function NewSchoolDialog({ onClose, onCreated }: {
       <div className="mt-1 space-y-3">
         <label className="block">
           <span className="text-xs font-medium text-slate-600">
-            School name — as it should appear on their invoice
+            School name: as it should appear on their invoice
           </span>
           <input autoFocus className={FIELD} value={name}
             onChange={(e) => setName(e.target.value)} />
@@ -131,7 +131,7 @@ export function NewSchoolDialog({ onClose, onCreated }: {
         </div>
         <label className="block">
           <span className="text-xs font-medium text-slate-600">
-            Notes — where you met them, who introduced you
+            Notes, where you met them, who introduced you
           </span>
           <input className={FIELD} value={notes} onChange={(e) => setNotes(e.target.value)} />
         </label>
@@ -175,7 +175,7 @@ function Shell({ title, onClose, children }: {
  * because "added the school" is not the same as "they can use it".
  *
  * The password is typed here and handed over verbally, and the copy says to have
- * it changed — which is the difference between a temporary password and a shared
+ * it changed, which is the difference between a temporary password and a shared
  * one. There is no invite-by-email path because email delivery is not something
  * this deployment can assume, and an invite that silently never arrives is worse
  * than a password read out on the phone.
@@ -255,11 +255,11 @@ function OwnerStep({ schoolId, stillNeeded, suggestedEmail, suggestedName, onDon
       </div>
 
       {/* Deliberately available, and deliberately second. A school that would
-          rather set its own password can, and then the operator never knows it —
+          rather set its own password can, and then the operator never knows it,
           but it means abandoning the school row just created, so it says so. */}
       <button onClick={onDone}
         className="mt-3 w-full rounded border border-slate-300 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50">
-        Skip for now — I will sort the login out later
+        Skip for now: I will sort the login out later
       </button>
     </>
   )

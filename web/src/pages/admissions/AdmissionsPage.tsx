@@ -104,7 +104,7 @@ export function AdmissionsPage() {
         rollNo: res.roll_no,
         fullName: form.full_name.trim(),
         fatherName: form.father_name || null,
-        className: cls?.name ?? '—',
+        className: cls?.name ?? '-',
         sectionName: sec?.name ?? null,
         admissionDate: form.admission_date || todayISO(),
       })
@@ -196,7 +196,7 @@ export function AdmissionsPage() {
             <label className="block">
               <span className={LABEL}>Gender</span>
               <select value={form.gender} onChange={(e) => set('gender', e.target.value)} className={FIELD}>
-                <option value="">—</option>
+                <option value="">-</option>
                 {GENDERS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
               </select>
             </label>

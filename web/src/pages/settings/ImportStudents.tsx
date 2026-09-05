@@ -70,7 +70,7 @@ export function ImportStudents() {
           Load an existing student list (a paper register typed into Excel, or an export from another system)
           in one go. Save your spreadsheet as <span className="font-medium">CSV</span> and upload it here.
           Students are admitted into the <span className="font-medium">current session</span>, appear on the
-          class roster, and become billable in Fees — exactly as if each were admitted by hand.
+          class roster, and become billable in Fees: exactly as if each were admitted by hand.
         </p>
         <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-600">
           <li>Only <span className="font-medium">Full name</span> and <span className="font-medium">Class</span> are required. Everything else is optional.</li>
@@ -79,10 +79,10 @@ export function ImportStudents() {
           <li>
             Include a <span className="font-medium">Father CNIC</span> column if your register has one. Children
             sharing a CNIC are put in one family, so the parent gets a single challan instead of one per child.
-            A column headed just <span className="font-medium">CNIC</span> is read as the father’s — children are
+            A column headed just <span className="font-medium">CNIC</span> is read as the father’s: children are
             identified by B-Form.
           </li>
-          <li>Always <span className="font-medium">Validate</span> first — it checks every row and changes nothing.</li>
+          <li>Always <span className="font-medium">Validate</span> first. It checks every row and changes nothing.</li>
         </ul>
         <button onClick={downloadTemplate}
           className="mt-3 rounded border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
@@ -110,7 +110,7 @@ export function ImportStudents() {
         {loaded && (
           <div className="mt-4 space-y-3 text-sm">
             <div className="text-slate-700">
-              <span className="font-medium">{loaded.fileName}</span> — {loaded.rows.length.toLocaleString()} row{loaded.rows.length === 1 ? '' : 's'} detected.
+              <span className="font-medium">{loaded.fileName}</span>: {loaded.rows.length.toLocaleString()} row{loaded.rows.length === 1 ? '' : 's'} detected.
             </div>
             <div>
               <span className="text-slate-500">Recognised columns:</span>
@@ -162,7 +162,7 @@ export function ImportStudents() {
           result={result}
           successDry="Every row is valid and ready to import. Click “Import” to save them."
           successReal="All rows imported cleanly. The students are now on the roster and billable in Fees."
-          footer="Tip: re-uploading the same file is safe for rows that carry a GR No or Admission No — those are skipped as duplicates. Rows without either identifier can’t be de-duplicated, so import a file once."
+          footer="Tip: re-uploading the same file is safe for rows that carry a GR No or Admission No. Those are skipped as duplicates. Rows without either identifier can’t be de-duplicated, so import a file once."
         />
       )}
 
@@ -175,7 +175,7 @@ export function ImportStudents() {
  * After an import, put brothers and sisters back together.
  *
  * A spreadsheet from a paper register has no father-CNIC column, so every
- * imported child arrives in a family of its own and their fees do not pool —
+ * imported child arrives in a family of its own and their fees do not pool:
  * the parent gets one challan per child instead of one for the family. This
  * sweeps the school for siblings sitting apart and merges them: explicit
  * sibling links first, then same father's name AND same phone number.
@@ -197,7 +197,7 @@ function JoinSiblings() {
       </p>
       <p className="mt-2 max-w-2xl text-xs text-slate-500">
         Two children are merged when the admission form linked them as siblings, or when they share{' '}
-        <strong>both</strong> the father&rsquo;s name and the phone number. A shared name alone is never enough —
+        <strong>both</strong> the father&rsquo;s name and the phone number. A shared name alone is never enough:
         too many fathers in Pakistan are called the same thing. Anything it misses can be fixed on the
         student&rsquo;s own profile, under Siblings&nbsp;/&nbsp;family.
       </p>
@@ -210,7 +210,7 @@ function JoinSiblings() {
       {repair.isSuccess && (
         <p className="mt-2 text-sm text-money-700">
           {repair.data === 0
-            ? 'Nothing to join — every family is already together.'
+            ? 'Nothing to join: every family is already together.'
             : `Joined ${repair.data} ${repair.data === 1 ? 'family' : 'families'}. Their fees now collect together.`}
         </p>
       )}

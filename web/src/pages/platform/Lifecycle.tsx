@@ -62,7 +62,7 @@ export function LifecycleDialog({ school, onClose, onDone }: {
               <Choice onClick={() => setAction('unsuspend')} title="Let them work again"
                 body="Lifts the suspension. They go back to whatever their licence dates say." />
             ) : (
-              <Choice onClick={() => setAction('suspend')} title="Suspend — stop new entries now"
+              <Choice onClick={() => setAction('suspend')} title="Suspend: stop new entries now"
                 body="Takes effect immediately whatever the licence says. They can still read,
                       print and export. They are shown the reason you type, so make it one you
                       would say on the phone."
@@ -71,7 +71,7 @@ export function LifecycleDialog({ school, onClose, onDone }: {
             <Choice onClick={() => setAction('grace')}
               title="Change their grace period"
               body="How long after expiry they keep working while a payment is in flight. For
-                    the school that always pays late and always pays — or the one that needs
+                    the school that always pays late and always pays, or the one that needs
                     chasing every quarter." />
             {school.status !== 'cancelled' && (
               <Choice onClick={() => setAction('cancel')} title="Cancel the subscription"
@@ -81,10 +81,10 @@ export function LifecycleDialog({ school, onClose, onDone }: {
             )}
             {school.archived ? (
               <Choice onClick={() => setAction('unarchive')} title="Bring them back into the list"
-                body="Makes them visible again. Does not give them a licence — that is a
+                body="Makes them visible again. Does not give them a licence. That is a
                       separate, priced decision." />
             ) : (
-              <Choice onClick={() => setAction('archive')} title="Archive — hide them"
+              <Choice onClick={() => setAction('archive')} title="Archive: hide them"
                 body="Out of this list and off the renewal worklist. Data completely intact,
                       and reversible. Required before you can export or delete them."
                 tone="warn" />
@@ -153,7 +153,7 @@ function ActionForm({ school, action, onBack, onDone }: {
             title: `${school.school_name} archived.`,
             lines: [...r.what_this_did,
                     r.outstanding > 0
-                      ? `They still owe ${formatPkr(r.outstanding)} — archiving does not write that off.`
+                      ? `They still owe ${formatPkr(r.outstanding)}: archiving does not write that off.`
                       : 'Nothing outstanding.'],
           }
         }
@@ -227,7 +227,7 @@ function ActionForm({ school, action, onBack, onDone }: {
         <label className="mt-3 block">
           <span className="text-xs font-medium text-slate-600">
             {action === 'suspend'
-              ? 'Reason — THE SCHOOL IS SHOWN THIS'
+              ? 'Reason: THE SCHOOL IS SHOWN THIS'
               : action === 'unsuspend'
                 ? 'Note (optional)'
                 : 'Reason'}

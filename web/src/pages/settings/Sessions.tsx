@@ -35,7 +35,7 @@ export function Sessions() {
             <li key={s.id} className="flex items-center justify-between px-3 py-2 text-sm">
               <span>
                 <span className="font-medium text-slate-800">{s.name}</span>
-                <span className="text-slate-500"> · {fmtDate(s.starts_on)} – {fmtDate(s.ends_on)}</span>
+                <span className="text-slate-500"> · {fmtDate(s.starts_on)} to {fmtDate(s.ends_on)}</span>
                 {s.is_current && <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">current</span>}
               </span>
               {!s.is_current && (

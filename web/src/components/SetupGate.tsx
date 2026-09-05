@@ -22,7 +22,7 @@ export function SetupGate({ children }: { children: ReactNode }) {
 
   if (settings.isLoading) return <div className="p-8 text-slate-500">Loading…</div>
 
-  // Fail open on error — a settings hiccup should not trap an established
+  // Fail open on error. A settings hiccup should not trap an established
   // school in a setup wizard that would create a duplicate session.
   if (settings.isError) return <>{children}</>
 

@@ -44,12 +44,12 @@ SCOPE = [
     # a rule enforced only on the output is a rule that fails on the next build
     # rather than on the edit that broke it.
     "site-src",
-    "web/src/pages/Login.tsx",
-    "web/src/pages/Signup.tsx",
-    "web/src/pages/ForgotPassword.tsx",
-    "web/src/pages/ResetPassword.tsx",
-    "web/src/components/AuthLayout.tsx",
-    "web/src/lib/schoolLabel.ts",
+    # THE WHOLE APPLICATION, not the four auth screens it used to be.
+    #
+    # There were 885 em dashes across 118 files in here, including the line a
+    # school reads while uploading a photograph. Listing individual files meant
+    # every new screen started outside the rule, which is how it got to 885.
+    "web/src",
     # The desktop shell's connect screen and its README. Two files, and the
     # first is the very first thing a school sees on its office computer.
     "desktop/ui/index.html",

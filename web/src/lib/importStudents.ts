@@ -34,7 +34,7 @@ const ALIASES: Record<string, StudentImportColumn> = {
   student_cnic: 'b_form',
 
   // A column headed just "CNIC" in a Pakistani school register is the PARENT's,
-  // not the child's — children carry a B-Form, adults carry a CNIC, and B-Form
+  // not the child's: children carry a B-Form, adults carry a CNIC, and B-Form
   // columns are labelled as such (handled above). This used to map to b_form,
   // which was wrong twice over: it filed an adult's ID as the child's, and it
   // discarded the one value that puts siblings in a single family for billing.
@@ -66,7 +66,7 @@ const ALIASES: Record<string, StudentImportColumn> = {
 }
 
 /** Lower-case, drop apostrophes, collapse any run of non-alphanumerics to a single
- *  underscore, and trim underscores. "Father's Name" → "father_s_name"?  No — the
+ *  underscore, and trim underscores. "Father's Name" → "father_s_name"?  No. The
  *  apostrophe is dropped first, so → "fathers_name". */
 export function normalizeHeader(header: string): string {
   return header
@@ -99,7 +99,7 @@ export function mapImportRows(raws: Record<string, string>[]): Record<string, st
   return raws.map(mapImportRow)
 }
 
-/** Required canonical columns that the given headings don't cover — for a friendly
+/** Required canonical columns that the given headings don't cover: for a friendly
  *  pre-flight warning before the operator even uploads. */
 export function missingRequiredColumns(headers: string[]): StudentImportColumn[] {
   const present = new Set(

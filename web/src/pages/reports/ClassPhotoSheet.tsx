@@ -11,8 +11,8 @@
  *     that exists and never gets used, because nobody photographs 800 children
  *     one navigation at a time.
  *
- * It also answers the question a principal will ask on day two — "how many are
- * still missing?" — with a number and a filter, rather than leaving them to
+ * It also answers the question a principal will ask on day two: "how many are
+ * still missing?": with a number and a filter, rather than leaving them to
  * count squares.
  */
 import { useMemo, useState } from 'react'
@@ -123,7 +123,7 @@ export function ClassPhotoSheet() {
       {!classId && (
         <p className="mt-6 text-sm text-slate-500">
           Choose a class to see its photo sheet.
-          {mayEdit && ' Tap any face to add or change a photograph — this is the quickest way to photograph a whole class.'}
+          {mayEdit && ' Tap any face to add or change a photograph. This is the quickest way to photograph a whole class.'}
         </p>
       )}
 
@@ -143,7 +143,7 @@ export function ClassPhotoSheet() {
             <SchoolMark name={schoolName} url={logo.data ?? null} />
             <div className="min-w-0">
               <div className="text-sm font-semibold text-slate-800">
-                Class photo sheet — {className}{sectionName ? `-${sectionName}` : ''}
+                Class photo sheet: {className}{sectionName ? `-${sectionName}` : ''}
               </div>
               <div className="text-xs text-slate-500">
                 {rows.length} {rows.length === 1 ? 'pupil' : 'pupils'}
@@ -179,7 +179,7 @@ export function ClassPhotoSheet() {
                   title={p.full_name}>
                   {p.full_name}
                 </div>
-                <div className="text-[10px] text-slate-400">{p.roll_no ?? '—'}</div>
+                <div className="text-[10px] text-slate-400">{p.roll_no ?? '-'}</div>
               </div>
             ))}
           </div>

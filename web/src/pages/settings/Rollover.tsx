@@ -73,7 +73,7 @@ export function Rollover() {
       <div className="rounded-lg border border-slate-200 bg-white p-4">
         <div className="text-sm font-medium text-slate-800">Year-end rollover</div>
         <p className="mt-1 text-sm text-slate-600">
-          Move the whole roster into a new academic session — promote each class up, detain (retain) students in
+          Move the whole roster into a new academic session: promote each class up, detain (retain) students in
           place, or graduate the leaving class to alumni. New roll numbers are assigned, and each student’s
           outstanding <span className="font-medium">arrears carry over automatically</span>. Always
           <span className="font-medium"> Preview</span> first; a rollover can be <span className="font-medium">undone</span> until
@@ -176,7 +176,7 @@ function ResultView({ result, committed, toName }: { result: RolloverResult; com
     <div className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="flex items-center gap-2">
         <span className={`rounded px-2 py-0.5 text-xs font-medium ${committed ? 'bg-emerald-100 text-emerald-700' : 'bg-sky-100 text-sky-700'}`}>
-          {committed ? 'Rollover complete' : 'Preview — nothing saved yet'}
+          {committed ? 'Rollover complete' : 'Preview. Nothing saved yet'}
         </span>
         <span className="text-sm text-slate-600">{result.total} student{result.total === 1 ? '' : 's'}</span>
       </div>
@@ -212,11 +212,11 @@ function ResultView({ result, committed, toName }: { result: RolloverResult; com
             {result.rows.slice(0, 300).map((r, i) => (
               <tr key={r.student_id + i} className="border-t border-slate-100">
                 <td className="py-1 pr-3 text-slate-700">{r.name}</td>
-                <td className="py-1 pr-3 text-slate-500">{r.gr_no ?? '—'}</td>
-                <td className="py-1 pr-3 text-slate-600">{r.from_class ?? '—'}</td>
-                <td className="py-1 pr-3 text-slate-600">{r.to_class ?? '—'}</td>
-                <td className="py-1 pr-3 text-slate-600">{r.roll_no ?? '—'}</td>
-                <td className="py-1 pr-3 text-slate-600">{Number(r.balance) > 0 ? fmtPKR(Number(r.balance)) : '—'}</td>
+                <td className="py-1 pr-3 text-slate-500">{r.gr_no ?? '-'}</td>
+                <td className="py-1 pr-3 text-slate-600">{r.from_class ?? '-'}</td>
+                <td className="py-1 pr-3 text-slate-600">{r.to_class ?? '-'}</td>
+                <td className="py-1 pr-3 text-slate-600">{r.roll_no ?? '-'}</td>
+                <td className="py-1 pr-3 text-slate-600">{Number(r.balance) > 0 ? fmtPKR(Number(r.balance)) : '-'}</td>
                 <td className="py-1">
                   <ActionBadge action={r.action} message={r.message} />
                 </td>

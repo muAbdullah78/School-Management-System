@@ -10,7 +10,7 @@ import { useQuery } from '@tanstack/react-query'
  * Shown instead of the app when a school's subscription has ended.
  *
  * The tone here matters more than the code. A school seeing this screen is
- * usually not refusing to pay — they forgot, or the transfer is still clearing.
+ * usually not refusing to pay. They forgot, or the transfer is still clearing.
  * So it says plainly that nothing has been deleted, puts the export button
  * directly on the page, and tells them exactly what to do next. It never
  * implies their records are being held.
@@ -49,7 +49,7 @@ export function SubscriptionLocked({ licence }: { licence: Licence }) {
         </h1>
 
         <p className="mt-2 text-sm text-slate-600">
-          Entering new information is paused for now — attendance, fees, admissions and results.
+          Entering new information is paused for now: attendance, fees, admissions and results.
         </p>
 
         <div className="mt-3 rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
@@ -60,7 +60,7 @@ export function SubscriptionLocked({ licence }: { licence: Licence }) {
         <div className="mt-4 rounded border border-slate-200 p-3">
           <div className="text-sm font-medium text-slate-800">To start again</div>
           <p className="mt-1 text-sm text-slate-600">
-            Send your payment by bank transfer and message us — we will switch your account back on and
+            Send your payment by bank transfer and message us. We will switch your account back on and
             everything continues from where it stopped.
           </p>
           <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
@@ -91,7 +91,7 @@ export function SubscriptionLocked({ licence }: { licence: Licence }) {
             disabled={isFetching}
             className="w-full rounded border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-60"
           >
-            {isFetching ? 'Checking…' : 'I have paid — check again'}
+            {isFetching ? 'Checking…' : 'I have paid: check again'}
           </button>
 
           <button
@@ -104,7 +104,7 @@ export function SubscriptionLocked({ licence }: { licence: Licence }) {
 
         {done !== null && (
           <p className="mt-3 rounded border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-800">
-            Downloaded — {done.toLocaleString()} records saved to your computer.
+            Downloaded: {done.toLocaleString()} records saved to your computer.
           </p>
         )}
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}

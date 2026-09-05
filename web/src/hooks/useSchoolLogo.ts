@@ -11,7 +11,7 @@ import { signPath } from '@/lib/photos'
  * of them is exactly the kind of half-wired defect this project keeps finding.
  * Here there is nothing to thread and nothing to forget.
  *
- * Two queries rather than one so that the signed URL — which expires — is keyed
+ * Two queries rather than one so that the signed URL, which expires: is keyed
  * on the path, and a school that has never uploaded a logo makes no signing
  * request at all.
  *

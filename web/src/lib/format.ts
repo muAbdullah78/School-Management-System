@@ -3,7 +3,7 @@
  * Rupees, no decimals.
  *
  * The sign goes OUTSIDE the currency: −Rs 33,500, not "Rs -33,500". The second
- * form is what toLocaleString gives you by default and it is wrong — the minus
+ * form is what toLocaleString gives you by default and it is wrong. The minus
  * belongs to the quantity, not to the unit, and buried after "Rs " it is easy
  * to skim straight past. That matters here: negatives in this product are a
  * credit on a family's account or a school that has spent more than it has
@@ -11,7 +11,7 @@
  */
 export function fmtPKR(n: number | null | undefined): string {
   // Rounded ONCE, with both the sign and the digits taken from the same rounded
-  // value — otherwise -0.4 rounds to "0" for display while still testing as
+  // value: otherwise -0.4 rounds to "0" for display while still testing as
   // negative, and prints "−Rs 0".
   const v = Math.round(Number(n ?? 0))
   const abs = Math.abs(v).toLocaleString('en-PK', { maximumFractionDigits: 0 })
@@ -22,7 +22,7 @@ export function fmtPKR(n: number | null | undefined): string {
  * The same number WITHOUT the unit, for a table that states the unit once in its
  * heading.
  *
- * Not a nicety. On a 360px phone — most of the parents using the portal — four
+ * Not a nicety. On a 360px phone: most of the parents using the portal. Four
  * money columns each carrying "Rs " either wrap "Rs" onto its own line or push
  * the rightmost column off the edge, and the rightmost column is Outstanding:
  * the one number the page exists to show. Dropping the repeated unit buys back
@@ -37,9 +37,9 @@ export function fmtAmount(n: number | null | undefined): string {
 }
 
 export function fmtDate(s?: string | null): string {
-  if (!s) return '—'
+  if (!s) return '-'
   const d = new Date(s)
-  return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })
+  return isNaN(d.getTime()) ? '-' : d.toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
 /**
@@ -50,10 +50,10 @@ export function fmtDate(s?: string | null): string {
  * day would be indistinguishable.
  */
 export function fmtDateTime(s?: string | null): string {
-  if (!s) return '—'
+  if (!s) return '-'
   const d = new Date(s)
   return isNaN(d.getTime())
-    ? '—'
+    ? '-'
     : d.toLocaleString('en-PK', {
         year: 'numeric', month: 'short', day: 'numeric',
         hour: 'numeric', minute: '2-digit',
@@ -75,7 +75,7 @@ export function todayISO(): string {
 
 /**
  * Build a WhatsApp click-to-chat URL (wa.me) from a Pakistani phone number.
- * MANUAL link only — the app never sends anything automatically (locked
+ * MANUAL link only. The app never sends anything automatically (locked
  * decision). Local 03xx… numbers are normalised to the 92 country code.
  * Returns null when there aren't enough digits to be a real number.
  */

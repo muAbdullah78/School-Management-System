@@ -28,7 +28,7 @@ import { listSchoolLogins, loginDeleteBlockers, deleteLogin, type SchoolLogin } 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 const TABS = [{ key: 'staff', label: 'Staff' }, { key: 'attendance', label: 'Attendance' },
               { key: 'teachers', label: 'Class Teachers' },
-              // 0085. Who teaches WHAT — and it is not paperwork: until this
+              // 0085. Who teaches WHAT, and it is not paperwork: until this
               // register existed, fn_enter_marks had no class scope at all, so
               // any teacher could rewrite any class's exam marks.
               { key: 'subjects', label: 'Subject Teachers' }] as const
@@ -122,7 +122,7 @@ function StaffTab() {
       setFlash(
         `${r.staff_name} is back on the staff list.` +
         (r.login_restored ? ' Their login works again.' : '') +
-        ' They are not class teacher of anything — assign that on the Class Teachers tab.',
+        ' They are not class teacher of anything: assign that on the Class Teachers tab.',
       )
       invalidate()
     },
@@ -160,7 +160,7 @@ function StaffTab() {
   })
   const faces = facesQ.data ?? new Map<string, string>()
 
-  /** The row being edited, for the fields the form does not hold — currently the
+  /** The row being edited, for the fields the form does not hold: currently the
    *  photograph path, which is written by an RPC rather than by the form save. */
   const editingRow = editing && editing !== 'new'
     ? staff.data?.find((r) => r.id === editing) ?? null
@@ -337,13 +337,13 @@ function StaffTab() {
                       </div>
                     </div>
                   </td>
-                  <td className="px-3 py-2 text-slate-600">{s.designation ?? '—'}</td>
-                  <td className="px-3 py-2 text-slate-600">{s.mobile ?? '—'}</td>
+                  <td className="px-3 py-2 text-slate-600">{s.designation ?? '-'}</td>
+                  <td className="px-3 py-2 text-slate-600">{s.mobile ?? '-'}</td>
                   <td className="px-3 py-2">
                     {canLink ? (
                       <select value={s.profile_id ?? ''} onChange={(e) => link.mutate({ id: s.id, profileId: e.target.value || null })}
                         className="w-full rounded border border-slate-300 px-2 py-1 text-sm focus:border-brand-500 focus:outline-none">
-                        <option value="">— no login —</option>
+                        <option value="">(no login)</option>
                         {logins.map((p) => (
                           <option key={p.id} value={p.id}>
                             {p.full_name || '(unnamed)'}
@@ -353,7 +353,7 @@ function StaffTab() {
                         ))}
                       </select>
                     ) : (
-                      <span className="text-slate-500">{profiles.data?.find((p) => p.id === s.profile_id)?.full_name ?? '—'}</span>
+                      <span className="text-slate-500">{profiles.data?.find((p) => p.id === s.profile_id)?.full_name ?? '-'}</span>
                     )}
                     {/* null and false are different facts and the old screen
                         could see neither: it read the staff table, and this
@@ -419,7 +419,7 @@ function StaffTab() {
               (r.login_revoked ? ' Their login is closed.'
                 : r.had_login ? ' Their login was already closed.' : '') +
               (r.sections_count > 0
-                ? ` ${r.sections_vacated} ${r.sections_count === 1 ? 'now has' : 'now have'} no class teacher — assign somebody on the Class Teachers tab.`
+                ? ` ${r.sections_vacated} ${r.sections_count === 1 ? 'now has' : 'now have'} no class teacher: assign somebody on the Class Teachers tab.`
                 : ''),
             )
             invalidate()
@@ -463,7 +463,7 @@ function LoginState({ row, canLink, onOpen, onClose }: {
   row: StaffRosterRow; canLink: boolean; onOpen: () => void; onClose: () => void
 }) {
   if (row.login_active === null) {
-    return <p className="mt-1 text-xs text-slate-400">No account — cannot sign in.</p>
+    return <p className="mt-1 text-xs text-slate-400">No account: cannot sign in.</p>
   }
   if (row.login_active) {
     return (
@@ -478,7 +478,7 @@ function LoginState({ row, canLink, onOpen, onClose }: {
   return (
     <p className="mt-1 text-xs text-slate-500">
       Login closed.
-      {/* Reopening is offered only for somebody who is still on the staff —
+      {/* Reopening is offered only for somebody who is still on the staff:
           reopening a departed person's login would leave the two facts
           contradicting each other, and SQL refuses it anyway. */}
       {canLink && row.status === 'active' && (
@@ -513,7 +513,7 @@ function LeaveDialog({ row, onClose, onDone }: {
         </label>
         <label className="mt-3 block"><span className="text-sm text-slate-600">Reason (optional)</span>
           <input value={reason} onChange={(e) => setReason(e.target.value)} className={FIELD}
-            placeholder="e.g. Resigned — moved to Lahore" />
+            placeholder="e.g. Resigned: moved to Lahore" />
         </label>
 
         <div className="mt-4 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
@@ -521,7 +521,7 @@ function LeaveDialog({ row, onClose, onDone }: {
           <ul className="mt-1 space-y-1">
             <li>
               {row.login_active === true
-                ? '• close their login straight away — they will not be able to sign in'
+                ? '• close their login straight away. They will not be able to sign in'
                 : row.login_active === false
                   ? '• leave their login closed (it already is)'
                   : '• change no login, because they do not have one'}
@@ -572,7 +572,7 @@ function StaffAttendanceModal({ staff, onClose }: { staff: StaffRow; onClose: ()
       <div className="mt-10 w-full max-w-lg rounded-lg bg-white p-6 shadow-lg print:mt-0 print:max-w-none print:shadow-none" id="report">
         <div className="text-center">
           <div className="text-lg font-semibold text-slate-800">{schoolName}</div>
-          <div className="text-xs uppercase tracking-wide text-slate-500">Staff Attendance — {monthLabel(month)}</div>
+          <div className="text-xs uppercase tracking-wide text-slate-500">Staff Attendance: {monthLabel(month)}</div>
         </div>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
           <div className="text-sm text-slate-700"><span className="text-slate-500">Staff:</span> {staff.full_name}{staff.designation ? ` · ${staff.designation}` : ''}</div>
@@ -582,7 +582,7 @@ function StaffAttendanceModal({ staff, onClose }: { staff: StaffRow; onClose: ()
         </div>
 
         <div className="mt-3 text-sm text-slate-700">
-          {d?.present_pct == null ? '—' : `${d.present_pct}% present`} over {d?.marked_days ?? 0} marked days ·
+          {d?.present_pct == null ? '-' : `${d.present_pct}% present`} over {d?.marked_days ?? 0} marked days ·
           {' '}P {d?.present ?? 0} · A {d?.absent ?? 0} · L {d?.leave ?? 0} · Lt {d?.late ?? 0} · ½ {d?.half_day ?? 0}
         </div>
 
@@ -916,9 +916,9 @@ function AddPerson({ onDone, onFlash }: { onDone: () => void; onFlash: (m: strin
 /**
  * Who teaches which subject.
  *
- * WHY THIS SCREEN IS NOT PAPERWORK. Until 0085, fn_enter_marks — the function
+ * WHY THIS SCREEN IS NOT PAPERWORK. Until 0085, fn_enter_marks. The function
  * that writes the marks printed on the result card, the certificate and the
- * tabulation sheet — had NO class scope at all. Any class_teacher or
+ * tabulation sheet: had NO class scope at all. Any class_teacher or
  * subject_teacher could enter or overwrite any class's exam marks in any
  * subject. Its sibling fn_enter_assessment_marks, which writes the weekly test
  * marks nobody keeps, had been class-scoped since 0048. The guarded path was the
@@ -935,7 +935,7 @@ function AddPerson({ onDone, onFlash }: { onDone: () => void; onFlash: (m: strin
  * SUBJECTS WITH NOBODY ASSIGNED ARE SHOWN AND MARKED. fn_subject_teachers returns
  * them for exactly that reason: the empty rows are the work list, and a screen
  * that listed only the filled ones would hide the thing the office opened it to
- * do — then teachers would hit "you can only enter marks for a class and subject
+ * do: then teachers would hit "you can only enter marks for a class and subject
  * you teach" during exam week with no idea why.
  */
 function SubjectTeachersTab() {
@@ -979,14 +979,14 @@ function SubjectTeachersTab() {
     <div className="max-w-3xl space-y-4">
       {!sessionId && !session.isLoading && (
         <p className="rounded bg-amber-50 p-3 text-sm text-amber-700">
-          No current session set — set one in Settings → Sessions first.
+          No current session set: set one in Settings → Sessions first.
         </p>
       )}
 
       <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-600">
         <span className="font-medium text-slate-800">This decides who can enter marks.</span>{' '}
         A teacher may enter marks for a class they are the class teacher of, or for a
-        class and subject listed here. Everyone else is refused — including for the exam
+        class and subject listed here. Everyone else is refused: including for the exam
         marks that go on the result card.
         {unassigned > 0 && (
           <span className="mt-1 block text-amber-700">
@@ -1036,7 +1036,7 @@ function SubjectTeachersTab() {
                 </div>
                 {activeStaff.length === 0 ? (
                   <p className="mt-1 text-xs text-slate-400">
-                    No active staff to assign — add them on the Staff tab first.
+                    No active staff to assign: add them on the Staff tab first.
                   </p>
                 ) : (
                   <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -1101,8 +1101,8 @@ function ClassTeachersTab() {
    *
    * This existed as `activeStaff` alone, and that was a silent misreport. If the
    * assigned teacher is no longer active, their id matches no <option>, and a
-   * <select> whose value matches nothing renders as the FIRST option — here,
-   * "— unassigned —". So the screen told the principal the section had no class
+   * <select> whose value matches nothing renders as the FIRST option: here,
+   * "(unassigned)". So the screen told the principal the section had no class
    * teacher while sections.class_teacher_id still held one, and result cards
    * still printed that name. Nothing on any screen could reveal it.
    *
@@ -1116,8 +1116,8 @@ function ClassTeachersTab() {
     const held = (staff.data ?? []).find((s) => s.id === current)
     return [
       ...(held
-        ? [{ ...held, full_name: `${held.full_name} (has left — please reassign)` }]
-        : [{ id: current, full_name: 'A former member of staff — please reassign' } as StaffRosterRow]),
+        ? [{ ...held, full_name: `${held.full_name} (has left: please reassign)` }]
+        : [{ id: current, full_name: 'A former member of staff: please reassign' } as StaffRosterRow]),
       ...activeStaff,
     ]
   }
@@ -1125,7 +1125,7 @@ function ClassTeachersTab() {
   return (
     <div className="max-w-2xl space-y-4">
       {!sessionId && !session.isLoading && (
-        <p className="rounded bg-amber-50 p-3 text-sm text-amber-700">No current session set — set one in Settings → Sessions first.</p>
+        <p className="rounded bg-amber-50 p-3 text-sm text-amber-700">No current session set: set one in Settings → Sessions first.</p>
       )}
       <label className="block max-w-xs"><span className="text-sm text-slate-600">Class</span>
         <select value={classId} onChange={(e) => setClassId(e.target.value)} className={FIELD}>
@@ -1137,14 +1137,14 @@ function ClassTeachersTab() {
       {classId && (
         <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
           <ul className="divide-y divide-slate-100">
-            {/* Whole-class row — the only option for a class with no sections */}
+            {/* Whole-class row. The only option for a class with no sections */}
             <li className="flex items-center justify-between px-3 py-2">
               <span className="text-sm font-medium text-slate-800">
                 Whole class <span className="text-xs font-normal text-slate-400">(use when there are no sections)</span>
               </span>
               <select value={teacherFor(null)} onChange={(e) => setTeacher.mutate({ sectionId: null, staffId: e.target.value || null })}
                 disabled={!sessionId} className="w-56 rounded border border-slate-300 px-2 py-1 text-sm focus:border-brand-500 focus:outline-none">
-                <option value="">— unassigned —</option>
+                <option value="">(unassigned)</option>
                 {optionsFor(null).map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
               </select>
             </li>
@@ -1153,7 +1153,7 @@ function ClassTeachersTab() {
                 <span className="text-sm font-medium text-slate-800">Section {sec.name}</span>
                 <select value={teacherFor(sec.id)} onChange={(e) => setTeacher.mutate({ sectionId: sec.id, staffId: e.target.value || null })}
                   disabled={!sessionId} className="w-56 rounded border border-slate-300 px-2 py-1 text-sm focus:border-brand-500 focus:outline-none">
-                  <option value="">— unassigned —</option>
+                  <option value="">(unassigned)</option>
                   {optionsFor(sec.id).map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
                 </select>
               </li>

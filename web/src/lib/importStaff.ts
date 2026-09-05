@@ -1,4 +1,4 @@
-/** Header canonicalisation for the staff importer — sibling of importStudents.ts
+/** Header canonicalisation for the staff importer: sibling of importStudents.ts
  *  / importBalances.ts. Maps the school's own headings to the keys the
  *  fn_import_staff RPC understands. */
 
