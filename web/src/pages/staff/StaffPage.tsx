@@ -684,9 +684,11 @@ function UnattachedLogins({ canLink, staff }: { canLink: boolean; staff: StaffRo
         <p className="mt-1 text-sm text-danger-800">
           They can sign in, and the portal shows them their own name above an empty
           page: no children, no fees, nothing. It happens when a login is created
-          but the family link does not get written. Open the child&rsquo;s profile
-          and add the parent again from there, which links it, or remove the login
-          here so the address can be used again.
+          but the family link does not get written.
+          <br />
+          Open the child&rsquo;s profile and press <b>Attach to this family</b> in the
+          Parent portal box. Do not try to create the login again: the address is
+          already taken and it will be refused. Or remove it here to free the address.
         </p>
         <ul className="mt-3 space-y-2">
           {parents.map((l) => (

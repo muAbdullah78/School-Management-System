@@ -2605,8 +2605,12 @@ export async function revokeInvite(id: string): Promise<void> {
  * could find was to create a second login for the same address, which fails
  * because the address is taken.
  *
- * So a failure here says exactly that, and says the address is now in use, which
- * is the part that otherwise sends somebody round the loop a second time.
+ * So a failure here says exactly that, and points at the repair. The repair had
+ * to be BUILT to say so: the first version of this message told the office to
+ * create the parent again, which cannot work, because the edge function calls
+ * auth.admin.createUser and a second call with the same address is refused. The
+ * only way back is fn_link_parent, which had no caller anywhere in the app until
+ * the Parent portal box on the student profile grew one.
  */
 export async function createParentLogin(input: {
   email: string; password: string; full_name: string; family_id: string
@@ -2619,9 +2623,9 @@ export async function createParentLogin(input: {
   } catch (e) {
     throw new Error(
       `The login for ${input.email} was created, but attaching it to this family failed: ` +
-      `${(e as Error).message}. The address is now in use, so creating it again will not work. ` +
-      'Press Add parent again with the same address to attach the existing login, or remove it ' +
-      'from Staff, where it is listed as a parent login belonging to no family.',
+      `${(e as Error).message}. Do not create it again, the address is already taken and it will ` +
+      'be refused. It is now listed in the Parent portal box on this page as a login belonging ' +
+      'to no family: press Attach to this family beside it.',
     )
   }
   return { id: created.id, email: created.email }

@@ -5,7 +5,8 @@ import {
   getStudentBalance, getStudentInvoices, getStudentPayments, attendanceSummary,
   getSiblings, getStudentLinks, removeStudentLink, studentJoinFamily, getStudentFamilyId,
   linkStudents, searchStudentsForLink,
-  listFamilyParents, createParentLogin, unlinkParent, getChallan, type Challan,
+  listFamilyParents, createParentLogin, unlinkParent, linkParent, listSchoolLogins,
+  getChallan, type Challan,
   getStudentMonthlyFee, getEnrollmentDiscounts, addDiscount, setDiscountStatus,
   recordPayment, billStudentMonth, deferInvoice, undoDefer, addAdjustment, voidInvoice,
   getStudentLedger, getDepositHeld,
@@ -793,6 +794,43 @@ function ParentAccess({ familyId, canEdit }: { familyId: string | null; canEdit:
     onSuccess: () => qc.invalidateQueries({ queryKey: ['familyParents', familyId] }),
   })
 
+  /**
+   * Parent logins that belong to no family, and attaching one here.
+   *
+   * THE REPAIR HAS TO EXIST, and the first version of this change did not check
+   * that it did. createParentLogin creates the login and then links it, in two
+   * awaits; when the second fails the login exists with no family. 0104 made
+   * that state visible on the Staff screen, and the wording there told the
+   * office to "add the parent again from the child's profile", which DOES NOT
+   * WORK: the edge function calls auth.admin.createUser, and a second call with
+   * the same address fails because the address is taken. So the advice was a
+   * loop, and the school's only remaining option was to delete the login and
+   * start over with the parent's password changed underneath them.
+   *
+   * fn_link_parent is the actual repair and had no caller anywhere in the app.
+   * It has one now, on the screen where somebody is already looking at the
+   * child whose parent cannot get in.
+   *
+   * Owner and principal only, because listing logins reads auth.users and is
+   * gated to them. A clerk sees the rest of this panel and not this part, which
+   * is right: a clerk can create a parent login, and repairing a broken one is
+   * an owner's job.
+   */
+  const orphans = useQuery({
+    queryKey: ['schoolLogins'],
+    queryFn: listSchoolLogins,
+    enabled: canEdit,
+    retry: false,
+  })
+  const loose = (orphans.data ?? []).filter((l) => l.role === 'parent')
+  const attach = useMutation({
+    mutationFn: (profileId: string) => linkParent(profileId, familyId!),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['familyParents', familyId] })
+      qc.invalidateQueries({ queryKey: ['schoolLogins'] })
+    },
+  })
+
   const valid = /^\S+@\S+\.\S+$/.test(email.trim()) && password.length >= 6
 
   if (!familyId) return null
@@ -828,6 +866,40 @@ function ParentAccess({ familyId, canEdit }: { familyId: string | null; canEdit:
             </li>
           ))}
         </ul>
+      )}
+
+      {/* A parent login that belongs to no family. Attaching it here is the ONLY
+          repair: creating it again fails because the address is taken. */}
+      {canEdit && loose.length > 0 && (
+        <div className="mt-3 rounded border border-danger-200 bg-danger-50 p-2 text-xs text-danger-800">
+          <div className="font-medium">
+            {loose.length === 1
+              ? 'A parent login belongs to no family'
+              : `${loose.length} parent logins belong to no family`}
+          </div>
+          <p className="mt-0.5 text-danger-700">
+            They can sign in and see an empty page. It happens when a login is created and the
+            family link does not get written. If one of these is this family&rsquo;s parent, attach
+            it here: making it again will not work, because the address is already taken.
+          </p>
+          <ul className="mt-2 space-y-1">
+            {loose.map((l) => (
+              <li key={l.profile_id} className="flex items-center justify-between gap-2 rounded bg-white px-2 py-1">
+                <span className="min-w-0 truncate">
+                  <span className="font-medium text-slate-800">{l.full_name || '(no name)'}</span>
+                  <span className="ml-1.5 text-slate-500">{l.email}</span>
+                </span>
+                <button onClick={() => attach.mutate(l.profile_id)} disabled={attach.isPending}
+                  className="shrink-0 rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                  Attach to this family
+                </button>
+              </li>
+            ))}
+          </ul>
+          {attach.isError && (
+            <p className="mt-1 text-danger-700">{(attach.error as Error).message}</p>
+          )}
+        </div>
       )}
 
       {done && (
