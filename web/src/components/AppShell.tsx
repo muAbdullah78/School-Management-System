@@ -17,6 +17,7 @@ import { ModuleSearch } from '@/components/ModuleSearch'
 import { getCurrentSession } from '@/lib/db'
 import { todayISO } from '@/lib/format'
 import { ADMIN_ROLES } from '@/auth/roles'
+import { useSchoolLogo } from '@/hooks/useSchoolLogo'
 
 export function AppShell() {
   const { profile, signOut } = useAuth()
@@ -57,6 +58,10 @@ export function AppShell() {
   // certainly in the wrong year.
   const sessionEnded = !!sess?.ends_on && sess.ends_on < todayISO()
 
+  // Returns null when there is no logo or the signed URL cannot be made, so the
+  // letter tile below is the fallback rather than a broken image.
+  const logo = useSchoolLogo()
+
   const initials = (profile?.full_name ?? 'U')
     .split(' ')
     .filter(Boolean)
@@ -69,9 +74,25 @@ export function AppShell() {
       <aside className="flex w-64 shrink-0 flex-col bg-gradient-to-b from-brand-900 via-brand-900 to-brand-950 text-brand-50">
         {/* School identity */}
         <div className="flex items-center gap-3 border-b border-white/10 px-4 py-4">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-sm font-bold ring-1 ring-white/15">
-            {(schoolName ?? 'S').slice(0, 1).toUpperCase()}
-          </span>
+          {/* The school's OWN logo, if they have uploaded one.
+              It was wired into every printed document (challan, receipt, result
+              card, certificate, ID card) and into nothing on screen, so a school
+              that uploaded a logo saw it in Settings, saw it on paper, and
+              nowhere else. The first thing they said was that the upload had not
+              worked. It had.
+              Falls back to the first letter, which is a perfectly good mark and
+              the commonest case: most schools never upload one. */}
+          {logo ? (
+            <img
+              src={logo}
+              alt=""
+              className="h-10 w-10 shrink-0 rounded-xl bg-white object-contain p-0.5 ring-1 ring-white/15"
+            />
+          ) : (
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-sm font-bold ring-1 ring-white/15">
+              {(schoolName ?? 'S').slice(0, 1).toUpperCase()}
+            </span>
+          )}
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold leading-tight">{appTitle(schoolName)}</div>
             {/* The vendor's name, under the school's own. The line above is
