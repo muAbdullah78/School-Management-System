@@ -2482,7 +2482,7 @@ const CLIENT_KNOWN_ROLES = [
 
 /** The version of create-teacher this app needs. Raised whenever the function's
  *  contract changes; checkLoginFunction() below compares against what is live. */
-export const REQUIRED_CREATE_TEACHER_VERSION = 2
+export const REQUIRED_CREATE_TEACHER_VERSION = 3
 
 export interface CreateTeacherInput { email: string; password: string; full_name: string; role?: string }
 export async function createTeacherLogin(input: CreateTeacherInput): Promise<{ id: string; email: string; role: string }> {

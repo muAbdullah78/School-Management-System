@@ -34,7 +34,11 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 // checks and comes back 400 "A valid email is required", which is itself the
 // answer: no version means old.
 // -----------------------------------------------------------------------------
-const FUNCTION_VERSION = 2
+// 3 as of the RLS fix below. The app compares this against
+// REQUIRED_CREATE_TEACHER_VERSION and warns the office when what is deployed is
+// older, which is the only way a school finds out that the function and the app
+// have drifted apart.
+const FUNCTION_VERSION = 3
 
 const ALLOWED_ROLES = [
   'principal', 'admin_clerk', 'accountant',
@@ -122,16 +126,74 @@ Deno.serve(async (req) => {
     })
     if (createErr || !created.user) return json({ error: createErr?.message ?? 'Could not create user' }, 400)
 
-    // 4) Set role + name as the VERIFIED CALLER (owner/principal). The
-    //    handle_new_user trigger already inserted the profile as 'readonly' in
-    //    the same txn as createUser; using the service-role client here would
-    //    hit guard_profile_role (auth.uid() is null → not owner/principal) and
-    //    silently leave the teacher at 'readonly'. The caller passes the guard.
-    const { error: upErr } = await caller.from('profiles').upsert(
-      { id: created.user.id, full_name: fullName || email.split('@')[0], role },
-      { onConflict: 'id' },
-    )
-    if (upErr) return json({ error: `Login created but its role could not be set: ${upErr.message}` }, 500)
+    // 4) VERIFY what the trigger wrote. Do not write it again.
+    //
+    // THIS STEP USED TO UPSERT THE ROLE, AND IT COULD NOT WORK.
+    //
+    //     await caller.from('profiles').upsert(
+    //       { id: created.user.id, full_name: ..., role }, { onConflict: 'id' })
+    //
+    // PostgREST's .upsert() sends INSERT ... ON CONFLICT DO UPDATE, and the
+    // payload carried no school_id, so the row being PROPOSED has NULL there.
+    // Postgres then refuses it TWICE OVER, which is worth writing down because
+    // loosening either rule alone still fails and would send the next person
+    // hunting the wrong one. Measured, not read:
+    //
+    //   1. the INSERT policy's WITH CHECK is applied to the proposed row
+    //      before any conflict is resolved. profiles_insert (0025) requires
+    //      school_id = public.current_school_id(), and `NULL = uuid` is NULL.
+    //   2. ON CONFLICT DO UPDATE also applies the SELECT policy to that same
+    //      proposed row, and profiles_select requires the same equality.
+    //
+    // Both report the identical message, so there is nothing in the error to
+    // tell them apart:
+    //
+    //     new row violates row-level security policy for table "profiles"
+    //
+    // reported to the office as "their login could not be created", which was
+    // not even true: the login exists and works. Adding school_id to the
+    // payload satisfies both and was the tempting one-line fix. It is still
+    // the wrong fix, because the write itself has nothing left to do.
+    //
+    // The step was a leftover. It was written when handle_new_user always
+    // inserted 'readonly' and somebody had to correct it afterwards. Since 0065
+    // the trigger reads school_id AND role from app_metadata, which only the
+    // service role can write and which step 3 above supplies, and it inserts
+    // the profile with that role and active = true. ALLOWED_ROLES here and the
+    // trigger's own whitelist are the same seven roles, checked, so there is no
+    // role this function accepts that the trigger would downgrade.
+    //
+    // So the profile is already correct before this line. What is worth doing
+    // is confirming it, because "the trigger will have done it" is exactly the
+    // kind of assumption that put a broken upsert here in the first place.
+    const { data: landed, error: readErr } = await caller.from('profiles')
+      .select('role, active, school_id').eq('id', created.user.id).maybeSingle()
+
+    if (readErr) {
+      return json({
+        error: 'The login was created and can sign in, but this function could '
+          + `not read back what the database recorded for it: ${readErr.message}. `
+          + 'Open Settings, Staff and attach the login to the person there.',
+        login_exists: true, id: created.user.id, email,
+      }, 500)
+    }
+    if (!landed) {
+      return json({
+        error: 'The login was created, but no profile was attached to it, so it '
+          + 'can sign in and see nothing. This means the signup trigger did not '
+          + 'run: apply the latest bundle from supabase/bundles/ and remove this '
+          + 'login from Settings, Staff before trying again.',
+        login_exists: true, id: created.user.id, email,
+      }, 500)
+    }
+    if (landed.role !== role || landed.active !== true) {
+      return json({
+        error: `The login was created, but the database recorded it as `
+          + `${landed.role}${landed.active ? '' : ' (closed)'} rather than `
+          + `${role}. Fix the role on the person's row in Settings, Staff.`,
+        login_exists: true, id: created.user.id, email, role: landed.role,
+      }, 500)
+    }
 
     return json({ id: created.user.id, email, role, version: FUNCTION_VERSION })
   } catch (e) {

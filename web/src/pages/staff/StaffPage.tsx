@@ -633,6 +633,7 @@ function StaffAttendanceModal({ staff, onClose }: { staff: StaffRow; onClose: ()
  * refused with the reason.
  */
 function UnattachedLogins({ canLink, staff }: { canLink: boolean; staff: StaffRow[] }) {
+  const { session } = useAuth()
   const qc = useQueryClient()
   const [removing, setRemoving] = useState<SchoolLogin | null>(null)
   const logins = useQuery({
@@ -654,6 +655,15 @@ function UnattachedLogins({ canLink, staff }: { canLink: boolean; staff: StaffRo
 
   if (!canLink) return null
   const all = (logins.data ?? []).filter((l) => !l.staff_id)
+  // WHO IS READING THIS SCREEN. The owner's own login is in this list on every
+  // school, because signing up creates a login and no staff record, and there
+  // is nothing wrong with that: a proprietor is not necessarily on the roster.
+  // What was wrong was offering them "Remove" for it. fn_delete_login refuses
+  // both ways round -- you cannot delete the login you are signed in with, and
+  // you cannot delete the last owner -- so the button could only ever produce
+  // an error. A button whose only outcome is a refusal teaches the office to
+  // distrust the buttons that do work.
+  const myId = session?.user?.id ?? null
   // A PARENT login in this list means one thing only: 0104 includes a parent
   // whose family link was never written, and excludes every parent who has one.
   // They need a family, not a staff record, so they get their own wording and
@@ -757,10 +767,16 @@ function UnattachedLogins({ canLink, staff }: { canLink: boolean; staff: StaffRo
                   Add them with &ldquo;Add someone&rdquo; first, then attach this login
                 </span>
               )}
-              <button onClick={() => setRemoving(l)}
-                className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50">
-                Remove
-              </button>
+              {l.profile_id === myId ? (
+                <span className="text-xs text-slate-500">
+                  This is the login you are signed in with
+                </span>
+              ) : (
+                <button onClick={() => setRemoving(l)}
+                  className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50">
+                  Remove
+                </button>
+              )}
             </div>
           </li>
         ))}
@@ -842,18 +858,39 @@ function AddPerson({ onDone, onFlash }: { onDone: () => void; onFlash: (m: strin
       // From here the person exists. If the login fails, say so precisely and
       // leave the person alone: they are a correct record either way, and the
       // login can be added later from the same row.
+      //
+      // TWO CATCHES, NOT ONE, AND THE WORDING IS THE POINT. One `try` around
+      // both calls could only say "their login could not be created", and it
+      // said that even when the login HAD been created and only the link to the
+      // staff row was missing. A school reading that retries, and the retry
+      // fails with "already registered" because the address is taken by the
+      // login they were told did not exist. Twice wrong is worse than silent.
+      const name = form.full_name.trim()
+      let created: Awaited<ReturnType<typeof createTeacherLogin>>
       try {
-        const created = await createTeacherLogin({
-          email: email.trim(), password, full_name: form.full_name.trim(), role,
+        created = await createTeacherLogin({
+          email: email.trim(), password, full_name: name, role,
         })
-        await linkStaffProfile(staffId, created.id)
-        return { name: form.full_name.trim(), login: created.email }
       } catch (e) {
+        // Neutral about whether the login exists, because the function itself
+        // knows and says so: some of its refusals happen after the account is
+        // minted, and this must not contradict them.
         throw new Error(
-          `${form.full_name.trim()} has been added to the staff list, but their login `
-          + `could not be created: ${(e as Error).message}`,
+          `${name} has been added to the staff list. The login step did not `
+          + `finish: ${(e as Error).message}`,
         )
       }
+      try {
+        await linkStaffProfile(staffId, created.id)
+      } catch (e) {
+        throw new Error(
+          `${name} has been added and can sign in as ${created.email}, but the `
+          + `login could not be joined to their staff record: `
+          + `${(e as Error).message} Attach it under "logins not attached to `
+          + `anybody on the staff list" above. Do not create the login again.`,
+        )
+      }
+      return { name, login: created.email }
     },
     onSuccess: (r) => {
       onFlash(

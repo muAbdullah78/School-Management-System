@@ -54,9 +54,12 @@ export function LoginFunctionWarning() {
         The login function on your server is out of date
       </p>
       <p className="mt-1 text-amber-800">
-        Staff logins will still work. Parent logins will fail with the words
-        &ldquo;Invalid role&rdquo;, because the copy deployed on your project was
-        published before parent logins existed. Nothing is wrong with your data.
+        No login can be created until it is updated. The copy deployed on your
+        project tries to write the new person&rsquo;s role in a way the database
+        refuses, and the attempt ends with &ldquo;new row violates row-level
+        security policy&rdquo;. An older copy still fails parent logins with the
+        words &ldquo;Invalid role&rdquo;. Nothing is wrong with your data, and
+        anyone who already has a login is unaffected.
       </p>
       <p className="mt-1.5 text-amber-800">
         To fix it once: Supabase dashboard, <b>Edge Functions</b>,{' '}
