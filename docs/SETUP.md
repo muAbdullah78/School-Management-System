@@ -217,11 +217,18 @@ For **each** of the three functions:
 
 1. Supabase dashboard → **Edge Functions** → **Deploy a new function** →
    **Via Editor**.
-2. Name it **exactly** `signup-school`, then repeat for `create-teacher`. The
-   app calls them by these names — a typo here shows up later as a signup that
-   silently fails.
+2. Name it **exactly** one of `signup-school`, `create-teacher`,
+   `create-school-owner`. The app calls them by these names, so a typo here
+   shows up later as a signup that silently fails.
 3. Delete the sample code, paste the whole contents of
    `supabase/functions/<name>/index.ts` from this project, and **Deploy**.
+
+**Do all three.** An earlier version of this page listed three in the table
+above and then named only two in this step, so a reader following the numbers
+deployed two. The one left out was `create-school-owner`, and the way that
+shows up is not an error message: a school you add from the console simply has
+nobody who can sign in to it, and in the console it looks like an ordinary
+trialing customer.
 
 Then one setting, on `signup-school` only:
 
@@ -230,8 +237,12 @@ Then one setting, on `signup-school` only:
 > **Why that one is different.** A school signing up does not have a login yet,
 > so this function must be reachable without one. It is the only unauthenticated
 > entry point in the system, and all it can do is create a school and its owner.
-> Leave **Verify JWT on** for `create-teacher` — that one is called by a signed-in
-> principal and must stay locked.
+>
+> Leave **Verify JWT on** for the other two. `create-teacher` is called by a
+> signed-in principal, and `create-school-owner` by a signed-in operator: both
+> read the caller's own token and then ask the database who that caller is
+> (`is_platform_admin()` in the operator's case). Turning verification off on
+> either would remove the only thing establishing who is asking.
 
 ### The command-line way
 
@@ -242,7 +253,31 @@ supabase login
 supabase link --project-ref YOUR_PROJECT_REF
 supabase functions deploy signup-school --no-verify-jwt
 supabase functions deploy create-teacher
+supabase functions deploy create-school-owner
 ```
+
+### Redeploy them when this project updates one
+
+**A function and a migration are often two halves of one change**, and the
+function is the half nobody remembers. The worked example is 0065, which moved
+where the signup trigger reads a new user's school from: `user_metadata`, which
+a browser can forge, to `app_metadata`, which only these functions can write.
+Apply that migration without redeploying `signup-school` and every new signup
+creates a school, a trial and a login **with no profile attached**, so the
+person who just signed up is told their login is not attached to a school.
+0065's own header calls that the safe direction to fail, because it is visible
+rather than silent, but a new school cannot use the product until it is fixed.
+
+So after pulling an update to this project, check whether anything under
+`supabase/functions/` changed, and redeploy what did:
+
+```bash
+git log --oneline -5 -- supabase/functions/
+```
+
+The dashboard's **Updated** column is the other half of the answer. If a
+function's last deployment is older than the last commit that touched it, it is
+stale.
 
 Your **project ref** is the `abcdefgh` part of your Project URL.
 
