@@ -166,8 +166,19 @@ Deno.serve(async (req) => {
     // So the profile is already correct before this line. What is worth doing
     // is confirming it, because "the trigger will have done it" is exactly the
     // kind of assumption that put a broken upsert here in the first place.
-    const { data: landed, error: readErr } = await caller.from('profiles')
+    // READ IT BACK WITH THE ADMIN CLIENT, not as the caller.
+    //
+    // The first version of this check read as `caller`, which is subject to
+    // profiles_select. That makes the verification itself capable of reporting
+    // "no profile" for a profile that exists and is merely invisible, and those
+    // two situations need completely different things done about them. A check
+    // that can be wrong in the direction of alarm is worse than no check.
+    const read = async () => await admin.from('profiles')
       .select('role, active, school_id').eq('id', created.user.id).maybeSingle()
+
+    const first = await read()
+    let landed = first.data
+    const readErr = first.error
 
     if (readErr) {
       return json({
@@ -177,14 +188,60 @@ Deno.serve(async (req) => {
         login_exists: true, id: created.user.id, email,
       }, 500)
     }
+    // FINISH THE JOB RATHER THAN REPORTING A HALF-DONE ONE.
+    //
+    // handle_new_user attaches the profile by reading school_id out of the
+    // account's APP metadata. Whether it can do that depends on something this
+    // function does not control and cannot see: whether the auth service writes
+    // app_metadata in the same statement that inserts the row, or in an update
+    // straight after it. An AFTER INSERT trigger sees nothing in the second
+    // case, and which one you get is a property of the auth service's version,
+    // not of this schema.
+    //
+    // Reported by a school as "The login was created, but no profile was
+    // attached to it", for a teacher and then for a parent, on a database whose
+    // trigger verify.sql confirms is the right version and correctly attached.
+    //
+    // So this no longer depends on it. Everything needed is already known and
+    // already authorised: the school comes from the CALLER's own profile, never
+    // the request body, and the role was whitelisted above after the caller was
+    // confirmed as owner or principal. The service client is the same one that
+    // just minted the account. Writing the row here is not a new privilege, it
+    // is the privilege this function already exercised, used to finish.
+    //
+    // A DUPLICATE HERE IS SUCCESS, NOT FAILURE. The trigger may have written the
+    // row between the read above and this insert, and if it did, its decision
+    // stands: this supplies what is absent, it never overwrites. So a unique
+    // violation is swallowed and the row is read again, while any other error
+    // is reported.
+    let repaired = false
     if (!landed) {
-      return json({
-        error: 'The login was created, but no profile was attached to it, so it '
-          + 'can sign in and see nothing. This means the signup trigger did not '
-          + 'run: apply the latest bundle from supabase/bundles/ and remove this '
-          + 'login from Settings, Staff before trying again.',
-        login_exists: true, id: created.user.id, email,
-      }, 500)
+      const { error: fixErr } = await admin.from('profiles').insert({
+        id: created.user.id,
+        school_id: prof.school_id,
+        full_name: fullName || email.split('@')[0],
+        role,
+        active: true,
+      })
+      if (fixErr && !/duplicate key|already exists/i.test(fixErr.message)) {
+        return json({
+          error: 'The login was created, but no profile could be attached to it, '
+            + `so it can sign in and see nothing: ${fixErr.message}. Remove this `
+            + 'login from Settings, Staff before trying the same address again.',
+          login_exists: true, id: created.user.id, email,
+        }, 500)
+      }
+      repaired = true
+      const again = await read()
+      landed = again.data
+      if (!landed) {
+        return json({
+          error: 'The login was created and a profile was written for it, and '
+            + 'reading it back found nothing. Something is removing it. Run '
+            + 'supabase/verify.sql and send the output.',
+          login_exists: true, id: created.user.id, email,
+        }, 500)
+      }
     }
     if (landed.role !== role || landed.active !== true) {
       return json({
@@ -195,7 +252,11 @@ Deno.serve(async (req) => {
       }, 500)
     }
 
-    return json({ id: created.user.id, email, role, version: FUNCTION_VERSION })
+    // `repaired` travels back so the office can be told, in one sentence, that
+    // the signup trigger did not do its half. It matters beyond this screen:
+    // public signup goes through the same trigger and has no such fallback, so
+    // a school that sees this once should run supabase/verify.sql.
+    return json({ id: created.user.id, email, role, version: FUNCTION_VERSION, repaired })
   } catch (e) {
     return json({ error: (e as Error).message }, 500)
   }

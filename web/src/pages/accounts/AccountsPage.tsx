@@ -274,9 +274,9 @@ export function AccountsPage() {
               Where the money went
             </CardTitle>
 
-            {range.data && range.data.by_category.length > 0 ? (
+            {range.data && range.data.expenses_by_category.length > 0 ? (
               <ul className="space-y-2">
-                {range.data.by_category.map((c) => {
+                {range.data.expenses_by_category.map((c) => {
                   const pct = range.data.expenses > 0 ? (c.total / range.data.expenses) * 100 : 0
                   return (
                     <li key={c.category}>

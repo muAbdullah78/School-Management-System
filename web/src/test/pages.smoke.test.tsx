@@ -255,10 +255,19 @@ describe('a screen says so when its reads fail, rather than looking empty', () =
  * over time, and a school that applied bundle 4 but not bundle 6 has an older
  * one installed. The screen trusts the shape completely: `data as FinanceSummary`
  * is a cast, which checks nothing at runtime, and the first `.by_category.length`
- * on a response that has no by_category throws during render.
+ * on a response that has no category list throws during render.
  *
  * These cases pin down what a screen does with a response that is legal JSON
  * and the wrong shape. They must not crash: the screen has to say something.
+ *
+ * THEY ALSO PROVED THE WRONG THING FOR A WHILE. Every case here is a MALFORMED
+ * response, so they all passed while the guard was asking for a key the
+ * database had not emitted since 0060 -- the guard fired, the screen said
+ * something, the test was happy, and the Accounts screen was broken on every
+ * up-to-date school. A suite of failure cases with no success case cannot tell
+ * "correctly refuses bad data" from "refuses everything", so the last case
+ * below is a GOOD response that must render. The database side is asserted
+ * separately, against the real functions, in supabase/tests/accounts_shape.sql.
  */
 describe('a screen survives a database function that returns an older shape', () => {
   const CASES: [string, Record<string, unknown>][] = [
@@ -272,8 +281,37 @@ describe('a screen survives a database function that returns an older shape', ()
       },
       fn_finance_summary: { from: '2026-09-01', to: '2026-09-05', expenses: 0, profit: 0 },
     }],
-    ['summary by_category is null', {
-      fn_finance_summary: { expenses: 100, profit: 0, by_category: null },
+    ['summary category list is null', {
+      fn_finance_summary: { expenses: 100, profit: 0, expenses_by_category: null },
+    }],
+    // The pre-0060 name. A school part-way through the bundles is legitimately
+    // on it, and the screen must work rather than tell them to apply bundles
+    // they have already applied.
+    ['summary uses the pre-0060 name', {
+      fn_profit_snapshot: {
+        today: { total_income: 0, expenses: 0, profit: 0, by_category: [] },
+        month: { total_income: 0, expenses: 0, profit: 0, by_category: [] },
+        year: { total_income: 0, expenses: 0, profit: 0, by_category: [] },
+      },
+      fn_finance_summary: {
+        from: '2026-09-01', to: '2026-09-05', total_income: 0,
+        expenses: 100, profit: -100, by_category: [{ category: 'Utilities', total: 100 }],
+      },
+    }],
+    // THE SUCCESS CASE, which is the one that was missing. Everything above is
+    // a malformed response, so all of them passed while the guard was rejecting
+    // every well-formed one as well.
+    ['summary is exactly what the database returns today', {
+      fn_profit_snapshot: {
+        today: { total_income: 0, expenses: 0, profit: 0, expenses_by_category: [] },
+        month: { total_income: 0, expenses: 0, profit: 0, expenses_by_category: [] },
+        year: { total_income: 0, expenses: 0, profit: 0, expenses_by_category: [] },
+      },
+      fn_finance_summary: {
+        from: '2026-09-01', to: '2026-09-05', fee_income: 0, other_income: 0,
+        total_income: 0, expenses: 5000, profit: -5000,
+        expenses_by_category: [{ category: 'Utilities', total: 5000 }],
+      },
     }],
   ]
   for (const [label, rpc] of CASES) {
@@ -281,6 +319,37 @@ describe('a screen survives a database function that returns an older shape', ()
       current.opts = { rpc }
       const { AccountsPage } = await import('@/pages/accounts/AccountsPage')
       await mount(AccountsPage)
+    })
+  }
+
+  // NOT CRASHING IS NOT THE SAME AS WORKING, and the difference is the whole
+  // bug. The cases above assert only that the screen survives; the screen also
+  // "survives" by showing "your database is behind the app" forever, which is
+  // what it did on every school from 0060 until this was written. So the two
+  // shapes a real database can return are asserted to RENDER, and the
+  // out-of-date message is asserted to be absent.
+  for (const [label, key] of [
+    ['the current name', 'expenses_by_category'],
+    ['the pre-0060 name', 'by_category'],
+  ] as const) {
+    it(`Accounts renders the category table with ${label}`, async () => {
+      const period = {
+        total_income: 0, expenses: 5000, profit: -5000, [key]: [],
+      }
+      current.opts = {
+        rpc: {
+          fn_profit_snapshot: { today: period, month: period, year: period },
+          fn_finance_summary: {
+            from: '2026-09-01', to: '2026-09-05', fee_income: 0, other_income: 0,
+            total_income: 0, expenses: 5000, profit: -5000,
+            [key]: [{ category: 'Utilities', total: 5000 }],
+          },
+        },
+      }
+      const { AccountsPage } = await import('@/pages/accounts/AccountsPage')
+      const { queryByText } = await mount(AccountsPage)
+      expect(queryByText(/database is behind the app/i)).toBeNull()
+      expect(queryByText(/Utilities/)).not.toBeNull()
     })
   }
 })
