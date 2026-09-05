@@ -107,6 +107,16 @@ export function PortalStatement({
           challan, so the amount asked for next month will be lower by that much.
         </p>
       )}
+      {/* On the PAPER especially. A parent keeps a printed statement, and this is
+          the line they will need years later when the child leaves and they ask
+          for the deposit back. It appeared on no page a family could open. */}
+      {fees.deposit_held > 0 && (
+        <p className="mt-2 rounded border border-slate-300 px-3 py-2 text-[11px] text-slate-800">
+          <span className="font-semibold">Refundable deposit held: {fmtPKR(fees.deposit_held)}.</span>{' '}
+          This is your money, held by the school and repayable when the child leaves. It is not part
+          of the balance above and it is not counted as fees paid.
+        </p>
+      )}
 
       {/* --- challans ---------------------------------------------------- */}
       <h3 className="mt-5 border-b border-slate-300 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-700">

@@ -481,10 +481,29 @@ select pg_temp.ok(
     'not found in this school'),
   '36. nor charge one');
 
+-- 0103 changed this from "returns 0" to "refuses", and the suite says so rather
+-- than being quietly relaxed to accept either.
+--
+-- Both answers are safe: zero leaks nothing. Refusing is better for two reasons.
+-- It matches assertion 36 directly above, where CHARGING another school's pupil
+-- already raised "not found in this school", so the read and the write now
+-- answer the same way instead of one refusing and one shrugging. And a zero is
+-- ambiguous where a refusal is not: "this pupil has no deposit" and "this pupil
+-- is not yours" are different facts, and a screen that shows the first when the
+-- second is true is how a school concludes a deposit has gone missing.
+--
+-- The same change closed a real gap on the other side of the wall:
+-- fn_deposit_held was granted to `authenticated` and gated by nothing but
+-- current_school_id(), so a PARENT account could ask it for any student id in
+-- their school. It is staff only now, and the portal reaches the arithmetic
+-- through fn_portal_child_fees, which asserts the child first.
 select pg_temp.ok(
-  public.fn_deposit_held((select s.id from public.students s
-                           where s.full_name = 'Leaving Child')) = 0,
-  '37. and asking what school A holds for its own pupil returns nothing to school B');
+  pg_temp.raises(
+    format('select public.fn_deposit_held(%L)',
+           (select s.id from public.students s where s.full_name = 'Leaving Child')),
+    'not found in this school'),
+  '37. and asking what school A holds for its own pupil is REFUSED to school B, '
+  || 'not answered with a zero that reads as "no deposit"');
 
 select pg_temp.be('Dep Owner A');
 select pg_temp.ok(

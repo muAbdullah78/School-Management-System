@@ -251,11 +251,13 @@ emit supabase/bundles/11_deletion_and_logins.sql \
 # absence flag in silence. 0102 is the same fault in the cash drawer: two
 # functions moved cash without telling the till, so a clerk who reversed a
 # receipt and took an admission fee could not close their drawer without
-# explaining a shortfall the software had created.
+# explaining a shortfall the software had created. 0103 is the last of the same
+# family: a refundable deposit is the family's money, and it appeared on the
+# balance sheet as a liability and on no page the family could open.
 emit supabase/bundles/12_one_number.sql \
      supabase/migrations/0098*.sql supabase/migrations/0099*.sql \
      supabase/migrations/0100*.sql supabase/migrations/0101*.sql \
-     supabase/migrations/0102*.sql
+     supabase/migrations/0102*.sql supabase/migrations/0103*.sql
 
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen

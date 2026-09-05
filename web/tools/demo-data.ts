@@ -112,6 +112,10 @@ export const DEMO_FEES = {
     { on: '2026-08-04', amount: 900, reason: 'Van fare, August' },
   ],
   charges_not_on_a_challan: 900,
+  // The guide shots carry a deposit for the same reason they carry a hand-keyed
+  // charge: if the line stops rendering, nobody reviewing the screenshots would
+  // notice money the school is holding had vanished from the family's page.
+  deposit_held: 5000,
 }
 
 /**

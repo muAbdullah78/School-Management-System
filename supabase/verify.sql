@@ -1451,6 +1451,26 @@ select 'every payment says which drawer it came from (0102)',
        end
 
 union all
+-- 0103. A refundable deposit is the family's money. It was on the office's
+-- Deposits screen and on the balance sheet as a liability, and on nothing a
+-- family could open.
+select 'the family can see the deposit the school holds (0103)',
+       case
+         when to_regprocedure('public.fn__deposit_held(uuid)') is null
+           then 'FAIL - apply supabase/bundles/12_one_number.sql'
+         when not exists (
+           select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = 'fn_portal_child_fees'
+             and p.prosrc like '%deposit_held%')
+           then 'FAIL - the parent portal does not report the deposit; '
+                || 'apply supabase/bundles/12_one_number.sql'
+         when has_function_privilege('authenticated', 'public.fn__deposit_held(uuid)', 'execute')
+           then 'FAIL - the ungated deposit figure is reachable by any signed-in '
+                || 'account; apply supabase/bundles/12_one_number.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS — no schools yet, as expected'

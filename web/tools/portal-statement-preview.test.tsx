@@ -59,6 +59,7 @@ const ordinary: PortalFees = {
   ],
   adjustments: [],
   charges_not_on_a_challan: 0,
+  deposit_held: 0,
 }
 
 /**
@@ -86,6 +87,9 @@ const withHandKeyedCharges: PortalFees = {
     { on: '2026-08-14', amount: -400, reason: 'Hardship: half the van fare waived' },
   ],
   charges_not_on_a_challan: 800,
+  // A security deposit the school is holding. Money that is NOT owed and NOT
+  // the school's, which appeared on no page a parent could open until 0103.
+  deposit_held: 5000,
 }
 
 /**
@@ -108,6 +112,7 @@ const withAdvance: PortalFees = {
   ],
   adjustments: [],
   charges_not_on_a_challan: 0,
+  deposit_held: 0,
 }
 
 /** Admitted last week. Nothing billed, nothing paid — and it must not look broken. */
@@ -120,6 +125,7 @@ const brandNew: PortalFees = {
   receipts: [],
   adjustments: [],
   charges_not_on_a_challan: 0,
+  deposit_held: 0,
 }
 
 /** Three children. The family total is the number that frightens people. */

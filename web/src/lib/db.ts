@@ -2110,13 +2110,6 @@ export async function listSectionTeachers(classId: string): Promise<SectionTeach
   )
 }
 
-export async function assignClassTeacher(sectionId: string, staffId: string | null): Promise<void> {
-  const sb = requireSupabase()
-  await mustWrite(
-    await sb.from('sections').update({ class_teacher_id: staffId })
-      .eq('id', sectionId).select('id'),
-    'The class teacher')
-}
 
 // ---- Teacher portal: assignments, self-attendance, check-in ----
 export interface MyAssignment {
@@ -2150,20 +2143,6 @@ export async function listTeacherAssignments(sessionId: string): Promise<Teacher
   })).sort((a, b) => a.staff_name.localeCompare(b.staff_name))
 }
 
-export async function assignTeacher(
-  staffId: string, sessionId: string, classId: string, sectionId: string | null,
-): Promise<void> {
-  const sb = requireSupabase()
-  const { error } = await sb.from('teacher_assignments')
-    .insert({ staff_id: staffId, session_id: sessionId, class_id: classId, section_id: sectionId })
-  if (error && !/duplicate key/i.test(error.message)) throw new Error(error.message)
-}
-export async function removeTeacherAssignment(id: string): Promise<void> {
-  const sb = requireSupabase()
-  await mustWrite(
-    await sb.from('teacher_assignments').delete().eq('id', id).select('id'),
-    'Removing that assignment')
-}
 
 /** Assign (or clear, staffId=null) a class teacher for a (class, section-or-null)
  *  atomically: assignment row for portal scoping + class_teacher_id for result cards. */
@@ -3089,6 +3068,9 @@ export interface DepositRefundResult {
 /** Refundable money the school is holding for one pupil. Derived from
  *  allocations against deposit invoices, less refunds: never stored, so it
  *  cannot drift from the ledger. */
+/** Refundable money the school holds for this child. Shown on the child's own
+ *  Fees tab, because the family's claim on the school belongs on the family's
+ *  page and not only on the office's Deposits screen. */
 export async function getDepositHeld(studentId: string): Promise<number> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_deposit_held', { p_student_id: studentId })
@@ -3329,6 +3311,15 @@ export interface PortalFees {
   receipts: PortalReceipt[]
   adjustments: PortalAdjustment[]
   /**
+   * Refundable money the school is HOLDING for this child, not money owed.
+   *
+   * It appeared on the office's Deposits screen, on the balance sheet as a
+   * liability, and nowhere the family could see. A deposit is the family's claim
+   * on the SCHOOL, so the only party with a reason to remember it was the one
+   * with no way to look it up.
+   */
+  deposit_held: number
+  /**
    * The sum of those. It is what closes the page's own arithmetic:
    *
    *     sum(invoice outstanding) + charges_not_on_a_challan === balance
@@ -3426,6 +3417,7 @@ export async function getPortalChildFees(studentId: string): Promise<PortalFees>
     ...(d as PortalFees),
     adjustments: Array.isArray(d.adjustments) ? d.adjustments : [],
     charges_not_on_a_challan: Number(d.charges_not_on_a_challan ?? 0),
+    deposit_held: Number(d.deposit_held ?? 0),
   }
 }
 

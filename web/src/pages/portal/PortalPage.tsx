@@ -20,9 +20,11 @@ import { useAuth } from '@/auth/AuthProvider'
 import {
   getPortalMe,
   getPortalChildFees,
+  getPortalChildLedger,
   getPortalChildAttendance,
   getPortalChildResults,
 } from '@/lib/db'
+import { FeeStatement } from '@/components/FeeStatement'
 import { Card, CardTitle, Badge, EmptyState, Button, money, MiniStat } from '@/components/ui'
 import {
   IconStudents,
@@ -104,6 +106,21 @@ export function PortalPage() {
     queryFn: () => getPortalChildFees(active as string),
     enabled: !!active && tab === 'fees',
   })
+  /**
+   * The running statement, off the same database function the office reads.
+   *
+   * The office got this and the parent did not, which is the defect this whole
+   * change was about one level up: a thing that exists and that the person it
+   * concerns cannot open. A parent arguing about a balance and a clerk arguing
+   * about a balance now have the same rows in front of them, which is the only
+   * way that argument ends.
+   */
+  const ledger = useQuery({
+    queryKey: ['portalLedger', active],
+    queryFn: () => getPortalChildLedger(active as string),
+    enabled: !!active && tab === 'fees',
+  })
+
   const attendance = useQuery({
     queryKey: ['portalAtt', active],
     queryFn: () => getPortalChildAttendance(active as string, fmt(from), fmt(today)),
@@ -273,6 +290,20 @@ export function PortalPage() {
                           automatically to the next challan.
                         </p>
                       )}
+                      {/* Money the school is HOLDING, which is the other
+                          direction from everything else on this page and the
+                          one figure a family has to be told about
+                          unprompted: it is their claim on the school, and
+                          before 0103 it appeared only on an office screen they
+                          cannot open. */}
+                      {fees.data.deposit_held > 0 && (
+                        <p className="mt-3 rounded-lg bg-money-50 px-3 py-2 text-xs text-money-800 ring-1 ring-money-100">
+                          The school is holding {money(fees.data.deposit_held)} as a refundable
+                          deposit. It is not part of what you owe. Ask the office for it back when
+                          your child leaves.
+                        </p>
+                      )}
+
                       {/* The line that closes the page's own arithmetic.
                           Without it a parent charged for the van read a balance
                           of Rs 2,350 above two challans totalling Rs 2,100 and
@@ -339,6 +370,19 @@ export function PortalPage() {
                             </li>
                           ))}
                         </ul>
+                      </Card>
+                    )}
+
+                    {(ledger.data?.length ?? 0) > 0 && (
+                      <Card>
+                        <CardTitle icon={<IconWallet />}>Every entry, in order</CardTitle>
+                        <p className="text-xs text-slate-500">
+                          The same statement the school office sees: every charge, discount, late
+                          fee, other charge and payment, with what was owed after each one.
+                        </p>
+                        <div className="mt-2">
+                          <FeeStatement entries={ledger.data ?? []} balance={fees.data.balance} />
+                        </div>
                       </Card>
                     )}
 

@@ -8,7 +8,7 @@ import {
   listFamilyParents, createParentLogin, unlinkParent, getChallan, type Challan,
   getStudentMonthlyFee, getEnrollmentDiscounts, addDiscount, setDiscountStatus,
   recordPayment, billStudentMonth, deferInvoice, undoDefer, addAdjustment, voidInvoice,
-  getStudentLedger,
+  getStudentLedger, getDepositHeld,
   getStudentMonthTests, getStudentMonthAttendance,
   type StudentProfile as Student, type EnrollmentInfo, type InvoiceBalance, type MonthTestRow,
 } from '@/lib/db'
@@ -906,6 +906,10 @@ function FeesTab({
   // clerk with a parent at the counter should not have to press anything to
   // reach it.
   const ledger = useQuery({ queryKey: ['ledger', studentId], queryFn: () => getStudentLedger(studentId) })
+  // Refundable money the school is holding for this child. It was on the office
+  // Deposits screen, on the balance sheet as a liability, and on neither the
+  // child's page nor anything the family could open.
+  const deposit = useQuery({ queryKey: ['depositHeld', studentId], queryFn: () => getDepositHeld(studentId) })
 
   const [receipt, setReceipt] = useState<ReceiptData | null>(null)
   const feeSchoolName = useSchoolName()
@@ -935,6 +939,7 @@ function FeesTab({
     qc.invalidateQueries({ queryKey: ['monthlyFee', enrollment.enrollment_id] })
     qc.invalidateQueries({ queryKey: ['enrollmentDiscounts', enrollment.enrollment_id] })
     qc.invalidateQueries({ queryKey: ['ledger', studentId] })
+    qc.invalidateQueries({ queryKey: ['depositHeld', studentId] })
   }
 
   const net = monthlyFee.data?.net ?? 0
@@ -999,6 +1004,12 @@ function FeesTab({
           <div className={`mt-1 text-2xl font-semibold ${bal > 0 ? 'text-red-600' : bal < 0 ? 'text-sky-600' : 'text-emerald-600'}`}>
             {balance.isLoading ? '…' : fmtPKR(bal)}
           </div>
+          {(deposit.data ?? 0) > 0 && (
+            <p className="mt-2 rounded bg-money-50 px-2.5 py-1.5 text-xs text-money-800">
+              Plus {fmtPKR(deposit.data ?? 0)} held as a refundable deposit. Not owed, and repayable
+              when the child leaves.
+            </p>
+          )}
           {canCollect && (
             <div className="mt-2 flex flex-wrap gap-2">
               <button onClick={() => setPay({ defaultAmount: bal > 0 ? bal : 0, note: '' })}

@@ -913,4 +913,104 @@ begin
   raise notice '14. a leaver keeps their arrears and the bridge names them — ok';
 end $t$;
 
+-- =============================================================================
+-- 15. Money the school HOLDS is on the page belonging to whoever it belongs to
+--
+-- A refundable deposit is the one sum on this system that is not the school's.
+-- The balance sheet knew that and showed it as a liability. The family it
+-- belongs to was told nothing: it appeared on the office's Deposits screen, on
+-- the balance sheet, and on neither the child's own page nor anything a parent
+-- could open.
+--
+-- Worse than the hand-keyed adjustment in one respect. An adjustment is the
+-- school's claim ON the family and the school will remember it. A deposit is
+-- the family's claim on the SCHOOL, and the only party with a reason to
+-- remember it was the one who could not see it.
+-- =============================================================================
+do $t$
+declare
+  v_school uuid; v_stu uuid; v_head uuid; v_office numeric; v_bal numeric; j jsonb;
+begin
+  select id into v_school from public.schools where name = 'Cross Check School';
+  select id into v_stu from public.students
+   where full_name = 'Awkward Ali' and school_id = v_school;
+
+  insert into public.fee_heads (name, type, is_recurring, active, school_id, is_refundable)
+  values ('Security Deposit', 'security_deposit', false, true, v_school, true)
+  returning id into v_head;
+
+  v_bal := public.student_balance(v_stu);
+  perform public.fn_charge_deposit(v_stu, v_head, 5000, current_date + 7, 'security');
+  perform public.fn_record_payment(v_stu, 5000, 'cash', 'security deposit');
+
+  v_office := public.fn_deposit_held(v_stu);
+  if v_office <> 5000 then
+    raise exception 'FAIL: the office says % is held, Rs 5,000 was paid', v_office;
+  end if;
+
+  if (public.fn_report_balance_sheet(current_date) ->> 'deposits_held')::numeric <> 5000 then
+    raise exception 'FAIL: the balance sheet holds % of deposits, not 5000',
+      public.fn_report_balance_sheet(current_date) ->> 'deposits_held';
+  end if;
+
+  -- AND THE FAMILY CAN SEE IT. This is the whole assertion.
+  perform set_config('test.uid', '00000000-0000-0000-0000-0000000000c2', false);
+  j := public.fn_portal_child_fees(v_stu);
+  if not (j ? 'deposit_held') then
+    raise exception 'FAIL: the parent page does not mention the deposit at all. '
+                    'The school is holding their money and the only screen that '
+                    'says so is one they cannot open.';
+  end if;
+  if (j ->> 'deposit_held')::numeric <> v_office then
+    raise exception 'FAIL: the office says % is held and the parent is shown %',
+      v_office, j ->> 'deposit_held';
+  end if;
+  -- And paying a deposit must not change what they OWE. It is paid, not owed.
+  if (j ->> 'balance')::numeric <> v_bal then
+    raise exception 'FAIL: paying a deposit moved the balance from % to %',
+      v_bal, j ->> 'balance';
+  end if;
+  perform set_config('test.uid', '00000000-0000-0000-0000-0000000000c1', false);
+
+  raise notice '15. the deposit is on the office page, the balance sheet and the family page — ok';
+end $t$;
+
+-- =============================================================================
+-- 16. A parent cannot ask what another family has on deposit
+--
+-- fn_deposit_held was SECURITY DEFINER, granted to `authenticated`, and gated by
+-- nothing but current_school_id(). Every signed-in account in a school could ask
+-- it for any student id in that school, a parent account included. Not
+-- enumerable in practice, because a student id is a uuid, but 0033's design is
+-- that a parent's reach is decided by fn__assert_my_child and not by which ids
+-- they happen to know.
+-- =============================================================================
+do $t$
+declare v_stu uuid; v_ok boolean := false;
+begin
+  select id into v_stu from public.students
+   where full_name = 'Awkward Ali'
+     and school_id = (select id from public.schools where name = 'Cross Check School');
+
+  perform set_config('test.uid', '00000000-0000-0000-0000-0000000000c2', false);
+  begin
+    perform public.fn_deposit_held(v_stu);
+    v_ok := true;
+  exception when others then null;
+  end;
+  perform set_config('test.uid', '00000000-0000-0000-0000-0000000000c1', false);
+
+  if v_ok then
+    raise exception 'FAIL: a parent called fn_deposit_held directly. It answers '
+                    'for any student id in the school, so it belongs to staff.';
+  end if;
+
+  if has_function_privilege('anon', 'public.fn__deposit_held(uuid)', 'execute')
+     or has_function_privilege('authenticated', 'public.fn__deposit_held(uuid)', 'execute') then
+    raise exception 'FAIL: fn__deposit_held is executable by a client role';
+  end if;
+
+  raise notice '16. the deposit figure is staff only, and the parent reaches it through the portal — ok';
+end $t$;
+
 rollback;
