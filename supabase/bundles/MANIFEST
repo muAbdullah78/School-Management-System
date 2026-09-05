@@ -8,3 +8,4 @@ supabase/bundles/7_ledger_and_limits.sql|0068_limit_notice_timing.sql 0069_migra
 supabase/bundles/8_counter_repair.sql|0090_counter_backfill_repair.sql
 supabase/bundles/9_validate_constraints.sql|0091_validate_the_subscription_fk.sql 0092_orphan_data.sql
 supabase/bundles/10_reviews.sql|0093_reviews.sql
+supabase/bundles/11_deletion.sql|0094_deletion.sql

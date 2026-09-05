@@ -21,6 +21,8 @@ import { Avatar } from '@/components/Avatar'
 import { removeStaffPhoto, signPaths, uploadStaffPhoto } from '@/lib/photos'
 import { LoadError } from '@/components/ui'
 import { LoginFunctionWarning } from '@/components/LoginFunctionWarning'
+import { DeleteRecord } from '@/components/DeleteRecord'
+import { staffDeleteBlockers, deleteStaff } from '@/lib/db'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 const TABS = [{ key: 'staff', label: 'Staff' }, { key: 'attendance', label: 'Attendance' },
@@ -84,6 +86,7 @@ function StaffTab() {
   const [attFor, setAttFor] = useState<StaffRow | null>(null)
   const [showLogin, setShowLogin] = useState(false)
   const [leaving, setLeaving] = useState<StaffRosterRow | null>(null)
+  const [removing, setRemoving] = useState<StaffRow | null>(null)
   const [flash, setFlash] = useState<string | null>(null)
 
   const invalidate = () => {
@@ -340,6 +343,17 @@ function StaffTab() {
                     )}
                     <button onClick={() => setAttFor(s)} className="mr-2 text-sm text-brand-700 hover:underline">Attendance</button>
                     <button onClick={() => setIdCard(s)} className="mr-2 text-sm text-brand-700 hover:underline">ID card</button>
+                    {/* Two different actions people confuse. "Left the school"
+                        is for somebody who really left and keeps every register
+                        and payslip they touched. "Remove" is for a row typed in
+                        by mistake, and it refuses the moment anything is
+                        attached. */}
+                    {canLink && (
+                      <button onClick={() => setRemoving(s)}
+                        className="mr-2 rounded border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50">
+                        Remove
+                      </button>
+                    )}
                     {canLink && (here ? (
                       <button onClick={() => setLeaving(s)}
                         className="rounded border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50">
@@ -377,6 +391,28 @@ function StaffTab() {
                 : ''),
             )
             invalidate()
+          }}
+        />
+      )}
+      {removing && (
+        <DeleteRecord
+          kind="staff member"
+          name={removing.full_name}
+          blockers={() => staffDeleteBlockers(removing.id)}
+          remove={() => deleteStaff(removing.id)}
+          onDeleted={(r) => {
+            setRemoving(null)
+            setFlash(`${r.name} has been removed from the staff list.`)
+            invalidate()
+            qc.invalidateQueries({ queryKey: ['profiles'] })
+          }}
+          onCancel={() => setRemoving(null)}
+          archive={{
+            label: 'Record them as having left instead',
+            explain: 'Their attendance and everything they entered stays exactly as it '
+                   + 'is, their login closes, and any class they run is freed for '
+                   + 'somebody else.',
+            run: () => { const r = removing; setRemoving(null); setLeaving(r as StaffRosterRow) },
           }}
         />
       )}

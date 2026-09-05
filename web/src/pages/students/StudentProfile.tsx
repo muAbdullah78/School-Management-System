@@ -16,6 +16,7 @@ import {
   ATTENDANCE_STATUSES, ATTENDANCE_SHORT, DISCOUNT_TYPES, RELATIONS,
 } from '@/lib/constants'
 import { fmtPKR, fmtDate, waLink, todayISO } from '@/lib/format'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/auth/AuthProvider'
 import { APPROVER_ROLES, ADMIN_ROLES, canWrite, type Role } from '@/auth/roles'
 import { ObserverNotice } from '@/components/ObserverNotice'
@@ -25,6 +26,8 @@ import { ChallanPrint } from '@/pages/fees/ChallanPrint'
 import { PhotoUpload } from '@/components/PhotoUpload'
 import { removeStudentPhoto, uploadStudentPhoto } from '@/lib/photos'
 import { LoginFunctionWarning } from '@/components/LoginFunctionWarning'
+import { DeleteRecord } from '@/components/DeleteRecord'
+import { studentDeleteBlockers, deleteStudent } from '@/lib/db'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 const FINANCE_ROLES: Role[] = ['owner', 'principal', 'admin_clerk', 'accountant']
@@ -183,8 +186,15 @@ function StatusBadge({ status }: { status: string }) {
  */
 function StatusAction({ student }: { student: Student }) {
   const qc = useQueryClient()
+  const nav = useNavigate()
+  const { profile } = useAuth()
+  // The database refuses anyone else, so this only decides whether the button
+  // is worth showing. A clerk seeing a Remove that always fails is worse than
+  // not seeing one.
+  const mayDelete = !!profile && ['owner', 'principal'].includes(profile.role)
   const active = student.status === 'active'
   const [leaving, setLeaving] = useState(false)
+  const [removing, setRemoving] = useState(false)
   const [note, setNote] = useState<string | null>(null)
 
   const refresh = () => {
@@ -201,10 +211,25 @@ function StatusAction({ student }: { student: Student }) {
     <>
       <div className="flex flex-col items-end gap-1">
         {active ? (
-          <button onClick={() => setLeaving(true)}
-            className="rounded border border-red-300 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50">
-            Record leaving
-          </button>
+          <div className="flex gap-2">
+            <button onClick={() => setLeaving(true)}
+              className="rounded border border-red-300 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50">
+              Record leaving
+            </button>
+            {/* Two different actions that people confuse, kept side by side and
+                worded so the difference is obvious. "Record leaving" is for a
+                child who really left and keeps every receipt and register
+                intact. "Remove" is for a row typed in by mistake, and the
+                dialog refuses the moment anything is attached to it. Only an
+                owner or principal sees it; the database refuses anyone else
+                anyway. */}
+            {mayDelete && (
+              <button onClick={() => setRemoving(true)}
+                className="rounded border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50">
+                Remove
+              </button>
+            )}
+          </div>
         ) : (
           <button onClick={() => back.mutate()} disabled={back.isPending}
             className="rounded border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60">
@@ -226,6 +251,22 @@ function StatusAction({ student }: { student: Student }) {
       {leaving && (
         <LeavingDialog student={student} onClose={() => setLeaving(false)}
           onDone={(msg) => { setLeaving(false); setNote(msg); refresh() }} />
+      )}
+      {removing && (
+        <DeleteRecord
+          kind="student"
+          name={student.full_name}
+          blockers={() => studentDeleteBlockers(student.id)}
+          remove={() => deleteStudent(student.id)}
+          onDeleted={() => { setRemoving(false); nav('/students') }}
+          onCancel={() => setRemoving(false)}
+          archive={{
+            label: 'Record them as having left instead',
+            explain: 'Their fee history, attendance and results stay exactly as they '
+                   + 'are, and they come off the active roll.',
+            run: () => { setRemoving(false); setLeaving(true) },
+          }}
+        />
       )}
     </>
   )

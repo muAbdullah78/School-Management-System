@@ -1288,6 +1288,19 @@ select 'reviews are wired, and the published average matches the rows',
        end
 
 union all
+-- 0094. All six or none: a screen that can ask what is blocking a delete but
+-- cannot perform one, or the reverse, is worse than neither, because the button
+-- appears and then fails.
+select 'deleting a record',
+       case when (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                   where n.nspname = 'public'
+                     and p.proname in ('fn_student_delete_blockers', 'fn_staff_delete_blockers',
+                                       'fn_login_delete_blockers', 'fn_delete_student',
+                                       'fn_delete_staff', 'fn_delete_login')) = 6
+            then 'PASS — records with no history can be removed, records with history cannot'
+            else 'FAIL — apply supabase/bundles/11_deletion.sql' end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS — no schools yet, as expected'

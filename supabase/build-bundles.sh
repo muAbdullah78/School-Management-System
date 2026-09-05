@@ -225,6 +225,15 @@ emit supabase/bundles/9_validate_constraints.sql \
 emit supabase/bundles/10_reviews.sql \
      supabase/migrations/0093*.sql
 
+# 0094 is deletion: the rules for when a record may be removed and when it may
+# only be archived, and the exact list of what is standing in the way when it
+# may not. Before it, nothing in this product could be deleted at all, so a
+# name typed in wrong stayed on the roster for ever. It adds functions only and
+# alters no existing table, so applying it changes nothing until somebody
+# presses Delete.
+emit supabase/bundles/11_deletion.sql \
+     supabase/migrations/0094*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

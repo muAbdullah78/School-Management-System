@@ -2615,6 +2615,75 @@ export async function unlinkParent(profileId: string): Promise<void> {
 }
 
 
+// ---- Deleting records (0094) ----
+//
+// Nothing in this app could be deleted before: a name typed in wrong stayed on
+// the roster for ever. The rule is in the database, not here: a record with no
+// money, attendance, marks or issued documents against it is removed; anything
+// else is refused, with the exact list of what is in the way.
+//
+// Every screen calls the blocker function BEFORE offering the button, so the
+// person is told what will happen while they are still deciding rather than
+// after they have pressed it.
+
+export interface DeleteBlocker {
+  /** In the words a school office uses: "payments received", "class teacher of Class 5-B". */
+  what: string
+  count: number
+}
+
+export interface DeleteResult {
+  deleted: boolean
+  name?: string | null
+  blockers: DeleteBlocker[]
+}
+
+function asBlockers(v: unknown): DeleteBlocker[] {
+  return Array.isArray(v)
+    ? (v as any[]).filter((b) => b && typeof b.what === 'string')
+        .map((b) => ({ what: String(b.what), count: Number(b.count) || 0 }))
+    : []
+}
+
+function asResult(v: unknown): DeleteResult {
+  const o = (v ?? {}) as Record<string, unknown>
+  return {
+    deleted: o.deleted === true,
+    name: (o.name as string | null) ?? null,
+    blockers: asBlockers(o.blockers),
+  }
+}
+
+async function blockersVia(fn: string, arg: Record<string, string>): Promise<DeleteBlocker[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc(fn, arg)
+  if (error) throw new Error(error.message)
+  return asBlockers(data)
+}
+
+async function deleteVia(fn: string, arg: Record<string, string>): Promise<DeleteResult> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc(fn, arg)
+  if (error) throw new Error(error.message)
+  return asResult(data)
+}
+
+export const studentDeleteBlockers = (id: string) =>
+  blockersVia('fn_student_delete_blockers', { p_student_id: id })
+export const deleteStudent = (id: string) =>
+  deleteVia('fn_delete_student', { p_student_id: id })
+
+export const staffDeleteBlockers = (id: string) =>
+  blockersVia('fn_staff_delete_blockers', { p_staff_id: id })
+export const deleteStaff = (id: string) =>
+  deleteVia('fn_delete_staff', { p_staff_id: id })
+
+export const loginDeleteBlockers = (id: string) =>
+  blockersVia('fn_login_delete_blockers', { p_profile_id: id })
+export const deleteLogin = (id: string) =>
+  deleteVia('fn_delete_login', { p_profile_id: id })
+
+
 // ---- Certificates ----
 //
 // A School Leaving Certificate is the document a Pakistani family cannot enrol a

@@ -1423,6 +1423,29 @@ jobs:
         # nobody signed in can insert, update or delete a row directly.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/reviews.sql
 
+      - name: Deleting a record cannot rewrite the school's books
+        # 0094 exists because nothing in this product could be deleted, so a
+        # name typed in wrong stayed on the roster for ever. The danger in
+        # fixing that is the opposite mistake: deleting a child who has paid
+        # fees would take receipts already handed to a parent out of the books
+        # and change last month's income after it was reported.
+        #
+        # So every assertion is about the LINE between the two: a record with
+        # nothing attached goes completely; one with money, attendance, marks or
+        # issued documents does not, and the refusal names what is in the way
+        # with counts. Plus the ways a school could lock itself out (deleting
+        # your own login, deleting the last owner) and the ways one school could
+        # reach into another's data.
+        #
+        # Two assertions are about the mechanism rather than a rule. The blocker
+        # list for a login WALKS pg_constraint instead of naming twenty-nine
+        # tables, so a table added next year is covered without anybody
+        # remembering this file; a test creates one and proves it. And when the
+        # blocker list is wrong anyway, Postgres still refuses on the foreign
+        # key, so the last test asserts that backstop surfaces as a clean
+        # refusal rather than a raw constraint error in front of a clerk.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/deletion.sql
+
       - name: Live student count — does a school outgrowing its plan get noticed?
         # It did not. subscriptions.student_count is a stored number driving the
         # console's count, limit_state, over_limit_flagged_at, suggested_plan and

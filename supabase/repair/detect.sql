@@ -674,7 +674,12 @@ with sig(migration, object, present) as (values
   -- outside the school can see, which looks like an empty page rather than an
   -- error and is exactly the state worth naming.
   ('0093_reviews', 'the website can read published reviews with no login',
-     to_regclass('public.reviews_public') is not null)
+     to_regclass('public.reviews_public') is not null),
+  -- The blocker function rather than the delete function: it is the half that
+  -- decides, and a screen calls it before showing the button. Without it every
+  -- Delete on the roster refuses with a function-not-found error.
+  ('0094_deletion', 'a record with no history can be deleted',
+     to_regprocedure('public.fn_student_delete_blockers(uuid)') is not null)
 )
 select migration,
        object                                   as looked_for,
