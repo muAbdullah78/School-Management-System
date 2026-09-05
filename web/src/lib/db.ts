@@ -2377,9 +2377,83 @@ function pkToday(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Karachi' })
 }
 
+export interface LoginFunctionState {
+  /** false = not deployed at all, or unreachable. */
+  deployed: boolean
+  /** 1 means a copy old enough that it does not report a version. */
+  version: number
+  /** Meets what this app needs. */
+  ok: boolean
+  /** The roles the DEPLOYED copy accepts, when it is new enough to say. */
+  roles: string[]
+  /** Why it could not be determined, when it could not. */
+  reason?: string
+}
+
+/**
+ * Which copy of create-teacher is actually live on this project.
+ *
+ * Edge Functions are deployed by hand, separately from the app, so a school can
+ * be running one months behind the code calling it. That mismatch had exactly
+ * one symptom: creating a parent login failed with the words "Invalid role" and
+ * nothing else, because role 'parent' was added to the function after their
+ * copy was deployed. Nothing in the app could see it and nothing said so.
+ *
+ * A GET asks the function to identify itself and creates nothing. Against a
+ * copy new enough to answer, that is a version. Against an older one the GET
+ * falls through to the input checks and comes back 400 "A valid email is
+ * required", and THAT is the answer: it is deployed, it works, it is old.
+ */
+export async function checkLoginFunction(): Promise<LoginFunctionState> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.functions.invoke('create-teacher', { method: 'GET' })
+
+  if (!error) {
+    const version = Number((data as any)?.version ?? 1)
+    const roles = Array.isArray((data as any)?.roles) ? (data as any).roles : []
+    return {
+      deployed: true, version, roles,
+      ok: version >= REQUIRED_CREATE_TEACHER_VERSION,
+    }
+  }
+
+  if ((error as any).name === 'FunctionsHttpError') {
+    // It answered, so it is deployed. Anything that answers a GET with a
+    // complaint about the request body predates the version probe.
+    let body: any = null
+    try { body = await (error as any).context?.json?.() } catch { /* ignore */ }
+    const version = Number(body?.version ?? 1)
+    return {
+      deployed: true,
+      version,
+      roles: Array.isArray(body?.roles) ? body.roles : [],
+      ok: version >= REQUIRED_CREATE_TEACHER_VERSION,
+    }
+  }
+
+  // Nothing answered: never deployed, or the project is unreachable. Those are
+  // different problems and this cannot tell them apart, so it says neither.
+  return {
+    deployed: false, version: 0, roles: [], ok: false,
+    reason: error.message,
+  }
+}
+
 /** Create a teacher/staff login via the create-teacher Edge Function (owner/
  *  principal only; enforced server-side). Throws a helpful message if the
  *  function isn't deployed. */
+/** Roles this version of the app may ask create-teacher for. Kept beside the
+ *  caller so a role added here and not in the deployed function produces the
+ *  clear message below instead of the bare words "Invalid role". */
+const CLIENT_KNOWN_ROLES = [
+  'principal', 'admin_clerk', 'accountant',
+  'class_teacher', 'subject_teacher', 'readonly', 'parent',
+]
+
+/** The version of create-teacher this app needs. Raised whenever the function's
+ *  contract changes; checkLoginFunction() below compares against what is live. */
+export const REQUIRED_CREATE_TEACHER_VERSION = 2
+
 export interface CreateTeacherInput { email: string; password: string; full_name: string; role?: string }
 export async function createTeacherLogin(input: CreateTeacherInput): Promise<{ id: string; email: string; role: string }> {
   const sb = requireSupabase()
@@ -2397,7 +2471,27 @@ export async function createTeacherLogin(input: CreateTeacherInput): Promise<{ i
   // The function is deployed but rejected the request → surface its real reason.
   if ((error as any).name === 'FunctionsHttpError') {
     let msg = error.message
-    try { const ctx = await (error as any).context?.json?.(); if (ctx?.error) msg = ctx.error } catch { /* ignore */ }
+    let body: any = null
+    try { body = await (error as any).context?.json?.() } catch { /* ignore */ }
+    if (body?.error) msg = body.error
+
+    // "Invalid role" for a role THIS app considers valid means the deployed
+    // copy of the function is older than the app, not that anything is wrong
+    // with the request. It is the single most confusing failure in the product:
+    // role 'parent' was added to the function's allowlist in commit 552f7d6, so
+    // every project deployed before that refuses to create a parent login and
+    // says only these two words. Turn it into something a school can act on.
+    if (/invalid role/i.test(msg) && CLIENT_KNOWN_ROLES.includes(role)) {
+      const theirs: string[] = Array.isArray(body?.roles) ? body.roles : []
+      throw new Error(
+        'The create-teacher function on your Supabase project is out of date, so ' +
+        `it does not recognise the "${role}" role yet. Nothing is wrong with your ` +
+        'data and nothing needs changing here. Redeploy it: Supabase dashboard, ' +
+        'Edge Functions, create-teacher, replace the code with ' +
+        'supabase/functions/create-teacher/index.ts from the project, Deploy.' +
+        (theirs.length ? ` (The deployed copy accepts only: ${theirs.join(', ')}.)` : ''),
+      )
+    }
     throw new Error(msg)
   }
 

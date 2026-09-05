@@ -30,6 +30,8 @@ export interface FakeOptions {
   failEverything?: string
   /** Records every table and RPC a screen touched, for coverage reporting. */
   seen?: { tables: Set<string>; rpcs: Set<string> }
+  /** What functions.invoke should do, per function name. */
+  fn?: Record<string, { data?: unknown; error?: { name: string; message: string; body?: unknown } }>
 }
 
 function builder(table: string, opts: FakeOptions): any {
@@ -120,7 +122,24 @@ export function fakeSupabase(opts: FakeOptions = {}) {
       signOut: async () => ({ error: null }),
     },
     functions: {
-      invoke: async () => ({ data: null, error: { name: 'FunctionsFetchError', message: 'not deployed in tests' } }),
+      invoke: async (name: string) => {
+        const spec = opts.fn?.[name]
+        if (!spec) {
+          return { data: null, error: { name: 'FunctionsFetchError', message: 'not deployed in tests' } }
+        }
+        if (spec.error) {
+          // The real client exposes the response body through context.json(),
+          // which is where the function's own error text and version live.
+          return {
+            data: null,
+            error: Object.assign(new Error(spec.error.message), {
+              name: spec.error.name,
+              context: { json: async () => spec.error!.body ?? { error: spec.error!.message } },
+            }),
+          }
+        }
+        return { data: spec.data ?? null, error: null }
+      },
     },
     channel: () => ({ on: () => ({ subscribe: () => ({}) }), subscribe: () => ({}) }),
     removeChannel: () => {},

@@ -24,6 +24,7 @@ import { useSchoolName } from '@/hooks/useSchoolName'
 import { ChallanPrint } from '@/pages/fees/ChallanPrint'
 import { PhotoUpload } from '@/components/PhotoUpload'
 import { removeStudentPhoto, uploadStudentPhoto } from '@/lib/photos'
+import { LoginFunctionWarning } from '@/components/LoginFunctionWarning'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 const FINANCE_ROLES: Role[] = ['owner', 'principal', 'admin_clerk', 'accountant']
@@ -778,6 +779,9 @@ function ParentAccess({ familyId, canEdit }: { familyId: string | null; canEdit:
 
       {canEdit && open && (
         <form className="mt-3 space-y-2" onSubmit={(e) => { e.preventDefault(); if (valid) create.mutate() }}>
+          {/* Parent logins are the exact case a stale create-teacher refuses,
+              so the warning belongs here more than anywhere else. */}
+          <LoginFunctionWarning />
           <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Parent's name"
             className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-brand-500 focus:outline-none" />
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="father@example.com"

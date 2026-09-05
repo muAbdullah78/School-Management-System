@@ -20,6 +20,7 @@ import { PhotoUpload } from '@/components/PhotoUpload'
 import { Avatar } from '@/components/Avatar'
 import { removeStaffPhoto, signPaths, uploadStaffPhoto } from '@/lib/photos'
 import { LoadError } from '@/components/ui'
+import { LoginFunctionWarning } from '@/components/LoginFunctionWarning'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 const TABS = [{ key: 'staff', label: 'Staff' }, { key: 'attendance', label: 'Attendance' },
@@ -557,6 +558,7 @@ function AddLogin({ onDone }: { onDone: () => void }) {
   const roleChoices = ROLES.filter((r) => r !== 'owner')
   return (
     <form className="rounded-lg border border-slate-200 bg-white p-4" onSubmit={(e) => { e.preventDefault(); if (valid) create.mutate() }}>
+      <LoginFunctionWarning />
       <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">New teacher login</div>
       <div className="mt-2 grid gap-3 sm:grid-cols-2">
         <label className="block"><span className="text-sm text-slate-600">Full name</span>
