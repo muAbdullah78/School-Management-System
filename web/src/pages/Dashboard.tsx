@@ -59,6 +59,21 @@ function QuickAction({
   )
 }
 
+/* THE one attendance rule: present + late + half of a half day, over marked
+ * days. It is fn__attendance_pct in the database (0097) and it is written out
+ * here only because this tile is handed counts rather than a percentage.
+ *
+ * This line used to read (present + half_day) / marked, which was wrong twice:
+ * it counted a half day as a whole one, and it did not count `late` AT ALL, so
+ * a class that all arrived late showed as nobody having come in. The result
+ * card in the child's hand, the student profile and the teacher's own screen
+ * all used the correct rule, so the owner's dashboard was the odd one out and
+ * always the pessimistic one. */
+export function attendancePct(a: { present: number; late: number; half_day: number; marked: number }): number | null {
+  if (!a.marked) return null
+  return Math.round(((a.present + a.late + 0.5 * a.half_day) / a.marked) * 100)
+}
+
 export function Dashboard() {
   const { profile } = useAuth()
   const configured = isConfigured
@@ -74,7 +89,7 @@ export function Dashboard() {
 
   const d = summary.data
   const att = d?.attendance
-  const pct = att && att.marked > 0 ? Math.round(((att.present + att.half_day) / att.marked) * 100) : null
+  const pct = att ? attendancePct(att) : null
   const loading = summary.isLoading
 
   return (
@@ -153,9 +168,17 @@ export function Dashboard() {
                 icon={<IconAttendance />}
                 label="Attendance today"
                 value={loading ? '…' : att && att.marked > 0 ? `${pct}%` : '-'}
+                /* The counts, not a weighted total. "18 present of 20" was
+                   computed with the same wrong arithmetic as the percentage,
+                   so the sentence under the tile disagreed with the register a
+                   teacher had just filled in. */
                 sub={
                   att && att.marked > 0
-                    ? `${att.present + att.half_day} present of ${att.marked} · ${att.absent} absent`
+                    ? [`${att.marked} marked`,
+                       att.absent ? `${att.absent} absent` : null,
+                       att.late ? `${att.late} late` : null,
+                       att.half_day ? `${att.half_day} half day` : null,
+                      ].filter(Boolean).join(' · ')
                     : 'Not marked yet today'
                 }
               />

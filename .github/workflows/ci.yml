@@ -1475,6 +1475,22 @@ jobs:
         # address for reuse.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/reset.sql
 
+      - name: One attendance percentage, not three
+        # The same fact was computed three ways, and the two that were wrong
+        # were the two most seen: the tile an owner looks at every morning, and
+        # the figure a PARENT reads. On one twelve day register the parent saw
+        # 92% and the school saw 83.3%, because the portal counted a late
+        # arrival and a half day as whole days present. The result card in the
+        # child's hand printed the correct one, so the three disagreed with
+        # each other in front of the family.
+        #
+        # This seeds ONE register containing every status and asserts that the
+        # rule, the student profile and the parent portal all report the same
+        # number, plus the three properties that make the rule the rule: a late
+        # child came in, a half day is half, and an unmarked register has no
+        # percentage rather than zero.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/attendance_rule.sql
+
       - name: Live student count — does a school outgrowing its plan get noticed?
         # It did not. subscriptions.student_count is a stored number driving the
         # console's count, limit_state, over_limit_flagged_at, suggested_plan and

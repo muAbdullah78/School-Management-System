@@ -235,7 +235,7 @@ emit supabase/bundles/10_reviews.sql \
 # presses Delete.
 emit supabase/bundles/11_deletion_and_logins.sql \
      supabase/migrations/0094*.sql supabase/migrations/0095*.sql \
-     supabase/migrations/0096*.sql
+     supabase/migrations/0096*.sql supabase/migrations/0097*.sql
 
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
