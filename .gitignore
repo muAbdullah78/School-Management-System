@@ -17,3 +17,8 @@ desktop/src-tauri/icons/
 .DS_Store
 *.log
 scratch/
+
+# Python bytecode from the guard scripts. Two of these were committed by
+# accident; a cache of a checker is not a checker.
+__pycache__/
+*.pyc

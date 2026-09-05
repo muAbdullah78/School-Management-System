@@ -255,11 +255,20 @@ begin
   if v_old like '%fn_may_mark_subject%' then
     raise notice '0085: fn_enter_assessment_marks already checks the subject';
   else
-    v_new := replace(v_old,
-      '    if not public.fn_may_manage_class(v_a.session_id, v_a.class_id, v_a.section_id) then
-      raise exception ''You can only enter marks for your assigned class'';
-    end if;',
-      '    -- 0085: class AND subject. The class check alone let the Physics
+    -- WHITESPACE-BLIND, and this was not always so. The pattern used to be a
+    -- literal string spanning three lines of THIS FILE, which means it carried
+    -- this file's line endings and matched only a stored body that had arrived
+    -- by the same route. 0101 shipped the same class of assumption in a form
+    -- that could not agree with anything -- E'\n', which is always a bare line
+    -- feed -- and it took all seven migrations of bundle 12 down on a live
+    -- school. Every line break in the pattern is `\s+` now, so a space, a tab,
+    -- an LF and a CRLF are all the same to it. supabase/check-patch-anchors.py
+    -- fails the build if this is written the old way again.
+    v_new := regexp_replace(v_old,
+      'if not public\.fn_may_manage_class\(v_a\.session_id, v_a\.class_id, v_a\.section_id\) then\s+'
+        || 'raise exception ''You can only enter marks for your assigned class'';\s+'
+        || 'end if;',
+      '-- 0085: class AND subject. The class check alone let the Physics
     -- teacher of Class 9 enter Class 9''s Islamiat marks.
     if not public.fn_may_mark_subject(
              v_a.session_id, v_a.class_id, v_a.section_id, v_a.subject_id) then

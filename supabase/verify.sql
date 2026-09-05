@@ -58,6 +58,32 @@ exception
 end
 $ask$;
 
+-- Asks fn_head_wise_dues whether it returns the school-wide total, and never
+-- lets the answer abort the report.
+--
+-- WHY THIS EXISTS AT ALL, given the 0098 row already asks the catalogue: the
+-- catalogue says the text is present, not that the function returns the key.
+-- Both questions are worth asking, and only one of them can be asked without a
+-- staff profile. So the catalogue decides the verdict and this decides whether
+-- the verdict was confirmed by running the thing. It returns 'yes', 'no', or a
+-- sentence saying why it could not tell -- never an exception, because one
+-- exception anywhere in this file prints no rows at all.
+create or replace function pg_temp.head_dues_total() returns text
+language plpgsql as $hd$
+declare v_id uuid; v_has boolean;
+begin
+  execute 'select id from public.academic_sessions limit 1' into v_id;
+  if v_id is null then
+    return 'there is no academic session yet to ask about';
+  end if;
+  execute 'select public.fn_head_wise_dues($1) ? ''total_outstanding'''
+    into v_has using v_id;
+  return case when v_has then 'yes' else 'no' end;
+exception when others then
+  return sqlerrm;
+end
+$hd$;
+
 -- Counts rows pointing at a school that is not there, with row-level security
 -- stood down: SECURITY DEFINER runs as this function's owner, and RLS does not
 -- apply to a table's owner unless FORCE is set.
@@ -1352,6 +1378,23 @@ union all
 -- in dues by fee head. This checks the two halves of the fix that a school can
 -- see: the fee statement exists, and the reconciliation screen carries the
 -- bridge that explains the remaining difference in basis.
+--
+-- THIS ROW USED TO CALL fn_head_wise_dues AND THAT WAS A BUG IN THE CHECKER,
+-- not in the thing checked. The whole report is ONE `select ... union all`
+-- statement, so an exception anywhere in it prints an error and NO ROWS AT ALL.
+-- fn_head_wise_dues refuses a caller with no staff profile -- which is every
+-- connection from the Supabase SQL editor -- so the moment bundle 12 made the
+-- first branch below stop matching, this row would have raised
+--
+--     ERROR: Not permitted to view fee reports
+--
+-- and taken all 60-odd checks with it. It was invisible only because the FAIL
+-- branch above it short-circuited the CASE on every database that needed the
+-- bundle. Measured, not reasoned about: the same shape in the 0099 row below
+-- did exactly that on a fresh install.
+--
+-- So the verdict now comes from the catalogue, which cannot refuse anybody, and
+-- the behaviour is asked separately through a helper that traps its own errors.
 select 'one answer to what a family owes (0098)',
        case
          when to_regprocedure('public.fn_student_ledger(uuid)') is null
@@ -1359,23 +1402,37 @@ select 'one answer to what a family owes (0098)',
          when to_regprocedure('public.fn_portal_child_ledger(uuid)') is null
            then 'FAIL - the parent cannot see the statement the office sees; '
                 || 'apply supabase/bundles/12_one_number.sql'
-         when not (public.fn_head_wise_dues(
-                     (select id from public.academic_sessions limit 1)) ? 'total_outstanding')
-           and (select count(*) from public.academic_sessions) > 0
+         when not exists (
+           select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = 'fn_head_wise_dues'
+             and p.prosrc like '%total_outstanding%')
            then 'FAIL - dues by fee head still totals itself by summing '
                 || 'apportioned rows; apply supabase/bundles/12_one_number.sql'
-         else 'PASS'
+         when pg_temp.head_dues_total() = 'no'
+           then 'FAIL - dues by fee head carries the total but does not return '
+                || 'it; apply supabase/bundles/12_one_number.sql'
+         when pg_temp.head_dues_total() = 'yes' then 'PASS'
+         else 'PASS - asked of the catalogue only. The report itself could not '
+              || 'be run from this connection: ' || pg_temp.head_dues_total()
        end
 
 union all
 -- 0099. Three definitions of "how many children are here". The tile is now the
 -- same function as the plan limit, so this asks whether the field that only the
 -- new version returns is there.
+--
+-- Catalogue, not a call, for the reason spelled out on the 0098 row above:
+-- fn_dashboard_summary refuses a connection with no staff profile, and this
+-- report is one statement whose first exception costs you every other check.
+-- Reproduced on a fresh install before this was changed.
 select 'one headcount, on the tile and the licence (0099)',
        case
          when to_regprocedure('public.fn_students_without_a_class()') is null
            then 'FAIL - apply supabase/bundles/12_one_number.sql'
-         when not (public.fn_dashboard_summary() ? 'students_without_a_class')
+         when not exists (
+           select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = 'fn_dashboard_summary'
+             and p.prosrc like '%students_without_a_class%')
            then 'FAIL - the dashboard still keeps its own headcount; '
                 || 'apply supabase/bundles/12_one_number.sql'
          else 'PASS'
@@ -1421,8 +1478,19 @@ select 'a payload key that is not read is refused (0101)',
              select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
              where n.nspname = 'public' and p.proname = x.name
                and p.prosrc like '%fn__only_these_keys%'))
-           then 'FAIL - one of the four still accepts a key it does not read; '
-                || 'apply supabase/bundles/12_one_number.sql'
+           -- Named, not counted. 0101 can now leave one function alone and warn
+           -- rather than abort the bundle, so this has to say WHICH one, the way
+           -- the 0100 and 0102 rows do. "One of the four" sends somebody
+           -- re-pasting a bundle that already applied.
+           then 'FAIL - these still accept a key they do not read: '
+                || (select string_agg(x.name, ', ' order by x.name)
+                      from (values ('fn_enter_marks'), ('fn_enter_assessment_marks'),
+                                   ('fn_mark_attendance'), ('fn_record_bulk_payments')) as x(name)
+                     where not exists (
+                       select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                       where n.nspname = 'public' and p.proname = x.name
+                         and p.prosrc like '%fn__only_these_keys%'))
+                || '; apply supabase/bundles/12_one_number.sql'
          else 'PASS'
        end
 

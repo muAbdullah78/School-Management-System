@@ -107,67 +107,113 @@ revoke all on function public.fn__reversal_till(uuid, public.payment_method)
 -- ---------------------------------------------------------------------------
 -- 2. The two writers that never learned about the drawer
 -- ---------------------------------------------------------------------------
+--
+-- EVERY PATTERN HERE IS WHITESPACE-BLIND, AND EVERY PATCH IS ITS OWN
+-- SUBTRANSACTION. 0101 shipped an anchor that assumed a fixed indentation and
+-- LF line endings; it matched on every database built here, missed on the first
+-- real school, and because the Supabase SQL editor runs a pasted file as ONE
+-- transaction, that one raise rolled back all seven migrations in the bundle.
+-- The admission-fee pattern below had the same flaw -- it matched an exact
+-- newline followed by exactly six spaces -- and the two `raise exception`s had
+-- the same blast radius. So:
+--
+--   * the two patterns match `\s+` wherever the source has whitespace, so
+--     indentation and line endings cannot decide whether a school's drawer
+--     balances;
+--   * each patch runs in a block with an exception handler, so a definition
+--     neither pattern fits leaves that one function alone;
+--   * a miss is a WARNING naming the function, not an exception. The drawer
+--     staying wrong for one of the two paths is bad. Reverting the fee total,
+--     the headcount, the attendance rule, the family's deposit and the parent
+--     login as well is worse, and it is what raising here does.
+--
+-- Nothing becomes invisible by being non-fatal: supabase/verify.sql names every
+-- function that still writes to `payments` without a drawer, and
+-- supabase/tests/till_and_the_clerk.sql runs the morning above and asserts the
+-- drawer balances.
 do $patch$
 declare
   v_src text; v_new text;
 begin
   -- ---- the contra receipt --------------------------------------------------
-  select pg_get_functiondef(p.oid) into v_src
-  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-  where n.nspname = 'public' and p.proname = 'fn_reverse_payment';
-  if v_src is null then
-    raise exception '0102: fn_reverse_payment is not present; apply the earlier bundles first';
-  end if;
+  begin
+    select pg_get_functiondef(p.oid) into v_src
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'fn_reverse_payment';
 
-  if v_src like '%fn__reversal_till%' then
-    raise notice '0102: fn_reverse_payment already attributes the drawer';
-  else
-    v_new := regexp_replace(
-      v_src,
-      '(insert into public\.payments\(student_id, family_id, amount, method, receipt_no,\s*'
-        || 'status, received_by, reversal_of, note\)\s*'
-        || 'values \(v_orig\.student_id, v_orig\.family_id, -v_orig\.amount, v_orig\.method, v_receipt,\s*'
-        || '''verified'', v_actor, p_payment_id, coalesce\(p_reason, ''reversal''\))\)',
-      '\1, public.fn__reversal_till(v_orig.till_session_id, v_orig.method))');
-    -- The column list needs the new name at the END, where the value was
-    -- appended. The first version of this put the column after `receipt_no` and
-    -- the value last, so the columns and the values no longer lined up and
-    -- Postgres tried to write 'verified' into a uuid. Caught by re-running the
-    -- morning above, which is why that fixture exists.
-    v_new := replace(v_new,
-      'status, received_by, reversal_of, note)',
-      'status, received_by, reversal_of, note, till_session_id)');
-    if v_new = v_src or v_new not like '%fn__reversal_till%' then
-      raise exception '0102: could not find the contra-receipt insert in '
-        'fn_reverse_payment. It has been reworded, so nothing was changed and '
-        'the drawer would keep being wrong. Update the pattern in this migration.';
+    if v_src is null then
+      raise warning '0102: fn_reverse_payment is not present, so nothing was '
+        'attributed for it. Apply the earlier bundles first.';
+    elsif v_src like '%fn__reversal_till%' then
+      raise notice '0102: fn_reverse_payment already attributes the drawer';
+    else
+      v_new := regexp_replace(
+        v_src,
+        '(insert\s+into\s+public\.payments\s*\(\s*student_id,\s*family_id,\s*amount,\s*method,\s*receipt_no,\s*'
+          || 'status,\s*received_by,\s*reversal_of,\s*note\s*\)\s*'
+          || 'values\s*\(\s*v_orig\.student_id,\s*v_orig\.family_id,\s*-v_orig\.amount,\s*v_orig\.method,\s*v_receipt,\s*'
+          || '''verified'',\s*v_actor,\s*p_payment_id,\s*coalesce\(\s*p_reason,\s*''reversal''\s*\))\s*\)',
+        '\1, public.fn__reversal_till(v_orig.till_session_id, v_orig.method))');
+      -- The column list needs the new name at the END, where the value was
+      -- appended. The first version of this put the column after `receipt_no`
+      -- and the value last, so the columns and the values no longer lined up
+      -- and Postgres tried to write 'verified' into a uuid. Caught by
+      -- re-running the morning above, which is why that fixture exists.
+      v_new := regexp_replace(v_new,
+        'status,(\s*)received_by,(\s*)reversal_of,(\s*)note\s*\)',
+        'status,\1received_by,\2reversal_of,\3note, till_session_id)');
+      if v_new = v_src or v_new not like '%fn__reversal_till%' then
+        raise warning '0102: could not find the contra-receipt insert in '
+          'fn_reverse_payment. It has been reworded, so nothing was changed, '
+          'the rest of this bundle still applied, and a reversal still leaves '
+          'the drawer short. Run supabase/verify.sql; it names what is '
+          'outstanding.';
+      else
+        execute v_new;
+      end if;
     end if;
-    execute v_new;
-  end if;
+  exception when others then
+    raise warning '0102: fn_reverse_payment was left as it was: %. The rest of '
+      'this bundle still applied.', sqlerrm;
+  end;
 
   -- ---- the admission fee ---------------------------------------------------
-  select pg_get_functiondef(p.oid) into v_src
-  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-  where n.nspname = 'public' and p.proname = 'fn_admit_student';
-  if v_src is null then
-    raise exception '0102: fn_admit_student is not present; apply the earlier bundles first';
-  end if;
+  begin
+    select pg_get_functiondef(p.oid) into v_src
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'fn_admit_student';
 
-  if v_src like '%fn__ensure_till%' then
-    raise notice '0102: fn_admit_student already attributes the drawer';
-  else
-    v_new := replace(v_src,
-      'insert into public.payments(student_id, family_id, amount, method, receipt_no, status, received_by, note)'
-        || E'\n      values (v_student, v_family, v_af_amt, ''cash'', v_af_receipt, ''verified'', v_actor, ''Admission fee'')',
-      'insert into public.payments(student_id, family_id, amount, method, receipt_no, status, received_by, note, till_session_id)'
-        || E'\n      values (v_student, v_family, v_af_amt, ''cash'', v_af_receipt, ''verified'', v_actor, ''Admission fee'', public.fn__ensure_till())');
-    if v_new = v_src then
-      raise exception '0102: could not find the admission-fee insert in '
-        'fn_admit_student. It has been reworded, so nothing was changed and the '
-        'drawer would keep being over. Update the pattern in this migration.';
+    if v_src is null then
+      raise warning '0102: fn_admit_student is not present, so nothing was '
+        'attributed for it. Apply the earlier bundles first.';
+    elsif v_src like '%fn__ensure_till%' then
+      raise notice '0102: fn_admit_student already attributes the drawer';
+    else
+      -- Two separate whitespace-blind substitutions rather than one match over
+      -- the column list AND the value list together, because the two are on
+      -- different lines and the amount of space between them is exactly what
+      -- the earlier version got wrong.
+      v_new := regexp_replace(
+        v_src,
+        '(insert\s+into\s+public\.payments\s*\(\s*student_id,\s*family_id,\s*amount,\s*method,\s*'
+          || 'receipt_no,\s*status,\s*received_by,\s*note\s*)\)(\s*)'
+          || '(values\s*\(\s*v_student,\s*v_family,\s*v_af_amt,\s*''cash'',\s*v_af_receipt,\s*'
+          || '''verified'',\s*v_actor,\s*''Admission fee''\s*)\)',
+        '\1, till_session_id)\2\3, public.fn__ensure_till())');
+      if v_new = v_src or v_new not like '%fn__ensure_till%' then
+        raise warning '0102: could not find the admission-fee insert in '
+          'fn_admit_student. It has been reworded, so nothing was changed, the '
+          'rest of this bundle still applied, and an admission fee still leaves '
+          'the drawer over. Run supabase/verify.sql; it names what is '
+          'outstanding.';
+      else
+        execute v_new;
+      end if;
     end if;
-    execute v_new;
-  end if;
+  exception when others then
+    raise warning '0102: fn_admit_student was left as it was: %. The rest of '
+      'this bundle still applied.', sqlerrm;
+  end;
 end $patch$;
 
 -- ---------------------------------------------------------------------------
@@ -188,8 +234,13 @@ begin
     where n.nspname = 'public' and p.proname = x.name
       and p.prosrc like '%till_session_id%');
 
-  if v_bad is not null then
-    raise exception '0102: these still write cash without saying which drawer '
-      'it came from or went into: %', v_bad;
+  if v_bad is null then
+    raise notice '0102: both writers now say which drawer the cash came from';
+  else
+    -- A WARNING and not an exception, for the reason recorded above section 2:
+    -- raising here undoes six migrations that have nothing to do with the till.
+    raise warning '0102: these still write cash without saying which drawer '
+      'it came from or went into: %. Everything else in this bundle applied. '
+      'Send the output of supabase/verify.sql.', v_bad;
   end if;
 end $assert$;
