@@ -372,7 +372,25 @@ $$;
 --
 -- Every one of these re-checks has_role('owner','principal') itself, so the
 -- grant to authenticated is not the boundary; the check inside is.
+--
+-- BUT THE REVOKE IS NOT OPTIONAL. Postgres grants EXECUTE on a new function to
+-- PUBLIC automatically, and anon is a member of PUBLIC, so a function is
+-- reachable without a login the moment it is created unless somebody says
+-- otherwise. 0071 revoked the whole schema from anon once and verify.sql
+-- asserts nothing has crept back. These six crept back, and it caught them on
+-- a fresh install: "7 functions still open".
+--
+-- Not merely untidy. An unauthenticated caller reaching fn_delete_student is
+-- stopped by has_role() only because auth.uid() is null there, which is one
+-- accident away from not being true.
 -- ---------------------------------------------------------------------------
+revoke execute on function public.fn_student_delete_blockers(uuid) from public, anon;
+revoke execute on function public.fn_staff_delete_blockers(uuid)   from public, anon;
+revoke execute on function public.fn_login_delete_blockers(uuid)   from public, anon;
+revoke execute on function public.fn_delete_student(uuid)          from public, anon;
+revoke execute on function public.fn_delete_staff(uuid)            from public, anon;
+revoke execute on function public.fn_delete_login(uuid)            from public, anon;
+
 grant execute on function public.fn_student_delete_blockers(uuid) to authenticated;
 grant execute on function public.fn_staff_delete_blockers(uuid)   to authenticated;
 grant execute on function public.fn_login_delete_blockers(uuid)   to authenticated;

@@ -371,6 +371,27 @@ select 'the observer role (0059)',
                                            -- true DURING a support visit, which
                                            -- would make the gate circular.
                                            'fn_support_visits',
+                                           -- 0094 and 0095: the same category as
+                                           -- fn_pending_invites above. Who can
+                                           -- sign in, what address they use, and
+                                           -- what stands in the way of removing a
+                                           -- person are ACCESS MANAGEMENT and the
+                                           -- gating of a destructive act, not a
+                                           -- read of the school's records.
+                                           --
+                                           -- may_view is true for an observer and
+                                           -- during an operator support visit.
+                                           -- Gating these on it would hand both of
+                                           -- them every staff email in the school
+                                           -- (fn_school_logins reads auth.users)
+                                           -- and let them enumerate which children
+                                           -- could be deleted without trace, which
+                                           -- is reconnaissance for exactly the act
+                                           -- 0094 exists to make impossible.
+                                           'fn_school_logins',
+                                           'fn_student_delete_blockers',
+                                           'fn_staff_delete_blockers',
+                                           'fn_login_delete_blockers',
                                            'may_view'))
                  -- THE ONE THAT MATTERS. An observer must not be able to write.
                  -- A write policy consulting may_view would let one change a

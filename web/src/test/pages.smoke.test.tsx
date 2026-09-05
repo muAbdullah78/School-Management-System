@@ -32,6 +32,24 @@ import { MemoryRouter } from 'react-router-dom'
 import { fakeSupabase, type FakeOptions } from './fakeSupabase'
 import { AuthContext, type Profile } from '@/auth/AuthProvider'
 
+/**
+ * The app must believe it is connected, whether or not this machine has a .env.
+ *
+ * isConfigured is computed at module load from VITE_SUPABASE_URL. A developer
+ * with a local web/.env gets true; CI, which has no such file, gets false, and
+ * Dashboard then renders "Supabase isn't configured" instead of running a
+ * single query. So this suite passed on my machine and failed on the runner,
+ * which is the exact shape of a test that is not testing anything: its result
+ * depended on an untracked file.
+ *
+ * Pinned here rather than by setting env in vite.config, so the unit tests that
+ * deliberately exercise the unconfigured path keep doing so.
+ */
+vi.mock('@/lib/config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/config')>()),
+  isConfigured: true,
+}))
+
 // One mutable holder so each case can swap the client the app sees without
 // re-mocking the module (vi.mock is hoisted and cannot close over a test's
 // local state).

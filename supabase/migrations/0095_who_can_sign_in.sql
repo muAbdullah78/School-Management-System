@@ -78,4 +78,10 @@ begin
 end;
 $$;
 
+-- Postgres grants EXECUTE on a new function to PUBLIC, and anon is a member of
+-- PUBLIC. This function reads auth.users, so leaving that default in place puts
+-- every staff email in the school one unauthenticated call away, with only
+-- has_role() in between. 0071 revoked the whole schema from anon and verify.sql
+-- asserts nothing has crept back.
+revoke execute on function public.fn_school_logins() from public, anon;
 grant execute on function public.fn_school_logins() to authenticated;
