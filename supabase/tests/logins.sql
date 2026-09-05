@@ -125,5 +125,80 @@ begin
   raise notice 'ok: neither a clerk nor a parent can enumerate logins';
 end $guard$;
 
+-- =============================================================================
+-- A parent login that belongs to no family is on SOME screen
+--
+-- 0095 fixed this shape for staff and excluded parents, with a good reason
+-- written on the line: four hundred linked parents would bury the staff roster.
+-- That reason covers a LINKED parent and it hid the broken ones with them.
+--
+-- Measured on the running code before 0104, with a login whose family link was
+-- never written:
+--
+--     Who can sign in            0 rows
+--     the family page            0 rows
+--     public.profiles            1 row
+--     the parent's own portal    {"children": [], "full_name": "Unlinked Parent"}
+--
+-- The parent sits at home looking at their own name above an empty page, the
+-- office has no screen that shows the login exists, and the only remedy anyone
+-- finds is to create a second login for the same address, which fails because
+-- the address is taken. There is no way out of that state from inside the
+-- product.
+--
+-- Reachable by an ordinary failure: createParentLogin creates the login and then
+-- links it, in two awaits.
+-- =============================================================================
+do $t$
+declare
+  v_school uuid; v_orphan uuid := '00000000-0000-0000-0000-0000000000fa';
+  v_linked uuid := '00000000-0000-0000-0000-0000000000fb';
+  v_fam uuid; v_n int;
+begin
+  -- Back to the owner. The block above deliberately leaves test.uid as a parent
+  -- to prove a parent cannot enumerate logins, and picking that up here would
+  -- fail on the permission gate rather than on anything this block is about.
+  perform set_config('test.uid', (select v::text from ids where k = 'own'), false);
+  select p.school_id into v_school from public.profiles p
+   where p.id = (select v from ids where k = 'own');
+
+  select id into v_fam from public.families where school_id = v_school limit 1;
+  if v_fam is null then
+    insert into public.families (school_id, head_name) values (v_school, 'Logins Family')
+    returning id into v_fam;
+  end if;
+
+  alter table public.profiles disable trigger user;
+  insert into auth.users (id, email) values
+    (v_orphan, 'orphan.parent@logins.test'),
+    (v_linked, 'linked.parent@logins.test')
+    on conflict (id) do nothing;
+  insert into public.profiles (id, full_name, role, school_id) values
+    (v_orphan, 'Unlinked Parent', 'parent', v_school),
+    (v_linked, 'Linked Parent',   'parent', v_school)
+    on conflict (id) do update set school_id = excluded.school_id, role = excluded.role;
+  alter table public.profiles enable trigger user;
+  perform public.fn_link_parent(v_linked, v_fam);
+
+  -- The broken one is listed.
+  select count(*) into v_n from public.fn_school_logins() l
+   where l.email = 'orphan.parent@logins.test';
+  if v_n <> 1 then
+    raise exception 'FAIL: a parent login belonging to no family is on no screen. '
+                    'They can sign in and see an empty portal with their own name '
+                    'on it, and the office has nothing to look at.';
+  end if;
+
+  -- And 0095's reason still holds: the LINKED one stays out of the staff roster.
+  select count(*) into v_n from public.fn_school_logins() l
+   where l.email = 'linked.parent@logins.test';
+  if v_n <> 0 then
+    raise exception 'FAIL: a parent WITH a family is in the staff roster. Four '
+                    'hundred of them would bury it, and they are already listed '
+                    'on their own family page.';
+  end if;
+
+  raise notice 'ok: a parent login with no family is visible, one with a family is not';
+end $t$;
+
 rollback;
-\echo 'LOGINS: ALL TESTS PASSED'

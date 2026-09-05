@@ -730,7 +730,12 @@ with sig(migration, object, present) as (values
      exists (
        select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
        where n.nspname = 'public' and p.proname = 'fn_portal_child_fees'
-         and p.prosrc like '%deposit_held%'))
+         and p.prosrc like '%deposit_held%')),
+  ('0104_the_parent_nobody_can_see', 'a parent login with no family is listed',
+     exists (
+       select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'fn_school_logins'
+         and p.prosrc like '%p.family_id is null%'))
 )
 select migration,
        object                                   as looked_for,

@@ -253,11 +253,15 @@ emit supabase/bundles/11_deletion_and_logins.sql \
 # receipt and took an admission fee could not close their drawer without
 # explaining a shortfall the software had created. 0103 is the last of the same
 # family: a refundable deposit is the family's money, and it appeared on the
-# balance sheet as a liability and on no page the family could open.
+# balance sheet as a liability and on no page the family could open. 0104 is the
+# parent-side twin of 0095: a parent login whose family link was never written
+# appeared on no screen at all, so the parent saw an empty portal with their own
+# name on it and the office had nothing to look at.
 emit supabase/bundles/12_one_number.sql \
      supabase/migrations/0098*.sql supabase/migrations/0099*.sql \
      supabase/migrations/0100*.sql supabase/migrations/0101*.sql \
-     supabase/migrations/0102*.sql supabase/migrations/0103*.sql
+     supabase/migrations/0102*.sql supabase/migrations/0103*.sql \
+     supabase/migrations/0104*.sql
 
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen

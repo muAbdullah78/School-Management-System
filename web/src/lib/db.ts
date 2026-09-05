@@ -2596,6 +2596,17 @@ export async function revokeInvite(id: string): Promise<void> {
  * rejected the 'parent' role outright, and nothing anywhere called
  * fn_link_parent, so profiles.family_id was never written and every portal read
  * refused with "Not a parent account".
+ *
+ * WHAT HAPPENS WHEN THE SECOND STEP FAILS, and why the message is worth the
+ * lines. The login exists, has no family, and until 0104 appeared on NO screen:
+ * not "Who can sign in", which excluded parents, and not the family page, which
+ * lists parents BY family. The parent could sign in and saw their own name above
+ * an empty portal, and the office had nothing to look at. The only remedy anyone
+ * could find was to create a second login for the same address, which fails
+ * because the address is taken.
+ *
+ * So a failure here says exactly that, and says the address is now in use, which
+ * is the part that otherwise sends somebody round the loop a second time.
  */
 export async function createParentLogin(input: {
   email: string; password: string; full_name: string; family_id: string
@@ -2603,7 +2614,16 @@ export async function createParentLogin(input: {
   const created = await createTeacherLogin({
     email: input.email, password: input.password, full_name: input.full_name, role: 'parent',
   })
-  await linkParent(created.id, input.family_id)
+  try {
+    await linkParent(created.id, input.family_id)
+  } catch (e) {
+    throw new Error(
+      `The login for ${input.email} was created, but attaching it to this family failed: ` +
+      `${(e as Error).message}. The address is now in use, so creating it again will not work. ` +
+      'Press Add parent again with the same address to attach the existing login, or remove it ' +
+      'from Staff, where it is listed as a parent login belonging to no family.',
+    )
+  }
   return { id: created.id, email: created.email }
 }
 

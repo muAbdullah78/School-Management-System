@@ -1471,6 +1471,21 @@ select 'the family can see the deposit the school holds (0103)',
        end
 
 union all
+-- 0104. A parent login whose family link was never written appeared on no
+-- screen: "Who can sign in" excluded every parent, and the family page lists
+-- parents BY family. The parent could sign in to an empty portal and the office
+-- had nothing to look at.
+select 'a parent login with no family is visible (0104)',
+       case
+         when not exists (
+           select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = 'fn_school_logins'
+             and p.prosrc like '%p.family_id is null%')
+           then 'FAIL - apply supabase/bundles/12_one_number.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS — no schools yet, as expected'

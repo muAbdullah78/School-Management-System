@@ -653,7 +653,14 @@ function UnattachedLogins({ canLink, staff }: { canLink: boolean; staff: StaffRo
   })
 
   if (!canLink) return null
-  const loose = (logins.data ?? []).filter((l) => !l.staff_id)
+  const all = (logins.data ?? []).filter((l) => !l.staff_id)
+  // A PARENT login in this list means one thing only: 0104 includes a parent
+  // whose family link was never written, and excludes every parent who has one.
+  // They need a family, not a staff record, so they get their own wording and
+  // their own actions. Mixing them in with "Attach to a staff member" would
+  // offer the office a repair that is wrong for them.
+  const parents = all.filter((l) => l.role === 'parent')
+  const loose = all.filter((l) => l.role !== 'parent')
   if (logins.isError) {
     return (
       <p className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-800">
@@ -661,12 +668,51 @@ function UnattachedLogins({ canLink, staff }: { canLink: boolean; staff: StaffRo
       </p>
     )
   }
-  if (!loose.length) return null
+  if (!loose.length && !parents.length) return null
 
   const free = staff.filter((s) => !s.profile_id && s.status === 'active')
 
   return (
-    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+    <>
+    {parents.length > 0 && (
+      <div className="rounded-lg border border-danger-200 bg-danger-50 p-4">
+        <p className="text-sm font-medium text-danger-900">
+          {parents.length === 1
+            ? 'One parent login belongs to no family'
+            : `${parents.length} parent logins belong to no family`}
+        </p>
+        <p className="mt-1 text-sm text-danger-800">
+          They can sign in, and the portal shows them their own name above an empty
+          page: no children, no fees, nothing. It happens when a login is created
+          but the family link does not get written. Open the child&rsquo;s profile
+          and add the parent again from there, which links it, or remove the login
+          here so the address can be used again.
+        </p>
+        <ul className="mt-3 space-y-2">
+          {parents.map((l) => (
+            <li key={l.profile_id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white px-3 py-2">
+              <div className="min-w-0">
+                <span className="text-sm font-medium text-slate-800">{l.full_name || '(no name)'}</span>
+                <span className="ml-2 text-xs text-slate-500">{l.email}</span>
+                <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600">
+                  Parent
+                </span>
+                {!l.active && (
+                  <span className="ml-2 rounded bg-slate-200 px-1.5 py-0.5 text-[11px] text-slate-600">closed</span>
+                )}
+              </div>
+              <button onClick={() => setRemoving(l)}
+                className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50">
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    )}
+    {loose.length > 0 && (
+    <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
       <p className="text-sm font-medium text-amber-900">
         {loose.length === 1
           ? 'One login is not attached to anybody on the staff list'
@@ -720,21 +766,23 @@ function UnattachedLogins({ canLink, staff }: { canLink: boolean; staff: StaffRo
       {attach.isError && (
         <p className="mt-2 text-sm text-danger-700">{(attach.error as Error).message}</p>
       )}
-      {removing && (
-        <DeleteRecord
-          kind="login"
-          name={removing.full_name || removing.email || 'this login'}
-          blockers={() => loginDeleteBlockers(removing.profile_id)}
-          remove={() => deleteLogin(removing.profile_id)}
-          onDeleted={() => {
-            setRemoving(null)
-            qc.invalidateQueries({ queryKey: ['schoolLogins'] })
-            qc.invalidateQueries({ queryKey: ['profiles'] })
-          }}
-          onCancel={() => setRemoving(null)}
-        />
-      )}
     </div>
+    )}
+    {removing && (
+      <DeleteRecord
+        kind="login"
+        name={removing.full_name || removing.email || 'this login'}
+        blockers={() => loginDeleteBlockers(removing.profile_id)}
+        remove={() => deleteLogin(removing.profile_id)}
+        onDeleted={() => {
+          setRemoving(null)
+          qc.invalidateQueries({ queryKey: ['schoolLogins'] })
+          qc.invalidateQueries({ queryKey: ['profiles'] })
+        }}
+        onCancel={() => setRemoving(null)}
+      />
+    )}
+    </>
   )
 }
 
