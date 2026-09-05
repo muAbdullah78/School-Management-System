@@ -3249,18 +3249,62 @@ export async function reverseOtherIncome(incomeId: string, reason: string): Prom
   if (error) throw new Error(error.message)
 }
 
+/**
+ * The message a school can act on when the database is behind the app.
+ *
+ * `data as FinanceSummary` is a CAST. It checks nothing at runtime, so a
+ * response of the wrong shape sails through here and throws several layers
+ * later, in the middle of rendering, as "Cannot read properties of undefined".
+ * With no error boundary that blanked the whole application, and the school had
+ * no way to know it was a version problem rather than a broken program.
+ *
+ * It is not hypothetical: these functions gained fields over time, and a school
+ * that applied bundle 4 but not bundle 6 is running the older one. The same lag
+ * already bites the create-teacher Edge Function.
+ *
+ * This THROWS rather than filling in zeros. The figures are the school's money.
+ * A screen that quietly shows "no expenses" because a field was missing is
+ * worse than one that says it cannot be sure, because the first is believed.
+ */
+function outOfDate(fn: string): Error {
+  return new Error(
+    `This school's database is behind the app: ${fn} returned something this ` +
+    'version does not understand. Apply the latest file from supabase/bundles ' +
+    'in the Supabase SQL editor, then reload. Nothing is lost and nothing is ' +
+    'wrong with your data.',
+  )
+}
+
+function asFinanceSummary(v: unknown, fn: string): FinanceSummary {
+  const o = v as Record<string, unknown> | null
+  if (
+    !o || typeof o !== 'object'
+    || typeof o.total_income !== 'number'
+    || typeof o.expenses !== 'number'
+    || typeof o.profit !== 'number'
+    || !Array.isArray(o.by_category)
+  ) throw outOfDate(fn)
+  return o as unknown as FinanceSummary
+}
+
 export async function getFinanceSummary(from: string, to: string): Promise<FinanceSummary> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_finance_summary', { p_from: from, p_to: to })
   if (error) throw new Error(error.message)
-  return data as FinanceSummary
+  return asFinanceSummary(data, 'fn_finance_summary')
 }
 
 export async function getProfitSnapshot(): Promise<ProfitSnapshot> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_profit_snapshot')
   if (error) throw new Error(error.message)
-  return data as ProfitSnapshot
+  const o = data as Record<string, unknown> | null
+  if (!o || typeof o !== 'object') throw outOfDate('fn_profit_snapshot')
+  return {
+    today: asFinanceSummary(o.today, 'fn_profit_snapshot'),
+    month: asFinanceSummary(o.month, 'fn_profit_snapshot'),
+    year: asFinanceSummary(o.year, 'fn_profit_snapshot'),
+  }
 }
 
 export interface ExpenseRow {

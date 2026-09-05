@@ -15,7 +15,7 @@ import { APPROVER_ROLES, canWrite } from '@/auth/roles'
 import { ObserverNotice } from '@/components/ObserverNotice'
 import { getCurrentTill, openTill, closeTill, approveTill, getTillReport } from '@/lib/db'
 import {
-  Card, CardTitle, PageHeader, Button, Badge, Field, inputClass, EmptyState, MiniStat, money,
+  Card, CardTitle, PageHeader, Button, Badge, Field, inputClass, EmptyState, MiniStat, money, LoadError,
 } from '@/components/ui'
 import { IconWallet, IconCheck, IconAlert } from '@/components/icons'
 
@@ -76,6 +76,8 @@ export function TillPage() {
         title="Cash drawer"
         subtitle="Count what you took, hand it over, and sign off the day."
       />
+
+      <LoadError of={[till, report]} what="The cash drawer" />
 
       {!mayWrite && <ObserverNotice what="cash-drawer sessions" />}
 

@@ -12,6 +12,7 @@ import { isTeacher } from '@/auth/roles'
 import { enqueueAttendance, isNetworkError, attendanceKey, cachedSchoolId } from '@/lib/offlineQueue'
 import { offlineFirst } from '@/lib/offlineCache'
 import { AttendanceSheet, type AttendanceSheetData } from './AttendanceSheet'
+import { LoadError } from '@/components/ui'
 
 type Marks = Record<string, AttendanceStatus>
 
@@ -223,6 +224,8 @@ export function AttendancePage() {
 
   return (
     <div>
+      <LoadError of={[session, classes, sections, roster]} what="The attendance register" />
+
       <div className="flex flex-wrap items-end justify-between gap-3">
         <h1 className="text-xl font-semibold text-slate-800">Attendance</h1>
         {rows.length > 0 && (

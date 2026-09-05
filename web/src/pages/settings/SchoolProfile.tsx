@@ -4,6 +4,7 @@ import { getSchoolSettings, updateSchoolSettings, type SchoolSettings } from '@/
 import { PhotoUpload } from '@/components/PhotoUpload'
 import { removeLogo, uploadLogo } from '@/lib/photos'
 import { useAuth } from '@/auth/AuthProvider'
+import { LoadError } from '@/components/ui'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 
@@ -50,6 +51,7 @@ export function SchoolProfile() {
 
   return (
     <form className="max-w-2xl space-y-4" onSubmit={(e) => { e.preventDefault(); save.mutate() }}>
+      <LoadError of={[settings]} what="The school profile" />
       <section className="rounded border border-slate-200 bg-white p-4">
         <h3 className="text-sm font-semibold text-slate-800">School logo</h3>
         <p className="mb-3 mt-0.5 text-xs text-slate-500">

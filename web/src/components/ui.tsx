@@ -289,3 +289,35 @@ export function balanceTone(balance: number): Tone {
   if (balance < 0) return 'info'
   return 'money'
 }
+
+/**
+ * Why the data on this screen is missing.
+ *
+ * A failed read and an empty table look identical unless somebody says
+ * otherwise, and on a school's own records that difference decides whether a
+ * wrong number is believed. Five screens drew "nothing here yet" for a read
+ * that had failed outright; src/test/pages.smoke.test.tsx now refuses that.
+ *
+ * Pass the query objects straight in. It renders nothing when they are fine,
+ * so it is safe to leave at the top of a screen permanently.
+ */
+export function LoadError(
+  { of, what }: { of: { isError: boolean; error: unknown }[]; what?: string },
+) {
+  const failed = of.filter((q) => q.isError)
+  if (!failed.length) return null
+  // One banner however many queries failed: three copies of "permission denied"
+  // is noise, and the first reason is almost always the whole story.
+  const message = (failed[0].error as Error)?.message ?? 'Unknown error'
+  return (
+    <div className="mb-4 rounded-xl border border-danger-200 bg-danger-50 px-4 py-3">
+      <p className="text-sm font-medium text-danger-900">
+        {what ? `${what} could not be loaded` : 'This could not be loaded'}
+      </p>
+      <p className="mt-1 break-words text-sm text-danger-800">{message}</p>
+      <p className="mt-1 text-xs text-danger-700">
+        What you see below may be incomplete. Reload before acting on it.
+      </p>
+    </div>
+  )
+}

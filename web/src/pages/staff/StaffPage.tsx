@@ -19,6 +19,7 @@ import { StaffDayRegister } from './StaffDayRegister'
 import { PhotoUpload } from '@/components/PhotoUpload'
 import { Avatar } from '@/components/Avatar'
 import { removeStaffPhoto, signPaths, uploadStaffPhoto } from '@/lib/photos'
+import { LoadError } from '@/components/ui'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 const TABS = [{ key: 'staff', label: 'Staff' }, { key: 'attendance', label: 'Attendance' },
@@ -156,6 +157,8 @@ function StaffTab() {
 
   return (
     <div className="space-y-5">
+      <LoadError of={[staff, profiles]} what="The staff list" />
+
       {!mayWrite && <ObserverNotice what="staff records" />}
 
       {!editing && mayWrite && (
