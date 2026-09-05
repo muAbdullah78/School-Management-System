@@ -1331,6 +1331,22 @@ select 'a school on trial can start again',
             else 'FAIL - apply supabase/bundles/11_deletion_and_logins.sql' end
 
 union all
+-- 0097. The same attendance percentage was computed three ways and a parent saw
+-- 92% where the result card printed 83.3%. This checks the shared rule exists
+-- AND still gives the documented answer: a function that is present but has
+-- been quietly changed back is the failure worth catching.
+select 'one attendance percentage, not three (0097)',
+       case
+         when to_regprocedure('public.fn__attendance_pct(integer,integer,integer,integer)') is null
+           then 'FAIL - apply supabase/bundles/11_deletion_and_logins.sql'
+         when public.fn__attendance_pct(8, 1, 2, 12) <> 83.3
+           then 'FAIL - the attendance rule gives '
+                || public.fn__attendance_pct(8, 1, 2, 12)::text
+                || ' where it should give 83.3 (present + late + half a half day, over marked days)'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS — no schools yet, as expected'

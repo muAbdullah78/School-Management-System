@@ -692,7 +692,19 @@ with sig(migration, object, present) as (values
   -- decides, and a screen calls it before showing the button. Without it every
   -- Delete on the roster refuses with a function-not-found error.
   ('0094_deletion', 'a record with no history can be deleted',
-     to_regprocedure('public.fn_student_delete_blockers(uuid)') is not null)
+     to_regprocedure('public.fn_student_delete_blockers(uuid)') is not null),
+  -- The login list rather than the delete: it is the half that makes an
+  -- unattached login visible at all, and without it the staff screen cannot
+  -- show a login that belongs to nobody.
+  ('0095_who_can_sign_in', 'every login is visible, with the address it uses',
+     to_regprocedure('public.fn_school_logins()') is not null),
+  ('0096_start_again', 'a school on trial can clear its practice data',
+     to_regprocedure('public.fn_reset_school_data(text)') is not null),
+  -- The shared rule, not the portal function: the portal function existed
+  -- before and simply computed the wrong number, so its presence proves
+  -- nothing. This one only exists if 0097 was applied.
+  ('0097_one_attendance_rule', 'one attendance percentage, shared by every screen',
+     to_regprocedure('public.fn__attendance_pct(integer,integer,integer,integer)') is not null)
 )
 select migration,
        object                                   as looked_for,

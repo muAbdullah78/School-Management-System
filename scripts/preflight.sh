@@ -50,6 +50,36 @@ step "the built site would index correctly" python3 scripts/check-site-seo.py
 step "0059 exemption list agrees across three files" python3 supabase/check-exemption-lists.py
 step "site links and app entry points" bash supabase/check-site-links.sh
 
+# The install checks must cover every migration on disk. This is a CI step I had
+# NOT copied here, and it is what failed the first push this script called
+# clean: detect.sql had no row for 0095 or 0096, so "is my database up to date?"
+# had quietly stopped answering two migrations ago.
+step "verify.sql and detect.sql cover every migration" bash -c '
+  fail=0
+  for n in 0035 0036 0037 0038 0039 0040 0041 0042 0043 0044 0045 0046 0047 0048 0049; do
+    grep -q "'"'"'$n'"'"'" supabase/verify.sql || { echo "verify.sql does not check $n"; fail=1; }
+    grep -q "'"'"'${n}_" supabase/repair/detect.sql || { echo "detect.sql does not check $n"; fail=1; }
+    test -f "supabase/repair/${n}_"*.sql || { echo "no repair file for $n"; fail=1; }
+  done
+  for f in supabase/migrations/*.sql; do
+    n=$(basename "$f" | cut -c1-4)
+    [ "$n" \> "0049" ] || continue
+    grep -q "$n" supabase/verify.sql || { echo "verify.sql never mentions $n"; fail=1; }
+    grep -q "'"'"'${n}_" supabase/repair/detect.sql || { echo "detect.sql does not check $n"; fail=1; }
+  done
+  exit $fail'
+
+# A suite nothing runs is a suite that rots. CI asserts every file in
+# supabase/tests has a step; so does this, or a new suite can be written, pass
+# here, and never run again.
+step "every SQL suite has a CI step" bash -c '
+  fail=0
+  for t in supabase/tests/*.sql; do
+    grep -q "$(basename "$t")" .github/workflows/ci.yml || {
+      echo "no CI step runs $(basename "$t")"; fail=1; }
+  done
+  exit $fail'
+
 echo
 echo "== the app =="
 step "typecheck" bash -c 'cd web && npx tsc --noEmit'
@@ -128,7 +158,30 @@ SQL
     }
   done
   [ "$bad" = 0 ] && printf '%-52s ok (%s suites)\n' "all SQL suites" "$(ls supabase/tests/*.sql | wc -l)"
+
+  # In REVERSE too, which CI also does. A suite that only passes when its
+  # predecessor has just run is depending on that predecessor's leftovers, and
+  # will fail the day somebody reorders them.
+  bad=0
+  for t in $(ls supabase/tests/*.sql | sort -r); do
+    psql -q -d preflight_migrations -v ON_ERROR_STOP=1 -f "$t" >/dev/null 2>/tmp/pf.err || {
+      printf '%-52s FAIL\n' "${t##*/} (reverse order)"
+      grep -E 'ERROR|FAIL' /tmp/pf.err | head -3 | sed 's/^/      /'
+      bad=$((bad + 1)); fails=$((fails + 1))
+    }
+  done
+  [ "$bad" = 0 ] && printf '%-52s ok\n' "all SQL suites again, in reverse order"
 fi
+
+# WHAT THIS SCRIPT STILL DOES NOT RUN.
+#
+# Printed every time, not hidden behind a flag. The first version said
+# "PREFLIGHT CLEAN" on a commit CI then failed, because it silently covered nine
+# of the ten multi-line CI steps. A checker that does not say what it skipped is
+# claiming more than it checked, which is the same fault as one that lies.
+echo
+echo "== CI steps this script does NOT run =="
+python3 scripts/preflight-gaps.py
 
 echo
 if [ "$fails" = 0 ]; then
