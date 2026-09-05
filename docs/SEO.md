@@ -191,13 +191,34 @@ Once it exists, a search for your business name shows a panel with your phone,
 your website and your reviews, and it is the only reliable route to stars beside
 your name. See the note on stars below.
 
-### 3. Bing Webmaster Tools, ten minutes
+### 3. Make sure there is only one address, five minutes
+
+Check what `www.theschoolmanager.site` does. Type it into a browser.
+
+- If it does not resolve at all, there is nothing to do.
+- If it loads the site and the address bar **stays** on `www.`, you have the
+  same site at two addresses. Google treats those as two sites and has to guess
+  which one is real, and any links people give you get split between them.
+
+The fix is a redirect, not a second deployment. In Cloudflare, open
+**Rules**, then **Redirect Rules**, and create one: when the hostname equals
+`www.theschoolmanager.site`, do a **301 permanent** redirect to the same path
+on `theschoolmanager.site`.
+
+Every canonical tag on the site already points at the version without `www.`,
+which limits the damage either way, but a canonical is a hint and a 301 is not.
+
+While you are there, the same is true of `http://`. Cloudflare's **Always Use
+HTTPS** setting handles it, and the site now sends an HSTS header as well, so a
+browser that has visited once will not try `http://` again for a year.
+
+### 4. Bing Webmaster Tools, ten minutes
 
 `bing.com/webmasters`. It can import everything from Search Console in one
 click. Bing is a small share of Pakistani search, but it is ten minutes and it
 also feeds some AI assistants.
 
-### 4. Links, slowly and honestly
+### 5. Links, slowly and honestly
 
 Ranking beyond the first month is mostly about who links to you. In order of
 value for your business:
@@ -218,7 +239,7 @@ value for your business:
 **Never buy links.** Paid link schemes are the one thing Google acts on
 manually, and a manual action is much harder to recover from than a bad ranking.
 
-### 5. What to measure, monthly
+### 6. What to measure, monthly
 
 In Search Console, look at **Performance** and write down four numbers:
 
