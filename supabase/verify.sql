@@ -1648,6 +1648,45 @@ select 'the school day is measured in Karachi, not UTC (0107)',
        end
 
 union all
+-- 0108. The other half of 0106. Closing an unpaid school changed what
+-- "cancelled" means, and the operator console was never told: it still printed
+-- 0079's sentence promising that a cancelled or archived school's staff can
+-- sign in, read, print and export. It also had no way to undo a cancellation at
+-- all, so the one irreversible control on a dialog headed "short of destroying
+-- it" was also the cheapest to press by mistake, and the only route back raised
+-- an invoice against a school that had already paid.
+select 'cancelling a school can be undone, and says what it does (0108)',
+       case
+         when to_regprocedure('public.fn_platform_reinstate_subscription(uuid, text)') is null
+           then 'FAIL - a cancellation cannot be undone without an invoice; '
+                || 'apply supabase/bundles/15_the_one_way_door.sql'
+         -- ASSERTED ON THE PRESENCE OF THE NEW SENTENCE, not on the absence of
+         -- the old one. The first draft of this row searched prosrc for "keep
+         -- read and export access" and failed on a database where 0108 HAD
+         -- applied, because 0108's own comment quotes the sentence it replaced
+         -- in order to explain it. prosrc is the whole body, comments included.
+         -- Absence is the wrong shape of question anyway: this file runs on a
+         -- customer's database to answer "did the migration land", and the
+         -- regression is caught properly by supabase/tests/the_one_way_door.sql,
+         -- which calls the function and reads what it actually returns.
+         when not exists (
+           select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = 'fn_platform_cancel_subscription'
+             and p.prosrc like '%closed sign%')
+           then 'FAIL - cancelling still tells the operator the school keeps read '
+                || 'and export access, which 0106 made false; '
+                || 'apply supabase/bundles/15_the_one_way_door.sql'
+         when not exists (
+           select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = 'fn_platform_archive_school'
+             and p.prosrc like '%closed sign%')
+           then 'FAIL - archiving still tells the operator the school''s staff can '
+                || 'sign in, read, print and export; '
+                || 'apply supabase/bundles/15_the_one_way_door.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS — no schools yet, as expected'

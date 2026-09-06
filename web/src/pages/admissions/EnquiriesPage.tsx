@@ -24,6 +24,7 @@ import { fmtDate } from '@/lib/format'
 import { useAuth } from '@/auth/AuthProvider'
 import { canWrite } from '@/auth/roles'
 import { ObserverNotice } from '@/components/ObserverNotice'
+import { daysFromNow } from '@/lib/dates'
 
 const FIELD =
   'rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
@@ -46,11 +47,7 @@ const STATUS_STYLE: Record<EnquiryStatus, string> = {
   lost: 'bg-slate-100 text-slate-500 border-slate-200',
 }
 
-function daysFromNow(n: number): string {
-  const d = new Date()
-  d.setDate(d.getDate() + n)
-  return d.toISOString().slice(0, 10)
-}
+// A follow-up date set at 9pm used to land a day early. See web/src/lib/dates.ts.
 
 function Pill({ status }: { status: EnquiryStatus }) {
   return (

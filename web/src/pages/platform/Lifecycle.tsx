@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  archiveSchool, cancelSubscription, setGrace, suspendSchool,
+  archiveSchool, cancelSubscription, reinstateSubscription, setGrace, suspendSchool,
   unarchiveSchool, unsuspendSchool, type PlatformSchool,
 } from '@/lib/platform'
 import { formatPkr } from '@/lib/licence'
@@ -17,15 +17,27 @@ const FIELD = 'w-full rounded border border-slate-300 px-2 py-1.5 text-sm'
  *   SUSPEND   stop them working NOW, whatever the licence dates say. The school
  *             is shown the reason. Reversible in one click.
  *   CANCEL    end the commercial relationship. Data untouched, still visible in
- *             the console, and it does NOT write off what they owe.
+ *             the console, and it does NOT write off what they owe. Since 0106
+ *             it also shuts the software immediately, whatever the dates say.
+ *   REINSTATE undo a cancellation. Puts back whatever the DATES say and raises
+ *             no invoice.
  *   ARCHIVE   out of the console and off the renewal list. Data untouched.
  *             Reversible, and the required step before offboarding.
  *   GRACE     a different post-expiry window for this school only.
  *
  * Nothing here deletes anything. That is Offboard, and it is a different screen
  * with a different colour and a name to type.
+ *
+ * WHY REINSTATE EXISTS
+ *
+ * Suspend had Unsuspend and Archive had Unarchive. Cancel had NOTHING, and 0106
+ * had just made cancelling throw every teacher and parent out of the software
+ * the same second - so the cheapest mis-click on this screen was also the only
+ * irreversible one, on a dialog whose heading promises the things you can do
+ * SHORT of destroying a school. The only route back was Activate/Renew, which
+ * raises an invoice, so undoing it meant billing a school that had already paid.
  */
-type Action = 'suspend' | 'unsuspend' | 'cancel' | 'archive' | 'unarchive' | 'grace'
+type Action = 'suspend' | 'unsuspend' | 'cancel' | 'reinstate' | 'archive' | 'unarchive' | 'grace'
 
 export function LifecycleDialog({ school, onClose, onDone }: {
   school: PlatformSchool
@@ -33,6 +45,11 @@ export function LifecycleDialog({ school, onClose, onDone }: {
   onDone: (message: string) => void
 }) {
   const [action, setAction] = useState<Action | null>(null)
+  // THE NUMBER THE OLD SCREEN NEVER SHOWED. fn_effective_status tests
+  // `status = 'cancelled'` above it tests the dates, so cancelling a school in
+  // September that has paid through June ends June this afternoon. The dialog
+  // said only that the relationship was ending and the debt still stood.
+  const paidDaysLeft = Math.max(0, school.days_left ?? 0)
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4">
       <div className="w-full max-w-lg rounded-lg bg-white p-5 shadow-lg">
@@ -73,11 +90,20 @@ export function LifecycleDialog({ school, onClose, onDone }: {
               body="How long after expiry they keep working while a payment is in flight. For
                     the school that always pays late and always pays, or the one that needs
                     chasing every quarter." />
-            {school.status !== 'cancelled' && (
+            {school.status !== 'cancelled' ? (
               <Choice onClick={() => setAction('cancel')} title="Cancel the subscription"
-                body="Ends the relationship. Nothing is deleted, they stay in this list, and
-                      anything they owe is still owed."
+                body={`Ends the relationship today, whatever their dates say. Nothing is
+                      deleted and anything they owe is still owed, but the owner drops to
+                      an export screen and teachers and parents are shown a closed sign${
+                        paidDaysLeft > 0
+                          ? `. They have paid to ${school.expires_on}: cancelling throws away ${paidDaysLeft} day(s) of that`
+                          : ''}.`}
                 tone="warn" />
+            ) : (
+              <Choice onClick={() => setAction('reinstate')} title="Reinstate the subscription"
+                body="For a cancellation that was a mistake. Puts back whatever their dates
+                      say and raises no invoice. If their dates have run out they stay
+                      locked, and renewing is what opens the software." />
             )}
             {school.archived ? (
               <Choice onClick={() => setAction('unarchive')} title="Bring them back into the list"
@@ -124,6 +150,12 @@ function ActionForm({ school, action, onBack, onDone }: {
 
   const needsReason = action === 'suspend' || action === 'cancel' || action === 'archive'
   const isGraceOverride = action === 'grace' && days.trim() !== ''
+  const graceProblem = !isGraceOverride ? null
+    : !Number.isInteger(Number(days))
+      ? 'Whole days only.'
+    : Number(days) < 0 || Number(days) > 180
+      ? 'Between 0 and 180 days. Leave it blank to put them back on the standard window.'
+    : null
 
   const run = useMutation({
     mutationFn: async (): Promise<{ title: string; lines: string[] }> => {
@@ -145,7 +177,21 @@ function ActionForm({ school, action, onBack, onDone }: {
         }
         case 'cancel': {
           const r = await cancelSubscription(school.school_id, reason)
-          return { title: 'Subscription cancelled.', lines: [r.note, r.data] }
+          // r.data used to read "their data is untouched and they keep read and
+          // export access", which 0106 made false and 0108 rewrote. r.gave_up
+          // and r.reversible are new, and both are things the operator would
+          // otherwise find out from a phone call.
+          return {
+            title: 'Subscription cancelled.',
+            lines: [r.note, r.data, r.gave_up ?? '', r.reversible],
+          }
+        }
+        case 'reinstate': {
+          const r = await reinstateSubscription(school.school_id, reason.trim() || null)
+          return {
+            title: r.back_in ? 'Back in.' : 'Reinstated, and still locked.',
+            lines: [r.note, 'No invoice was raised.'],
+          }
         }
         case 'archive': {
           const r = await archiveSchool(school.school_id, reason)
@@ -162,6 +208,11 @@ function ActionForm({ school, action, onBack, onDone }: {
           return { title: 'Back in the list.', lines: [r.note] }
         }
         case 'grace': {
+          // `min` and `max` on a number input are enforced by form validation
+          // and there is no form here, so both were decoration: -5 and 9999 were
+          // typeable, and Number('') is 0 rather than null, which silently means
+          // something different from "leave it standard". graceProblem below
+          // stops all three before they reach the database.
           const n = days.trim() === '' ? null : Number(days)
           const r = await setGrace(school.school_id, n, reason.trim() || null)
           return {
@@ -209,6 +260,33 @@ function ActionForm({ school, action, onBack, onDone }: {
       </button>
 
       {err && <p className="mt-2 rounded bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
+      {graceProblem && (
+        <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          {graceProblem}
+        </p>
+      )}
+
+      {/* WHAT CANCELLING ACTUALLY COSTS, ON THE SCREEN WHERE IT IS DECIDED.
+          The reason box was the only thing here, so the last thing the operator
+          read before pressing was a prompt for churn data. Since 0106 this
+          action ends a paid period on the spot and takes every teacher and
+          parent offline with it, and neither fact appeared anywhere. */}
+      {action === 'cancel' && (
+        <div className="mt-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <p className="font-medium">This takes effect today, not at the end of their term.</p>
+          <ul className="mt-1 space-y-0.5">
+            {(school.days_left ?? 0) > 0 && school.expires_on && (
+              <li>
+                They have paid to {school.expires_on}. Those {school.days_left} day(s) end
+                the moment you press this.
+              </li>
+            )}
+            <li>The owner and principal keep a screen that downloads everything.</li>
+            <li>Teachers and parents are shown a closed sign when they sign in.</li>
+            <li>Nothing is deleted, and Reinstate puts it all back without an invoice.</li>
+          </ul>
+        </div>
+      )}
 
       {action === 'grace' && (
         <label className="mt-3 block">
@@ -223,12 +301,12 @@ function ActionForm({ school, action, onBack, onDone }: {
         </label>
       )}
 
-      {(needsReason || isGraceOverride || action === 'unsuspend') && (
+      {(needsReason || isGraceOverride || action === 'unsuspend' || action === 'reinstate') && (
         <label className="mt-3 block">
           <span className="text-xs font-medium text-slate-600">
             {action === 'suspend'
               ? 'Reason: THE SCHOOL IS SHOWN THIS'
-              : action === 'unsuspend'
+              : action === 'unsuspend' || action === 'reinstate'
                 ? 'Note (optional)'
                 : 'Reason'}
           </span>
@@ -241,7 +319,7 @@ function ActionForm({ school, action, onBack, onDone }: {
 
       <button
         onClick={() => run.mutate()}
-        disabled={run.isPending
+        disabled={run.isPending || graceProblem !== null
           || ((needsReason || isGraceOverride) && reason.trim().length === 0)}
         className={`mt-4 w-full rounded px-3 py-2 text-sm font-medium text-white disabled:opacity-60 ${
           action === 'suspend' || action === 'cancel' || action === 'archive'
@@ -254,6 +332,7 @@ function ActionForm({ school, action, onBack, onDone }: {
 }
 
 const LABEL: Record<Action, string> = {
+  reinstate: 'Reinstate them',
   suspend: 'Suspend them',
   unsuspend: 'Lift the suspension',
   cancel: 'Cancel the subscription',
@@ -263,6 +342,7 @@ const LABEL: Record<Action, string> = {
 }
 
 const PLACEHOLDER: Record<Action, string> = {
+  reinstate: 'Cancelled the wrong row',
   suspend: 'Three months unpaid and not answering the phone',
   unsuspend: 'Paid in full on the 14th',
   cancel: 'Moved to a competitor on price',
@@ -272,6 +352,7 @@ const PLACEHOLDER: Record<Action, string> = {
 }
 
 const HINT: Record<Action, string> = {
+  reinstate: 'Optional, and kept in the history beside the cancellation it undoes.',
   suspend: 'This exact sentence appears on their screen. Write it as you would say '
     + 'it to the principal, because that is who will read it.',
   unsuspend: 'Kept in the history beside the reason they were suspended.',

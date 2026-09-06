@@ -295,6 +295,19 @@ emit supabase/bundles/13_the_leave_the_school_approved.sql \
 emit supabase/bundles/14_the_unpaid_school.sql \
      supabase/migrations/0106*.sql supabase/migrations/0107*.sql
 
+# A FIFTEENTH bundle. Bundle 14 has been pasted into a live school, so it is
+# frozen above and this is where new work goes.
+#
+# 0108 is the other half of 0106. Closing an unpaid school changed what the word
+# "cancelled" means, and the operator console was never told: it still printed
+# 0079's sentence promising that a cancelled or archived school's staff can sign
+# in, read, print and export, which stopped being true the day 0106 shipped. It
+# also had no way to undo a cancellation at all, on a dialog whose own heading
+# offers the things you can do to a school SHORT of destroying it, so the one
+# irreversible control on that screen was the cheapest one to press by mistake.
+emit supabase/bundles/15_the_one_way_door.sql \
+     supabase/migrations/0108*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

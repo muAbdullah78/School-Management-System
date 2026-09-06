@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { actionNeeded, sortByAction, type PlatformSchool } from './platform'
+import { actionNeeded, describeAction, sortByAction, type PlatformSchool } from './platform'
 
 const base: PlatformSchool = {
   school_id: 's', school_name: 'A School', city: null, contact_name: null, contact_phone: null,
@@ -82,5 +82,77 @@ describe('sortByAction', () => {
       s({ school_name: 'Sooner', status: 'active', days_left: 1 }),
     ]
     expect(sortByAction(list).map((x) => x.school_name)).toEqual(['Sooner', 'Later'])
+  })
+})
+
+/**
+ * The six heaviest things anybody can do to a customer fell through to
+ * describeAction's default and rendered as their own slug with the reason
+ * thrown away.
+ *
+ * The History dialog's whole stated purpose is "who chose it, and the reason
+ * somebody typed at the time". 0079 calls the cancellation reason "the only
+ * churn data this business will ever have" and then nothing ever showed it. A
+ * school could be suspended, cancelled, archived and finally have its records
+ * destroyed, and the history read:
+ *
+ *     school suspended
+ *     subscription cancelled
+ *     school archived
+ *     school purged
+ *
+ * Four slugs, no reasons, no amounts, and nothing to distinguish the last one -
+ * which cannot be undone - from the first.
+ */
+describe('describeAction: the actions that used to say nothing', () => {
+  const a = (action: string, detail: Record<string, unknown> = {}) =>
+    describeAction({ action, at: '2026-09-06T00:00:00Z', actor_email: 'op@vendor.test', detail } as never)
+
+  it('shows why a school was cancelled, and what it cost them', () => {
+    const out = a('subscription_cancelled', {
+      reason: 'Moved to a competitor on price',
+      outstanding_at_cancellation: 38000,
+      paid_until: '2027-06-30', days_given_up: 297,
+    })
+    expect(out).toContain('Moved to a competitor on price')
+    expect(out).toContain('38,000')
+    expect(out).toContain('297')
+    expect(out).not.toBe('subscription cancelled')
+  })
+
+  it('shows the sentence the school itself is being shown', () => {
+    const out = a('school_suspended', { reason: 'Three months unpaid and not answering' })
+    expect(out).toContain('Three months unpaid and not answering')
+    expect(out).toContain('shown this')
+  })
+
+  it('marks the one entry that cannot be undone', () => {
+    const out = a('school_purged', { reason: 'Closed down, data retention expired', rows: 41233 })
+    expect(out).toContain('DESTROYED')
+    expect(out).toContain('Closed down, data retention expired')
+  })
+
+  it('says what a grace period changed from and to', () => {
+    expect(a('grace_changed', { days: 30, standard: 14, reason: 'Their accountant is slow' }))
+      .toContain('30')
+    expect(a('grace_changed', { days: null, standard: 14 })).toContain('standard 14')
+  })
+
+  it('reads an archive and an unarchive back', () => {
+    expect(a('school_archived', { reason: 'Left in August', outstanding: 5000 }))
+      .toContain('Left in August')
+    expect(a('school_unarchived', { was_reason: 'Left in August' }))
+      .toContain('Left in August')
+  })
+
+  it('reports a reinstatement by where it actually landed', () => {
+    // The honest half: reinstating a school whose dates ran out puts it back
+    // as locked, and the feed has to say locked rather than reinstated.
+    expect(a('subscription_reinstated', { effective_status: 'locked' })).toContain('locked')
+    expect(a('subscription_reinstated', { effective_status: 'active' })).toContain('active')
+  })
+
+  it('still falls back to the slug for something nobody has taught it yet', () => {
+    expect(a('some_future_action')).toBe('some future action')
   })
 })

@@ -399,6 +399,59 @@ export function describeAction(a: OperatorAction): string {
       // question this answers.
       return `Our own billing details changed${f.length ? `: ${f.join(', ')}` : ''}`
     }
+    // --- 0079-0080 and 0108 ------------------------------------------------
+    // THE SIX HEAVIEST THINGS ANYBODY CAN DO TO A CUSTOMER FELL THROUGH TO THE
+    // DEFAULT and rendered as their own slug with the reason dropped on the
+    // floor. This screen's whole purpose, in its own words, is "who chose it,
+    // and the reason somebody typed at the time" - and for suspending a school,
+    // cancelling it, archiving it and destroying its records it showed neither.
+    // 0079 calls the cancellation reason "the only churn data this business will
+    // ever have" and then never displayed it anywhere.
+    case 'subscription_cancelled': {
+      const gave = Number(d.days_given_up ?? 0)
+      return `Subscription cancelled: ${String(d.reason ?? 'no reason recorded')}`
+        + (Number(d.outstanding_at_cancellation ?? 0) > 0
+            ? ` (${pkr(d.outstanding_at_cancellation)} still owed)` : '')
+        + (gave > 0 ? `, giving up ${gave} paid day(s) to ${String(d.paid_until ?? '')}` : '')
+    }
+    case 'subscription_reinstated':
+      return `Subscription reinstated: back to ${String(d.effective_status ?? d.status ?? '?')}`
+        + (d.reason ? ` (${String(d.reason)})` : '')
+    case 'school_suspended':
+      return `Suspended: ${String(d.reason ?? 'no reason recorded')}`
+        + ' (the school is shown this)'
+    case 'school_unsuspended':
+      return 'Suspension lifted'
+        + (d.note ?? d.reason ? `: ${String(d.note ?? d.reason)}` : '')
+    case 'school_archived':
+      return `Archived: ${String(d.reason ?? 'no reason recorded')}`
+        + (Number(d.outstanding ?? 0) > 0 ? ` (${pkr(d.outstanding)} still owed)` : '')
+    case 'school_unarchived':
+      return 'Brought back into the list'
+        + (d.was_reason ? ` (was archived: ${String(d.was_reason)})` : '')
+    case 'grace_changed':
+      return d.days === null || d.days === undefined
+        ? `Grace period put back to the standard ${String(d.standard ?? '?')} days`
+        : `Grace period set to ${String(d.days)} days instead of ${String(d.standard ?? '?')}`
+          + (d.reason ? `: ${String(d.reason)}` : '')
+    case 'school_exported':
+      return 'Their whole record was exported'
+        + (d.reason ? `: ${String(d.reason)}` : '')
+    case 'school_purged':
+      // The only entry on this list describing something that cannot be undone.
+      return `RECORDS DESTROYED: ${String(d.reason ?? 'no reason recorded')}`
+        + (d.rows ? ` (${String(d.rows)} rows)` : '')
+    case 'orphan_data_purged':
+      return `Rows belonging to no school deleted${d.rows ? ` (${String(d.rows)})` : ''}`
+    case 'announcement_posted':
+      return `Announcement posted${d.title ? `: ${String(d.title)}` : ''}`
+    case 'announcement_ended':
+      return `Announcement taken down${d.title ? `: ${String(d.title)}` : ''}`
+    case 'release_published':
+      return `Release ${String(d.version ?? '')} published`
+    case 'release_pulled':
+      return `Release ${String(d.version ?? '')} pulled`
+        + (d.reason ? `: ${String(d.reason)}` : '')
     default:
       return a.action.replace(/_/g, ' ')
   }
@@ -940,13 +993,21 @@ export async function unsuspendSchool(
  */
 export async function cancelSubscription(
   schoolId: string, reason: string,
-): Promise<{ status: string; outstanding: number; note: string; data: string }> {
+): Promise<{
+  status: string; outstanding: number; note: string; data: string
+  paid_until: string | null; days_given_up: number
+  gave_up: string | null; reversible: string
+}> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_platform_cancel_subscription', {
     p_school_id: schoolId, p_reason: reason,
   })
   if (error) throw new Error(error.message)
-  return data as { status: string; outstanding: number; note: string; data: string }
+  return data as {
+    status: string; outstanding: number; note: string; data: string
+    paid_until: string | null; days_given_up: number
+    gave_up: string | null; reversible: string
+  }
 }
 
 /**
@@ -976,6 +1037,25 @@ export async function archiveSchool(
   return data as {
     archived: boolean; outstanding: number; what_this_did: string[]; reversible: boolean
   }
+}
+
+/**
+ * The opposite of cancelling, which until 0108 did not exist.
+ *
+ * Suspend had unsuspend and archive had unarchive; cancel had nothing, so a
+ * mis-click could only be undone by raising an invoice against a school that
+ * had already paid. It restores the status the DATES imply and never invents a
+ * licence: a school whose paid period ran out in March comes back locked.
+ */
+export async function reinstateSubscription(
+  schoolId: string, reason: string | null,
+): Promise<{ status: string; back_in: boolean; note: string; invoiced: boolean }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_reinstate_subscription', {
+    p_school_id: schoolId, p_reason: reason,
+  })
+  if (error) throw new Error(error.message)
+  return data as { status: string; back_in: boolean; note: string; invoiced: boolean }
 }
 
 export async function unarchiveSchool(

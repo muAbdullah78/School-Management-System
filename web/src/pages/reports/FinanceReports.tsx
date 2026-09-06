@@ -27,17 +27,16 @@ import {
 } from '@/lib/db'
 import { DataTable, type Column } from '@/components/DataTable'
 import { fmtPKR, fmtDate } from '@/lib/format'
+import { daysAgo, monthStart, today } from '@/lib/dates'
 
 const FIELD =
   'rounded border border-slate-300 px-2 py-2 text-sm focus:border-brand-500 focus:outline-none'
 
-function monthStart(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
-}
-function today(): string {
-  return new Date().toISOString().slice(0, 10)
-}
+// Both come from one place now. This file had a CORRECT month start built from
+// the local calendar fields and, four lines below it, a today() that went
+// through toISOString and so named yesterday for five hours every night. A
+// range whose two ends disagree about what day it is produces from > to at 1am
+// on the 1st of the month, and an empty report nobody can explain.
 
 /* ============================================================ debit & credit */
 
@@ -1022,12 +1021,8 @@ export function StudentsLeftReport() {
  * worked around.
  */
 export function VoidedChargesReport() {
-  const [from, setFrom] = useState(() => {
-    const d = new Date()
-    d.setDate(d.getDate() - 90)
-    return d.toISOString().slice(0, 10)
-  })
-  const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10))
+  const [from, setFrom] = useState(() => daysAgo(90))
+  const [to, setTo] = useState(() => today())
   const q = useQuery({
     queryKey: ['voidedInvoices', from, to],
     queryFn: () => getVoidedInvoices(from, to),

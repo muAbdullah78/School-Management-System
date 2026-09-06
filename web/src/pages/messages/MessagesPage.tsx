@@ -1,3 +1,4 @@
+
 /**
  * WhatsApp: click to chat.
  *
@@ -21,12 +22,11 @@ import {
 } from '@/components/ui'
 import { IconWhatsApp, IconCheck, IconAlert } from '@/components/icons'
 import { AskDialog } from '@/components/AskDialog'
+import { monthStart, today } from '@/lib/dates'
 
-const todayStr = () => new Date().toISOString().slice(0, 10)
-const monthStart = () => {
-  const d = new Date()
-  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10)
-}
+// Was `new Date().toISOString().slice(0, 10)` for today and a local-midnight
+// round trip for the month, which named the last day of the previous month.
+const todayStr = today
 
 const LABELS: Record<string, string> = {
   payment_received: 'Fee receipt',
