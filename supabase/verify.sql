@@ -160,6 +160,38 @@ missing as (
     select 1 from information_schema.tables
      where table_schema = 'public' and table_name = e.t)
 )
+-- HOW FAR BEHIND A DATABASE CAN BE AND STILL GET AN ANSWER OUT OF THIS FILE.
+--
+-- This whole file is ONE statement, so a single raise anywhere prints no rows
+-- at all. That is the exact failure verify_clean() in scripts/preflight.sh was
+-- written to catch, arriving from the other direction: a report that renders
+-- nothing looks like a report with no failures.
+--
+-- TABLE LOOKUPS ARE RAISE-PROOF, and they were not. `'public.x'::regclass`
+-- raises when the table is absent, so a school that had pasted bundles 1 to 16
+-- and ran this file to find out what to paste next named payment_method_tokens
+-- (bundle 18) and login_secrets (bundle 22), neither of which existed yet, and
+-- got a Postgres error instead of the list. The one moment the file is opened
+-- was the one moment it could not run. to_regclass() returns null instead of
+-- raising and `oid = null` matches no rows, so those lookups now degrade to
+-- "absent". The ::regclass casts left in this file all name tables from bundle
+-- 1, which any database running this file at all already has.
+--
+-- FUNCTION CALLS CANNOT BE MADE RAISE-PROOF, and are worth keeping anyway.
+-- Several rows check BEHAVIOUR rather than existence, which is the whole
+-- reason this file catches things a catalogue query cannot:
+-- `fn__attendance_pct(8, 1, 2, 12) <> 83.3` is worth ten rows asking whether
+-- functions exist. A call to a function that is not there raises while the
+-- statement is PLANNED, before any CASE or AND could guard it, so this file
+-- cannot run on a database missing those functions and must not be rewritten to
+-- avoid them.
+--
+-- SO: this file is what a school runs AFTER pasting the bundles, to confirm the
+-- paste worked, and it works from about bundle 13 onward. supabase/repair/
+-- detect.sql is the one for a database that is behind: it asks nothing but the
+-- catalogue and runs at every stage, which preflight now asserts at five points
+-- along the bundle list.
+
 select 'tables present' as check,
        case when (select count(*) from missing) = 0 then 'PASS'
             else 'FAIL — missing ' || (select string_agg(t, ', ') from missing)
@@ -1850,11 +1882,14 @@ select 'a card number cannot be stored, and a way to pay is recorded (0112)',
            then 'FAIL - the gateway credential table has a policy on it, which is '
                 || 'the only thing that could let the app read a saved card token. '
                 || 'Remove it.'
-         when not (select relrowsecurity and relforcerowsecurity
-                     from pg_class where oid = 'public.payment_method_tokens'::regclass)
+         when not coalesce((select c.relrowsecurity and c.relforcerowsecurity
+                              from pg_class c
+                             where c.oid = to_regclass('public.payment_method_tokens')), false)
            then 'FAIL - row level security is not forced on the gateway credential '
                 || 'table; apply supabase/bundles/18_a_way_to_pay.sql'
-         when has_table_privilege('authenticated', 'public.payment_method_tokens', 'select')
+         when coalesce((select has_table_privilege('authenticated', c.oid, 'select')
+                          from pg_class c
+                         where c.oid = to_regclass('public.payment_method_tokens')), false)
            then 'FAIL - the app role can select from the gateway credential table'
          -- Auto-renewal with nothing to charge is the state that silently stops
          -- collecting money, so the schema has to refuse it.
@@ -1893,7 +1928,7 @@ select 'renewals go out without anybody remembering (0113)',
          -- ever goes, the runner bills twice on the second press.
          when not exists (select 1 from pg_trigger
                            where tgname = 'trg_refuse_duplicate_invoice'
-                             and tgrelid = 'public.platform_invoices'::regclass)
+                             and tgrelid = to_regclass('public.platform_invoices'))
            then 'FAIL - nothing stops the same period being invoiced twice, so a '
                 || 'second renewal run would bill every school again'
          else 'PASS'
@@ -1940,18 +1975,21 @@ select 'the school keeps its own keys, and only its own (0116)',
            then 'FAIL - a parent who forgets a password given to them on a '
                 || 'made-up address is locked out for good; apply '
                 || 'supabase/bundles/22_the_school_keeps_the_keys.sql'
-         when has_table_privilege('authenticated', 'public.login_secrets', 'select')
-           or has_table_privilege('anon', 'public.login_secrets', 'select')
+         when coalesce((select has_table_privilege('authenticated', c.oid, 'select')
+                           or has_table_privilege('anon', c.oid, 'select')
+                          from pg_class c
+                         where c.oid = to_regclass('public.login_secrets')), false)
            then 'FAIL - THE PASSWORD STORE IS READABLE BY A CLIENT ROLE. Every '
                 || 'password every school gave its parents is exposed. Re-apply '
                 || 'supabase/bundles/22_the_school_keeps_the_keys.sql, which '
                 || 'revokes it, and tell us.'
-         when not (select relrowsecurity and relforcerowsecurity
-                     from pg_class where oid = 'public.login_secrets'::regclass)
+         when not coalesce((select c.relrowsecurity and c.relforcerowsecurity
+                              from pg_class c
+                             where c.oid = to_regclass('public.login_secrets')), false)
            then 'FAIL - row level security is not forced on the password store; '
                 || 're-apply supabase/bundles/22_the_school_keeps_the_keys.sql'
          when exists (select 1 from pg_attribute
-                       where attrelid = 'public.login_secrets'::regclass
+                       where attrelid = to_regclass('public.login_secrets')
                          and attname = 'school_id' and not attisdropped)
            then 'FAIL - the password store has grown a school_id column, which '
                 || 'puts every school''s assigned passwords into the vendor '

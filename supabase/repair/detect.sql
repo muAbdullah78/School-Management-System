@@ -829,12 +829,28 @@ with sig(migration, object, present) as (values
   -- by default, so an unsealed login_secrets is a plaintext credential store
   -- anybody with the anon key can read. A row that only checked the table
   -- existed would report the dangerous state as healthy.
+  --
+  -- NOT SPELLED WITH ::regclass, AND THAT IS THE WHOLE POINT OF THIS FILE.
+  -- 'public.login_secrets'::regclass RAISES when the table is absent, which is
+  -- true of every database this file exists to diagnose, and the file is ONE
+  -- statement so one raise prints no rows at all. Measured, not reasoned about:
+  -- a database at migration 0037 answered
+  --     ERROR: relation "public.login_secrets" does not exist
+  -- and CI's upgrade replay caught it, because preflight only ever runs this
+  -- against databases that already have every migration. A boolean AND chain
+  -- in a VALUES list has no short-circuit guarantee either, so guarding with
+  -- to_regclass IS NOT NULL first would not have saved it.
+  -- to_regclass() returns null instead of raising, and `oid = null` matches no
+  -- rows, so each lookup degrades to "absent".
   ('0116_the_school_keeps_the_keys', 'the school can keep the passwords it gave out',
      to_regprocedure('public.fn_login_email_available(text)') is not null
      and to_regclass('public.login_secrets') is not null
-     and not has_table_privilege('authenticated', 'public.login_secrets', 'select')
-     and (select relrowsecurity and relforcerowsecurity
-            from pg_class where oid = 'public.login_secrets'::regclass)),
+     and not coalesce((select has_table_privilege('authenticated', c.oid, 'select')
+                         from pg_class c
+                        where c.oid = to_regclass('public.login_secrets')), true)
+     and coalesce((select c.relrowsecurity and c.relforcerowsecurity
+                     from pg_class c
+                    where c.oid = to_regclass('public.login_secrets')), false)),
   ('0117_which_door_you_came_through', 'a login with no school is told which kind',
      to_regprocedure('public.fn_my_login_state()') is not null)
 )
