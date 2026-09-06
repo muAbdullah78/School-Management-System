@@ -71,9 +71,16 @@ const OWNER: Profile = {
   staff_id: null, school_id: '22222222-2222-2222-2222-222222222222',
 }
 
-function authValue(profile: Profile) {
+function authValue(profile: Profile | null) {
   return {
-    session: { user: { id: profile.id, email: 'owner@example.test' } } as never,
+    // A SESSION WITH NO PROFILE IS A REAL STATE, not a nonsense one. It is what
+    // the platform operator looks like, and it is also what a school owner
+    // whose signup did not finish looks like, which is the whole reason
+    // LicenceGate has to ask which of the two it is talking to.
+    session: {
+      user: { id: profile?.id ?? '99999999-9999-9999-9999-999999999999',
+              email: profile ? 'owner@example.test' : 'stranded@example.test' },
+    } as never,
     profile, loading: false,
     signIn: async () => ({ error: null }),
     signOut: async () => {},
@@ -97,7 +104,10 @@ function onUncaught(e: ErrorEvent) {
   e.preventDefault()
 }
 
-async function mount(Comp: ComponentType, route = '/', props: Record<string, unknown> = {}) {
+async function mount(
+  Comp: ComponentType, route = '/', props: Record<string, unknown> = {},
+  profile: Profile | null = OWNER,
+) {
   uncaught.length = 0
   window.addEventListener('error', onUncaught)
   const qc = new QueryClient({
@@ -105,7 +115,7 @@ async function mount(Comp: ComponentType, route = '/', props: Record<string, unk
   })
   const utils = render(
     createElement(MemoryRouter, { initialEntries: [route] },
-      createElement(AuthContext.Provider, { value: authValue(OWNER) },
+      createElement(AuthContext.Provider, { value: authValue(profile) },
         createElement(QueryClientProvider, { client: qc },
           createElement(Comp as ComponentType<Record<string, unknown>>, props)))),
   )
@@ -327,6 +337,10 @@ describe('the operator console', () => {
     fn_platform_payment_claims: [],
     fn_platform_settings: { missing: [] },
     fn_platform_orphan_report: [],
+    // 0115. Empty in every case but the one that asserts the tab, because an
+    // unstubbed RPC comes back as an error and the tab would then be absent for
+    // the wrong reason.
+    fn_platform_unattached_logins: [],
     // 0113. The Renewals tab now opens with the run strip, which reads the run
     // history the moment "Past runs" is pressed and nothing before that. Stubbed
     // so a missing RPC cannot make the tab look broken in this suite while
@@ -493,6 +507,112 @@ describe('the operator console', () => {
     expect(details!.hasAttribute('open')).toBe(false)
     // And nothing in the page's own summary line mentions it.
     expect(container.querySelector('summary')?.textContent ?? '').not.toMatch(/0107_x/)
+  })
+
+  it('shows a tab when somebody can sign in and has no school', async () => {
+    // The state this tab exists for is invisible everywhere else in the
+    // console. A school with a login and no profile appears in the list above
+    // as an ordinary new customer, on trial, fourteen days left, nought
+    // pupils, and the person it belongs to is being shown a wall.
+    current.opts = {
+      rpc: {
+        ...ADMIN_RPCS,
+        fn_platform_unattached_logins: [{
+          user_id: 'usr-9', email: 'chaudharytraders735@example.test',
+          school_id: 'sch-1', school_name: 'Al Qalam School',
+          asked_role: null, created_at: '2026-09-05T08:00:00Z',
+        }],
+      },
+    }
+    const { PlatformPage } = await import('@/pages/platform/PlatformPage')
+    const { queryByText, getByText } = await mount(PlatformPage)
+    const tab = queryByText('Logins with no school')
+    expect(tab).not.toBeNull()
+    tab!.click()
+    await waitFor(() =>
+      expect(queryByText('chaudharytraders735@example.test')).not.toBeNull())
+    expect(queryByText('Attach to their school')).not.toBeNull()
+    // Said, not implied. The operator has to know which school it belongs to
+    // before they press anything.
+    expect(getByText('Al Qalam School')).not.toBeNull()
+  })
+
+  it('hides that tab when nobody is stranded, which is always', async () => {
+    // A permanently empty tab teaches people to stop reading the nav, and the
+    // nav is where the badges live.
+    current.opts = { rpc: ADMIN_RPCS }
+    const { PlatformPage } = await import('@/pages/platform/PlatformPage')
+    const { queryByText } = await mount(PlatformPage)
+    expect(queryByText('Logins with no school')).toBeNull()
+  })
+})
+
+/**
+ * WHICH SCREEN A SIGNED-IN USER WITH NO PROFILE GETS.
+ *
+ * This was one screen and it belonged to somebody else. "No profile" was read
+ * as "platform operator", because that is what an operator looks like from the
+ * browser, and the inference only runs one way. Two real schools signed up and
+ * both owners were sent to the operator's console, which refused them with
+ * "This area is for the system operator." on the click meant to open their new
+ * school. Signing in again gave the same wall, and nothing on it said what had
+ * gone wrong or who could fix it.
+ *
+ * Three ways to be here, three different right answers, all three asserted.
+ */
+describe('a signed-in user with no school', () => {
+  afterEach(cleanup)
+
+  const CHILD = () => createElement('div', null, 'THE SCHOOL APP')
+
+  async function gate(rpc: Record<string, unknown>) {
+    current.opts = { rpc }
+    const { LicenceGate } = await import('@/components/LicenceGate')
+    return mount(
+      () => createElement(LicenceGate, null, createElement(CHILD)),
+      '/', {}, null,
+    )
+  }
+
+  it('tells a school owner their login is not attached, and how to fix it', async () => {
+    const { queryByText, queryAllByText } = await gate({
+      is_platform_admin: false, fn_operator_current: null, fn_my_licence: null,
+    })
+    expect(queryByText(/not attached to a school/i)).not.toBeNull()
+    // AND NOT THE WRONG SCREEN. This is the assertion the bug would fail.
+    expect(queryByText(/for the system operator/i)).toBeNull()
+    // The two things a person in this position can actually do. queryAllByText
+    // because the button and the sentence telling them to press it both say
+    // "Check again", which is deliberate: the instruction names the control.
+    expect(queryAllByText(/Check again/i).length).toBeGreaterThan(0)
+    expect(queryByText(/Get in touch/i)).not.toBeNull()
+    // And the address, because whoever fixes this needs it and a person
+    // reading their own off the screen gets it right.
+    expect(queryByText(/stranded@example.test/)).not.toBeNull()
+  })
+
+  it('does not show that screen to the operator', async () => {
+    const { queryByText } = await gate({
+      is_platform_admin: true, fn_operator_current: null, fn_my_licence: null,
+    })
+    expect(queryByText(/not attached to a school/i)).toBeNull()
+  })
+
+  it('shows the school app to an operator inside a support visit', async () => {
+    // "View as school" was dead for a different reason once already: the gate
+    // saw no profile and bounced the operator back to the console while the
+    // school's own audit trail recorded a visit that never happened. The visit
+    // is therefore checked BEFORE the operator question, and this pins it.
+    const { queryByText } = await gate({
+      is_platform_admin: true, fn_my_licence: null,
+      fn_operator_current: {
+        id: 'sess-1', school_id: 'sch-1', school_name: 'Al Qalam School',
+        reason: 'Principal on the phone', started_at: '2026-09-06T05:00:00Z',
+        expires_at: '2026-09-06T07:00:00Z',
+      },
+    })
+    expect(queryByText('THE SCHOOL APP')).not.toBeNull()
+    expect(queryByText(/not attached to a school/i)).toBeNull()
   })
 })
 

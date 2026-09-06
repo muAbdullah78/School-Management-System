@@ -79,15 +79,24 @@ def main() -> int:
                 continue
             bad.append((name, key))
 
-    # handle_new_user MUST read the trusted field. If it stops doing so, either
-    # the whole mechanism was replaced (say so deliberately) or somebody deleted
-    # the fix — and a guard that only checks for the bad pattern would call an
-    # empty function healthy.
+    # THE TRUSTED CHANNEL MUST STILL BE READ SOMEWHERE. If it stops being read,
+    # either the whole mechanism was replaced (say so deliberately) or somebody
+    # deleted the fix, and a guard that only checks for the bad pattern would
+    # call an empty function healthy.
+    #
+    # BOTH BODIES ARE CONCATENATED, because there are two names for one
+    # decision. 0115 moved it out of the trigger into fn__attach_login so that
+    # the trigger, the repair sweep and the operator's repair button could not
+    # drift apart, leaving handle_new_user a two-line wrapper. Asking only about
+    # handle_new_user would then report the mechanism as gutted while it was
+    # working perfectly one call away, which is a guard that cries wolf, and a
+    # guard that cries wolf gets switched off.
     trusted = subprocess.run(
         ["psql", "-tA", "-v", "ON_ERROR_STOP=1", "-c",
-         "select coalesce((select prosrc from pg_proc p "
+         "select coalesce(string_agg(p.prosrc, E'\n'), '') from pg_proc p "
          "  join pg_namespace n on n.oid = p.pronamespace "
-         " where n.nspname='public' and p.proname='handle_new_user'), '')"],
+         " where n.nspname='public' "
+         "   and p.proname in ('handle_new_user', 'fn__attach_login')"],
         capture_output=True, text=True, env=dict(os.environ)).stdout
 
     problems = 0
@@ -106,14 +115,14 @@ with the reason.""")
 
     if "raw_app_meta_data" not in trusted:
         problems = 1
-        print("\nhandle_new_user DOES NOT READ raw_app_meta_data.\n"
+        print("\nNOTHING READS raw_app_meta_data.\n"
               "That is the trusted channel the Edge Functions provision through.\n"
               "Either the function was gutted, or the mechanism changed without\n"
               "this guard being updated. Both need a human.")
 
     if "user_invites" not in trusted:
         problems = 1
-        print("\nhandle_new_user DOES NOT CONSULT public.user_invites.\n"
+        print("\nNOTHING CONSULTS public.user_invites.\n"
               "That is the path a school adds a teacher through when the\n"
               "create-teacher Edge Function is not deployed. Without it, the\n"
               "only way to add staff is an Edge Function deployment.")

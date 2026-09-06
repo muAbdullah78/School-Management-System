@@ -17,3 +17,4 @@ supabase/bundles/16_who_actually_did_it.sql|0109_who_actually_did_it.sql 0110_a_
 supabase/bundles/17_the_price_of_a_term.sql|0111_the_price_of_a_term.sql
 supabase/bundles/18_a_way_to_pay.sql|0112_a_way_to_pay.sql
 supabase/bundles/19_the_renewal_run.sql|0113_the_renewal_run.sql
+supabase/bundles/20_leaving_and_coming_back.sql|0114_leaving_and_coming_back.sql

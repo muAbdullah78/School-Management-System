@@ -4,12 +4,32 @@
 // The one public, unauthenticated entry point in the product. A school owner
 // fills in the signup form and this creates, in order:
 //   1. the school + a 14-day trial subscription  (fn_signup_school, service role)
-//   2. their auth login, carrying school_id in user_metadata
-// The handle_new_user trigger reads that metadata and creates their profile as
-// 'owner' — first user in THAT school.
+//   2. their auth login, carrying school_id in APP metadata
+//   3. their profile as the school's owner, if step 2 did not already produce it
 //
-// Order matters: the school must exist before the user, because the trigger
-// needs a school to attach the profile to.
+// Order matters: the school must exist before the user, because the profile
+// needs a school to attach to.
+//
+// WHY STEP 3 EXISTS. It used not to. handle_new_user() is an AFTER INSERT
+// trigger on auth.users that reads the school out of app metadata, and the auth
+// service does not always write app metadata in the statement that inserts the
+// row: some versions insert the user and then update the metadata onto it a
+// moment later. An AFTER INSERT trigger sees the first statement only, finds no
+// school, and by design creates nothing.
+//
+// What that looked like to a real school: the school row was created, the trial
+// was created, the password worked, and the owner was shown the operator's
+// "Not available" gate, because a signed-in user with no profile belongs to no
+// school and the only thing that can be is the vendor. It happened twice, with
+// two schools, and both sat in the console looking like ordinary new customers
+// with nobody able to open them.
+//
+// 0115 fixes the trigger (it now fires on the update as well) AND adds the
+// operator a way to see and repair it. This step is here so that this function
+// does not DEPEND on that: redeploying it fixes new signups on a database that
+// has not had bundle 21 pasted yet. create-teacher has carried the same
+// fallback since it hit the same fault, and the comment it left behind said in
+// plain words that public signup had none. It does now.
 //
 // Deploy:  supabase functions deploy signup-school --no-verify-jwt
 // (--no-verify-jwt because a school signing up has no JWT yet.)
@@ -69,8 +89,8 @@ Deno.serve(async (req) => {
       // handle_new_user reads authorisation from here and nowhere else since
       // 0065: a browser signUp can set user_metadata, so a role or a school_id
       // there was a self-service promotion (a parent could make themselves
-      // principal). No role is sent — the school has no profiles yet, so the
-      // trigger makes this first account its owner.
+      // principal). No role is sent: the school has no profiles yet, so the
+      // first account of a school becomes its owner.
       app_metadata: { school_id: schoolId, provisioned_by: 'signup-school' },
     })
 
@@ -85,10 +105,90 @@ Deno.serve(async (req) => {
       return json({ error: msg }, 400)
     }
 
+    // 3) THE PROFILE. Read back what the trigger did, and finish the job if it
+    //    did nothing.
+    //
+    //    Read with the SERVICE client, not as the new owner. profiles carries a
+    //    SELECT policy keyed on current_school_id(), which is itself derived
+    //    from the profile, so asking as the owner cannot distinguish "no
+    //    profile" from "a profile that exists and is invisible to this caller".
+    //    Those two need completely different things done about them, and a
+    //    check that can be wrong in the direction of alarm is worse than none.
+    const readProfile = async () => await admin.from('profiles')
+      .select('role, active, school_id').eq('id', created.user.id).maybeSingle()
+
+    const first = await readProfile()
+    if (first.error) {
+      return json({
+        error: 'Your school and your login were created, but we could not read '
+          + `back what the database recorded: ${first.error.message}. Please `
+          + 'contact us with this reference and do not sign up again: '
+          + schoolId,
+        school_id: schoolId,
+      }, 500)
+    }
+
+    let landed = first.data
+    if (!landed) {
+      // Everything needed is already known and already authorised. The school
+      // was created by THIS request a moment ago, so it has no other profiles
+      // and this account is its owner by the same rule the trigger applies.
+      // Writing the row here is not a new privilege, it is the privilege this
+      // function has already exercised, used to finish.
+      //
+      // A DUPLICATE HERE IS SUCCESS. The trigger may have written the row
+      // between the read above and this insert, and if it did, its decision
+      // stands: this supplies what is absent and never overwrites.
+      const { error: fixErr } = await admin.from('profiles').insert({
+        id: created.user.id,
+        school_id: schoolId,
+        full_name: fullName,
+        role: 'owner',
+        active: true,
+      })
+      if (fixErr && !/duplicate key|already exists/i.test(fixErr.message)) {
+        // NOTHING IS LEFT BEHIND. The alternative was tried on a real school
+        // and is what this whole change exists to undo: a school row in the
+        // console, a login that signs in, and the operator's gate where the
+        // dashboard should be. Better to leave the address free so they can try
+        // again than to leave them holding a school they cannot open.
+        //
+        // The LOGIN goes first and the school only if that succeeded. The other
+        // order can leave a working login pointing at a school that is gone,
+        // which is worse than either half.
+        const { error: delUserErr } = await admin.auth.admin.deleteUser(created.user.id)
+        if (!delUserErr) await admin.from('schools').delete().eq('id', schoolId)
+        return json({
+          error: delUserErr
+            ? 'Something went wrong setting up your school and we could not tidy '
+              + `it away either: ${fixErr.message}. Please contact us with this `
+              + `reference: ${schoolId}`
+            : 'Something went wrong setting up your school, so nothing was saved '
+              + `and your email address is free to use: ${fixErr.message}. `
+              + 'Please try again.',
+        }, 500)
+      }
+      const again = await readProfile()
+      landed = again.data
+      if (!landed) {
+        return json({
+          error: 'Your school and your login were created and a profile was '
+            + 'written for them, and reading it back found nothing. Please '
+            + `contact us with this reference: ${schoolId}`,
+          school_id: schoolId,
+        }, 500)
+      }
+    }
+
     return json({
       ok: true,
       school_id: schoolId,
       trial_ends_on: (provisioned as { trial_ends_on: string }).trial_ends_on,
+      // Travels back so the signup page can say, in one line, that the database
+      // trigger did not do its half. It matters beyond this screen: the same
+      // trigger attaches every teacher and parent login, so a school that sees
+      // this once needs bundle 21.
+      repaired: !first.data,
     })
   } catch (e) {
     return json({ error: (e as Error).message ?? 'Unexpected error' }, 500)

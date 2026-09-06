@@ -30,9 +30,12 @@ check-definer-queries.py.
 
 EXEMPTIONS, and why there are two
 
-`handle_new_user` is VOLATILE and mentions 'readonly' because it CHOOSES that
-role as the fallback for an invited account. That is the point of the function,
-not a leak.
+`handle_new_user` and `fn__attach_login` are VOLATILE and mention 'readonly'
+because they CHOOSE that role as the fallback for an account whose provisioning
+named no recognised one. That is the point of the function, not a leak. They are
+two names for one decision: 0115 moved the body into fn__attach_login so the
+signup trigger, the repair sweep and the operator's repair button could not
+drift apart, and the trigger now just calls it.
 
 `fn_family_sheet` is VOLATILE only because of how it was written, and it mentions
 readonly in a read gate. It is exempt by name rather than by rule, because a rule
@@ -53,8 +56,13 @@ ALLOWED_VOLATILE = {
     'fn_operator_leave':
         "ends the caller's own support session; same category as enter",
     'handle_new_user':
-        "chooses 'readonly' as the fallback role for an invited account — "
-        "that is what the function is for",
+        "chooses 'readonly' as the fallback role for an invited account, which "
+        "is what the function is for",
+    'fn__attach_login':
+        "the same decision, which 0115 moved here so the trigger, the repair "
+        "sweep and the operator's repair button share one implementation; it "
+        "writes profiles and user_invites and nothing else, and is executable "
+        "by neither anon nor authenticated",
     'fn_family_sheet':
         "a read gate that happens to sit in a VOLATILE function; it selects and "
         "returns, it does not write",

@@ -622,15 +622,28 @@ select 'invite-only provisioning (0065)',
                  -- THE ONE THAT MATTERS, and it is a NEGATIVE. handle_new_user
                  -- has existed since 0011; its presence proves nothing. What
                  -- 0065 changed is that it no longer believes a role the BROWSER
-                 -- sent — which is what let any parent sign up again as
+                 -- sent, which is what let any parent sign up again as
                  -- 'principal' and get it, active.
+                 --
+                 -- ASKED OF BOTH FUNCTIONS since 0115, which moved the decision
+                 -- out of the trigger into fn__attach_login so the trigger, the
+                 -- repair sweep and the operator's repair button could not
+                 -- drift apart. The POSITIVE facts need only hold wherever the
+                 -- decision now lives; the NEGATIVE one must hold in both,
+                 -- because a re-read of the untrusted field reintroduced in
+                 -- either place is the same tenant breach.
                  and exists (select 1 from pg_proc p
                               join pg_namespace n on n.oid = p.pronamespace
-                              where n.nspname='public' and p.proname='handle_new_user'
+                              where n.nspname='public'
+                                and p.proname in ('handle_new_user','fn__attach_login')
                                 and p.prosrc like '%raw_app_meta_data%'
-                                and p.prosrc like '%user_invites%'
-                                and strpos(p.prosrc, 'raw_user_meta_data->>''role''') = 0
-                                and strpos(p.prosrc, 'raw_user_meta_data->>''school_id''') = 0)
+                                and p.prosrc like '%user_invites%')
+                 and not exists (select 1 from pg_proc p
+                              join pg_namespace n on n.oid = p.pronamespace
+                              where n.nspname='public'
+                                and p.proname in ('handle_new_user','fn__attach_login')
+                                and (strpos(p.prosrc, 'raw_user_meta_data->>''role''') > 0
+                                  or strpos(p.prosrc, 'raw_user_meta_data->>''school_id''') > 0))
        then 'PASS' else 'FAIL — run migrations/0065_invite_only_provisioning.sql' end
 
 union all
@@ -723,9 +736,62 @@ select 'parent lockout',
   ) bad
 
 union all
+-- THE EVENT LIST IS THE CHECK, not the trigger's existence.
+--
+-- The trigger has existed since 0011 and fired on INSERT only. The auth service
+-- does not always write app metadata in the statement that inserts the row:
+-- some versions insert the user and update the metadata onto it a moment later,
+-- and an AFTER INSERT trigger sees the first statement only. So it read app
+-- metadata with no school in it, created no profile, and the school's owner
+-- could sign in and had nothing to open. It happened to two real schools.
+--
+-- 0115 added the UPDATE event. The trigger keeps its old NAME so that a
+-- database which re-pastes bundle 1 does not end up with two of them, which
+-- means a re-paste of bundle 1 silently puts the INSERT-only version back. This
+-- row is what catches that. tgtype bit 2 is INSERT, bit 4 is UPDATE.
 select 'signup trigger on auth.users',
-       case when exists (select 1 from pg_trigger where tgname = 'on_auth_user_created')
-       then 'PASS' else 'FAIL — re-run bundle 1' end
+       case
+         when not exists (select 1 from pg_trigger where tgname = 'on_auth_user_created')
+           then 'FAIL — re-run bundle 1'
+         when not exists (select 1 from pg_trigger
+                           where tgname = 'on_auth_user_created' and (tgtype & 16) <> 0)
+           then 'FAIL - the trigger only fires on INSERT, so a school signing up '
+                || 'gets a login with no school attached and its owner cannot get '
+                || 'in; apply supabase/bundles/21_a_login_with_no_school.sql'
+         else 'PASS'
+       end
+
+union all
+-- 0115. Two questions, and the second one is about THIS database rather than
+-- about the schema: is anybody stranded right now.
+select 'nobody can sign in with no school (0115)',
+       case
+         when to_regprocedure('public.fn__attach_login(uuid)') is null
+           then 'FAIL - apply supabase/bundles/21_a_login_with_no_school.sql'
+         when to_regprocedure('public.fn_platform_unattached_logins()') is null
+           then 'FAIL - the operator cannot see a stranded login; '
+                || 'apply supabase/bundles/21_a_login_with_no_school.sql'
+         when to_regprocedure('public.fn_platform_attach_login(uuid)') is null
+           then 'FAIL - the operator can see a stranded login and not fix it; '
+                || 'apply supabase/bundles/21_a_login_with_no_school.sql'
+         -- Compared as TEXT deliberately: (…)::uuid on a malformed value in one
+         -- row would fail this whole report, and app metadata is a jsonb
+         -- document. The join is also the definition: a login naming a school
+         -- that has been purged cannot be attached to anything and is not a
+         -- fault. Kept spelled out rather than calling 0115's function, because
+         -- a diagnostic has to work on a database that is missing it.
+         when (select count(*) from auth.users u
+                where not exists (select 1 from public.profiles p where p.id = u.id)
+                  and exists (select 1 from public.schools s
+                               where s.id::text = u.raw_app_meta_data->>'school_id')) > 0
+           then 'FAIL - ' || (select count(*)::text from auth.users u
+                where not exists (select 1 from public.profiles p where p.id = u.id)
+                  and exists (select 1 from public.schools s
+                               where s.id::text = u.raw_app_meta_data->>'school_id'))
+                || ' login(s) can sign in and have no school. Open the operator '
+                || 'console, tab "Logins with no school", and attach them.'
+         else 'PASS'
+       end
 
 union all
 -- 0068. The school's over-limit banner must be silent until the renewal is

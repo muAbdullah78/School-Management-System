@@ -376,6 +376,18 @@ emit supabase/bundles/19_the_renewal_run.sql \
 emit supabase/bundles/20_leaving_and_coming_back.sql \
      supabase/migrations/0114*.sql
 
+# A TWENTY-FIRST bundle. 20 is frozen above.
+#
+# 0115 is the one that stopped two real schools from ever getting in. The signup
+# created the school, the trial and the login and then attached no profile,
+# because the auth service writes app metadata in a second statement and the
+# trigger that reads it fired only on the first. Their owners were shown the
+# operator's own gate. This makes the trigger fire on both, moves the decision
+# somewhere the repair path can share it, and sweeps up the logins already
+# stranded.
+emit supabase/bundles/21_a_login_with_no_school.sql \
+     supabase/migrations/0115*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

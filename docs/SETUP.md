@@ -279,6 +279,25 @@ The dashboard's **Updated** column is the other half of the answer. If a
 function's last deployment is older than the last commit that touched it, it is
 stale.
 
+> **0115 is the second worked example, and it happened for real.** The same
+> trigger 0065 introduced only fired on `INSERT`, and the auth service does not
+> always write `app_metadata` in the statement that inserts the row: some
+> versions insert the user and update the metadata onto it a moment afterwards.
+> An `AFTER INSERT` trigger sees the first statement only.
+>
+> So two schools signed up, both got a school, a trial and a working login, and
+> both owners were shown the operator's own gate instead of their new school.
+> 0115 makes the trigger fire on the update as well, and repairs the logins
+> already stranded. `signup-school` and `create-school-owner` were changed in
+> the same commit to write the profile themselves when it is missing, which is
+> what `create-teacher` already did.
+>
+> **Redeploy all three, and apply bundle 21.** The functions alone fix new
+> signups; the bundle alone fixes the ones already broken and stops the fault
+> for every login the product creates. There is also a new console tab, "Logins
+> with no school", which appears only when somebody is stranded and attaches
+> them in one click.
+
 Your **project ref** is the `abcdefgh` part of your Project URL.
 
 ---

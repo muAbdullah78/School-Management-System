@@ -20,13 +20,14 @@ import { NewSchoolDialog } from './NewSchool'
 import { Business } from './Business'
 import { Publishing } from './Publishing'
 import { LeftBehind } from './LeftBehind'
+import { UnattachedLogins } from './UnattachedLogins'
 import { Reviews } from './Reviews'
-import { paymentClaims, dueSoon, platformSettings, orphanReport } from '@/lib/platform'
+import { paymentClaims, dueSoon, platformSettings, orphanReport, unattachedLogins } from '@/lib/platform'
 
 const FIELD = 'rounded border border-slate-300 px-2 py-1.5 text-sm'
 
 type Tab = 'schools' | 'renewals' | 'claims' | 'business' | 'publishing' | 'billing'
-  | 'leftbehind' | 'reviews'
+  | 'leftbehind' | 'reviews' | 'strandedlogins'
 
 // What each screen is FOR, in one line, because the heading alone does not say.
 // "Renewals" and "Payments reported" are both about money arriving and a person
@@ -40,6 +41,7 @@ const TAB_SUBTITLE: Record<Tab, string> = {
   billing: 'Our own NTN and bank details, printed on every invoice we raise.',
   leftbehind: 'Records whose school no longer exists. Normally none.',
   reviews: 'What schools have said publicly, and anything reported as abuse.',
+  strandedlogins: 'People who can sign in and have no school. Should be none, ever.',
 }
 
 const TAB_TITLE: Record<Tab, string> = {
@@ -51,6 +53,7 @@ const TAB_TITLE: Record<Tab, string> = {
   billing: 'Our billing details',
   leftbehind: 'Records with no school',
   reviews: 'What schools say',
+  strandedlogins: 'Logins with no school',
 }
 
 // today() USED TO BE `new Date().toISOString().slice(0, 10)`, which is today in
@@ -116,6 +119,16 @@ export function PlatformPage() {
   const orphanCount = useQuery({
     queryKey: ['orphanReport', 'count'],
     queryFn: async () => new Set((await orphanReport()).map((r) => r.school_id)).size,
+    enabled: isAdmin.data === true,
+    retry: false,
+  })
+  // Logins that can sign in and belong to no school. Same reasoning as the
+  // count above and a worse failure: those people are CUSTOMERS who have paid
+  // us nothing yet, are being shown a wall, and are indistinguishable in the
+  // school list from a school that simply has not opened the app.
+  const strandedCount = useQuery({
+    queryKey: ['unattachedLogins', 'count'],
+    queryFn: async () => (await unattachedLogins()).length,
     enabled: isAdmin.data === true,
     retry: false,
   })
@@ -267,6 +280,13 @@ export function PlatformPage() {
             <TabButton now={tab} me="leftbehind" set={setTab} label="Records with no school"
               badge={orphanCount.data} warn />
           )}
+          {/* Same rule: only when there IS something. This one is the more
+              urgent of the two, because what it lists is a person sitting in
+              front of a screen that will not let them in. */}
+          {(strandedCount.data ?? 0) > 0 && (
+            <TabButton now={tab} me="strandedlogins" set={setTab} label="Logins with no school"
+              badge={strandedCount.data} warn />
+          )}
         </nav>
 
         {tab === 'renewals' && (
@@ -291,6 +311,7 @@ export function PlatformPage() {
         {tab === 'publishing' && <Publishing />}
         {tab === 'billing' && <BillingSettings />}
         {tab === 'leftbehind' && <LeftBehind />}
+        {tab === 'strandedlogins' && <UnattachedLogins />}
         {tab === 'reviews' && <Reviews />}
 
         {tab === 'schools' && <>

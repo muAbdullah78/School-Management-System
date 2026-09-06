@@ -1868,6 +1868,24 @@ jobs:
         # payment really may be in flight, must still get its grace.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/leaving_and_coming_back.sql
 
+      - name: A school signed up and its owner could not get in
+        # Two real schools. The school row, the trial and the login were all
+        # created and the password worked, and both owners were shown the
+        # operator's own "Not available" gate on the click meant to open their
+        # new school, because no profile was attached to the login.
+        #
+        # handle_new_user reads the school out of app metadata and fired on
+        # INSERT only, and the auth service does not always write app metadata
+        # in the statement that inserts the row. Reproduced before the fix: two
+        # signups differing only in that, one attached and one not.
+        #
+        # The suite asserts both spellings, because a fix for the second that
+        # broke the first would break every existing school at once; that a
+        # later metadata edit cannot move an attached person into another school
+        # now that the trigger fires on updates; that rubbish in app metadata
+        # cannot abort a signup; and that every 0065 rule survived the rewrite.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/a_login_with_no_school.sql
+
       - name: The cash drawer never accuses the clerk
         # One ordinary morning, seeded and run: open with a Rs 1,000 float, take
         # Rs 3,000 cash, reverse it when the cheque bounces and hand the money
