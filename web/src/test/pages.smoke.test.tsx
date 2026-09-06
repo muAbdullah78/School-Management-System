@@ -553,6 +553,72 @@ describe('the operator console', () => {
 })
 
 /**
+ * THE THREE DOORS, MOUNTED.
+ *
+ * One page served an operator console, a school back office and a parent portal
+ * while being written for a fourth person, a school buyer, who is not signing in
+ * at all. The full critique is in web/src/auth/doors.ts; these hold the facts
+ * that are checkable in a browser rather than by eye.
+ */
+describe('the sign-in doors', () => {
+  afterEach(cleanup)
+
+  async function door(mod: 'office' | 'parents' | 'operator') {
+    current.opts = {}
+    const { Login } = await import('@/pages/Login')
+    const doors = await import('@/auth/doors')
+    const d = mod === 'office' ? doors.OFFICE_DOOR
+      : mod === 'parents' ? doors.PARENT_DOOR : doors.OPERATOR_DOOR
+    return mount(() => createElement(Login, { door: d }), '/', {}, null)
+  }
+
+  it('shows a parent no price and no way to buy a school by accident', async () => {
+    const { queryByText, queryAllByText, container } = await door('parents')
+    expect(queryByText('Parent sign in')).not.toBeNull()
+    // THE TWO THINGS THE OLD PAGE PUT IN FRONT OF THEM.
+    expect(container.textContent ?? '').not.toMatch(/Rs 2,000/)
+    expect(queryByText(/Start a free 14-day trial/i)).toBeNull()
+    // And the sentence that replaces the trial link, which answers a question
+    // parents genuinely ask the office.
+    expect(queryByText(/nothing here for you to buy/i)).not.toBeNull()
+    // The most useful sentence on the page for the largest group of users, and
+    // queryAllByText because it is said twice on purpose: once on the card for
+    // somebody who does not know their details, and once in the strip at the
+    // bottom for somebody who cannot get in. Two different problems with the
+    // same answer, and the strip is the half a phone still shows when the
+    // support column is gone.
+    expect(queryAllByText(/ask the school office/i).length).toBeGreaterThan(0)
+  })
+
+  it('keeps the office door working for everybody and points a parent at theirs', async () => {
+    // /login has to keep serving all three audiences, because every bookmark
+    // and every ProtectedRoute redirect lands on it. So it way-finds with a
+    // sentence and never with a refusal.
+    const { queryByText } = await door('office')
+    // The EYEBROW, not the heading: "Sign in" is both the h1 and the submit
+    // button on this door, which is right, and the eyebrow is what names the
+    // door. Three applications sit behind this form and nothing on the old page
+    // said which one the visitor was standing in front of.
+    expect(queryByText('School office')).not.toBeNull()
+    expect(queryByText(/Start a free 14-day trial/i)).not.toBeNull()
+    expect(queryByText(/The parent portal is here/i)).not.toBeNull()
+    expect(queryByText(/you can sign in above just the same/i)).not.toBeNull()
+  })
+
+  it('gives the operator the plainest page in the product', async () => {
+    const { queryByText, container } = await door('operator')
+    expect(queryByText('Operator sign in')).not.toBeNull()
+    expect(container.textContent ?? '').not.toMatch(/Rs 2,000/)
+    expect(queryByText(/Start a free 14-day trial/i)).toBeNull()
+    // No support column at all, at any width.
+    expect(container.querySelector('aside')).toBeNull()
+    // The way out for a school owner who found the address, because a person at
+    // the wrong door should be redirected by a sentence and never by a refusal.
+    expect(queryByText(/Sign in to your school/i)).not.toBeNull()
+  })
+})
+
+/**
  * THE PASSWORDS A SCHOOL GAVE OUT.
  *
  * Storing a password is normally indefensible, and the reason it is defensible
@@ -682,6 +748,7 @@ describe('a signed-in user with no school', () => {
   it('tells a school owner their login is not attached, and how to fix it', async () => {
     const { queryByText, queryAllByText } = await gate({
       is_platform_admin: false, fn_operator_current: null, fn_my_licence: null,
+      fn_my_login_state: { state: 'unattached' },
     })
     expect(queryByText(/not attached to a school/i)).not.toBeNull()
     // AND NOT THE WRONG SCREEN. This is the assertion the bug would fail.
@@ -696,9 +763,31 @@ describe('a signed-in user with no school', () => {
     expect(queryByText(/stranded@example.test/)).not.toBeNull()
   })
 
+  it('says so when the login was closed rather than never attached', async () => {
+    // TWO WAYS TO HAVE NO SCHOOL, and the old screen said the same thing about
+    // both. A teacher who left or a parent whose access was removed was told
+    // their login was "not attached to a school yet" and to ask the office to
+    // attach it, which sent the office hunting for a problem that was not
+    // there while the remedy, one Activate button, sat beside that person's
+    // name on the Users screen. A closed login reads no profile at all, by
+    // design, so only fn_my_login_state (0117) can tell them apart.
+    const { queryByText } = await gate({
+      is_platform_admin: false, fn_operator_current: null, fn_my_licence: null,
+      fn_my_login_state: { state: 'closed', school: 'Al Qalam School', role: 'class_teacher' },
+    })
+    expect(queryByText(/switched off/i)).not.toBeNull()
+    expect(queryByText(/Al Qalam School/)).not.toBeNull()
+    expect(queryByText(/press Activate/i)).not.toBeNull()
+    // AND NOT THE OTHER SCREEN'S ADVICE. "Do not sign up again" and "ask the
+    // office to attach it" are both wrong here.
+    expect(queryByText(/not attached to a school yet/i)).toBeNull()
+    expect(queryByText(/would make a second school/i)).toBeNull()
+  })
+
   it('does not show that screen to the operator', async () => {
     const { queryByText } = await gate({
       is_platform_admin: true, fn_operator_current: null, fn_my_licence: null,
+      fn_my_login_state: { state: 'operator' },
     })
     expect(queryByText(/not attached to a school/i)).toBeNull()
   })

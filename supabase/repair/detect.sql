@@ -834,7 +834,9 @@ with sig(migration, object, present) as (values
      and to_regclass('public.login_secrets') is not null
      and not has_table_privilege('authenticated', 'public.login_secrets', 'select')
      and (select relrowsecurity and relforcerowsecurity
-            from pg_class where oid = 'public.login_secrets'::regclass))
+            from pg_class where oid = 'public.login_secrets'::regclass)),
+  ('0117_which_door_you_came_through', 'a login with no school is told which kind',
+     to_regprocedure('public.fn_my_login_state()') is not null)
 )
 select migration,
        object                                   as looked_for,

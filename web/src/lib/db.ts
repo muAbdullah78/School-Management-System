@@ -2599,6 +2599,28 @@ export async function createTeacherLogin(input: CreateTeacherInput): Promise<Cre
 // locked out for ever.
 // =============================================================================
 
+/**
+ * Why the signed-in person cannot see a school.
+ *
+ * There are two ways to have no school and they need opposite things said
+ * about them: nothing ever attached this login, or somebody closed it. The
+ * second reads no profile at all, because current_school_id() requires
+ * `active` and profiles_select requires the school to match it, so the browser
+ * cannot tell "no row" from "a row I may not see". See migration 0117.
+ */
+export interface LoginState {
+  state: 'signed_out' | 'operator' | 'unattached' | 'closed' | 'ok'
+  school?: string | null
+  role?: string | null
+}
+
+export async function myLoginState(): Promise<LoginState> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_my_login_state')
+  if (error) throw new Error(error.message)
+  return (data ?? { state: 'unattached' }) as LoginState
+}
+
 export interface EmailVerdict {
   available: boolean
   why: 'available' | 'not_an_address' | 'in_use_here' | 'invited_here'

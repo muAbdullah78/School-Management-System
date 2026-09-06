@@ -6,6 +6,7 @@ import {
 } from '@/lib/db'
 import { ROLE_LABELS, type Role } from '@/auth/roles'
 import { fmtDate } from '@/lib/format'
+import { ParentLink } from '@/components/ParentLink'
 
 const FIELD = 'rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-brand-500 focus:outline-none'
 
@@ -103,6 +104,12 @@ export function KeyRing() {
           it, and you can see that on the row. Your own owner password is never
           kept here.
         </p>
+        {/* And the address to send them to, beside the passwords, because those
+            are the two things a parent needs and the office had neither to
+            hand. */}
+        <div className="mt-3">
+          <ParentLink />
+        </div>
         {stale.length > 0 && (
           <p className="mt-2 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
             {stale.length === 1

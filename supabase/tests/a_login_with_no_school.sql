@@ -473,4 +473,72 @@ select pg_temp.ok(
   || 'so it no longer matters which statement the auth service writes the '
   || 'school in');
 
+-- =============================================================================
+-- 9. WHICH KIND of "no school" this is (0117)
+--
+-- 0115 replaced a wall with an explanation, and the explanation was right for
+-- one of the two ways to be in that position. A teacher who left, or a parent
+-- whose access was removed, has a profile that names a school and carries
+-- active = false. They were told their login was "not attached to a school
+-- yet" and to ask the office to attach it; the office then looked, found them
+-- attached and merely closed, and could not see what the screen said. One
+-- Activate button, beside that person's name, and a support call to find it.
+--
+-- The app cannot work this out for itself, which is why a function exists:
+-- current_school_id() requires `active` and profiles_select requires the school
+-- to match it, so a closed login reads NO profile at all and the browser cannot
+-- tell "there is no row" from "there is a row I may not see".
+-- =============================================================================
+do $s9$
+declare v_a uuid := (select v from _s where k = 'a'); v_out jsonb;
+begin
+  -- The 0115 case: a login nothing ever attached.
+  perform set_config('test.uid', '00000000-0000-0000-0000-0000000a0004', false);
+  v_out := public.fn_my_login_state();
+  perform pg_temp.ok(v_out->>'state' = 'unattached',
+    '26. a login nothing ever attached reads as unattached, which is what the '
+    || 'screen says');
+
+  -- The other case, and the one that was being told the wrong thing.
+  update public.profiles set active = false
+   where id = '00000000-0000-0000-0000-0000000a0003';
+  perform set_config('test.uid', '00000000-0000-0000-0000-0000000a0003', false);
+  v_out := public.fn_my_login_state();
+  perform pg_temp.ok(v_out->>'state' = 'closed',
+    '27. a login somebody CLOSED reads as closed rather than unattached, so the '
+    || 'person is sent to ask for the thing that will actually help');
+  perform pg_temp.ok(v_out->>'school' = 'Strand A',
+    '28. and it names the school, which is the fact that turns "something is '
+    || 'wrong" into "ring that office". It discloses nothing: they worked there');
+  perform pg_temp.ok(v_out->>'role' = 'class_teacher',
+    '29. and their role, so the screen can say whether to ask the office or the '
+    || 'principal');
+
+  -- The operator, who has no school BECAUSE that is what an operator is. The
+  -- screen must never tell the vendor their own login is broken.
+  perform set_config('test.uid', (select v::text from _s where k = 'ops'), false);
+  perform pg_temp.ok(public.fn_my_login_state()->>'state' = 'operator',
+    '30. and the operator reads as the operator, not as a broken login');
+
+  -- An ordinary working login, so the function is not just a detector of
+  -- failure states.
+  perform set_config('test.uid', '00000000-0000-0000-0000-0000000a0001', false);
+  perform pg_temp.ok(public.fn_my_login_state()->>'state' = 'ok',
+    '31. and a working login reads ok, which is the case a suite of failure '
+    || 'states would never have caught being broken');
+  perform set_config('test.uid', '', false);
+end
+$s9$;
+
+-- It answers about auth.uid() and takes no argument, so there is nothing to
+-- point at anybody else. Asserted from the catalogue, because the day somebody
+-- adds a p_user parameter "for the console" is the day it becomes a way to ask
+-- which school a given login belongs to.
+select pg_temp.ok(
+  (select count(*) = 0 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'fn_my_login_state'
+      and p.pronargs > 0),
+  '32. fn_my_login_state takes no arguments, so it cannot be pointed at another '
+  || 'login');
+
 rollback;

@@ -1960,6 +1960,23 @@ select 'the school keeps its own keys, and only its own (0116)',
        end
 
 union all
+-- 0117. Small, and it closes a wrong message rather than a hole. There are two
+-- ways to be signed in with no school: nothing ever attached this login, or
+-- somebody closed it. A closed login reads NO profile at all, because
+-- current_school_id() requires `active` and profiles_select requires the school
+-- to match it, so the browser cannot tell "no row" from "a row I may not see"
+-- and told a teacher who left that their login was never attached. The office
+-- then hunts a problem that is not there while the remedy sits beside that
+-- person's name on their own Users screen.
+select 'a login with no school is told which kind (0117)',
+       case when to_regprocedure('public.fn_my_login_state()') is null
+         then 'FAIL - a login somebody closed is told it was never attached, and '
+              || 'sent to ask for the wrong thing; apply '
+              || 'supabase/bundles/23_which_door_you_came_through.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS — no schools yet, as expected'

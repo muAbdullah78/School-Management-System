@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { PRODUCT_NAME, config } from '@/lib/config'
 import { schoolLabel } from '@/lib/schoolLabel'
+import type { Door } from '@/auth/doors'
 
 /**
  * The frame around every screen a visitor sees BEFORE they are signed in:
@@ -41,6 +42,21 @@ import { schoolLabel } from '@/lib/schoolLabel'
  * BELOW 1024px the support column is not rendered at all. Most signups happen
  * on a phone, so the device with the most signups gets the header, the form and
  * one line of facts, and nothing else to get wrong.
+ *
+ * WHAT THE COLUMN SAYS NOW DEPENDS ON THE DOOR, and the three rules above are
+ * about WEIGHT rather than content, so none of them changes.
+ *
+ * The selling column was right for a buyer and wrong for everybody else, and it
+ * was shown to everybody: a parent checking whether their son's fee was paid got
+ * a dashboard mockup, three selling points and the monthly price of the software
+ * their school buys. On a phone the column is hidden and the PRICE survived into
+ * the footer strip, so the one thing that reached a parent on a phone was the
+ * price. See web/src/auth/doors.ts for the whole critique.
+ *
+ * So the column is now one of four: 'selling' (the signup page, where a buyer
+ * really is standing), 'portal' (what a parent gets, and that it costs them
+ * nothing), 'office' (what is behind the door, with no price), and 'none' (the
+ * operator's, which is deliberately the plainest page in the product).
  *
  * COLOUR. The palette is the app's own indigo with the site's cyan accent, on
  * white and slate-50. Cyan appears only as an accent: the eyebrow rule, the
@@ -382,19 +398,92 @@ function Facts() {
   )
 }
 
+/**
+ * What a PARENT gets, which is nothing to do with what a school buys.
+ *
+ * Three things they can actually see, and the answer to the question parents
+ * ask the office rather than us: is this going to cost me anything. No mockup,
+ * because the mockup is a fee dashboard for an office and it would be selling
+ * them software they are not buying.
+ */
+function PortalColumn() {
+  return (
+    <ul className="mt-7 space-y-3 text-[15px] text-slate-700">
+      {[
+        ['Fees', 'What is paid, what is left, and every receipt.'],
+        ['Attendance', 'Which days your child was marked present.'],
+        ['Results', 'Marks and result cards, once the school releases them.'],
+      ].map(([k, v]) => (
+        <li key={k} className="flex gap-3">
+          <Tick />
+          <span>
+            <span className="font-semibold text-slate-900">{k}. </span>
+            {v}
+          </span>
+        </li>
+      ))}
+      {/* NOT "there is nothing here for you to buy" a second time. That
+          sentence lives under the form, where it replaces the trial link and
+          where a phone still shows it; saying it twice on one page is how copy
+          starts sounding defensive. */}
+      <li className="mt-6 border-t border-slate-200 pt-5 text-sm text-slate-600">
+        Your school pays for this, and it works in the browser on the phone you
+        are holding, with nothing to install.
+      </li>
+    </ul>
+  )
+}
+
+/**
+ * What is behind the OFFICE door, with no price on it.
+ *
+ * The selling column's three ticks were about buying: what is included in one
+ * price, what it runs on, what is kept. A clerk signing in on a Tuesday
+ * morning is not deciding whether to buy. These say what they are about to
+ * open, so the page is at least honest about which of three applications is on
+ * the other side of the form.
+ */
+function OfficeColumn() {
+  return (
+    <ul className="mt-7 space-y-3 text-[15px] text-slate-700">
+      {[
+        ['Fees and receipts', 'Bill a month, take a payment, print a challan.'],
+        ['Registers and results', 'Attendance, marks, result cards and certificates.'],
+        ['The office', 'Staff, accounts, the cash drawer and every report.'],
+      ].map(([k, v]) => (
+        <li key={k} className="flex gap-3">
+          <Tick />
+          <span>
+            <span className="font-semibold text-slate-900">{k}. </span>
+            {v}
+          </span>
+        </li>
+      ))}
+      <li className="mt-6 border-t border-slate-200 pt-5 text-sm text-slate-600">
+        Every receipt, reversal and correction is kept, with the name of whoever
+        entered it.
+      </li>
+    </ul>
+  )
+}
+
 export type AuthLayoutProps = {
-  /** One line of institutional copy. One line, not a feature list. */
-  line: string
+  /**
+   * Which door this is. It decides the eyebrow, the support column and the
+   * line under the form on a narrow screen, and it decides NOTHING about what
+   * the form can do. See web/src/auth/doors.ts.
+   */
+  door: Door
   /**
    * What the visitor has typed into School name, shown inside the mockup.
-   * Only /signup has such a field; the other three pass nothing.
+   * Only /signup has such a field, and only the selling column renders it.
    */
   schoolName?: string
   /** The form column. */
   children: ReactNode
 }
 
-export function AuthLayout({ line, schoolName, children }: AuthLayoutProps) {
+export function AuthLayout({ door, schoolName, children }: AuthLayoutProps) {
   /*
    * The vendor's name, not appTitle(useSchoolName()).
    *
@@ -454,7 +543,20 @@ export function AuthLayout({ line, schoolName, children }: AuthLayoutProps) {
           1440 it is 900 against 420. The form column is wider at every width
           the support column exists at, which is the property the old layout
           did not have. */}
-      <div className="mx-auto flex w-full max-w-[1120px] flex-1 flex-col px-5 sm:px-8 lg:grid lg:grid-cols-[minmax(0,1fr)_420px] lg:gap-14">
+      {/* THE GRID IS ONLY A GRID WHEN THERE ARE TWO COLUMNS.
+          The first version left `lg:grid-cols-[1fr_420px]` on for the operator
+          door as well, which renders no column: so the card sat in a 1fr track
+          with 420px of nothing beside it, pushed left of centre in a 1120px
+          container. That is not austerity, it is a layout that looks broken.
+          One centred column when there is nothing to sit beside. */}
+      <div
+        className={
+          'mx-auto flex w-full max-w-[1120px] flex-1 flex-col px-5 sm:px-8 '
+          + (door.column === 'none'
+            ? ''
+            : 'lg:grid lg:grid-cols-[minmax(0,1fr)_420px] lg:gap-14')
+        }
+      >
         <main className="flex flex-1 items-center justify-center py-10 sm:py-14">
           {/* The one elevated surface on the page, and only where there is a
               second column for it to outweigh.
@@ -475,45 +577,65 @@ export function AuthLayout({ line, schoolName, children }: AuthLayoutProps) {
         {/* display:none below 1024px, which takes it out of layout and out of
             the accessibility tree both, so a 420px mockup cannot make a 360px
             phone scroll sideways and a screen reader never walks through it.
-            Nothing in here is required in order to sign in. */}
-        <aside className="hidden lg:flex lg:flex-col lg:justify-center lg:py-14">
-          <p className="flex items-center gap-2.5 text-[11.5px] font-bold uppercase tracking-[0.09em] text-cyan-700">
-            <span aria-hidden="true" className="h-[2px] w-[18px] rounded-sm bg-cyan-500" />
-            One place for the office
-          </p>
-          <p className="mt-4 max-w-[24ch] text-[1.6rem] font-semibold leading-[1.2] tracking-[-0.02em] text-slate-900">
-            {line}
-          </p>
+            Nothing in here is required in order to sign in.
 
-          <div className="mt-7">
-            <AppMockup name={schoolName} />
-          </div>
+            NOT RENDERED AT ALL for the operator's door, at any width. It is the
+            one page in the product with nobody to persuade, and its plainness is
+            the point: an austere page is also the one least likely to be
+            mistaken for a school's own sign-in. */}
+        {door.column !== 'none' && (
+          <aside className="hidden lg:flex lg:flex-col lg:justify-center lg:py-14">
+            <p className="flex items-center gap-2.5 text-[11.5px] font-bold uppercase tracking-[0.09em] text-cyan-700">
+              <span aria-hidden="true" className="h-[2px] w-[18px] rounded-sm bg-cyan-500" />
+              {door.column === 'portal' ? 'For parents' : 'One place for the office'}
+            </p>
+            <p className="mt-4 max-w-[24ch] text-[1.6rem] font-semibold leading-[1.2] tracking-[-0.02em] text-slate-900">
+              {door.line}
+            </p>
 
-          <ul className="mt-6 space-y-2.5 text-sm text-slate-600">
-            <li className="flex gap-2.5">
-              <Tick />
-              <span>Fees, attendance, results and payroll, all included in one price.</span>
-            </li>
-            <li className="flex gap-2.5">
-              <Tick />
-              <span>Works in any browser on the computer the office already has.</span>
-            </li>
-            <li className="flex gap-2.5">
-              <Tick />
-              <span>Every receipt and reversal is kept, with the name of whoever entered it.</span>
-            </li>
-          </ul>
-
-          <Facts />
-        </aside>
+            {/* THE MOCKUP AND THE PRICE TABLE ARE FOR A BUYER, so they appear
+                on the signup page and nowhere else now. The mockup is a fee
+                dashboard for an office; showing it to a parent sells them
+                software they are not buying, and the price table answers a
+                question they never asked. */}
+            {door.column === 'selling' && (
+              <>
+                <div className="mt-7">
+                  <AppMockup name={schoolName} />
+                </div>
+                <ul className="mt-6 space-y-2.5 text-sm text-slate-600">
+                  <li className="flex gap-2.5">
+                    <Tick />
+                    <span>Fees, attendance, results and payroll, all included in one price.</span>
+                  </li>
+                  <li className="flex gap-2.5">
+                    <Tick />
+                    <span>Works in any browser on the computer the office already has.</span>
+                  </li>
+                  <li className="flex gap-2.5">
+                    <Tick />
+                    <span>Every receipt and reversal is kept, with the name of whoever entered it.</span>
+                  </li>
+                </ul>
+                <Facts />
+              </>
+            )}
+            {door.column === 'portal' && <PortalColumn />}
+            {door.column === 'office' && <OfficeColumn />}
+          </aside>
+        )}
       </div>
 
-      {/* One line of facts for the widths where the support column is gone.
-          The price is the fact that has to survive the collapse, because it is
-          the first question every school asks. */}
-      <p className="border-t border-slate-200 bg-white px-5 py-4 text-center text-[13px] tabular-nums lining-nums text-slate-500 lg:hidden">
-        From Rs 2,000 a month. 14 days free. All modules included.
-      </p>
+      {/* One line for the widths where the support column is gone.
+          IT USED TO BE THE PRICE ON EVERY PAGE, which meant the one thing
+          guaranteed to reach a parent on a phone was the monthly cost of the
+          software their school buys. It is the door's own line now, and the
+          parent door's says that the portal costs them nothing. */}
+      {door.footNote && (
+        <p className="border-t border-slate-200 bg-white px-5 py-4 text-center text-[13px] tabular-nums lining-nums text-slate-500 lg:hidden">
+          {door.footNote}
+        </p>
+      )}
     </div>
   )
 }

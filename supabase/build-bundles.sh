@@ -399,6 +399,16 @@ emit supabase/bundles/21_a_login_with_no_school.sql \
 emit supabase/bundles/22_the_school_keeps_the_keys.sql \
      supabase/migrations/0116*.sql
 
+# A TWENTY-THIRD bundle. 22 is frozen above.
+#
+# 0117 goes with the sign-in rebuild. One page served an operator console, a
+# school back office and a parent portal, and 0115's replacement for its wall
+# said the same thing about the two different ways of having no school: nothing
+# ever attached this login, or somebody closed it. Only a definer function can
+# tell those apart, because a closed login reads no profile at all by design.
+emit supabase/bundles/23_which_door_you_came_through.sql \
+     supabase/migrations/0117*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

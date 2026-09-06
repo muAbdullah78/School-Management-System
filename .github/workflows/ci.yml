@@ -1899,6 +1899,13 @@ jobs:
         # later metadata edit cannot move an attached person into another school
         # now that the trigger fires on updates; that rubbish in app metadata
         # cannot abort a signup; and that every 0065 rule survived the rewrite.
+        #
+        # It also covers 0117, which is about the two DIFFERENT ways to have no
+        # school. A login somebody closed reads no profile at all, by design, so
+        # a teacher who left was told their login had never been attached and to
+        # ask the office to attach it: the office then hunted a problem that was
+        # not there while the remedy, one Activate button, sat beside that
+        # person's name on their own Users screen.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/a_login_with_no_school.sql
 
       - name: A school keeps its own keys, and only its own

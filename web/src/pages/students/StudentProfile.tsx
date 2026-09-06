@@ -32,6 +32,7 @@ import { LoginFunctionWarning } from '@/components/LoginFunctionWarning'
 import { DeleteRecord } from '@/components/DeleteRecord'
 import { FeeStatement, FeeStatementDoc } from '@/components/FeeStatement'
 import { studentDeleteBlockers, deleteStudent } from '@/lib/db'
+import { ParentLink } from '@/components/ParentLink'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 const FINANCE_ROLES: Role[] = ['owner', 'principal', 'admin_clerk', 'accountant']
@@ -930,6 +931,13 @@ function ParentAccess({ familyId, canEdit }: { familyId: string | null; canEdit:
             {doneRemembered
               ? 'The password is kept under Settings, Users, so you can tell them again if they forget it. These addresses do not have to be real, so do not rely on “Forgot password” for a parent.'
               : 'Write this password down now. It could NOT be saved under Settings, Users, because this school’s database does not have the key ring yet (apply bundle 22). These addresses do not have to be real, so “Forgot password” may not reach them.'}
+          </div>
+          {/* THE MOMENT THE LINK IS NEEDED. The clerk has the login in front of
+              them and is about to send a WhatsApp message. Telling them
+              elsewhere to "use your school's parent link" would be advice with
+              no link attached. */}
+          <div className="mt-2 border-t border-money-200 pt-2">
+            <ParentLink compact />
           </div>
         </div>
       )}

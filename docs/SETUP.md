@@ -300,11 +300,15 @@ stale.
 > works: the **Change password** button under Settings, Users is what refuses
 > until it is redeployed.
 >
-> **Redeploy all three, and apply bundle 21.** The functions alone fix new
-> signups; the bundle alone fixes the ones already broken and stops the fault
-> for every login the product creates. There is also a new console tab, "Logins
-> with no school", which appears only when somebody is stranded and attaches
-> them in one click.
+> **So: redeploy all three functions, then paste bundles 21, 22 and 23 in that
+> order, then `supabase/verify.sql`.** The functions alone fix new signups;
+> bundle 21 repairs the logins already stranded and stops the fault for every
+> login the product creates, and adds a console tab, "Logins with no school",
+> which appears only when somebody is stranded and attaches them in one click.
+> Bundle 22 adds the address check the office sees while typing and the key ring
+> under Settings, Users that keeps the passwords a school gave out. Bundle 23
+> lets the app tell a login somebody CLOSED from one nothing ever attached,
+> which used to send a teacher who left asking for the wrong thing.
 
 Your **project ref** is the `abcdefgh` part of your Project URL.
 
