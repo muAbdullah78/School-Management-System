@@ -416,6 +416,45 @@ describe('the operator console', () => {
     expect(queryByText('Actions')).not.toBeNull()
   })
 
+  it('says on the worklist which schools will pay by themselves', async () => {
+    // Now that the runner raises the invoices, the question this list has to
+    // answer is which of these rows is a phone call at all. A saved card means
+    // the money is coming; a transfer means it is not. Under a twelfth of
+    // Pakistani adults hold a card, so most of the list is the second kind, and
+    // until this was here every row looked equally like work.
+    current.opts = {
+      rpc: {
+        ...ADMIN_RPCS,
+        fn_platform_due_soon: [{
+          school_id: 'sch-2', school_name: 'Beaconhouse Multan', city: 'Multan',
+          contact_name: null, contact_phone: null,
+          plan_code: 'growth', status: 'grace', expires_on: '2026-08-20',
+          days_left: -17, bucket: 'grace',
+          student_count: 640, student_limit: 500,
+          suggested_plan: 'scale', needs_upgrade: true,
+          renewal_amount: 35000, outstanding: 38000,
+          invoiced_to: null, unbilled_days: 0, never_invoiced: false,
+          last_reminded_at: null, last_reminded_stage: null,
+        }],
+      },
+      rows: {
+        payment_methods: [{
+          school_id: 'sch-2', kind: 'manual', brand: null, last4: null,
+          label: 'HBL current account',
+        }],
+      },
+    }
+    const { PlatformPage } = await import('@/pages/platform/PlatformPage')
+    const { queryByText, getByText } = await mount(PlatformPage)
+    getByText('Renewals').click()
+    // WAITED ON THE METHOD LINE, not on the school name. Clicking a tab starts
+    // two queries and mount() has already stopped waiting; the name lands with
+    // fn_platform_due_soon while the payment methods are still in flight, so
+    // asserting on the name and then reading the line finds nothing.
+    await waitFor(() => expect(queryByText(/will not arrive on its own/i)).not.toBeNull())
+    expect(queryByText(/Beaconhouse Multan/)).not.toBeNull()
+  })
+
   it('opens the renewals tab with a preview, not with a billing button', async () => {
     // A batch job that moves money and opens with "go" is one somebody runs by
     // accident while exploring, and exploring is what a new operator does

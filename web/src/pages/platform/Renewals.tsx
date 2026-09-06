@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  dueSoon, renewalMessage, markReminded,
+  dueSoon, renewalMessage, markReminded, schoolPaymentMethods,
   type DueSoonRow, type RenewalBucket, type ReminderStage,
+  type SchoolPaymentMethod,
 } from '@/lib/platform'
 import { whatsappLink } from '@/lib/db'
 import { formatPkr } from '@/lib/licence'
@@ -57,6 +58,12 @@ export function Renewals({ onOpenSchool, onTakePayment }: {
   const [days, setDays] = useState(45)
   const [remind, setRemind] = useState<DueSoonRow | null>(null)
   const q = useQuery({ queryKey: ['dueSoon', days], queryFn: () => dueSoon(days) })
+  // WHICH OF THESE WILL PAY BY THEMSELVES. Now that the runner raises the
+  // invoices, that is the question this worklist has to answer: it splits the
+  // list into schools whose money is coming and schools that need a phone call,
+  // and until this was here every row looked equally like work.
+  const methods = useQuery({ queryKey: ['schoolPaymentMethods'], queryFn: schoolPaymentMethods })
+  const methodFor = (id: string) => methods.data?.find((m) => m.school_id === id) ?? null
 
   const rows = q.data ?? []
   const groups = BUCKETS
@@ -127,7 +134,7 @@ export function Renewals({ onOpenSchool, onTakePayment }: {
           </div>
           <div className="mt-1 space-y-2">
             {g.rows.map((r) => (
-              <Row key={r.school_id} r={r} tone={g.tone}
+              <Row key={r.school_id} r={r} tone={g.tone} method={methodFor(r.school_id)}
                 onOpen={() => onOpenSchool(r.school_id)}
                 onTake={() => onTakePayment(r.school_id)}
                 onRemind={() => setRemind(r)} />
@@ -141,8 +148,9 @@ export function Renewals({ onOpenSchool, onTakePayment }: {
   )
 }
 
-function Row({ r, tone, onOpen, onTake, onRemind }: {
-  r: DueSoonRow; tone: string; onOpen: () => void; onTake: () => void; onRemind: () => void
+function Row({ r, tone, method, onOpen, onTake, onRemind }: {
+  r: DueSoonRow; tone: string; method: SchoolPaymentMethod | null
+  onOpen: () => void; onTake: () => void; onRemind: () => void
 }) {
   const reminded = r.last_reminded_at
     ? Math.floor((Date.now() - new Date(r.last_reminded_at).getTime()) / 86_400_000)
@@ -167,6 +175,30 @@ function Row({ r, tone, onOpen, onTake, onRemind }: {
               : 'no expiry recorded'}
             {' · '}{r.student_count.toLocaleString()} students
             {r.student_limit !== null && ` / ${r.student_limit.toLocaleString()}`}
+          </div>
+
+          {/* HOW THE MONEY IS SUPPOSED TO ARRIVE, which decides whether this
+              row is a phone call at all. A saved card means the invoice the
+              runner raised will be settled without anybody doing anything; a
+              transfer means it will not. Under a twelfth of Pakistani adults
+              hold a card, so most of this list is the second kind, and saying
+              so is what stops the operator treating the two the same. */}
+          <div className="mt-1 text-xs">
+            {method === null ? (
+              <span className="font-medium text-due-800">
+                No way to pay on record yet
+              </span>
+            ) : method.kind === 'manual' ? (
+              <span className="text-due-800">
+                Pays by transfer{method.label ? ` · ${method.label}` : ''}:
+                the money will not arrive on its own
+              </span>
+            ) : (
+              <span className="text-money-700">
+                {method.brand ?? 'Card'}{method.last4 ? ` ending ${method.last4}` : ''}:
+                renews without a phone call
+              </span>
+            )}
           </div>
 
           {/* The two facts that change what you say on the phone. */}

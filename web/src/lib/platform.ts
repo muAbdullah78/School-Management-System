@@ -449,6 +449,40 @@ export async function renewalRuns(limit = 20): Promise<RenewalRunRecord[]> {
   return (data ?? []) as RenewalRunRecord[]
 }
 
+export interface SchoolPaymentMethod {
+  school_id: string
+  kind: 'card' | 'wallet' | 'manual'
+  brand: string | null
+  last4: string | null
+  label: string | null
+}
+
+/**
+ * How each school intends to pay, for the renewal worklist.
+ *
+ * READ FROM THE TABLE RATHER THAN ADDED TO fn_platform_due_soon, and that is
+ * the whole reason this function exists separately. Adding an OUT column to
+ * that function means DROP and CREATE, and 0078 lives in bundle 7, which is
+ * frozen and already pasted into a live school. 0109 tried exactly that on a
+ * different function and the cost was bundle 7 refusing to re-paste - which in
+ * turn was the only thing restoring a write gate that bundle 6 rewrites. One
+ * column is not worth reopening that.
+ *
+ * payment_methods carries an is_platform_admin() read policy, so this is a
+ * plain scoped select. The gateway credential is in a different table with no
+ * policies at all and cannot be reached from here.
+ */
+export async function schoolPaymentMethods(): Promise<SchoolPaymentMethod[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb
+    .from('payment_methods')
+    .select('school_id,kind,brand,last4,label')
+    .eq('is_default', true)
+    .eq('status', 'active')
+  if (error) throw new Error(error.message)
+  return (data ?? []) as SchoolPaymentMethod[]
+}
+
 export async function schoolActions(schoolId: string, limit = 100): Promise<OperatorAction[]> {
   const sb = requireSupabase()
   // fn_platform_school_activity, NOT fn_platform_school_actions. The by_operator
