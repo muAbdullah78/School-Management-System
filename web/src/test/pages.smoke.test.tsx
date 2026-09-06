@@ -269,6 +269,94 @@ describe('a screen says so when its reads fail, rather than looking empty', () =
  * below is a GOOD response that must render. The database side is asserted
  * separately, against the real functions, in supabase/tests/accounts_shape.sql.
  */
+/**
+ * THE OPERATOR CONSOLE HAD NO COVERAGE AT ALL, which is why it is here.
+ *
+ * It is the screen the business is run from, it renders a customer list with a
+ * button on every row that raises an invoice, and nothing in this repository
+ * ever mounted it. Two of its screens were rebuilt in this change: the school
+ * row went from eleven interactive controls to one plus five grouped links, and
+ * the renewals list gained the actions it existed to offer.
+ *
+ * These are smoke tests and they say so. They prove the screens mount, that the
+ * gate holds, and that the +14d control is gone. What they cannot prove is that
+ * the layout is legible, which is the thing the redesign was for and is not a
+ * thing a test can hold.
+ */
+describe('the operator console', () => {
+  afterEach(cleanup)
+
+  // The names are the RPCs the console actually calls, taken from
+  // web/src/lib/platform.ts. The first draft of this guessed them
+  // (fn_am_platform_admin, fn_due_soon) and the gate test passed for the wrong
+  // reason: every stub missed, is_platform_admin came back undefined, and the
+  // page correctly showed "for the system operator" -- which is what the test
+  // asserting the refusal was looking for.
+  const ADMIN_RPCS: Record<string, unknown> = {
+    is_platform_admin: true,
+    fn_platform_schools: [],
+    fn_platform_revenue: {
+      net_invoiced: 0, collected: 0, cash_received: 0, tax_withheld: 0,
+      discounted: 0, outstanding_total: 0, voided: 0,
+      tax_certificates_awaited: 0, schools_owing: [],
+    },
+    fn_platform_schema_state: { applied_count: 40, latest: '0107_x.sql', gaps: [], gaps_total: 0 },
+    fn_platform_due_soon: [],
+    fn_platform_payment_claims: [],
+    fn_platform_settings: { missing: [] },
+    fn_platform_orphan_report: [],
+  }
+
+  it('refuses anybody who is not the operator', async () => {
+    current.opts = { rpc: { ...ADMIN_RPCS, is_platform_admin: false } }
+    const { PlatformPage } = await import('@/pages/platform/PlatformPage')
+    const { queryByText } = await mount(PlatformPage)
+    expect(queryByText(/for the system operator/i)).not.toBeNull()
+  })
+
+  it('renders the schools screen for the operator', async () => {
+    current.opts = { rpc: ADMIN_RPCS }
+    const { PlatformPage } = await import('@/pages/platform/PlatformPage')
+    const { queryByText } = await mount(PlatformPage)
+    expect(queryByText(/for the system operator/i)).toBeNull()
+  })
+
+  it('offers no way to extend a trial', async () => {
+    // fn_extend_trial capped one call at 30 days and capped nothing else, so
+    // the button was a fortnight per press with no ceiling and no confirmation.
+    // 0106 makes the database refuse it; this makes sure the control does not
+    // quietly come back.
+    current.opts = { rpc: ADMIN_RPCS }
+    const { PlatformPage } = await import('@/pages/platform/PlatformPage')
+    const { queryByText } = await mount(PlatformPage)
+    expect(queryByText(/\+14d/)).toBeNull()
+    expect(queryByText(/extend/i)).toBeNull()
+  })
+
+  it('keeps the migration filename out of sight while the schema is healthy', async () => {
+    // It used to read "Schema 38 migrations applied · latest 0105_the_leave..."
+    // in a box above the customer list, every day, forever. Build output at the
+    // top of a business console teaches its owner to skim the top of the page,
+    // which is where the money is.
+    //
+    // ASSERTED ON WHAT IS SHOWN, not on what exists. The first version of this
+    // test checked the filename was absent from the DOM entirely and failed,
+    // correctly: it is still there, inside a collapsed <details>, which is the
+    // whole design. One click when you want it, nothing when you do not.
+    current.opts = { rpc: ADMIN_RPCS }
+    const { PlatformPage } = await import('@/pages/platform/PlatformPage')
+    const { queryByText, container } = await mount(PlatformPage)
+    expect(queryByText(/Database up to date/i)).not.toBeNull()
+    const filename = queryByText(/0107_x/)
+    expect(filename).not.toBeNull()
+    const details = filename!.closest('details')
+    expect(details).not.toBeNull()
+    expect(details!.hasAttribute('open')).toBe(false)
+    // And nothing in the page's own summary line mentions it.
+    expect(container.querySelector('summary')?.textContent ?? '').not.toMatch(/0107_x/)
+  })
+})
+
 describe('a screen survives a database function that returns an older shape', () => {
   const CASES: [string, Record<string, unknown>][] = [
     ['snapshot missing its periods', { fn_profit_snapshot: {} }],

@@ -281,6 +281,20 @@ emit supabase/bundles/12_one_number.sql \
 emit supabase/bundles/13_the_leave_the_school_approved.sql \
      supabase/migrations/0105*.sql
 
+# A FOURTEENTH bundle. Bundle 13 has been pasted into a live school, so it is
+# frozen above and this is where new work goes.
+#
+# 0106 closes two holes that both cost money and neither of which anybody in a
+# school would ever report. The console's "+14d trial" button added a fortnight
+# per press, with no confirmation and no ceiling, against a function whose own
+# comment warned that an unbounded extend button becomes a free tier. And the
+# parent portal, being a separate route outside the browser's licence gate,
+# answered in full for a school that had stopped paying: fees, attendance and
+# results, for every family, indefinitely. The office is deliberately NOT locked
+# out of its own records, which is 0026's rule and stays.
+emit supabase/bundles/14_the_unpaid_school.sql \
+     supabase/migrations/0106*.sql supabase/migrations/0107*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

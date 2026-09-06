@@ -48,6 +48,22 @@ begin;
 create or replace function auth.uid() returns uuid language sql stable as
   $$ select nullif(current_setting('test.uid', true), '')::uuid $$;
 
+-- THE SCHOOL DAY IS KARACHI'S DAY, NOT THE SERVER'S.
+--
+-- Every function this suite exercises reckons the day as
+-- (now() at time zone 'Asia/Karachi')::date, because a Pakistani school's today
+-- is Karachi's today. This file used current_date, which is the database's date
+-- and on Supabase is UTC. Pakistan is UTC+5, so from 19:00 UTC the two disagree
+-- and the suite failed against correct code: the TEST was measuring from the
+-- wrong place, and only ever after seven in the evening.
+--
+-- The same assumption sat in the table constraint, where it was not a flaky
+-- test at all: staff check-in was refused every day between midnight and 5am
+-- Pakistan time. 0107 moved the constraint to this reckoning; this moves the
+-- suite, so the two cannot drift apart again.
+create or replace function pg_temp.school_today() returns date language sql stable as
+  $$ select (now() at time zone 'Asia/Karachi')::date $$;
+
 create or replace function pg_temp.ok(p_cond boolean, p_label text)
 returns void language plpgsql as $$
 begin
@@ -128,7 +144,7 @@ $$;
 create or replace function pg_temp.backdate_arrival(p_staff_name text, p_hours integer)
 returns void language sql security definer as $$
   update public.staff_attendance a set checked_at = now() - (p_hours || ' hours')::interval
-   where a.attendance_date = current_date
+   where a.attendance_date = (now() at time zone 'Asia/Karachi')::date
      and a.staff_id = (select id from public.staff where full_name = p_staff_name
                         and school_id = (select id from public.schools
                                           where name = 'Checkin School A'));
@@ -207,7 +223,7 @@ select pg_temp.be('Miss Ayesha');
 select pg_temp.ok(
   pg_temp.affected(format(
     'insert into public.staff_attendance (school_id, staff_id, attendance_date, status, checked_at, source) '
-    'values (%L, %L, current_date, ''present'', now(), ''qr'')',
+    'values (%L, %L, (now() at time zone ''Asia/Karachi'')::date, ''present'', now(), ''qr'')',
     public.current_school_id(), public.my_staff_id())) = -1,
   '1. a teacher cannot insert her own attendance row. This is the whole feature: '
   || 'before 0062 she could, with source = ''qr'' and no code, from home');
@@ -219,7 +235,7 @@ select pg_temp.ok(
 select pg_temp.ok(
   pg_temp.affected(format(
     'insert into public.staff_attendance (school_id, staff_id, attendance_date, status, checked_at, source) '
-    'values (%L, %L, current_date - 3, ''present'', now(), ''qr'')',
+    'values (%L, %L, (now() at time zone ''Asia/Karachi'')::date - 3, ''present'', now(), ''qr'')',
     public.current_school_id(), public.my_staff_id())) = -1,
   '3. nor back-date a day she never worked — on a school that pays by attendance '
   || 'that was payroll fraud in one call');
@@ -231,7 +247,7 @@ select pg_temp.be('CI Owner A');
 
 select pg_temp.ok(
   pg_temp.raises(format(
-    'select public.fn_set_staff_attendance(%L, current_date + 1, ''present''::public.attendance_status, ''early'')',
+    'select public.fn_set_staff_attendance(%L, (now() at time zone ''Asia/Karachi'')::date + 1, ''present''::public.attendance_status, ''early'')',
     pg_temp.staff('Miss Ayesha')),
     'has not happened yet'),
   '4. the office cannot mark attendance for tomorrow either — a month of '
@@ -240,7 +256,7 @@ select pg_temp.ok(
 select pg_temp.ok(
   pg_temp.raises(format(
     'insert into public.staff_attendance (school_id, staff_id, attendance_date, status, source) '
-    'values (%L, %L, current_date + 5, ''present'', ''manual'')',
+    'values (%L, %L, (now() at time zone ''Asia/Karachi'')::date + 5, ''present'', ''manual'')',
     public.current_school_id(), pg_temp.staff('Miss Ayesha')),
     'staff_attendance_not_future'),
   '5. and the CHECK constraint stops it on every other path too, including ones '
@@ -301,7 +317,7 @@ select pg_temp.ok(
 
 select pg_temp.ok(
   (select code_id is not null and code_window is not null and source = 'qr'
-     from public.staff_attendance where attendance_date = current_date),
+     from public.staff_attendance where attendance_date = pg_temp.school_today()),
   '13. and the row records WHICH code and WHICH window — the forged row had a '
   || 'null code_id and nothing anywhere looked at it');
 
@@ -355,7 +371,7 @@ select pg_temp.ok(
   || 'records, it is a key to the gate — so has_role, not may_view');
 
 select pg_temp.ok(
-  (select count(*) from public.fn_staff_attendance_day(current_date)) > 0,
+  (select count(*) from public.fn_staff_attendance_day(pg_temp.school_today())) > 0,
   '21. while the observer CAN read the daily register, which is a read');
 
 -- =============================================================================
@@ -365,20 +381,20 @@ select pg_temp.be('CI Owner A');
 
 select pg_temp.ok(
   pg_temp.raises(format(
-    'select public.fn_set_staff_attendance(%L, current_date, ''absent''::public.attendance_status)',
+    'select public.fn_set_staff_attendance(%L, (now() at time zone ''Asia/Karachi'')::date, ''absent''::public.attendance_status)',
     pg_temp.staff('Miss Ayesha')),
     'needs a reason'),
   '22. overwriting a recorded check-in with a judgement needs a reason — it is '
   || 'exactly the thing somebody has to be able to explain a month later');
 
 select public.fn_set_staff_attendance(
-  pg_temp.staff('Miss Ayesha'), current_date, 'leave', 'Called away, confirmed by phone');
+  pg_temp.staff('Miss Ayesha'), pg_temp.school_today(), 'leave', 'Called away, confirmed by phone');
 
 select pg_temp.ok(
   (select status::text = 'leave' and source = 'manual'
       and reason = 'Called away, confirmed by phone' and checked_at is not null
      from public.staff_attendance
-    where staff_id = pg_temp.staff('Miss Ayesha') and attendance_date = current_date),
+    where staff_id = pg_temp.staff('Miss Ayesha') and attendance_date = pg_temp.school_today()),
   '23. the office mark lands, and the ORIGINAL arrival time is kept — what time '
   || 'somebody actually arrived is a fact worth keeping even when the status changes');
 
@@ -393,7 +409,7 @@ select pg_temp.ok(
 select pg_temp.be('CI Owner A');
 select pg_temp.ok(
   (select status::text = 'leave' from public.staff_attendance
-    where staff_id = pg_temp.staff('Miss Ayesha') and attendance_date = current_date),
+    where staff_id = pg_temp.staff('Miss Ayesha') and attendance_date = pg_temp.school_today()),
   '25. and the office''s status is still what stands');
 
 -- =============================================================================
@@ -425,14 +441,36 @@ select pg_temp.be('CI Owner A');
 select pg_temp.ok(
   (select late_minutes is null and status::text = 'present'
      from public.staff_attendance
-    where staff_id = pg_temp.staff('Mr Kamran') and attendance_date = current_date),
+    where staff_id = pg_temp.staff('Mr Kamran') and attendance_date = pg_temp.school_today()),
   '29. with no school start time set, nothing is late and late_minutes is null. '
   || 'A default start time would have marked a whole staff room late on the day '
   || 'the school upgraded');
 
+-- THE OFFSET IS COMPUTED, NOT FIXED AT 95 MINUTES, and this is the third face
+-- of the same midnight problem. `(karachi_now::time - interval '95 minutes')`
+-- WRAPS: at 01:25 in the morning it produces 23:50, so the fixture was setting
+-- a school day that starts ten minutes before midnight and the arrival at 01:25
+-- came out EARLY. The suite failed against correct code, again, and again only
+-- after seven in the evening UTC.
+--
+-- So the offset is whatever fits inside today, and the expected lateness is
+-- derived from it rather than written down. At any normal hour it is the same
+-- 95 and 10 the assertions below describe; in the small hours it shrinks and
+-- the arithmetic still holds. The one minute a day it cannot express is the
+-- first, and nothing sensible can.
+create or replace function pg_temp.late_offset() returns integer language sql stable as $$
+  select greatest(1, least(95,
+    extract(hour from (now() at time zone 'Asia/Karachi'))::int * 60
+    + extract(minute from (now() at time zone 'Asia/Karachi'))::int - 1))
+$$;
+create or replace function pg_temp.late_grace() returns integer language sql stable as $$
+  select least(10, greatest(0, pg_temp.late_offset() - 1))
+$$;
+
 update public.school_settings
-   set day_starts_at = ((now() at time zone 'Asia/Karachi')::time - interval '95 minutes')::time,
-       late_grace_minutes = 10
+   set day_starts_at = ((now() at time zone 'Asia/Karachi')
+                        - (pg_temp.late_offset() || ' minutes')::interval)::time,
+       late_grace_minutes = pg_temp.late_grace()
  where school_id = public.current_school_id();
 
 select pg_temp.be('Mrs Late');
@@ -445,8 +483,12 @@ select pg_temp.ok(
   || 'produce it, because there was no start time to be late against');
 
 select pg_temp.ok(
-  (:'late'::jsonb->>'late_minutes')::integer between 83 and 87,
-  '31. and late_minutes is measured NET of the grace period (95 late, 10 grace), '
+  (:'late'::jsonb->>'late_minutes')::integer
+    between pg_temp.late_offset() - pg_temp.late_grace() - 2
+        and pg_temp.late_offset() - pg_temp.late_grace() + 2,
+  '31. and late_minutes is measured NET of the grace period (normally 95 late, '
+  || '10 grace, shrunk in the small hours so the fixture cannot wrap past '
+  || 'midnight), '
   || 'not gross');
 
 -- =============================================================================
@@ -495,29 +537,29 @@ select pg_temp.ok(
 -- 10. The register shows what was scanned and what was typed
 -- =============================================================================
 select pg_temp.ok(
-  (select scanned from public.fn_staff_attendance_day(current_date)
+  (select scanned from public.fn_staff_attendance_day(pg_temp.school_today())
     where full_name = 'Mrs Late'),
   '37. a scanned row is shown as scanned');
 
 select public.fn_set_staff_attendance(
-  pg_temp.staff('Mr Watchman'), current_date, 'absent', 'Did not come in');
+  pg_temp.staff('Mr Watchman'), pg_temp.school_today(), 'absent', 'Did not come in');
 
 select pg_temp.ok(
   (select not scanned and source = 'manual'
-     from public.fn_staff_attendance_day(current_date) where full_name = 'Mr Watchman'),
+     from public.fn_staff_attendance_day(pg_temp.school_today()) where full_name = 'Mr Watchman'),
   '38. and a row the office typed, for somebody who has no login and will never '
   || 'scan anything, is shown as NOT scanned. The direct-insert loophole survived '
   || 'because nothing anywhere displayed code_id');
 
 select pg_temp.ok(
   (select scanned and source = 'manual'
-     from public.fn_staff_attendance_day(current_date) where full_name = 'Miss Ayesha'),
+     from public.fn_staff_attendance_day(pg_temp.school_today()) where full_name = 'Miss Ayesha'),
   '39. while a scan the office later overrode keeps BOTH facts — she did arrive '
   || 'and a code was presented, and the office then changed the status. Collapsing '
   || 'those into one column would lose the arrival');
 
 select pg_temp.ok(
-  (select count(*) from public.fn_staff_attendance_day(current_date))
+  (select count(*) from public.fn_staff_attendance_day(pg_temp.school_today()))
     = (select count(*) from public.staff where status = 'active'
         and school_id = public.current_school_id()),
   '40. and every active staff member appears, marked or not — a register that '
@@ -536,8 +578,8 @@ select pg_temp.ok(
 
 select pg_temp.be('CI Owner B');
 select pg_temp.ok(
-  (select count(*) from public.fn_staff_attendance_day(current_date)) = 1
-  and (select full_name from public.fn_staff_attendance_day(current_date)) = 'Mr Bilal',
+  (select count(*) from public.fn_staff_attendance_day(pg_temp.school_today())) = 1
+  and (select full_name from public.fn_staff_attendance_day(pg_temp.school_today())) = 'Mr Bilal',
   '42. and school B''s daily register shows only school B''s staff');
 
 select pg_temp.ok(
@@ -547,7 +589,7 @@ select pg_temp.ok(
 
 select pg_temp.be('CI Owner A');
 select pg_temp.ok(
-  not exists (select 1 from public.fn_staff_attendance_day(current_date)
+  not exists (select 1 from public.fn_staff_attendance_day(pg_temp.school_today())
                where full_name = 'Mr Bilal'),
   '44. and the reverse: school A cannot see school B''s staff either — a filter '
   || 'scoped to whichever school was created first passes one way only');

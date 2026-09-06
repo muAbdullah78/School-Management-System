@@ -14,6 +14,7 @@ import { ResetPassword } from '@/pages/ResetPassword'
 import { Account } from '@/pages/Account'
 import { FeedbackPage } from '@/pages/FeedbackPage'
 import { PlatformPage } from '@/pages/platform/PlatformPage'
+import { PortalLicenceGate } from '@/components/PortalLicenceGate'
 import { CheckIn } from '@/pages/CheckIn'
 import { Dashboard } from '@/pages/Dashboard'
 import { FeesPage } from '@/pages/fees/FeesPage'
@@ -162,11 +163,22 @@ export default function App() {
                 />
               ))}
             </Route>
+            {/* THE PORTAL HAD NO LICENCE GATE AT ALL, and that was the hole
+                in the business model rather than a missing feature. Staff hit
+                LicenceGate on the route below and saw the lock screen; parents
+                come here, outside it, and carried on reading fees, attendance
+                and results for a school that had stopped paying, forever.
+                Nobody in the building had any reason to notice, and the parents
+                are the people who make a school renew. The database now closes
+                the portal too (0106), so this is the courtesy layer that
+                explains it rather than the enforcement. */}
             <Route
               path="/portal"
               element={
                 <ProtectedRoute>
-                  <PortalPage />
+                  <PortalLicenceGate>
+                    <PortalPage />
+                  </PortalLicenceGate>
                 </ProtectedRoute>
               }
             />

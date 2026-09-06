@@ -744,7 +744,22 @@ with sig(migration, object, present) as (values
      and exists (
        select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
        where n.nspname = 'public' and p.proname = 'fn_portal_child_attendance'
-         and p.prosrc like '%''leave''%'))
+         and p.prosrc like '%''leave''%')),
+  ('0106_an_unpaid_school_is_closed', 'the parent portal closes with the licence',
+     exists (
+       select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'fn__assert_my_child'
+         and p.prosrc like '%fn__require_live_licence%')
+     and exists (
+       select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'fn_extend_trial'
+         and p.prosrc like '%Trials are not extended%')),
+  ('0107_midnight_in_karachi', 'the school day is measured in Karachi, not UTC',
+     exists (
+       select 1 from pg_constraint
+       where conname = 'staff_attendance_not_future'
+         and conrelid = 'public.staff_attendance'::regclass
+         and pg_get_constraintdef(oid) like '%Asia/Karachi%'))
 )
 select migration,
        object                                   as looked_for,

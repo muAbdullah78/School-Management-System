@@ -1775,6 +1775,19 @@ jobs:
         # nothing at runtime. So this asserts, against the real functions, that
         # every key web/src/lib/db.ts requires is actually emitted.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/accounts_shape.sql
+      - name: An unpaid school is closed to its parents, open to its office
+        # Two holes that both cost money and that nobody in a school would ever
+        # report. The console's "+14d trial" button added a fortnight per press
+        # with no ceiling. And the parent portal, a separate route outside the
+        # browser's licence gate whose functions are all SECURITY DEFINER,
+        # answered in full for a school that had stopped paying: fees,
+        # attendance and results, for every family, indefinitely.
+        #
+        # Asserted in BOTH directions, because half of this decision protects
+        # the school: a locked school's office keeps reading and exporting its
+        # own records. A school locked out of its own attendance and fee history
+        # is how a late payment becomes a legal complaint instead of a payment.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/unpaid_school.sql
 
       - name: The cash drawer never accuses the clerk
         # One ordinary morning, seeded and run: open with a Rs 1,000 float, take

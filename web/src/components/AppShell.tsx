@@ -18,17 +18,33 @@ import { getCurrentSession } from '@/lib/db'
 import { todayISO } from '@/lib/format'
 import { ADMIN_ROLES } from '@/auth/roles'
 import { useSchoolLogo } from '@/hooks/useSchoolLogo'
+import { useSupportVisit } from '@/hooks/useSupportVisit'
 
 export function AppShell() {
   const { profile, signOut } = useAuth()
   const schoolName = useSchoolName()
   const location = useLocation()
-  const nav = visibleNav(profile?.role)
+  // WHO THIS SHELL IS BEING DRAWN FOR.
+  //
+  // Normally the signed-in user's own role. During a support visit there is no
+  // profile at all -- a platform admin belongs to no school -- and with an
+  // undefined role visibleNav returns almost nothing and canAccess refuses
+  // every path, so the operator would arrive at an empty shell reading "Your
+  // role does not have access to this section" on every screen.
+  //
+  // `readonly` is the honest answer rather than a convenience. It is the
+  // observer role 0059 created for exactly this shape: may look at everything,
+  // may change nothing. And it is not the enforcement, which matters more: the
+  // database refuses every write from an operator session on its own, so this
+  // only decides what is worth drawing.
+  const visit = useSupportVisit().visit
+  const role = profile?.role ?? (visit ? ('readonly' as const) : undefined)
+  const nav = visibleNav(role)
   // The module filter works over the nav THIS ROLE can already see, so it can
   // never surface a module the user has no access to.
   const [shownNav, setShownNav] = useState(nav)
-  useEffect(() => setShownNav(visibleNav(profile?.role)), [profile?.role])
-  const permitted = canAccess(location.pathname, profile?.role)
+  useEffect(() => setShownNav(visibleNav(role)), [role])
+  const permitted = canAccess(location.pathname, role)
   const current = nav.find((n) => n.path === location.pathname)
 
   // The running academic session, shown in the top bar on every screen.
@@ -151,10 +167,10 @@ export function AppShell() {
             </span>
             <div className="min-w-0 flex-1">
               <div className="truncate text-xs font-medium text-white">
-                {profile?.full_name ?? 'User'}
+                {profile?.full_name ?? (visit ? 'Support visit' : 'User')}
               </div>
               <div className="truncate text-[11px] text-brand-200/70">
-                {profile ? ROLE_LABELS[profile.role] : ''}
+                {profile ? ROLE_LABELS[profile.role] : (visit ? 'Read only' : '')}
               </div>
             </div>
           </div>

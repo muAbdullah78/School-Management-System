@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/auth/AuthProvider'
 import {
-  activateSubscription, actionNeeded, amPlatformAdmin, describeAction, extendTrial,
+  activateSubscription, actionNeeded, amPlatformAdmin, describeAction,
   listPlans, listPlatformSchools, operatorEnter, platformRevenue,
   platformSchemaState, recordPlatformPayment, refreshAllCounts, schoolActions,
   sortByAction,
@@ -36,6 +36,20 @@ const FIELD = 'rounded border border-slate-300 px-2 py-1.5 text-sm'
 
 type Tab = 'schools' | 'renewals' | 'claims' | 'business' | 'publishing' | 'billing'
   | 'leftbehind' | 'reviews'
+
+// What each screen is FOR, in one line, because the heading alone does not say.
+// "Renewals" and "Payments reported" are both about money arriving and a person
+// opening the console cold cannot tell which is which.
+const TAB_SUBTITLE: Record<Tab, string> = {
+  schools: '',
+  renewals: 'Licences ending soon, worst first. This is the call list.',
+  claims: 'Schools that say they have paid, waiting to be matched to the bank.',
+  business: 'What the company is worth: revenue, churn and the plan mix.',
+  publishing: 'The desktop installer, and notices every school sees.',
+  billing: 'Our own NTN and bank details, printed on every invoice we raise.',
+  leftbehind: 'Records whose school no longer exists. Normally none.',
+  reviews: 'What schools have said publicly, and anything reported as abuse.',
+}
 
 const TAB_TITLE: Record<Tab, string> = {
   schools: 'Schools',
@@ -174,14 +188,23 @@ export function PlatformPage() {
     <div className="min-h-full bg-slate-100 p-4">
       <div className="mx-auto max-w-6xl space-y-4">
         <header className="flex flex-wrap items-center justify-between gap-3">
+          {/* THE SUBTITLE USED TO DESCRIBE SCHOOLS ON EVERY TAB. On Renewals it
+              read "1 total · 0 paying · 1 on trial · 0 need attention", which is
+              the school list's summary rendered under a heading about licences,
+              and on "Our billing details" it was pure noise. A number under a
+              heading is read as being about that heading. */}
           <div>
             <h1 className="text-lg font-semibold text-slate-800">{TAB_TITLE[tab]}</h1>
-            <p className="text-sm text-slate-500">
-              {counts.total} total · {counts.paying} paying · {counts.trial} on trial ·{' '}
-              <span className={counts.attention ? 'font-medium text-amber-700' : ''}>
-                {counts.attention} need attention
-              </span>
-            </p>
+            {tab === 'schools' ? (
+              <p className="text-sm text-slate-500">
+                {counts.total} total · {counts.paying} paying · {counts.trial} on trial ·{' '}
+                <span className={counts.attention ? 'font-medium text-amber-700' : ''}>
+                  {counts.attention} need attention
+                </span>
+              </p>
+            ) : (
+              <p className="text-sm text-slate-500">{TAB_SUBTITLE[tab]}</p>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {tab === 'schools' && (
@@ -245,10 +268,20 @@ export function PlatformPage() {
         </nav>
 
         {tab === 'renewals' && (
-          <Renewals onOpenSchool={(id) => {
-            const s = rows.find((r) => r.school_id === id)
-            if (s) { setTab('schools'); setOpenSchool(s) }
-          }} />
+          <Renewals
+            onOpenSchool={(id) => {
+              const s = rows.find((r) => r.school_id === id)
+              if (s) { setTab('schools'); setOpenSchool(s) }
+            }}
+            // Straight into the payment dialog, on the renewals screen, without
+            // changing tab. The operator is on the phone: the school has just
+            // said they have transferred it, and the reference is being read out
+            // now, not after two clicks of navigation.
+            onTakePayment={(id) => {
+              const s = rows.find((r) => r.school_id === id)
+              if (s) { setErr(null); setMsg(null); setPaying(s) }
+            }}
+          />
         )}
         {tab === 'claims' && <Claims />}
         {tab === 'business' && <Business />}
@@ -401,27 +434,43 @@ export function PlatformPage() {
                       {s.last_paid_on && <span className="ml-2 text-slate-400">last paid {s.last_paid_on}</span>}
                     </div>
                     {todo && <div className="mt-1 text-sm font-medium text-amber-700">{todo}</div>}
-                    <div className="mt-1 flex gap-3 text-xs">
-                      <button onClick={() => setLedgerFor(s)} className="text-brand-700 hover:underline">
+                    {/* GROUPED BY WHAT THEY COST YOU IF YOU PRESS THEM BY
+                        MISTAKE, because they used to be five identical blue
+                        links in a row: Statement, which opens a read-only panel,
+                        sat beside View as school, which enters a customer's live
+                        records and writes a line into their own audit trail that
+                        they can read. Nothing said one was heavier than the
+                        other. Now: reading on the left, money in the middle, the
+                        two that change or expose something set apart on the
+                        right and coloured for it. */}
+                    <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                      <button onClick={() => setLedgerFor(s)}
+                        className="rounded border border-slate-200 bg-white px-2 py-1 text-slate-700 hover:bg-slate-50">
                         Statement
                       </button>
-                      <button onClick={() => { setErr(null); setMsg(null); setPaying(s) }} className="text-brand-700 hover:underline">
-                        Record payment
-                      </button>
-                      <button onClick={() => setHistoryFor(s)} className="text-brand-700 hover:underline">
+                      <button onClick={() => setHistoryFor(s)}
+                        className="rounded border border-slate-200 bg-white px-2 py-1 text-slate-700 hover:bg-slate-50">
                         History
                       </button>
-                      {/* The support tool. Read-only, refused at the database,
-                          logged, and shown to the school in its own settings,
-                          so this button is not a back door, it is the front one
-                          with a bell on it. */}
-                      <button onClick={() => { setErr(null); setMsg(null); setVisiting(s) }}
-                        className="font-medium text-red-700 hover:underline">
-                        View as school
+                      <button onClick={() => { setErr(null); setMsg(null); setPaying(s) }}
+                        className="rounded border border-brand-200 bg-brand-50 px-2 py-1 font-medium text-brand-800 hover:bg-brand-100">
+                        Record payment
                       </button>
+
+                      <span aria-hidden className="mx-1 h-4 w-px bg-slate-200" />
+
                       <button onClick={() => { setErr(null); setMsg(null); setLifecycleFor(s) }}
-                        className="text-slate-500 hover:underline">
+                        className="rounded border border-slate-200 bg-white px-2 py-1 text-slate-600 hover:bg-slate-50">
                         Manage
+                      </button>
+                      {/* The support tool. Read-only, refused at the database,
+                          logged, and shown to the school in its own settings, so
+                          this is not a back door: it is the front one with a bell
+                          on it. Coloured as the heaviest thing on the row because
+                          it is the only one the customer finds out about. */}
+                      <button onClick={() => { setErr(null); setMsg(null); setVisiting(s) }}
+                        className="rounded border border-red-200 bg-red-50 px-2 py-1 font-medium text-red-800 hover:bg-red-100">
+                        View as school
                       </button>
                       {/* Only offered on an archived school, because that is the
                           only school the database will export or delete, and a
@@ -429,7 +478,7 @@ export function PlatformPage() {
                           buttons. */}
                       {s.archived && (
                         <button onClick={() => { setErr(null); setMsg(null); setOffboarding(s) }}
-                          className="text-slate-500 hover:underline">
+                          className="rounded border border-slate-200 bg-white px-2 py-1 text-slate-600 hover:bg-slate-50">
                           Offboard
                         </button>
                       )}
@@ -446,8 +495,6 @@ export function PlatformPage() {
                         () => activateSubscription(s.school_id, plan, months,
                           { amount, note, allowOverLimit }),
                       )}
-                    onExtend={() =>
-                      run(`${s.school_name} trial extended by 14 days.`, () => extendTrial(s.school_id, 14))}
                   />
                 </div>
               </div>
@@ -560,20 +607,35 @@ function SchemaStrip({ state, error }: { state?: SchemaState; error: Error | nul
   }
 
   const gaps = state.gaps_total > 0
+  // QUIET WHEN IT IS FINE. On a healthy day this said "Schema 38 migrations
+  // applied · latest 0105_the_leave_the_school_approved" in a box above the
+  // customer list, every day, forever. That is build output, and a business
+  // console that opens with a migration filename teaches its owner to skim the
+  // top of the page, which is where the money is. It still goes loud, in red and
+  // at full size, the moment there is a gap: that is the case it was written
+  // for, and the case where a school is silently missing fifteen migrations.
+  if (!gaps) {
+    return (
+      <details className="text-xs text-slate-400">
+        <summary className="cursor-pointer select-none hover:text-slate-600">
+          Database up to date · {state.applied_count} migration{state.applied_count === 1 ? '' : 's'}
+        </summary>
+        <div className="mt-1 pl-4">
+          Latest {state.latest?.replace(/\.sql$/, '') ?? 'unknown'}. No gaps.
+        </div>
+      </details>
+    )
+  }
   return (
-    <div className={`rounded border px-3 py-2 text-sm ${
-      gaps ? 'border-red-300 bg-red-50 text-red-900' : 'border-slate-200 bg-white text-slate-600'
-    }`}>
+    <div className="rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900">
       <span className="font-medium">Schema</span>{' '}
       {state.applied_count} migration{state.applied_count === 1 ? '' : 's'} applied
-      {state.latest && <span className="text-slate-400"> · latest {state.latest.replace(/\.sql$/, '')}</span>}
-      {gaps && (
-        <div className="mt-1 font-medium">
-          {state.gaps_total} missing in the middle: {state.gaps.join(', ')}
-          {state.gaps_total > state.gaps.length && ` … and ${state.gaps_total - state.gaps.length} more`}.
-          {' '}A bundle rolled back halfway: apply those migrations before anything else.
-        </div>
-      )}
+      {state.latest && <span className="text-red-700"> · latest {state.latest.replace(/\.sql$/, '')}</span>}
+      <div className="mt-1 font-medium">
+        {state.gaps_total} missing in the middle: {state.gaps.join(', ')}
+        {state.gaps_total > state.gaps.length && ` … and ${state.gaps_total - state.gaps.length} more`}.
+        {' '}A bundle rolled back halfway: apply those migrations before anything else.
+      </div>
     </div>
   )
 }
@@ -590,91 +652,210 @@ function Tile({ label, value, hint, tone }: {
   )
 }
 
+/**
+ * The one commercial control on a school's row.
+ *
+ * IT USED TO BE SEVEN. A plan dropdown, a months dropdown, a price, an Activate
+ * button, a +14d trial button, a change-price toggle and, behind that, two more
+ * inputs. Alongside five text links and up to six badges, that put ELEVEN
+ * interactive controls on every row. At fifty schools it is 550 controls on one
+ * page, and the operator's own description of it was "I get lost all the time".
+ *
+ * The problem was not density, it was that nothing had a rank. Activate raises
+ * an invoice and cannot be undone; Statement opens a read-only panel. They were
+ * the same size, one click apart, side by side.
+ *
+ * So the row now carries ONE button, and every choice it needs -- plan, length,
+ * price, reason -- is made in the dialog it opens, where there is room to show
+ * what is about to happen and the numbers can be read before they are agreed
+ * rather than after.
+ */
 function SchoolActions({
-  school, plans, busy, onActivate, onExtend,
+  school, plans, busy, onActivate,
 }: {
   school: PlatformSchool
   plans: { code: string; name: string; price_yearly: number; price_monthly: number; student_limit: number | null }[]
   busy: boolean
   onActivate: (plan: string, months: number, amount: number | null, note: string | null, allowOverLimit: boolean) => void
-  onExtend: () => void
+}) {
+  const [confirming, setConfirming] = useState(false)
+  const renewing = school.status === 'active'
+
+  return (
+    <div className="flex w-full shrink-0 flex-col items-start gap-2 sm:w-auto sm:items-end">
+      <button
+        onClick={() => setConfirming(true)}
+        disabled={busy}
+        className="rounded bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60"
+      >
+        {renewing ? 'Renew' : 'Activate'}
+      </button>
+
+      {/* THERE IS NO +14d BUTTON ANY MORE. fn_extend_trial capped ONE call at 30
+          days and capped nothing else, so a fortnight was one click and a
+          hundred and forty days was ten, with no confirmation and no reason
+          recorded. 0027's own comment above that function warns that an
+          unbounded extend button becomes a free tier by accident, and the cap it
+          describes is per press. A school that needs longer is put on a plan,
+          which is an invoice and a conversation. 0106 makes the database refuse
+          the call outright. */}
+
+      {confirming && (
+        <ActivationDialog
+          school={school} plans={plans}
+          onCancel={() => setConfirming(false)}
+          onGo={(plan, months, amount, note, over) => {
+            setConfirming(false)
+            onActivate(plan, months, amount, note, over)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+/**
+ * Where a licence is actually sold, and the last thing between a mis-click and
+ * an invoice.
+ *
+ * WHY THE CHOICES MOVED HERE. Plan, length and price used to be three controls
+ * on the school's row, competing with five text links and up to six badges.
+ * Choosing was done in a strip narrower than a phone, and pressing Activate
+ * committed immediately: an invoice raised against a real customer, no undo, one
+ * click, next to a link that opens a read-only statement.
+ *
+ * WHAT IT SHOWS IS THE POINT. Not "are you sure", which nobody reads, but the
+ * four facts being decided, in the words the invoice will use: who, what plan,
+ * what period, and how much. The discount and the over-limit breach are called
+ * out because those are the two that get argued about a month later.
+ */
+function ActivationDialog({ school, plans, onCancel, onGo }: {
+  school: PlatformSchool
+  plans: { code: string; name: string; price_yearly: number; price_monthly: number; student_limit: number | null }[]
+  onCancel: () => void
+  onGo: (plan: string, months: number, amount: number | null, note: string | null, over: boolean) => void
 }) {
   // Default to the plan their real headcount says they should be on, so the
-  // common case is one click and the size question is already answered.
+  // common case is one press and the size question is already answered.
   const [plan, setPlan] = useState(school.suggested_plan || school.plan_code)
   const [months, setMonths] = useState(12)
-  const [open, setOpen] = useState(false)
   const [amount, setAmount] = useState('')
   const [note, setNote] = useState('')
+
   const chosen = plans.find((p) => p.code === plan)
   const list = chosen ? (months >= 12 ? chosen.price_yearly * (months / 12) : chosen.price_monthly * months) : null
   const typed = amount.trim() === '' ? null : Number(amount)
+  const charge = typed ?? list
+  const discount = list !== null && typed !== null ? list - typed : 0
   // The database refuses a non-list amount with no reason. Refusing here too
-  // means the operator is told before pressing the button, not after.
+  // means the operator is told before pressing, not after.
   const needsNote = typed !== null && list !== null && typed !== list && !note.trim()
   // The database also refuses a plan the school has outgrown. Showing it up
   // front turns a red error into a decision.
-  const wouldBeOver = chosen?.student_limit != null
+  const overLimit = chosen?.student_limit != null
     && school.student_count > Math.ceil(chosen.student_limit * 1.1)
+  const renewing = school.status === 'active'
+  // Renewing early extends from the existing end date rather than today, which
+  // is fn_activate_subscription's own rule. Saying so stops the operator
+  // wondering whether a school paying a week early loses that week.
+  const from = renewing && school.expires_on && school.expires_on >= today()
+    ? school.expires_on : null
 
   return (
-    // Full width and left-aligned on a phone, right-aligned beside the school
-    // row from `sm` up. Fifty schools means calls made in a car park, and the
-    // controls that renew a licence cannot be the ones that fall off the screen.
-    <div className="flex w-full shrink-0 flex-col items-start gap-2 sm:w-auto sm:items-end">
-      <div className="flex flex-wrap items-center gap-2">
-        <select value={plan} onChange={(e) => setPlan(e.target.value)} className={FIELD}>
-          {plans.map((p) => <option key={p.code} value={p.code}>{p.code}</option>)}
-        </select>
-        <select value={months} onChange={(e) => setMonths(Number(e.target.value))} className={FIELD}>
-          <option value={1}>1 month</option>
-          <option value={3}>3 months</option>
-          <option value={6}>6 months</option>
-          <option value={12}>1 year</option>
-        </select>
-        {list !== null && <span className="text-sm text-slate-500">{formatPkr(list)}</span>}
-        <button
-          onClick={() => onActivate(plan, months, typed, note.trim() || null, wouldBeOver)}
-          disabled={busy || needsNote}
-          className="rounded bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60"
-        >
-          {school.status === 'active' ? 'Renew' : 'Activate'}
-        </button>
-        {(school.status === 'trialing' || school.status === 'locked') && (
-          <button onClick={onExtend} disabled={busy}
-            className="rounded border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-60">
-            +14d trial
-          </button>
-        )}
-        <button onClick={() => setOpen((v) => !v)} className="text-xs text-brand-700 hover:underline">
-          {open ? 'hide price' : 'change price'}
-        </button>
-      </div>
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center">
+      <div className="w-full max-w-md rounded-lg bg-white p-5 text-left shadow-lg">
+        <h2 className="text-base font-semibold text-slate-800">
+          {renewing ? 'Renew' : 'Activate'} {school.school_name}
+        </h2>
+        <p className="mt-1 text-sm text-slate-600">
+          {school.student_count.toLocaleString()} students
+          {school.outstanding > 0 && <> · owes {formatPkr(school.outstanding)}</>}
+        </p>
 
-      {wouldBeOver && (
-        <div className="max-w-sm rounded border border-amber-300 bg-amber-50 px-2 py-1 text-right text-xs text-amber-900">
-          {school.student_count.toLocaleString()} students against {plan}&rsquo;s limit of{' '}
-          {chosen?.student_limit?.toLocaleString()}. {school.suggested_plan !== plan
-            ? <>Pick <span className="font-semibold">{school.suggested_plan}</span>, or renew on {plan} anyway. The breach is recorded on the invoice.</>
-            : <>Renewing anyway records the breach on the invoice.</>}
-        </div>
-      )}
-
-      {open && (
-        <div className="flex max-w-sm flex-col items-end gap-1">
-          <div className="flex items-center gap-2">
-            <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal"
-              placeholder={list !== null ? `list ${list}` : 'amount'} className={`${FIELD} w-28 text-right`} />
-            <input value={note} onChange={(e) => setNote(e.target.value)}
-              placeholder="reason (goes on the invoice)" className={`${FIELD} w-56`} />
-          </div>
-          {needsNote && (
-            <span className="text-xs text-amber-700">
-              A price that is not the list price needs a reason: including zero.
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <label className="block">
+            <span className="text-sm text-slate-600">Plan</span>
+            <select value={plan} onChange={(e) => setPlan(e.target.value)}
+              className={`${FIELD} mt-1 w-full`}>
+              {plans.map((p) => <option key={p.code} value={p.code}>{p.code}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-sm text-slate-600">For how long</span>
+            <select value={months} onChange={(e) => setMonths(Number(e.target.value))}
+              className={`${FIELD} mt-1 w-full`}>
+              <option value={1}>1 month</option>
+              <option value={3}>3 months</option>
+              <option value={6}>6 months</option>
+              <option value={12}>1 year</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-sm text-slate-600">
+              They pay <span className="text-slate-400">(blank = list price)</span>
             </span>
-          )}
+            <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal"
+              placeholder={list !== null ? String(list) : 'amount'}
+              className={`${FIELD} mt-1 w-full`} />
+          </label>
+          <label className="block">
+            <span className="text-sm text-slate-600">Reason for the price</span>
+            <input value={note} onChange={(e) => setNote(e.target.value)}
+              placeholder="goes on the invoice" className={`${FIELD} mt-1 w-full`} />
+          </label>
         </div>
-      )}
+
+        <dl className="mt-3 grid grid-cols-[auto,1fr] gap-x-4 gap-y-1 rounded border border-slate-200 bg-slate-50 p-3 text-sm">
+          <dt className="text-slate-500">Period</dt>
+          <dd className="text-slate-800">
+            {months === 12 ? '1 year' : `${months} month${months === 1 ? '' : 's'}`}
+            {from && <span className="text-slate-500"> · starts {from}, after the current one</span>}
+          </dd>
+          <dt className="text-slate-500">Invoice</dt>
+          <dd className="font-medium text-slate-800">
+            {charge === null ? 'list price' : formatPkr(charge)}
+            {discount > 0 && (
+              <span className="ml-1 text-amber-700">
+                ({formatPkr(discount)} off {formatPkr(list ?? 0)})
+              </span>
+            )}
+          </dd>
+        </dl>
+
+        {needsNote && (
+          <p className="mt-2 text-sm text-amber-700">
+            A price that is not the list price needs a reason, including zero.
+          </p>
+        )}
+
+        {overLimit && (
+          <p className="mt-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            {school.student_count.toLocaleString()} students against {plan}&rsquo;s limit
+            of {chosen?.student_limit?.toLocaleString()}.
+            {school.suggested_plan !== plan
+              ? <> Pick <span className="font-semibold">{school.suggested_plan}</span>, or go ahead on {plan}: the breach is recorded on the invoice.</>
+              : <> Going ahead records the breach on the invoice.</>}
+          </p>
+        )}
+
+        <p className="mt-3 text-xs text-slate-500">
+          This raises an invoice and starts the paid period. It cannot be undone
+          from here.
+        </p>
+
+        <div className="mt-3 flex gap-2">
+          <button
+            onClick={() => onGo(plan, months, typed, note.trim() || null, overLimit)}
+            disabled={needsNote}
+            className="flex-1 rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
+            {renewing ? 'Renew and invoice' : 'Activate and invoice'}
+          </button>
+          <button onClick={onCancel}
+            className="flex-1 rounded border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">
+            Cancel
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
