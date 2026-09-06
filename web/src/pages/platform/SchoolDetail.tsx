@@ -23,33 +23,28 @@ import { fmtDate, fmtDateTime } from '@/lib/format'
  * of the page, which says so to the operator as well, because a screen that
  * quietly omits something reads as a screen that is missing it.
  */
-export function SchoolDetailPanel({ schoolId, onClose, onVisit }: {
-  schoolId: string
-  onClose: () => void
-  onVisit: () => void
-}) {
+/**
+ * The Overview tab of the school workspace.
+ *
+ * This used to be its own centered modal, reachable only by clicking the
+ * school's NAME on the card - a plain-looking link beside five other plain
+ * links, which is why the richest screen in the console was also the least
+ * discovered. It is now what you get by clicking the row, and the identity, the
+ * status chips, Close and View as school all belong to the drawer around it
+ * rather than being repeated here.
+ */
+export function OverviewTab({ schoolId }: { schoolId: string }) {
   const q = useQuery({
     queryKey: ['schoolDetail', schoolId],
     queryFn: () => schoolDetail(schoolId),
   })
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4">
-      <div className="w-full max-w-3xl rounded-lg bg-white p-5 shadow-lg">
-        {q.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
-        {q.error && <p className="text-sm text-red-600">{(q.error as Error).message}</p>}
-        {q.data && <Body d={q.data} onClose={onClose} onVisit={onVisit} />}
-        {!q.data && (
-          <button onClick={onClose} className="mt-3 text-sm text-slate-500 hover:underline">
-            Close
-          </button>
-        )}
-      </div>
-    </div>
-  )
+  if (q.isLoading) return <p className="text-sm text-slate-500">Loading…</p>
+  if (q.error) return <p className="text-sm text-danger-600">{(q.error as Error).message}</p>
+  if (!q.data) return null
+  return <Body d={q.data} />
 }
 
-function Body({ d, onClose, onVisit }: { d: Detail; onClose: () => void; onVisit: () => void }) {
+function Body({ d }: { d: Detail }) {
   // The first unfinished step. This is the single most useful thing on the page:
   // it turns "they seem quiet" into a sentence you can say on the phone.
   const stuckAt = d.readiness.find((r) => !r.done)
@@ -57,30 +52,16 @@ function Body({ d, onClose, onVisit }: { d: Detail; onClose: () => void; onVisit
 
   return (
     <>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="text-base font-semibold text-slate-800">{d.school.name}</h2>
-          <p className="text-sm text-slate-500">
-            {[d.school.city, d.school.contact_name, d.school.contact_phone]
-              .filter(Boolean).join(' · ') || 'No contact details'}
-          </p>
-          <p className="text-xs text-slate-400">
-            Signed up {fmtDate(d.school.created_at)}
-            {/* A school that renamed itself in its own settings is worth
-                noticing: it means somebody is in there using it. */}
-            {d.school.display_name && d.school.display_name !== d.school.name && (
-              <> · calls itself &ldquo;{d.school.display_name}&rdquo; in the app</>
-            )}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <button onClick={onVisit}
-            className="rounded bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700">
-            View as school
-          </button>
-          <button onClick={onClose} className="text-sm text-slate-500 hover:underline">Close</button>
-        </div>
-      </div>
+      {/* Signed up, and what they call themselves. The name and contact line
+          live in the drawer header now; this is the part that does not. */}
+      <p className="text-xs text-slate-400">
+        Signed up {fmtDate(d.school.created_at)}
+        {/* A school that renamed itself in its own settings is worth noticing:
+            it means somebody is in there using it. */}
+        {d.school.display_name && d.school.display_name !== d.school.name && (
+          <> · calls itself &ldquo;{d.school.display_name}&rdquo; in the app</>
+        )}
+      </p>
 
       {/* 1. ARE THEY LIVE? */}
       <section className="mt-4">
@@ -88,12 +69,12 @@ function Body({ d, onClose, onVisit }: { d: Detail; onClose: () => void; onVisit
           Getting started: {done} of {d.readiness.length} done
         </SectionTitle>
         {stuckAt ? (
-          <div className="mt-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <div className="mt-2 rounded border border-due-200 bg-due-50 px-3 py-2 text-sm text-due-900">
             <span className="font-medium">Stuck at: {stuckAt.label}.</span>{' '}
             {stuckAt.detail || 'Worth a phone call.'}
           </div>
         ) : (
-          <div className="mt-2 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+          <div className="mt-2 rounded border border-money-200 bg-money-50 px-3 py-2 text-sm text-money-900">
             Fully set up and billing.
           </div>
         )}
@@ -138,7 +119,7 @@ function Body({ d, onClose, onVisit }: { d: Detail; onClose: () => void; onVisit
                   <span className="text-slate-400"> / {d.licence.student_limit.toLocaleString()}</span>
                 )}
                 {d.licence.limit_state === 'over' && (
-                  <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">
+                  <span className="ml-2 rounded bg-due-100 px-1.5 py-0.5 text-xs font-medium text-due-800">
                     over limit
                     {d.licence.over_limit_since && ` since ${fmtDate(d.licence.over_limit_since)}`}
                   </span>
@@ -147,7 +128,7 @@ function Body({ d, onClose, onVisit }: { d: Detail; onClose: () => void; onVisit
               {d.licence.limit_state === 'over'
                 && d.licence.suggested_plan
                 && d.licence.suggested_plan !== d.licence.plan_code && (
-                <div className="text-amber-800">
+                <div className="text-due-800">
                   Move them to <span className="font-medium">{d.licence.suggested_plan}</span> at renewal.
                 </div>
               )}
@@ -156,7 +137,7 @@ function Body({ d, onClose, onVisit }: { d: Detail; onClose: () => void; onVisit
               </div>
             </div>
           ) : (
-            <p className="mt-1.5 text-sm text-red-700">
+            <p className="mt-1.5 text-sm text-danger-700">
               No subscription row at all. This school cannot use the software.
             </p>
           )}
@@ -167,7 +148,7 @@ function Body({ d, onClose, onVisit }: { d: Detail; onClose: () => void; onVisit
           <div className="mt-1.5 space-y-0.5 text-sm text-slate-700">
             <div>Invoiced {formatPkr(d.money.invoiced)} over {d.money.invoice_count} invoice(s)</div>
             <div>Paid {formatPkr(d.money.paid)}</div>
-            <div className={d.money.outstanding > 0 ? 'font-medium text-amber-800' : ''}>
+            <div className={d.money.outstanding > 0 ? 'font-medium text-due-800' : ''}>
               Outstanding {formatPkr(d.money.outstanding)}
             </div>
             <div className="text-xs text-slate-400">
@@ -181,7 +162,7 @@ function Body({ d, onClose, onVisit }: { d: Detail; onClose: () => void; onVisit
       <section className="mt-4">
         <SectionTitle>Logins ({d.people.length})</SectionTitle>
         {d.people.length === 0 ? (
-          <p className="mt-1.5 text-sm text-red-700">
+          <p className="mt-1.5 text-sm text-danger-700">
             Nobody can sign in. The school was created and never given an owner login.
           </p>
         ) : (
@@ -196,7 +177,7 @@ function Body({ d, onClose, onVisit }: { d: Detail; onClose: () => void; onVisit
                         an invited accountant who never signed in is a seat
                         nobody is using and probably does not know about. */}
                     {!p.ever_signed_in
-                      ? <span className="font-medium text-amber-700">never signed in</span>
+                      ? <span className="font-medium text-due-700">never signed in</span>
                       : <span className="text-slate-400">last in {fmtDate(p.last_sign_in)}</span>}
                     {!p.active && <span className="ml-2 text-slate-400">· switched off</span>}
                   </td>
@@ -228,7 +209,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 function ReadyRow({ r }: { r: ReadinessItem }) {
   return (
     <li className="flex items-start gap-2 text-sm">
-      <span className={`mt-0.5 shrink-0 ${r.done ? 'text-emerald-600' : 'text-slate-300'}`}>
+      <span className={`mt-0.5 shrink-0 ${r.done ? 'text-money-600' : 'text-slate-300'}`}>
         {r.done ? '✓' : '○'}
       </span>
       <span className={r.done ? 'text-slate-600' : 'font-medium text-slate-800'}>
@@ -260,7 +241,7 @@ function Since({ label, at }: { label: string; at: string | null }) {
   return (
     <div className="flex justify-between gap-2">
       <span className="text-slate-500">{label}</span>
-      <span className={stale ? 'font-medium text-amber-700' : 'text-slate-700'}>
+      <span className={stale ? 'font-medium text-due-700' : 'text-slate-700'}>
         {days <= 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`}
       </span>
     </div>

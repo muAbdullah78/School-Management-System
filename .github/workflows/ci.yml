@@ -1806,6 +1806,16 @@ jobs:
         # had already paid.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/the_one_way_door.sql
 
+      - name: The history feed records who actually did it
+        # The correction to the migration above, and to my own sweep. 0108
+        # enumerated every action name in the schema with a grep whose character
+        # class had no dot in it, so the three call sites in 0094 matched nothing
+        # and the console printed "login.deleted" at the operator. The naming was
+        # hiding the larger fault: all three are called by the SCHOOL'S own
+        # office and written into the table whose reader is headed "what we have
+        # done to this school".
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/who_actually_did_it.sql
+
       - name: The cash drawer never accuses the clerk
         # One ordinary morning, seeded and run: open with a Rs 1,000 float, take
         # Rs 3,000 cash, reverse it when the cheque bounces and hand the money

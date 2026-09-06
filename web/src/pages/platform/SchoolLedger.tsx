@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   creditNote, platformInvoice, platformLedger, setInvoiceTax, voidInvoice,
-  type InvoiceDocument, type LedgerEntry, type PlatformSchool, type PlatformSettings,
+  type InvoiceDocument, type LedgerEntry, type PlatformSettings,
   platformSettings,
 } from '@/lib/platform'
 import { InvoiceDoc } from '@/components/InvoiceDoc'
@@ -30,123 +30,155 @@ const FIELD = 'w-full rounded border border-slate-300 px-2 py-1.5 text-sm'
  *               that would erase a real sale and unbalance the books against a
  *               payment genuinely received.
  */
-export function LedgerDialog({ school, onClose }: {
-  school: PlatformSchool; onClose: () => void
-}) {
+/**
+ * The statement, inline, as the lower half of the workspace's Billing tab.
+ *
+ * It used to be a centered modal opened from a "Statement" link on the school's
+ * row, which meant reading the balance, closing it, and opening a different
+ * modal to act on what you had just read. The outstanding figure and the two
+ * buttons that move it now sit directly above this table.
+ *
+ * VOID AND CREDIT ARE NOT THE SAME THING, and the buttons say which is which:
+ *
+ *   Void        the document should never have existed: wrong school, wrong
+ *               plan, raised twice by a double click. Excluded from every total.
+ *               Refused once a payment or a credit note is attached, because
+ *               that is exactly the case a credit note exists for.
+ *   Credit      the document was RIGHT and part of it is being given back. A
+ *               school that paid for twelve months, used four and left. Voiding
+ *               that would erase a real sale and unbalance the books against a
+ *               payment genuinely received.
+ */
+export function LedgerBody({ schoolId }: { schoolId: string }) {
   const q = useQuery({
-    queryKey: ['platformLedger', school.school_id],
-    queryFn: () => platformLedger(school.school_id),
+    queryKey: ['platformLedger', schoolId],
+    queryFn: () => platformLedger(schoolId),
   })
   const settings = useQuery({ queryKey: ['platformSettings'], queryFn: platformSettings })
   const [printing, setPrinting] = useState<string | null>(null)
   const [acting, setActing] = useState<{ e: LedgerEntry; mode: Mode } | null>(null)
 
   // A running balance, computed here rather than stored, so it can never
-  // disagree with the rows above it.
+  // disagree with the rows above it. The order it depends on comes from
+  // fn_platform_ledger: oldest first, documents before the payment that settles
+  // them on a shared date.
   let bal = 0
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4">
-      <div className="w-full max-w-4xl rounded-lg bg-white p-5 shadow-lg">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold text-slate-800">{school.school_name}</h2>
-            <p className="text-sm text-slate-600">
-              Statement · {school.outstanding > 0
-                ? <span className="font-medium text-amber-800">{formatPkr(school.outstanding)} outstanding</span>
-                : 'nothing outstanding'}
-            </p>
-          </div>
-          <button onClick={onClose} className="text-sm text-slate-500 hover:underline">Close</button>
-        </div>
-
-        {settings.data && settings.data.missing.length > 0 && (
-          <p className="mt-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-            Invoices will print without {settings.data.missing.map((m) => m.replace(/_/g, ' ')).join(', ')}.
-            Fill it in under the Our billing tab before sending anything.
-          </p>
-        )}
-
-        {q.isLoading && <p className="mt-3 text-sm text-slate-500">Loading…</p>}
-        {q.error && <p className="mt-3 text-sm text-red-600">{(q.error as Error).message}</p>}
-
-        {q.data && q.data.length === 0 && (
-          <p className="mt-3 text-sm text-slate-500">
-            Nothing invoiced yet. A charge is written when you activate or renew them.
-          </p>
-        )}
-
-        {q.data && q.data.length > 0 && (
-          <div className="mt-3 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="w-24 px-2 py-2">Date</th>
-                  <th className="w-24 px-2 py-2">Number</th>
-                  <th className="px-2 py-2">What</th>
-                  <th className="w-24 px-2 py-2 text-right">Charged</th>
-                  <th className="w-24 px-2 py-2 text-right">Paid</th>
-                  <th className="w-24 px-2 py-2 text-right">Balance</th>
-                  <th className="w-40 px-2 py-2"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {q.data.map((e) => {
-                  bal += Number(e.charged ?? 0) - Number(e.paid ?? 0)
-                  const isDoc = e.kind !== 'payment'
-                  return (
-                    <tr key={e.entry_id} className={e.voided ? 'text-slate-400' : ''}>
-                      <td className="px-2 py-2 text-slate-500">{e.entry_date}</td>
-                      <td className="px-2 py-2">
-                        <span className={e.voided ? 'line-through' : 'font-medium text-slate-700'}>
-                          {e.doc_no ?? ''}
-                        </span>
-                      </td>
-                      <td className="px-2 py-2 text-slate-700">
-                        {e.description}
-                        {e.reference && <span className="text-slate-400"> · {e.reference}</span>}
-                        {e.note && <div className="text-xs text-slate-500">{e.note}</div>}
-                      </td>
-                      <td className={`px-2 py-2 text-right ${
-                        Number(e.charged ?? 0) < 0 ? 'text-emerald-700' : 'text-slate-700'}`}>
-                        {e.charged ? formatPkr(Number(e.charged)) : ''}
-                      </td>
-                      <td className="px-2 py-2 text-right text-emerald-700">
-                        {e.paid ? formatPkr(Number(e.paid)) : ''}
-                      </td>
-                      <td className="px-2 py-2 text-right font-medium text-slate-800">
-                        {formatPkr(bal)}
-                      </td>
-                      <td className="px-2 py-2 text-right text-xs">
-                        {isDoc && (
-                          <div className="flex flex-wrap justify-end gap-2">
-                            <button onClick={() => setPrinting(e.entry_id)}
-                              className="text-brand-700 hover:underline">Print</button>
-                            {!e.voided && (
-                              <>
-                                <button onClick={() => setActing({ e, mode: 'void' })}
-                                  className="text-slate-500 hover:underline">Void</button>
-                                {e.kind === 'invoice' && (
-                                  <>
-                                    <button onClick={() => setActing({ e, mode: 'credit' })}
-                                      className="text-slate-500 hover:underline">Credit</button>
-                                    <button onClick={() => setActing({ e, mode: 'tax' })}
-                                      className="text-slate-500 hover:underline">Tax</button>
-                                  </>
-                                )}
-                              </>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+    <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        Statement
       </div>
+
+      {settings.data && settings.data.missing.length > 0 && (
+        <p className="mt-2 rounded border border-due-200 bg-due-50 px-3 py-2 text-sm text-due-900">
+          Invoices will print without {settings.data.missing.map((m) => m.replace(/_/g, ' ')).join(', ')}.
+          Fill it in under the Our billing tab before sending anything.
+        </p>
+      )}
+
+      {q.isLoading && <p className="mt-3 text-sm text-slate-500">Loading…</p>}
+      {q.error && <p className="mt-3 text-sm text-danger-600">{(q.error as Error).message}</p>}
+
+      {q.data && q.data.length === 0 && (
+        <p className="mt-3 text-sm text-slate-500">
+          Nothing invoiced yet. A charge is written when you activate or renew them.
+        </p>
+      )}
+
+      {q.data && q.data.length > 0 && (
+        <div className="mt-3 overflow-x-auto">
+          {/* SEVEN COLUMNS IN A DRAWER. The fixed w-24 and w-40 widths this
+              table was born with were sized for a max-w-4xl centered modal; in
+              the workspace they left the description about 130px, so "growth ·
+              12 months · 2026-08-20 to 2027-08-19" broke into seven lines and
+              one invoice filled half the panel. Replacing them with a hard
+              min-width on the TABLE fixed the wrapping and pushed the Credit
+              and Tax links off the right edge instead - measured at 870px of
+              content in an 822px panel. What actually works is the opposite of
+              a floor: every column that must not wrap says so, nothing else is
+              constrained, and the description absorbs whatever is left. The
+              scroller stays for the narrow case. */}
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+              {/* NO FIXED COLUMN WIDTHS. They were w-24 and w-40, sized for the
+                  max-w-4xl centered modal this table used to live in. Inside the
+                  workspace there is less room, and a fixed 96px date column plus
+                  a fixed 160px action column left the description about 130px
+                  wide - so "growth · 12 months · 2026-08-20 to 2027-08-19" wrapped
+                  to seven lines and one invoice filled half the panel. Everything
+                  that must not wrap says so instead, and What takes what is left. */}
+              <tr>
+                <th className="whitespace-nowrap px-2 py-2">Date</th>
+                <th className="whitespace-nowrap px-2 py-2">Number</th>
+                {/* The only column allowed to wrap, and the only one given a
+                    floor. Everything else says whitespace-nowrap, so the table
+                    asks for exactly the width the figures need and What takes
+                    the remainder - which is how it fits a 4xl drawer without a
+                    horizontal scrollbar and still reads on a laptop. */}
+                <th className="min-w-[12rem] px-2 py-2">What</th>
+                <th className="whitespace-nowrap px-2 py-2 text-right">Charged</th>
+                <th className="whitespace-nowrap px-2 py-2 text-right">Paid</th>
+                <th className="whitespace-nowrap px-2 py-2 text-right">Balance</th>
+                <th className="whitespace-nowrap px-2 py-2"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {q.data.map((e) => {
+                bal += Number(e.charged ?? 0) - Number(e.paid ?? 0)
+                const isDoc = e.kind !== 'payment'
+                return (
+                  <tr key={e.entry_id} className={e.voided ? 'text-slate-400' : ''}>
+                    <td className="whitespace-nowrap px-2 py-2 text-slate-500">{e.entry_date}</td>
+                    <td className="whitespace-nowrap px-2 py-2">
+                      <span className={e.voided ? 'line-through' : 'font-medium text-slate-700'}>
+                        {e.doc_no ?? ''}
+                      </span>
+                    </td>
+                    <td className="px-2 py-2 text-slate-700">
+                      {e.description}
+                      {e.reference && <span className="text-slate-400"> · {e.reference}</span>}
+                      {e.note && <div className="text-xs text-slate-500">{e.note}</div>}
+                    </td>
+                    <td className={`whitespace-nowrap px-2 py-2 text-right tabular-nums ${
+                      Number(e.charged ?? 0) < 0 ? 'text-money-700' : 'text-slate-700'}`}>
+                      {e.charged ? formatPkr(Number(e.charged)) : ''}
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums text-money-700">
+                      {e.paid ? formatPkr(Number(e.paid)) : ''}
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-2 text-right font-medium tabular-nums text-slate-800">
+                      {formatPkr(bal)}
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-2 text-right text-xs">
+                      {isDoc && (
+                        <div className="flex shrink-0 justify-end gap-2">
+                          <button onClick={() => setPrinting(e.entry_id)}
+                            className="text-brand-700 hover:underline">Print</button>
+                          {!e.voided && (
+                            <>
+                              <button onClick={() => setActing({ e, mode: 'void' })}
+                                className="text-slate-500 hover:underline">Void</button>
+                              {e.kind === 'invoice' && (
+                                <>
+                                  <button onClick={() => setActing({ e, mode: 'credit' })}
+                                    className="text-slate-500 hover:underline">Credit</button>
+                                  <button onClick={() => setActing({ e, mode: 'tax' })}
+                                    className="text-slate-500 hover:underline">Tax</button>
+                                </>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {printing && <PrintDialog invoiceId={printing} onClose={() => setPrinting(null)} />}
       {acting && (
@@ -175,7 +207,7 @@ function PrintDialog({ invoiceId, onClose }: { invoiceId: string; onClose: () =>
           <button onClick={onClose} className="text-sm text-slate-500 hover:underline">Close</button>
         </div>
         {q.isLoading && <p className="p-4 text-sm text-slate-500">Loading…</p>}
-        {q.error && <p className="p-4 text-sm text-red-600">{(q.error as Error).message}</p>}
+        {q.error && <p className="p-4 text-sm text-danger-600">{(q.error as Error).message}</p>}
         {q.data && <InvoiceDoc d={q.data as InvoiceDocument} />}
       </div>
     </div>
@@ -243,7 +275,7 @@ function DocActionDialog({ entry, mode, settings, onClose }: {
   if (warn) {
     return (
       <Shell title="Voided. One thing is left to decide" onClose={onClose}>
-        <p className="text-sm text-amber-900">{warn}</p>
+        <p className="text-sm text-due-900">{warn}</p>
         <button onClick={onClose}
           className="mt-4 w-full rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
           Understood
@@ -296,12 +328,12 @@ function DocActionDialog({ entry, mode, settings, onClose }: {
         </p>
       )}
 
-      {err && <p className="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
+      {err && <p className="mt-3 rounded bg-danger-50 px-3 py-2 text-sm text-danger-700">{err}</p>}
       {/* `min` and `max` on a number input are enforced by form validation, and
           there is no form on this dialog, so both were decoration. A typed
           -500 or 9,999,999 went to the database and came back as a raw error. */}
       {(creditProblem || taxProblem) && (
-        <p className="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+        <p className="mt-3 rounded border border-due-200 bg-due-50 px-3 py-2 text-xs text-due-900">
           {creditProblem ?? taxProblem}
         </p>
       )}

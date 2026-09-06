@@ -58,14 +58,14 @@ export function LifecycleDialog({ school, onClose, onDone }: {
             <h2 className="text-base font-semibold text-slate-800">{school.school_name}</h2>
             <p className="text-sm text-slate-500">
               {school.plan_code} · {school.status}
-              {school.suspended && <span className="text-red-700"> · suspended by us</span>}
+              {school.suspended && <span className="text-danger-700"> · suspended by us</span>}
               {school.archived && <span className="text-slate-400"> · archived</span>}
               {school.outstanding > 0 && (
-                <span className="text-amber-800"> · owes {formatPkr(school.outstanding)}</span>
+                <span className="text-due-800"> · owes {formatPkr(school.outstanding)}</span>
               )}
             </p>
             {school.suspended && school.suspend_reason && (
-              <p className="mt-1 rounded bg-red-50 px-2 py-1 text-xs text-red-800">
+              <p className="mt-1 rounded bg-danger-50 px-2 py-1 text-xs text-danger-800">
                 They are being shown: &ldquo;{school.suspend_reason}&rdquo;
               </p>
             )}
@@ -131,7 +131,7 @@ function Choice({ title, body, onClick, tone }: {
   return (
     <button onClick={onClick}
       className={`block w-full rounded border p-3 text-left hover:bg-slate-50 ${
-        tone === 'warn' ? 'border-amber-300 bg-amber-50/40' : 'border-slate-200'}`}>
+        tone === 'warn' ? 'border-due-300 bg-due-50/40' : 'border-slate-200'}`}>
       <div className="text-sm font-medium text-slate-800">{title}</div>
       <div className="mt-0.5 text-xs text-slate-500">{body}</div>
     </button>
@@ -259,9 +259,9 @@ function ActionForm({ school, action, onBack, onDone }: {
         ← back
       </button>
 
-      {err && <p className="mt-2 rounded bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
+      {err && <p className="mt-2 rounded bg-danger-50 px-3 py-2 text-sm text-danger-700">{err}</p>}
       {graceProblem && (
-        <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+        <p className="mt-2 rounded border border-due-200 bg-due-50 px-3 py-2 text-xs text-due-900">
           {graceProblem}
         </p>
       )}
@@ -272,7 +272,7 @@ function ActionForm({ school, action, onBack, onDone }: {
           action ends a paid period on the spot and takes every teacher and
           parent offline with it, and neither fact appeared anywhere. */}
       {action === 'cancel' && (
-        <div className="mt-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+        <div className="mt-3 rounded border border-due-300 bg-due-50 px-3 py-2 text-xs text-due-900">
           <p className="font-medium">This takes effect today, not at the end of their term.</p>
           <ul className="mt-1 space-y-0.5">
             {(school.days_left ?? 0) > 0 && school.expires_on && (
@@ -323,7 +323,7 @@ function ActionForm({ school, action, onBack, onDone }: {
           || ((needsReason || isGraceOverride) && reason.trim().length === 0)}
         className={`mt-4 w-full rounded px-3 py-2 text-sm font-medium text-white disabled:opacity-60 ${
           action === 'suspend' || action === 'cancel' || action === 'archive'
-            ? 'bg-amber-600 hover:bg-amber-700'
+            ? 'bg-due-600 hover:bg-due-700'
             : 'bg-brand-600 hover:bg-brand-700'}`}>
         {run.isPending ? 'Saving…' : LABEL[action]}
       </button>

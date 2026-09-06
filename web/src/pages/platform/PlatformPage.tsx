@@ -2,17 +2,15 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/auth/AuthProvider'
 import {
-  activateSubscription, actionNeeded, amPlatformAdmin, describeAction,
+  activateSubscription, actionNeeded, amPlatformAdmin,
   listPlans, listPlatformSchools, operatorEnter, platformRevenue,
-  platformSchemaState, recordPlatformPayment, refreshAllCounts, schoolActions,
-  sortByAction,
+  platformSchemaState, recordPlatformPayment, refreshAllCounts,
   type PlatformSchool, type SchemaState,
 } from '@/lib/platform'
 import { formatPkr } from '@/lib/licence'
 import { monthStart, today } from '@/lib/dates'
-import { fmtDateTime } from '@/lib/format'
-import { SchoolDetailPanel } from './SchoolDetail'
-import { LedgerDialog } from './SchoolLedger'
+import { SchoolsTable, type QuickKind } from './SchoolsTable'
+import { SchoolDrawer, type DrawerTab } from './SchoolDrawer'
 import { Renewals } from './Renewals'
 import { Claims } from './Claims'
 import { BillingSettings } from './BillingSettings'
@@ -24,14 +22,6 @@ import { Publishing } from './Publishing'
 import { LeftBehind } from './LeftBehind'
 import { Reviews } from './Reviews'
 import { paymentClaims, dueSoon, platformSettings, orphanReport } from '@/lib/platform'
-
-const STATUS_STYLE: Record<PlatformSchool['status'], string> = {
-  trialing: 'bg-sky-100 text-sky-800',
-  active: 'bg-emerald-100 text-emerald-800',
-  grace: 'bg-amber-100 text-amber-800',
-  locked: 'bg-red-100 text-red-800',
-  cancelled: 'bg-slate-200 text-slate-700',
-}
 
 const FIELD = 'rounded border border-slate-300 px-2 py-1.5 text-sm'
 
@@ -86,15 +76,18 @@ export function PlatformPage() {
   const [from, setFrom] = useState(monthStart())
   const [to, setTo] = useState(today())
   const [paying, setPaying] = useState<PlatformSchool | null>(null)
-  const [ledgerFor, setLedgerFor] = useState<PlatformSchool | null>(null)
-  const [historyFor, setHistoryFor] = useState<PlatformSchool | null>(null)
   const [visiting, setVisiting] = useState<PlatformSchool | null>(null)
-  const [openSchool, setOpenSchool] = useState<PlatformSchool | null>(null)
   const [tab, setTab] = useState<Tab>('schools')
-  const [showArchived, setShowArchived] = useState(false)
   const [creating, setCreating] = useState(false)
   const [lifecycleFor, setLifecycleFor] = useState<PlatformSchool | null>(null)
   const [offboarding, setOffboarding] = useState<PlatformSchool | null>(null)
+  const [activating, setActivating] = useState<PlatformSchool | null>(null)
+  // ONE WORKSPACE INSTEAD OF SIX DIALOG FLAGS. The console used to carry a piece
+  // of state per popup - ledgerFor, historyFor, openSchool - and the school
+  // being worked on could be in three of them at once, each holding a snapshot
+  // taken at a different moment. There is now one selected school and one tab.
+  const [openId, setOpenId] = useState<string | null>(null)
+  const [drawerTab, setDrawerTab] = useState<DrawerTab>('overview')
 
   const isAdmin = useQuery({ queryKey: ['amPlatformAdmin', session?.user?.id], queryFn: amPlatformAdmin })
   // Counts for the tab badges. Loaded whatever tab is showing, because the whole
@@ -126,12 +119,19 @@ export function PlatformPage() {
     enabled: isAdmin.data === true,
     retry: false,
   })
+  // FETCHED ONCE, WITH ARCHIVED INCLUDED, and filtered in the table.
+  //
+  // This used to be keyed on a "Show archived" checkbox in the page header,
+  // with a comment warning that an archived school left in the cache is how a
+  // departed customer turns up in this month's totals. That warning was right
+  // and the checkbox was the wrong answer to it: a control in the header that
+  // silently changes what a list contains is a control people forget is on.
+  // Archived is a filter on the table now, where a person looks for it, and the
+  // header counts below exclude archived explicitly rather than relying on a
+  // flag being off.
   const schools = useQuery({
-    // Keyed on the flag: an archived school appearing in a cache the console
-    // filled while the toggle was off is how a departed customer shows up in
-    // this month's totals.
-    queryKey: ['platformSchools', showArchived],
-    queryFn: () => listPlatformSchools(showArchived),
+    queryKey: ['platformSchools', 'all'],
+    queryFn: () => listPlatformSchools(true),
     enabled: isAdmin.data === true,
   })
   const plans = useQuery({ queryKey: ['plans'], queryFn: listPlans, enabled: isAdmin.data === true })
@@ -144,7 +144,13 @@ export function PlatformPage() {
     queryKey: ['platformSchemaState'], queryFn: platformSchemaState, enabled: isAdmin.data === true,
   })
 
-  const rows = useMemo(() => sortByAction(schools.data ?? []), [schools.data])
+  const rows = useMemo(() => schools.data ?? [], [schools.data])
+  // The school the drawer is showing, read from the LIVE list rather than held
+  // in state. Holding the object meant the drawer kept rendering the balance and
+  // the status as they were when the row was clicked, so recording a payment
+  // left the header claiming they still owed it.
+  const openSchool = useMemo(
+    () => rows.find((r) => r.school_id === openId) ?? null, [rows, openId])
 
   const act = useMutation({
     mutationFn: async (fn: () => Promise<unknown>) => fn(),
@@ -177,11 +183,14 @@ export function PlatformPage() {
     )
   }
 
+  // Live schools only. An archived customer counted in "3 paying" is how last
+  // year's revenue ends up in this year's summary.
+  const live = rows.filter((s) => !s.archived)
   const counts = {
-    total: rows.length,
-    paying: rows.filter((s) => s.status === 'active').length,
-    trial: rows.filter((s) => s.status === 'trialing').length,
-    attention: rows.filter((s) => actionNeeded(s) !== null).length,
+    total: live.length,
+    paying: live.filter((s) => s.status === 'active').length,
+    trial: live.filter((s) => s.status === 'trialing').length,
+    attention: live.filter((s) => actionNeeded(s) !== null).length,
   }
   const rev = revenue.data
 
@@ -199,7 +208,7 @@ export function PlatformPage() {
             {tab === 'schools' ? (
               <p className="text-sm text-slate-500">
                 {counts.total} total · {counts.paying} paying · {counts.trial} on trial ·{' '}
-                <span className={counts.attention ? 'font-medium text-amber-700' : ''}>
+                <span className={counts.attention ? 'font-medium text-due-700' : ''}>
                   {counts.attention} need attention
                 </span>
               </p>
@@ -214,14 +223,6 @@ export function PlatformPage() {
                   className="rounded bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700">
                   Add a school
                 </button>
-                {/* Archived schools are off by default. A console that shows last
-                    year's departed customers next to this year's is a console
-                    whose totals nobody trusts. */}
-                <label className="flex items-center gap-1.5 rounded border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-600">
-                  <input type="checkbox" checked={showArchived}
-                    onChange={(e) => setShowArchived(e.target.checked)} />
-                  Show archived
-                </label>
               </>
             )}
             <button
@@ -271,8 +272,9 @@ export function PlatformPage() {
         {tab === 'renewals' && (
           <Renewals
             onOpenSchool={(id) => {
-              const s = rows.find((r) => r.school_id === id)
-              if (s) { setTab('schools'); setOpenSchool(s) }
+              // Straight into the school's Billing tab, because that is the
+              // question the renewals list was asking.
+              setTab('schools'); setDrawerTab('billing'); setOpenId(id)
             }}
             // Straight into the payment dialog, on the renewals screen, without
             // changing tab. The operator is on the phone: the school has just
@@ -306,7 +308,7 @@ export function PlatformPage() {
               <input type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} className={FIELD} />
             </div>
           </div>
-          {revenue.error && <p className="mt-2 text-sm text-red-600">{(revenue.error as Error).message}</p>}
+          {revenue.error && <p className="mt-2 text-sm text-danger-600">{(revenue.error as Error).message}</p>}
           <div className="mt-3 grid gap-3 sm:grid-cols-4">
             <Tile label="Invoiced" value={rev ? formatPkr(rev.net_invoiced) : '-'}
               hint={rev && rev.credited > 0
@@ -339,7 +341,7 @@ export function PlatformPage() {
                 </span>
               )}
               {rev.tax_certificates_awaited > 0 && (
-                <span className="rounded bg-amber-50 px-2 py-0.5 text-amber-900">
+                <span className="rounded bg-due-50 px-2 py-0.5 text-due-900">
                   {formatPkr(rev.tax_certificates_awaited)} of withheld tax with no CPR on
                   record. We cannot claim it until the certificate arrives
                 </span>
@@ -351,7 +353,7 @@ export function PlatformPage() {
               <div className="text-xs text-slate-500">Who to chase</div>
               <div className="mt-1 flex flex-wrap gap-2">
                 {rev.schools_owing.map((s) => (
-                  <span key={s.school_id} className="rounded bg-amber-50 px-2 py-0.5 text-xs text-amber-900">
+                  <span key={s.school_id} className="rounded bg-due-50 px-2 py-0.5 text-xs text-due-900">
                     {s.school_name} · {formatPkr(s.outstanding)}
                   </span>
                 ))}
@@ -362,149 +364,49 @@ export function PlatformPage() {
 
         <SchemaStrip state={schema.data} error={schema.error as Error | null} />
 
-        {msg && <div className="rounded border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-800">{msg}</div>}
-        {err && <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">{err}</div>}
+        {msg && <div className="rounded border border-money-200 bg-money-50 p-2 text-sm text-money-800">{msg}</div>}
+        {err && <div className="rounded border border-danger-200 bg-danger-50 p-2 text-sm text-danger-700">{err}</div>}
 
-        {schools.isLoading && <div className="text-sm text-slate-500">Loading schools…</div>}
-        {schools.error && <div className="text-sm text-red-600">{(schools.error as Error).message}</div>}
-
-        {rows.length === 0 && !schools.isLoading && (
-          <div className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
-            No schools yet. They appear here as soon as someone signs up.
-          </div>
+        {msg && (
+          <div className="rounded border border-money-200 bg-money-50 p-2 text-sm text-money-800">{msg}</div>
+        )}
+        {err && (
+          <div className="rounded border border-danger-200 bg-danger-50 p-2 text-sm text-danger-700">{err}</div>
         )}
 
-        <div className="space-y-2">
-          {rows.map((s) => {
-            const todo = actionNeeded(s)
-            return (
-              <div key={s.school_id} className="rounded-lg border border-slate-200 bg-white p-3">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => setOpenSchool(s)}
-                        className="font-medium text-slate-800 hover:text-brand-700 hover:underline">
-                        {s.school_name}
-                      </button>
-                      <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${STATUS_STYLE[s.status]}`}>
-                        {s.status}
-                      </span>
-                      {s.outstanding > 0 && (
-                        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">
-                          owes {formatPkr(s.outstanding)}
-                        </span>
-                      )}
-                      {/* `status` reads 'locked' for a school we suspended AND
-                          for one whose licence simply ran out. Without this badge
-                          the two are indistinguishable, and the operator cannot
-                          tell "they did not pay" from "we switched them off". */}
-                      {s.suspended && (
-                        <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-800"
-                          title={s.suspend_reason ?? undefined}>
-                          we suspended them
-                        </span>
-                      )}
-                      {s.archived && (
-                        <span className="rounded bg-slate-200 px-1.5 py-0.5 text-xs text-slate-600">
-                          archived
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-0.5 text-xs text-slate-500">
-                      {[s.city, s.contact_name, s.contact_phone].filter(Boolean).join(' · ') || 'No contact details'}
-                    </div>
-                    <div className="mt-1 text-sm text-slate-600">
-                      {s.student_count.toLocaleString()} students
-                      {s.student_limit !== null && <span className="text-slate-400"> / {s.student_limit.toLocaleString()}</span>}
-                      {s.limit_state === 'over' && (
-                        <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">
-                          over limit
-                        </span>
-                      )}
-                      {s.limit_state === 'within_margin' && (
-                        <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">
-                          in margin
-                        </span>
-                      )}
-                      <span className="ml-2 text-slate-400">
-                        {s.plan_code}
-                        {s.expires_on && ` · ${s.days_left !== null && s.days_left >= 0
-                          ? `${s.days_left}d left`
-                          : `expired ${Math.abs(s.days_left ?? 0)}d ago`}`}
-                      </span>
-                      {s.last_paid_on && <span className="ml-2 text-slate-400">last paid {s.last_paid_on}</span>}
-                    </div>
-                    {todo && <div className="mt-1 text-sm font-medium text-amber-700">{todo}</div>}
-                    {/* GROUPED BY WHAT THEY COST YOU IF YOU PRESS THEM BY
-                        MISTAKE, because they used to be five identical blue
-                        links in a row: Statement, which opens a read-only panel,
-                        sat beside View as school, which enters a customer's live
-                        records and writes a line into their own audit trail that
-                        they can read. Nothing said one was heavier than the
-                        other. Now: reading on the left, money in the middle, the
-                        two that change or expose something set apart on the
-                        right and coloured for it. */}
-                    <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-                      <button onClick={() => setLedgerFor(s)}
-                        className="rounded border border-slate-200 bg-white px-2 py-1 text-slate-700 hover:bg-slate-50">
-                        Statement
-                      </button>
-                      <button onClick={() => setHistoryFor(s)}
-                        className="rounded border border-slate-200 bg-white px-2 py-1 text-slate-700 hover:bg-slate-50">
-                        History
-                      </button>
-                      <button onClick={() => { setErr(null); setMsg(null); setPaying(s) }}
-                        className="rounded border border-brand-200 bg-brand-50 px-2 py-1 font-medium text-brand-800 hover:bg-brand-100">
-                        Record payment
-                      </button>
-
-                      <span aria-hidden className="mx-1 h-4 w-px bg-slate-200" />
-
-                      <button onClick={() => { setErr(null); setMsg(null); setLifecycleFor(s) }}
-                        className="rounded border border-slate-200 bg-white px-2 py-1 text-slate-600 hover:bg-slate-50">
-                        Manage
-                      </button>
-                      {/* The support tool. Read-only, refused at the database,
-                          logged, and shown to the school in its own settings, so
-                          this is not a back door: it is the front one with a bell
-                          on it. Coloured as the heaviest thing on the row because
-                          it is the only one the customer finds out about. */}
-                      <button onClick={() => { setErr(null); setMsg(null); setVisiting(s) }}
-                        className="rounded border border-red-200 bg-red-50 px-2 py-1 font-medium text-red-800 hover:bg-red-100">
-                        View as school
-                      </button>
-                      {/* Only offered on an archived school, because that is the
-                          only school the database will export or delete, and a
-                          button that always refuses teaches people to ignore
-                          buttons. */}
-                      {s.archived && (
-                        <button onClick={() => { setErr(null); setMsg(null); setOffboarding(s) }}
-                          className="rounded border border-slate-200 bg-white px-2 py-1 text-slate-600 hover:bg-slate-50">
-                          Offboard
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  <SchoolActions
-                    school={s}
-                    plans={plans.data ?? []}
-                    busy={act.isPending}
-                    onActivate={(plan, months, amount, note, allowOverLimit) =>
-                      run(
-                        `${s.school_name} activated on ${plan} for ${months} month(s).`,
-                        () => activateSubscription(s.school_id, plan, months,
-                          { amount, note, allowOverLimit }),
-                      )}
-                  />
-                </div>
-              </div>
-            )
-          })}
-        </div>
+        <SchoolsTable
+          schools={rows}
+          loading={schools.isLoading}
+          error={schools.error as Error | null}
+          busy={act.isPending}
+          onOpen={(s) => { setDrawerTab('overview'); setOpenId(s.school_id) }}
+          onQuickAction={(s, kind: QuickKind) => {
+            setErr(null); setMsg(null)
+            if (kind === 'pay') setPaying(s)
+            else setActivating(s)
+          }}
+        />
 
         </>}
       </div>
+
+      {/* ONE WORKSPACE. Six dialogs used to be mounted here, each opened from
+          its own link on every row. The drawer is the only thing a row opens
+          now, and the dialogs below are what the drawer opens in turn: they hold
+          logic that took several passes to get right and none of it changed. */}
+      {openSchool && (
+        <SchoolDrawer
+          school={openSchool}
+          tab={drawerTab}
+          onTab={setDrawerTab}
+          onClose={() => setOpenId(null)}
+          onPay={() => { setErr(null); setMsg(null); setPaying(openSchool) }}
+          onActivate={() => { setErr(null); setMsg(null); setActivating(openSchool) }}
+          onManage={() => { setErr(null); setMsg(null); setLifecycleFor(openSchool) }}
+          onVisit={() => { setErr(null); setMsg(null); setVisiting(openSchool) }}
+          onOffboard={() => { setErr(null); setMsg(null); setOffboarding(openSchool) }}
+        />
+      )}
 
       {paying && (
         <PaymentDialog
@@ -519,16 +421,28 @@ export function PlatformPage() {
         />
       )}
 
-      {ledgerFor && <LedgerDialog school={ledgerFor} onClose={() => setLedgerFor(null)} />}
+      {activating && (
+        <ActivationDialog
+          school={activating}
+          plans={plans.data ?? []}
+          onCancel={() => setActivating(null)}
+          onGo={(plan, months, amount, note, over) => {
+            const s = activating
+            setActivating(null)
+            run(`${s.school_name} activated on ${plan} for ${months} month(s).`,
+              () => activateSubscription(s.school_id, plan, months,
+                { amount, note, allowOverLimit: over }))
+          }}
+        />
+      )}
 
       {creating && (
         <NewSchoolDialog
           onClose={() => setCreating(false)}
           onCreated={(id) => {
             setCreating(false)
-            const s = rows.find((r) => r.school_id === id)
-            if (s) setOpenSchool(s)
-            else setMsg('School added. It will appear in the list on the next refresh.')
+            setDrawerTab('overview')
+            setOpenId(id)
           }}
         />
       )}
@@ -543,16 +457,6 @@ export function PlatformPage() {
 
       {offboarding && (
         <OffboardDialog school={offboarding} onClose={() => setOffboarding(null)} />
-      )}
-
-      {historyFor && <HistoryDialog school={historyFor} onClose={() => setHistoryFor(null)} />}
-
-      {openSchool && (
-        <SchoolDetailPanel
-          schoolId={openSchool.school_id}
-          onClose={() => setOpenSchool(null)}
-          onVisit={() => { const s = openSchool; setOpenSchool(null); setErr(null); setMsg(null); setVisiting(s) }}
-        />
       )}
 
       {visiting && (
@@ -587,9 +491,9 @@ function SchemaStrip({ state, error }: { state?: SchemaState; error: Error | nul
   // errors. Saying so plainly beats a blank space, because the fix is one paste.
   if (error) {
     return (
-      <div className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+      <div className="rounded border border-due-300 bg-due-50 px-3 py-2 text-sm text-due-900">
         <span className="font-medium">This database has no migration ledger.</span>{' '}
-        Paste <code className="rounded bg-amber-100 px-1">supabase/bundles/7_ledger_and_limits.sql</code>{' '}
+        Paste <code className="rounded bg-due-100 px-1">supabase/bundles/7_ledger_and_limits.sql</code>{' '}
         into the Supabase SQL editor. Until then nothing records which migrations production has.
       </div>
     )
@@ -598,10 +502,10 @@ function SchemaStrip({ state, error }: { state?: SchemaState; error: Error | nul
 
   if (state.applied_count === 0) {
     return (
-      <div className="rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900">
+      <div className="rounded border border-danger-300 bg-danger-50 px-3 py-2 text-sm text-danger-900">
         <span className="font-medium">The migration ledger is empty.</span>{' '}
         0069 refused to record this database because it could not prove every shipped bundle is
-        present. Run <code className="rounded bg-red-100 px-1">supabase/repair/detect.sql</code> and
+        present. Run <code className="rounded bg-danger-100 px-1">supabase/repair/detect.sql</code> and
         apply what it names.
       </div>
     )
@@ -628,10 +532,10 @@ function SchemaStrip({ state, error }: { state?: SchemaState; error: Error | nul
     )
   }
   return (
-    <div className="rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900">
+    <div className="rounded border border-danger-300 bg-danger-50 px-3 py-2 text-sm text-danger-900">
       <span className="font-medium">Schema</span>{' '}
       {state.applied_count} migration{state.applied_count === 1 ? '' : 's'} applied
-      {state.latest && <span className="text-red-700"> · latest {state.latest.replace(/\.sql$/, '')}</span>}
+      {state.latest && <span className="text-danger-700"> · latest {state.latest.replace(/\.sql$/, '')}</span>}
       <div className="mt-1 font-medium">
         {state.gaps_total} missing in the middle: {state.gaps.join(', ')}
         {state.gaps_total > state.gaps.length && ` … and ${state.gaps_total - state.gaps.length} more`}.
@@ -645,72 +549,10 @@ function Tile({ label, value, hint, tone }: {
   label: string; value: string; hint?: string; tone?: 'warn'
 }) {
   return (
-    <div className={`rounded border p-2 ${tone === 'warn' ? 'border-amber-200 bg-amber-50' : 'border-slate-200'}`}>
+    <div className={`rounded border p-2 ${tone === 'warn' ? 'border-due-200 bg-due-50' : 'border-slate-200'}`}>
       <div className="text-xs text-slate-500">{label}</div>
-      <div className={`text-lg font-semibold ${tone === 'warn' ? 'text-amber-900' : 'text-slate-800'}`}>{value}</div>
+      <div className={`text-lg font-semibold ${tone === 'warn' ? 'text-due-900' : 'text-slate-800'}`}>{value}</div>
       {hint && <div className="text-[11px] text-slate-400">{hint}</div>}
-    </div>
-  )
-}
-
-/**
- * The one commercial control on a school's row.
- *
- * IT USED TO BE SEVEN. A plan dropdown, a months dropdown, a price, an Activate
- * button, a +14d trial button, a change-price toggle and, behind that, two more
- * inputs. Alongside five text links and up to six badges, that put ELEVEN
- * interactive controls on every row. At fifty schools it is 550 controls on one
- * page, and the operator's own description of it was "I get lost all the time".
- *
- * The problem was not density, it was that nothing had a rank. Activate raises
- * an invoice and cannot be undone; Statement opens a read-only panel. They were
- * the same size, one click apart, side by side.
- *
- * So the row now carries ONE button, and every choice it needs -- plan, length,
- * price, reason -- is made in the dialog it opens, where there is room to show
- * what is about to happen and the numbers can be read before they are agreed
- * rather than after.
- */
-function SchoolActions({
-  school, plans, busy, onActivate,
-}: {
-  school: PlatformSchool
-  plans: { code: string; name: string; price_yearly: number; price_monthly: number; student_limit: number | null }[]
-  busy: boolean
-  onActivate: (plan: string, months: number, amount: number | null, note: string | null, allowOverLimit: boolean) => void
-}) {
-  const [confirming, setConfirming] = useState(false)
-  const renewing = school.status === 'active'
-
-  return (
-    <div className="flex w-full shrink-0 flex-col items-start gap-2 sm:w-auto sm:items-end">
-      <button
-        onClick={() => setConfirming(true)}
-        disabled={busy}
-        className="rounded bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60"
-      >
-        {renewing ? 'Renew' : 'Activate'}
-      </button>
-
-      {/* THERE IS NO +14d BUTTON ANY MORE. fn_extend_trial capped ONE call at 30
-          days and capped nothing else, so a fortnight was one click and a
-          hundred and forty days was ten, with no confirmation and no reason
-          recorded. 0027's own comment above that function warns that an
-          unbounded extend button becomes a free tier by accident, and the cap it
-          describes is per press. A school that needs longer is put on a plan,
-          which is an invoice and a conversation. 0106 makes the database refuse
-          the call outright. */}
-
-      {confirming && (
-        <ActivationDialog
-          school={school} plans={plans}
-          onCancel={() => setConfirming(false)}
-          onGo={(plan, months, amount, note, over) => {
-            setConfirming(false)
-            onActivate(plan, months, amount, note, over)
-          }}
-        />
-      )}
     </div>
   )
 }
@@ -816,7 +658,7 @@ function ActivationDialog({ school, plans, onCancel, onGo }: {
           <dd className="font-medium text-slate-800">
             {charge === null ? 'list price' : formatPkr(charge)}
             {discount > 0 && (
-              <span className="ml-1 text-amber-700">
+              <span className="ml-1 text-due-700">
                 ({formatPkr(discount)} off {formatPkr(list ?? 0)})
               </span>
             )}
@@ -824,13 +666,13 @@ function ActivationDialog({ school, plans, onCancel, onGo }: {
         </dl>
 
         {needsNote && (
-          <p className="mt-2 text-sm text-amber-700">
+          <p className="mt-2 text-sm text-due-700">
             A price that is not the list price needs a reason, including zero.
           </p>
         )}
 
         {overLimit && (
-          <p className="mt-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <p className="mt-3 rounded border border-due-300 bg-due-50 px-3 py-2 text-sm text-due-900">
             {school.student_count.toLocaleString()} students against {plan}&rsquo;s limit
             of {chosen?.student_limit?.toLocaleString()}.
             {school.suggested_plan !== plan
@@ -1001,7 +843,7 @@ function PaymentDialog({ school, busy, onClose, onSave }: {
             statement used to grey out Record with no message at all. The amount
             is now parsed properly AND the reason is printed. */}
         {problem && (
-          <p className="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <p className="mt-3 rounded border border-due-200 bg-due-50 px-3 py-2 text-xs text-due-900">
             {problem}
           </p>
         )}
@@ -1020,115 +862,6 @@ function PaymentDialog({ school, busy, onClose, onSave }: {
             Cancel
           </button>
         </div>
-      </div>
-    </div>
-  )
-}
-
-/**
- * Everything we have ever done to this school.
- *
- * The billing rows say what was charged. This says who chose it, that a year was
- * given away for a reason somebody typed at the time, that a school was suspended
- * and why, and every support visit. Before 0073 none of it was recorded, which
- * with one customer is recoverable from memory and with fifty is not.
- *
- * (It used to say "that a trial was extended three times". Since 0106 a trial
- * cannot be extended at all, so that sentence was describing a button that no
- * longer exists.)
- */
-const HISTORY_LIMIT = 100
-
-function HistoryDialog({ school, onClose }: { school: PlatformSchool; onClose: () => void }) {
-  const q = useQuery({
-    queryKey: ['schoolActions', school.school_id, HISTORY_LIMIT],
-    queryFn: () => schoolActions(school.school_id, HISTORY_LIMIT),
-  })
-
-  // COLOURED BY CONSEQUENCE, not by how interesting it was to write. Six of the
-  // heaviest actions had no entry here at all, so "school purged" - which
-  // destroys a customer's records and cannot be undone - rendered in exactly
-  // the same neutral grey as "school created". Reading down this list, the
-  // things that ended a relationship were the least visible on it.
-  const TONE: Record<string, string> = {
-    // Irreversible.
-    school_purged: 'bg-red-600 text-white',
-    orphan_data_purged: 'bg-red-600 text-white',
-    // Somebody lost access.
-    school_entered: 'bg-red-50 text-red-800',
-    school_suspended: 'bg-red-50 text-red-800',
-    subscription_cancelled: 'bg-red-50 text-red-800',
-    school_archived: 'bg-red-50 text-red-800',
-    // Access came back.
-    school_unsuspended: 'bg-emerald-50 text-emerald-800',
-    subscription_reinstated: 'bg-emerald-50 text-emerald-800',
-    school_unarchived: 'bg-emerald-50 text-emerald-800',
-    payment_recorded: 'bg-emerald-50 text-emerald-800',
-    // Money and terms.
-    invoice_raised: 'bg-sky-50 text-sky-800',
-    credit_note_raised: 'bg-sky-50 text-sky-800',
-    invoice_voided: 'bg-amber-50 text-amber-900',
-    credit_note_voided: 'bg-amber-50 text-amber-900',
-    licence_changed: 'bg-amber-50 text-amber-900',
-    grace_changed: 'bg-amber-50 text-amber-900',
-    school_exported: 'bg-amber-50 text-amber-900',
-    // Routine.
-    school_left: 'bg-slate-100 text-slate-600',
-    school_created: 'bg-slate-100 text-slate-700',
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4">
-      <div className="w-full max-w-2xl rounded-lg bg-white p-5 shadow-lg">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold text-slate-800">{school.school_name}</h2>
-            <p className="text-sm text-slate-600">What we have done to this school</p>
-          </div>
-          <button onClick={onClose} className="text-sm text-slate-500 hover:underline">Close</button>
-        </div>
-
-        {q.isLoading && <p className="mt-3 text-sm text-slate-500">Loading…</p>}
-        {q.error && <p className="mt-3 text-sm text-red-600">{(q.error as Error).message}</p>}
-        {q.data && q.data.length === 0 && (
-          <p className="mt-3 text-sm text-slate-500">
-            Nothing recorded yet. Activating them, taking a payment or opening their
-            account all appear here.
-          </p>
-        )}
-
-        {q.data && q.data.length > 0 && (
-          <ul className="mt-3 divide-y divide-slate-100">
-            {q.data.map((a, i) => (
-              <li key={i} className="flex items-start gap-3 py-2">
-                <span className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium ${
-                  TONE[a.action] ?? 'bg-slate-100 text-slate-600'}`}>
-                  {a.action.replace(/_/g, ' ')}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm text-slate-800">{describeAction(a)}</div>
-                  <div className="text-xs text-slate-400">
-                    {fmtDateTime(a.at)}
-                    {a.actor_email && <> · {a.actor_email}</>}
-                    {a.detail?.backfilled === true && <> · reconstructed from the billing rows</>}
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {/* THE LIMIT WAS SILENT. schoolActions asks for 100 rows and the list
-            simply stopped, so a school with a long history showed a first entry
-            that was not the first entry, and "School added" - the one row that
-            is always the oldest - quietly disappeared once the hundredth action
-            was logged. A list that has been cut has to say so. */}
-        {q.data && q.data.length >= HISTORY_LIMIT && (
-          <p className="mt-3 border-t border-slate-100 pt-2 text-xs text-slate-400">
-            The most recent {HISTORY_LIMIT} entries. Older ones are kept and are in
-            the audit log, but are not shown here.
-          </p>
-        )}
       </div>
     </div>
   )
@@ -1171,9 +904,9 @@ function VisitDialog({ school, onClose, onError }: {
           Open {school.school_name}
         </h2>
 
-        <div className="mt-3 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+        <div className="mt-3 rounded border border-danger-200 bg-danger-50 p-3 text-sm text-danger-900">
           <div className="font-medium">Read only, and they will see it.</div>
-          <ul className="mt-1 list-disc space-y-0.5 pl-4 text-red-800">
+          <ul className="mt-1 list-disc space-y-0.5 pl-4 text-danger-800">
             <li>You cannot change anything. The database refuses every write.</li>
             <li>
               This visit and your reason appear in the school&rsquo;s own Settings →
@@ -1208,7 +941,7 @@ function VisitDialog({ school, onClose, onError }: {
           <button
             onClick={() => enter.mutate()}
             disabled={enter.isPending || reason.trim().length < 4}
-            className="flex-1 rounded bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
+            className="flex-1 rounded bg-danger-600 px-3 py-2 text-sm font-medium text-white hover:bg-danger-700 disabled:opacity-60"
           >
             {enter.isPending ? 'Opening…' : 'Open, read only'}
           </button>
@@ -1234,11 +967,11 @@ function TabButton({ now, me, set, label, badge, warn }: {
       {label}
       {badge !== undefined && badge > 0 && (
         <span className={`rounded-full px-1.5 text-xs ${
-          on ? 'bg-white/25' : 'bg-amber-100 text-amber-900'}`}>{badge}</span>
+          on ? 'bg-white/25' : 'bg-due-100 text-due-900'}`}>{badge}</span>
       )}
       {warn && (
         <span title="Something required is missing"
-          className={`h-1.5 w-1.5 rounded-full ${on ? 'bg-white' : 'bg-amber-500'}`} />
+          className={`h-1.5 w-1.5 rounded-full ${on ? 'bg-white' : 'bg-due-500'}`} />
       )}
     </button>
   )

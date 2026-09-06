@@ -321,12 +321,33 @@ export interface OperatorAction {
   actor_email: string | null
   action: string
   detail: Record<string, unknown>
+  /**
+   * Whether WE did this, or the school did.
+   *
+   * fn_delete_student, fn_delete_staff and fn_delete_login are granted to
+   * `authenticated` and are called from the school's own screens, yet they log
+   * into operator_actions - the table this reads, under a heading that used to
+   * say "what we have done to this school". A principal deleting a duplicate
+   * pupil record appeared in the vendor's audit feed as something the vendor
+   * had done, with no actor beside it.
+   *
+   * Answered by 0109 from platform_admins, not from actor_email being null:
+   * null there means EITHER a school clerk OR a cron action, and those are
+   * different sentences.
+   */
+  by_operator: boolean
 }
 
-/** What we have done to this school: prices chosen, trials extended, visits made. */
+/** Everything that has happened to this school, ours and theirs, newest first. */
 export async function schoolActions(schoolId: string, limit = 100): Promise<OperatorAction[]> {
   const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_platform_school_actions', {
+  // fn_platform_school_activity, NOT fn_platform_school_actions. The by_operator
+  // column needed a new OUT parameter, and `create or replace` cannot change a
+  // return type - so altering the original would have made bundle 7 fail to
+  // re-paste, which in turn stopped it restoring a write gate that bundle 6
+  // wrongly rewrites. 0109 explains it; the old function is left exactly as it
+  // was so that bundle stays re-pastable.
+  const { data, error } = await sb.rpc('fn_platform_school_activity', {
     p_school_id: schoolId, p_limit: limit,
   })
   if (error) throw new Error(error.message)
@@ -337,7 +358,14 @@ export async function schoolActions(schoolId: string, limit = 100): Promise<Oper
 export function describeAction(a: OperatorAction): string {
   const d = a.detail ?? {}
   const pkr = (v: unknown) => `Rs ${Number(v ?? 0).toLocaleString('en-PK')}`
-  switch (a.action) {
+  // THE THREE ACTIONS IN 0094 WERE NAMED WITH A DOT while every other action in
+  // this schema is entity_verb with an underscore, so the fallback at the foot
+  // of this switch - replace(/_/g, ' ') - left them exactly as stored and the
+  // history feed printed the literal string "login.deleted" at the operator.
+  // 0109 renamed them going forward; rows already written keep the old spelling
+  // forever, because an audit table whose past is edited to look tidier is an
+  // audit table nobody can rely on. So one case covers both spellings.
+  switch (a.action.replace(/\./g, '_')) {
     case 'school_created':
       return `School added${d.city ? ` (${String(d.city)})` : ''}`
     case 'licence_changed': {
@@ -452,8 +480,22 @@ export function describeAction(a: OperatorAction): string {
     case 'release_pulled':
       return `Release ${String(d.version ?? '')} pulled`
         + (d.reason ? `: ${String(d.reason)}` : '')
+    // --- 0094, and done BY THE SCHOOL rather than by us -----------------------
+    // The office deleting its own records. Worth keeping and worth reading: a
+    // school that deleted forty pupils last week is a phone call, and "who
+    // removed this child's records" is a question that gets asked in disputes.
+    // The name is included because the row it points at no longer exists, so
+    // without it the entry names nothing at all.
+    case 'student_deleted':
+      return `Pupil record deleted${d.name ? `: ${String(d.name)}` : ''}`
+    case 'staff_deleted':
+      return `Staff record deleted${d.name ? `: ${String(d.name)}` : ''}`
+        + (d.profile_id ? ' (their login went with it)' : '')
+    case 'login_deleted':
+      return `Login deleted${d.name ? `: ${String(d.name)}` : ''}`
+        + (d.role ? ` (${String(d.role).replace(/_/g, ' ')})` : '')
     default:
-      return a.action.replace(/_/g, ' ')
+      return a.action.replace(/[._]/g, ' ')
   }
 }
 
@@ -541,16 +583,36 @@ export async function refreshAllCounts(): Promise<number> {
  * schools are a phone call worth making.
  */
 export function actionRank(s: PlatformSchool): number {
-  if (s.status === 'locked' || s.status === 'cancelled') return 0
+  // ARCHIVED IS ALWAYS LAST. They used to rank 0 - the very top of the morning
+  // worklist - because archiving sets the subscription to 'cancelled' and this
+  // function tested `status === 'cancelled'` first. So a departed customer
+  // filed away last year sorted above a trial ending tomorrow.
+  if (s.archived) return 9
+  // CANCELLED IS NOT A CHASE EITHER. It is an ending somebody decided on
+  // deliberately, with a reason recorded at the time. It shared rank 0 with
+  // 'locked' and so sat above every school that actually owed money.
+  if (s.status === 'cancelled') return 8
+  // SUSPENDED BY US IS NOT A CHASE. fn_effective_status reports 'locked' for a
+  // suspension exactly as it does for an expiry, so a school we switched off
+  // ourselves sorted to the top of the list of people to phone about money.
+  // Still visible, because a suspension nobody revisits is a customer quietly
+  // lost, but below everything that is actually owed.
+  if (s.suspended) return 7
+  // Locked WITH money owed is the first call of the day: the software has
+  // stopped and there is an invoice to point at.
+  if (s.status === 'locked' && s.outstanding > 0) return 0
   if (s.status === 'grace') return 1
   if (s.days_left !== null && s.days_left <= 7) return 2
+  // Locked with nothing owed is a renewal to sell rather than a debt to chase,
+  // so it sits below the deadlines and above the rest.
+  if (s.status === 'locked') return 3
   // Money already invoiced and not paid outranks an over-limit school: one is a
   // debt, the other is a conversation. Before `outstanding` existed this
   // ranking could not tell the two apart at all.
-  if (s.outstanding > 0) return 3
-  if (s.limit_state === 'over') return 4
-  if (s.status === 'trialing') return 5
-  return 6
+  if (s.outstanding > 0) return 4
+  if (s.limit_state === 'over') return 5
+  if (s.status === 'trialing') return 6
+  return 6.5
 }
 
 export function sortByAction(list: PlatformSchool[]): PlatformSchool[] {
@@ -566,6 +628,19 @@ export function sortByAction(list: PlatformSchool[]): PlatformSchool[] {
 
 /** One short line saying what to do about this school, or null if nothing. */
 export function actionNeeded(s: PlatformSchool): string | null {
+  // AN ARCHIVED SCHOOL IS NOT A TO-DO. They are a departed customer, off the
+  // renewal worklist by design, and telling the operator to chase them is how
+  // last year's churn gets worked as this year's pipeline.
+  if (s.archived) return null
+  // SUSPENDED BY US IS NOT THE SAME AS LOCKED OUT BY THE CALENDAR, and it
+  // reached this function looking identical because fn_effective_status returns
+  // 'locked' for both. So a school WE switched off was labelled "chase payment
+  // or reactivate" - advice to phone a principal about money when the reason
+  // their software stopped is a decision somebody here made, and the reason is
+  // recorded two fields away.
+  if (s.suspended) {
+    return `We suspended them${s.suspend_reason ? `: ${s.suspend_reason}` : ''}`
+  }
   // An unpaid invoice is worth saying whatever the licence status is: a school
   // can be comfortably active and still owe for the year it is halfway through.
   if (s.outstanding > 0 && s.status !== 'locked' && s.status !== 'cancelled') {
@@ -573,9 +648,17 @@ export function actionNeeded(s: PlatformSchool): string | null {
   }
   switch (s.status) {
     case 'locked':
-      return 'Locked: chase payment or reactivate'
+      // Named with the money on it, because "locked" alone does not say whether
+      // this is a phone call about an invoice or a renewal to sell.
+      return s.outstanding > 0
+        ? `Locked and owes ${s.outstanding.toLocaleString('en-PK')}: chase the payment`
+        : 'Locked: their licence ran out. Renew them'
     case 'cancelled':
-      return 'Cancelled'
+      // NOT A TO-DO. It used to return the bare word "Cancelled", which the
+      // status column already says, in colour, one cell to the right. A to-do
+      // line that repeats the status trains the operator to stop reading the
+      // to-do line.
+      return null
     case 'grace':
       return `In grace: ${s.days_left ?? 0} day(s) before it locks`
     case 'trialing':
