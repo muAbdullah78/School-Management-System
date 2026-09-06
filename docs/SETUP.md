@@ -292,6 +292,14 @@ stale.
 > the same commit to write the profile themselves when it is missing, which is
 > what `create-teacher` already did.
 >
+> **0116 is the third, in the same week.** `create-teacher` is now version 4: it
+> gained the ability to change somebody's password later, which the office needs
+> because the addresses a school gives parents do not have to be real and a
+> reset link cannot reach an invented mailbox. A version 3 copy still creates
+> logins perfectly, so the app says exactly that rather than claiming nothing
+> works: the **Change password** button under Settings, Users is what refuses
+> until it is redeployed.
+>
 > **Redeploy all three, and apply bundle 21.** The functions alone fix new
 > signups; the bundle alone fixes the ones already broken and stops the fault
 > for every login the product creates. There is also a new console tab, "Logins

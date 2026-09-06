@@ -158,6 +158,11 @@ const SCREENS: [string, () => Promise<Record<string, unknown>>, string][] = [
   ['Settings/Users', () => import('@/pages/settings/Users'), 'Users'],
   ['Settings/Backup', () => import('@/pages/settings/Backup'), 'Backup'],
   ['Settings/StaffCheckin', () => import('@/pages/settings/StaffCheckin'), 'StaffCheckin'],
+  // 0116. It renders stored credentials, so "does it open" and "does it say so
+  // when the read fails" are worth more here than on most screens: a key ring
+  // that silently renders empty reads as "you have saved no passwords", which
+  // is the opposite of the truth and sends the office off to set new ones.
+  ['Settings/KeyRing', () => import('@/pages/settings/KeyRing'), 'KeyRing'],
   ['Feedback', () => import('@/pages/FeedbackPage'), 'FeedbackPage'],
 ]
 
@@ -544,6 +549,106 @@ describe('the operator console', () => {
     const { PlatformPage } = await import('@/pages/platform/PlatformPage')
     const { queryByText } = await mount(PlatformPage)
     expect(queryByText('Logins with no school')).toBeNull()
+  })
+})
+
+/**
+ * THE PASSWORDS A SCHOOL GAVE OUT.
+ *
+ * Storing a password is normally indefensible, and the reason it is defensible
+ * here is written at the top of migration 0116. What makes it safe rather than
+ * merely justified is a set of fences, and two of them are this screen's:
+ * nothing is shown until somebody asks for one specific person, and the page
+ * says out loud what it is before anybody reads anything off it.
+ *
+ * The database half of the fences (no school_id, RLS forced, no policies, owner
+ * and principal only, never an owner's own, never another school, never the
+ * operator even inside a support visit) is asserted in
+ * supabase/tests/the_school_keeps_the_keys.sql. These are the two a test in a
+ * browser can hold.
+ */
+describe('the key ring', () => {
+  afterEach(cleanup)
+
+  const RING = [
+    {
+      profile_id: 'p-1', full_name: 'Miss Ayesha', email: 'ayesha@school.pk',
+      role: 'class_teacher', active: true, has_password: true,
+      set_at: '2026-09-01T06:00:00Z', set_by_name: 'Test Owner',
+      changed_since: false, reads: 0, read_by_name: null, read_at: null,
+    },
+    {
+      profile_id: 'p-2', full_name: 'Ali Raza', email: 'aliraza786@gmail.com',
+      role: 'parent', active: true, has_password: true,
+      set_at: '2026-08-20T06:00:00Z', set_by_name: 'Test Owner',
+      changed_since: true, reads: 3, read_by_name: 'Test Owner',
+      read_at: '2026-09-04T06:00:00Z',
+    },
+    {
+      profile_id: 'p-3', full_name: 'Bilal Khan', email: 'bilal@school.pk',
+      role: 'admin_clerk', active: true, has_password: false,
+      set_at: null, set_by_name: null,
+      changed_since: false, reads: 0, read_by_name: null, read_at: null,
+    },
+  ]
+
+  it('shows no password until one is asked for by name', async () => {
+    current.opts = {
+      rpc: {
+        fn_school_key_ring: RING,
+        fn_reveal_login_password: {
+          email: 'ayesha@school.pk', full_name: 'Miss Ayesha',
+          password: 'ayesha-2026', changed_since: false,
+        },
+      },
+    }
+    const { KeyRing } = await import('@/pages/settings/KeyRing')
+    const { queryByText, queryAllByText, getAllByText } = await mount(KeyRing)
+
+    // Everybody is listed, so "who could I set a password for" is answerable.
+    expect(queryByText('Miss Ayesha')).not.toBeNull()
+    expect(queryByText('Ali Raza')).not.toBeNull()
+    expect(queryByText('Bilal Khan')).not.toBeNull()
+    // AND NOT ONE PASSWORD IS ON THE PAGE. The listing deliberately does not
+    // carry them: revealing one is a separate, counted act against one person.
+    expect(queryByText('ayesha-2026')).toBeNull()
+
+    // The plain truth, said before anything is read off the page rather than in
+    // a footnote underneath it.
+    expect(queryByText(/can sign in as any of these people/i)).not.toBeNull()
+    expect(queryByText(/never kept here/i)).not.toBeNull()
+
+    // One press, one password.
+    getAllByText('Show')[0].click()
+    await waitFor(() => expect(queryByText('ayesha-2026')).not.toBeNull())
+    // Only the one asked for.
+    expect(queryAllByText(/gmail/).length).toBeGreaterThan(0)
+  })
+
+  it('says when somebody has changed their own password since', async () => {
+    // The failure this prevents: the office reads out a password that stopped
+    // working the day the parent changed it, it fails, and the feature is never
+    // trusted again. Nothing server-side sees a self-service password change,
+    // so the only way to know is the fingerprint 0116 records.
+    current.opts = { rpc: { fn_school_key_ring: RING } }
+    const { KeyRing } = await import('@/pages/settings/KeyRing')
+    const { queryByText } = await mount(KeyRing)
+    expect(queryByText(/have changed their own password|has changed their own password/i))
+      .not.toBeNull()
+    expect(queryByText(/Changed by them since/i)).not.toBeNull()
+    // And the count is on the row, so an owner can see what their principal has
+    // been reading.
+    expect(queryByText(/Shown 3 times/i)).not.toBeNull()
+  })
+
+  it('tells a school that is behind to apply the bundle, not that it is broken', async () => {
+    // A missing migration and a broken screen need completely different things
+    // done about them, and PostgREST reports the first as "function does not
+    // exist", which reads exactly like the second.
+    current.opts = { failEverything: 'Could not find the function public.fn_school_key_ring in the schema cache' }
+    const { KeyRing } = await import('@/pages/settings/KeyRing')
+    const { queryByText } = await mount(KeyRing)
+    expect(queryByText(/bundle 22/i)).not.toBeNull()
   })
 })
 

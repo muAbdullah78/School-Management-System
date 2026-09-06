@@ -415,6 +415,21 @@ select 'the observer role (0059)',
                                            -- could be deleted without trace, which
                                            -- is reconnaissance for exactly the act
                                            -- 0094 exists to make impossible.
+                                           -- 0116, and the strongest case of the
+                                           -- lot. fn_login_email_available asks
+                                           -- the whole platform whether an
+                                           -- address is taken; fn_school_key_ring
+                                           -- lists the passwords this school gave
+                                           -- its parents. may_view is true for an
+                                           -- observer AND during a support visit,
+                                           -- so gating either on it would let an
+                                           -- observer enumerate the platform's
+                                           -- addresses and let US read a
+                                           -- customer's stored credentials. Both
+                                           -- are access management of the most
+                                           -- literal kind.
+                                           'fn_login_email_available',
+                                           'fn_school_key_ring',
                                            'fn_school_logins',
                                            'fn_student_delete_blockers',
                                            'fn_staff_delete_blockers',
@@ -1904,6 +1919,43 @@ select 'cancelling does not buy a free fortnight (0114)',
            then 'FAIL - a school that cancels gets a free grace period after its '
                 || 'paid time runs out, because the status ladder does not know '
                 || 'it cancelled; apply supabase/bundles/20_leaving_and_coming_back.sql'
+         else 'PASS'
+       end
+
+union all
+-- 0116. The two halves are asserted differently on purpose. The functions are
+-- checked by existence, because they are new and nothing else could be
+-- mistaken for them. The KEY RING IS CHECKED BY WHAT IT IS SEALED WITH, because
+-- Supabase grants the client roles on every new table in public by default, so
+-- a table created without the revoke is a plaintext credential store readable
+-- by anybody with the anon key. That is the one way this feature could be a
+-- catastrophe rather than a convenience, so it is the thing asked about.
+select 'the school keeps its own keys, and only its own (0116)',
+       case
+         when to_regprocedure('public.fn_login_email_available(text)') is null
+           then 'FAIL - a school cannot find out an address is taken until after '
+                || 'it fills in the form; apply '
+                || 'supabase/bundles/22_the_school_keeps_the_keys.sql'
+         when to_regclass('public.login_secrets') is null
+           then 'FAIL - a parent who forgets a password given to them on a '
+                || 'made-up address is locked out for good; apply '
+                || 'supabase/bundles/22_the_school_keeps_the_keys.sql'
+         when has_table_privilege('authenticated', 'public.login_secrets', 'select')
+           or has_table_privilege('anon', 'public.login_secrets', 'select')
+           then 'FAIL - THE PASSWORD STORE IS READABLE BY A CLIENT ROLE. Every '
+                || 'password every school gave its parents is exposed. Re-apply '
+                || 'supabase/bundles/22_the_school_keeps_the_keys.sql, which '
+                || 'revokes it, and tell us.'
+         when not (select relrowsecurity and relforcerowsecurity
+                     from pg_class where oid = 'public.login_secrets'::regclass)
+           then 'FAIL - row level security is not forced on the password store; '
+                || 're-apply supabase/bundles/22_the_school_keeps_the_keys.sql'
+         when exists (select 1 from pg_attribute
+                       where attrelid = 'public.login_secrets'::regclass
+                         and attname = 'school_id' and not attisdropped)
+           then 'FAIL - the password store has grown a school_id column, which '
+                || 'puts every school''s assigned passwords into the vendor '
+                || 'offboarding export. That column must not exist.'
          else 'PASS'
        end
 

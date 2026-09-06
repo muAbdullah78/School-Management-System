@@ -388,6 +388,17 @@ emit supabase/bundles/20_leaving_and_coming_back.sql \
 emit supabase/bundles/21_a_login_with_no_school.sql \
      supabase/migrations/0115*.sql
 
+# A TWENTY-SECOND bundle. 21 is frozen above.
+#
+# 0116 is about the addresses a school hands out. It invents most of them, so
+# names collide across schools and "Forgot password" posts a reset link into a
+# mailbox nobody owns. Two answers: ask whether an address is free BEFORE
+# filling in the form, and keep the password the office chose so it can tell
+# somebody again. The key ring is sealed harder than anything else in this
+# schema, and verify.sql checks the seal rather than the table.
+emit supabase/bundles/22_the_school_keeps_the_keys.sql \
+     supabase/migrations/0116*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

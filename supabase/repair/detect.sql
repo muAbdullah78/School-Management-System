@@ -212,6 +212,15 @@ with sig(migration, object, present) as (values
               -- on it would hand both of them every staff email in the school
               -- and let them enumerate which children could be deleted without
               -- trace.
+              -- 0116, and the strongest case of the lot.
+              -- fn_login_email_available asks the whole platform whether an
+              -- address is taken; fn_school_key_ring lists the passwords this
+              -- school gave its parents. may_view is true for an observer AND
+              -- during a support visit, so gating either on it would let an
+              -- observer enumerate the platform's addresses and let the VENDOR
+              -- read a customer's stored credentials.
+                                  'fn_login_email_available',
+                                  'fn_school_key_ring',
                                   'fn_school_logins',
                                   'fn_student_delete_blockers',
                                   'fn_staff_delete_blockers',
@@ -814,7 +823,18 @@ with sig(migration, object, present) as (values
      to_regprocedure('public.fn__attach_login(uuid)') is not null
      and to_regprocedure('public.fn_platform_unattached_logins()') is not null
      and exists (select 1 from pg_trigger
-                  where tgname = 'on_auth_user_created' and (tgtype & 16) <> 0))
+                  where tgname = 'on_auth_user_created' and (tgtype & 16) <> 0)),
+  -- 0116's signature is the table AND the seal on it, for the reason spelled
+  -- out in verify.sql: Supabase grants the client roles on new tables in public
+  -- by default, so an unsealed login_secrets is a plaintext credential store
+  -- anybody with the anon key can read. A row that only checked the table
+  -- existed would report the dangerous state as healthy.
+  ('0116_the_school_keeps_the_keys', 'the school can keep the passwords it gave out',
+     to_regprocedure('public.fn_login_email_available(text)') is not null
+     and to_regclass('public.login_secrets') is not null
+     and not has_table_privilege('authenticated', 'public.login_secrets', 'select')
+     and (select relrowsecurity and relforcerowsecurity
+            from pg_class where oid = 'public.login_secrets'::regclass))
 )
 select migration,
        object                                   as looked_for,

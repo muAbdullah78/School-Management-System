@@ -176,7 +176,8 @@ if [ "$QUICK" = 0 ]; then
 create schema if not exists auth;
 create table if not exists auth.users (id uuid primary key, email text,
   raw_user_meta_data jsonb default '{}'::jsonb, raw_app_meta_data jsonb default '{}'::jsonb,
-  last_sign_in_at timestamptz, created_at timestamptz default now());
+  last_sign_in_at timestamptz, encrypted_password text,
+  created_at timestamptz default now());
 create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
 do $$ begin
   if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
@@ -231,7 +232,8 @@ SQL
 create schema if not exists auth;
 create table if not exists auth.users (id uuid primary key, email text,
   raw_user_meta_data jsonb default '{}'::jsonb, raw_app_meta_data jsonb default '{}'::jsonb,
-  last_sign_in_at timestamptz, created_at timestamptz default now());
+  last_sign_in_at timestamptz, encrypted_password text,
+  created_at timestamptz default now());
 create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
 do $$ begin
   if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
@@ -310,7 +312,8 @@ SQL
 create schema if not exists auth;
 create table if not exists auth.users (id uuid primary key, email text,
   raw_user_meta_data jsonb default '{}'::jsonb, raw_app_meta_data jsonb default '{}'::jsonb,
-  last_sign_in_at timestamptz, created_at timestamptz default now());
+  last_sign_in_at timestamptz, encrypted_password text,
+  created_at timestamptz default now());
 create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
 do $$ begin
   if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;

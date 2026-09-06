@@ -13,6 +13,7 @@ import {
   getStudentMonthTests, getStudentMonthAttendance,
   type StudentProfile as Student, type EnrollmentInfo, type InvoiceBalance, type MonthTestRow,
 } from '@/lib/db'
+import { useEmailCheck, EmailVerdictLine } from '@/components/EmailAvailability'
 import {
   GENDERS, STUDENT_STATUS_LABELS, PAYMENT_METHODS, PAYMENT_STATUS_LABELS,
   ATTENDANCE_STATUSES, ATTENDANCE_SHORT, DISCOUNT_TYPES, RELATIONS,
@@ -768,6 +769,12 @@ function ParentAccess({ familyId, canEdit }: { familyId: string | null; canEdit:
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [done, setDone] = useState<string | null>(null)
+  const [doneRemembered, setDoneRemembered] = useState(true)
+  // Asked when the address field loses focus. A parent login is the exact case
+  // this is for: the office invents these addresses, names repeat across
+  // schools, and the refusal used to arrive in the auth service's own words
+  // after the name, the address and the password had all been typed.
+  const emailCheck = useEmailCheck()
 
   const parents = useQuery({
     queryKey: ['familyParents', familyId],
@@ -780,12 +787,16 @@ function ParentAccess({ familyId, canEdit }: { familyId: string | null; canEdit:
       email: email.trim(), password, full_name: fullName.trim(), family_id: familyId!,
     }),
     onSuccess: (r) => {
-      // Shown once, deliberately: the password is not stored anywhere we can
-      // read back, so if the clerk does not write it down now it has to be
-      // reset. Saying so is better than a silent success.
+      // Shown here AND kept on the school's key ring since 0116. It used to be
+      // shown here and nowhere else, with a line telling the clerk that a lost
+      // password meant Forgot password: which for an address the office
+      // invented is a permanent lockout.
       setDone(`${r.email}: password: ${password}`)
+      setDoneRemembered(r.remembered)
       setFullName(''); setEmail(''); setPassword(''); setOpen(false)
+      emailCheck.clear()
       qc.invalidateQueries({ queryKey: ['familyParents', familyId] })
+      qc.invalidateQueries({ queryKey: ['keyRing'] })
     },
   })
 
@@ -831,7 +842,10 @@ function ParentAccess({ familyId, canEdit }: { familyId: string | null; canEdit:
     },
   })
 
+  // A KNOWN NO BLOCKS; an unknown does not. The database enforces uniqueness
+  // whatever this panel believes.
   const valid = /^\S+@\S+\.\S+$/.test(email.trim()) && password.length >= 6
+    && !emailCheck.checking && emailCheck.verdict?.available !== false
 
   if (!familyId) return null
 
@@ -904,11 +918,18 @@ function ParentAccess({ familyId, canEdit }: { familyId: string | null; canEdit:
 
       {done && (
         <div className="mt-3 rounded border border-money-200 bg-money-50 p-2 text-xs text-money-800">
-          <div className="font-medium">Login created: write this down now</div>
+          <div className="font-medium">Login created</div>
           <div className="mt-0.5 break-all font-mono">{done}</div>
+          {/* THIS USED TO SAY THE OPPOSITE, and what it said was a dead end:
+              "The password is not saved anywhere you can read it back. If it is
+              lost the parent has to use Forgot password." These addresses are
+              invented by the office, so the reset link goes to a mailbox nobody
+              owns, and a parent who forgot their password was locked out for
+              good. 0116 keeps it instead. */}
           <div className="mt-1 text-money-700">
-            The password is not saved anywhere you can read it back. If it is lost the parent has to
-            use “Forgot password”.
+            {doneRemembered
+              ? 'The password is kept under Settings, Users, so you can tell them again if they forget it. These addresses do not have to be real, so do not rely on “Forgot password” for a parent.'
+              : 'Write this password down now. It could NOT be saved under Settings, Users, because this school’s database does not have the key ring yet (apply bundle 22). These addresses do not have to be real, so “Forgot password” may not reach them.'}
           </div>
         </div>
       )}
@@ -927,8 +948,11 @@ function ParentAccess({ familyId, canEdit }: { familyId: string | null; canEdit:
           <LoginFunctionWarning />
           <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Parent's name"
             className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-brand-500 focus:outline-none" />
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="father@example.com"
+          <input type="email" value={email}
+            onChange={(e) => { setEmail(e.target.value); emailCheck.clear() }}
+            onBlur={() => void emailCheck.check(email)} placeholder="father@example.com"
             className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-brand-500 focus:outline-none" />
+          <EmailVerdictLine verdict={emailCheck.verdict} checking={emailCheck.checking} />
           <input type="text" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="temporary password (min 6)"
             className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-brand-500 focus:outline-none" />
           {create.isError && <p className="text-xs text-red-600">{(create.error as Error).message}</p>}

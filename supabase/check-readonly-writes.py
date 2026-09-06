@@ -196,6 +196,18 @@ def main() -> int:
                                  -- (fn_school_logins reads auth.users) and let
                                  -- them enumerate which children could be
                                  -- deleted without trace.
+                                 -- 0116, and the strongest case of the lot.
+                                 -- fn_login_email_available asks the whole
+                                 -- platform whether an address is taken;
+                                 -- fn_school_key_ring lists the passwords this
+                                 -- school gave its parents. may_view is true
+                                 -- for an observer AND during a support visit,
+                                 -- so gating either on it would let an observer
+                                 -- enumerate the platform's addresses and let
+                                 -- the VENDOR read a customer's stored
+                                 -- credentials.
+                                 'fn_login_email_available',
+                                 'fn_school_key_ring',
                                  'fn_school_logins',
                                  'fn_student_delete_blockers',
                                  'fn_staff_delete_blockers',

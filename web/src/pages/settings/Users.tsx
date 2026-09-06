@@ -8,6 +8,8 @@ import { ROLES, ROLE_LABELS, type Role } from '@/auth/roles'
 import { useAuth } from '@/auth/AuthProvider'
 import { fmtDate } from '@/lib/format'
 import { LoadError } from '@/components/ui'
+import { KeyRing } from './KeyRing'
+import { useEmailCheck, EmailVerdictLine } from '@/components/EmailAvailability'
 
 const FIELD = 'rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-brand-500 focus:outline-none'
 
@@ -27,6 +29,8 @@ export function Users() {
 
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
+  // Asked when they leave the field, not per keystroke. See the hook.
+  const emailCheck = useEmailCheck()
   const [inviteRole, setInviteRole] = useState<string>('class_teacher')
   const [sent, setSent] = useState<string | null>(null)
 
@@ -72,7 +76,9 @@ export function Users() {
           <div className="mt-3 flex flex-wrap items-end gap-2">
             <label className="block">
               <span className="text-xs text-slate-600">Email address</span>
-              <input value={email} onChange={(e) => { setEmail(e.target.value); setSent(null) }}
+              <input value={email}
+                onChange={(e) => { setEmail(e.target.value); setSent(null); emailCheck.clear() }}
+                onBlur={() => void emailCheck.check(email)}
                 type="email" placeholder="teacher@school.pk" className={`${FIELD} mt-1 w-56`} />
             </label>
             <label className="block">
@@ -87,12 +93,19 @@ export function Users() {
                 {INVITABLE.map((r) => <option key={r} value={r}>{ROLE_LABELS[r as Role]}</option>)}
               </select>
             </label>
+            {/* BLOCKED ONLY ON A KNOWN NO. A check that failed leaves the
+                verdict null and the button live: the database enforces
+                uniqueness whatever this screen believes, and refusing to let a
+                school invite a teacher because a courtesy call timed out would
+                be the worse failure by far. */}
             <button onClick={() => invite.mutate()}
-              disabled={invite.isPending || !email.trim()}
+              disabled={invite.isPending || !email.trim()
+                || emailCheck.checking || emailCheck.verdict?.available === false}
               className="rounded bg-brand-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
               {invite.isPending ? 'Inviting…' : 'Send invitation'}
             </button>
           </div>
+          <EmailVerdictLine verdict={emailCheck.verdict} checking={emailCheck.checking} />
           {invite.isError && <p className="mt-2 text-sm text-red-600">{(invite.error as Error).message}</p>}
           {sent && (
             <p className="mt-2 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
@@ -184,6 +197,12 @@ export function Users() {
         so nothing a person types while signing up can give them a role you did not choose.
         Deactivating blocks someone without deleting their history.
       </p>
+
+      {/* THE ONE HOME FOR THIS. There used to be three places to create access
+          and the office could not tell which one to use, so the passwords live
+          in exactly one place and the Staff screen and the student profile point
+          here rather than growing their own copy. */}
+      {canManage && <KeyRing />}
     </div>
   )
 }
