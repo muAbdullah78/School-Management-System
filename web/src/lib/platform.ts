@@ -339,6 +339,150 @@ export interface OperatorAction {
 }
 
 /** Everything that has happened to this school, ours and theirs, newest first. */
+export interface PlanQuote {
+  plan_code: string
+  plan_name: string
+  months: number
+  amount: number
+  list_amount: number
+  saving: number
+  per_month: number
+  /** False for the custom plan, which is priced in a conversation, not at zero. */
+  sold_at_list: boolean
+  student_limit: number | null
+}
+
+/**
+ * What a term costs, ASKED rather than calculated.
+ *
+ * This dialog used to do the arithmetic itself:
+ *
+ *     months >= 12 ? plan.price_yearly * (months / 12) : plan.price_monthly * months
+ *
+ * which is a copy of fn__plan_price's ladder, in TypeScript, in the browser.
+ * The two agreed for as long as the ladder had two steps. 0111 added a third
+ * (three months, about five percent off) and the copy would have quoted
+ * Rs 6,000 for a quarter while the database charged Rs 5,700 - a disagreement
+ * nothing in this repository could have caught, because each side is correct
+ * about its own rule and neither knows the other exists.
+ *
+ * It also would not have known about the cap that stops eleven months costing
+ * more than twelve.
+ *
+ * So the price now has exactly one home. This is one indexed lookup, cached by
+ * React Query on the plan and the term, and it is the number that goes on the
+ * invoice.
+ */
+export async function planQuote(planCode: string, months: number): Promise<PlanQuote> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_plan_quote', {
+    p_plan_code: planCode, p_months: months,
+  })
+  if (error) throw new Error(error.message)
+  return data as PlanQuote
+}
+
+export interface RenewalAttempt {
+  school_id?: string
+  school_name: string
+  due_on?: string | null
+  plan_code?: string
+  term_months?: number
+  amount: number | null
+  outcome: 'would_invoice' | 'invoiced' | 'already_invoiced' | 'needs_decision'
+         | 'trial_never_said_yes' | 'failed'
+  message: string | null
+}
+
+export interface RenewalRun {
+  run_id: string
+  dry_run: boolean
+  as_at: string
+  considered: number
+  invoiced: number
+  skipped: number
+  failed: number
+  note: string
+  attempts: RenewalAttempt[]
+}
+
+/**
+ * Raise the invoices for every school whose payment has fallen due.
+ *
+ * DRY RUN BY DEFAULT, and the parameter is required here on purpose: a caller
+ * that has to type `false` has decided to bill people. A money-moving batch job
+ * whose default is "go" is one somebody runs by accident while exploring, and
+ * exploring is what a new operator does first.
+ *
+ * Safe to run twice. 0078's duplicate-invoice trigger refuses a second invoice
+ * for the same period, and the runner records that as `already_invoiced` rather
+ * than treating it as a failure.
+ */
+export async function runRenewals(dryRun: boolean): Promise<RenewalRun> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_run_renewals', {
+    p_dry_run: dryRun, p_as_at: null,
+  })
+  if (error) throw new Error(error.message)
+  return data as RenewalRun
+}
+
+export interface RenewalRunRecord {
+  id: string
+  started_at: string
+  finished_at: string | null
+  dry_run: boolean
+  as_at: string
+  considered: number
+  invoiced: number
+  skipped: number
+  failed: number
+  triggered_by_email: string | null
+  attempts: Array<{ school_name: string; outcome: string; amount: number | null; message: string | null }>
+}
+
+/** What the last runs did, so "why was this school not billed" has an answer. */
+export async function renewalRuns(limit = 20): Promise<RenewalRunRecord[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_renewal_runs', { p_limit: limit })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as RenewalRunRecord[]
+}
+
+export interface SchoolPaymentMethod {
+  school_id: string
+  kind: 'card' | 'wallet' | 'manual'
+  brand: string | null
+  last4: string | null
+  label: string | null
+}
+
+/**
+ * How each school intends to pay, for the renewal worklist.
+ *
+ * READ FROM THE TABLE RATHER THAN ADDED TO fn_platform_due_soon, and that is
+ * the whole reason this function exists separately. Adding an OUT column to
+ * that function means DROP and CREATE, and 0078 lives in bundle 7, which is
+ * frozen and already pasted into a live school. 0109 tried exactly that on a
+ * different function and the cost was bundle 7 refusing to re-paste - which in
+ * turn was the only thing restoring a write gate that bundle 6 rewrites. One
+ * column is not worth reopening that.
+ *
+ * payment_methods carries an is_platform_admin() read policy, so this is a
+ * plain scoped select. The gateway credential is in a different table with no
+ * policies at all and cannot be reached from here.
+ */
+export async function schoolPaymentMethods(): Promise<SchoolPaymentMethod[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb
+    .from('payment_methods')
+    .select('school_id,kind,brand,last4,label')
+    .eq('is_default', true)
+    .eq('status', 'active')
+  if (error) throw new Error(error.message)
+  return (data ?? []) as SchoolPaymentMethod[]
+}
+
 export async function schoolActions(schoolId: string, limit = 100): Promise<OperatorAction[]> {
   const sb = requireSupabase()
   // fn_platform_school_activity, NOT fn_platform_school_actions. The by_operator
@@ -462,6 +606,10 @@ export function describeAction(a: OperatorAction): string {
         ? `Grace period put back to the standard ${String(d.standard ?? '?')} days`
         : `Grace period set to ${String(d.days)} days instead of ${String(d.standard ?? '?')}`
           + (d.reason ? `: ${String(d.reason)}` : '')
+    case 'renewal_run':
+      return `Renewal run${d.dry_run === true ? ' (dry run, nothing changed)' : ''}: `
+        + `${String(d.considered ?? 0)} due, ${String(d.invoiced ?? 0)} invoiced`
+        + (Number(d.failed ?? 0) > 0 ? `, ${String(d.failed)} failed` : '')
     case 'school_exported':
       return 'Their whole record was exported'
         + (d.reason ? `: ${String(d.reason)}` : '')

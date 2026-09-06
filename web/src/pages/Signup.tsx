@@ -67,7 +67,7 @@ export function Signup() {
 
   return (
     <AuthLayout
-      line="Fourteen days free, then from Rs 950 a month."
+      line="Fourteen days free, then from Rs 2,000 a month."
       schoolName={form.school_name}
     >
       <h1 className="text-2xl font-semibold tracking-[-0.015em] text-slate-900">

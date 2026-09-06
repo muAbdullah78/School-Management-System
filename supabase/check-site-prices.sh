@@ -54,7 +54,8 @@ done
 # says "Let's talk", so it is skipped by the price filter rather than by name —
 # a future free tier would be skipped for the same real reason.
 rows=$(psql -tA -F'|' -v ON_ERROR_STOP=1 -c \
-  "select code, student_limit, price_monthly::bigint, price_yearly::bigint
+  "select code, student_limit, price_monthly::bigint, price_quarterly::bigint,
+          price_yearly::bigint
      from public.plans
     where active and price_monthly > 0
     order by sort_order") || {
@@ -124,7 +125,7 @@ commas() {   # 9500 -> 9,500  (the grouping the page prints)
   echo "$1" | sed -E ':a; s/([0-9])([0-9]{3})($|,)/\1,\2\3/; ta'
 }
 
-while IFS='|' read -r code limit monthly yearly; do
+while IFS='|' read -r code limit monthly quarterly yearly; do
   [ -z "${code:-}" ] && continue
   block=$(card "$code")
   if [ -z "$block" ]; then
@@ -143,6 +144,7 @@ while IFS='|' read -r code limit monthly yearly; do
   checked=$((checked + 1))
 
   m=$(commas "$monthly")
+  q=$(commas "$quarterly")
   y=$(commas "$yearly")
   l=$(commas "$limit")
 
@@ -150,6 +152,13 @@ while IFS='|' read -r code limit monthly yearly; do
     || { echo "  $code: monthly price is Rs $monthly in the database; \"Rs $m\" is not in its card"; fail=1; }
   printf '%s' "$block" | grep -qF "Rs $y" \
     || { echo "  $code: yearly price is Rs $yearly in the database; \"Rs $y\" is not in its card"; fail=1; }
+  # 0111 added a THIRD term. A guard that checks two of three figures is a guard
+  # for two thirds of the price list, and the third is the one nobody would
+  # think to re-read.
+  if [ "${quarterly:-0}" -gt 0 ]; then
+    printf '%s' "$block" | grep -qF "Rs $q" \
+      || { echo "  $code: three-month price is Rs $quarterly in the database; \"Rs $q\" is not in its card"; fail=1; }
+  fi
   if [ -n "${limit:-}" ]; then
     printf '%s' "$block" | grep -qF "$l students" \
       || { echo "  $code: limit is $limit students in the database; \"$l students\" is not in its card"; fail=1; }
@@ -240,11 +249,37 @@ for f in $ld_pages; do
 done
 
 # The AUTH SCREENS quote it too, and they are in the app rather than the site.
-AUTH=web/src/components/AuthLayout.tsx
-if [ -f "$AUTH" ]; then
-  grep -qF "Rs $cheap" "$AUTH" \
-    || { echo "  $AUTH quotes a price that is not Rs $cheapest (the signup panel)"; fail=1; }
-fi
+#
+# THIS LIST WAS ONE FILE LONG AND THE HOLE COST A PRICE RISE.
+#
+# It named AuthLayout.tsx alone and reported "the signup panel" as checked. Two
+# other files quote the same figure and neither was looked at:
+#
+#   web/src/pages/Signup.tsx   "Fourteen days free, then from Rs 950 a month."
+#                              which is the sentence directly above the form a
+#                              school fills in, and the most-read price in the
+#                              entire product.
+#   scripts/build-og.mjs       the Open Graph card, so the figure that appears
+#                              when the site is pasted into WhatsApp - which is
+#                              how a Pakistani school actually shares a link.
+#
+# Both still said Rs 950 after the price list moved to Rs 2,000, and this check
+# printed success. A guard with a hole in it is worse than no guard, because the
+# clean line at the end is read as a promise that every copy was found.
+for f in web/src/components/AuthLayout.tsx web/src/pages/Signup.tsx scripts/build-og.mjs; do
+  [ -f "$f" ] || continue
+  grep -qF "Rs $cheap" "$f" \
+    || { echo "  $f quotes a price that is not Rs $cheapest"; fail=1; }
+  # And no OTHER plan's monthly price masquerading as the "from" figure. A file
+  # saying "from Rs 3,500" would pass the test above if it also said Rs 2,000
+  # somewhere, which is exactly how a stale figure survives a careless edit.
+  while IFS='|' read -r c _l _m _q _y; do
+    [ -z "${c:-}" ] && continue
+    [ "$_m" = "$cheapest" ] && continue
+    grep -qF "from Rs $(commas "$_m")" "$f" \
+      && { echo "  $f says \"from Rs $(commas "$_m")\", which is the $c price, not the lowest one"; fail=1; }
+  done <<< "$rows"
+done
 
 # The floor. A card-matching function that silently matched nothing would report
 # a clean run over an empty check — the failure mode two of this project's other
@@ -263,4 +298,4 @@ if [ "$fail" = 1 ]; then
   exit 1
 fi
 
-echo "the site and public.plans agree on $checked plan(s), the hero figure, the meta and Open Graph descriptions on both money pages, the JSON-LD offers on $(printf '%s\n' $ld_pages | wc -l | tr -d ' ') page(s), the signup panel, and no page quotes a price that is not a real one"
+echo "the site and public.plans agree on $checked plan(s), the hero figure, the meta and Open Graph descriptions on both money pages, the JSON-LD offers on $(printf '%s\n' $ld_pages | wc -l | tr -d ' ') page(s), the three app files that quote it, and no page quotes a price that is not a real one"

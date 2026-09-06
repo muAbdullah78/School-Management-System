@@ -144,6 +144,7 @@ declare
   leaked    bigint;
   failures  text := '';
   checked   int := 0;
+  sealed    int := 0;
 begin
   perform set_config('test.uid', (select v::text from public._test_ids where k='a_owner'), false);
   set local role authenticated;
@@ -157,12 +158,23 @@ begin
       and c.relname <> '_test_ids'
     order by c.relname
   loop
-    execute format('select count(*) from public.%I where school_id = $1', t)
-      into leaked using b_school;
-    checked := checked + 1;
-    if leaked > 0 then
-      failures := failures || format('  %s: %s Beta rows visible%s', t, leaked, chr(10));
-    end if;
+    -- A TABLE THE APPLICATION ROLE CANNOT READ AT ALL is not a failure of this
+    -- sweep, it is the strongest possible result. 0112 introduced the first
+    -- one: payment_method_tokens holds gateway credentials, has RLS on with no
+    -- policies and nothing granted, so this SELECT raises rather than returning
+    -- zero. Counting the exception as a leak reported the most-isolated table
+    -- in the schema as the least, which is how a check ends up arguing against
+    -- the thing it exists to protect.
+    begin
+      execute format('select count(*) from public.%I where school_id = $1', t)
+        into leaked using b_school;
+      checked := checked + 1;
+      if leaked > 0 then
+        failures := failures || format('  %s: %s Beta rows visible%s', t, leaked, chr(10));
+      end if;
+    exception when insufficient_privilege then
+      sealed := sealed + 1;
+    end;
   end loop;
 
   reset role;
@@ -170,7 +182,8 @@ begin
   if failures <> '' then
     raise exception E'CROSS-TENANT READ LEAK across % tables:\n%', checked, failures;
   end if;
-  raise notice 'ok: no cross-tenant reads (% tables swept)', checked;
+  raise notice 'ok: no cross-tenant reads (% readable tables swept, % sealed to the app entirely)',
+    checked, sealed;
 end $reads$;
 
 -- =============================================================================
@@ -414,6 +427,33 @@ declare
     -- through fn_my_report_payment, and a school-writable `status` column would
     -- be a school writing money.
     'platform_payment_claims',
+    -- 0112. How a school pays. Exactly the operator_sessions shape and on this
+    -- list for the same reason: TWO select policies, one on current_school_id
+    -- plus has_role so the school can see and revoke its own saved method, and
+    -- one on is_platform_admin so the console can tell a school paying by card
+    -- from one paying by transfer. 4b would reject the second for not
+    -- mentioning current_school_id, and it would be rejecting a policy that is
+    -- entirely correct. 4b-ii accepts either authority, which is the whole
+    -- reason it is phrased that way. No write policy: every change goes through
+    -- a definer function, so 4b-iii holds too.
+    'payment_methods',
+    -- 0112. The gateway credential. On this list because 4b's tenant rule does
+    -- not apply to a table with NO POLICIES AT ALL, which is the point of it:
+    -- RLS is on and forced with nothing granted, so every application role
+    -- reads nothing whatever a later migration does. It contributes no rows to
+    -- 4b-ii and must never contribute any. supabase/tests/a_way_to_pay.sql
+    -- asserts that directly, and verify.sql fails on a customer's database if a
+    -- policy ever appears here.
+    'payment_method_tokens',
+    -- 0113. The renewal run and what it did to each school. billing_runs has no
+    -- school_id because it describes a RUN across every school rather than one
+    -- customer, and billing_attempts carries one only because it is keyed on it.
+    -- Both are the vendor's own operational record: RLS on and forced with NO
+    -- policies, read through fn_platform_renewal_runs by a platform admin. A
+    -- school must never see why another school was or was not billed, so
+    -- current_school_id() would be the wrong gate and 4b would be demanding it.
+    'billing_runs',
+    'billing_attempts',
     -- 0080. What was handed to a school before its records were destroyed. No
     -- school_id in the tenant sense — the column is nullable and ON DELETE SET
     -- NULL precisely so the row OUTLIVES the school it describes, which is the
@@ -706,10 +746,19 @@ begin
                             'operator_actions', 'operator_sessions')
     order by c.relname
   loop
-    execute format('select count(*) from public.%I', t) into visible;
-    if visible > 0 then
-      failures := failures || format('  %s: %s rows visible to a platform admin%s', t, visible, chr(10));
-    end if;
+    -- Same reasoning as TEST 1: a table the role cannot read AT ALL is the
+    -- strongest possible result, not a failure. payment_method_tokens raises
+    -- rather than returning zero because nothing is granted on it, and
+    -- treating the exception as a leak would report the most sealed table in
+    -- the schema as the least.
+    begin
+      execute format('select count(*) from public.%I', t) into visible;
+      if visible > 0 then
+        failures := failures || format('  %s: %s rows visible to a platform admin%s', t, visible, chr(10));
+      end if;
+    exception when insufficient_privilege then
+      null;
+    end;
   end loop;
 
   -- But the platform tables they actually need ARE readable, or the admin panel

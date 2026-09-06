@@ -58,6 +58,22 @@ create or replace function pg_temp.real_count() returns integer language sql as 
   select public.fn_count_students((select id from public.schools where name = 'Count School'));
 $$;
 
+-- HOW MANY PUPILS TO ENROL, DERIVED FROM THE PRICE LIST.
+--
+-- This was the literal 120, chosen because Starter allowed 100 and 120 is
+-- comfortably past the 10 percent margin. 0111 moved Starter to 150, and every
+-- assertion below about the over-limit FLAG silently stopped testing anything:
+-- 117 pupils no longer exceed 165, so the flag was correctly not raised and the
+-- suite correctly failed.
+--
+-- The arithmetic is the real subject of this file - one withdrawn, one enrolment
+-- closed, two deleted, one re-activated - and it is untouched. Only the base
+-- moves, and it moves WITH the plan, so the next price change cannot quietly
+-- turn this suite into a test of nothing.
+create or replace function pg_temp.base() returns integer language sql as $$
+  select (student_limit * 1.1)::integer + 15 from public.plans where code = 'starter';
+$$;
+
 -- --- Fixture -----------------------------------------------------------------
 do $seed$
 declare v_s uuid; v_o uuid := '00000000-0000-0000-0000-00000000cc01';
@@ -149,7 +165,7 @@ declare v_s uuid := (select id from public.schools where name = 'Count School');
 begin
   with ins as (
     insert into public.students (school_id, full_name, father_name, status)
-    select v_s, 'Child ' || g, 'Father ' || g, 'active' from generate_series(1, 120) g
+    select v_s, 'Child ' || g, 'Father ' || g, 'active' from generate_series(1, pg_temp.base()) g
     returning id, full_name
   )
   insert into public.enrollments (school_id, student_id, session_id, class_id, roll_no, status)
@@ -158,10 +174,10 @@ end;
 $enrol$;
 
 select pg_temp.ok(
-  pg_temp.stored() = 120 and pg_temp.real_count() = 120,
-  '3. enrolling 120 children in one statement updates the stored count to 120 — '
-  || 'it stayed at 0 before, until somebody clicked a button in the operator '
-  || 'console');
+  pg_temp.stored() = pg_temp.base() and pg_temp.real_count() = pg_temp.base(),
+  format('3. enrolling %s children in one statement updates the stored count to %s'
+         ' — it stayed at 0 before, until somebody clicked a button in the '
+         'operator console', pg_temp.base(), pg_temp.base()));
 
 -- (b) a pupil marked withdrawn — students changes, enrollments does not
 update public.students set status = 'withdrawn', left_on = current_date
@@ -169,8 +185,8 @@ update public.students set status = 'withdrawn', left_on = current_date
    and full_name = 'Child 1';
 
 select pg_temp.ok(
-  pg_temp.stored() = 119,
-  '4. marking ONE pupil withdrawn drops it to 119 — fn_count_students joins '
+  pg_temp.stored() = pg_temp.base() - 1,
+  '4. marking ONE pupil withdrawn drops it by one — fn_count_students joins '
   || 'students as well as enrollments, so a trigger on enrollments alone would '
   || 'have missed this entirely');
 
@@ -180,8 +196,8 @@ update public.enrollments set status = 'left'
    and roll_no = 'Child 2';
 
 select pg_temp.ok(
-  pg_temp.stored() = 118,
-  '5. closing ONE enrolment drops it to 118');
+  pg_temp.stored() = pg_temp.base() - 2,
+  '5. closing ONE enrolment drops it by another');
 
 -- (d) deletes
 delete from public.enrollments
@@ -189,10 +205,10 @@ delete from public.enrollments
    and roll_no in ('Child 3', 'Child 4');
 
 select pg_temp.ok(
-  pg_temp.stored() = 116,
-  '6. deleting two enrolments drops it to 116 — the DELETE path needs the OLD '
-  || 'transition table, which Postgres refuses to declare on an INSERT trigger, '
-  || 'so this verb is easy to leave out');
+  pg_temp.stored() = pg_temp.base() - 4,
+  '6. deleting two enrolments drops it by two more — the DELETE path needs the '
+  || 'OLD transition table, which Postgres refuses to declare on an INSERT '
+  || 'trigger, so this verb is easy to leave out');
 
 -- (e) and back up again
 update public.students set status = 'active', left_on = null
@@ -200,7 +216,7 @@ update public.students set status = 'active', left_on = null
    and full_name = 'Child 1';
 
 select pg_temp.ok(
-  pg_temp.stored() = 117,
+  pg_temp.stored() = pg_temp.base() - 3,
   '7. re-activating a pupil puts the count back up — the trigger recounts, it '
   || 'does not increment, so it cannot drift');
 
@@ -215,14 +231,16 @@ select pg_temp.ok(
 select pg_temp.ok(
   (select over_limit_flagged_at is not null from public.subscriptions
     where school_id = (select id from public.schools where name = 'Count School')),
-  '9. 117 pupils against Starter''s 100 raises over_limit_flagged_at — the count '
-  || 'alone tells nobody to act, and this is the field the console reads to say '
-  || '"over limit"');
+  format('9. %s pupils against Starter''''s %s raises over_limit_flagged_at — the '
+         'count alone tells nobody to act, and this is the field the console '
+         'reads to say "over limit"', pg_temp.base() - 3,
+         (select student_limit from public.plans where code = 'starter')));
 
 -- As the OPERATOR, because that is who reads this screen.
 select set_config('test.uid', '00000000-0000-0000-0000-00000000cc99', false);
 select pg_temp.ok(
-  (select student_count = 117 and limit_state = 'over' and suggested_plan = 'growth'
+  (select student_count = pg_temp.base() - 3 and limit_state = 'over'
+      and suggested_plan = 'growth'
      from public.fn_platform_schools()
     where school_name = 'Count School'),
   '10. and the operator console now shows the real figure, the over-limit state '
@@ -275,8 +293,8 @@ end;
 $other$;
 
 select pg_temp.ok(
-  pg_temp.stored() = 117,
-  '12. enrolling seven children at another school leaves this one at 117 — the '
+  pg_temp.stored() = pg_temp.base() - 3,
+  '12. enrolling seven children at another school leaves this one alone — the '
   || 'trigger scopes by the school_id on the rows it touched, and a statement '
   || 'trigger with no transition table could not have');
 
@@ -299,7 +317,7 @@ end;
 $both$;
 
 select pg_temp.ok(
-  pg_temp.stored() = 116
+  pg_temp.stored() = pg_temp.base() - 4
   and (select student_count from public.subscriptions
         where school_id = (select id from public.schools where name = 'Other Count School')) = 6,
   '14. one statement withdrawing a pupil from EACH school refreshes both — the '

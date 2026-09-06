@@ -203,6 +203,7 @@ with sig(migration, object, present) as (values
                                   'fn_pending_invites',
                                   'fn_checkin_display',
                                   'fn_support_visits',
+                                  'fn_my_next_payment',
               -- 0094 and 0095, and the same category as fn_pending_invites: who
               -- can sign in, what address they use, and what stands in the way
               -- of removing a person are access management and the gating of a
@@ -774,7 +775,27 @@ with sig(migration, object, present) as (values
         where n.nspname = 'public'
           and p.proname in ('fn_may_mark_subject', 'fn_may_manage_class',
                             'fn_may_write_school_file')
-          and p.prosrc like '%may_view(%'))
+          and p.prosrc like '%may_view(%')),
+  ('0111_the_price_of_a_term', 'three months can be sold, and one place prices it',
+     exists (
+       select 1 from information_schema.columns
+        where table_schema = 'public' and table_name = 'plans'
+          and column_name = 'price_quarterly')
+     and to_regprocedure('public.fn_plan_quote(text, integer)') is not null),
+  ('0112_a_way_to_pay', 'a school can record how it pays, and no role can read a token',
+     to_regclass('public.payment_methods') is not null
+     and to_regprocedure('public.fn_my_next_payment()') is not null
+     and (select count(*) from pg_policies
+           where schemaname = 'public' and tablename = 'payment_method_tokens') = 0),
+  ('0113_the_renewal_run', 'renewal invoices go out without anybody remembering',
+     to_regprocedure('public.fn_platform_run_renewals(boolean, date)') is not null
+     and to_regclass('public.billing_attempts') is not null),
+  ('0114_leaving_and_coming_back', 'a school can leave, and cancelling buys it no free time',
+     to_regprocedure('public.fn_cancel_my_subscription(text)') is not null
+     and exists (
+       select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' and p.proname = 'fn_effective_status'
+          and p.prosrc like '%cancel_at_period_end%'))
 )
 select migration,
        object                                   as looked_for,

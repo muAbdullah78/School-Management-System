@@ -1,6 +1,6 @@
 path: /
 title: The School Manager: school management software for Pakistan
-description: School management software for Pakistani private schools. One parent pays once for all their children, and you see what was owed. From Rs 950 a month.
+description: School management software for Pakistani private schools. One parent pays once for all their children, and you see what was owed. From Rs 2,000 a month.
 schema: org software
 priority: 1.0
 changefreq: weekly
@@ -84,7 +84,7 @@ changefreq: weekly
   <div class="wrap trust__in">
     <div class="trust__cell">
       <span class="trust__k">From</span>
-      <span class="trust__v"><b id="lead-price">Rs 950</b> <small>a month</small></span>
+      <span class="trust__v"><b id="lead-price">Rs 2,000</b> <small>a month</small></span>
     </div>
     <div class="trust__cell">
       <span class="trust__k">Trial</span>

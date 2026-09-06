@@ -145,7 +145,7 @@
   }
 
   function wirePrices() {
-    return rest('plans?select=code,name,student_limit,price_monthly,price_yearly&active=eq.true&order=sort_order')
+    return rest('plans?select=code,name,student_limit,price_monthly,price_quarterly,price_yearly&active=eq.true&order=sort_order')
       .then(function (plans) {
         if (!plans || !plans.length) return
         plans.forEach(function (p) {
@@ -157,11 +157,15 @@
           if (!card) return
           var monthly = card.querySelector('[data-price-monthly]')
           var yearly = card.querySelector('[data-price-yearly]')
+          var quarterly = card.querySelector('[data-price-quarterly]')
           var cap = card.querySelector('[data-price-cap]')
           // A plan priced at zero is the "contact us" tier. Writing "Rs 0" on it
           // would be worse than leaving the words that are already there.
           if (monthly && Number(p.price_monthly) > 0) {
             monthly.textContent = money(p.price_monthly)
+          }
+          if (quarterly && Number(p.price_quarterly) > 0) {
+            quarterly.textContent = money(p.price_quarterly) + ' for 3 months'
           }
           if (yearly && Number(p.price_yearly) > 0) {
             yearly.textContent = money(p.price_yearly) + ' a year'

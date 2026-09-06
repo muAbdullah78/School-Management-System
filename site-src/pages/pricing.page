@@ -1,6 +1,6 @@
 path: /pricing
 title: School management software price in Pakistan
-description: Three plans by school size, from Rs 950 a month for up to 100 students. Every module in every plan, and payment by bank transfer with no card on file.
+description: Three plans by school size, from Rs 2,000 a month for up to 150 students. Every module in every plan, and payment by bank transfer with no card on file.
 nav: Pricing
 nav_order: 6
 breadcrumb: Pricing
@@ -14,20 +14,22 @@ changefreq: weekly
     <span class="eyebrow">Pricing</span>
     <h1>Priced for a real Pakistani school</h1>
     <p class="lede" style="margin-top:14px;max-width:64ch">
-      Every plan includes every feature. You pay for size, not for modules. Pay
-      yearly and get two months free.
+      Every plan includes every feature. You pay for size, not for modules. Take
+      three months and save about five percent; pay yearly and get two months
+      free.
     </p>
 
 <div class="prices" style="margin-top:38px">
       <div class="price" data-plan="starter">
         <h3>Starter</h3>
-        <div class="price__amt"><span data-price-monthly>Rs 950</span><small>/month</small></div>
-        <p class="price__cap" data-price-cap>Up to 100 students</p>
+        <div class="price__amt"><span data-price-monthly>Rs 2,000</span><small>/month</small></div>
+        <p class="price__cap" data-price-cap>Up to 150 students</p>
         <ul>
           <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Every module included</li>
           <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Unlimited staff logins</li>
           <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Parent portal</li>
-          <li data-price-yearly>Rs 9,500 a year</li>
+          <li data-price-quarterly>Rs 5,700 for 3 months</li>
+          <li data-price-yearly>Rs 20,000 a year</li>
         </ul>
         <a class="btn btn--ghost" href="/contact" data-app="signup"
            aria-label="Start a free trial on the Starter plan">Start free trial</a>
@@ -37,13 +39,14 @@ changefreq: weekly
       <div class="price price--hot" data-plan="growth">
         <span class="price__tag">Most schools</span>
         <h3>Growth</h3>
-        <div class="price__amt"><span data-price-monthly>Rs 2,000</span><small>/month</small></div>
-        <p class="price__cap" data-price-cap>Up to 300 students</p>
+        <div class="price__amt"><span data-price-monthly>Rs 3,500</span><small>/month</small></div>
+        <p class="price__cap" data-price-cap>Up to 350 students</p>
         <ul>
           <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Every module included</li>
           <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Unlimited staff logins</li>
           <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Parent portal</li>
-          <li data-price-yearly>Rs 20,000 a year</li>
+          <li data-price-quarterly>Rs 10,000 for 3 months</li>
+          <li data-price-yearly>Rs 35,000 a year</li>
         </ul>
         <a class="btn btn--primary" href="/contact" data-app="signup"
            aria-label="Start a free trial on the Growth plan">Start free trial</a>
@@ -52,13 +55,14 @@ changefreq: weekly
 
       <div class="price" data-plan="institution">
         <h3>Institution</h3>
-        <div class="price__amt"><span data-price-monthly>Rs 3,500</span><small>/month</small></div>
-        <p class="price__cap" data-price-cap>Up to 1,000 students</p>
+        <div class="price__amt"><span data-price-monthly>Rs 5,500</span><small>/month</small></div>
+        <p class="price__cap" data-price-cap>Up to 600 students</p>
         <ul>
           <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Every module included</li>
           <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Unlimited staff logins</li>
           <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Parent portal</li>
-          <li data-price-yearly>Rs 35,000 a year</li>
+          <li data-price-quarterly>Rs 15,700 for 3 months</li>
+          <li data-price-yearly>Rs 55,000 a year</li>
         </ul>
         <a class="btn btn--ghost" href="/contact" data-app="signup"
            aria-label="Start a free trial on the Institution plan">Start free trial</a>

@@ -328,6 +328,54 @@ emit supabase/bundles/15_the_one_way_door.sql \
 emit supabase/bundles/16_who_actually_did_it.sql \
      supabase/migrations/0109*.sql supabase/migrations/0110*.sql
 
+# A SEVENTEENTH bundle. 16 is frozen above.
+#
+# 0111 is the commercial change: new bands, new prices, and a THIRD term to buy
+# between "monthly, I will think about it" and "a year up front". It is also a
+# correctness fix, because the price of N months was computed in two places -
+# fn__plan_price and a TypeScript copy of its ladder in the operator console -
+# which agreed only for as long as the ladder had two steps.
+emit supabase/bundles/17_the_price_of_a_term.sql \
+     supabase/migrations/0111*.sql
+
+# AN EIGHTEENTH bundle. 17 is frozen above.
+#
+# 0112 records HOW a school will pay and which term it chose, so the renewal
+# machine has something to act on. No gateway integration: there is no merchant
+# account yet, and a card adapter written against documentation and never run is
+# not something to put near a customer's money. What works end to end is the
+# manual path, which is what most Pakistani schools will use for years - credit
+# cards are held by 0.22 percent of adults and debit cards by 7.7 percent.
+#
+# The card NUMBER cannot be stored by this schema. The gateway token lives in
+# its own table with RLS on and no policies, so no application role can read it
+# whatever a later migration grants.
+emit supabase/bundles/18_a_way_to_pay.sql \
+     supabase/migrations/0112*.sql
+
+# A NINETEENTH bundle. 18 is frozen above.
+#
+# 0113 is the runner. Every renewal invoice in this product existed because
+# somebody opened the console and pressed a button, so the failure mode was not
+# a bug but a Tuesday: the list is not opened, a school's period ends with no
+# invoice ever raised, and it lapses into grace and locks having never been
+# asked for money. It raises invoices and does NOT take money - that separation
+# survives the arrival of a card gateway, and it means an outage at the gateway
+# cannot stop bills going out.
+emit supabase/bundles/19_the_renewal_run.sql \
+     supabase/migrations/0113*.sql
+
+# A TWENTIETH bundle. 19 is frozen above.
+#
+# 0114 gives a school its own way out, and closes a hole 0112 opened. 0112 added
+# cancel_at_period_end so cancelling would keep a school running to the end of
+# what it paid for; fn_effective_status knew nothing about the flag, so once the
+# period passed the school fell into the ordinary ladder and read 'grace'. Grace
+# exists for a payment in flight and a cancelled school has none, so pressing
+# Cancel would have bought a free fortnight every time.
+emit supabase/bundles/20_leaving_and_coming_back.sql \
+     supabase/migrations/0114*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

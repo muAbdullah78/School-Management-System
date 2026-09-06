@@ -361,7 +361,7 @@ function AppMockup({ name }: { name?: string }) {
 /** Three facts, flat on the tint. Tabular figures, no card, no dark fill. */
 function Facts() {
   const cells: Array<[string, string]> = [
-    ['From', 'Rs 950'],
+    ['From', 'Rs 2,000'],
     ['Trial', '14 days'],
     ['Modules', 'All included'],
   ]
@@ -512,7 +512,7 @@ export function AuthLayout({ line, schoolName, children }: AuthLayoutProps) {
           The price is the fact that has to survive the collapse, because it is
           the first question every school asks. */}
       <p className="border-t border-slate-200 bg-white px-5 py-4 text-center text-[13px] tabular-nums lining-nums text-slate-500 lg:hidden">
-        From Rs 950 a month. 14 days free. All modules included.
+        From Rs 2,000 a month. 14 days free. All modules included.
       </p>
     </div>
   )
