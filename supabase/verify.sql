@@ -1687,6 +1687,42 @@ select 'cancelling a school can be undone, and says what it does (0108)',
        end
 
 union all
+-- 0109. The correction to 0108's own sweep. Three of the actions in this schema
+-- are named entity.verb with a dot while every other one is entity_verb, so the
+-- console printed the literal string "login.deleted" at the operator. And all
+-- three are called by the SCHOOL'S own office yet written into the table whose
+-- reader is headed "what we have done to this school", so a principal deleting
+-- a duplicate pupil appeared in the vendor's audit feed as our doing.
+select 'the history feed says who actually did it (0109, 0110)',
+       case
+         when to_regprocedure('public.fn_platform_school_activity(uuid, integer)') is null
+           then 'FAIL - the history cannot tell what we did from what the school '
+                || 'did; apply supabase/bundles/16_who_actually_did_it.sql'
+         when exists (
+           select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public'
+             and p.proname in ('fn_delete_student', 'fn_delete_staff', 'fn_delete_login')
+             and (p.prosrc like '%''student.deleted''%'
+               or p.prosrc like '%''staff.deleted''%'
+               or p.prosrc like '%''login.deleted''%'))
+           then 'FAIL - three actions still log a name with a dot in it, which the '
+                || 'console prints raw; apply supabase/bundles/16_who_actually_did_it.sql'
+         -- 0110. Only reachable on a database pasted more than once, and it is
+         -- the most serious thing in this bundle: bundle 6's rewrite loop turns
+         -- the gate that decides who may ENTER MARKS into one that admits the
+         -- read-only role.
+         when exists (
+           select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public'
+             and p.proname in ('fn_may_mark_subject', 'fn_may_manage_class',
+                               'fn_may_write_school_file')
+             and p.prosrc like '%may_view(%')
+           then 'FAIL - a read-only user can enter marks. This happens on a database '
+                || 'pasted more than once; apply supabase/bundles/16_who_actually_did_it.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS — no schools yet, as expected'

@@ -308,6 +308,26 @@ emit supabase/bundles/14_the_unpaid_school.sql \
 emit supabase/bundles/15_the_one_way_door.sql \
      supabase/migrations/0108*.sql
 
+# A SIXTEENTH bundle. 15 is frozen above.
+#
+# 0109 is the correction to 0108's own sweep. That migration enumerated every
+# action name in this schema with a grep whose character class had no dot in it,
+# so the three call sites in 0094 - student.deleted, staff.deleted,
+# login.deleted - matched nothing and were never seen. The console printed them
+# raw. The naming was hiding the larger fault: all three are called by the
+# SCHOOL'S OWN OFFICE and written into the table whose reader is titled "what we
+# have done to this school", so a principal deleting a duplicate pupil appeared
+# in the vendor's audit feed as something the vendor had done.
+#
+# 0110 rides with it because the two were found together: making 0109 change a
+# return type stopped bundle 7 re-applying, and that turned out to be the only
+# thing putting fn_may_mark_subject back after bundle 6's rewrite loop had
+# converted the gate for entering marks into one that admits the readonly role.
+# 0109 was rewritten to be purely additive; 0110 closes the hole underneath,
+# which luck had been covering.
+emit supabase/bundles/16_who_actually_did_it.sql \
+     supabase/migrations/0109*.sql supabase/migrations/0110*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

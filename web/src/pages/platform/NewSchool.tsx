@@ -76,7 +76,7 @@ export function NewSchoolDialog({ onClose, onCreated }: {
 
   return (
     <Shell title="Add a school" onClose={onClose}>
-      {err && <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
+      {err && <p className="rounded bg-danger-50 px-3 py-2 text-sm text-danger-700">{err}</p>}
 
       <div className="mt-1 space-y-3">
         <label className="block">
@@ -202,7 +202,7 @@ function OwnerStep({ schoolId, stillNeeded, suggestedEmail, suggestedName, onDon
   if (done) {
     return (
       <>
-        <div className="mt-3 rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+        <div className="mt-3 rounded border border-money-200 bg-money-50 p-3 text-sm text-money-900">
           <div className="font-semibold">They can sign in now.</div>
           <p className="mt-1">{done.next}</p>
           <div className="mt-2 rounded bg-white px-2 py-1 font-mono text-xs text-slate-700">
@@ -219,9 +219,9 @@ function OwnerStep({ schoolId, stillNeeded, suggestedEmail, suggestedName, onDon
 
   return (
     <>
-      <div className="mt-3 rounded border border-amber-300 bg-amber-50 p-3">
-        <div className="text-sm font-semibold text-amber-900">{stillNeeded}</div>
-        {err && <p className="mt-2 rounded bg-red-50 px-2 py-1 text-sm text-red-700">{err}</p>}
+      <div className="mt-3 rounded border border-due-300 bg-due-50 p-3">
+        <div className="text-sm font-semibold text-due-900">{stillNeeded}</div>
+        {err && <p className="mt-2 rounded bg-danger-50 px-2 py-1 text-sm text-danger-700">{err}</p>}
         <div className="mt-2 space-y-2">
           <label className="block">
             <span className="text-xs font-medium text-slate-700">
@@ -241,7 +241,7 @@ function OwnerStep({ schoolId, stillNeeded, suggestedEmail, suggestedName, onDon
             <input className={FIELD} value={password} autoComplete="off"
               onChange={(e) => setPassword(e.target.value)}
               placeholder="at least 8 characters" />
-            <span className="mt-0.5 block text-xs text-amber-800">
+            <span className="mt-0.5 block text-xs text-due-800">
               Read it out to them and tell them to change it from their own profile.
               You should not be the person who knows their password a month from now.
             </span>

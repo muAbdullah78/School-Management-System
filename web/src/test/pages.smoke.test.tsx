@@ -294,7 +294,29 @@ describe('the operator console', () => {
   // asserting the refusal was looking for.
   const ADMIN_RPCS: Record<string, unknown> = {
     is_platform_admin: true,
-    fn_platform_schools: [],
+    // TWO SCHOOLS, DELIBERATELY DIFFERENT. The console's list used to be checked
+    // against an empty array, which renders the "no schools yet" sentence and
+    // proves nothing about the table, the badges, the usage bar or the filters.
+    fn_platform_schools: [
+      {
+        school_id: 'sch-1', school_name: 'Al Qalam School', city: 'Lahore',
+        contact_name: 'Basha Salamat', contact_phone: '0300-1234567',
+        plan_code: 'starter', status: 'active', expires_on: '2027-06-30',
+        days_left: 297, student_count: 180, student_limit: 200, limit_state: 'within_margin',
+        suggested_plan: 'starter', needs_upgrade: false,
+        outstanding: 0, last_paid_on: '2026-07-01',
+        suspended: false, suspend_reason: null, archived: false,
+      },
+      {
+        school_id: 'sch-2', school_name: 'Beaconhouse Multan', city: 'Multan',
+        contact_name: null, contact_phone: null,
+        plan_code: 'growth', status: 'grace', expires_on: '2026-08-20',
+        days_left: -17, student_count: 640, student_limit: 500, limit_state: 'over',
+        suggested_plan: 'scale', needs_upgrade: true,
+        outstanding: 38000, last_paid_on: '2025-08-19',
+        suspended: false, suspend_reason: null, archived: false,
+      },
+    ],
     fn_platform_revenue: {
       net_invoiced: 0, collected: 0, cash_received: 0, tax_withheld: 0,
       discounted: 0, outstanding_total: 0, voided: 0,
@@ -331,6 +353,56 @@ describe('the operator console', () => {
     const { queryByText } = await mount(PlatformPage)
     expect(queryByText(/\+14d/)).toBeNull()
     expect(queryByText(/extend/i)).toBeNull()
+  })
+
+  it('lists schools in a table you can search', async () => {
+    // The list was a stack of 130px cards with no search box anywhere on the
+    // page, so finding one school among fifty meant scrolling past the other
+    // forty-nine.
+    current.opts = { rpc: ADMIN_RPCS }
+    const { PlatformPage } = await import('@/pages/platform/PlatformPage')
+    const { queryByText, queryByPlaceholderText } = await mount(PlatformPage)
+    expect(queryByPlaceholderText(/search a school/i)).not.toBeNull()
+    expect(queryByText('Al Qalam School')).not.toBeNull()
+    expect(queryByText('Beaconhouse Multan')).not.toBeNull()
+  })
+
+  it('says what a status means instead of printing the database enum', async () => {
+    // "grace" reads as a compliment. It means they have not paid and the clock
+    // is running, and the operator should not have to translate it every time.
+    current.opts = { rpc: ADMIN_RPCS }
+    const { PlatformPage } = await import('@/pages/platform/PlatformPage')
+    const { queryByText, queryAllByText } = await mount(PlatformPage)
+    expect(queryByText('Payment overdue')).not.toBeNull()
+    // More than one on purpose: the filter tab and the status chip share the
+    // word, which is the point. The filter is named after the state it selects.
+    expect(queryAllByText('Paying').length).toBeGreaterThan(0)
+    expect(queryByText('grace')).toBeNull()
+    expect(queryByText('trialing')).toBeNull()
+  })
+
+  it('puts the one thing each school needs today in the last column', async () => {
+    // A fixed button on every row is a button nobody reads. The school that
+    // owes money gets Record payment; the one that is paid up and inside its
+    // dates gets an empty cell.
+    current.opts = { rpc: ADMIN_RPCS }
+    const { PlatformPage } = await import('@/pages/platform/PlatformPage')
+    const { queryAllByText } = await mount(PlatformPage)
+    expect(queryAllByText('Record payment')).toHaveLength(1)
+  })
+
+  it('opens one workspace rather than six dialogs', async () => {
+    current.opts = { rpc: { ...ADMIN_RPCS, fn_platform_school_detail: null } }
+    const { PlatformPage } = await import('@/pages/platform/PlatformPage')
+    const { queryByText, getByText } = await mount(PlatformPage)
+    // Nothing is open until a row is clicked.
+    expect(queryByText('Overview')).toBeNull()
+    getByText('Al Qalam School').click()
+    await waitFor(() => expect(queryByText('Overview')).not.toBeNull())
+    // Three tabs, one Actions menu, and no row of five blue links anywhere.
+    expect(queryByText('Billing')).not.toBeNull()
+    expect(queryByText('Activity')).not.toBeNull()
+    expect(queryByText('Actions')).not.toBeNull()
   })
 
   it('keeps the migration filename out of sight while the schema is healthy', async () => {

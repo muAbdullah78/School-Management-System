@@ -17,9 +17,34 @@ describe('actionNeeded', () => {
   })
 
   it('flags locked, grace and imminent renewals', () => {
-    expect(actionNeeded(s({ status: 'locked' }))).toMatch(/chase payment/i)
+    // A locked school that owes NOTHING is a renewal to sell, not a debt to
+    // chase. This used to read "chase payment or reactivate" either way, which
+    // is advice to phone a principal about money they do not owe.
+    expect(actionNeeded(s({ status: 'locked' }))).toMatch(/renew them/i)
     expect(actionNeeded(s({ status: 'grace', days_left: 3 }))).toMatch(/grace/i)
     expect(actionNeeded(s({ status: 'active', days_left: 5 }))).toMatch(/renewal due/i)
+  })
+
+  it('never tells the operator to chase a school we switched off ourselves', () => {
+    // fn_effective_status returns 'locked' for a manual suspension exactly as
+    // it does for an expired licence, so a school WE suspended arrived here
+    // indistinguishable from one that had not paid, and got "chase payment".
+    // The reason we suspended them is two fields away.
+    const msg = actionNeeded(s({
+      status: 'locked', suspended: true, outstanding: 40000,
+      suspend_reason: 'Three months unpaid and not answering',
+    }))
+    expect(msg).toMatch(/we suspended them/i)
+    expect(msg).toContain('Three months unpaid and not answering')
+    expect(msg).not.toMatch(/chase/i)
+  })
+
+  it('says nothing at all about an archived school', () => {
+    // A departed customer is off the renewal worklist by design. Telling the
+    // operator to chase them is how last year's churn gets worked as this
+    // year's pipeline.
+    expect(actionNeeded(s({ archived: true, status: 'cancelled', outstanding: 12000 })))
+      .toBeNull()
   })
 
   it('names the plan to move an over-limit school onto', () => {
@@ -42,10 +67,15 @@ describe('actionNeeded', () => {
     expect(actionNeeded(s({ status: 'trialing', days_left: 12, outstanding: 9500 }))).toMatch(/owes/i)
   })
 
-  it('does not say "owes" about a locked school. That message is chase payment', () => {
-    // Two messages competing for one line. Locked is the stronger statement:
-    // the school cannot use the software at all, which is what to lead with.
-    expect(actionNeeded(s({ status: 'locked', outstanding: 9500 }))).toMatch(/chase payment/i)
+  it('puts the locked school\'s debt on the same line as the lock', () => {
+    // Two facts competing for one line, and the old version dropped one of
+    // them: "Locked: chase payment or reactivate" never said how much, so the
+    // operator had to open the school to find out whether this was a phone call
+    // about Rs 9,500 or about nothing at all.
+    const msg = actionNeeded(s({ status: 'locked', outstanding: 9500 }))
+    expect(msg).toMatch(/locked/i)
+    expect(msg).toContain('9,500')
+    expect(msg).toMatch(/chase the payment/i)
   })
 
   it('does not nag about a trial that has just started', () => {
@@ -58,13 +88,34 @@ describe('sortByAction', () => {
   it('puts the work first: lost money before quiet schools', () => {
     const list = [
       s({ school_name: 'Healthy' }),
-      s({ school_name: 'Locked', status: 'locked' }),
+      s({ school_name: 'LockedOwing', status: 'locked', outstanding: 38000 }),
+      s({ school_name: 'LockedClear', status: 'locked' }),
       s({ school_name: 'Trial', status: 'trialing', days_left: 10 }),
       s({ school_name: 'Grace', status: 'grace', days_left: 4 }),
       s({ school_name: 'Expiring', status: 'active', days_left: 3 }),
     ]
+    // Locked WITH an invoice is the first call of the day. Locked with nothing
+    // owed is a renewal to sell, so it drops below the two deadlines.
     expect(sortByAction(list).map((x) => x.school_name))
-      .toEqual(['Locked', 'Grace', 'Expiring', 'Trial', 'Healthy'])
+      .toEqual(['LockedOwing', 'Grace', 'Expiring', 'LockedClear', 'Trial', 'Healthy'])
+  })
+
+  it('sinks archived, cancelled and suspended below the live worklist', () => {
+    // ALL THREE USED TO RANK 0, the very top. Archiving sets the subscription
+    // to 'cancelled' and this ranking tested that status first, so a customer
+    // filed away last year sorted above a trial ending tomorrow. A suspension
+    // reports as 'locked', so a school we switched off ourselves sorted above
+    // every school that actually owed us money.
+    const list = [
+      s({ school_name: 'Archived', archived: true, status: 'cancelled' }),
+      s({ school_name: 'Cancelled', status: 'cancelled' }),
+      s({ school_name: 'Suspended', status: 'locked', suspended: true,
+          suspend_reason: 'not answering' }),
+      s({ school_name: 'Owing', outstanding: 38000 }),
+      s({ school_name: 'Trial', status: 'trialing', days_left: 10 }),
+    ]
+    expect(sortByAction(list).map((x) => x.school_name))
+      .toEqual(['Owing', 'Trial', 'Suspended', 'Cancelled', 'Archived'])
   })
 
   it('ranks an unpaid invoice above an over-limit school', () => {

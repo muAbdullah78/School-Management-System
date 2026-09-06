@@ -130,7 +130,7 @@ export function OffboardDialog({ school, onClose }: {
   if (q.error) {
     return (
       <Shell title={`Offboard ${school.school_name}`} onClose={onClose}>
-        <div className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+        <div className="rounded border border-due-300 bg-due-50 px-3 py-2 text-sm text-due-900">
           {(q.error as Error).message}
         </div>
         <p className="mt-3 text-xs text-slate-500">
@@ -146,7 +146,7 @@ export function OffboardDialog({ school, onClose }: {
 
   return (
     <Shell title={`Offboard ${school.school_name}`} onClose={onClose}>
-      {err && <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
+      {err && <p className="rounded bg-danger-50 px-3 py-2 text-sm text-danger-700">{err}</p>}
 
       {/* --- step 1 -------------------------------------------------------- */}
       <section className="rounded border border-slate-200 p-3">
@@ -176,7 +176,7 @@ export function OffboardDialog({ school, onClose }: {
           <p className="mt-2 text-sm text-brand-700">Reading {progress}…</p>
         )}
         {exported && (
-          <p className="mt-2 rounded bg-emerald-50 px-2 py-1 text-sm text-emerald-800">
+          <p className="mt-2 rounded bg-money-50 px-2 py-1 text-sm text-money-800">
             Downloaded and recorded: {exported.rows.toLocaleString()} rows.
           </p>
         )}
@@ -190,7 +190,7 @@ export function OffboardDialog({ school, onClose }: {
       {/* --- step 2 -------------------------------------------------------- */}
       <section className={`mt-3 rounded border p-3 ${
         already.length > 0 || exported
-          ? 'border-red-300 bg-red-50/40' : 'border-slate-200 opacity-60'}`}>
+          ? 'border-danger-300 bg-danger-50/40' : 'border-slate-200 opacity-60'}`}>
         <div className="text-sm font-semibold text-slate-800">
           2. Delete them permanently
         </div>
@@ -200,13 +200,13 @@ export function OffboardDialog({ school, onClose }: {
           </p>
         ) : (
           <>
-            <p className="mt-1 text-xs text-red-800">
+            <p className="mt-1 text-xs text-danger-800">
               This cannot be undone. Every pupil, guardian, payment, mark and photograph
               is destroyed. Your own invoices and receipts are kept, with the school&rsquo;s
               name on them, because a business keeps its sales ledger.
             </p>
             {school.outstanding > 0 && (
-              <label className="mt-2 flex items-start gap-2 text-xs text-amber-900">
+              <label className="mt-2 flex items-start gap-2 text-xs text-due-900">
                 <input type="checkbox" checked={force} className="mt-0.5"
                   onChange={(e) => setForce(e.target.checked)} />
                 <span>
@@ -228,7 +228,7 @@ export function OffboardDialog({ school, onClose }: {
               disabled={doPurge.isPending
                 || confirm !== school.school_name
                 || (school.outstanding > 0 && !force)}
-              className="mt-2 rounded bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">
+              className="mt-2 rounded bg-danger-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-danger-700 disabled:opacity-50">
               {doPurge.isPending ? 'Deleting…' : 'Delete this school for ever'}
             </button>
           </>

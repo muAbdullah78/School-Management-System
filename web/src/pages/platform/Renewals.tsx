@@ -28,16 +28,16 @@ import { fmtDate } from '@/lib/format'
  *                    the plan the count fits, or the conversation happens twice.
  */
 const BUCKETS: { key: RenewalBucket; label: string; tone: string }[] = [
-  // 'grace' and 'overdue' were both border-red-200 bg-red-50 text-red-800:
+  // 'grace' and 'overdue' were both border-danger-200 bg-danger-50 text-danger-800:
   // pixel-identical, for the two states an operator most needs to tell apart. In
   // grace the school is still working and a call saves them; overdue means the
   // licence has run past its invoice. Stopped is the one where the phone is
   // already ringing.
-  { key: 'locked',    label: 'Stopped working', tone: 'border-red-400 bg-red-100 text-red-900' },
+  { key: 'locked',    label: 'Stopped working', tone: 'border-danger-400 bg-danger-100 text-danger-900' },
   { key: 'grace',     label: 'In grace',        tone: 'border-orange-300 bg-orange-50 text-orange-900' },
-  { key: 'overdue',   label: 'Overdue',         tone: 'border-red-300 bg-red-50 text-red-800' },
-  { key: 'today',     label: 'Expires today',  tone: 'border-amber-300 bg-amber-50 text-amber-900' },
-  { key: 'week',      label: 'This week',      tone: 'border-amber-200 bg-amber-50 text-amber-900' },
+  { key: 'overdue',   label: 'Overdue',         tone: 'border-danger-300 bg-danger-50 text-danger-800' },
+  { key: 'today',     label: 'Expires today',  tone: 'border-due-300 bg-due-50 text-due-900' },
+  { key: 'week',      label: 'This week',      tone: 'border-due-200 bg-due-50 text-due-900' },
   { key: 'fortnight', label: 'Two weeks',      tone: 'border-slate-200 bg-white text-slate-800' },
   { key: 'month',     label: 'This month',     tone: 'border-slate-200 bg-white text-slate-800' },
   { key: 'later',     label: 'Later',          tone: 'border-slate-200 bg-white text-slate-600' },
@@ -90,7 +90,7 @@ export function Renewals({ onOpenSchool, onTakePayment }: {
         </label>
       </div>
 
-      {q.error && <p className="text-sm text-red-600">{(q.error as Error).message}</p>}
+      {q.error && <p className="text-sm text-danger-600">{(q.error as Error).message}</p>}
       {q.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
 
       {rows.length > 0 && (
@@ -107,7 +107,7 @@ export function Renewals({ onOpenSchool, onTakePayment }: {
       )}
 
       {!q.isLoading && rows.length === 0 && (
-        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+        <p className="rounded-lg border border-money-200 bg-money-50 px-3 py-2 text-sm text-money-900">
           Nothing to chase in the next {days} days.
         </p>
       )}
@@ -274,8 +274,8 @@ function RemindDialog({ row, onClose }: { row: DueSoonRow; onClose: () => void }
           <button onClick={onClose} className="text-sm text-slate-500 hover:underline">Close</button>
         </div>
 
-        {q.error && <p className="mt-3 text-sm text-red-600">{(q.error as Error).message}</p>}
-        {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
+        {q.error && <p className="mt-3 text-sm text-danger-600">{(q.error as Error).message}</p>}
+        {err && <p className="mt-3 text-sm text-danger-600">{err}</p>}
 
         {m && (
           <>
@@ -297,14 +297,14 @@ function RemindDialog({ row, onClose }: { row: DueSoonRow; onClose: () => void }
             </div>
 
             {m.no_phone_reason ? (
-              <p className="mt-3 rounded bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              <p className="mt-3 rounded bg-due-50 px-3 py-2 text-sm text-due-900">
                 {m.no_phone_reason}. Copy the message above and send it however you
                 reach them.
               </p>
             ) : (
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <a href={link ?? '#'} target="_blank" rel="noreferrer"
-                  className="rounded bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700">
+                  className="rounded bg-money-600 px-3 py-2 text-sm font-medium text-white hover:bg-money-700">
                   Open WhatsApp to {m.phone}
                 </a>
                 <button onClick={() => mark.mutate()} disabled={mark.isPending || done}
@@ -331,10 +331,10 @@ function Tile({ label, value, hint, tone }: {
 }) {
   return (
     <div className={`rounded border p-3 ${
-      tone === 'warn' ? 'border-amber-200 bg-amber-50' : 'border-slate-200 bg-white'}`}>
+      tone === 'warn' ? 'border-due-200 bg-due-50' : 'border-slate-200 bg-white'}`}>
       <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
       <div className={`text-lg font-semibold ${
-        tone === 'warn' ? 'text-amber-900' : 'text-slate-800'}`}>{value}</div>
+        tone === 'warn' ? 'text-due-900' : 'text-slate-800'}`}>{value}</div>
       {hint && <div className="text-xs text-slate-400">{hint}</div>}
     </div>
   )

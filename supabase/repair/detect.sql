@@ -765,7 +765,16 @@ with sig(migration, object, present) as (values
      and exists (
        select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
        where n.nspname = 'public' and p.proname = 'fn_platform_archive_school'
-         and p.prosrc like '%closed sign%'))
+         and p.prosrc like '%closed sign%')),
+  ('0109_who_actually_did_it', 'the history feed records who actually did it',
+     to_regprocedure('public.fn_platform_school_activity(uuid, integer)') is not null),
+  ('0110_a_read_gate_is_not_a_write_gate', 'a read-only user cannot enter marks',
+     not exists (
+       select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public'
+          and p.proname in ('fn_may_mark_subject', 'fn_may_manage_class',
+                            'fn_may_write_school_file')
+          and p.prosrc like '%may_view(%'))
 )
 select migration,
        object                                   as looked_for,
