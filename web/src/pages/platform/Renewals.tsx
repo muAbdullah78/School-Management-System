@@ -7,6 +7,7 @@ import {
 import { whatsappLink } from '@/lib/db'
 import { formatPkr } from '@/lib/licence'
 import { fmtDate } from '@/lib/format'
+import { RenewalRunStrip } from './RenewalRun'
 
 /**
  * The renewal worklist.
@@ -67,6 +68,13 @@ export function Renewals({ onOpenSchool, onTakePayment }: {
 
   return (
     <div className="space-y-4">
+      {/* THE THING THAT MAKES THIS LIST SHORTER WITHOUT ANYBODY WORKING IT.
+          Every renewal invoice used to exist because somebody opened this tab
+          and pressed a button on a row, so a quiet Tuesday meant a school's
+          period ended with no invoice ever raised. First, because raising the
+          bills is what to do before phoning anybody about them. */}
+      <RenewalRunStrip />
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold text-slate-800">

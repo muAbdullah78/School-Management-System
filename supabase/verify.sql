@@ -1785,6 +1785,40 @@ select 'a card number cannot be stored, and a way to pay is recorded (0112)',
        end
 
 union all
+-- 0113. The bill goes out on the day it is due whether anybody remembered. Its
+-- default is a DRY RUN, which is the assertion worth making on a customer's
+-- database: a money-moving batch job whose default is "go" is one somebody runs
+-- by accident while exploring.
+select 'renewals go out without anybody remembering (0113)',
+       case
+         when to_regprocedure('public.fn_platform_run_renewals(boolean, date)') is null
+           then 'FAIL - nothing raises a renewal invoice unless the operator '
+                || 'presses a button; apply supabase/bundles/19_the_renewal_run.sql'
+         when to_regclass('public.billing_attempts') is null
+           then 'FAIL - there is no record of why a school was or was not billed; '
+                || 'apply supabase/bundles/19_the_renewal_run.sql'
+         -- ILIKE, because pg_get_function_arguments spells it DEFAULT in
+         -- capitals and the first version of this row used a case-sensitive
+         -- LIKE. It reported FAIL against a function whose default was
+         -- perfectly correct, which is the worst kind of check: one that cries
+         -- wolf on a customer's database and teaches them to ignore the report.
+         when not exists (
+                select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                 where n.nspname = 'public' and p.proname = 'fn_platform_run_renewals'
+                   and pg_get_function_arguments(p.oid) ilike '%p_dry_run boolean default true%')
+           then 'FAIL - the renewal run does not default to a dry run, so an '
+                || 'operator exploring the console can bill every school by accident'
+         -- 0078's duplicate-invoice trigger is what makes re-running safe. If it
+         -- ever goes, the runner bills twice on the second press.
+         when not exists (select 1 from pg_trigger
+                           where tgname = 'trg_refuse_duplicate_invoice'
+                             and tgrelid = 'public.platform_invoices'::regclass)
+           then 'FAIL - nothing stops the same period being invoiced twice, so a '
+                || 'second renewal run would bill every school again'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS — no schools yet, as expected'

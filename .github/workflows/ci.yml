@@ -1845,6 +1845,16 @@ jobs:
         # which is how a card number is written on the card.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/a_way_to_pay.sql
 
+      - name: The bill goes out on the day it is due, and twice is safe
+        # A batch job that moves money is held to four properties here, each of
+        # which is a way it could quietly do harm: running it twice must not
+        # bill twice (the commonest thing anybody does with a new button is
+        # press it again); one school's refusal must not abort the run and leave
+        # the schools after it in the loop unbilled while reporting success; it
+        # must not invent a customer out of a trial that never said yes; and it
+        # must not bill for a period we switched off ourselves.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/the_renewal_run.sql
+
       - name: The cash drawer never accuses the clerk
         # One ordinary morning, seeded and run: open with a Rs 1,000 float, take
         # Rs 3,000 cash, reverse it when the cheque bounces and hand the money

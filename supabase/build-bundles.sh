@@ -353,6 +353,18 @@ emit supabase/bundles/17_the_price_of_a_term.sql \
 emit supabase/bundles/18_a_way_to_pay.sql \
      supabase/migrations/0112*.sql
 
+# A NINETEENTH bundle. 18 is frozen above.
+#
+# 0113 is the runner. Every renewal invoice in this product existed because
+# somebody opened the console and pressed a button, so the failure mode was not
+# a bug but a Tuesday: the list is not opened, a school's period ends with no
+# invoice ever raised, and it lapses into grace and locks having never been
+# asked for money. It raises invoices and does NOT take money - that separation
+# survives the arrival of a card gateway, and it means an outage at the gateway
+# cannot stop bills going out.
+emit supabase/bundles/19_the_renewal_run.sql \
+     supabase/migrations/0113*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

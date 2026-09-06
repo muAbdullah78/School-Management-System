@@ -327,6 +327,17 @@ describe('the operator console', () => {
     fn_platform_payment_claims: [],
     fn_platform_settings: { missing: [] },
     fn_platform_orphan_report: [],
+    // 0113. The Renewals tab now opens with the run strip, which reads the run
+    // history the moment "Past runs" is pressed and nothing before that. Stubbed
+    // so a missing RPC cannot make the tab look broken in this suite while
+    // being fine in the app, or the reverse.
+    fn_platform_renewal_runs: [],
+    fn_platform_run_renewals: {
+      run_id: 'r1', dry_run: true, as_at: '2026-09-06',
+      considered: 0, invoiced: 0, skipped: 0, failed: 0,
+      note: 'Nothing was changed. 0 school(s) are due; run it again with dry run off to raise the invoices.',
+      attempts: [],
+    },
   }
 
   it('refuses anybody who is not the operator', async () => {
@@ -403,6 +414,23 @@ describe('the operator console', () => {
     expect(queryByText('Billing')).not.toBeNull()
     expect(queryByText('Activity')).not.toBeNull()
     expect(queryByText('Actions')).not.toBeNull()
+  })
+
+  it('opens the renewals tab with a preview, not with a billing button', async () => {
+    // A batch job that moves money and opens with "go" is one somebody runs by
+    // accident while exploring, and exploring is what a new operator does
+    // first. The only control on arrival changes nothing.
+    current.opts = { rpc: ADMIN_RPCS }
+    const { PlatformPage } = await import('@/pages/platform/PlatformPage')
+    const { queryByText, getByText } = await mount(PlatformPage)
+    getByText('Renewals').click()
+    await waitFor(() => expect(queryByText(/Raise the bills that are due/i)).not.toBeNull())
+    expect(queryByText(/Show me who is due/i)).not.toBeNull()
+    // No "Raise N invoice(s)" until a preview has been read.
+    expect(queryByText(/^Raise \d+ invoice/)).toBeNull()
+    // And it says which of the two things it does, because they are easy to
+    // conflate and the difference is the whole design.
+    expect(queryByText(/does not take money/i)).not.toBeNull()
   })
 
   it('keeps the migration filename out of sight while the schema is healthy', async () => {

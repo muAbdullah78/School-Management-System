@@ -445,6 +445,15 @@ declare
     -- asserts that directly, and verify.sql fails on a customer's database if a
     -- policy ever appears here.
     'payment_method_tokens',
+    -- 0113. The renewal run and what it did to each school. billing_runs has no
+    -- school_id because it describes a RUN across every school rather than one
+    -- customer, and billing_attempts carries one only because it is keyed on it.
+    -- Both are the vendor's own operational record: RLS on and forced with NO
+    -- policies, read through fn_platform_renewal_runs by a platform admin. A
+    -- school must never see why another school was or was not billed, so
+    -- current_school_id() would be the wrong gate and 4b would be demanding it.
+    'billing_runs',
+    'billing_attempts',
     -- 0080. What was handed to a school before its records were destroyed. No
     -- school_id in the tenant sense — the column is nullable and ON DELETE SET
     -- NULL precisely so the row OUTLIVES the school it describes, which is the

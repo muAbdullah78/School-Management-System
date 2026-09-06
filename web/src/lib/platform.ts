@@ -382,6 +382,73 @@ export async function planQuote(planCode: string, months: number): Promise<PlanQ
   return data as PlanQuote
 }
 
+export interface RenewalAttempt {
+  school_id?: string
+  school_name: string
+  due_on?: string | null
+  plan_code?: string
+  term_months?: number
+  amount: number | null
+  outcome: 'would_invoice' | 'invoiced' | 'already_invoiced' | 'needs_decision'
+         | 'trial_never_said_yes' | 'failed'
+  message: string | null
+}
+
+export interface RenewalRun {
+  run_id: string
+  dry_run: boolean
+  as_at: string
+  considered: number
+  invoiced: number
+  skipped: number
+  failed: number
+  note: string
+  attempts: RenewalAttempt[]
+}
+
+/**
+ * Raise the invoices for every school whose payment has fallen due.
+ *
+ * DRY RUN BY DEFAULT, and the parameter is required here on purpose: a caller
+ * that has to type `false` has decided to bill people. A money-moving batch job
+ * whose default is "go" is one somebody runs by accident while exploring, and
+ * exploring is what a new operator does first.
+ *
+ * Safe to run twice. 0078's duplicate-invoice trigger refuses a second invoice
+ * for the same period, and the runner records that as `already_invoiced` rather
+ * than treating it as a failure.
+ */
+export async function runRenewals(dryRun: boolean): Promise<RenewalRun> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_run_renewals', {
+    p_dry_run: dryRun, p_as_at: null,
+  })
+  if (error) throw new Error(error.message)
+  return data as RenewalRun
+}
+
+export interface RenewalRunRecord {
+  id: string
+  started_at: string
+  finished_at: string | null
+  dry_run: boolean
+  as_at: string
+  considered: number
+  invoiced: number
+  skipped: number
+  failed: number
+  triggered_by_email: string | null
+  attempts: Array<{ school_name: string; outcome: string; amount: number | null; message: string | null }>
+}
+
+/** What the last runs did, so "why was this school not billed" has an answer. */
+export async function renewalRuns(limit = 20): Promise<RenewalRunRecord[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_renewal_runs', { p_limit: limit })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as RenewalRunRecord[]
+}
+
 export async function schoolActions(schoolId: string, limit = 100): Promise<OperatorAction[]> {
   const sb = requireSupabase()
   // fn_platform_school_activity, NOT fn_platform_school_actions. The by_operator
@@ -505,6 +572,10 @@ export function describeAction(a: OperatorAction): string {
         ? `Grace period put back to the standard ${String(d.standard ?? '?')} days`
         : `Grace period set to ${String(d.days)} days instead of ${String(d.standard ?? '?')}`
           + (d.reason ? `: ${String(d.reason)}` : '')
+    case 'renewal_run':
+      return `Renewal run${d.dry_run === true ? ' (dry run, nothing changed)' : ''}: `
+        + `${String(d.considered ?? 0)} due, ${String(d.invoiced ?? 0)} invoiced`
+        + (Number(d.failed ?? 0) > 0 ? `, ${String(d.failed)} failed` : '')
     case 'school_exported':
       return 'Their whole record was exported'
         + (d.reason ? `: ${String(d.reason)}` : '')
