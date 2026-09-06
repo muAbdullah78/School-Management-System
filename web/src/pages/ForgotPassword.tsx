@@ -12,6 +12,7 @@ import {
   authLabel,
   AuthBusy,
 } from '@/components/AuthLayout'
+import { RECOVERY_DOOR } from '@/auth/doors'
 
 /**
  * "I have forgotten my password."
@@ -59,7 +60,7 @@ export function ForgotPassword() {
   }
 
   return (
-    <AuthLayout line="A way back in that does not need a phone call.">
+    <AuthLayout door={{ ...RECOVERY_DOOR, line: 'A way back in that does not need a phone call.' }}>
       {/* Both headings are the state the screen is in, because the two states
           are genuinely different pages: one asks for an address, the other has
           already sent to it and the user's next move is to leave for email. */}

@@ -279,6 +279,37 @@ The dashboard's **Updated** column is the other half of the answer. If a
 function's last deployment is older than the last commit that touched it, it is
 stale.
 
+> **0115 is the second worked example, and it happened for real.** The same
+> trigger 0065 introduced only fired on `INSERT`, and the auth service does not
+> always write `app_metadata` in the statement that inserts the row: some
+> versions insert the user and update the metadata onto it a moment afterwards.
+> An `AFTER INSERT` trigger sees the first statement only.
+>
+> So two schools signed up, both got a school, a trial and a working login, and
+> both owners were shown the operator's own gate instead of their new school.
+> 0115 makes the trigger fire on the update as well, and repairs the logins
+> already stranded. `signup-school` and `create-school-owner` were changed in
+> the same commit to write the profile themselves when it is missing, which is
+> what `create-teacher` already did.
+>
+> **0116 is the third, in the same week.** `create-teacher` is now version 4: it
+> gained the ability to change somebody's password later, which the office needs
+> because the addresses a school gives parents do not have to be real and a
+> reset link cannot reach an invented mailbox. A version 3 copy still creates
+> logins perfectly, so the app says exactly that rather than claiming nothing
+> works: the **Change password** button under Settings, Users is what refuses
+> until it is redeployed.
+>
+> **So: redeploy all three functions, then paste bundles 21, 22 and 23 in that
+> order, then `supabase/verify.sql`.** The functions alone fix new signups;
+> bundle 21 repairs the logins already stranded and stops the fault for every
+> login the product creates, and adds a console tab, "Logins with no school",
+> which appears only when somebody is stranded and attaches them in one click.
+> Bundle 22 adds the address check the office sees while typing and the key ring
+> under Settings, Users that keeps the passwords a school gave out. Bundle 23
+> lets the app tell a login somebody CLOSED from one nothing ever attached,
+> which used to send a teacher who left asking for the wrong thing.
+
 Your **project ref** is the `abcdefgh` part of your Project URL.
 
 ---

@@ -71,9 +71,16 @@ const OWNER: Profile = {
   staff_id: null, school_id: '22222222-2222-2222-2222-222222222222',
 }
 
-function authValue(profile: Profile) {
+function authValue(profile: Profile | null) {
   return {
-    session: { user: { id: profile.id, email: 'owner@example.test' } } as never,
+    // A SESSION WITH NO PROFILE IS A REAL STATE, not a nonsense one. It is what
+    // the platform operator looks like, and it is also what a school owner
+    // whose signup did not finish looks like, which is the whole reason
+    // LicenceGate has to ask which of the two it is talking to.
+    session: {
+      user: { id: profile?.id ?? '99999999-9999-9999-9999-999999999999',
+              email: profile ? 'owner@example.test' : 'stranded@example.test' },
+    } as never,
     profile, loading: false,
     signIn: async () => ({ error: null }),
     signOut: async () => {},
@@ -97,7 +104,10 @@ function onUncaught(e: ErrorEvent) {
   e.preventDefault()
 }
 
-async function mount(Comp: ComponentType, route = '/', props: Record<string, unknown> = {}) {
+async function mount(
+  Comp: ComponentType, route = '/', props: Record<string, unknown> = {},
+  profile: Profile | null = OWNER,
+) {
   uncaught.length = 0
   window.addEventListener('error', onUncaught)
   const qc = new QueryClient({
@@ -105,7 +115,7 @@ async function mount(Comp: ComponentType, route = '/', props: Record<string, unk
   })
   const utils = render(
     createElement(MemoryRouter, { initialEntries: [route] },
-      createElement(AuthContext.Provider, { value: authValue(OWNER) },
+      createElement(AuthContext.Provider, { value: authValue(profile) },
         createElement(QueryClientProvider, { client: qc },
           createElement(Comp as ComponentType<Record<string, unknown>>, props)))),
   )
@@ -148,6 +158,11 @@ const SCREENS: [string, () => Promise<Record<string, unknown>>, string][] = [
   ['Settings/Users', () => import('@/pages/settings/Users'), 'Users'],
   ['Settings/Backup', () => import('@/pages/settings/Backup'), 'Backup'],
   ['Settings/StaffCheckin', () => import('@/pages/settings/StaffCheckin'), 'StaffCheckin'],
+  // 0116. It renders stored credentials, so "does it open" and "does it say so
+  // when the read fails" are worth more here than on most screens: a key ring
+  // that silently renders empty reads as "you have saved no passwords", which
+  // is the opposite of the truth and sends the office off to set new ones.
+  ['Settings/KeyRing', () => import('@/pages/settings/KeyRing'), 'KeyRing'],
   ['Feedback', () => import('@/pages/FeedbackPage'), 'FeedbackPage'],
 ]
 
@@ -327,6 +342,10 @@ describe('the operator console', () => {
     fn_platform_payment_claims: [],
     fn_platform_settings: { missing: [] },
     fn_platform_orphan_report: [],
+    // 0115. Empty in every case but the one that asserts the tab, because an
+    // unstubbed RPC comes back as an error and the tab would then be absent for
+    // the wrong reason.
+    fn_platform_unattached_logins: [],
     // 0113. The Renewals tab now opens with the run strip, which reads the run
     // history the moment "Past runs" is pressed and nothing before that. Stubbed
     // so a missing RPC cannot make the tab look broken in this suite while
@@ -493,6 +512,301 @@ describe('the operator console', () => {
     expect(details!.hasAttribute('open')).toBe(false)
     // And nothing in the page's own summary line mentions it.
     expect(container.querySelector('summary')?.textContent ?? '').not.toMatch(/0107_x/)
+  })
+
+  it('shows a tab when somebody can sign in and has no school', async () => {
+    // The state this tab exists for is invisible everywhere else in the
+    // console. A school with a login and no profile appears in the list above
+    // as an ordinary new customer, on trial, fourteen days left, nought
+    // pupils, and the person it belongs to is being shown a wall.
+    current.opts = {
+      rpc: {
+        ...ADMIN_RPCS,
+        fn_platform_unattached_logins: [{
+          user_id: 'usr-9', email: 'chaudharytraders735@example.test',
+          school_id: 'sch-1', school_name: 'Al Qalam School',
+          asked_role: null, created_at: '2026-09-05T08:00:00Z',
+        }],
+      },
+    }
+    const { PlatformPage } = await import('@/pages/platform/PlatformPage')
+    const { queryByText, getByText } = await mount(PlatformPage)
+    const tab = queryByText('Logins with no school')
+    expect(tab).not.toBeNull()
+    tab!.click()
+    await waitFor(() =>
+      expect(queryByText('chaudharytraders735@example.test')).not.toBeNull())
+    expect(queryByText('Attach to their school')).not.toBeNull()
+    // Said, not implied. The operator has to know which school it belongs to
+    // before they press anything.
+    expect(getByText('Al Qalam School')).not.toBeNull()
+  })
+
+  it('hides that tab when nobody is stranded, which is always', async () => {
+    // A permanently empty tab teaches people to stop reading the nav, and the
+    // nav is where the badges live.
+    current.opts = { rpc: ADMIN_RPCS }
+    const { PlatformPage } = await import('@/pages/platform/PlatformPage')
+    const { queryByText } = await mount(PlatformPage)
+    expect(queryByText('Logins with no school')).toBeNull()
+  })
+})
+
+/**
+ * THE THREE DOORS, MOUNTED.
+ *
+ * One page served an operator console, a school back office and a parent portal
+ * while being written for a fourth person, a school buyer, who is not signing in
+ * at all. The full critique is in web/src/auth/doors.ts; these hold the facts
+ * that are checkable in a browser rather than by eye.
+ */
+describe('the sign-in doors', () => {
+  afterEach(cleanup)
+
+  async function door(mod: 'office' | 'parents' | 'operator') {
+    current.opts = {}
+    const { Login } = await import('@/pages/Login')
+    const doors = await import('@/auth/doors')
+    const d = mod === 'office' ? doors.OFFICE_DOOR
+      : mod === 'parents' ? doors.PARENT_DOOR : doors.OPERATOR_DOOR
+    return mount(() => createElement(Login, { door: d }), '/', {}, null)
+  }
+
+  it('shows a parent no price and no way to buy a school by accident', async () => {
+    const { queryByText, queryAllByText, container } = await door('parents')
+    expect(queryByText('Parent sign in')).not.toBeNull()
+    // THE TWO THINGS THE OLD PAGE PUT IN FRONT OF THEM.
+    expect(container.textContent ?? '').not.toMatch(/Rs 2,000/)
+    expect(queryByText(/Start a free 14-day trial/i)).toBeNull()
+    // And the sentence that replaces the trial link, which answers a question
+    // parents genuinely ask the office.
+    expect(queryByText(/nothing here for you to buy/i)).not.toBeNull()
+    // The most useful sentence on the page for the largest group of users, and
+    // queryAllByText because it is said twice on purpose: once on the card for
+    // somebody who does not know their details, and once in the strip at the
+    // bottom for somebody who cannot get in. Two different problems with the
+    // same answer, and the strip is the half a phone still shows when the
+    // support column is gone.
+    expect(queryAllByText(/ask the school office/i).length).toBeGreaterThan(0)
+  })
+
+  it('keeps the office door working for everybody and points a parent at theirs', async () => {
+    // /login has to keep serving all three audiences, because every bookmark
+    // and every ProtectedRoute redirect lands on it. So it way-finds with a
+    // sentence and never with a refusal.
+    const { queryByText } = await door('office')
+    // The EYEBROW, not the heading: "Sign in" is both the h1 and the submit
+    // button on this door, which is right, and the eyebrow is what names the
+    // door. Three applications sit behind this form and nothing on the old page
+    // said which one the visitor was standing in front of.
+    expect(queryByText('School office')).not.toBeNull()
+    expect(queryByText(/Start a free 14-day trial/i)).not.toBeNull()
+    expect(queryByText(/The parent portal is here/i)).not.toBeNull()
+    expect(queryByText(/you can sign in above just the same/i)).not.toBeNull()
+  })
+
+  it('gives the operator the plainest page in the product', async () => {
+    const { queryByText, container } = await door('operator')
+    expect(queryByText('Operator sign in')).not.toBeNull()
+    expect(container.textContent ?? '').not.toMatch(/Rs 2,000/)
+    expect(queryByText(/Start a free 14-day trial/i)).toBeNull()
+    // No support column at all, at any width.
+    expect(container.querySelector('aside')).toBeNull()
+    // The way out for a school owner who found the address, because a person at
+    // the wrong door should be redirected by a sentence and never by a refusal.
+    expect(queryByText(/Sign in to your school/i)).not.toBeNull()
+  })
+})
+
+/**
+ * THE PASSWORDS A SCHOOL GAVE OUT.
+ *
+ * Storing a password is normally indefensible, and the reason it is defensible
+ * here is written at the top of migration 0116. What makes it safe rather than
+ * merely justified is a set of fences, and two of them are this screen's:
+ * nothing is shown until somebody asks for one specific person, and the page
+ * says out loud what it is before anybody reads anything off it.
+ *
+ * The database half of the fences (no school_id, RLS forced, no policies, owner
+ * and principal only, never an owner's own, never another school, never the
+ * operator even inside a support visit) is asserted in
+ * supabase/tests/the_school_keeps_the_keys.sql. These are the two a test in a
+ * browser can hold.
+ */
+describe('the key ring', () => {
+  afterEach(cleanup)
+
+  const RING = [
+    {
+      profile_id: 'p-1', full_name: 'Miss Ayesha', email: 'ayesha@school.pk',
+      role: 'class_teacher', active: true, has_password: true,
+      set_at: '2026-09-01T06:00:00Z', set_by_name: 'Test Owner',
+      changed_since: false, reads: 0, read_by_name: null, read_at: null,
+    },
+    {
+      profile_id: 'p-2', full_name: 'Ali Raza', email: 'aliraza786@gmail.com',
+      role: 'parent', active: true, has_password: true,
+      set_at: '2026-08-20T06:00:00Z', set_by_name: 'Test Owner',
+      changed_since: true, reads: 3, read_by_name: 'Test Owner',
+      read_at: '2026-09-04T06:00:00Z',
+    },
+    {
+      profile_id: 'p-3', full_name: 'Bilal Khan', email: 'bilal@school.pk',
+      role: 'admin_clerk', active: true, has_password: false,
+      set_at: null, set_by_name: null,
+      changed_since: false, reads: 0, read_by_name: null, read_at: null,
+    },
+  ]
+
+  it('shows no password until one is asked for by name', async () => {
+    current.opts = {
+      rpc: {
+        fn_school_key_ring: RING,
+        fn_reveal_login_password: {
+          email: 'ayesha@school.pk', full_name: 'Miss Ayesha',
+          password: 'ayesha-2026', changed_since: false,
+        },
+      },
+    }
+    const { KeyRing } = await import('@/pages/settings/KeyRing')
+    const { queryByText, queryAllByText, getAllByText } = await mount(KeyRing)
+
+    // Everybody is listed, so "who could I set a password for" is answerable.
+    expect(queryByText('Miss Ayesha')).not.toBeNull()
+    expect(queryByText('Ali Raza')).not.toBeNull()
+    expect(queryByText('Bilal Khan')).not.toBeNull()
+    // AND NOT ONE PASSWORD IS ON THE PAGE. The listing deliberately does not
+    // carry them: revealing one is a separate, counted act against one person.
+    expect(queryByText('ayesha-2026')).toBeNull()
+
+    // The plain truth, said before anything is read off the page rather than in
+    // a footnote underneath it.
+    expect(queryByText(/can sign in as any of these people/i)).not.toBeNull()
+    expect(queryByText(/never kept here/i)).not.toBeNull()
+
+    // One press, one password.
+    getAllByText('Show')[0].click()
+    await waitFor(() => expect(queryByText('ayesha-2026')).not.toBeNull())
+    // Only the one asked for.
+    expect(queryAllByText(/gmail/).length).toBeGreaterThan(0)
+  })
+
+  it('says when somebody has changed their own password since', async () => {
+    // The failure this prevents: the office reads out a password that stopped
+    // working the day the parent changed it, it fails, and the feature is never
+    // trusted again. Nothing server-side sees a self-service password change,
+    // so the only way to know is the fingerprint 0116 records.
+    current.opts = { rpc: { fn_school_key_ring: RING } }
+    const { KeyRing } = await import('@/pages/settings/KeyRing')
+    const { queryByText } = await mount(KeyRing)
+    expect(queryByText(/have changed their own password|has changed their own password/i))
+      .not.toBeNull()
+    expect(queryByText(/Changed by them since/i)).not.toBeNull()
+    // And the count is on the row, so an owner can see what their principal has
+    // been reading.
+    expect(queryByText(/Shown 3 times/i)).not.toBeNull()
+  })
+
+  it('tells a school that is behind to apply the bundle, not that it is broken', async () => {
+    // A missing migration and a broken screen need completely different things
+    // done about them, and PostgREST reports the first as "function does not
+    // exist", which reads exactly like the second.
+    current.opts = { failEverything: 'Could not find the function public.fn_school_key_ring in the schema cache' }
+    const { KeyRing } = await import('@/pages/settings/KeyRing')
+    const { queryByText } = await mount(KeyRing)
+    expect(queryByText(/bundle 22/i)).not.toBeNull()
+  })
+})
+
+/**
+ * WHICH SCREEN A SIGNED-IN USER WITH NO PROFILE GETS.
+ *
+ * This was one screen and it belonged to somebody else. "No profile" was read
+ * as "platform operator", because that is what an operator looks like from the
+ * browser, and the inference only runs one way. Two real schools signed up and
+ * both owners were sent to the operator's console, which refused them with
+ * "This area is for the system operator." on the click meant to open their new
+ * school. Signing in again gave the same wall, and nothing on it said what had
+ * gone wrong or who could fix it.
+ *
+ * Three ways to be here, three different right answers, all three asserted.
+ */
+describe('a signed-in user with no school', () => {
+  afterEach(cleanup)
+
+  const CHILD = () => createElement('div', null, 'THE SCHOOL APP')
+
+  async function gate(rpc: Record<string, unknown>) {
+    current.opts = { rpc }
+    const { LicenceGate } = await import('@/components/LicenceGate')
+    return mount(
+      () => createElement(LicenceGate, null, createElement(CHILD)),
+      '/', {}, null,
+    )
+  }
+
+  it('tells a school owner their login is not attached, and how to fix it', async () => {
+    const { queryByText, queryAllByText } = await gate({
+      is_platform_admin: false, fn_operator_current: null, fn_my_licence: null,
+      fn_my_login_state: { state: 'unattached' },
+    })
+    expect(queryByText(/not attached to a school/i)).not.toBeNull()
+    // AND NOT THE WRONG SCREEN. This is the assertion the bug would fail.
+    expect(queryByText(/for the system operator/i)).toBeNull()
+    // The two things a person in this position can actually do. queryAllByText
+    // because the button and the sentence telling them to press it both say
+    // "Check again", which is deliberate: the instruction names the control.
+    expect(queryAllByText(/Check again/i).length).toBeGreaterThan(0)
+    expect(queryByText(/Get in touch/i)).not.toBeNull()
+    // And the address, because whoever fixes this needs it and a person
+    // reading their own off the screen gets it right.
+    expect(queryByText(/stranded@example.test/)).not.toBeNull()
+  })
+
+  it('says so when the login was closed rather than never attached', async () => {
+    // TWO WAYS TO HAVE NO SCHOOL, and the old screen said the same thing about
+    // both. A teacher who left or a parent whose access was removed was told
+    // their login was "not attached to a school yet" and to ask the office to
+    // attach it, which sent the office hunting for a problem that was not
+    // there while the remedy, one Activate button, sat beside that person's
+    // name on the Users screen. A closed login reads no profile at all, by
+    // design, so only fn_my_login_state (0117) can tell them apart.
+    const { queryByText } = await gate({
+      is_platform_admin: false, fn_operator_current: null, fn_my_licence: null,
+      fn_my_login_state: { state: 'closed', school: 'Al Qalam School', role: 'class_teacher' },
+    })
+    expect(queryByText(/switched off/i)).not.toBeNull()
+    expect(queryByText(/Al Qalam School/)).not.toBeNull()
+    expect(queryByText(/press Activate/i)).not.toBeNull()
+    // AND NOT THE OTHER SCREEN'S ADVICE. "Do not sign up again" and "ask the
+    // office to attach it" are both wrong here.
+    expect(queryByText(/not attached to a school yet/i)).toBeNull()
+    expect(queryByText(/would make a second school/i)).toBeNull()
+  })
+
+  it('does not show that screen to the operator', async () => {
+    const { queryByText } = await gate({
+      is_platform_admin: true, fn_operator_current: null, fn_my_licence: null,
+      fn_my_login_state: { state: 'operator' },
+    })
+    expect(queryByText(/not attached to a school/i)).toBeNull()
+  })
+
+  it('shows the school app to an operator inside a support visit', async () => {
+    // "View as school" was dead for a different reason once already: the gate
+    // saw no profile and bounced the operator back to the console while the
+    // school's own audit trail recorded a visit that never happened. The visit
+    // is therefore checked BEFORE the operator question, and this pins it.
+    const { queryByText } = await gate({
+      is_platform_admin: true, fn_my_licence: null,
+      fn_operator_current: {
+        id: 'sess-1', school_id: 'sch-1', school_name: 'Al Qalam School',
+        reason: 'Principal on the phone', started_at: '2026-09-06T05:00:00Z',
+        expires_at: '2026-09-06T07:00:00Z',
+      },
+    })
+    expect(queryByText('THE SCHOOL APP')).not.toBeNull()
+    expect(queryByText(/not attached to a school/i)).toBeNull()
   })
 })
 

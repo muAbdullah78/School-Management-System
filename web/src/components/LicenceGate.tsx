@@ -3,8 +3,10 @@ import { Navigate } from 'react-router-dom'
 import { useAuth } from '@/auth/AuthProvider'
 import { useLicence } from '@/hooks/useLicence'
 import { useSupportVisit } from '@/hooks/useSupportVisit'
+import { useAmOperator } from '@/hooks/useAmOperator'
 import { SubscriptionLocked } from '@/pages/SubscriptionLocked'
 import { SchoolClosed } from '@/pages/SchoolClosed'
+import { LoginNotAttached } from '@/pages/LoginNotAttached'
 
 /**
  * Decides whether a signed-in user sees the school app at all.
@@ -23,28 +25,50 @@ export function LicenceGate({ children }: { children: ReactNode }) {
   const { profile, loading: authLoading } = useAuth()
   const { data, isLoading, isError } = useLicence()
   const { visit, loading: visitLoading } = useSupportVisit()
+  const { amOperator, loading: operatorLoading } = useAmOperator()
 
-  if (authLoading || isLoading || visitLoading) {
+  if (authLoading || isLoading || visitLoading || operatorLoading) {
     return <div className="p-8 text-slate-500">Loading…</div>
   }
 
-  // A signed-in user with no profile belongs to no school. That is what a
-  // platform admin looks like, so send them to their own console rather than
-  // showing a school app with nothing in it.
+  // A signed-in user with no profile belongs to no school.
   //
-  // UNLESS THEY HAVE OPENED A SCHOOL. "View as school" exists so the vendor can
-  // see what a principal is describing on the phone, and it was completely dead:
-  // fn_operator_enter created the session, wrote it to the school's own audit
-  // trail, and then this line sent the operator straight back to the console.
-  // The visit was logged and never happened. current_school_id() has honoured an
-  // open session since 0074, so the database was ready and only this was not.
+  // THIS USED TO SEND THEM TO /platform, FULL STOP, and the inference ran the
+  // wrong way round. A platform admin has no profile, so "no profile" was read
+  // as "operator", and everybody in that position was sent to the operator's
+  // console, which then correctly refused them:
+  //
+  //     Not available
+  //     This area is for the system operator.
+  //     [Sign out]
+  //
+  // Two real schools signed up and both owners got that on the click meant to
+  // open their new school, because the signup created the school and the login
+  // and then failed to attach the profile. Signing in again gave the same wall.
+  // It named the wrong problem, offered nothing to do about it, and gave no
+  // clue that anything had gone wrong at signup at all.
+  //
+  // So the question is ASKED now, in useAmOperator, instead of inferred from an
+  // absence, and the three ways to be here get the three different answers they
+  // need.
   if (!profile) {
-    if (!visit) return <Navigate to="/platform" replace />
+    // THE VISIT IS CHECKED FIRST, because an operator inside a support visit
+    // must land in the school and not be sent back to the console.
+    //
+    // "View as school" exists so the vendor can see what a principal is
+    // describing on the phone, and it was completely dead: fn_operator_enter
+    // created the session, wrote it to the school's own audit trail, and then
+    // this line sent the operator straight back to the console. The visit was
+    // logged and never happened. current_school_id() has honoured an open
+    // session since 0074, so the database was ready and only this was not.
+    //
     // Deliberately NOT licence-gated. The schools most needing a support visit
     // are the ones whose licence has lapsed, and a read-only visit changes
     // nothing, so locking the operator out of a locked school would disable the
     // tool exactly where it earns its keep.
-    return <>{children}</>
+    if (visit) return <>{children}</>
+    if (amOperator) return <Navigate to="/platform" replace />
+    return <LoginNotAttached />
   }
 
   if (isError || !data) return <>{children}</>

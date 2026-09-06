@@ -470,7 +470,25 @@ declare
     -- write policy, so world-readable cannot become world-writable. A visitor who
     -- could insert an app_releases row could point the download button at their
     -- own installer.
-    'app_releases', 'platform_announcements'
+    'app_releases', 'platform_announcements',
+    -- 0116. The passwords a school gave its own parents and staff. On this list
+    -- for the opposite reason to everything above it: the ABSENCE of a
+    -- school_id is deliberate and load-bearing, not an omission. Every export
+    -- and every purge in this schema enumerates tenant tables BY that column
+    -- (fn__school_data_tables, fn__school_id_tables), so a school_id here would
+    -- have put every school's assigned passwords into the offboarding export
+    -- the VENDOR can take. Scoped through profiles.school_id instead, inside
+    -- four SECURITY DEFINER functions, with RLS on and forced, no policies and
+    -- nothing granted. It contributes no rows to 4b-ii and must never
+    -- contribute any. supabase/tests/the_school_keeps_the_keys.sql asserts the
+    -- seal and the absence of the column directly, and verify.sql fails on a
+    -- customer's database if either changes.
+    --
+    -- Its rows die with the school anyway: profile_id references profiles ON
+    -- DELETE CASCADE, and profiles references schools the same way, so purging
+    -- a school takes the key ring with it without this table appearing in any
+    -- sweep.
+    'login_secrets'
   ];
 begin
   -- 4a. Every tenant table must carry school_id.

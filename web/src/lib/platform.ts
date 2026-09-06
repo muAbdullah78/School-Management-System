@@ -619,6 +619,12 @@ export function describeAction(a: OperatorAction): string {
         + (d.rows ? ` (${String(d.rows)} rows)` : '')
     case 'orphan_data_purged':
       return `Rows belonging to no school deleted${d.rows ? ` (${String(d.rows)})` : ''}`
+    // 0115. Rare by design, and worth reading when it does appear: it means a
+    // login inside this school existed for a while with nothing attaching it,
+    // so somebody could sign in and see nothing at all.
+    case 'login_attached':
+      return 'A login with no school was attached to this school'
+        + (d.role ? ` as ${String(d.role).replace(/_/g, ' ')}` : '')
     case 'announcement_posted':
       return `Announcement posted${d.title ? `: ${String(d.title)}` : ''}`
     case 'announcement_ended':
@@ -1667,6 +1673,65 @@ export type OrphanRow = {
   row_count: number
   /** 'delete'. The school's own records. 'unlink': our ledger, which is kept. */
   treatment: 'delete' | 'unlink'
+}
+
+/**
+ * A login that can sign in and belongs to no school.
+ *
+ * WHY THIS LIST EXISTS
+ *
+ * It is meant to be empty for ever, and it was not. Two schools signed up, and
+ * both times the school row, the trial and the login were created and the
+ * profile that attaches the login to the school was not, because the auth
+ * service writes app metadata in a second statement and the trigger that reads
+ * it only fired on the first. The owners could sign in, so nothing looked
+ * broken from outside, and they were shown the operator's own "Not available"
+ * gate because a signed-in user with no school used to be assumed to be us.
+ *
+ * Nothing in this console could show that. A school with a login and no profile
+ * looks exactly like a school that signed up this morning and has not opened
+ * the app yet, and the difference between those two is a customer lost in
+ * silence.
+ *
+ * 0115 fixes the cause in three places at once (the trigger now fires on the
+ * update, and both provisioning functions write the profile themselves if it is
+ * absent). This list is the check that it stayed fixed.
+ */
+export interface UnattachedLogin {
+  user_id: string
+  email: string | null
+  school_id: string
+  school_name: string
+  /** The role app metadata asked for, if any. Null means the school's owner. */
+  asked_role: string | null
+  created_at: string
+}
+
+export async function unattachedLogins(): Promise<UnattachedLogin[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_unattached_logins')
+  if (error) throw new Error(error.message)
+  return (data ?? []) as UnattachedLogin[]
+}
+
+/**
+ * Attach one of them, using the same rule the signup trigger uses: the first
+ * account of a school is its owner, a recognised role from app metadata is
+ * honoured, anything else lands closed for an owner to open.
+ *
+ * Written to the SCHOOL's own audit trail as well as ours, because a login
+ * inside a customer's data created by the vendor is exactly the kind of thing
+ * the school is entitled to see a record of.
+ */
+export async function attachLogin(userId: string): Promise<{
+  outcome: string
+  school_id: string | null
+  role: string | null
+}> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_attach_login', { p_user: userId })
+  if (error) throw new Error(error.message)
+  return data as Awaited<ReturnType<typeof attachLogin>>
 }
 
 export async function orphanReport(): Promise<OrphanRow[]> {

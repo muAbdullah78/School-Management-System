@@ -2482,11 +2482,15 @@ const CLIENT_KNOWN_ROLES = [
 
 /** The version of create-teacher this app needs. Raised whenever the function's
  *  contract changes; checkLoginFunction() below compares against what is live. */
-export const REQUIRED_CREATE_TEACHER_VERSION = 3
+export const REQUIRED_CREATE_TEACHER_VERSION = 4
 
 export interface CreateTeacherInput { email: string; password: string; full_name: string; role?: string }
 export interface CreatedLogin {
   id: string; email: string; role: string
+  /** False when the password could not be put on the school's key ring, which
+   *  on a database without bundle 22 is every time. The login is fine; the
+   *  office just has to write the password down the old way. */
+  remembered?: boolean
   /** True when the Edge Function had to write the profile itself because the
    *  signup trigger did not. The login is fine; the trigger is not, and PUBLIC
    *  signup goes through the same trigger with no such fallback. Surfaced to
@@ -2505,7 +2509,34 @@ export async function createTeacherLogin(input: CreateTeacherInput): Promise<Cre
   const { data, error } = await sb.functions.invoke('create-teacher', {
     body: { email, password: input.password, full_name: fullName, role },
   })
-  if (!error) return data as CreatedLogin
+  if (!error) {
+    const made = data as CreatedLogin
+    // ONTO THE KEY RING IMMEDIATELY, and this is the whole point of 0116.
+    //
+    // The addresses a school hands to parents are frequently invented, so
+    // "Forgot password" posts a reset link into a mailbox nobody owns. Until
+    // this line the office was told, on the student profile, that the password
+    // "is not saved anywhere you can read it back" -- which for a made-up
+    // address describes a permanent lockout with no way back.
+    //
+    // DONE HERE RATHER THAN IN THE EDGE FUNCTION, so there is one implementation
+    // of the remembering whether the password was just created or just changed,
+    // and so a school running a stale copy of create-teacher still gets a key
+    // ring for the logins it creates.
+    //
+    // A FAILURE HERE IS NOT A FAILED LOGIN. The account exists and works. If the
+    // school has not applied bundle 22 yet, the function does not exist and this
+    // throws; reporting that as "the login could not be created" would send the
+    // office round the retry loop that ends in "already registered". So it is
+    // swallowed and reported as a fact the caller can render.
+    let remembered = true
+    try {
+      await rememberLoginPassword(made.id, input.password)
+    } catch {
+      remembered = false
+    }
+    return { ...made, remembered }
+  }
 
   // The function is deployed but rejected the request → surface its real reason.
   if ((error as any).name === 'FunctionsHttpError') {
@@ -2554,6 +2585,184 @@ export async function createTeacherLogin(input: CreateTeacherInput): Promise<Cre
     + 'applied when they sign up. (Deploy the create-teacher function once if you would '
     + 'rather create logins directly.)',
   )
+}
+
+// =============================================================================
+// The school's key ring, and the question to ask before you fill in a form
+//
+// Both halves of 0116. See that migration's header for the argument; the short
+// version is that a Pakistani private school invents the addresses it gives
+// parents, so two things follow. Names repeat, so the address a clerk picks may
+// already be taken somewhere on the platform, and they should be able to find
+// that out BEFORE typing a password rather than after. And a made-up address
+// cannot receive a reset link, so a forgotten password used to mean a family
+// locked out for ever.
+// =============================================================================
+
+/**
+ * Why the signed-in person cannot see a school.
+ *
+ * There are two ways to have no school and they need opposite things said
+ * about them: nothing ever attached this login, or somebody closed it. The
+ * second reads no profile at all, because current_school_id() requires
+ * `active` and profiles_select requires the school to match it, so the browser
+ * cannot tell "no row" from "a row I may not see". See migration 0117.
+ */
+export interface LoginState {
+  state: 'signed_out' | 'operator' | 'unattached' | 'closed' | 'ok'
+  school?: string | null
+  role?: string | null
+}
+
+export async function myLoginState(): Promise<LoginState> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_my_login_state')
+  if (error) throw new Error(error.message)
+  return (data ?? { state: 'unattached' }) as LoginState
+}
+
+export interface EmailVerdict {
+  available: boolean
+  why: 'available' | 'not_an_address' | 'in_use_here' | 'invited_here'
+     | 'in_use_elsewhere' | 'invited_elsewhere' | string
+  /** A sentence to put in front of the office, composed by the database so the
+   *  same words appear wherever the question is asked. */
+  message: string
+  /** Only ever populated for a clash inside the caller's OWN school, where
+   *  naming the person is help rather than disclosure. */
+  here?: { full_name: string | null; role: string; active: boolean } | null
+}
+
+/**
+ * Is this address free to use as a login?
+ *
+ * Answers for the whole platform, because auth.users enforces uniqueness across
+ * every school, and in far more detail about the caller's own school: "that
+ * address already signs in here as Miss Ayesha, class teacher" ends the question
+ * where "that address is taken" starts an argument. About any OTHER school it
+ * says only yes or no, never which school, who, or what role.
+ */
+export async function checkLoginEmail(email: string): Promise<EmailVerdict> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_login_email_available', {
+    p_email: email.trim(),
+  })
+  if (error) throw new Error(error.message)
+  return data as EmailVerdict
+}
+
+export interface KeyRingRow {
+  profile_id: string
+  full_name: string | null
+  email: string | null
+  role: string
+  active: boolean
+  has_password: boolean
+  set_at: string | null
+  set_by_name: string | null
+  /** True when that person has changed their own password since the office set
+   *  it. The saved one will not work and saying so is the difference between a
+   *  feature and a trap. */
+  changed_since: boolean
+  reads: number
+  read_by_name: string | null
+  read_at: string | null
+}
+
+/** Every login in this school except the owner's, and whether its password is
+ *  saved. Never contains a password: revealing one is a separate, counted act. */
+export async function schoolKeyRing(): Promise<KeyRingRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_school_key_ring')
+  if (error) throw new Error(error.message)
+  return (data ?? []) as KeyRingRow[]
+}
+
+/** Read one saved password. Counted, with who looked and when, and the count is
+ *  shown on the same screen. */
+export async function revealLoginPassword(profileId: string): Promise<{
+  email: string; full_name: string | null; password: string; changed_since: boolean
+}> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_reveal_login_password', {
+    p_profile_id: profileId,
+  })
+  if (error) throw new Error(error.message)
+  return data as Awaited<ReturnType<typeof revealLoginPassword>>
+}
+
+/** Put a password on the ring. The caller typed it, so this grants them nothing
+ *  they did not have; what it refuses is another school's login, and an owner. */
+export async function rememberLoginPassword(
+  profileId: string, password: string,
+): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_remember_login_password', {
+    p_profile_id: profileId, p_password: password,
+  })
+  if (error) throw new Error(error.message)
+}
+
+/** Take one off the ring. A feature that can only accumulate credentials is one
+ *  nobody can change their mind about. */
+export async function forgetLoginPassword(profileId: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_forget_login_password', {
+    p_profile_id: profileId,
+  })
+  if (error) throw new Error(error.message)
+}
+
+/**
+ * Set a new password for somebody in this school, and remember it.
+ *
+ * TWO CALLS, AND THE ORDER IS FIXED. Only the service key can change an auth
+ * password, so the Edge Function does that; only the database can keep it, so
+ * the RPC does that, and it must run second because it fingerprints what the
+ * auth service is now holding. Fingerprinting the old hash would mark the row
+ * stale the moment it was written.
+ *
+ * If the second call fails the password IS changed and is simply not on the
+ * ring, so the message says exactly that rather than implying nothing happened.
+ * A school that reads "it did not work" and tries again would be right to, and
+ * would be setting a third password.
+ */
+export async function setLoginPassword(
+  profileId: string, password: string,
+): Promise<{ remembered: boolean }> {
+  const sb = requireSupabase()
+  const { error } = await sb.functions.invoke('create-teacher', {
+    body: { action: 'set_password', profile_id: profileId, password },
+  })
+  if (error) {
+    let msg = error.message
+    let body: any = null
+    try { body = await (error as any).context?.json?.() } catch { /* ignore */ }
+    if (body?.error) msg = body.error
+    // An older copy of the function has never heard of the action and falls
+    // through to its creation checks, which refuse with something about an
+    // email address. That reads as a bug in this screen rather than a stale
+    // deployment, so it is named.
+    if (/valid email|Unknown action/i.test(msg)) {
+      throw new Error(
+        'The create-teacher function on your Supabase project is too old to '
+        + 'change a password. Redeploy it: Supabase dashboard, Edge Functions, '
+        + 'create-teacher, replace the code with '
+        + 'supabase/functions/create-teacher/index.ts from the project, Deploy.',
+      )
+    }
+    throw new Error(msg)
+  }
+  try {
+    await rememberLoginPassword(profileId, password)
+  } catch (e) {
+    throw new Error(
+      `The password has been changed and it works, but it could not be saved to `
+      + `the key ring: ${(e as Error).message} Do not change it again; write it `
+      + `down and press "Save this password" on their row.`,
+    )
+  }
+  return { remembered: true }
 }
 
 export interface PendingInvite {
@@ -2632,7 +2841,7 @@ export async function revokeInvite(id: string): Promise<void> {
  */
 export async function createParentLogin(input: {
   email: string; password: string; full_name: string; family_id: string
-}): Promise<{ id: string; email: string }> {
+}): Promise<{ id: string; email: string; remembered: boolean }> {
   const created = await createTeacherLogin({
     email: input.email, password: input.password, full_name: input.full_name, role: 'parent',
   })
@@ -2646,7 +2855,10 @@ export async function createParentLogin(input: {
       'to no family: press Attach to this family beside it.',
     )
   }
-  return { id: created.id, email: created.email }
+  // remembered travels back so the panel can say whether the password is on the
+  // key ring or whether the clerk still has to write it down. Those are opposite
+  // instructions and getting them the wrong way round loses a family's access.
+  return { id: created.id, email: created.email, remembered: created.remembered !== false }
 }
 
 /** Attach an existing parent login to a family. */

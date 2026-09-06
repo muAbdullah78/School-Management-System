@@ -13,6 +13,7 @@ import {
   authLabel,
   AuthBusy,
 } from '@/components/AuthLayout'
+import { RECOVERY_DOOR } from '@/auth/doors'
 
 /**
  * Where the reset link lands.
@@ -103,7 +104,7 @@ export function ResetPassword() {
   }
 
   return (
-    <AuthLayout line="One new password, and you are back where you left off.">
+    <AuthLayout door={{ ...RECOVERY_DOOR, line: 'One new password, and you are back where you left off.' }}>
       {/* Four states, four headings. A fixed heading over the "this link has
           expired" branch reads as though the form is still coming. */}
       <h1 className="text-2xl font-semibold tracking-[-0.015em] text-slate-900">

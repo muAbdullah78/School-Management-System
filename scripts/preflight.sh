@@ -176,7 +176,8 @@ if [ "$QUICK" = 0 ]; then
 create schema if not exists auth;
 create table if not exists auth.users (id uuid primary key, email text,
   raw_user_meta_data jsonb default '{}'::jsonb, raw_app_meta_data jsonb default '{}'::jsonb,
-  last_sign_in_at timestamptz, created_at timestamptz default now());
+  last_sign_in_at timestamptz, encrypted_password text,
+  created_at timestamptz default now());
 create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
 do $$ begin
   if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
@@ -231,7 +232,8 @@ SQL
 create schema if not exists auth;
 create table if not exists auth.users (id uuid primary key, email text,
   raw_user_meta_data jsonb default '{}'::jsonb, raw_app_meta_data jsonb default '{}'::jsonb,
-  last_sign_in_at timestamptz, created_at timestamptz default now());
+  last_sign_in_at timestamptz, encrypted_password text,
+  created_at timestamptz default now());
 create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
 do $$ begin
   if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
@@ -310,7 +312,8 @@ SQL
 create schema if not exists auth;
 create table if not exists auth.users (id uuid primary key, email text,
   raw_user_meta_data jsonb default '{}'::jsonb, raw_app_meta_data jsonb default '{}'::jsonb,
-  last_sign_in_at timestamptz, created_at timestamptz default now());
+  last_sign_in_at timestamptz, encrypted_password text,
+  created_at timestamptz default now());
 create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
 do $$ begin
   if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
@@ -341,6 +344,97 @@ SQL
   if [ "$ok" = 1 ]; then
     verify_clean preflight_upgrade "upgrade: verify.sql renders, no FAIL row"
   fi
+
+  # ------------------------------------------------------------------------
+  # detect.sql MUST RUN ON THE DATABASE IT EXISTS TO DIAGNOSE.
+  #
+  # THE GAP THIS CLOSES, AND IT COST A RED CI RUN. Everything above installs
+  # every migration first, so detect.sql was only ever asked against databases
+  # that have everything. Its whole purpose is the opposite case: its own header
+  # says "read-only, safe to run any time, run it BEFORE any repair file". And
+  # it is ONE statement, so a single raise prints NO ROWS AT ALL, which looks
+  # exactly like a clean report.
+  #
+  # Measured, not reasoned about. detect.sql carried
+  # `'public.login_secrets'::regclass`, and on a database at migration 0037 that
+  # is
+  #     ERROR: relation "public.login_secrets" does not exist
+  # so the file a school runs when their database is behind could not run when
+  # their database was behind. A boolean AND chain in a VALUES list has no
+  # short-circuit guarantee, so the `to_regclass(...) is not null` sitting one
+  # line above it did not help. to_regclass() everywhere is the fix.
+  #
+  # CI's upgrade replay caught it. Preflight's own note said that replay was a
+  # step it did not run: a gap recorded and left open. Closed here.
+  #
+  # WHY verify.sql IS ONLY ASKED AT THE END, and this is a real difference
+  # between the two files rather than laziness. verify.sql checks BEHAVIOUR
+  # where it can, because that is the whole reason it catches things a catalogue
+  # query cannot: `public.fn__attendance_pct(8, 1, 2, 12) <> 83.3` is worth ten
+  # rows asking whether functions exist. A call to a function that does not
+  # exist raises while the statement is being PLANNED, before any CASE or AND
+  # can guard it, so making verify.sql runnable at every prefix would mean
+  # replacing those behaviour checks with catalogue checks. That trade is the
+  # wrong way round: verify.sql is what a school runs AFTER pasting the bundles,
+  # to confirm the paste worked, and detect.sql is the one for a database that
+  # is behind. Raise-proofing verify.sql's TABLE lookups is still worth doing
+  # and is done, which is why it now runs from bundle 13 onward instead of only
+  # at the end.
+  echo
+  echo "== the diagnostics, on a database part-way through the bundles =="
+  bad=0
+  last=$(ls supabase/bundles/*.sql | sort -V | wc -l)
+  for upto in 1 6 13 16 "$last"; do
+    db="preflight_partial"
+    dropdb --if-exists "$db" >/dev/null 2>&1
+    createdb "$db" >/dev/null 2>&1
+    psql -q -d "$db" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+create schema if not exists auth;
+create table if not exists auth.users (id uuid primary key, email text,
+  raw_user_meta_data jsonb default '{}'::jsonb, raw_app_meta_data jsonb default '{}'::jsonb,
+  last_sign_in_at timestamptz, encrypted_password text,
+  created_at timestamptz default now());
+create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
+do $$ begin
+  if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
+  if not exists (select 1 from pg_roles where rolname='authenticated') then create role authenticated nologin; end if;
+  if not exists (select 1 from pg_roles where rolname='service_role') then create role service_role nologin; end if;
+end $$;
+alter default privileges in schema public grant all on tables to postgres, anon, authenticated, service_role;
+SQL
+    for b in $(ls supabase/bundles/*.sql | sort -V                | awk -F/ -v n="$upto" '{ x = $NF; sub(/_.*/, "", x); if (x + 0 <= n + 0) print }'); do
+      psql -q -d "$db" -v ON_ERROR_STOP=1 -f "$b" >/dev/null 2>&1
+    done
+    # The number of rows is the assertion. A raise prints none, and grepping for
+    # the word FAIL on no output finds nothing and reports success, which is the
+    # trap verify_clean was written for.
+    want=$(( $(grep -c '^union all' supabase/verify.sql) + 1 ))
+    files="supabase/repair/detect.sql"
+    # verify.sql from bundle 13 on. Below that its behaviour checks call
+    # functions the database does not have yet, which raises at plan time; see
+    # the note above for why that is the right trade rather than a defect.
+    [ "$upto" -ge 13 ] && files="$files supabase/verify.sql"
+    for f in $files; do
+      out=$(psql -q -d "$db" -f "$f" 2>&1)
+      if printf '%s
+' "$out" | grep -qE '^(psql:|ERROR)'; then
+        printf '%-52s FAIL
+' "diagnostics: ${f##*/} on bundles 1-$upto"
+        printf '%s
+' "$out" | grep -E '^(psql:|ERROR)' | head -2 | sed 's/^/      /'
+        bad=$((bad + 1)); fails=$((fails + 1))
+        continue
+      fi
+      rows=$(printf '%s
+' "$out" | sed -n 's/^(\([0-9]\+\) rows\?)$/\1/p' | tail -1)
+      if [ "$f" = supabase/verify.sql ] && [ "${rows:-0}" != "$want" ]; then
+        printf '%-52s FAIL
+' "diagnostics: verify.sql on bundles 1-$upto"
+        echo "      printed ${rows:-0} rows, expected $want" ; bad=$((bad + 1)); fails=$((fails + 1))
+      fi
+    done
+  done
+  [ "$bad" = 0 ] && printf '%-52s ok\n' "detect.sql at every stage, verify.sql from 13 on"
 
   echo
   echo "== every SQL suite, on the fresh migrations database =="

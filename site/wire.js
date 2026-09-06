@@ -40,7 +40,14 @@
   //
   // Driven off data attributes rather than ids, so a new button in the HTML is
   // wired by adding `data-app="signup"` and nothing here changes.
-  var ROUTES = { signin: '/login', signup: '/signup', billing: '/settings', portal: '/portal' }
+  // portal points at the parent SIGN-IN, not at /portal itself.
+  //
+  // /portal requires a session, so a signed-out parent clicking "Parent portal
+  // login" was bounced to the office door and shown the monthly price of the
+  // software their school buys. /parents is the parent's own door and it
+  // forwards a parent who IS signed in straight through to /portal, so the one
+  // link is right in both states.
+  var ROUTES = { signin: '/login', signup: '/signup', billing: '/settings', portal: '/parents' }
 
   function wireAppLinks() {
     var nodes = document.querySelectorAll('[data-app]')

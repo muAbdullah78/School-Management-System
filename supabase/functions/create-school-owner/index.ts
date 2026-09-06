@@ -122,11 +122,91 @@ Deno.serve(async (req) => {
       return json({ error: msg }, 400)
     }
 
+    // 5) THE PROFILE. Read back what the trigger did, and finish the job if it
+    //    did nothing.
+    //
+    //    handle_new_user() is an AFTER INSERT trigger on auth.users and the auth
+    //    service does not always write app metadata in the statement that
+    //    inserts the row. When it writes it a moment later in an update, an
+    //    AFTER INSERT trigger sees nothing. 0115 makes the trigger fire on that
+    //    update too; this step is here so that this function does not DEPEND on
+    //    0115 having been applied. A login with no profile signs in
+    //    successfully and is then shown the operator's own gate, which is how
+    //    two real schools ended up in the console with nobody able to open
+    //    them.
+    //
+    //    Read with the SERVICE client. profiles carries a SELECT policy keyed
+    //    on current_school_id(), which is derived from the profile itself, so
+    //    asking as anybody else cannot tell "no profile" from "a profile this
+    //    caller may not see".
+    const readProfile = async () => await admin.from('profiles')
+      .select('role, active, school_id').eq('id', created.user.id).maybeSingle()
+
+    const first = await readProfile()
+    let landed = first.data
+    if (first.error) {
+      return json({
+        error: 'The login was created and can sign in, but what the database '
+          + `recorded for it could not be read back: ${first.error.message}. `
+          + 'Open the console tab "Logins with no school".',
+        login_exists: true, id: created.user.id, email,
+      }, 500)
+    }
+    if (!landed) {
+      // The school was checked above and has no profiles at all, so this
+      // account is its owner by the same rule the trigger applies. No new
+      // privilege: this is the privilege the function already exercised when it
+      // minted the account, used to finish. A duplicate is success, because the
+      // trigger may have written the row in between and its decision stands.
+      const { error: fixErr } = await admin.from('profiles').insert({
+        id: created.user.id,
+        school_id: schoolId,
+        full_name: fullName || email.split('@')[0],
+        role: 'owner',
+        active: true,
+      })
+      if (fixErr && !/duplicate key|already exists/i.test(fixErr.message)) {
+        // The login is NOT deleted here, unlike in signup-school. There, the
+        // person is sitting in front of the form and can try again in ten
+        // seconds. Here the operator has already told somebody their password,
+        // possibly on the telephone, and deleting the account underneath them
+        // is worse than leaving one repairable row.
+        return json({
+          error: 'The login was created, but no profile could be attached to it, '
+            + `so it can sign in and see nothing: ${fixErr.message}. Open the `
+            + 'console tab "Logins with no school" and attach it there.',
+          login_exists: true, id: created.user.id, email,
+        }, 500)
+      }
+      const again = await readProfile()
+      landed = again.data
+      if (!landed) {
+        return json({
+          error: 'The login was created and a profile was written for it, and '
+            + 'reading it back found nothing. Something is removing it. Run '
+            + 'supabase/verify.sql and send the output.',
+          login_exists: true, id: created.user.id, email,
+        }, 500)
+      }
+    }
+    if (landed.role !== 'owner' || landed.active !== true) {
+      return json({
+        error: 'The login was created, but the database recorded it as '
+          + `${landed.role}${landed.active ? '' : ' (closed)'} rather than the `
+          + "school's owner. Fix it on the Users screen inside the school.",
+        login_exists: true, id: created.user.id, email, role: landed.role,
+      }, 500)
+    }
+
     return json({
       ok: true,
       school_id: schoolId,
       school_name: (school as { name: string }).name,
       email,
+      // Said back so the operator knows the signup trigger did not do its half.
+      // The same trigger attaches every teacher and parent login in the
+      // product, so seeing this once means that database needs bundle 21.
+      repaired: !first.data,
       // Said back deliberately. The operator has to pass this on, and telling
       // them to have it changed is the difference between a temporary password
       // and a shared one.

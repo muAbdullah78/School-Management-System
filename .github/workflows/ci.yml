@@ -316,6 +316,12 @@ jobs:
             -- product could see that before. The rule the two of them make is
             -- that this stub must carry every auth column the schema touches.
             last_sign_in_at timestamptz,
+            -- And again, one migration later still. 0116 hashes it, so a
+            -- password the office saved for a parent can be reported as stale
+            -- once that parent has changed it themselves. The value is hashed
+            -- and never leaves the database; without the column,
+            -- fn_school_key_ring raises on every call.
+            encrypted_password text,
             created_at timestamptz default now()
           );
           create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
@@ -391,7 +397,10 @@ jobs:
             -- nothing in this product could see that before. The stub has to
             -- carry every auth column the schema actually touches, the same
             -- reason raw_app_meta_data was added here for 0065.
-            last_sign_in_at timestamptz, created_at timestamptz default now());
+            -- encrypted_password: 0116 hashes it to tell a saved password the
+            -- person has since changed themselves from one that still works.
+            last_sign_in_at timestamptz, encrypted_password text,
+            created_at timestamptz default now());
           create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
           do $$ begin
             if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
@@ -498,7 +507,10 @@ jobs:
           create table if not exists auth.users (
             id uuid primary key, email text, raw_user_meta_data jsonb default '{}'::jsonb,
             raw_app_meta_data jsonb default '{}'::jsonb,
-            last_sign_in_at timestamptz, created_at timestamptz default now());
+            -- encrypted_password: 0116 hashes it to tell a saved password the
+            -- person has since changed themselves from one that still works.
+            last_sign_in_at timestamptz, encrypted_password text,
+            created_at timestamptz default now());
           create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
           do $$ begin
             if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
@@ -617,7 +629,10 @@ jobs:
             -- nothing in this product could see that before. The stub has to
             -- carry every auth column the schema actually touches, the same
             -- reason raw_app_meta_data was added here for 0065.
-            last_sign_in_at timestamptz, created_at timestamptz default now());
+            -- encrypted_password: 0116 hashes it to tell a saved password the
+            -- person has since changed themselves from one that still works.
+            last_sign_in_at timestamptz, encrypted_password text,
+            created_at timestamptz default now());
           create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
           do $$ begin
             if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
@@ -1867,6 +1882,50 @@ jobs:
         # easy way to break the other: a school that is merely LATE, and whose
         # payment really may be in flight, must still get its grace.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/leaving_and_coming_back.sql
+
+      - name: A school signed up and its owner could not get in
+        # Two real schools. The school row, the trial and the login were all
+        # created and the password worked, and both owners were shown the
+        # operator's own "Not available" gate on the click meant to open their
+        # new school, because no profile was attached to the login.
+        #
+        # handle_new_user reads the school out of app metadata and fired on
+        # INSERT only, and the auth service does not always write app metadata
+        # in the statement that inserts the row. Reproduced before the fix: two
+        # signups differing only in that, one attached and one not.
+        #
+        # The suite asserts both spellings, because a fix for the second that
+        # broke the first would break every existing school at once; that a
+        # later metadata edit cannot move an attached person into another school
+        # now that the trigger fires on updates; that rubbish in app metadata
+        # cannot abort a signup; and that every 0065 rule survived the rewrite.
+        #
+        # It also covers 0117, which is about the two DIFFERENT ways to have no
+        # school. A login somebody closed reads no profile at all, by design, so
+        # a teacher who left was told their login had never been attached and to
+        # ask the office to attach it: the office then hunted a problem that was
+        # not there while the remedy, one Activate button, sat beside that
+        # person's name on their own Users screen.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/a_login_with_no_school.sql
+
+      - name: A school keeps its own keys, and only its own
+        # A Pakistani private school invents the email addresses it gives
+        # parents, so two things follow: names collide across schools, and
+        # "Forgot password" posts a reset link into a mailbox nobody owns. 0116
+        # answers both, and the second answer means storing a password, which is
+        # normally indefensible. So the fences are what this suite is about.
+        #
+        # The three that matter most: the availability check names a person only
+        # inside the caller's OWN school and says nothing but yes or no about
+        # any other, so a school cannot learn that a teacher has an account at a
+        # competitor; an owner's own password is never stored, and a principal
+        # cannot store one for them; and the key ring has NO school_id column,
+        # asserted against fn__school_data_tables() itself, because that is what
+        # the vendor's offboarding export enumerates on and a column there would
+        # have put every school's assigned passwords into an export we can take.
+        # The operator is refused all four functions from inside an open support
+        # visit, which is the assertion that keeps the vendor out.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/the_school_keeps_the_keys.sql
 
       - name: The cash drawer never accuses the clerk
         # One ordinary morning, seeded and run: open with a Rs 1,000 float, take

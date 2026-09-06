@@ -34,11 +34,18 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 // checks and comes back 400 "A valid email is required", which is itself the
 // answer: no version means old.
 // -----------------------------------------------------------------------------
-// 3 as of the RLS fix below. The app compares this against
+// 4 as of the set_password action below. The app compares this against
 // REQUIRED_CREATE_TEACHER_VERSION and warns the office when what is deployed is
 // older, which is the only way a school finds out that the function and the app
 // have drifted apart.
-const FUNCTION_VERSION = 3
+//
+// 4 ADDS AN ACTION RATHER THAN A FUNCTION. Changing somebody's password needs
+// the same service key, the same caller check and the same school scoping as
+// creating them, and a fourth Edge Function is a fourth thing to deploy and a
+// fourth thing to go stale. This project has now been bitten three times by a
+// deployed function lagging the app, so the count matters more than the name
+// does. The name is already broader than it says: it creates parents too.
+const FUNCTION_VERSION = 4
 
 const ALLOWED_ROLES = [
   'principal', 'admin_clerk', 'accountant',
@@ -49,6 +56,10 @@ const ALLOWED_ROLES = [
   // it out is what made the parent portal impossible to reach.
   'parent',
 ]
+
+// What a POST body's `action` may say. An absent action means 'create', so an
+// app older than this copy keeps working unchanged.
+const ACTIONS = ['create', 'set_password']
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -65,7 +76,7 @@ Deno.serve(async (req) => {
   // but a number and the list of roles this copy understands, and the app needs
   // to be able to ask even when it is not about to create anybody.
   if (req.method === 'GET') {
-    return json({ version: FUNCTION_VERSION, roles: ALLOWED_ROLES })
+    return json({ version: FUNCTION_VERSION, roles: ALLOWED_ROLES, actions: ACTIONS })
   }
 
   try {
@@ -90,8 +101,84 @@ Deno.serve(async (req) => {
       return json({ error: 'Your login is not attached to a school.' }, 403)
     }
 
-    // 2) Validate input.
+    // 2) Which job is this? An absent action means 'create', so an app older
+    //    than this copy keeps working unchanged.
     const body = await req.json().catch(() => ({}))
+    const action = String(body.action ?? 'create')
+    if (!ACTIONS.includes(action)) {
+      return json({ error: 'Unknown action', version: FUNCTION_VERSION, actions: ACTIONS }, 400)
+    }
+
+    const admin = createClient(url, service, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    })
+
+    // -----------------------------------------------------------------------
+    // ACTION: set_password
+    //
+    // WHY THIS EXISTS. The addresses a Pakistani school hands to parents are
+    // frequently invented, so "Forgot password" posts a reset link into a
+    // mailbox nobody owns. Before this, a parent who forgot their password was
+    // locked out permanently: the office could not reset it, and could not make
+    // a replacement login either, because the address was taken by the login
+    // they were trying to replace. This is the way back in.
+    //
+    // WHAT IT REFUSES, AND WHY EACH REFUSAL IS LOAD-BEARING.
+    //
+    //   * The target must be in the CALLER's school, read from the caller's own
+    //     profile and never from the body, so this cannot be pointed anywhere
+    //     else. Read with the service client because the caller's own view of
+    //     profiles is subject to RLS and would report a cross-school target as
+    //     "not found", which is the right answer for the wrong reason and stops
+    //     being right the moment a policy changes.
+    //   * THE TARGET MUST NOT BE AN OWNER. This is the one that matters. A
+    //     principal is allowed here, and without this line a principal could
+    //     set the owner's password and take the school: the highest privilege in
+    //     the building, reachable by the second highest, with no owner consent
+    //     anywhere in the path. An owner changes their own password from their
+    //     own profile, or by Forgot password on their own address, which is the
+    //     one address on a school that has to be real.
+    // -----------------------------------------------------------------------
+    if (action === 'set_password') {
+      const profileId = String(body.profile_id ?? '').trim()
+      const newPassword = String(body.password ?? '')
+      if (!/^[0-9a-f-]{36}$/i.test(profileId)) {
+        return json({ error: 'A login is required' }, 400)
+      }
+      if (newPassword.length < 6) {
+        return json({ error: 'The password must be at least 6 characters' }, 400)
+      }
+
+      const { data: target, error: targetErr } = await admin.from('profiles')
+        .select('id, role, school_id, full_name').eq('id', profileId).maybeSingle()
+      if (targetErr) return json({ error: targetErr.message }, 500)
+      if (!target || target.school_id !== prof.school_id) {
+        return json({ error: 'That login is not in your school' }, 404)
+      }
+      if (target.role === 'owner') {
+        return json({
+          error: "An owner's password cannot be changed from here. They set it "
+            + 'from their own profile, or use Forgot password on their own '
+            + 'address, which is the one address on a school that has to be real.',
+        }, 403)
+      }
+
+      const { error: setErr } = await admin.auth.admin.updateUserById(profileId, {
+        password: newPassword,
+      })
+      if (setErr) return json({ error: setErr.message }, 400)
+
+      // The APP saves it to the key ring, through fn_remember_login_password,
+      // not this function. One implementation of the remembering, whichever of
+      // the two things just happened, and a school running a stale copy of this
+      // function still gets a key ring for the logins it creates.
+      return json({
+        ok: true, id: profileId, role: target.role,
+        full_name: target.full_name, version: FUNCTION_VERSION,
+      })
+    }
+
+    // 3) Validate input for a creation.
     const email = String(body.email ?? '').trim().toLowerCase()
     const password = String(body.password ?? '')
     const fullName = String(body.full_name ?? '').trim()
@@ -110,8 +197,7 @@ Deno.serve(async (req) => {
       }, 400)
     }
 
-    // 3) Create the user with the service_role client (email pre-confirmed).
-    const admin = createClient(url, service, { auth: { autoRefreshToken: false, persistSession: false } })
+    // 4) Create the user with the service_role client (email pre-confirmed).
     const { data: created, error: createErr } = await admin.auth.admin.createUser({
       email, password, email_confirm: true,
       // school_id is what handle_new_user reads to attach the profile. Without
@@ -124,9 +210,34 @@ Deno.serve(async (req) => {
       // values here are authorised facts rather than client claims.
       app_metadata: { school_id: prof.school_id, role },
     })
-    if (createErr || !created.user) return json({ error: createErr?.message ?? 'Could not create user' }, 400)
+    if (createErr || !created.user) {
+      // SAID IN WORDS THE OFFICE CAN ACT ON. This used to return the auth
+      // service's own text, which for the commonest failure of all reads
+      // "A user with this email address has already been registered" and does
+      // not say whether the clash is inside this school (where the answer is
+      // the key ring) or somewhere else on the platform (where the answer is a
+      // different address). Names repeat in Pakistan and schools invent these
+      // addresses, so this is not an edge case: it is a Tuesday.
+      const taken = /already registered|already been registered|duplicate|already exists/i
+        .test(createErr?.message ?? '')
+      if (taken) {
+        // Asked of the database, which can see across schools, rather than
+        // guessed. fn_login_email_available is owner/principal only and says
+        // nothing about another school beyond yes or no.
+        const { data: verdict } = await caller.rpc('fn_login_email_available', { p_email: email })
+        const said = (verdict as { message?: string } | null)?.message
+        return json({
+          error: said
+            ?? 'That address already has a login somewhere on The School Manager, '
+               + 'so it cannot be used again. Choose another one.',
+          why: (verdict as { why?: string } | null)?.why ?? 'in_use',
+          version: FUNCTION_VERSION,
+        }, 409)
+      }
+      return json({ error: createErr?.message ?? 'Could not create user' }, 400)
+    }
 
-    // 4) VERIFY what the trigger wrote. Do not write it again.
+    // 5) VERIFY what the trigger wrote. Do not write it again.
     //
     // THIS STEP USED TO UPSERT THE ROLE, AND IT COULD NOT WORK.
     //

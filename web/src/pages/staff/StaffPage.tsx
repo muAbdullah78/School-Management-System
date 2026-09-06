@@ -24,6 +24,7 @@ import { LoginFunctionWarning } from '@/components/LoginFunctionWarning'
 import { DeleteRecord } from '@/components/DeleteRecord'
 import { staffDeleteBlockers, deleteStaff } from '@/lib/db'
 import { listSchoolLogins, loginDeleteBlockers, deleteLogin, type SchoolLogin } from '@/lib/db'
+import { useEmailCheck, EmailVerdictLine } from '@/components/EmailAvailability'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 const TABS = [{ key: 'staff', label: 'Staff' }, { key: 'attendance', label: 'Attendance' },
@@ -843,11 +844,20 @@ function AddPerson({ onDone, onFlash }: { onDone: () => void; onFlash: (m: strin
   const [password, setPassword] = useState('')
   const [role, setRole] = useState('class_teacher')
   const [partial, setPartial] = useState<string | null>(null)
+  // Asked when they leave the address field. The office types a name, an
+  // address, a password and a role, and before this the answer to "is that
+  // address free?" arrived after all four, in the auth service's own words.
+  const emailCheck = useEmailCheck()
 
   const nameOk = form.full_name.trim().length > 0
   const loginOk = !wantsLogin
     || (/^\S+@\S+\.\S+$/.test(email.trim()) && password.length >= 6)
-  const valid = nameOk && loginOk
+  // A KNOWN NO BLOCKS, an unknown does not. The database enforces uniqueness
+  // whatever this screen believes, so a check that failed must not stop a
+  // school adding a teacher.
+  const addressFree = !wantsLogin
+    || (!emailCheck.checking && emailCheck.verdict?.available !== false)
+  const valid = nameOk && loginOk && addressFree
   const roleChoices = ROLES.filter((r) => r !== 'owner')
 
   const save = useMutation({
@@ -890,12 +900,23 @@ function AddPerson({ onDone, onFlash }: { onDone: () => void; onFlash: (m: strin
           + `anybody on the staff list" above. Do not create the login again.`,
         )
       }
-      return { name, login: created.email, repaired: created.repaired === true }
+      return { name, login: created.email, repaired: created.repaired === true,
+               remembered: created.remembered !== false }
     },
     onSuccess: (r) => {
       onFlash(
         r.login
           ? `${r.name} has been added, and can sign in as ${r.login}.`
+            // SAID EITHER WAY. "Their password is saved" is the sentence that
+            // stops the office writing it on a piece of paper; its absence,
+            // said out loud, is what stops them assuming it was saved when the
+            // school's database has not had bundle 22 yet.
+            + (r.remembered === false
+              ? ' Their password could NOT be saved under Settings, Users, so'
+                + ' write it down now: this school\'s database does not have the'
+                + ' key ring yet (apply bundle 22).'
+              : ' Their password is saved under Settings, Users, so you can tell'
+                + ' them again if they forget it.')
             + (r.repaired
               ? ' Note: the signup trigger on this database did not attach their'
                 + ' profile, so the server finished the job. This login is fine,'
@@ -969,7 +990,10 @@ function AddPerson({ onDone, onFlash }: { onDone: () => void; onFlash: (m: strin
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block"><span className="text-sm text-slate-600">Email they sign in with</span>
                 <input type="email" value={email} placeholder="teacher@school.pk"
-                  onChange={(e) => setEmail(e.target.value)} className={FIELD} /></label>
+                  onChange={(e) => { setEmail(e.target.value); emailCheck.clear() }}
+                  onBlur={() => void emailCheck.check(email)} className={FIELD} />
+                <EmailVerdictLine verdict={emailCheck.verdict} checking={emailCheck.checking} />
+              </label>
               <label className="block"><span className="text-sm text-slate-600">What they can do</span>
                 <select value={role} onChange={(e) => setRole(e.target.value)} className={FIELD}>
                   {roleChoices.map((r) => <option key={r} value={r}>{ROLE_LABELS[r as Role]}</option>)}
@@ -981,7 +1005,8 @@ function AddPerson({ onDone, onFlash }: { onDone: () => void; onFlash: (m: strin
             </div>
             <p className="mt-2 text-xs text-slate-500">
               Give them the address and this password. They can sign in straight away
-              and change it from their own account.
+              and change it from their own account. It is also kept under
+              Settings, Users so you can tell them again if they forget it.
             </p>
           </div>
         )}

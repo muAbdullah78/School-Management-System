@@ -8,6 +8,7 @@ import { RedirectIfSignedIn } from '@/components/RedirectIfSignedIn'
 import { LicenceGate } from '@/components/LicenceGate'
 import { SetupGate } from '@/components/SetupGate'
 import { Login } from '@/pages/Login'
+import { OPERATOR_DOOR, PARENT_DOOR } from '@/auth/doors'
 import { Signup } from '@/pages/Signup'
 import { ForgotPassword } from '@/pages/ForgotPassword'
 import { ResetPassword } from '@/pages/ResetPassword'
@@ -81,6 +82,33 @@ export default function App() {
               element={
                 <RedirectIfSignedIn>
                   <Login />
+                </RedirectIfSignedIn>
+              }
+            />
+            {/* THE OTHER TWO DOORS. Same component, same form, same
+                mechanism: a door changes what the page SAYS and never what it
+                can do, so any of these three signs anybody in and all three
+                land on "/" where the routing below decides by role. The whole
+                critique, and why a door that could refuse the wrong audience
+                would be worse than the single page it replaced, is in
+                web/src/auth/doors.ts.
+
+                /login stays exactly where it was, because every bookmark,
+                every ProtectedRoute redirect and every "Sign in" link on the
+                website points at it. */}
+            <Route
+              path="/parents"
+              element={
+                <RedirectIfSignedIn>
+                  <Login door={PARENT_DOOR} />
+                </RedirectIfSignedIn>
+              }
+            />
+            <Route
+              path="/operator"
+              element={
+                <RedirectIfSignedIn>
+                  <Login door={OPERATOR_DOOR} />
                 </RedirectIfSignedIn>
               }
             />

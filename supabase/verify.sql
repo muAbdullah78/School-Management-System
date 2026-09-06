@@ -160,6 +160,38 @@ missing as (
     select 1 from information_schema.tables
      where table_schema = 'public' and table_name = e.t)
 )
+-- HOW FAR BEHIND A DATABASE CAN BE AND STILL GET AN ANSWER OUT OF THIS FILE.
+--
+-- This whole file is ONE statement, so a single raise anywhere prints no rows
+-- at all. That is the exact failure verify_clean() in scripts/preflight.sh was
+-- written to catch, arriving from the other direction: a report that renders
+-- nothing looks like a report with no failures.
+--
+-- TABLE LOOKUPS ARE RAISE-PROOF, and they were not. `'public.x'::regclass`
+-- raises when the table is absent, so a school that had pasted bundles 1 to 16
+-- and ran this file to find out what to paste next named payment_method_tokens
+-- (bundle 18) and login_secrets (bundle 22), neither of which existed yet, and
+-- got a Postgres error instead of the list. The one moment the file is opened
+-- was the one moment it could not run. to_regclass() returns null instead of
+-- raising and `oid = null` matches no rows, so those lookups now degrade to
+-- "absent". The ::regclass casts left in this file all name tables from bundle
+-- 1, which any database running this file at all already has.
+--
+-- FUNCTION CALLS CANNOT BE MADE RAISE-PROOF, and are worth keeping anyway.
+-- Several rows check BEHAVIOUR rather than existence, which is the whole
+-- reason this file catches things a catalogue query cannot:
+-- `fn__attendance_pct(8, 1, 2, 12) <> 83.3` is worth ten rows asking whether
+-- functions exist. A call to a function that is not there raises while the
+-- statement is PLANNED, before any CASE or AND could guard it, so this file
+-- cannot run on a database missing those functions and must not be rewritten to
+-- avoid them.
+--
+-- SO: this file is what a school runs AFTER pasting the bundles, to confirm the
+-- paste worked, and it works from about bundle 13 onward. supabase/repair/
+-- detect.sql is the one for a database that is behind: it asks nothing but the
+-- catalogue and runs at every stage, which preflight now asserts at five points
+-- along the bundle list.
+
 select 'tables present' as check,
        case when (select count(*) from missing) = 0 then 'PASS'
             else 'FAIL — missing ' || (select string_agg(t, ', ') from missing)
@@ -415,6 +447,21 @@ select 'the observer role (0059)',
                                            -- could be deleted without trace, which
                                            -- is reconnaissance for exactly the act
                                            -- 0094 exists to make impossible.
+                                           -- 0116, and the strongest case of the
+                                           -- lot. fn_login_email_available asks
+                                           -- the whole platform whether an
+                                           -- address is taken; fn_school_key_ring
+                                           -- lists the passwords this school gave
+                                           -- its parents. may_view is true for an
+                                           -- observer AND during a support visit,
+                                           -- so gating either on it would let an
+                                           -- observer enumerate the platform's
+                                           -- addresses and let US read a
+                                           -- customer's stored credentials. Both
+                                           -- are access management of the most
+                                           -- literal kind.
+                                           'fn_login_email_available',
+                                           'fn_school_key_ring',
                                            'fn_school_logins',
                                            'fn_student_delete_blockers',
                                            'fn_staff_delete_blockers',
@@ -622,15 +669,28 @@ select 'invite-only provisioning (0065)',
                  -- THE ONE THAT MATTERS, and it is a NEGATIVE. handle_new_user
                  -- has existed since 0011; its presence proves nothing. What
                  -- 0065 changed is that it no longer believes a role the BROWSER
-                 -- sent — which is what let any parent sign up again as
+                 -- sent, which is what let any parent sign up again as
                  -- 'principal' and get it, active.
+                 --
+                 -- ASKED OF BOTH FUNCTIONS since 0115, which moved the decision
+                 -- out of the trigger into fn__attach_login so the trigger, the
+                 -- repair sweep and the operator's repair button could not
+                 -- drift apart. The POSITIVE facts need only hold wherever the
+                 -- decision now lives; the NEGATIVE one must hold in both,
+                 -- because a re-read of the untrusted field reintroduced in
+                 -- either place is the same tenant breach.
                  and exists (select 1 from pg_proc p
                               join pg_namespace n on n.oid = p.pronamespace
-                              where n.nspname='public' and p.proname='handle_new_user'
+                              where n.nspname='public'
+                                and p.proname in ('handle_new_user','fn__attach_login')
                                 and p.prosrc like '%raw_app_meta_data%'
-                                and p.prosrc like '%user_invites%'
-                                and strpos(p.prosrc, 'raw_user_meta_data->>''role''') = 0
-                                and strpos(p.prosrc, 'raw_user_meta_data->>''school_id''') = 0)
+                                and p.prosrc like '%user_invites%')
+                 and not exists (select 1 from pg_proc p
+                              join pg_namespace n on n.oid = p.pronamespace
+                              where n.nspname='public'
+                                and p.proname in ('handle_new_user','fn__attach_login')
+                                and (strpos(p.prosrc, 'raw_user_meta_data->>''role''') > 0
+                                  or strpos(p.prosrc, 'raw_user_meta_data->>''school_id''') > 0))
        then 'PASS' else 'FAIL — run migrations/0065_invite_only_provisioning.sql' end
 
 union all
@@ -723,9 +783,62 @@ select 'parent lockout',
   ) bad
 
 union all
+-- THE EVENT LIST IS THE CHECK, not the trigger's existence.
+--
+-- The trigger has existed since 0011 and fired on INSERT only. The auth service
+-- does not always write app metadata in the statement that inserts the row:
+-- some versions insert the user and update the metadata onto it a moment later,
+-- and an AFTER INSERT trigger sees the first statement only. So it read app
+-- metadata with no school in it, created no profile, and the school's owner
+-- could sign in and had nothing to open. It happened to two real schools.
+--
+-- 0115 added the UPDATE event. The trigger keeps its old NAME so that a
+-- database which re-pastes bundle 1 does not end up with two of them, which
+-- means a re-paste of bundle 1 silently puts the INSERT-only version back. This
+-- row is what catches that. tgtype bit 2 is INSERT, bit 4 is UPDATE.
 select 'signup trigger on auth.users',
-       case when exists (select 1 from pg_trigger where tgname = 'on_auth_user_created')
-       then 'PASS' else 'FAIL — re-run bundle 1' end
+       case
+         when not exists (select 1 from pg_trigger where tgname = 'on_auth_user_created')
+           then 'FAIL — re-run bundle 1'
+         when not exists (select 1 from pg_trigger
+                           where tgname = 'on_auth_user_created' and (tgtype & 16) <> 0)
+           then 'FAIL - the trigger only fires on INSERT, so a school signing up '
+                || 'gets a login with no school attached and its owner cannot get '
+                || 'in; apply supabase/bundles/21_a_login_with_no_school.sql'
+         else 'PASS'
+       end
+
+union all
+-- 0115. Two questions, and the second one is about THIS database rather than
+-- about the schema: is anybody stranded right now.
+select 'nobody can sign in with no school (0115)',
+       case
+         when to_regprocedure('public.fn__attach_login(uuid)') is null
+           then 'FAIL - apply supabase/bundles/21_a_login_with_no_school.sql'
+         when to_regprocedure('public.fn_platform_unattached_logins()') is null
+           then 'FAIL - the operator cannot see a stranded login; '
+                || 'apply supabase/bundles/21_a_login_with_no_school.sql'
+         when to_regprocedure('public.fn_platform_attach_login(uuid)') is null
+           then 'FAIL - the operator can see a stranded login and not fix it; '
+                || 'apply supabase/bundles/21_a_login_with_no_school.sql'
+         -- Compared as TEXT deliberately: (…)::uuid on a malformed value in one
+         -- row would fail this whole report, and app metadata is a jsonb
+         -- document. The join is also the definition: a login naming a school
+         -- that has been purged cannot be attached to anything and is not a
+         -- fault. Kept spelled out rather than calling 0115's function, because
+         -- a diagnostic has to work on a database that is missing it.
+         when (select count(*) from auth.users u
+                where not exists (select 1 from public.profiles p where p.id = u.id)
+                  and exists (select 1 from public.schools s
+                               where s.id::text = u.raw_app_meta_data->>'school_id')) > 0
+           then 'FAIL - ' || (select count(*)::text from auth.users u
+                where not exists (select 1 from public.profiles p where p.id = u.id)
+                  and exists (select 1 from public.schools s
+                               where s.id::text = u.raw_app_meta_data->>'school_id'))
+                || ' login(s) can sign in and have no school. Open the operator '
+                || 'console, tab "Logins with no school", and attach them.'
+         else 'PASS'
+       end
 
 union all
 -- 0068. The school's over-limit banner must be silent until the renewal is
@@ -1769,11 +1882,14 @@ select 'a card number cannot be stored, and a way to pay is recorded (0112)',
            then 'FAIL - the gateway credential table has a policy on it, which is '
                 || 'the only thing that could let the app read a saved card token. '
                 || 'Remove it.'
-         when not (select relrowsecurity and relforcerowsecurity
-                     from pg_class where oid = 'public.payment_method_tokens'::regclass)
+         when not coalesce((select c.relrowsecurity and c.relforcerowsecurity
+                              from pg_class c
+                             where c.oid = to_regclass('public.payment_method_tokens')), false)
            then 'FAIL - row level security is not forced on the gateway credential '
                 || 'table; apply supabase/bundles/18_a_way_to_pay.sql'
-         when has_table_privilege('authenticated', 'public.payment_method_tokens', 'select')
+         when coalesce((select has_table_privilege('authenticated', c.oid, 'select')
+                          from pg_class c
+                         where c.oid = to_regclass('public.payment_method_tokens')), false)
            then 'FAIL - the app role can select from the gateway credential table'
          -- Auto-renewal with nothing to charge is the state that silently stops
          -- collecting money, so the schema has to refuse it.
@@ -1812,7 +1928,7 @@ select 'renewals go out without anybody remembering (0113)',
          -- ever goes, the runner bills twice on the second press.
          when not exists (select 1 from pg_trigger
                            where tgname = 'trg_refuse_duplicate_invoice'
-                             and tgrelid = 'public.platform_invoices'::regclass)
+                             and tgrelid = to_regclass('public.platform_invoices'))
            then 'FAIL - nothing stops the same period being invoiced twice, so a '
                 || 'second renewal run would bill every school again'
          else 'PASS'
@@ -1838,6 +1954,63 @@ select 'cancelling does not buy a free fortnight (0114)',
            then 'FAIL - a school that cancels gets a free grace period after its '
                 || 'paid time runs out, because the status ladder does not know '
                 || 'it cancelled; apply supabase/bundles/20_leaving_and_coming_back.sql'
+         else 'PASS'
+       end
+
+union all
+-- 0116. The two halves are asserted differently on purpose. The functions are
+-- checked by existence, because they are new and nothing else could be
+-- mistaken for them. The KEY RING IS CHECKED BY WHAT IT IS SEALED WITH, because
+-- Supabase grants the client roles on every new table in public by default, so
+-- a table created without the revoke is a plaintext credential store readable
+-- by anybody with the anon key. That is the one way this feature could be a
+-- catastrophe rather than a convenience, so it is the thing asked about.
+select 'the school keeps its own keys, and only its own (0116)',
+       case
+         when to_regprocedure('public.fn_login_email_available(text)') is null
+           then 'FAIL - a school cannot find out an address is taken until after '
+                || 'it fills in the form; apply '
+                || 'supabase/bundles/22_the_school_keeps_the_keys.sql'
+         when to_regclass('public.login_secrets') is null
+           then 'FAIL - a parent who forgets a password given to them on a '
+                || 'made-up address is locked out for good; apply '
+                || 'supabase/bundles/22_the_school_keeps_the_keys.sql'
+         when coalesce((select has_table_privilege('authenticated', c.oid, 'select')
+                           or has_table_privilege('anon', c.oid, 'select')
+                          from pg_class c
+                         where c.oid = to_regclass('public.login_secrets')), false)
+           then 'FAIL - THE PASSWORD STORE IS READABLE BY A CLIENT ROLE. Every '
+                || 'password every school gave its parents is exposed. Re-apply '
+                || 'supabase/bundles/22_the_school_keeps_the_keys.sql, which '
+                || 'revokes it, and tell us.'
+         when not coalesce((select c.relrowsecurity and c.relforcerowsecurity
+                              from pg_class c
+                             where c.oid = to_regclass('public.login_secrets')), false)
+           then 'FAIL - row level security is not forced on the password store; '
+                || 're-apply supabase/bundles/22_the_school_keeps_the_keys.sql'
+         when exists (select 1 from pg_attribute
+                       where attrelid = to_regclass('public.login_secrets')
+                         and attname = 'school_id' and not attisdropped)
+           then 'FAIL - the password store has grown a school_id column, which '
+                || 'puts every school''s assigned passwords into the vendor '
+                || 'offboarding export. That column must not exist.'
+         else 'PASS'
+       end
+
+union all
+-- 0117. Small, and it closes a wrong message rather than a hole. There are two
+-- ways to be signed in with no school: nothing ever attached this login, or
+-- somebody closed it. A closed login reads NO profile at all, because
+-- current_school_id() requires `active` and profiles_select requires the school
+-- to match it, so the browser cannot tell "no row" from "a row I may not see"
+-- and told a teacher who left that their login was never attached. The office
+-- then hunts a problem that is not there while the remedy sits beside that
+-- person's name on their own Users screen.
+select 'a login with no school is told which kind (0117)',
+       case when to_regprocedure('public.fn_my_login_state()') is null
+         then 'FAIL - a login somebody closed is told it was never attached, and '
+              || 'sent to ask for the wrong thing; apply '
+              || 'supabase/bundles/23_which_door_you_came_through.sql'
          else 'PASS'
        end
 

@@ -376,6 +376,39 @@ emit supabase/bundles/19_the_renewal_run.sql \
 emit supabase/bundles/20_leaving_and_coming_back.sql \
      supabase/migrations/0114*.sql
 
+# A TWENTY-FIRST bundle. 20 is frozen above.
+#
+# 0115 is the one that stopped two real schools from ever getting in. The signup
+# created the school, the trial and the login and then attached no profile,
+# because the auth service writes app metadata in a second statement and the
+# trigger that reads it fired only on the first. Their owners were shown the
+# operator's own gate. This makes the trigger fire on both, moves the decision
+# somewhere the repair path can share it, and sweeps up the logins already
+# stranded.
+emit supabase/bundles/21_a_login_with_no_school.sql \
+     supabase/migrations/0115*.sql
+
+# A TWENTY-SECOND bundle. 21 is frozen above.
+#
+# 0116 is about the addresses a school hands out. It invents most of them, so
+# names collide across schools and "Forgot password" posts a reset link into a
+# mailbox nobody owns. Two answers: ask whether an address is free BEFORE
+# filling in the form, and keep the password the office chose so it can tell
+# somebody again. The key ring is sealed harder than anything else in this
+# schema, and verify.sql checks the seal rather than the table.
+emit supabase/bundles/22_the_school_keeps_the_keys.sql \
+     supabase/migrations/0116*.sql
+
+# A TWENTY-THIRD bundle. 22 is frozen above.
+#
+# 0117 goes with the sign-in rebuild. One page served an operator console, a
+# school back office and a parent portal, and 0115's replacement for its wall
+# said the same thing about the two different ways of having no school: nothing
+# ever attached this login, or somebody closed it. Only a definer function can
+# tell those apart, because a closed login reads no profile at all by design.
+emit supabase/bundles/23_which_door_you_came_through.sql \
+     supabase/migrations/0117*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.
