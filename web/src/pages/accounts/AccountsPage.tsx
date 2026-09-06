@@ -31,14 +31,17 @@ import { IconWallet, IconAlert, IconCheck, IconReports } from '@/components/icon
 import { useAuth } from '@/auth/AuthProvider'
 import { canWrite } from '@/auth/roles'
 import { ObserverNotice } from '@/components/ObserverNotice'
+import { monthStart, today } from '@/lib/dates'
 
 const METHODS = ['cash', 'bank_transfer', 'bank_challan', 'jazzcash', 'easypaisa', 'other']
 
-function firstOfMonth(): string {
-  const d = new Date()
-  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10)
-}
-const todayStr = () => new Date().toISOString().slice(0, 10)
+// Both of these used to be spelled out here and both were wrong. The month one
+// built LOCAL midnight on the 1st and then converted it to UTC, which in Karachi
+// is 7pm on the last day of the PREVIOUS month, so every "this month" figure on
+// this screen has silently included the 31st of the month before. See
+// web/src/lib/dates.ts.
+const firstOfMonth = monthStart
+const todayStr = today
 
 function ProfitRow({ s, label }: { s: FinanceSummary; label: string }) {
   return (

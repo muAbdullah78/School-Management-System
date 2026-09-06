@@ -9,6 +9,7 @@ import {
   type PlatformSchool, type SchemaState,
 } from '@/lib/platform'
 import { formatPkr } from '@/lib/licence'
+import { monthStart, today } from '@/lib/dates'
 import { fmtDateTime } from '@/lib/format'
 import { SchoolDetailPanel } from './SchoolDetail'
 import { LedgerDialog } from './SchoolLedger'
@@ -62,13 +63,13 @@ const TAB_TITLE: Record<Tab, string> = {
   reviews: 'What schools say',
 }
 
-function monthStart(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
-}
-function today(): string {
-  return new Date().toISOString().slice(0, 10)
-}
+// today() USED TO BE `new Date().toISOString().slice(0, 10)`, which is today in
+// UTC. Pakistan is UTC+5, so from midnight to 5am in Karachi it named
+// YESTERDAY - and this file uses it twice for the Record payment dialog: once
+// to pre-fill the date received, and once as the date picker's `max`. So an
+// operator reconciling the bank at half past midnight got yesterday's date
+// filled in AND was refused when they tried to correct it to today. Back-office
+// work happens at night; that is when this fired. See web/src/lib/dates.ts.
 
 /**
  * The product owner's console: every school, what they owe, and what needs
@@ -860,6 +861,38 @@ function ActivationDialog({ school, plans, onCancel, onGo }: {
   )
 }
 
+/**
+ * A figure a person typed, as a number.
+ *
+ * `Number('38,000')` is NaN and `Number('Rs 38,000')` is NaN, and both are how a
+ * Pakistani bank statement writes a figure. The old code fed the raw string
+ * straight to Number and then disabled the Record button when the result was
+ * not finite, so pasting the amount out of the statement produced a screen with
+ * no error and a button that did nothing. Commas, spaces and a leading Rs are
+ * stripped; anything else still fails, and now says so.
+ */
+export function money(v: string): number {
+  const cleaned = v.replace(/[\s,]/g, '').replace(/^rs\.?/i, '')
+  return cleaned === '' ? NaN : Number(cleaned)
+}
+
+/** Why Record is disabled, in a sentence, or null when it is not. */
+export function whyNot(rawAmount: string, n: number, rawTax: string, t: number, paidOn: string): string | null {
+  if (rawAmount.trim() === '') return 'Enter the amount received.'
+  if (!Number.isFinite(n)) return `"${rawAmount.trim()}" is not an amount. Digits only, and a decimal point if you need one.`
+  if (n <= 0) return 'A payment has to be more than zero. To reverse a charge, credit or void the invoice on the statement.'
+  if (rawTax.trim() !== '' && !Number.isFinite(t)) return `"${rawTax.trim()}" is not an amount.`
+  if (t < 0) return 'Withheld tax cannot be negative.'
+  // The date picker carries a `max`, but a max on an <input type="date"> is only
+  // enforced by native form validation and there is no form here, so a date
+  // typed straight into the field went through. The database has no future
+  // check either: a payment dated next March would have landed in the books and
+  // shown up in the wrong month's revenue.
+  if (paidOn > today()) return 'That date is in the future. Record a payment on the day it actually arrived.'
+  if (paidOn < '2000-01-01') return 'That date looks wrong.'
+  return null
+}
+
 function PaymentDialog({ school, busy, onClose, onSave }: {
   school: PlatformSchool
   busy: boolean
@@ -878,10 +911,17 @@ function PaymentDialog({ school, busy, onClose, onSave }: {
   const [note, setNote] = useState('')
   const [wht, setWht] = useState('')
   const [cert, setCert] = useState('')
-  const n = Number(amount)
-  const t = Number(wht || 0)
-  const valid = amount.trim() !== '' && Number.isFinite(n) && n > 0
-    && Number.isFinite(t) && t >= 0
+  const n = money(amount)
+  const t = wht.trim() === '' ? 0 : money(wht)
+  // THE CERTIFICATE FIELD IS CLEARED, NOT JUST GREYED OUT.
+  // It used to be disabled when the withheld amount went back to zero while
+  // still holding whatever had been typed, and still being sent. The database
+  // refuses that outright - "A tax certificate was given but no withheld
+  // amount" - so the operator got a hard error naming a field they could see
+  // was empty and could not edit. Deriving what is sent from the tax figure
+  // means the two can never disagree.
+  const sendCert = t > 0 ? cert.trim() || null : null
+  const problem = whyNot(amount, n, wht, t, paidOn)
   // What the invoice is actually settled by. The gap between this and the
   // outstanding figure is what the operator is deciding about.
   const settles = n + t
@@ -938,7 +978,7 @@ function PaymentDialog({ school, busy, onClose, onSave }: {
           </label>
           <label className="block">
             <span className="text-sm text-slate-600">CPR / certificate no.</span>
-            <input value={cert} onChange={(e) => setCert(e.target.value)}
+            <input value={t > 0 ? cert : ''} onChange={(e) => setCert(e.target.value)}
               disabled={t <= 0}
               placeholder={t > 0 ? 'blank if not received yet' : '-'}
               className={`${FIELD} mt-1 w-full disabled:bg-slate-50`} />
@@ -955,14 +995,24 @@ function PaymentDialog({ school, busy, onClose, onSave }: {
             {cert.trim() === '' && ' The CPR can be attached from the statement when it arrives.'}
           </p>
         )}
+        {/* A DISABLED BUTTON THAT DOES NOT SAY WHY IS A BROKEN SCREEN.
+            `Number('38,000')` is NaN, and Pakistani figures are written with
+            those commas, so typing the amount the way it appears on the bank
+            statement used to grey out Record with no message at all. The amount
+            is now parsed properly AND the reason is printed. */}
+        {problem && (
+          <p className="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            {problem}
+          </p>
+        )}
         <div className="mt-4 flex gap-2">
           <button
             onClick={() => onSave({
               amount: n, paidOn, method,
               reference: reference.trim() || null, note: note.trim() || null,
-              taxWithheld: t, taxCertificate: cert.trim() || null,
+              taxWithheld: t, taxCertificate: sendCert,
             })}
-            disabled={busy || !valid}
+            disabled={busy || problem !== null}
             className="flex-1 rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
             Record
           </button>
@@ -978,23 +1028,52 @@ function PaymentDialog({ school, busy, onClose, onSave }: {
 /**
  * Everything we have ever done to this school.
  *
- * The billing rows say what was charged. This says who chose it, that a trial was
- * extended three times, that a year was given away for a reason somebody typed at
- * the time, and every support visit. Before 0073 none of it was recorded, which
+ * The billing rows say what was charged. This says who chose it, that a year was
+ * given away for a reason somebody typed at the time, that a school was suspended
+ * and why, and every support visit. Before 0073 none of it was recorded, which
  * with one customer is recoverable from memory and with fifty is not.
+ *
+ * (It used to say "that a trial was extended three times". Since 0106 a trial
+ * cannot be extended at all, so that sentence was describing a button that no
+ * longer exists.)
  */
+const HISTORY_LIMIT = 100
+
 function HistoryDialog({ school, onClose }: { school: PlatformSchool; onClose: () => void }) {
   const q = useQuery({
-    queryKey: ['schoolActions', school.school_id],
-    queryFn: () => schoolActions(school.school_id),
+    queryKey: ['schoolActions', school.school_id, HISTORY_LIMIT],
+    queryFn: () => schoolActions(school.school_id, HISTORY_LIMIT),
   })
 
+  // COLOURED BY CONSEQUENCE, not by how interesting it was to write. Six of the
+  // heaviest actions had no entry here at all, so "school purged" - which
+  // destroys a customer's records and cannot be undone - rendered in exactly
+  // the same neutral grey as "school created". Reading down this list, the
+  // things that ended a relationship were the least visible on it.
   const TONE: Record<string, string> = {
+    // Irreversible.
+    school_purged: 'bg-red-600 text-white',
+    orphan_data_purged: 'bg-red-600 text-white',
+    // Somebody lost access.
     school_entered: 'bg-red-50 text-red-800',
-    school_left: 'bg-slate-100 text-slate-600',
+    school_suspended: 'bg-red-50 text-red-800',
+    subscription_cancelled: 'bg-red-50 text-red-800',
+    school_archived: 'bg-red-50 text-red-800',
+    // Access came back.
+    school_unsuspended: 'bg-emerald-50 text-emerald-800',
+    subscription_reinstated: 'bg-emerald-50 text-emerald-800',
+    school_unarchived: 'bg-emerald-50 text-emerald-800',
     payment_recorded: 'bg-emerald-50 text-emerald-800',
+    // Money and terms.
     invoice_raised: 'bg-sky-50 text-sky-800',
+    credit_note_raised: 'bg-sky-50 text-sky-800',
+    invoice_voided: 'bg-amber-50 text-amber-900',
+    credit_note_voided: 'bg-amber-50 text-amber-900',
     licence_changed: 'bg-amber-50 text-amber-900',
+    grace_changed: 'bg-amber-50 text-amber-900',
+    school_exported: 'bg-amber-50 text-amber-900',
+    // Routine.
+    school_left: 'bg-slate-100 text-slate-600',
     school_created: 'bg-slate-100 text-slate-700',
   }
 
@@ -1037,6 +1116,18 @@ function HistoryDialog({ school, onClose }: { school: PlatformSchool; onClose: (
               </li>
             ))}
           </ul>
+        )}
+
+        {/* THE LIMIT WAS SILENT. schoolActions asks for 100 rows and the list
+            simply stopped, so a school with a long history showed a first entry
+            that was not the first entry, and "School added" - the one row that
+            is always the oldest - quietly disappeared once the hundredth action
+            was logged. A list that has been cut has to say so. */}
+        {q.data && q.data.length >= HISTORY_LIMIT && (
+          <p className="mt-3 border-t border-slate-100 pt-2 text-xs text-slate-400">
+            The most recent {HISTORY_LIMIT} entries. Older ones are kept and are in
+            the audit log, but are not shown here.
+          </p>
         )}
       </div>
     </div>

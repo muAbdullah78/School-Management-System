@@ -759,7 +759,13 @@ with sig(migration, object, present) as (values
        select 1 from pg_constraint
        where conname = 'staff_attendance_not_future'
          and conrelid = 'public.staff_attendance'::regclass
-         and pg_get_constraintdef(oid) like '%Asia/Karachi%'))
+         and pg_get_constraintdef(oid) like '%Asia/Karachi%')),
+  ('0108_the_one_way_door', 'a cancellation can be undone without an invoice',
+     to_regprocedure('public.fn_platform_reinstate_subscription(uuid, text)') is not null
+     and exists (
+       select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'fn_platform_archive_school'
+         and p.prosrc like '%closed sign%'))
 )
 select migration,
        object                                   as looked_for,

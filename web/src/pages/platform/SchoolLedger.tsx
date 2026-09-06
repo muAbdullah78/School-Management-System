@@ -189,9 +189,30 @@ function DocActionDialog({ entry, mode, settings, onClose }: {
   const charged = Math.abs(Number(entry.charged ?? 0))
   const [reason, setReason] = useState('')
   const [amount, setAmount] = useState(String(charged))
-  const [pct, setPct] = useState(String(settings?.default_withholding_pct ?? 0))
+  // SETTINGS ARRIVE AFTER THE FIRST RENDER. useState only reads its argument
+  // once, so opening Tax before the platform settings query resolved left the
+  // rate at 0 rather than at the configured default, and 0 means "remove the
+  // tax line entirely". Somebody would have set a rate in Our billing, opened
+  // this, seen zero, and pressed Set the tax.
+  const [pct, setPct] = useState<string | null>(null)
+  const shownPct = pct ?? String(settings?.default_withholding_pct ?? 0)
   const [err, setErr] = useState<string | null>(null)
   const [warn, setWarn] = useState<string | null>(null)
+  const creditAmount = Number(amount)
+  const creditProblem = mode !== 'credit' ? null
+    : !Number.isFinite(creditAmount) || amount.trim() === ''
+      ? 'Enter how much to credit.'
+    : creditAmount <= 0
+      ? 'A credit note has to be more than zero.'
+    : creditAmount > charged
+      ? `That is more than the invoice. ${formatPkr(charged)} is the whole of it.`
+    : null
+  const taxProblem = mode !== 'tax' ? null
+    : !Number.isFinite(Number(shownPct)) || shownPct.trim() === ''
+      ? 'Enter a rate.'
+    : Number(shownPct) < 0 || Number(shownPct) > 100
+      ? 'A tax rate is between 0 and 100.'
+    : null
 
   const act = useMutation({
     mutationFn: async () => {
@@ -200,10 +221,10 @@ function DocActionDialog({ entry, mode, settings, onClose }: {
         return r.warning
       }
       if (mode === 'credit') {
-        await creditNote({ invoiceId: entry.entry_id, amount: Number(amount), reason })
+        await creditNote({ invoiceId: entry.entry_id, amount: creditAmount, reason })
         return null
       }
-      await setInvoiceTax(entry.entry_id, Number(pct))
+      await setInvoiceTax(entry.entry_id, Number(shownPct))
       return null
     },
     onSuccess: (w) => {
@@ -249,7 +270,21 @@ function DocActionDialog({ entry, mode, settings, onClose }: {
         <p className="text-xs text-slate-500">
           For an invoice that was correct where part of it is no longer due. A school
           that paid for a year, used four months and left. It gets its own document
-          number and reduces the balance. At most {formatPkr(charged)} can be credited.
+          number and reduces the balance.
+        </p>
+      )}
+      {/* THIS LINE USED TO READ "at most {formatPkr(charged)} can be credited",
+          which is the WHOLE invoice and so is only true the first time. An
+          invoice already half credited would still have offered the full
+          amount, and the database - which does track it - would have refused
+          with a number the screen had just contradicted. The statement row does
+          not carry what has already been credited, so rather than guess, this
+          says what it actually knows. */}
+      {mode === 'credit' && (
+        <p className="mt-2 text-xs text-slate-500">
+          The invoice is {formatPkr(charged)}. Anything already credited against it
+          comes off that, and the database will say exactly how much is left if you
+          go over.
         </p>
       )}
       {mode === 'tax' && (
@@ -262,6 +297,14 @@ function DocActionDialog({ entry, mode, settings, onClose }: {
       )}
 
       {err && <p className="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
+      {/* `min` and `max` on a number input are enforced by form validation, and
+          there is no form on this dialog, so both were decoration. A typed
+          -500 or 9,999,999 went to the database and came back as a raw error. */}
+      {(creditProblem || taxProblem) && (
+        <p className="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          {creditProblem ?? taxProblem}
+        </p>
+      )}
 
       <div className="mt-3 space-y-3">
         {mode === 'credit' && (
@@ -278,10 +321,10 @@ function DocActionDialog({ entry, mode, settings, onClose }: {
           <label className="block">
             <span className="text-xs font-medium text-slate-600">Rate (%)</span>
             <input type="number" step="0.01" min="0" max="100" className={FIELD}
-              value={pct} onChange={(e) => setPct(e.target.value)} />
+              value={shownPct} onChange={(e) => setPct(e.target.value)} />
             <span className="mt-0.5 block text-xs text-slate-400">
-              {Number(pct) > 0
-                ? `Adds ${formatPkr(charged * Number(pct) / 100)} to this invoice.`
+              {Number(shownPct) > 0
+                ? `Adds ${formatPkr(charged * Number(shownPct) / 100)} to this invoice.`
                 : 'Zero removes the tax line entirely.'}
             </span>
           </label>
@@ -306,7 +349,8 @@ function DocActionDialog({ entry, mode, settings, onClose }: {
 
       <div className="mt-4 flex gap-2">
         <button onClick={() => act.mutate()}
-          disabled={act.isPending || (mode !== 'tax' && reason.trim().length === 0)}
+          disabled={act.isPending || (mode !== 'tax' && reason.trim().length === 0)
+            || creditProblem !== null || taxProblem !== null}
           className="flex-1 rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
           {act.isPending ? 'Saving…'
             : mode === 'void' ? 'Void it'

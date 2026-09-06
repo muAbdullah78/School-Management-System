@@ -1789,6 +1789,23 @@ jobs:
         # is how a late payment becomes a legal complaint instead of a payment.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/unpaid_school.sql
 
+      - name: Cancelling is reversible and the console stops promising what 0106 undid
+        # The other half of the migration above. 0106 made a cancelled school a
+        # shut school, and nobody updated the two sentences the operator console
+        # prints straight afterwards, both written back when a cancelled school
+        # could still read: "they keep read and export access" on cancel, and
+        # "their staff can still sign in, read, print and export" on archive.
+        # So the console told the operator, in writing, that a departing
+        # customer's teachers could still print. Nothing throws when the words
+        # are wrong, so the words are asserted.
+        #
+        # And the structural half: suspend had unsuspend, archive had unarchive,
+        # cancel had nothing. The only irreversible control on a dialog headed
+        # "short of destroying it" was also the cheapest one to press by
+        # mistake, and the only way back raised an invoice against a school that
+        # had already paid.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/the_one_way_door.sql
+
       - name: The cash drawer never accuses the clerk
         # One ordinary morning, seeded and run: open with a Rs 1,000 float, take
         # Rs 3,000 cash, reverse it when the cheque bounces and hand the money

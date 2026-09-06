@@ -37,6 +37,7 @@ import {
   IconPrint,
 } from '@/components/icons'
 import { guideUrl } from '@/lib/config'
+import { monthsAgoStart, today } from '@/lib/dates'
 
 function monthLabel(m: string | null): string {
   if (!m) return 'Other charges'
@@ -97,9 +98,10 @@ export function PortalPage() {
   const active = childId ?? children[0]?.student_id ?? null
   const activeChild = children.find((c) => c.student_id === active)
 
-  const today = new Date()
-  const from = new Date(today.getFullYear(), today.getMonth() - 2, 1)
-  const fmt = (d: Date) => d.toISOString().slice(0, 10)
+  // Was a local-midnight Date converted through toISOString, which in Karachi
+  // names the last day of the month BEFORE the one intended, so the parent's
+  // three-month window has always been three months and a day.
+  const from = monthsAgoStart(2)
 
   const fees = useQuery({
     queryKey: ['portalFees', active],
@@ -123,7 +125,7 @@ export function PortalPage() {
 
   const attendance = useQuery({
     queryKey: ['portalAtt', active],
-    queryFn: () => getPortalChildAttendance(active as string, fmt(from), fmt(today)),
+    queryFn: () => getPortalChildAttendance(active as string, from, today()),
     enabled: !!active && tab === 'attendance',
   })
   const results = useQuery({

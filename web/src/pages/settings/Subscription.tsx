@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { today } from '@/lib/dates'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { myBilling, myPlatformInvoice, reportSubscriptionPayment } from '@/lib/db'
 import type { MyBillingDocument } from '@/lib/db'
@@ -308,7 +309,7 @@ function ReportDialog({ suggested, onClose }: {
 }) {
   const qc = useQueryClient()
   const [amount, setAmount] = useState(suggested ? String(suggested) : '')
-  const [paidOn, setPaidOn] = useState(new Date().toISOString().slice(0, 10))
+  const [paidOn, setPaidOn] = useState(today())
   const [method, setMethod] = useState('bank')
   const [reference, setReference] = useState('')
   const [fromBank, setFromBank] = useState('')
@@ -367,7 +368,7 @@ function ReportDialog({ suggested, onClose }: {
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block">
               <span className="text-xs font-medium text-slate-600">On what date</span>
-              <input type="date" max={new Date().toISOString().slice(0, 10)}
+              <input type="date" max={today()}
                 className={FIELD} value={paidOn} onChange={(e) => setPaidOn(e.target.value)} />
             </label>
             <label className="block">

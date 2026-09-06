@@ -18,9 +18,12 @@ import {
   Card, CardTitle, PageHeader, Button, Badge, Field, inputClass, EmptyState, MiniStat, money, LoadError,
 } from '@/components/ui'
 import { IconWallet, IconCheck, IconAlert } from '@/components/icons'
+import { daysAgo, today } from '@/lib/dates'
 
-const todayStr = () => new Date().toISOString().slice(0, 10)
-const weekAgo = () => new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10)
+// Both were UTC, so between midnight and 5am in Karachi the till's default
+// range ended yesterday and the day's own takings were missing from it.
+const todayStr = today
+const weekAgo = () => daysAgo(7)
 
 export function TillPage() {
   const qc = useQueryClient()
