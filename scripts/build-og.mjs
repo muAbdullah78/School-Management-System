@@ -57,7 +57,7 @@ const HTML = `<!doctype html>
   h1 { font-size: 74px; line-height: 1.04; letter-spacing: -0.035em; font-weight: 700; max-width: 20ch; }
   h1 em { font-style: normal; color: #4F46E5; }
   .facts { display: flex; gap: 44px; align-items: flex-end; }
-  /* nowrap: "Rs 950 a month" wrapped to two lines at 30px and pushed the
+  /* nowrap: "Rs 2,000 a month" wrapped to two lines at 30px and pushed the
      domain out of alignment. The three facts plus the domain measure 958px
      inside a 1048px content box, so they fit on one line each. */
   .fact b { display: block; font-size: 30px; font-weight: 700; letter-spacing: -0.02em; white-space: nowrap; }
@@ -77,7 +77,7 @@ const HTML = `<!doctype html>
   <h1>One parent. One payment. <em>One receipt.</em></h1>
 </div>
 <div class="facts">
-  <div class="fact"><span>From</span><b>Rs 950 a month</b></div>
+  <div class="fact"><span>From</span><b>Rs 2,000 a month</b></div>
   <div class="fact"><span>Trial</span><b>14 days, no card</b></div>
   <div class="fact"><span>Modules</span><b>All included</b></div>
   <div class="dom">theschoolmanager.site</div>

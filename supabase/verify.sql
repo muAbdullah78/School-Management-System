@@ -1723,6 +1723,35 @@ select 'the history feed says who actually did it (0109, 0110)',
        end
 
 union all
+-- 0111. New bands, new prices, and a third term. Also the end of the price
+-- being computed in two places: fn__plan_price held the ladder and the operator
+-- console held a TypeScript copy of it, which would have quoted three months at
+-- Rs 6,000 while the invoice charged Rs 5,700.
+select 'a term has one price, and a longer one never costs less (0111)',
+       case
+         when not exists (
+           select 1 from information_schema.columns
+            where table_schema = 'public' and table_name = 'plans'
+              and column_name = 'price_quarterly')
+           then 'FAIL - three months cannot be sold; '
+                || 'apply supabase/bundles/17_the_price_of_a_term.sql'
+         when to_regprocedure('public.fn_plan_quote(text, integer)') is null
+           then 'FAIL - the console has nothing to ask for a price and will fall '
+                || 'back to computing one; apply supabase/bundles/17_the_price_of_a_term.sql'
+         when exists (select 1 from public.plans
+                       where code = 'starter' and price_monthly <> 2000)
+           then 'FAIL - the price list is not the agreed one; '
+                || 'apply supabase/bundles/17_the_price_of_a_term.sql'
+         -- The cap. Eleven months at the quarterly rate is Rs 20,900 against
+         -- Rs 20,000 for a whole year, so without it a school buying less pays
+         -- more and nobody notices until the invoice.
+         when public.fn__plan_price('starter', 11) > public.fn__plan_price('starter', 12)
+           then 'FAIL - eleven months costs more than twelve; '
+                || 'apply supabase/bundles/17_the_price_of_a_term.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS — no schools yet, as expected'

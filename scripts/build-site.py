@@ -61,9 +61,9 @@ SITE = 'https://theschoolmanager.site'
 # supabase/check-site-prices.sh, so they live in one place here rather than
 # being retyped into every schema block.
 PLANS = [
-    ('Starter', '950', 'Up to 100 students'),
-    ('Growth', '2000', 'Up to 300 students'),
-    ('Institution', '3500', 'Up to 1,000 students'),
+    ('Starter', '2000', 'Up to 150 students'),
+    ('Growth', '3500', 'Up to 350 students'),
+    ('Institution', '5500', 'Up to 600 students'),
 ]
 
 def load_profiles() -> dict:

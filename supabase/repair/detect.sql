@@ -774,7 +774,13 @@ with sig(migration, object, present) as (values
         where n.nspname = 'public'
           and p.proname in ('fn_may_mark_subject', 'fn_may_manage_class',
                             'fn_may_write_school_file')
-          and p.prosrc like '%may_view(%'))
+          and p.prosrc like '%may_view(%')),
+  ('0111_the_price_of_a_term', 'three months can be sold, and one place prices it',
+     exists (
+       select 1 from information_schema.columns
+        where table_schema = 'public' and table_name = 'plans'
+          and column_name = 'price_quarterly')
+     and to_regprocedure('public.fn_plan_quote(text, integer)') is not null)
 )
 select migration,
        object                                   as looked_for,

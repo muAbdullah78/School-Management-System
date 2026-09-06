@@ -328,6 +328,16 @@ emit supabase/bundles/15_the_one_way_door.sql \
 emit supabase/bundles/16_who_actually_did_it.sql \
      supabase/migrations/0109*.sql supabase/migrations/0110*.sql
 
+# A SEVENTEENTH bundle. 16 is frozen above.
+#
+# 0111 is the commercial change: new bands, new prices, and a THIRD term to buy
+# between "monthly, I will think about it" and "a year up front". It is also a
+# correctness fix, because the price of N months was computed in two places -
+# fn__plan_price and a TypeScript copy of its ladder in the operator console -
+# which agreed only for as long as the ladder had two steps.
+emit supabase/bundles/17_the_price_of_a_term.sql \
+     supabase/migrations/0111*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

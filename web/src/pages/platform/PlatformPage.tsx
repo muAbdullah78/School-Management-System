@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/auth/AuthProvider'
 import {
   activateSubscription, actionNeeded, amPlatformAdmin,
-  listPlans, listPlatformSchools, operatorEnter, platformRevenue,
+  listPlans, listPlatformSchools, operatorEnter, planQuote, platformRevenue,
   platformSchemaState, recordPlatformPayment, refreshAllCounts,
   type PlatformSchool, type SchemaState,
 } from '@/lib/platform'
@@ -586,7 +586,27 @@ function ActivationDialog({ school, plans, onCancel, onGo }: {
   const [note, setNote] = useState('')
 
   const chosen = plans.find((p) => p.code === plan)
-  const list = chosen ? (months >= 12 ? chosen.price_yearly * (months / 12) : chosen.price_monthly * months) : null
+  // THE PRICE IS ASKED FOR, NOT WORKED OUT HERE.
+  //
+  // This line used to be
+  //
+  //     months >= 12 ? chosen.price_yearly * (months / 12) : chosen.price_monthly * months
+  //
+  // which is fn__plan_price's ladder retyped in TypeScript. It agreed with the
+  // database for as long as there were two rates. 0111 sells a third - three
+  // months at about five percent off - so the copy would have quoted Rs 6,000
+  // for a quarter while the invoice charged Rs 5,700, and it would not have
+  // known about the cap that stops eleven months costing more than twelve.
+  // Neither side would have been wrong about its own rule, which is why no test
+  // could have found it.
+  const quote = useQuery({
+    queryKey: ['planQuote', plan, months],
+    queryFn: () => planQuote(plan, months),
+    enabled: !!plan && months > 0,
+    staleTime: 5 * 60_000,
+  })
+  const list = quote.data?.sold_at_list ? quote.data.amount : null
+  const saving = quote.data?.saving ?? 0
   const typed = amount.trim() === '' ? null : Number(amount)
   const charge = typed ?? list
   const discount = list !== null && typed !== null ? list - typed : 0
@@ -656,13 +676,33 @@ function ActivationDialog({ school, plans, onCancel, onGo }: {
           </dd>
           <dt className="text-slate-500">Invoice</dt>
           <dd className="font-medium text-slate-800">
-            {charge === null ? 'list price' : formatPkr(charge)}
+            {quote.isLoading ? <span className="text-slate-400">working it out…</span>
+              : quote.error ? <span className="text-danger-700">{(quote.error as Error).message}</span>
+              : charge === null ? 'priced in a conversation'
+              : formatPkr(charge)}
             {discount > 0 && (
               <span className="ml-1 text-due-700">
                 ({formatPkr(discount)} off {formatPkr(list ?? 0)})
               </span>
             )}
           </dd>
+          {/* WHAT THE LONGER TERM SAVES, which the operator is about to say on
+              the phone. The figure comes from the same call that prices the
+              invoice, so the sentence and the charge cannot disagree. */}
+          {saving > 0 && typed === null && (
+            <>
+              <dt className="text-slate-500">They save</dt>
+              <dd className="text-money-700">
+                {formatPkr(saving)} against {formatPkr(quote.data?.list_amount ?? 0)} at
+                the monthly rate
+                {quote.data && (
+                  <span className="text-slate-500">
+                    {' '}· works out at {formatPkr(quote.data.per_month)} a month
+                  </span>
+                )}
+              </dd>
+            </>
+          )}
         </dl>
 
         {needsNote && (

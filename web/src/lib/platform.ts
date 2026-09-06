@@ -339,6 +339,49 @@ export interface OperatorAction {
 }
 
 /** Everything that has happened to this school, ours and theirs, newest first. */
+export interface PlanQuote {
+  plan_code: string
+  plan_name: string
+  months: number
+  amount: number
+  list_amount: number
+  saving: number
+  per_month: number
+  /** False for the custom plan, which is priced in a conversation, not at zero. */
+  sold_at_list: boolean
+  student_limit: number | null
+}
+
+/**
+ * What a term costs, ASKED rather than calculated.
+ *
+ * This dialog used to do the arithmetic itself:
+ *
+ *     months >= 12 ? plan.price_yearly * (months / 12) : plan.price_monthly * months
+ *
+ * which is a copy of fn__plan_price's ladder, in TypeScript, in the browser.
+ * The two agreed for as long as the ladder had two steps. 0111 added a third
+ * (three months, about five percent off) and the copy would have quoted
+ * Rs 6,000 for a quarter while the database charged Rs 5,700 - a disagreement
+ * nothing in this repository could have caught, because each side is correct
+ * about its own rule and neither knows the other exists.
+ *
+ * It also would not have known about the cap that stops eleven months costing
+ * more than twelve.
+ *
+ * So the price now has exactly one home. This is one indexed lookup, cached by
+ * React Query on the plan and the term, and it is the number that goes on the
+ * invoice.
+ */
+export async function planQuote(planCode: string, months: number): Promise<PlanQuote> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_plan_quote', {
+    p_plan_code: planCode, p_months: months,
+  })
+  if (error) throw new Error(error.message)
+  return data as PlanQuote
+}
+
 export async function schoolActions(schoolId: string, limit = 100): Promise<OperatorAction[]> {
   const sb = requireSupabase()
   // fn_platform_school_activity, NOT fn_platform_school_actions. The by_operator

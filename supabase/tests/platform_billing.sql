@@ -35,6 +35,33 @@ begin;
 
 create or replace function auth.uid() returns uuid language sql stable as
   $$ select nullif(current_setting('test.uid', true), '')::uuid $$;
+-- --- THIS SUITE OWNS ITS OWN PRICES -----------------------------------------
+--
+-- Every figure below is invoice ARITHMETIC: a part payment of 20,000 against
+-- 35,000 leaves 15,000, a discount of 9,500 shows up in the revenue roll-up,
+-- six months of Starter at the monthly rate is 5,700. None of it is a test of
+-- what the business charges, and it should never have depended on that.
+--
+-- It did. 0111 moved the price list - new bands, new prices and a third term -
+-- and this suite failed on eleven assertions at once, none of which had
+-- anything wrong with them. Pinning the rates the arithmetic was written
+-- against inside the suite's own transaction fixes that permanently: the
+-- commercial price list is asserted by supabase/tests/the_price_of_a_term.sql,
+-- which is where it belongs, and a price change can no longer break a test of
+-- addition.
+--
+-- price_quarterly is pinned to ZERO deliberately, so fn__plan_price falls back
+-- to the monthly rate for a three-to-eleven month term exactly as it did before
+-- the third rate existed.
+--
+-- The student LIMITS are pinned for the same reason. One assertion checks that
+-- an over-limit invoice states the breach in words - "300 students against a
+-- limit of 100" - which is a test of whether the sentence is written at all,
+-- not of where the band happens to sit this quarter.
+update public.plans set student_limit =  100, price_monthly =  950, price_quarterly = 0, price_yearly =  9500 where code = 'starter';
+update public.plans set student_limit =  300, price_monthly = 2000, price_quarterly = 0, price_yearly = 20000 where code = 'growth';
+update public.plans set student_limit = 1000, price_monthly = 3500, price_quarterly = 0, price_yearly = 35000 where code = 'institution';
+
 
 create or replace function pg_temp.ok(p_cond boolean, p_label text)
 returns void language plpgsql as $$

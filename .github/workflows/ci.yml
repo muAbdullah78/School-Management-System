@@ -1816,6 +1816,18 @@ jobs:
         # done to this school".
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/who_actually_did_it.sql
 
+      - name: A longer term never costs less than a shorter one
+        # Three terms are sold now, and pricing anything else by repeating the
+        # longest that fits made eleven months cost Rs 900 MORE than twelve. The
+        # suite asserts the price list is MONOTONIC over every term an operator
+        # can type, which is the property a customer can feel, rather than
+        # asserting that the cap exists.
+        #
+        # It also asserts the quote the console shows is the price the invoice
+        # charges. Those were two separate implementations of the same ladder
+        # until 0111, agreeing only because the ladder had two steps.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/the_price_of_a_term.sql
+
       - name: The cash drawer never accuses the clerk
         # One ordinary morning, seeded and run: open with a Rs 1,000 float, take
         # Rs 3,000 cash, reverse it when the cheque bounces and hand the money
