@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { chooseTerm, myNextPayment, setManualPaymentMethod, type NextPayment } from '@/lib/db'
+import {
+  cancelMySubscription, chooseTerm, myNextPayment, resumeMySubscription,
+  setManualPaymentMethod, type NextPayment,
+} from '@/lib/db'
 import { formatPkr } from '@/lib/licence'
 
 const FIELD = 'w-full rounded border border-slate-300 px-2 py-1.5 text-sm'
@@ -114,7 +117,116 @@ function Body({ n }: { n: NextPayment }) {
         )}
         <MethodBlock n={n} editing={editing} setEditing={setEditing} onDone={refresh} />
       </div>
+
+      <LeaveOrStay n={n} onDone={refresh} />
     </section>
+  )
+}
+
+/**
+ * Leaving, and changing your mind.
+ *
+ * AT THE BOTTOM, IN SMALL TEXT, AND NOT HIDDEN. Two failure modes to avoid and
+ * they pull in opposite directions: a cancel link given the same weight as the
+ * plan chooser invites an accidental press, and a cancellation buried behind a
+ * support email is the thing that makes people distrust a subscription before
+ * they have even started one. So it is quiet, it is here, and it takes two
+ * presses.
+ *
+ * The confirmation says what the school KEEPS rather than warning it what it
+ * loses, because the fear that stops people cancelling is not knowing whether
+ * their records go with it. They do not: nothing is deleted, the software runs
+ * to the date already paid for, and the export button stays.
+ */
+function LeaveOrStay({ n, onDone }: { n: NextPayment; onDone: () => void }) {
+  const [asking, setAsking] = useState(false)
+  const [reason, setReason] = useState('')
+  const [err, setErr] = useState<string | null>(null)
+
+  const leave = useMutation({
+    mutationFn: () => cancelMySubscription(reason.trim() || null),
+    onSuccess: () => { setErr(null); setAsking(false); onDone() },
+    onError: (e) => setErr((e as Error).message),
+  })
+  const stay = useMutation({
+    mutationFn: () => resumeMySubscription(),
+    onSuccess: () => { setErr(null); onDone() },
+    onError: (e) => setErr((e as Error).message),
+  })
+
+  // Already ending: the only thing to offer is the way back, and only while the
+  // period is still running. Afterwards it is a purchase, not an undo, and the
+  // database refuses it.
+  if (n.cancel_at_period_end) {
+    const stillRunning = !!n.period_end && n.period_end >= new Date().toISOString().slice(0, 10)
+    return (
+      <div className="mt-3 border-t border-slate-200/70 pt-3">
+        {err && <p className="mb-1 text-xs text-danger-700">{err}</p>}
+        {stillRunning ? (
+          <p className="text-xs text-slate-500">
+            Your subscription is set to end.{' '}
+            <button onClick={() => stay.mutate()} disabled={stay.isPending}
+              className="font-medium text-brand-700 hover:underline disabled:opacity-60">
+              {stay.isPending ? 'Restarting…' : 'Carry on instead'}
+            </button>
+          </p>
+        ) : (
+          <p className="text-xs text-slate-500">
+            Your subscription has ended. Choose a plan above to start again;
+            everything is exactly where you left it.
+          </p>
+        )}
+      </div>
+    )
+  }
+
+  if (!asking) {
+    return (
+      <div className="mt-3 border-t border-slate-200/70 pt-3">
+        <button onClick={() => setAsking(true)}
+          className="text-xs text-slate-400 hover:text-slate-700 hover:underline">
+          Cancel my subscription
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mt-3 rounded border border-slate-200 bg-white p-3">
+      <p className="text-sm font-medium text-slate-800">
+        Stop at the end of what you have already paid for?
+      </p>
+      {/* WHAT THEY KEEP, not what they lose. */}
+      <ul className="mt-1.5 space-y-0.5 text-xs text-slate-600">
+        <li>
+          The software keeps working until{' '}
+          <span className="font-medium">{n.period_end ?? n.trial_ends_on ?? 'your paid date'}</span>.
+          Nothing stops today.
+        </li>
+        <li>Nothing is deleted. Every pupil, payment and result stays exactly as it is.</li>
+        <li>You can download all of your records at any time, including afterwards.</li>
+        <li>You can carry on instead, from this screen, before that date.</li>
+      </ul>
+      <label className="mt-2 block">
+        <span className="text-xs text-slate-600">
+          If you have a moment, what made you decide? It is optional.
+        </span>
+        <input value={reason} onChange={(e) => setReason(e.target.value)}
+          placeholder="e.g. too expensive for our size"
+          className={`${FIELD} mt-1`} />
+      </label>
+      {err && <p className="mt-1 text-xs text-danger-700">{err}</p>}
+      <div className="mt-2 flex flex-wrap gap-2">
+        <button onClick={() => leave.mutate()} disabled={leave.isPending}
+          className="rounded border border-danger-200 bg-danger-50 px-3 py-1.5 text-xs font-medium text-danger-800 hover:bg-danger-100 disabled:opacity-60">
+          {leave.isPending ? 'Cancelling…' : 'Yes, cancel at the end'}
+        </button>
+        <button onClick={() => { setAsking(false); setErr(null) }}
+          className="rounded border border-slate-300 px-3 py-1.5 text-xs hover:bg-slate-50">
+          Keep my subscription
+        </button>
+      </div>
+    </div>
   )
 }
 

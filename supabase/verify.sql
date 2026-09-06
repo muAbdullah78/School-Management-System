@@ -1819,6 +1819,29 @@ select 'renewals go out without anybody remembering (0113)',
        end
 
 union all
+-- 0114. A school's own way out, and the hole 0112 opened. Asserted by BEHAVIOUR
+-- rather than by the function existing, because the bug was never a missing
+-- function: it was fn_effective_status not knowing about a flag, which no
+-- catalogue query would ever have shown.
+select 'cancelling does not buy a free fortnight (0114)',
+       case
+         when to_regprocedure('public.fn_cancel_my_subscription(text)') is null
+           then 'FAIL - a school cannot cancel without telephoning us; '
+                || 'apply supabase/bundles/20_leaving_and_coming_back.sql'
+         when to_regprocedure('public.fn_resume_my_subscription()') is null
+           then 'FAIL - a school that cancels by mistake cannot undo it; '
+                || 'apply supabase/bundles/20_leaving_and_coming_back.sql'
+         when not exists (
+           select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = 'fn_effective_status'
+             and p.prosrc like '%cancel_at_period_end%')
+           then 'FAIL - a school that cancels gets a free grace period after its '
+                || 'paid time runs out, because the status ladder does not know '
+                || 'it cancelled; apply supabase/bundles/20_leaving_and_coming_back.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS — no schools yet, as expected'

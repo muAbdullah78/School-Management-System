@@ -5042,6 +5042,37 @@ export async function chooseTerm(
   return data as { term_months: number; applies_from: string; next: NextPayment }
 }
 
+/**
+ * Stop at the end of what we have paid for.
+ *
+ * NOT IMMEDIATELY, which is the whole design. The school has paid to a date;
+ * ending access the moment somebody clicks Cancel takes money already received
+ * and gives nothing back for it. And a product with no self-service
+ * cancellation is a product people are afraid to start.
+ */
+export async function cancelMySubscription(reason: string | null): Promise<{
+  cancelled: boolean; runs_until: string | null
+  keeps: string; reversible: string; next: NextPayment
+}> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_cancel_my_subscription', { p_reason: reason })
+  if (error) throw new Error(error.message)
+  return data as {
+    cancelled: boolean; runs_until: string | null
+    keeps: string; reversible: string; next: NextPayment
+  }
+}
+
+/** Change your mind, while the period is still running. */
+export async function resumeMySubscription(): Promise<{
+  resumed: boolean; note: string; next: NextPayment
+}> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_resume_my_subscription')
+  if (error) throw new Error(error.message)
+  return data as { resumed: boolean; note: string; next: NextPayment }
+}
+
 export async function myBilling(): Promise<MyBilling> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_my_billing')

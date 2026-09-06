@@ -365,6 +365,17 @@ emit supabase/bundles/18_a_way_to_pay.sql \
 emit supabase/bundles/19_the_renewal_run.sql \
      supabase/migrations/0113*.sql
 
+# A TWENTIETH bundle. 19 is frozen above.
+#
+# 0114 gives a school its own way out, and closes a hole 0112 opened. 0112 added
+# cancel_at_period_end so cancelling would keep a school running to the end of
+# what it paid for; fn_effective_status knew nothing about the flag, so once the
+# period passed the school fell into the ordinary ladder and read 'grace'. Grace
+# exists for a payment in flight and a cancelled school has none, so pressing
+# Cancel would have bought a free fortnight every time.
+emit supabase/bundles/20_leaving_and_coming_back.sql \
+     supabase/migrations/0114*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

@@ -789,7 +789,13 @@ with sig(migration, object, present) as (values
            where schemaname = 'public' and tablename = 'payment_method_tokens') = 0),
   ('0113_the_renewal_run', 'renewal invoices go out without anybody remembering',
      to_regprocedure('public.fn_platform_run_renewals(boolean, date)') is not null
-     and to_regclass('public.billing_attempts') is not null)
+     and to_regclass('public.billing_attempts') is not null),
+  ('0114_leaving_and_coming_back', 'a school can leave, and cancelling buys it no free time',
+     to_regprocedure('public.fn_cancel_my_subscription(text)') is not null
+     and exists (
+       select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' and p.proname = 'fn_effective_status'
+          and p.prosrc like '%cancel_at_period_end%'))
 )
 select migration,
        object                                   as looked_for,

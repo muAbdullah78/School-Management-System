@@ -1855,6 +1855,19 @@ jobs:
         # must not bill for a period we switched off ourselves.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/the_renewal_run.sql
 
+      - name: Cancelling does not buy a school a free fortnight
+        # 0112 added cancel_at_period_end so that cancelling would keep a school
+        # running to the end of what it had paid for. fn_effective_status knew
+        # nothing about the flag, so once the period passed the school fell into
+        # the ordinary ladder and read 'grace' - which exists for a payment in
+        # flight, and a cancelled school has none. Measured before the fix, not
+        # assumed: period_end three days ago plus the flag reported 'grace'.
+        #
+        # The suite also asserts the opposite case, because a fix for one is an
+        # easy way to break the other: a school that is merely LATE, and whose
+        # payment really may be in flight, must still get its grace.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/leaving_and_coming_back.sql
+
       - name: The cash drawer never accuses the clerk
         # One ordinary morning, seeded and run: open with a Rs 1,000 float, take
         # Rs 3,000 cash, reverse it when the cheque bounces and hand the money
