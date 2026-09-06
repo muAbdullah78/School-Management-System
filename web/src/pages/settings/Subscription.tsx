@@ -6,6 +6,7 @@ import type { MyBillingDocument } from '@/lib/db'
 import { InvoiceDoc } from '@/components/InvoiceDoc'
 import { formatPkr } from '@/lib/licence'
 import { fmtDate, fmtDateTime } from '@/lib/format'
+import { NextPaymentPanel } from './NextPayment'
 
 const FIELD = 'w-full rounded border border-slate-300 px-2 py-1.5 text-sm'
 
@@ -67,6 +68,11 @@ export function Subscription() {
           under Fees. This page is only about our invoice to you.
         </p>
       </div>
+
+      {/* WHEN DOES THIS START COSTING MONEY, AND HOW MUCH. The two questions a
+          school asks on day one of a trial, and the two this page could not
+          answer: the trial simply ended and the software stopped. */}
+      <NextPaymentPanel />
 
       {/* --- where the licence stands ---------------------------------------- */}
       <section className="rounded-lg border border-slate-200 bg-white p-4">

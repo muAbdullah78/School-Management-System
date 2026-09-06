@@ -1828,6 +1828,23 @@ jobs:
         # until 0111, agreeing only because the ladder had two steps.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/the_price_of_a_term.sql
 
+      - name: A card number cannot get into this database
+        # The highest-consequence assertion in the schema. The gateway token
+        # lives in its own table with RLS on and NO policies, which in Postgres
+        # denies every row to every non-owner role whatever the grants say - so
+        # a mistaken policy on the DISPLAY table cannot leak a credential,
+        # because the credential is not in it.
+        #
+        # Read AS `authenticated` and not just by checking grants: a grant check
+        # alone would pass on a table that had picked up both a policy and a
+        # grant from a later migration.
+        #
+        # It also asserts the tripwire that refuses PAN-shaped text in the
+        # free-text fields, however it is punctuated. The first version tested
+        # for twelve consecutive digits and waved through "4242 4242 4242 4242",
+        # which is how a card number is written on the card.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/a_way_to_pay.sql
+
       - name: The cash drawer never accuses the clerk
         # One ordinary morning, seeded and run: open with a Rs 1,000 float, take
         # Rs 3,000 cash, reverse it when the cheque bounces and hand the money

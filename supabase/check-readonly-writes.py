@@ -175,6 +175,7 @@ def main() -> int:
                                  -- operator session anyway, which would make the
                                  -- gate circular.
                                  'fn_support_visits',
+                                 'fn_my_next_payment',
                                  -- 0094 and 0095, the same category as
                                  -- fn_pending_invites: who can sign in, what
                                  -- address they use, and what stands in the way

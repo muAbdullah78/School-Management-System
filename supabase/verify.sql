@@ -397,6 +397,7 @@ select 'the observer role (0059)',
                                            -- true DURING a support visit, which
                                            -- would make the gate circular.
                                            'fn_support_visits',
+                                           'fn_my_next_payment',
                                            -- 0094 and 0095: the same category as
                                            -- fn_pending_invites above. Who can
                                            -- sign in, what address they use, and
@@ -1748,6 +1749,38 @@ select 'a term has one price, and a longer one never costs less (0111)',
          when public.fn__plan_price('starter', 11) > public.fn__plan_price('starter', 12)
            then 'FAIL - eleven months costs more than twelve; '
                 || 'apply supabase/bundles/17_the_price_of_a_term.sql'
+         else 'PASS'
+       end
+
+union all
+-- 0112. How a school pays, and the assertion that matters most in this schema:
+-- the gateway credential is in a table with RLS on and NO policies, so no
+-- application role can read it whatever a later migration grants.
+select 'a card number cannot be stored, and a way to pay is recorded (0112)',
+       case
+         when to_regclass('public.payment_methods') is null
+           then 'FAIL - a school cannot record how it pays; '
+                || 'apply supabase/bundles/18_a_way_to_pay.sql'
+         when to_regprocedure('public.fn_my_next_payment()') is null
+           then 'FAIL - the school cannot be told what it will be charged and when; '
+                || 'apply supabase/bundles/18_a_way_to_pay.sql'
+         when (select count(*) from pg_policies
+                where schemaname = 'public' and tablename = 'payment_method_tokens') > 0
+           then 'FAIL - the gateway credential table has a policy on it, which is '
+                || 'the only thing that could let the app read a saved card token. '
+                || 'Remove it.'
+         when not (select relrowsecurity and relforcerowsecurity
+                     from pg_class where oid = 'public.payment_method_tokens'::regclass)
+           then 'FAIL - row level security is not forced on the gateway credential '
+                || 'table; apply supabase/bundles/18_a_way_to_pay.sql'
+         when has_table_privilege('authenticated', 'public.payment_method_tokens', 'select')
+           then 'FAIL - the app role can select from the gateway credential table'
+         -- Auto-renewal with nothing to charge is the state that silently stops
+         -- collecting money, so the schema has to refuse it.
+         when not exists (select 1 from pg_constraint
+                           where conname = 'subscriptions_autorenew_chk')
+           then 'FAIL - a subscription can claim to auto-renew with no payment '
+                || 'method; apply supabase/bundles/18_a_way_to_pay.sql'
          else 'PASS'
        end
 

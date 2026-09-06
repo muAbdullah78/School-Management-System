@@ -338,6 +338,21 @@ emit supabase/bundles/16_who_actually_did_it.sql \
 emit supabase/bundles/17_the_price_of_a_term.sql \
      supabase/migrations/0111*.sql
 
+# AN EIGHTEENTH bundle. 17 is frozen above.
+#
+# 0112 records HOW a school will pay and which term it chose, so the renewal
+# machine has something to act on. No gateway integration: there is no merchant
+# account yet, and a card adapter written against documentation and never run is
+# not something to put near a customer's money. What works end to end is the
+# manual path, which is what most Pakistani schools will use for years - credit
+# cards are held by 0.22 percent of adults and debit cards by 7.7 percent.
+#
+# The card NUMBER cannot be stored by this schema. The gateway token lives in
+# its own table with RLS on and no policies, so no application role can read it
+# whatever a later migration grants.
+emit supabase/bundles/18_a_way_to_pay.sql \
+     supabase/migrations/0112*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

@@ -4966,6 +4966,82 @@ export interface MyBilling {
   how_to_pay: string
 }
 
+export interface NextPayment {
+  has_subscription: boolean
+  plan_code?: string
+  plan_name?: string
+  term_months?: number
+  status?: string
+  in_trial?: boolean
+  trial_ends_on?: string | null
+  period_end?: string | null
+  next_charge_on?: string | null
+  next_charge_amount?: number | null
+  auto_renew?: boolean
+  cancel_at_period_end?: boolean
+  method?: {
+    id: string
+    kind: 'card' | 'wallet' | 'manual'
+    brand: string | null
+    last4: string | null
+    label: string | null
+    instructions: string | null
+    status: string
+  } | null
+  /**
+   * The three terms with their REAL figures, from the same price list the
+   * invoice uses. The first version of the panel had "save about 5%" typed into
+   * the component, which is a promise about a number held in the database:
+   * change the quarterly rate and the label lies, silently, on the screen where
+   * a school decides what to spend.
+   */
+  terms?: Array<{ months: 1 | 3 | 12; amount: number; saving: number; chosen: boolean }>
+  /** The sentence, composed in the database so every surface says the same words. */
+  sentence?: string
+}
+
+/**
+ * What this school will be charged, when, and whether anything can charge it.
+ *
+ * The SENTENCE comes from the database rather than being assembled here, and
+ * that is deliberate. A school reads "your trial ends on the 20th" at checkout
+ * and again three days before the charge; if two screens compose that from
+ * parts, one of them eventually says the 20th while the invoice says the 21st.
+ *
+ * It also distinguishes "you WILL be charged" from "this is DUE by", which is
+ * not a nicety: under a twelfth of Pakistani adults hold a card, so for most
+ * schools nothing can take the money automatically. Telling them otherwise is
+ * how a school that did everything asked of it gets locked out.
+ */
+export async function myNextPayment(): Promise<NextPayment> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_my_next_payment')
+  if (error) throw new Error(error.message)
+  return data as NextPayment
+}
+
+/** Record how the school will send the money. No credential, nothing to charge. */
+export async function setManualPaymentMethod(
+  label: string, instructions: string | null,
+): Promise<{ payment_method_id: string; auto_renew: boolean; note: string; next: NextPayment }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_set_manual_payment_method', {
+    p_label: label, p_instructions: instructions,
+  })
+  if (error) throw new Error(error.message)
+  return data as { payment_method_id: string; auto_renew: boolean; note: string; next: NextPayment }
+}
+
+/** Monthly, three months or a year. Applies to the NEXT payment, not this period. */
+export async function chooseTerm(
+  months: 1 | 3 | 12,
+): Promise<{ term_months: number; applies_from: string; next: NextPayment }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_choose_term', { p_months: months })
+  if (error) throw new Error(error.message)
+  return data as { term_months: number; applies_from: string; next: NextPayment }
+}
+
 export async function myBilling(): Promise<MyBilling> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_my_billing')

@@ -203,6 +203,7 @@ with sig(migration, object, present) as (values
                                   'fn_pending_invites',
                                   'fn_checkin_display',
                                   'fn_support_visits',
+                                  'fn_my_next_payment',
               -- 0094 and 0095, and the same category as fn_pending_invites: who
               -- can sign in, what address they use, and what stands in the way
               -- of removing a person are access management and the gating of a
@@ -780,7 +781,12 @@ with sig(migration, object, present) as (values
        select 1 from information_schema.columns
         where table_schema = 'public' and table_name = 'plans'
           and column_name = 'price_quarterly')
-     and to_regprocedure('public.fn_plan_quote(text, integer)') is not null)
+     and to_regprocedure('public.fn_plan_quote(text, integer)') is not null),
+  ('0112_a_way_to_pay', 'a school can record how it pays, and no role can read a token',
+     to_regclass('public.payment_methods') is not null
+     and to_regprocedure('public.fn_my_next_payment()') is not null
+     and (select count(*) from pg_policies
+           where schemaname = 'public' and tablename = 'payment_method_tokens') = 0)
 )
 select migration,
        object                                   as looked_for,
