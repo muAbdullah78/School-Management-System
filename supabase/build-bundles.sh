@@ -409,6 +409,22 @@ emit supabase/bundles/22_the_school_keeps_the_keys.sql \
 emit supabase/bundles/23_which_door_you_came_through.sql \
      supabase/migrations/0117*.sql
 
+# A TWENTY-FOURTH bundle. 23 is frozen above, and it has been pasted.
+#
+# 0118 is the first bundle in this project that is purely about speed, and the
+# reason it needed a migration rather than a note is that the cost is invisible
+# for the first year. student_balance() joins four tables and two of them had no
+# index on the column it joins by; measured at a five-year school it is 10.13 ms
+# a call against 1.76 ms, and at a one-year school there is no difference at all.
+# So the schools that would feel it are the ones that have been paying longest,
+# and nobody would ever connect the two. Same shape of gap on the audit log:
+# 33,016 buffers to show a screen of 200 rows, against 471.
+#
+# Found by simulating two years of one school's use (supabase/sim/) rather than
+# by reading the schema, which is the only way a cost like this shows up.
+emit supabase/bundles/24_a_balance_should_not_read_the_whole_ledger.sql \
+     supabase/migrations/0118*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

@@ -2015,6 +2015,41 @@ select 'a login with no school is told which kind (0117)',
        end
 
 union all
+-- 0118. Not a hole and not a wrong message: a cost that arrives slowly. Two of
+-- the four tables student_balance() joins had no index on the column it joins
+-- by, so every balance calculation read a whole table -- and student_balance()
+-- is called once per child by the defaulters list, once per sibling by the
+-- family sheet, once per promoted child by the rollover, and on every visit to
+-- the parent portal. Measured at a five-year school: 10.13 ms a call against
+-- 1.76 ms, and no difference at all in the first year, which is why it could
+-- ship. The audit log had the same shape of gap: 33,016 buffers to show 200
+-- rows, against 471.
+--
+-- Checks the COLUMN and not the index name, because an index called
+-- idx_invoice_lines_invoice built over school_id would satisfy a name check and
+-- fix nothing.
+select 'a balance does not read the whole ledger (0118)',
+       case when (select count(*) from (values
+                    ('invoice_lines', 'invoice_id'),
+                    ('payment_allocations', 'invoice_id'),
+                    ('payment_allocations', 'payment_id'),
+                    ('adjustments', 'student_id'),
+                    ('audit_log', 'school_id')
+                  ) as need(t, c)
+                  where not exists (
+                    select 1 from pg_index i
+                      join pg_class rel on rel.oid = i.indrelid
+                      join pg_namespace n on n.oid = rel.relnamespace
+                      join pg_attribute a on a.attrelid = rel.oid and a.attnum = i.indkey[0]
+                     where n.nspname = 'public' and rel.relname = need.t
+                       and a.attname = need.c)) > 0
+         then 'FAIL - every fee screen, the defaulter list and the audit log get '
+              || 'slower every month this school stays a customer; apply '
+              || 'supabase/bundles/24_a_balance_should_not_read_the_whole_ledger.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS — no schools yet, as expected'

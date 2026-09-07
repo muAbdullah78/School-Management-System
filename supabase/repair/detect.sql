@@ -852,7 +852,22 @@ with sig(migration, object, present) as (values
                      from pg_class c
                     where c.oid = to_regclass('public.login_secrets')), false)),
   ('0117_which_door_you_came_through', 'a login with no school is told which kind',
-     to_regprocedure('public.fn_my_login_state()') is not null)
+     to_regprocedure('public.fn_my_login_state()') is not null),
+  -- The column, not the index name: an index on the wrong column would pass a
+  -- name check and leave every balance calculation reading a whole table.
+  ('0118_a_balance_should_not_read_the_whole_ledger', 'the balance and audit indexes',
+     exists (select 1 from pg_index i
+               join pg_class rel on rel.oid = i.indrelid
+               join pg_namespace n on n.oid = rel.relnamespace
+               join pg_attribute a on a.attrelid = rel.oid and a.attnum = i.indkey[0]
+              where n.nspname = 'public' and rel.relname = 'invoice_lines'
+                and a.attname = 'invoice_id')
+     and exists (select 1 from pg_index i
+               join pg_class rel on rel.oid = i.indrelid
+               join pg_namespace n on n.oid = rel.relnamespace
+               join pg_attribute a on a.attrelid = rel.oid and a.attnum = i.indkey[0]
+              where n.nspname = 'public' and rel.relname = 'audit_log'
+                and a.attname = 'school_id' and i.indnatts > 1))
 )
 select migration,
        object                                   as looked_for,

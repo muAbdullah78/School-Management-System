@@ -20,3 +20,4 @@ supabase/bundles/19_the_renewal_run.sql|0113_the_renewal_run.sql
 supabase/bundles/20_leaving_and_coming_back.sql|0114_leaving_and_coming_back.sql
 supabase/bundles/21_a_login_with_no_school.sql|0115_a_login_with_no_school.sql
 supabase/bundles/22_the_school_keeps_the_keys.sql|0116_the_school_keeps_the_keys.sql
+supabase/bundles/23_which_door_you_came_through.sql|0117_which_door_you_came_through.sql
