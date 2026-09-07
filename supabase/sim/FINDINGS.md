@@ -569,3 +569,58 @@ Worth recording, because a report that only lists faults is not an audit.
 - **The practical flag lives on the subject** (F11), not on the paper.
 - **The provisional result card works**: children admitted after a mid-term
   produce a card that says so, rather than a card with holes in it.
+
+---
+
+## F18. The read sweep: five screens were over a second, and one took 7.7 seconds
+
+**This is the headline number of the audit, and it is what migration 0118
+actually bought.**
+
+Every read path in the product, timed on the finished simulation (368,386 rows,
+223 children, 2.5 years), as a real signed-in owner with RLS enforced. Three
+calls each, the last one reported, so these are **warm-cache figures on a local
+SSD**. The same sweep was then run on a byte-identical copy with 0118's 32
+indexes dropped.
+
+| Screen | without 0118 | with 0118 | |
+| --- | --- | --- | --- |
+| Reports: fee reconciliation, expected vs collected | **7,743.7 ms** | 116.3 ms | **67x** |
+| Cash drawer: `fn_counter_summary` | **3,888.0 ms** | 59.2 ms | **66x** |
+| Fees: head-wise dues, whole school | **3,398.2 ms** | 89.0 ms | **38x** |
+| Fees: `fn_recent_payments(25)` | **1,862.7 ms** | 52.4 ms | **36x** |
+| Reports: unpaid invoices | **1,472.3 ms** | 12.7 ms | **116x** |
+| Reports: ledger, a full year | 712.2 ms | 18.3 ms | 39x |
+| Fees: class dues, one section | 595.1 ms | 24.5 ms | 24x |
+| Dashboard | 565.2 ms | 66.9 ms | 8.4x |
+| Fees: defaulters, whole school | 479.0 ms | 64.8 ms | 7.4x |
+
+**`fn_recent_payments(25)` is on the dashboard.** It is one of the first things
+the software does every morning, and it was taking 1.86 seconds on a warm cache
+for a school with 4,800 payments. On Supabase, cold, across a network from
+Islamabad, that is a screen a school would describe as broken.
+
+**These are the numbers the live database is running at today**, because bundle
+24 has not been pasted yet.
+
+### And with the indexes, everything is fast
+
+| | |
+| --- | --- |
+| slowest screen in the product | 116 ms (fee reconciliation) |
+| dashboard | 67 ms |
+| **global search bar** | **6.5 to 11.3 ms** |
+| a child's whole 2.5-year ledger | 3.3 ms |
+| a section's register for today | 0.7 ms |
+| a child's attendance summary over a year | 0.2 ms |
+
+The **global search** was the specific worry, and it is not one: 11.3 ms for a
+first-name search across children, parents, staff, challans and receipts, 6.5 ms
+for a receipt number. `students(school_id, full_name)` and the voucher and
+receipt indexes were already right before this audit started.
+
+The three that remain worth watching, all in the 60 to 120 ms band, all
+whole-school aggregates rather than per-child reads: fee reconciliation,
+head-wise dues and the dashboard. None is a problem at this size. All three
+scale with the number of invoice lines, so they are the ones to re-measure at
+1,000 children.
