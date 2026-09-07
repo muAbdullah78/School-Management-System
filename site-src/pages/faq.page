@@ -55,6 +55,23 @@ priority: 0.8
         </p>
       </details>
       <details class="q">
+        <summary>How does a parent get a login?<span class="q__m" aria-hidden="true"></span></summary>
+        <p>
+          You make it for them, in about ten seconds. Open the child in Students,
+          press <b>Give this family a login</b>, and the software hands you an
+          email address and a password to pass on to the family. There is no form
+          for a parent to fill in and nothing for them to pay: parents cannot
+          create their own account, by design, because an account that reaches a
+          child&rsquo;s fee record has to be one the school gave out on purpose.
+        </p>
+        <p style="margin-top:12px">
+          If a parent forgets the password, look it up in the office and read it
+          back to them. The address you give a family does not have to be a real
+          mailbox, so a reset email may never arrive, and nobody should be locked
+          out of their own child&rsquo;s record waiting for one.
+        </p>
+      </details>
+      <details class="q">
         <summary>We already have years of records in Excel. Can we move them?<span class="q__m" aria-hidden="true"></span></summary>
         <p>
           Yes. Students, staff and opening balances import from a spreadsheet. Bring

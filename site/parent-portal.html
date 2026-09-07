@@ -159,12 +159,42 @@
         <li><a href="/fee-management">Fees</a></li>
         <li><a href="/attendance">Attendance</a></li>
         <li><a href="/exams-and-results">Exams</a></li>
+        <li><a href="/parent-portal">Parents</a></li>
         <li><a href="/pricing">Pricing</a></li>
         <li><a href="/faq">Questions</a></li>
         <li><a href="/guides">Guides</a></li></ul>
     </nav>
+    <!-- THREE AUDIENCES, THREE ENTRY POINTS, in increasing order of prominence
+         left to right, which is also increasing order of what this site is for.
+         A parent sent here by their child's school had none: the only mention
+         of the portal anywhere was a footer link, and the only thing in the
+         header that looked like a way in was "Sign in", which opens the school
+         office door.
+
+         The two sign-in doors sit next to each other and the trial button sits
+         apart, because that is the real division: two of these are for people
+         who already have an account and one is for somebody who has never
+         heard of us. The first arrangement put the plain "Sign in" link
+         between the two buttons, where a 15px text link reads as something
+         nobody meant to leave there.
+
+         Nothing here can send anybody to a dead end. Every door in the app
+         signs anybody in, so a parent who presses Sign in still gets where they
+         need to go: that page now carries a full-width button to theirs. This
+         just means they no longer have to.
+
+         "Parent sign in" and not "Parent portal", because the section nav now
+         carries a "Parents" entry that goes to the PAGE ABOUT the portal. Two
+         controls with one label going to two places is worse than no control,
+         and the label a parent needs is the one that says sign in.
+
+         data-app="portal" points it at the app's own parent door, and
+         site/wire.js rewrites the href to do it. The href here is the no-script
+         fallback, and /parent-portal is a better answer than nothing: the page
+         explains what the portal is and carries its own way in. -->
     <div class="nav__cta">
-      <a href="/contact" data-app="signin">Sign in</a>
+      <a class="nav__plain" href="/contact" data-app="signin">Sign in</a>
+      <a class="btn btn--ghost btn--sm" href="/parent-portal" data-app="portal">Parent sign in</a>
       <a class="btn btn--primary" href="/pricing" data-app="signup">Start free trial</a>
     </div>
 
@@ -175,15 +205,36 @@
         </svg>
         Menu
       </summary>
+      <!-- Below 880px the CTA row is display:none, so this panel is the ONLY
+           way in on a phone. Which is the device almost every parent will be
+           holding, so the portal has to be in here or the whole change is
+           desktop-only.
+
+           AND IT HAS TO BE MORE THAN A ROW IN THE LIST. The first version put
+           "Parent sign in" and "Sign in" at the bottom of ten identical rows,
+           in the same 16px black as "Guides" and "Contact": a parent scanning
+           for the way in had nothing to catch their eye, which is the exact
+           complaint that started this change, moved from the header to the
+           menu. They are buttons, below a rule, because they are the only two
+           things in here that are DOORS rather than pages.
+
+           "Start free trial" is deliberately not in this list. Below 880px the
+           sticky bar at the foot of every page carries it, and between 880 and
+           1139 the header CTA row still does, so it is never more than one
+           control away without being repeated three times. -->
       <div class="navmenu__panel">
         <a href="/fee-management">Fees</a>
         <a href="/attendance">Attendance</a>
         <a href="/exams-and-results">Exams</a>
+        <a href="/parent-portal">Parents</a>
         <a href="/pricing">Pricing</a>
         <a href="/faq">Questions</a>
         <a href="/guides">Guides</a>
         <a href="/contact">Contact</a>
-        <a href="/contact" data-app="signin">Sign in</a>
+        <div class="navmenu__doors">
+          <a class="btn btn--ghost" href="/parent-portal" data-app="portal">Parent sign in</a>
+          <a class="btn btn--ghost" href="/contact" data-app="signin">Sign in</a>
+        </div>
       </div>
     </details>
   </div>
@@ -213,6 +264,53 @@
     <div class="hero__cta">
       <a class="btn btn--primary btn--lg" href="/pricing" data-app="signup">Start 14 day free trial</a>
       <a class="btn btn--ghost btn--lg" href="/contact" data-app="portal">Open the portal</a>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ FOR PARENTS =
+     WHY THIS SITS SECOND, ABOVE EVERYTHING ELSE ON THE PAGE.
+
+     Every other word on this page is addressed to a school that is deciding
+     whether to buy: "Start 14 day free trial", "More questions principals
+     ask", "not something a school should have to police". That is correct for
+     a feature page and useless to the person the header's Parent sign in
+     button sends here with no script, and to any parent who searches for the
+     portal and lands on it.
+
+     They need two things and neither was anywhere on this site: the way in,
+     and where an account comes from when they have not been given one. The
+     second is the one that generated the report. A parent cannot create their
+     own account, by design, so "sign up" is not an answer and neither is
+     silence. The answer is "ask your school", said out loud.
+-->
+<section class="section" id="for-parents" style="padding-top:0">
+  <div class="wrap">
+    <div class="card" style="max-width:62ch">
+      <span class="eyebrow">For parents</span>
+      <h2 style="margin-top:12px">Are you a parent?</h2>
+      <p style="margin-top:12px">
+        Sign in with the email address and password your child&rsquo;s school
+        gave you. You will see your own children, and nobody else&rsquo;s.
+      </p>
+      <p style="margin-top:16px">
+        <a class="btn btn--primary btn--lg" href="/contact" data-app="portal">Parent sign in</a>
+      </p>
+      <div class="note">
+        <p>
+          <b>No account yet?</b> Only your child&rsquo;s school can create one.
+          Contact the school office and ask them to make you a parent account:
+          they will give you the email address and password to use. There is
+          nothing here for you to buy and no form to fill in, and it takes the
+          school a few seconds.
+        </p>
+        <p style="margin-top:10px">
+          <b>Forgotten your password?</b> Ask the office as well. The address a
+          school gives you does not have to be a real mailbox, so a reset email
+          may never arrive, and the office can look your password up and read
+          it back to you.
+        </p>
+      </div>
     </div>
   </div>
 </section>

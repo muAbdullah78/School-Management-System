@@ -234,7 +234,11 @@ main:focus { outline: none; }
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--line);
 }
-.nav__in { display: flex; align-items: center; gap: 24px; height: 66px; }
+/* min-height, NOT height. The bar has to be allowed to grow, because at the
+   narrowest phone widths the brand name is permitted to take two lines (see
+   the 419px block at the foot of this file) and a fixed 66px would have let it
+   spill out of the bar instead. */
+.nav__in { display: flex; align-items: center; gap: 20px; min-height: 66px; }
 .brand {
   display: flex; align-items: center; gap: 9px;
   font-weight: 700; font-size: 16.5px; letter-spacing: -0.015em;
@@ -242,15 +246,63 @@ main:focus { outline: none; }
 }
 .brand svg, .brand img { display: block; }
 .nav__links { display: flex; margin-left: auto; }
-.nav__links ul { display: flex; gap: 4px; list-style: none; margin: 0; padding: 0; align-items: center; }
+.nav__links ul { display: flex; gap: 3px; list-style: none; margin: 0; padding: 0; align-items: center; }
+/* 8px of padding and 14.5px of type, and both numbers were measured rather
+   than chosen. Seven section links plus three sign-in/trial controls plus the
+   brand came to 1180px of unbreakable content, against 1092px of room inside
+   a 1140px wrap: the row overflowed by 88px at EVERY width, including 1920,
+   because .wrap is capped and the shortfall therefore never closes.
+   Everything in this bar is now sized to bring that to 1052px, which leaves
+   40px. scripts/check-site-render.mjs measures the real row in a browser on
+   every page at seven widths and fails under a 30px floor, so the next label
+   somebody adds is caught before it ships rather than after a school reports
+   it. */
 .nav__links a {
-  display: block; padding: 8px 12px; border-radius: var(--r-sm);
-  text-decoration: none; font-size: 15px; font-weight: 500; color: var(--ink-2);
+  display: block; padding: 8px; border-radius: var(--r-sm);
+  text-decoration: none; font-size: 14.5px; font-weight: 500; color: var(--ink-2);
 }
 .nav__links a:hover { color: var(--brand); background: var(--brand-50); }
-.nav__cta { display: flex; gap: 12px; align-items: center; }
-.nav__cta a:first-child { font-size: 15px; font-weight: 500; text-decoration: none; color: var(--ink-2); }
-.nav__cta a:first-child:hover { color: var(--brand); }
+/* NOTHING IN THE BAR WRAPS MID-LABEL.
+   Adding two entries to the header (a Parents section link, a Parent sign in
+   button) pushed the row past its width at 1400px, and flex answered by
+   breaking the text inside every item: "The School / Manager", "Parent /
+   portal", "Parent sign / in", "Sign / in", "Start free / trial". Five
+   two-line items in a 66px bar, which is what the school photographed.
+   A nav label is a name, not a paragraph, so it does not get to wrap. The row
+   sheds a whole tier instead, at the breakpoints near the foot of this file. */
+.brand span, .nav__links a, .nav__cta a { white-space: nowrap; }
+
+/* margin-left, not a bigger .nav__in gap, because only ONE of the two
+   boundaries in this row needs widening. "Sign in" lands immediately after
+   "Guides", and 20px of gap against the 19px between section links is not a
+   boundary a reader can see. */
+.nav__cta { display: flex; gap: 10px; align-items: center; margin-left: 10px; }
+/* A CLASS, NOT :first-child, and the difference is a real bug avoided.
+   This was `.nav__cta a:first-child`, which styles "whatever happens to be
+   first". Two controls have since been inserted before this one and the order
+   of the row has changed once; a positional selector would have handed the
+   quiet-text style to whichever link moved into first place and left this one
+   a bare anchor: blue, underlined, in the header of every page.
+
+   SEMIBOLD AND NEARLY BLACK, and that is what tells it apart from a section
+   link. It sits immediately after "Guides" in the row, and at 15px in the same
+   grey at the same weight it read as an eighth section link to anybody
+   scanning. The confusion this whole change exists to remove is people not
+   knowing which of these opens what, so the one control that is a DOOR and
+   looked like a LABEL had to stop looking like one. */
+.nav__cta .nav__plain { font-size: 15px; font-weight: 600; text-decoration: none; color: var(--ink); }
+.nav__cta .nav__plain:hover { color: var(--brand); }
+/* The parent portal entry. A ghost BUTTON rather than a text link, because the
+   people it is for did not come to read about school software: they were sent
+   here by their child's school and are looking for the way in. It stays
+   visually below the filled primary, which is still the one thing this site is
+   for. */
+.nav__cta .btn--sm { min-height: 40px; padding: 9px 14px; font-size: 14.5px; }
+/* Narrower than the 22px every other primary button on the site gets, and only
+   here. It is still the tallest, heaviest thing in the bar, which is what
+   carries the hierarchy; the horizontal padding was just the cheapest 8px
+   available once a third control moved in beside it. */
+.nav__cta .btn--primary { padding: 12px 18px; }
 
 .navmenu { display: none; margin-left: auto; }
 .navmenu > summary {
@@ -262,15 +314,47 @@ main:focus { outline: none; }
 .navmenu > summary::-webkit-details-marker { display: none; }
 .navmenu[open] > summary { border-color: var(--brand); color: var(--brand); }
 .navmenu__panel {
-  position: absolute; left: 0; right: 0; top: 66px;
+  /* 100%, not 66px. The offset parent is .nav (it is sticky, so it is
+     positioned), and a hard-coded 66px would have left a gap under a bar that
+     grew taller. */
+  position: absolute; left: 0; right: 0; top: 100%;
   background: #fff; border-bottom: 1px solid var(--line);
   padding: 8px 24px 18px; box-shadow: var(--sh-md);
+  /* IT HAS TO BE ABLE TO SCROLL. The panel is absolutely positioned inside a
+     sticky header, so anything past the bottom of the screen scrolls with the
+     header and can never be reached: on a 568px phone the list already ran
+     off, and the two door buttons made it longer. 100% is the bar's own
+     height, so this stays right when the bar grows a line at 320px. dvh
+     first, because on a phone 100vh is the address bar's optimistic guess. */
+  max-height: calc(100vh - 100%);
+  max-height: calc(100dvh - 100%);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .navmenu__panel a {
   display: block; padding: 13px 0; font-size: 16px; text-decoration: none;
   color: var(--ink); border-bottom: 1px solid var(--bg-2);
 }
 .navmenu__panel a:last-of-type { border-bottom: 0; }
+/* THE TWO DOORS, AS BUTTONS, BELOW A RULE.
+   They used to be the ninth and tenth rows of an undifferentiated list. See
+   the comment on the markup in site-src/layout.html for why that was the
+   header's bug wearing a different hat. */
+.navmenu__doors {
+  display: grid; gap: 10px;
+  margin-top: 8px; padding-top: 14px; border-top: 1px solid var(--line);
+}
+/* The list rule above sets padding, a bottom border AND display:block on every
+   anchor in the panel. It is a more specific selector than .btn, so without
+   this the buttons kept the 13px inner offset, a stray line underneath, and
+   block layout: the label sat hard against the left edge of its own box
+   instead of centred in it, which is what gave the first attempt two
+   left-aligned outlined rectangles. */
+.navmenu__doors a { display: flex; padding: 12px 22px; border-bottom: 0; }
+/* Above 880px the header still shows the CTA row, so these two would be the
+   same doors twice on one screen, as a pair of 976px-wide buttons. The panel
+   exists up there only to hold the section links. */
+@media (min-width: 880px) { .navmenu__doors { display: none; } }
 
 /* ---------------------------------------------------------------- button ---*/
 .btn {
@@ -731,9 +815,75 @@ details.q p { margin-top: 12px; color: var(--ink-2); max-width: 72ch; font-size:
 }
 
 /* ------------------------------------------------------------ responsive ---*/
+/* THE ROW CANNOT PUSH THE PAGE SIDEWAYS, whatever font the visitor has.
+   Every width in this bar was measured in Liberation Sans, which has Arial's
+   metrics and is the WIDEST of the families the stack can land on: Segoe UI on
+   Windows, SF on Apple and Roboto on Android all come out 4-6% narrower, so
+   the 40px of slack on a real device is more like 80px. A Linux desktop with
+   neither Liberation nor Arial installed falls through to DejaVu Sans, which
+   is 11% wider and would not fit.
+   So the section nav, and only the section nav, is allowed to give way: it is
+   the one tier that is duplicated in the Menu panel and the footer. A clipped
+   "Guides" on an unusual font setup is a small blemish. A header that pushes
+   every page 70px sideways, and puts a horizontal scrollbar under all of it,
+   is the bug this whole block exists to remove.
+   Scoped to the width where the three-tier row actually exists, because below
+   it the brand needs to keep its own ability to shrink (see the 419px block). */
+@media (min-width: 1140px) {
+  .brand, .nav__cta { flex-shrink: 0; }
+  .nav__links { min-width: 0; overflow: hidden; }
+  /* AND THE FOCUS RING GOES INSIDE, because overflow:hidden clips at the
+     container's padding box and the site's ring is painted 3px OUTSIDE the
+     link. With the standard ring a keyboard user tabbing to "Fees" saw a
+     single blue arc on its right-hand side: the left, top and bottom of the
+     ring were cut off by the clip above. Measured, not guessed, on a
+     screenshot of a real Tab press.
+     Inset by 2px it sits within the link's own 8px of padding, so it is a
+     complete ring at the same 2px and the same colour, and nothing can cut it
+     off. This is the only clipping container on the site, which is why it is
+     the only place that needs to deviate. */
+  .nav__links a:focus-visible { outline-offset: -2px; }
+}
+/* THE HEADER COLLAPSES IN TWO STEPS, NOT ONE, and which tier goes first is
+   the whole decision.
+   It used to be one step at 879px: below that the section links and the CTA
+   row both vanished together. That worked while the CTA row was two items
+   wide. With three it does not fit inside the 1140px wrap at any width, so
+   something has to give earlier, and the section links are the right thing to
+   lose: they are duplicated verbatim in the Menu panel this reveals AND in the
+   footer, while "Sign in", "Parent sign in" and "Start free trial" are the
+   only copy of themselves anywhere in the header.
+   The alternative was raising the single breakpoint to ~1200px, which would
+   have taken "Start free trial" off the header on every 1024px and 1100px
+   screen, with the sticky action bar that normally carries it not appearing
+   until 879px. A 300px band of viewports with no way to buy anything is a
+   worse bug than a Guides link behind a Menu button. */
+@media (max-width: 1139px) {
+  .nav__links { display: none; }
+  /* The auto margin moves from the hidden section nav to the CTA row, so the
+     three controls stay on the right instead of collapsing against the brand.
+     .navmenu gives its own auto margin up for the same reason: two auto
+     margins would split the free space and put the CTA row in the middle. */
+  .nav__cta { margin-left: auto; }
+  .navmenu { display: block; margin-left: 0; }
+}
 @media (max-width: 879px) {
-  .nav__links, .nav__cta { display: none; }
-  .navmenu { display: block; }
+  .nav__cta { display: none; }
+  .navmenu { margin-left: auto; }
+}
+/* The last 100px, where "The School Manager" and "Menu" genuinely do not fit
+   on one line at a readable size. Measured: at 320px there are 272px inside
+   the wrap, and the brand alone is 192px of it.
+   The brand name is the one label in this bar allowed to wrap, because it is
+   the one whose meaning survives a line break, and because .nav__in is
+   min-height so the bar grows with it rather than spilling. Measured: at 360px
+   it still comes out on one line with 17px to spare; at 320px it takes two and
+   the bar stays 66px tall. Which is what a 2016 phone gets instead of a
+   horizontal scrollbar under every page. */
+@media (max-width: 419px) {
+  .nav__in { gap: 12px; }
+  .navmenu > summary { padding: 0 12px; }
+  .brand span { white-space: normal; }
 }
 @media (max-width: 700px) {
   .section { padding: 62px 0; }
