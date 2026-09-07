@@ -896,7 +896,16 @@ with sig(migration, object, present) as (values
               where n.nspname = 'public'
                 and p.proname = 'fn_unlock_attendance'
                 and p.prosrc ~ 'is_locked\s*=\s*false'
-                and has_function_privilege('authenticated', p.oid, 'EXECUTE')))
+                and has_function_privilege('authenticated', p.oid, 'EXECUTE'))),
+  -- With the comments stripped, because supabase/ is full of em dashes in
+  -- comments and none of those are things the software says. What is left
+  -- after stripping them is string literals.
+  ('0122_the_em_dash_a_parent_receives', 'no em dash in what the software says or sends',
+     not exists (select 1
+                   from pg_proc p
+                   join pg_namespace n on n.oid = p.pronamespace
+                  where n.nspname = 'public'
+                    and regexp_replace(p.prosrc, '--.*$', '', 'gn') ~ '[\u2014\u2013]'))
 )
 select migration,
        object                                   as looked_for,

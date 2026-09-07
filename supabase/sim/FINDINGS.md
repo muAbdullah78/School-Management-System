@@ -748,6 +748,7 @@ footer, recomputed over the whole filtered set on every page. That is a
 reasonable thing to want and an O(school) cost to pay for it. Counting only on
 the first page, or dropping the exact total, is a product decision rather than a
 bug fix.
+
 ## F21. Finalize a register with a wrong mark on it and nobody, at any privilege level, could ever put it right. **Fixed in migration 0121.**
 
 **Severity: high. The most serious thing this simulation found, and it was found
@@ -824,3 +825,67 @@ three.
 The simulation now walks the path: twenty days across the two years are
 reopened, corrected and closed again, so the corrections report has rows in it
 for the first time.
+
+## F22. 0120 fixed what the software says when it REFUSES. Fifty-seven strings it says while WORKING still carried an em dash, six of them in text messages to parents. **Fixed in migration 0122.**
+
+**Severity: medium, and the interesting part is how a careful guard came to be
+asserting the narrower half of its own rule.**
+
+F14 found the em dash in `raise exception` messages, 0120 repunctuated all 27,
+and the `verify.sql` row has been asserting that ever since. Then, while writing
+the verify row for 0121, I read `fn_attendance_corrections` and saw this at the
+end of it:
+
+```sql
+ad.correction_reason, coalesce(p.full_name, '—')
+```
+
+A `raise exception` is what the software says when it refuses, which most users
+never see. What everybody sees is what it says when it works. Counted properly,
+against the functions as stored and with their comments stripped out: **57
+string literals in 29 functions**, not one of them a refusal message.
+
+| | |
+|---|---|
+| **6 message templates** | Seeded at signup and sent to parents by SMS and WhatsApp: `Fee received. Thank you — {school}.` |
+| **24 placeholders** | `coalesce(x, '—')` in 13 report and search functions: the fee ledger, recent payments, the enquiry list, both corrections reports, global search, voided challans, the discount report |
+| **27 sentences** | The staff check-in explaining why a saved link will not work, the licence notice, the renewal message, the importer saying which column to add, the operator console throughout |
+
+The templates are the worst of it: the em dash was not merely in this project's
+writing, it was going out in text messages under a school's name. On the
+two-year simulation there were **864 queued messages** carrying it.
+
+### Three things this one taught
+
+- **Patching the function is not patching the school.**
+  `fn__default_message_templates` runs once, at signup. A school that already
+  exists keeps its own `message_templates` rows, and its already-composed
+  messages sit in `message_outbox` waiting to go. Both are repaired, by the
+  exact fragment only, so a template a school has edited for itself keeps its
+  own wording, and only `queued` and `failed` messages are touched: one that has
+  already been sent is a record of what happened.
+- **The first version of the data patch repaired 104 rows of 864 and looked
+  successful.** It matched on `{school}`, and `message_outbox.rendered_text`
+  holds the finished text with the school's *name* already substituted. Caught
+  by counting what was left rather than what had changed.
+- **A check must not break its own rule.** The `verify.sql` row is written with
+  `\u2014` escapes rather than the characters, because
+  `scripts/check-no-emdash.py` now scans the string literals in that file, and
+  the first version of the check failed itself.
+
+### And the same rule was broken by the checking apparatus, in its own output
+
+`supabase/verify.sql` said `FAIL — re-run bundle 7` and ninety-six variations of
+it, read by exactly the person who has just been told something is wrong with
+their database. `supabase/reset.sql` said it once. Both fixed here, and
+`scripts/check-no-emdash.py` now scans the string *literals* of those operator
+scripts, with comments exempt: not "does this file contain the character" but
+"does the software say it". Proved to catch a dash inside a `$$` function body
+and to allow one in a comment.
+
+What is still not swept, said plainly: about 2,900 em dashes in code comments
+under `supabase/`, which nobody outside this repository will ever read; and the
+text inside `supabase/migrations/` and `supabase/bundles/`, which cannot be
+swept because a bundle a school has already pasted must never change. The two
+verify rows are what hold that line, against the live database rather than the
+file.

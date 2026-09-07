@@ -448,6 +448,7 @@ emit supabase/bundles/25_last_year_still_gets_its_result_cards.sql \
 # voided: allocate the payment elsewhere", which nobody would write.
 emit supabase/bundles/26_the_em_dash_a_clerk_reads.sql \
      supabase/migrations/0120*.sql
+
 # A TWENTY-SEVENTH bundle.
 #
 # 0121 is the one finding from the two-year simulation that a school could not
@@ -463,6 +464,23 @@ emit supabase/bundles/26_the_em_dash_a_clerk_reads.sql \
 # one who could create a state the owner could not undo.
 emit supabase/bundles/27_a_finalised_register_can_be_reopened.sql \
      supabase/migrations/0121*.sql
+
+# A TWENTY-EIGHTH bundle.
+#
+# 0122 is 0120 finished. 0120 swept the em dash out of every `raise exception`
+# message and left every other string alone, which turned out to be the half
+# that people actually read: six message templates sent to PARENTS by SMS
+# ("Fee received. Thank you — {school}."), the missing-value placeholder in
+# thirteen report and search functions, and twenty-seven sentences the software
+# says while working rather than while refusing.
+#
+# It repairs the data too. fn__default_message_templates runs once, at signup,
+# so patching the function does nothing for a school that already exists: their
+# message_templates rows, and any message queued and not yet sent, are
+# repunctuated by the exact fragment only, so a template a school has edited
+# for itself keeps its own wording.
+emit supabase/bundles/28_the_em_dash_a_parent_receives.sql \
+     supabase/migrations/0122*.sql
 
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen

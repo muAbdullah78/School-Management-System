@@ -52,7 +52,7 @@ declare r text;
 begin
   foreach r in array array['postgres', 'anon', 'authenticated', 'service_role'] loop
     if not exists (select 1 from pg_roles where rolname = r) then
-      raise notice 'role % not present on this project — skipped', r;
+      raise notice 'role % not present on this project, skipped', r;
       continue;
     end if;
 

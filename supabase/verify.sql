@@ -194,8 +194,8 @@ missing as (
 
 select 'tables present' as check,
        case when (select count(*) from missing) = 0 then 'PASS'
-            else 'FAIL — missing ' || (select string_agg(t, ', ') from missing)
-                 || ' — re-run bundle ' || (select min(bundle) from missing)
+            else 'FAIL: missing ' || (select string_agg(t, ', ') from missing)
+                 || '; re-run bundle ' || (select min(bundle) from missing)
        end as result
 
 union all
@@ -203,7 +203,7 @@ select 'parent role added (bundle 2)',
        case when exists (
          select 1 from pg_enum e join pg_type t on t.oid = e.enumtypid
           where t.typname = 'user_role' and e.enumlabel = 'parent')
-       then 'PASS' else 'FAIL — re-run bundle 2' end
+       then 'PASS' else 'FAIL: re-run bundle 2' end
 
 union all
 select 'portal functions (bundle 3)',
@@ -211,7 +211,7 @@ select 'portal functions (bundle 3)',
                    where n.nspname = 'public' and p.proname in
                      ('fn_portal_me','fn_portal_child_fees',
                       'fn_portal_child_attendance','fn_portal_child_results')) = 4
-       then 'PASS' else 'FAIL — re-run bundle 3' end
+       then 'PASS' else 'FAIL: re-run bundle 3' end
 
 union all
 -- EVERY migration from 0035 to 0049, not a hand-picked subset.
@@ -227,8 +227,8 @@ union all
 -- stopped at different points inside it. The signatures here are the same ones
 -- supabase/repair/detect.sql uses, and CI asserts the two lists agree.
 select 'migrations 0035-0049',
-       coalesce('FAIL — missing ' || string_agg(m, ', ')
-                  || ' — run supabase/repair/detect.sql, then the files it names',
+       coalesce('FAIL: missing ' || string_agg(m, ', ')
+                  || '; run supabase/repair/detect.sql, then the files it names',
                 'PASS')
   from (
     select '0035' as m where not exists (select 1 from pg_proc where proname='fn_fee_amount' and pronamespace='public'::regnamespace)
@@ -313,7 +313,7 @@ select 'search, birthdays, staff leaving (bundle 5)',
                    join pg_namespace n on n.oid = p.pronamespace
                    where n.nspname = 'public' and p.proname = 'fn_recent_payments'
                      and p.prosrc like '%order by p.created_at desc, p.receipt_no desc%')
-       then 'PASS' else 'FAIL — re-run bundle 5 (5_search.sql)' end
+       then 'PASS' else 'FAIL: re-run bundle 5 (5_search.sql)' end
 
 union all
 select 'photographs and school logo (0057)',
@@ -345,7 +345,7 @@ select 'photographs and school logo (0057)',
                  and (select count(*) from pg_constraint
                        where conname in ('students_photo_path_chk', 'staff_photo_path_chk',
                                          'school_settings_logo_path_chk')) = 3
-       then 'PASS' else 'FAIL — run migrations/0057_photos_and_logo.sql' end
+       then 'PASS' else 'FAIL: run migrations/0057_photos_and_logo.sql' end
 
 union all
 select 'exam computation (0058)',
@@ -379,7 +379,7 @@ select 'exam computation (0058)',
                               join pg_namespace n on n.oid = p.pronamespace
                               where n.nspname='public' and p.proname='fn_generate_result_cards'
                                 and p.prosrc like '%fn_takes_subject%')
-       then 'PASS' else 'FAIL — run migrations/0058_exam_computation.sql' end
+       then 'PASS' else 'FAIL: run migrations/0058_exam_computation.sql' end
 
 union all
 select 'the observer role (0059)',
@@ -490,7 +490,7 @@ select 'the observer role (0059)',
                    where n.nspname='public'
                      and p.proname in ('fn_may_manage_class','fn_may_write_school_file')
                      and p.prosrc like '%may_view(%')
-       then 'PASS' else 'FAIL — run migrations/0059_readonly_boundary.sql' end
+       then 'PASS' else 'FAIL: run migrations/0059_readonly_boundary.sql' end
 
 union all
 select 'refundable deposits (0060)',
@@ -518,7 +518,7 @@ select 'refundable deposits (0060)',
                               join pg_namespace n on n.oid = p.pronamespace
                               where n.nspname='public' and p.proname='fn_report_balance_sheet'
                                 and p.prosrc like '%deposits_held%')
-       then 'PASS' else 'FAIL — run migrations/0060_refundable_deposits.sql' end
+       then 'PASS' else 'FAIL: run migrations/0060_refundable_deposits.sql' end
 
 union all
 select 'certificates (0061)',
@@ -561,7 +561,7 @@ select 'certificates (0061)',
                               where n.nspname='public'
                                 and p.proname='fn_certificate_readiness'
                                 and p.prosrc like '%blocked_by_dues%')
-       then 'PASS' else 'FAIL — run migrations/0061_certificates.sql' end
+       then 'PASS' else 'FAIL: run migrations/0061_certificates.sql' end
 
 union all
 select 'staff check-in (0062)',
@@ -601,7 +601,7 @@ select 'staff check-in (0062)',
                  and exists (select 1 from information_schema.columns
                               where table_schema='public' and table_name='school_settings'
                                 and column_name='day_starts_at')
-       then 'PASS' else 'FAIL — run migrations/0062_staff_checkin.sql' end
+       then 'PASS' else 'FAIL: run migrations/0062_staff_checkin.sql' end
 
 union all
 select 'a signed-in user can write the tables (0063)',
@@ -620,7 +620,7 @@ select 'a signed-in user can write the tables (0063)',
                where n.nspname = 'public' and con.contype = 'c' and rel.relkind = 'r'
                  and pg_get_constraintdef(con.oid) like '%' || f.proname || '(%'
                  and not has_function_privilege('authenticated', f.oid, 'EXECUTE'))
-       then 'PASS' else 'FAIL — run migrations/0063_constraint_function_grants.sql' end
+       then 'PASS' else 'FAIL: run migrations/0063_constraint_function_grants.sql' end
 
 union all
 select 'operator billing (0064)',
@@ -656,7 +656,7 @@ select 'operator billing (0064)',
                               where n.nspname='public'
                                 and p.proname='fn_platform_schools'
                                 and pg_get_function_result(p.oid) like '%outstanding%')
-       then 'PASS' else 'FAIL — run migrations/0064_operator_billing.sql' end
+       then 'PASS' else 'FAIL: run migrations/0064_operator_billing.sql' end
 
 union all
 select 'invite-only provisioning (0065)',
@@ -691,7 +691,7 @@ select 'invite-only provisioning (0065)',
                                 and p.proname in ('handle_new_user','fn__attach_login')
                                 and (strpos(p.prosrc, 'raw_user_meta_data->>''role''') > 0
                                   or strpos(p.prosrc, 'raw_user_meta_data->>''school_id''') > 0))
-       then 'PASS' else 'FAIL — run migrations/0065_invite_only_provisioning.sql' end
+       then 'PASS' else 'FAIL: run migrations/0065_invite_only_provisioning.sql' end
 
 union all
 select 'fee setup (0066)',
@@ -714,7 +714,7 @@ select 'fee setup (0066)',
                               join pg_namespace n on n.oid = p.pronamespace
                               where n.nspname='public' and p.proname='fn_student_monthly_fee'
                                 and p.prosrc like '%effective_from <=%')
-       then 'PASS' else 'FAIL — run migrations/0066_fee_setup.sql' end
+       then 'PASS' else 'FAIL: run migrations/0066_fee_setup.sql' end
 
 union all
 select 'live student count (0067)',
@@ -738,12 +738,12 @@ select 'live student count (0067)',
                          and pr.proname = 'fn__refresh_counts_touched'
                          and t.tgrelid in ('public.students'::regclass,
                                            'public.enrollments'::regclass)) = 6
-       then 'PASS' else 'FAIL — run migrations/0067_live_student_count.sql' end
+       then 'PASS' else 'FAIL: run migrations/0067_live_student_count.sql' end
 
 union all
 select 'price plans loaded',
        case when (select count(*) from public.plans) = 4
-       then 'PASS' else 'FAIL — re-run bundle 1' end
+       then 'PASS' else 'FAIL: re-run bundle 1' end
 
 union all
 -- THE ONE THAT PROTECTS CHILDREN.
@@ -759,13 +759,13 @@ union all
 -- table, with its own reason, so the two cases can never be confused again.
 select 'parent lockout',
        coalesce(
-         'FAIL — ' || string_agg(t || ' (' || why || ')', ', '),
+         'FAIL: ' || string_agg(t || ' (' || why || ')', ', '),
          'PASS')
   from (
     select t,
            case when to_regclass('public.' || t) is null
-                  then 'table does not exist — re-run bundle 1'
-                else 'SELECT policy does not consult is_staff() — re-run bundle 3'
+                  then 'table does not exist; re-run bundle 1'
+                else 'SELECT policy does not consult is_staff(); re-run bundle 3'
            end as why
     from unnest(array[
       'academic_sessions','assessments','attendance_daily','classes',
@@ -799,7 +799,7 @@ union all
 select 'signup trigger on auth.users',
        case
          when not exists (select 1 from pg_trigger where tgname = 'on_auth_user_created')
-           then 'FAIL — re-run bundle 1'
+           then 'FAIL: re-run bundle 1'
          when not exists (select 1 from pg_trigger
                            where tgname = 'on_auth_user_created' and (tgtype & 16) <> 0)
            then 'FAIL - the trigger only fires on INSERT, so a school signing up '
@@ -856,7 +856,7 @@ select 'licence banner does not nag mid-term (0068)',
        case when exists (select 1 from pg_proc where proname = 'fn_my_licence'
                           and pronamespace = 'public'::regnamespace
                           and prosrc like '%v_tell%')
-       then 'PASS' else 'FAIL — re-run bundle 7' end
+       then 'PASS' else 'FAIL: re-run bundle 7' end
 
 union all
 -- 0070. Two cross-tenant defects, both proven on live fixtures.
@@ -880,7 +880,7 @@ select 'one school cannot reach another''s families or fees (0070)',
                               join pg_namespace n on n.oid = p.pronamespace
                               where n.nspname = 'public' and p.proname like 'fn\_\_%'
                                 and has_function_privilege('authenticated', p.oid, 'execute'))
-       then 'PASS' else 'FAIL — re-run bundle 7 (cross-tenant leak is OPEN)' end
+       then 'PASS' else 'FAIL: re-run bundle 7 (cross-tenant leak is OPEN)' end
 
 union all
 -- 0071. Every function in public used to be callable by an unauthenticated
@@ -893,7 +893,7 @@ select 'unauthenticated callers can run nothing (0071)',
                               join pg_namespace n on n.oid = p.pronamespace
                               where n.nspname = 'public'
                                 and has_function_privilege('anon', p.oid, 'execute'))
-       then 'PASS' else 'FAIL — re-run bundle 7 ('
+       then 'PASS' else 'FAIL: re-run bundle 7 ('
             || (select count(*)::text from pg_proc p
                  join pg_namespace n on n.oid = p.pronamespace
                 where n.nspname = 'public'
@@ -915,7 +915,7 @@ select 'class names and fee heads are per-school (0072)',
              and exists (select 1 from pg_proc where proname = 'fn_import_students'
                           and pronamespace = 'public'::regnamespace
                           and prosrc like '%active and school_id = public.current_school_id() and lower(btrim(name))%')
-       then 'PASS' else 'FAIL — re-run bundle 7' end
+       then 'PASS' else 'FAIL: re-run bundle 7' end
 
 union all
 -- 0073 and 0074. The operator's audit trail, and read-only support access.
@@ -944,8 +944,8 @@ select 'support access is read-only (0073, 0074)',
        when exists (select 1 from pg_proc where proname='has_role'
                      and pronamespace='public'::regnamespace
                      and prosrc like '%is_operator_session%')
-       then 'FAIL — has_role() consults the support session; support access is NOT read-only'
-       else 'FAIL — re-run bundle 7' end
+       then 'FAIL: has_role() consults the support session; support access is NOT read-only'
+       else 'FAIL: re-run bundle 7' end
 
 union all
 -- 0075. The operator can open a school: the getting-started checklist, when each
@@ -956,7 +956,7 @@ select 'the operator can open a school (0075)',
        case when exists (select 1 from pg_proc where proname='fn_platform_school_detail'
                           and pronamespace='public'::regnamespace
                           and prosrc like '%readiness%')
-       then 'PASS' else 'FAIL — re-run bundle 7' end
+       then 'PASS' else 'FAIL: re-run bundle 7' end
 
 union all
 -- Whether this database can produce an INVOICE, correct a wrong one, and record
@@ -976,25 +976,25 @@ union all
 select 'invoices, corrections and withholding tax (0076, 0077, 0078)',
        case
          when to_regclass('public.platform_settings') is null
-           then 'FAIL — re-run bundle 7 (no seller details, so no invoice can be printed)'
+           then 'FAIL: re-run bundle 7 (no seller details, so no invoice can be printed)'
          when not exists (select 1 from information_schema.columns
                            where table_schema='public' and table_name='platform_invoices'
                              and column_name='doc_no')
-           then 'FAIL — invoices have no document number; re-run bundle 7'
+           then 'FAIL: invoices have no document number; re-run bundle 7'
          when not exists (select 1 from information_schema.columns
                            where table_schema='public' and table_name='platform_payments'
                              and column_name='tax_withheld')
-           then 'FAIL — withheld tax cannot be recorded, so every balance for a '
+           then 'FAIL: withheld tax cannot be recorded, so every balance for a '
                 || 'withholding school will be wrong; re-run bundle 7'
          when not exists (select 1 from pg_trigger t join pg_proc pr on pr.oid=t.tgfoid
                            where not t.tgisinternal and pr.proname='fn__assign_doc_no')
-           then 'FAIL — the numbering trigger is missing; re-run bundle 7'
+           then 'FAIL: the numbering trigger is missing; re-run bundle 7'
          when not exists (select 1 from pg_trigger t join pg_proc pr on pr.oid=t.tgfoid
                            where not t.tgisinternal
                              and pr.proname='fn__refuse_duplicate_invoice')
-           then 'FAIL — a double-clicked renewal would bill twice; re-run bundle 7'
+           then 'FAIL: a double-clicked renewal would bill twice; re-run bundle 7'
          when to_regclass('public.platform_payment_claims') is null
-           then 'FAIL — schools cannot report a payment; re-run bundle 7'
+           then 'FAIL: schools cannot report a payment; re-run bundle 7'
          else 'PASS' end
 
 union all
@@ -1008,13 +1008,13 @@ select 'our own invoice details are filled in',
                                           or btrim(coalesce(bank_account,'')) = ''
                                      then 'incomplete' else 'ok' end
                                 from public.platform_settings where id$q$) is null
-           then 'n/a — 0076 not applied yet, so there is nowhere to put them'
+           then 'n/a: 0076 not applied yet, so there is nowhere to put them'
          when pg_temp.ask($q$select case when btrim(coalesce(business_name,'')) = ''
                                           or btrim(coalesce(ntn,'')) = ''
                                           or btrim(coalesce(bank_account,'')) = ''
                                      then 'incomplete' else 'ok' end
                                 from public.platform_settings where id$q$) = 'incomplete'
-           then 'ACTION NEEDED — set your business name, NTN and bank account in the '
+           then 'ACTION NEEDED: set your business name, NTN and bank account in the '
                 || 'console under "Our billing details". Until then every invoice prints '
                 || 'incomplete and a school cannot claim it or file the tax it must withhold.'
          else 'PASS' end
@@ -1031,26 +1031,26 @@ select 'a school can be suspended, archived and deleted (0079, 0080)',
          when not exists (select 1 from information_schema.columns
                            where table_schema='public' and table_name='subscriptions'
                              and column_name='suspended_at')
-           then 'FAIL — a school cannot be stopped before its renewal date; re-run bundle 7'
+           then 'FAIL: a school cannot be stopped before its renewal date; re-run bundle 7'
          when not exists (select 1 from pg_proc where proname='fn_effective_status'
                            and pronamespace='public'::regnamespace
                            and prosrc like '%suspended_at%')
-           then 'FAIL — suspension is recorded but nothing reads it, so a suspended '
+           then 'FAIL: suspension is recorded but nothing reads it, so a suspended '
                 || 'school keeps working; re-run bundle 7'
          when not exists (select 1 from pg_proc where proname='fn_my_licence'
                            and pronamespace='public'::regnamespace
                            and prosrc like '%suspend_reason%')
-           then 'FAIL — a suspended school would not be told why; re-run bundle 7'
+           then 'FAIL: a suspended school would not be told why; re-run bundle 7'
          when to_regclass('public.platform_exports') is null
-           then 'FAIL — no record of what was handed to a school before deletion; re-run bundle 7'
+           then 'FAIL: no record of what was handed to a school before deletion; re-run bundle 7'
          when not exists (select 1 from pg_proc where proname='fn_platform_purge_school'
                            and pronamespace='public'::regnamespace)
-           then 'FAIL — a school still cannot be deleted; re-run bundle 7'
+           then 'FAIL: a school still cannot be deleted; re-run bundle 7'
          when (select confdeltype from pg_constraint
                 where conname='platform_invoices_school_id_fkey') <> 'n'
            -- The one that would be silent: everything else works and deleting a
            -- school takes your own sales invoices with it.
-           then 'FAIL — deleting a school would destroy your own invoices to it, '
+           then 'FAIL: deleting a school would destroy your own invoices to it, '
                 || 'which tax retention does not permit; re-run bundle 7'
          else 'PASS' end
 
@@ -1064,14 +1064,14 @@ select 'the business can say what it is worth (0081)',
        case
          when not exists (select 1 from pg_proc where proname='fn_platform_metrics'
                            and pronamespace='public'::regnamespace)
-           then 'FAIL — re-run bundle 7'
+           then 'FAIL: re-run bundle 7'
          when not exists (select 1 from pg_proc where proname='fn__school_mrr'
                            and pronamespace='public'::regnamespace)
            -- Without it MRR reads zero on a screen that looks like it is working.
-           then 'FAIL — MRR would report zero for every school; re-run bundle 7'
+           then 'FAIL: MRR would report zero for every school; re-run bundle 7'
          when not exists (select 1 from pg_proc where proname='fn_platform_growth'
                            and pronamespace='public'::regnamespace)
-           then 'FAIL — the growth chart has nothing to read; re-run bundle 7'
+           then 'FAIL: the growth chart has nothing to read; re-run bundle 7'
          else 'PASS' end
 
 union all
@@ -1081,15 +1081,15 @@ union all
 select 'the website can read prices and offer the installer (0082)',
        case
          when to_regclass('public.app_releases') is null
-           then 'FAIL — re-run bundle 7'
+           then 'FAIL: re-run bundle 7'
          when not has_table_privilege('anon', 'public.plans', 'select')
            -- Silent: the site keeps showing whatever is typed into its HTML.
-           then 'FAIL — a visitor cannot read your prices, so the website will show '
+           then 'FAIL: a visitor cannot read your prices, so the website will show '
                 || 'its own hardcoded ones; re-run bundle 7'
          when not has_table_privilege('anon', 'public.app_releases', 'select')
-           then 'FAIL — the download button has nothing to read; re-run bundle 7'
+           then 'FAIL: the download button has nothing to read; re-run bundle 7'
          when to_regclass('public.platform_announcements') is null
-           then 'FAIL — there is no way to tell every school anything; re-run bundle 7'
+           then 'FAIL: there is no way to tell every school anything; re-run bundle 7'
          else 'PASS' end
 
 union all
@@ -1106,11 +1106,11 @@ select 'a parent can see whether their child passed (0083)',
          when not exists (select 1 from pg_proc where proname='fn_portal_child_results'
                            and pronamespace='public'::regnamespace
                            and prosrc like '%failed_subjects%')
-           then 'FAIL — the portal shows marks but not the verdict; re-run bundle 7'
+           then 'FAIL: the portal shows marks but not the verdict; re-run bundle 7'
          when to_regclass('public.campuses') is not null
            -- Not a failure if the guard found rows: it says so in a NOTICE and
            -- leaves them alone. Reported here so the difference is visible.
-           then 'note — campuses/shifts still exist. Either bundle 7 has not been '
+           then 'note: campuses/shifts still exist. Either bundle 7 has not been '
                 || 're-run, or the guard found rows in them and refused to drop them.'
          else 'PASS' end
 
@@ -1126,18 +1126,18 @@ select 'a fee receipt names the child and the month (0084)',
        case
          when not exists (select 1 from pg_proc where proname='fn__payment_applied'
                            and pronamespace='public'::regnamespace)
-           then 'FAIL — re-run bundle 7'
+           then 'FAIL: re-run bundle 7'
          when not exists (select 1 from pg_proc where proname='fn_record_family_payment'
                            and pronamespace='public'::regnamespace
                            and prosrc like '%fn__payment_applied%')
            -- Silent: the counter still works and the receipt still prints. It
            -- just cannot say what the money paid for.
-           then 'FAIL — family receipts cannot name the children they paid for; '
+           then 'FAIL: family receipts cannot name the children they paid for; '
                 || 're-run bundle 7'
          when not exists (select 1 from pg_proc where proname='fn_record_payment'
                            and pronamespace='public'::regnamespace
                            and prosrc like '%fn__payment_applied%')
-           then 'FAIL — single-student receipts cannot name the months they '
+           then 'FAIL: single-student receipts cannot name the months they '
                 || 'cleared; re-run bundle 7'
          else 'PASS' end
 
@@ -1152,17 +1152,17 @@ union all
 select 'only the right teacher can mark a paper (0085)',
        case
          when to_regclass('public.subject_teachers') is null
-           then 'FAIL — re-run bundle 7'
+           then 'FAIL: re-run bundle 7'
          when not exists (select 1 from pg_proc where proname='fn_enter_marks'
                            and pronamespace='public'::regnamespace
                            and prosrc like '%fn_may_mark_subject%')
            -- Silent: marks still save. They save for the wrong people.
-           then 'FAIL — ANY teacher can still enter ANY class''s exam marks; '
+           then 'FAIL: ANY teacher can still enter ANY class''s exam marks; '
                 || 're-run bundle 7'
          when not exists (select 1 from pg_proc where proname='fn_enter_assessment_marks'
                            and pronamespace='public'::regnamespace
                            and prosrc like '%fn_may_mark_subject%')
-           then 'FAIL — class-test marks are still not subject-scoped; re-run bundle 7'
+           then 'FAIL: class-test marks are still not subject-scoped; re-run bundle 7'
          else 'PASS' end
 
 union all
@@ -1185,14 +1185,14 @@ select 'the books are not writable from a session (0086)',
                       unnest(array['insert', 'update', 'delete']) v
                 where to_regclass('public.' || t) is not null
                   and has_table_privilege(r, 'public.' || t, v)) > 0
-           then 'FAIL — a signed-in clerk can rewrite the books directly over REST: '
+           then 'FAIL: a signed-in clerk can rewrite the books directly over REST: '
                 || 'delete a paid challan''s allocation, invent one, rewrite a '
                 || 'published result card. Re-run bundle 7.'
          when has_column_privilege('authenticated', 'public.students', 'status', 'update')
-           then 'FAIL — a clerk can set a pupil''s status directly, bypassing '
+           then 'FAIL: a clerk can set a pupil''s status directly, bypassing '
                 || 'fn_set_student_status and its audit row. Re-run bundle 7.'
          when not has_column_privilege('authenticated', 'public.students', 'full_name', 'update')
-           then 'FAIL — the student profile editor cannot save bio-data. The 0086 '
+           then 'FAIL: the student profile editor cannot save bio-data. The 0086 '
                 || 'revoke went too far on this database.'
          else 'PASS' end
 
@@ -1209,17 +1209,17 @@ select 'records of a deleted school can be found and cleared (0092)',
          when not exists (select 1 from pg_proc where proname = 'audit_trigger'
                            and pronamespace = 'public'::regnamespace
                            and prosrc like '%not exists (select 1 from public.schools s where s.id = v_school)%')
-           then 'FAIL — the audit trigger still refuses every write belonging to a '
+           then 'FAIL: the audit trigger still refuses every write belonging to a '
                 || 'school whose row is missing, so those records cannot be deleted '
                 || 'at all. Run bundle 9.'
          when not exists (select 1 from pg_proc where proname = 'fn_platform_orphan_report'
                            and pronamespace = 'public'::regnamespace)
-           then 'FAIL — nothing lists what a deleted school left behind; run bundle 9'
+           then 'FAIL: nothing lists what a deleted school left behind; run bundle 9'
          when not exists (select 1 from pg_proc where proname = 'fn_platform_purge_orphan_data'
                            and pronamespace = 'public'::regnamespace)
-           then 'FAIL — no way to clear it once found; run bundle 9'
+           then 'FAIL: no way to clear it once found; run bundle 9'
          when has_function_privilege('anon', 'public.fn_platform_purge_orphan_data(uuid, text)', 'execute')
-           then 'FAIL — a signed-out visitor can call the cleanup; re-run bundle 9'
+           then 'FAIL: a signed-out visitor can call the cleanup; re-run bundle 9'
          else 'PASS' end
 
 union all
@@ -1232,15 +1232,15 @@ select 'a mis-raised challan can be cancelled, and then will not print (0087)',
        case
          when not exists (select 1 from pg_proc where proname = 'fn_void_invoice'
                            and pronamespace = 'public'::regnamespace)
-           then 'FAIL — no way to cancel a wrongly generated challan; re-run bundle 7'
+           then 'FAIL: no way to cancel a wrongly generated challan; re-run bundle 7'
          when not exists (select 1 from pg_proc where proname = 'fn_challan'
                            and pronamespace = 'public'::regnamespace
                            and prosrc like '%status = ''void''%')
-           then 'FAIL — a cancelled challan still prints its bank-payable slip; '
+           then 'FAIL: a cancelled challan still prints its bank-payable slip; '
                 || 're-run bundle 7'
          when not exists (select 1 from pg_proc where proname = 'fn_voided_invoices'
                            and pronamespace = 'public'::regnamespace)
-           then 'FAIL — nothing shows what was cancelled and why; re-run bundle 7'
+           then 'FAIL: nothing shows what was cancelled and why; re-run bundle 7'
          else 'PASS' end
 
 union all
@@ -1253,7 +1253,7 @@ select 'every WhatsApp template a school can switch on has something that sends 
          when not exists (select 1 from pg_proc
                            where proname = 'fn__default_message_templates'
                              and pronamespace = 'public'::regnamespace)
-           then 'n/a — 0043 not applied yet'
+           then 'n/a: 0043 not applied yet'
          when (select string_agg(d.template_key, ', ')
                  from public.fn__default_message_templates() d
                 where not exists (
@@ -1262,7 +1262,7 @@ select 'every WhatsApp template a school can switch on has something that sends 
                         where n.nspname = 'public'
                           and p.proname <> 'fn__default_message_templates'
                           and p.prosrc like '%' || d.template_key || '%')) is not null
-           then 'FAIL — these are seeded, editable and switchable and NOTHING queues '
+           then 'FAIL: these are seeded, editable and switchable and NOTHING queues '
                 || 'them: '
                 || (select string_agg(d.template_key, ', ')
                       from public.fn__default_message_templates() d
@@ -1282,12 +1282,12 @@ select 'the grade scale a school chooses is the one it gets (0089)',
          when not exists (select 1 from pg_proc where proname = 'fn_grade_for'
                            and pronamespace = 'public'::regnamespace
                            and prosrc like '%gpa10%')
-           then 'FAIL — a school that picks "GPA (10-point)" in Settings still gets '
+           then 'FAIL: a school that picks "GPA (10-point)" in Settings still gets '
                 || 'A+/A/B letters on every card, with no warning. Re-run bundle 7.'
          when not exists (select 1 from pg_proc where proname = 'fn_generate_result_cards'
                            and pronamespace = 'public'::regnamespace
                            and prosrc like '%jsonb_set(v_frozen, ''{grade}''%')
-           then 'FAIL — the card''s overall figure is the band of the aggregate '
+           then 'FAIL: the card''s overall figure is the band of the aggregate '
                 || 'rather than the mean of the papers'' grade points, so two pupils '
                 || 'with the same total and different distributions get the same GPA. '
                 || 'Re-run bundle 7.'
@@ -1305,18 +1305,18 @@ select 'the student counter cannot be stopped by one bad row (0090)',
        case
          when not exists (select 1 from pg_proc where proname = 'fn__refresh_counts_touched'
                            and pronamespace = 'public'::regnamespace)
-           then 'FAIL — the live student count has no triggers at all; run bundle 8'
+           then 'FAIL: the live student count has no triggers at all; run bundle 8'
          when not exists (select 1 from pg_proc where proname = 'fn__refresh_counts_touched'
                            and pronamespace = 'public'::regnamespace
                            and prosrc like '%join public.schools sc%')
-           then 'FAIL — the recount still trusts subscriptions alone, so one school '
+           then 'FAIL: the recount still trusts subscriptions alone, so one school '
                 || 'with no row in `schools` can abort a whole bundle. Run bundle 8.'
          when (select count(*) from pg_trigger t
                  join pg_proc p on p.oid = t.tgfoid
                 where not t.tgisinternal
                   and p.pronamespace = 'public'::regnamespace
                   and p.proname = 'fn__refresh_counts_touched') <> 6
-           then 'FAIL — not all six student-count triggers are installed, so the '
+           then 'FAIL: not all six student-count triggers are installed, so the '
                 || 'console shows whatever the roll was when somebody last pressed '
                 || 'Refresh. Run bundle 8.'
          else 'PASS' end
@@ -1324,26 +1324,26 @@ select 'the student counter cannot be stopped by one bad row (0090)',
 union all
 select 'every subscription belongs to a school that exists',
        case
-         when to_regclass('public.subscriptions') is null then 'n/a — bundle 1 not applied'
+         when to_regclass('public.subscriptions') is null then 'n/a: bundle 1 not applied'
          -- COUNT THE ROWS. The constraint's flag is not consulted here at all,
          -- and the reasoning is in the comment on pg_temp.orphans above: a
          -- validated foreign key is a statement about the past, and this row is
          -- a question about now.
          when pg_temp.orphans('subscriptions') > 0
-           then 'ACTION NEEDED — ' || pg_temp.orphans('subscriptions')::text
+           then 'ACTION NEEDED: ' || pg_temp.orphans('subscriptions')::text
                 || ' subscription(s) name a school that is not there. Read as the '
                 || 'table owner, so this is not row-level security hiding the '
                 || 'school: those rows are real. Run supabase/repair/enforcement.sql '
-                || '— it says whether foreign keys are still switched off, which is '
-                || 'the part that would keep happening — then clear them from the '
-                || 'platform console under Danger zone.'
+                || 'first: it says whether foreign keys are still switched off, '
+                || 'which is the part that would keep happening. Then clear them '
+                || 'from the platform console under Danger zone.'
          when not exists (select 1 from pg_constraint c
                           join pg_class t on t.oid = c.conrelid
                           join pg_namespace n on n.oid = t.relnamespace
                           where n.nspname = 'public' and t.relname = 'subscriptions'
                             and c.contype = 'f'
                             and pg_get_constraintdef(c.oid) ilike '%references%schools(id)%')
-           then 'ACTION NEEDED — subscriptions has no foreign key to schools, so a '
+           then 'ACTION NEEDED: subscriptions has no foreign key to schools, so a '
                 || 'school deleted from now on will leave its subscription behind. '
                 || 'Run bundle 8, which restores it.'
          when exists (select 1 from pg_constraint c
@@ -1352,8 +1352,9 @@ select 'every subscription belongs to a school that exists',
                       where n.nspname = 'public' and t.relname = 'subscriptions'
                         and c.contype = 'f' and not c.convalidated
                         and pg_get_constraintdef(c.oid) ilike '%references%schools(id)%')
-           then 'ACTION NEEDED — the foreign key exists but is NOT VALID: it refuses '
-                || 'every new orphan and has never checked the rows already there. '
+           then 'ACTION NEEDED: the foreign key exists but is NOT VALID. It '
+                || 'refuses every new orphan and has never checked the rows '
+                || 'already there. '
                 || 'There are none right now, so run bundle 9 (0091) to validate it.'
          else 'PASS' end
 
@@ -1370,9 +1371,9 @@ union all
 -- ---------------------------------------------------------------------------
 select 'no records are left behind by a school that was deleted',
        case
-         when to_regclass('public.schools') is null then 'n/a — bundle 1 not applied'
+         when to_regclass('public.schools') is null then 'n/a: bundle 1 not applied'
          when pg_temp.orphan_sweep() = '0 table(s), 0 row(s)' then 'PASS'
-         else 'ACTION NEEDED — ' || pg_temp.orphan_sweep()
+         else 'ACTION NEEDED: ' || pg_temp.orphan_sweep()
               || ' belong to a school that is no longer in `schools`. Until 0092 is '
               || 'applied those rows cannot even be deleted: the audit trigger tries '
               || 'to file an audit entry against the missing school and the foreign '
@@ -1387,12 +1388,12 @@ union all
 select 'a desktop installer is published',
        case
          when to_regclass('public.app_releases') is null
-           then 'n/a — 0082 not applied yet'
+           then 'n/a: 0082 not applied yet'
          when pg_temp.ask($q$select version from public.app_releases
                                 where platform = 'windows' and is_current limit 1$q$) is not null
-           then 'PASS — ' || pg_temp.ask($q$select version from public.app_releases
+           then 'PASS: ' || pg_temp.ask($q$select version from public.app_releases
                                                where platform = 'windows' and is_current limit 1$q$)
-         else 'ACTION NEEDED — no Windows release is published, so the website says '
+         else 'ACTION NEEDED: no Windows release is published, so the website says '
               || 'the installer is being prepared. Build it, put the file somewhere '
               || 'schools can reach, and record it under "Downloads & notices" in '
               || 'the console with its SHA-256.' end
@@ -1409,13 +1410,13 @@ union all
 -- that the number matches what was pasted.
 select 'migrations recorded',
        case when to_regclass('public.schema_migrations') is null
-              then 'FAIL — re-run bundle 7 (the migration ledger)'
+              then 'FAIL: re-run bundle 7 (the migration ledger)'
             when coalesce(pg_temp.ask('select count(*) from public.schema_migrations'), '0') = '0'
               -- The ledger exists but 0069 refused to seed it, which happens
               -- only when its bundle probes found the chain incomplete. The
               -- NOTICEs it raised name which bundle is missing.
-              then 'FAIL — ledger is empty; run supabase/repair/detect.sql and apply what it names'
-            else 'PASS — ' || pg_temp.ask('select count(*) from public.schema_migrations')
+              then 'FAIL: ledger is empty; run supabase/repair/detect.sql and apply what it names'
+            else 'PASS: ' || pg_temp.ask('select count(*) from public.schema_migrations')
                  || ' applied, latest '
                  || pg_temp.ask('select max(filename) from public.schema_migrations')
        end
@@ -1431,19 +1432,19 @@ union all
 select 'reviews are wired, and the published average matches the rows',
        case
          when to_regclass('public.reviews') is null
-           then 'FAIL — 0093 not applied yet, so the reviews page has nothing to read'
+           then 'FAIL: 0093 not applied yet, so the reviews page has nothing to read'
          when to_regclass('public.reviews_public') is null
            or to_regclass('public.reviews_summary') is null
-           then 'FAIL — the public views are missing; re-run 0093'
+           then 'FAIL: the public views are missing; re-run 0093'
          when coalesce(pg_temp.ask('select total::text from public.reviews_summary'), '0') = '0'
-           then 'PASS — no published reviews yet, so the website claims no rating'
+           then 'PASS: no published reviews yet, so the website claims no rating'
          when pg_temp.ask($q$select case
                  when round(avg(rating)::numeric, 2)
                       = (select average from public.reviews_summary)
                  then 'ok' else 'mismatch' end
                from public.reviews_public$q$) <> 'ok'
-           then 'FAIL — the published average does not match the published reviews'
-         else 'PASS — ' || pg_temp.ask('select total::text from public.reviews_summary')
+           then 'FAIL: the published average does not match the published reviews'
+         else 'PASS: ' || pg_temp.ask('select total::text from public.reviews_summary')
               || ' published, average '
               || pg_temp.ask('select average::text from public.reviews_summary')
        end
@@ -1458,8 +1459,8 @@ select 'deleting a record',
                      and p.proname in ('fn_student_delete_blockers', 'fn_staff_delete_blockers',
                                        'fn_login_delete_blockers', 'fn_delete_student',
                                        'fn_delete_staff', 'fn_delete_login')) = 6
-            then 'PASS — records with no history can be removed, records with history cannot'
-            else 'FAIL — apply supabase/bundles/11_deletion.sql' end
+            then 'PASS: records with no history can be removed, records with history cannot'
+            else 'FAIL: apply supabase/bundles/11_deletion.sql' end
 
 union all
 -- 0096. Trial only, owner only, and it must type-check the school's name. The
@@ -2131,8 +2132,63 @@ select 'a finalised register can be reopened (0121)',
        end
 
 union all
+-- 0122. The other half of 0120, and the half a parent reads. The 0120 row
+-- above asserts only that no `raise exception` message carries a dash, and it
+-- was passing while six message TEMPLATES went out to parents by SMS ending
+-- "Thank you — {school}.", thirteen report functions printed a dash in every
+-- empty cell, and twenty-seven other sentences the software says while working
+-- carried one.
+--
+-- Asserted with the COMMENTS STRIPPED OUT, which is the only reason it can be
+-- asserted at all: supabase/ holds about 2,900 em dashes and almost every one
+-- is in a comment nobody outside this repository will ever see. Remove the
+-- comments and the only place left for a dash to hide is a string literal, and
+-- a string literal in a function body is something the software says.
+--
+-- The data half is checked too. Patching fn__default_message_templates does
+-- nothing for a school that already exists, because it only runs at signup.
+select 'no em dash in anything the software says or sends (0122)',
+       case when (select count(*)
+                    from pg_proc p
+                    join pg_namespace n on n.oid = p.pronamespace
+                   where n.nspname = 'public'
+                     -- The character class below is written as the two
+                     -- unicode ESCAPES, not the characters themselves, and not
+                     -- for neatness: scripts/check-no-emdash.py scans the
+                     -- string literals in this file, so a check with the
+                     -- character in it fails its own rule. Postgres regex
+                     -- understands \uXXXX; LIKE does not, which is why every
+                     -- pattern here is a regex and not a LIKE.
+                     and regexp_replace(p.prosrc, '--.*$', '', 'gn')
+                         ~ '[\u2014\u2013]') > 0
+         then 'FAIL: this school prints an em dash on its reports and sends one '
+              || 'in its text messages to parents; apply '
+              || 'supabase/bundles/28_the_em_dash_a_parent_receives.sql'
+         -- Anchored on THIS SOFTWARE'S OWN sign-off shapes, not on the
+         -- character. A school may write an em dash in a template of its own
+         -- and that is the school's writing, not ours; a row that failed here
+         -- for that would have no remedy and the whole check would be ignored.
+         when (select count(*) from public.message_templates
+                where body ~ '[\u2014\u2013]\s*\{school\}') > 0
+         then 'FAIL: the message templates this school sends to parents still '
+              || 'carry an em dash; apply '
+              || 'supabase/bundles/28_the_em_dash_a_parent_receives.sql'
+         -- And the messages already composed and still waiting to go out.
+         -- Patching the template does nothing for those.
+         when (select count(*) from public.message_outbox
+                where status in ('queued', 'failed')
+                  and rendered_text ~ '(\. |Thank you )[\u2014\u2013] ') > 0
+         then 'FAIL: ' || (select count(*)::text from public.message_outbox
+                            where status in ('queued', 'failed')
+                              and rendered_text ~ '(\. |Thank you )[\u2014\u2013] ')
+              || ' message(s) waiting to be sent to parents carry an em dash; apply '
+              || 'supabase/bundles/28_the_em_dash_a_parent_receives.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
-            then 'PASS — no schools yet, as expected'
+            then 'PASS: no schools yet, as expected'
             else 'note: ' || (select count(*) from public.schools)::text
                  || ' school(s) already exist' end;
