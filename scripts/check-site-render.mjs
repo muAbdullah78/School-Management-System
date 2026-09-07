@@ -5,8 +5,16 @@
  * clipped by a container that is not scrollable, no element hanging outside the
  * viewport, no stray text node wider than the screen (which is what a nested
  * HTML comment produces and what querySelectorAll cannot reach), no console
- * error, and every text colour composited against its real painted background
- * against the WCAG threshold for its size and weight.
+ * error, every text colour composited against its real painted background
+ * against the WCAG threshold for its size and weight, and that the header row
+ * fits on one line with room to spare.
+ *
+ * THAT LAST ONE IS HERE BECAUSE EVERYTHING ELSE MISSED IT TWICE. A header that
+ * wraps every label onto two lines inside a fixed-height bar clips nothing,
+ * leaves nothing outside the viewport and scrolls no page sideways; neither
+ * does one that overflows a centred wrap with 390px of blank page either side
+ * of it. Both shipped. The assertions and their measurements are at the foot
+ * of audit().
  *
  * IT ALSO ASSERTS EACH URL IS A DIFFERENT PAGE, and that is not paranoia. The
  * first version of this used the SPA fallback server written for the app, which
@@ -125,7 +133,83 @@ const audit = () => {
     const b = r.getBoundingClientRect()
     if (b.width > innerWidth + 1) strays.push(`${p.tagName}.${p.className}: "${n.textContent.trim().slice(0,40)}" w=${Math.round(b.width)}`)
   }
-  return { scrollW: document.documentElement.scrollWidth, inner: innerWidth, low, clipped, over, strays }
+  // ---- THE HEADER ROW, WHICH IS ONE LINE OR IT IS BROKEN -------------------
+  // Neither of the two ways this bar has failed was caught by anything above.
+  //
+  // First it WRAPPED. Adding a fourth and a fifth control put five items on
+  // two lines each ("Parent sign / in", "Start free / trial") inside a 66px
+  // bar. Nothing was clipped, nothing left the viewport and the page did not
+  // scroll sideways, so every check in this file passed a header a school
+  // reported as broken on sight.
+  //
+  // Then white-space:nowrap turned the wrap into an OVERFLOW: 1180px of
+  // unbreakable content in 1092px of room, at every width including 1920,
+  // because .wrap is capped and the shortfall therefore never closes. Still
+  // invisible from outside: at 1920 there is 390px of empty page either side
+  // of the wrap for it to spill into.
+  //
+  // So both are asserted here directly, and the slack floor is what makes the
+  // NEXT label somebody adds fail before it ships rather than after.
+  const nav = []
+  const bar = document.querySelector('.nav__in')
+  if (bar) {
+    const shown = (el) => !!el && getComputedStyle(el).display !== 'none'
+    const bs = getComputedStyle(bar)
+    const kids = [...bar.children].filter(shown)
+    const box = bar.getBoundingClientRect()
+    const left = box.left + parseFloat(bs.paddingLeft)
+    const right = box.right - parseFloat(bs.paddingRight)
+    const gap = parseFloat(bs.columnGap) || 0
+    const room = right - left
+    // EXACT, and margin-agnostic: whatever the auto margins resolve to, no
+    // child may end up past the inside edge of the bar.
+    for (const el of kids) {
+      const b = el.getBoundingClientRect()
+      if (b.right > right + 1) nav.push(`.${String(el.className).split(' ')[0]} ends ${Math.round(b.right - right)}px past the bar`)
+      if (b.left < left - 1) nav.push(`.${String(el.className).split(' ')[0]} starts ${Math.round(left - b.left)}px before the bar`)
+    }
+    // CONSERVATIVE, and the reason this file is worth editing: how much room
+    // is left over. Sum of widths plus the gaps between them, which leaves out
+    // the 10px margin that separates the CTA row from the section links, so
+    // the floor has to cover it: 20px of true slack plus that margin.
+    // 20 and not 0 because every width here is measured in Liberation Sans,
+    // which carries Arial's metrics. Segoe UI, SF and Roboto all come out
+    // narrower, so a real visitor has more room than this test does, but a
+    // Linux desktop missing both Liberation and Arial lands on DejaVu Sans and
+    // has 11% less. A row that fits by 2px does not fit.
+    const need = kids.reduce((s, e) => s + e.getBoundingClientRect().width, 0) + gap * Math.max(0, kids.length - 1)
+    const floor = shown(document.querySelector('.nav__links')) ? 30 : 0
+    if (need > room - floor) {
+      nav.push(`row needs ${Math.round(need)}px of ${Math.round(room)}px, under the ${floor}px floor`)
+    }
+    // NOTHING IN THE BAR TAKES TWO LINES. Range rects, one per line box, and
+    // only on elements whose contents are a single text node: the Menu button
+    // holds an icon beside its label, and two boxes at two different tops
+    // would read as two lines.
+    const lines = (el) => {
+      if (![...el.childNodes].every((n) => n.nodeType === 3)) return 1
+      const r = document.createRange()
+      r.selectNodeContents(el)
+      return new Set([...r.getClientRects()]
+        .filter((b) => b.width > 0.5 && b.height > 0.5)
+        .map((b) => Math.round(b.top))).size
+    }
+    const cta = document.querySelector('.nav__cta')
+    const oneLine = [...document.querySelectorAll('.nav__links a, .nav__cta a')]
+    // The brand name is the ONE label allowed a second line, and only at the
+    // widths where it is the last thing left in the row beside the Menu
+    // button. .nav__in is min-height so the bar grows to hold it.
+    if (shown(document.querySelector('.nav__links')) || shown(cta)) {
+      oneLine.push(document.querySelector('.brand span'))
+    }
+    for (const el of oneLine) {
+      if (!shown(el) || hiddenByDetails(el)) continue
+      const n = lines(el)
+      if (n > 1) nav.push(`"${el.textContent.trim().slice(0, 26)}" is on ${n} lines`)
+    }
+  }
+
+  return { scrollW: document.documentElement.scrollWidth, inner: innerWidth, low, clipped, over, strays, nav }
 }
 
 
@@ -150,7 +234,7 @@ for (const w of [320, 360, 414, 768, 1024, 1280, 1440]) {
     titles.set(seen, path)
     const r = await page.evaluate(audit)
     const n = r.low.length + r.clipped.length + r.over.length + r.strays.length + errs.length +
-              (r.scrollW > r.inner + 1 ? 1 : 0)
+              r.nav.length + (r.scrollW > r.inner + 1 ? 1 : 0)
     if (n) {
       bad += n
       notes.push(`${path}: scrollW=${r.scrollW}` +
@@ -158,6 +242,7 @@ for (const w of [320, 360, 414, 768, 1024, 1280, 1440]) {
         r.clipped.map((x) => `\n      clip: ${x}`).join('') +
         r.over.map((x) => `\n      over: ${x}`).join('') +
         r.strays.map((x) => `\n      stray: ${x}`).join('') +
+        r.nav.map((x) => `\n      nav : ${x}`).join('') +
         errs.map((x) => `\n      err : ${x}`).join(''))
     }
     if (w === 1280 && ['/', '/fee-management', '/guides/expected-vs-collected', '/reviews'].includes(path)) {

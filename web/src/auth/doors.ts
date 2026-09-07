@@ -81,6 +81,31 @@ export interface Door {
   resetFirst: boolean
   /** Extra sentence beside the reset link, when there is something true to add. */
   resetNote?: string
+  /**
+   * What to do when you have no account at all, as opposed to having one and
+   * not knowing its details.
+   *
+   * A PARENT CANNOT MAKE THEIR OWN. Self-registration is deliberately absent
+   * from this product: an account that lets somebody read a child's fees and
+   * attendance is created by the school, for a named family, or it is a way
+   * for a stranger to ask about a child. So the only true answer to "how do I
+   * get one" is "ask the school", and until now no screen said it. A parent
+   * with no account was left looking at a sign-in form with nothing on it
+   * addressed to them.
+   */
+  noAccount?: string
+  /**
+   * The door to point at instead, for somebody standing at the wrong one.
+   *
+   * A BUTTON, NOT A SENTENCE, AND THAT IS THE WHOLE POINT OF THIS FIELD. It
+   * was a 12px line of text at the bottom of a stack of four other lines, and
+   * the person it exists for is a parent who has been sent to the office door
+   * by their school, a bookmark or the website. They will not find a sentence
+   * that size. Rendered as a full-width outlined control: unmissable, still
+   * plainly subordinate to the filled Sign in button above it, and a real
+   * 44px target on a phone.
+   */
+  otherDoor?: { to: string; label: string; caption?: string }
   /** The support column's content. 'none' renders no column at all. */
   column: DoorColumn
   /** The line under the form on narrow screens, where the column is gone. */
@@ -109,6 +134,11 @@ export const OFFICE_DOOR: Door = {
   resetNote:
     'If the address your school gave you is not a real mailbox, the email will '
     + 'not arrive. Ask the office instead.',
+  otherDoor: {
+    to: '/parents',
+    label: 'Open the parent portal',
+    caption: 'Or just sign in above. The same details work on both pages.',
+  },
   column: 'office',
   footNote: 'From Rs 2,000 a month. 14 days free. All modules included.',
   offerTrial: true,
@@ -138,6 +168,20 @@ export const PARENT_DOOR: Door = {
   resetNote:
     'The address your school gave you may not be a real mailbox, so a reset '
     + 'email may never arrive. The office is the quicker way back in.',
+  // THE SENTENCE A PARENT WITH NO ACCOUNT NEEDED AND NEVER GOT. They were
+  // shown a form, and nothing anywhere told them where an account comes from.
+  // It comes from the school, and only from the school: see the field's own
+  // note on why self-registration is absent by design.
+  noAccount:
+    'No account at all? Only your child\u2019s school can create one. Contact '
+    + 'the school office and ask them to make you a parent account: they will '
+    + 'tell you the email address and password to use. There is nothing here '
+    + 'for you to buy and no form to fill in.',
+  otherDoor: {
+    to: '/login',
+    label: 'Sign in for the school office',
+    caption: 'For the owner, the principal, the office and the teachers.',
+  },
   column: 'portal',
   footNote: 'Free for parents. Ask the school office if you cannot get in.',
   offerTrial: false,
@@ -160,6 +204,7 @@ export const OPERATOR_DOOR: Door = {
   intro: "For The School Manager's own staff.",
   ifUnknown: 'If you run a school rather than this service, use the school sign in.',
   resetFirst: true,
+  otherDoor: { to: '/login', label: 'Sign in to your school' },
   column: 'none',
   footNote: '',
   offerTrial: false,

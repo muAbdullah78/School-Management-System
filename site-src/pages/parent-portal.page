@@ -1,7 +1,17 @@
 path: /parent-portal
 title: Parent portal for schools: fee balance, receipts and results
 description: Parents sign in on their own phone and see their own children only: what is owed, every receipt, attendance day by day, and released results.
-nav_order: 30
+nav: Parents
+# 4, so it sits with the other things the software DOES (Fees 1, Attendance 2,
+# Exams 3) and before what it costs (Pricing 6).
+#
+# THIS PAGE HAD A nav_order AND NO nav LABEL, which is how it came to be
+# invisible: build-site.py puts a page in the nav only if it asks with `nav`,
+# so an order on its own is an instruction nobody carries out. It was reachable
+# from the footer, which is enough to satisfy the orphan check in
+# check-site-seo.py and not nearly enough for a parent to find. A school
+# reported exactly that: no mention of the parent portal anywhere on the site.
+nav_order: 4
 breadcrumb: Parent portal
 schema: org software
 priority: 0.8
@@ -20,6 +30,53 @@ priority: 0.8
     <div class="hero__cta">
       <a class="btn btn--primary btn--lg" href="/pricing" data-app="signup">Start 14 day free trial</a>
       <a class="btn btn--ghost btn--lg" href="/contact" data-app="portal">Open the portal</a>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ FOR PARENTS =
+     WHY THIS SITS SECOND, ABOVE EVERYTHING ELSE ON THE PAGE.
+
+     Every other word on this page is addressed to a school that is deciding
+     whether to buy: "Start 14 day free trial", "More questions principals
+     ask", "not something a school should have to police". That is correct for
+     a feature page and useless to the person the header's Parent sign in
+     button sends here with no script, and to any parent who searches for the
+     portal and lands on it.
+
+     They need two things and neither was anywhere on this site: the way in,
+     and where an account comes from when they have not been given one. The
+     second is the one that generated the report. A parent cannot create their
+     own account, by design, so "sign up" is not an answer and neither is
+     silence. The answer is "ask your school", said out loud.
+-->
+<section class="section" id="for-parents" style="padding-top:0">
+  <div class="wrap">
+    <div class="card" style="max-width:62ch">
+      <span class="eyebrow">For parents</span>
+      <h2 style="margin-top:12px">Are you a parent?</h2>
+      <p style="margin-top:12px">
+        Sign in with the email address and password your child&rsquo;s school
+        gave you. You will see your own children, and nobody else&rsquo;s.
+      </p>
+      <p style="margin-top:16px">
+        <a class="btn btn--primary btn--lg" href="/contact" data-app="portal">Parent sign in</a>
+      </p>
+      <div class="note">
+        <p>
+          <b>No account yet?</b> Only your child&rsquo;s school can create one.
+          Contact the school office and ask them to make you a parent account:
+          they will give you the email address and password to use. There is
+          nothing here for you to buy and no form to fill in, and it takes the
+          school a few seconds.
+        </p>
+        <p style="margin-top:10px">
+          <b>Forgotten your password?</b> Ask the office as well. The address a
+          school gives you does not have to be a real mailbox, so a reset email
+          may never arrive, and the office can look your password up and read
+          it back to you.
+        </p>
+      </div>
     </div>
   </div>
 </section>
