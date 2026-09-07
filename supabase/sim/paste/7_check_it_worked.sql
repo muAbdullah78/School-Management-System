@@ -46,6 +46,26 @@ set local "sim.school" = 'Chaudhary Puclix High School Ghauriii';
 -- limit. Only a superuser can lift it, which the SQL editor is.
 set local statement_timeout = 0;
 
+-- ---------------------------------------------------------------------------
+-- IS THIS DATABASE NEW ENOUGH? Asked here, at the top, rather than found out
+-- thirteen minutes into a file.
+--
+-- The register section reopens a finalised day and corrects it, which is what
+-- the corrections report exists to show and which no database could do before
+-- migration 0121. On a database that is behind, that call fails with "function
+-- does not exist" AFTER the file has done all its work, and because each file
+-- is one transaction the whole lot is rolled back with nothing to show for it.
+-- ---------------------------------------------------------------------------
+do $prereq$
+begin
+  if to_regprocedure('public.fn_unlock_attendance(uuid,uuid,uuid,date,text)') is null then
+    raise exception 'This project is behind the application. Run '
+      'supabase/verify.sql, paste every bundle it names in a FAIL row (the '
+      'first of them is 27_a_finalised_register_can_be_reopened.sql), then '
+      'start this set again.';
+  end if;
+end $prereq$;
+
 
 
 -- ------------------------------------------------------------------------
@@ -153,6 +173,24 @@ begin
   select count(*) into v_n from public.invoices
    where school_id = v_school and status = 'void';
   if v_n < 1 then v_fail := v_fail || 'no challan has ever been voided'; end if;
+
+  --     AND THE REGISTER HAS BEEN PUT RIGHT. This one was zero for the whole
+  --     of the first build, and chasing that down is what found the bug in
+  --     0121: every past day is finalised, fn_mark_attendance skips a locked
+  --     row, and nothing in the schema could clear the lock. So the corrections
+  --     report had never been seen with a row in it, and no school could have
+  --     corrected a mistake even if it had.
+  select count(*) into v_n from public.attendance_daily
+   where school_id = v_school and corrected_from is not null;
+  if v_n < 5 then
+    v_fail := v_fail || format('only %s attendance row(s) carry a correction, so '
+      || 'the corrections report is empty and the unlock path is unexercised', v_n);
+  end if;
+  select count(*) into v_n from public.audit_log
+   where school_id = v_school and action = 'ATTENDANCE_UNLOCK';
+  if v_n < 5 then
+    v_fail := v_fail || format('only %s reopened register(s) in the audit log', v_n);
+  end if;
 
   -- 8. THE DRAWER HAS BEEN COUNTED, AND HAS DISAGREED IN BOTH DIRECTIONS.
   --    The first version's two hashes were correlated and produced five overs

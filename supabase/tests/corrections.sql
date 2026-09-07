@@ -379,4 +379,175 @@ begin
     '27 and a range that excludes them returns nothing');
 end $$;
 
+-- =============================================================================
+-- 9. A FINALISED REGISTER CAN BE REOPENED (0121)
+--
+-- The defect this proves is fixed: a class teacher marked a child wrongly,
+-- pressed Finalize, and NOTHING at any privilege level could clear
+-- attendance_daily.is_locked. fn_mark_attendance's upsert carries
+-- `where not ad.is_locked`, so the owner's correction reported
+-- {"marked": 0, "skipped": 1} and the register did not change. The attendance
+-- percentage on the RESULT CARD is computed from that table, so the wrong
+-- figure went home every term afterwards.
+--
+-- It belongs in THIS file and not in a new one, because the whole point of the
+-- fix is the corrections report: reopening the day is only useful if the
+-- correction that follows is visible and attributed, which is rules 1 to 8
+-- above applied to a day that had been closed.
+--
+-- A DIFFERENT DATE from section 5 on purpose. Reusing today would leave two
+-- corrections in the report and make assertion 17's single-row select a
+-- coin toss depending on which ran last.
+-- =============================================================================
+do $$
+declare
+  v_a uuid; v_sess uuid; v_class uuid; v_class_b uuid; v_staff uuid;
+  v_ct uuid := '00000000-0000-0000-0000-00000000cc05';
+  v_e1 uuid; v_e2 uuid; v_n int; r record; v_status text; v_aud record;
+  v_day date := current_date - 1;
+begin
+  perform pg_temp.be('Corr Owner');
+  select id into v_a from public.schools where name = 'Corr A';
+  select id into v_class_b from public.classes where school_id =
+    (select id from public.schools where name = 'Corr B') limit 1;
+  select id into v_sess from public.academic_sessions where school_id = v_a limit 1;
+  select id into v_class from public.classes where school_id = v_a limit 1;
+  select e.id into v_e1 from public.enrollments e
+    join public.students s on s.id = e.student_id where s.full_name = 'Ali Raza';
+  select e.id into v_e2 from public.enrollments e
+    join public.students s on s.id = e.student_id where s.full_name = 'Sana Iqbal';
+
+  -- A CLASS TEACHER, assigned to that class, because they are the one who can
+  -- create this state. Without the assignment fn_may_manage_class refuses the
+  -- finalize and the test would prove nothing about the interesting case.
+  insert into public.staff (school_id, full_name, designation, employee_no, status, joined_on)
+    values (v_a, 'Corr Teacher Staff', 'Class Teacher', 'CT-1', 'active', current_date - 100)
+    returning id into v_staff;
+  insert into auth.users (id, email) values (v_ct, 'cct@corr.test')
+    on conflict (id) do nothing;
+  alter table public.profiles disable trigger user;
+  insert into public.profiles (id, full_name, role, school_id, staff_id)
+    values (v_ct, 'Corr Class Teacher', 'class_teacher', v_a, v_staff)
+    on conflict (id) do update set school_id = excluded.school_id,
+                                   role = excluded.role, staff_id = excluded.staff_id,
+                                   active = true;
+  alter table public.profiles enable trigger user;
+  insert into public.teacher_assignments (school_id, staff_id, session_id, class_id, section_id)
+    values (v_a, v_staff, v_sess, v_class, null);
+
+  -- --- The state the school gets into -------------------------------------
+  perform pg_temp.be('Corr Class Teacher');
+  perform public.fn_mark_attendance(v_day, jsonb_build_array(
+    jsonb_build_object('enrollment_id', v_e1, 'status', 'absent'),
+    jsonb_build_object('enrollment_id', v_e2, 'status', 'present')));
+  v_n := public.fn_finalize_attendance(v_sess, v_class, null, v_day);
+  perform pg_temp.ok(v_n = 2, '28 a class teacher can finalise their own class');
+
+  -- THE DEFECT, asserted rather than described. If a later change ever makes
+  -- fn_mark_attendance write through a lock, this fails and the lock has
+  -- stopped meaning anything.
+  perform pg_temp.ok(
+    (public.fn_mark_attendance(v_day, jsonb_build_array(
+       jsonb_build_object('enrollment_id', v_e1, 'status', 'leave')),
+       'father produced a leave application')->>'skipped')::int = 1,
+    '29 and a correction to that day is then skipped, not applied');
+  select status::text into v_status from public.attendance_daily
+   where enrollment_id = v_e1 and attendance_date = v_day;
+  perform pg_temp.ok(v_status = 'absent', '30 the wrong mark is still on the register');
+
+  -- --- Who may reopen it ---------------------------------------------------
+  -- Not the person who locked it. If the teacher could reopen their own day,
+  -- finalising would mean nothing at all.
+  begin
+    perform public.fn_unlock_attendance(v_sess, v_class, null, v_day,
+                                        'I want to change my own mark');
+    raise exception 'FAIL  31 a class teacher reopened the day they finalised';
+  exception when insufficient_privilege then
+    raise notice 'PASS  31 a class teacher cannot reopen the day they finalised';
+  end;
+
+  perform pg_temp.be('Corr Owner');
+  -- A reason, and a real one. Every other correction path in this schema
+  -- demands one and this is the one somebody will be asked about later.
+  begin
+    perform public.fn_unlock_attendance(v_sess, v_class, null, v_day, 'oops');
+    raise exception 'FAIL  32 a four-character reason was accepted';
+  exception when others then
+    if sqlstate = '42501' then raise; end if;
+    raise notice 'PASS  32 reopening without a real reason is refused';
+  end;
+
+  -- Another school's class, as an owner who is genuinely an owner. The scope
+  -- check has to be on the ids, not on the role.
+  begin
+    perform public.fn_unlock_attendance(v_sess, v_class_b, null, v_day,
+                                        'a class in somebody else''s school');
+    raise exception 'FAIL  33 an owner reopened another school''s register';
+  exception when insufficient_privilege then
+    raise notice 'PASS  33 nor another school''s register';
+  end;
+
+  -- --- The fix ------------------------------------------------------------
+  v_n := public.fn_unlock_attendance(v_sess, v_class, null, v_day,
+           'father produced the leave application the next morning');
+  perform pg_temp.ok(v_n = 2, '34 the owner reopens the day, and is told how many rows');
+
+  perform pg_temp.ok(
+    (public.fn_mark_attendance(v_day, jsonb_build_array(
+       jsonb_build_object('enrollment_id', v_e1, 'status', 'leave')),
+       'father produced a leave application')->>'marked')::int = 1,
+    '35 and the correction now takes');
+  select status::text into v_status from public.attendance_daily
+   where enrollment_id = v_e1 and attendance_date = v_day;
+  perform pg_temp.ok(v_status = 'leave', '36 the register is right');
+
+  -- The point of the whole exercise: it is visible, with what it was and why.
+  -- THE DATE RANGE ON THIS FUNCTION IS `updated_at`, NOT `attendance_date`:
+  -- it answers "what was corrected this week", not "what corrections touch
+  -- last week's register". Both are reasonable and the report returns
+  -- attendance_date either way, so the filter here is on the row, and the
+  -- range is today because today is when the correction was made. Getting this
+  -- wrong is how the first version of this assertion failed.
+  select * into r from public.fn_attendance_corrections(current_date, current_date) c
+   where c.attendance_date = v_day;
+  perform pg_temp.ok(r.was = 'absent' and r.now_is = 'leave'
+                 and r.reason = 'father produced a leave application'
+                 and r.student_name = 'Ali Raza',
+    '37 the correction to a reopened day is in the corrections report');
+
+  -- And the reopening itself is on the record, which is what replaces the
+  -- date window this function deliberately does not have.
+  select * into v_aud from public.audit_log
+   where school_id = v_a and action = 'ATTENDANCE_UNLOCK'
+   order by id desc limit 1;
+  perform pg_temp.ok(v_aud.reason like 'father produced the leave application%'
+                 and v_aud.actor_role = 'owner'
+                 and (v_aud.before->>'locked')::boolean
+                 and not (v_aud.after->>'locked')::boolean,
+    '38 and the reopening is audited, with its reason and who did it');
+
+  -- --- Closing it again ---------------------------------------------------
+  v_n := public.fn_finalize_attendance(v_sess, v_class, null, v_day);
+  perform pg_temp.ok(v_n = 2, '39 the day can be closed again afterwards');
+
+  -- A principal may reopen too: the pair is "owner or principal", not "owner".
+  perform pg_temp.be('Corr Principal');
+  perform pg_temp.ok(
+    public.fn_unlock_attendance(v_sess, v_class, null, v_day,
+      'the principal checked the leave register herself') = 2,
+    '40 a principal may reopen it as well');
+
+  -- And a day that is not locked is not silently "reopened". A function that
+  -- returned 0 here would report success for a date the school typed wrongly.
+  perform pg_temp.be('Corr Owner');
+  begin
+    perform public.fn_unlock_attendance(v_sess, v_class, null, v_day,
+                                        'reopening it a second time');
+    raise exception 'FAIL  41 reopening an already-open day reported success';
+  exception when others then
+    if sqlstate = '42501' then raise; end if;
+    raise notice 'PASS  41 a day that is not finalised cannot be reopened';
+  end;
+end $$;
+
 rollback;

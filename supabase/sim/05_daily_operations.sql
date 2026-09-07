@@ -182,6 +182,84 @@ begin
 end
 $sim$;
 
+-- --- 4. The register put right -------------------------------------------------
+-- WHY THIS SECTION EXISTS AT ALL, and it is finding F21.
+--
+-- Section 1 finalises every past day, which is what a real school does. That
+-- also made `corrected_from` zero across the whole two years, so
+-- fn_attendance_corrections returned nothing and the corrections report on the
+-- History screen had never been seen with a row in it. Chasing that down is how
+-- the bug in 0121 was found: fn_mark_attendance skips a locked row, and until
+-- 0121 NOTHING in the schema could clear the lock. The owner could not fix a
+-- wrong mark at any privilege level, and the attendance percentage on the
+-- result card is computed from this table.
+--
+-- So the school now does what a school does: a father turns up with the leave
+-- application, the office reopens that day, corrects the one child and closes
+-- it again. Every step through the application's own functions, which is what
+-- writes corrected_from, correction_reason and the ATTENDANCE_UNLOCK audit row.
+do $sim$
+declare
+  v_school uuid := public.current_school_id();
+  r record; v_n int := 0; v_rows bigint; v_reason text; v_new text;
+  -- Five real ones, cycled. A school's reasons are not "test".
+  v_reasons text[] := array[
+    'father produced the leave application the next morning',
+    'medical certificate produced, the child was marked absent in error',
+    'the child was in the exam hall; the register was marked before assembly',
+    'on school duty at the district sports, so not absent',
+    'marked against the wrong roll number'
+  ];
+begin
+  if v_school is null then raise exception 'No owner session.'; end if;
+
+  -- EVERY Nth CANDIDATE, not a hash, and the difference matters. A hash filter
+  -- (`% 400 = 0` over the roughly 5,000 locked absences) averaged twelve days
+  -- and produced eleven on one build and twenty on another, because the ids it
+  -- hashes are new every time. 09_check.sql then asserts a floor, and an
+  -- assertion whose subject varies by luck fails a build eventually and reads
+  -- as a real defect when it does. Taking every Nth row of the ordered
+  -- candidate set gives exactly twenty, spread across both years.
+  --
+  -- Only absences and lates: "present" corrected to something else is not the
+  -- story a school tells.
+  for r in
+    select q.session_id, q.class_id, q.section_id, q.d, q.enrollment_id, q.was
+      from (
+        select e.session_id, e.class_id, e.section_id, ad.attendance_date as d,
+               ad.enrollment_id, ad.status::text as was,
+               row_number() over (order by ad.attendance_date, ad.enrollment_id) as rn,
+               count(*) over () as total
+          from public.attendance_daily ad
+          join public.enrollments e on e.id = ad.enrollment_id
+         where ad.school_id = v_school
+           and ad.is_locked
+           and ad.status in ('absent', 'late')
+      ) q
+     where q.rn % greatest(1, (q.total / 20)::int) = 1
+     order by q.d, q.enrollment_id
+     limit 20
+  loop
+    v_reason := v_reasons[(v_n % array_length(v_reasons, 1)) + 1];
+    -- Owner and principal only, and this simulation runs as the owner. A class
+    -- teacher calling this is refused, which is the point of 0121.
+    perform public.fn_unlock_attendance(r.session_id, r.class_id, r.section_id, r.d, v_reason);
+    v_new := case when r.was = 'absent' then 'leave' else 'present' end;
+    perform public.fn_mark_attendance(r.d,
+      jsonb_build_array(jsonb_build_object('enrollment_id', r.enrollment_id, 'status', v_new)),
+      v_reason);
+    -- Closed again. A day left open after a correction is a day somebody can
+    -- quietly change a second time.
+    perform public.fn_finalize_attendance(r.session_id, r.class_id, r.section_id, r.d);
+    v_n := v_n + 1;
+  end loop;
+
+  select count(*) into v_rows from public.attendance_daily
+   where school_id = v_school and corrected_from is not null;
+  raise notice 'the register put right: % day(s) reopened, % row(s) carry a correction', v_n, v_rows;
+end
+$sim$;
+
 commit;
 
 -- The clock is NOT set here. Every timestamp in this simulation is moved onto

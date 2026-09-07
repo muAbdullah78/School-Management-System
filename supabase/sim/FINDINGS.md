@@ -748,3 +748,79 @@ footer, recomputed over the whole filtered set on every page. That is a
 reasonable thing to want and an O(school) cost to pay for it. Counting only on
 the first page, or dropping the exact total, is a product decision rather than a
 bug fix.
+## F21. Finalize a register with a wrong mark on it and nobody, at any privilege level, could ever put it right. **Fixed in migration 0121.**
+
+**Severity: high. The most serious thing this simulation found, and it was found
+by asking why one column was empty.**
+
+Every past day in this school's register is finalised, which is what a real
+school does. So after the first build I looked at the corrections report and it
+had nothing in it: `corrected_from` was null on all 89,634 attendance rows.
+Chasing that produced this.
+
+`fn_finalize_attendance` sets `attendance_daily.is_locked = true`.
+`fn_mark_attendance`'s upsert carries `where not ad.is_locked`. And a search of
+every function body in the schema for `is_locked = false` returns **nothing**.
+There was no unlock, no override and no owner exception anywhere in 330
+functions.
+
+Reproduced as the school's own OWNER, with a reason, on a day thirty days old:
+
+```
+day 2026-09-05 : the register says "present", locked = t
+the OWNER, with a reason, gets: {"total": 1, "marked": 0, "skipped": 1}
+the register now says "present"   <-- unchanged. There is no way to fix it.
+```
+
+### Why it is worse than one wrong mark
+
+- **The register is a legal document** in a Pakistani school, and it was wrong
+  for ever.
+- **It reaches the result card.** `fn_generate_result_cards` computes the
+  attendance percentage from `attendance_daily`, so the wrong figure is printed
+  and sent home to that family every term, for the rest of the child's time at
+  the school.
+- **It inverts the privilege ordering.** A class teacher can finalise their own
+  class. So the least privileged user in the product could create a state the
+  owner could not undo, which is true nowhere else in this schema.
+
+To the application's credit it is not silent about it: the Attendance screen
+already said "1 locked, skipped", and then "This day is finalized and locked. It
+is read-only." So the school was told exactly what had happened and given no way
+to act on it.
+
+### The fix, and what it deliberately does not do
+
+`fn_unlock_attendance(session, class, section, date, reason)`:
+
+- **Owner and principal only.** Deliberately not the class teacher who locked
+  it. If the person who finalised could reopen it, finalising would mean
+  nothing, and the thing it protects (a teacher cannot quietly rewrite last
+  Tuesday) is worth keeping.
+- **A reason, at least eight characters**, on the audit log with the before and
+  after and who did it. That accountability is what replaces a date window.
+- **Not date-bounded.** A school that finds a mistake at the end of term must be
+  able to fix it, and a limit would only move the trap to a different distance.
+- **It does not change the mark.** It clears the lock; the correction then goes
+  through `fn_mark_attendance` exactly as a same-day fix does, which is what
+  writes `corrected_from` and `correction_reason` so the corrections report can
+  show it.
+- **Its section predicate is `is not distinct from`, matching
+  `fn_finalize_attendance` exactly.** The first version read
+  `p_section_id is null or ...`, which means "the whole class" where finalize
+  means "the pupils in this class who are in no section". Reopening more than
+  the button that closed it is how an owner fixing one child's mark quietly
+  reopens four other sections.
+
+Proved three ways, because a function that exists and returns 0 would satisfy a
+grep: 14 assertions in `supabase/tests/corrections.sql` (a class teacher is
+refused, the owner reopens, the correction takes, it appears in the report with
+its reason, the day closes again, a principal may also reopen, and an
+already-open day is refused); three UI tests that the door is on the screen for
+an owner and not for a teacher; and a `verify.sql` row that checks the body
+clears the flag and that `authenticated` may execute it. A no-op stub fails all
+three.
+
+The simulation now walks the path: twenty days across the two years are
+reopened, corrected and closed again, so the corrections report has rows in it
+for the first time.

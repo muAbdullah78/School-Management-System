@@ -448,6 +448,21 @@ emit supabase/bundles/25_last_year_still_gets_its_result_cards.sql \
 # voided: allocate the payment elsewhere", which nobody would write.
 emit supabase/bundles/26_the_em_dash_a_clerk_reads.sql \
      supabase/migrations/0120*.sql
+# A TWENTY-SEVENTH bundle.
+#
+# 0121 is the one finding from the two-year simulation that a school could not
+# have worked around. A class teacher marks a child absent by mistake and
+# presses Finalize; fn_finalize_attendance sets is_locked, fn_mark_attendance
+# skips a locked row, and NOTHING in the schema at any privilege level cleared
+# that flag. Reproduced as the owner, on their own school, with a reason: the
+# register did not change.
+#
+# It matters more than a wrong mark. The attendance percentage on the result
+# card is computed from attendance_daily, so the wrong figure is printed and
+# sent home every term, and the least privileged user in the product was the
+# one who could create a state the owner could not undo.
+emit supabase/bundles/27_a_finalised_register_can_be_reopened.sql \
+     supabase/migrations/0121*.sql
 
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen

@@ -46,6 +46,26 @@ set local "sim.school" = 'Chaudhary Puclix High School Ghauriii';
 -- limit. Only a superuser can lift it, which the SQL editor is.
 set local statement_timeout = 0;
 
+-- ---------------------------------------------------------------------------
+-- IS THIS DATABASE NEW ENOUGH? Asked here, at the top, rather than found out
+-- thirteen minutes into a file.
+--
+-- The register section reopens a finalised day and corrects it, which is what
+-- the corrections report exists to show and which no database could do before
+-- migration 0121. On a database that is behind, that call fails with "function
+-- does not exist" AFTER the file has done all its work, and because each file
+-- is one transaction the whole lot is rolled back with nothing to show for it.
+-- ---------------------------------------------------------------------------
+do $prereq$
+begin
+  if to_regprocedure('public.fn_unlock_attendance(uuid,uuid,uuid,date,text)') is null then
+    raise exception 'This project is behind the application. Run '
+      'supabase/verify.sql, paste every bundle it names in a FAIL row (the '
+      'first of them is 27_a_finalised_register_can_be_reopened.sql), then '
+      'start this set again.';
+  end if;
+end $prereq$;
+
 
 
 -- ------------------------------------------------------------------------
@@ -384,6 +404,23 @@ begin
    where a.school_id = v_school and a.entity = 'admission_enquiries'
      and e.id::text = a.entity_id;
   get diagnostics v_n = row_count; v_tot := v_tot + v_n;
+
+  -- THE ONE AUDIT ACTION WHOSE entity_id IS A DATE, not a row id. Reopening a
+  -- finalised register (0121) is about a whole section-day, and there is no
+  -- single attendance_daily row that IS the day, so the function records the
+  -- date. Which means the join above cannot reach these rows and they would
+  -- keep claiming that a 2024 register was reopened this afternoon.
+  --
+  -- Dated to the morning after the day in question, because that is when the
+  -- father turns up with the letter. Clamped to now(), so the last few days
+  -- cannot land in the future.
+  update public.audit_log a
+     set created_at = least((a.entity_id::date) + interval '1 day' + time '09:40', now())
+   where a.school_id = v_school and a.action = 'ATTENDANCE_UNLOCK'
+     and a.id <= v_audit_mark
+     and a.entity_id ~ '^\d{4}-\d{2}-\d{2}$';
+  get diagnostics v_n = row_count; v_tot := v_tot + v_n;
+  raise notice 'registers reopened: % audit row(s) dated', v_n;
 
   raise notice 'audit rows re-dated: %', v_tot;
 

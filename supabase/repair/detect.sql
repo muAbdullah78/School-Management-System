@@ -885,7 +885,18 @@ with sig(migration, object, present) as (values
                    join pg_namespace n on n.oid = p.pronamespace
                    cross join lateral regexp_matches(
                      p.prosrc, 'raise\s+exception[^;]*[\u2014\u2013][^;]*;', 'gi') m
-                  where n.nspname = 'public'))
+                  where n.nspname = 'public')),
+  -- Not the function's existence: a stub returning 0 would satisfy that while
+  -- the register stayed shut. The body must clear the flag, and the grant must
+  -- let a signed-in owner call it, because a function nobody may execute is
+  -- the same as no function at all.
+  ('0121_a_finalised_register_can_be_reopened', 'an owner can reopen a locked day',
+     exists (select 1 from pg_proc p
+               join pg_namespace n on n.oid = p.pronamespace
+              where n.nspname = 'public'
+                and p.proname = 'fn_unlock_attendance'
+                and p.prosrc ~ 'is_locked\s*=\s*false'
+                and has_function_privilege('authenticated', p.oid, 'EXECUTE')))
 )
 select migration,
        object                                   as looked_for,

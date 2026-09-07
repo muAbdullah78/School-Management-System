@@ -2096,6 +2096,41 @@ select 'no em dash in anything the software says (0120)',
        end
 
 union all
+-- 0121. Attendance, and the only finding from the two-year simulation that a
+-- school could not have worked around by doing something else. A class teacher
+-- marks a child absent by mistake and presses Finalize; fn_finalize_attendance
+-- sets is_locked, fn_mark_attendance's upsert carries `where not ad.is_locked`,
+-- and nothing in the schema at any privilege level cleared that flag. The owner,
+-- on their own school, with a reason, got {"marked": 0, "skipped": 1} and a
+-- register that did not change. The attendance percentage on the RESULT CARD is
+-- computed from that table, so the wrong figure is printed and sent home every
+-- term afterwards.
+--
+-- Three clauses, and the middle one is the point. A function that merely EXISTS
+-- proves nothing: a stub that returned 0 and touched no row would pass a
+-- name check while the register stayed shut. So this also requires that the
+-- body actually clears the flag, and that the grant is right, because a
+-- function nobody may execute is the same as no function. The behaviour itself
+-- (an owner can, a class teacher cannot, and the correction then takes) is
+-- proved by the DO block at the foot of the migration, which needs to write and
+-- roll back and so cannot live in a read-only script like this one.
+select 'a finalised register can be reopened (0121)',
+       case when not exists (
+              select 1 from pg_proc p
+                join pg_namespace n on n.oid = p.pronamespace
+               where n.nspname = 'public'
+                 and p.proname = 'fn_unlock_attendance'
+                 and p.prosrc ~ 'is_locked\s*=\s*false'
+                 and has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                 and not has_function_privilege('anon', p.oid, 'EXECUTE'))
+         then 'FAIL - one mistaken mark finalised by a teacher is on this '
+              || 'school''s register for good, and on every result card that '
+              || 'child is given; apply '
+              || 'supabase/bundles/27_a_finalised_register_can_be_reopened.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS — no schools yet, as expected'
