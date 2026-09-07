@@ -29,6 +29,151 @@
   </head>
   <body>
     <div id="root"></div>
+
+    <!--
+      THE RESCUE PATH, AND IT HAS TO BE INLINE.
+
+      A school reported the sign-in page loading for a minute and then going
+      completely white, with nothing on it at all. Reproduced exactly, and the
+      mechanism is worth writing down because nothing in the application could
+      ever have fixed it.
+
+      Vite fingerprints its output, so every build has a new asset name. If a
+      browser is handed an OLD index.html it asks for an asset name that no
+      longer exists, and wrangler.jsonc sets not_found_handling to
+      "single-page-application" -- which answers a missing path with
+      index.html, at 200, as text/html. So a request for a script gets a page,
+      Chrome refuses to execute HTML as a module, and the result is:
+
+          #root innerHTML length: 0
+          BODY TEXT: ""
+          CONSOLE error: Failed to load module script: Expected a
+            JavaScript-or-Wasm module script but the server responded with a
+            MIME type of "text/html".
+
+      A blank page, a 200 in the network tab, and one line in a console the
+      school will never open. Three things can hand a browser that old
+      index.html: the service worker's cached shell, any HTTP cache, and the
+      back/forward cache. The fixes for those are in public/sw.js and
+      public/_headers respectively.
+
+      This is here because none of them is a rescue. When the module does not
+      execute, NO application code runs: not ErrorBoundary, not the router, not
+      a single line of anything in src/. The only thing left that can act is a
+      classic script already in the document.
+
+      WHY IT LISTENS FOR THE ERROR RATHER THAN TIMING OUT. A module script that
+      fails its MIME check fires a real `error` event, verified in Chromium as
+      both a capture listener on document and the element's own onerror. That
+      is immediate and it cannot mistake a slow download for a failure -- which
+      matters, because a 350 kB bundle over a bad line in Rawalpindi can take a
+      long time, and reloading a school mid-download would make this worse
+      rather than better.
+
+      SO THE TIMER NEVER RELOADS. It only puts something readable on screen if
+      the page is still empty long afterwards. Auto-healing is reserved for a
+      proven load failure; explaining is safe in every case.
+
+      AND IT HEALS AT MOST ONCE. sessionStorage guards it, because a reload loop
+      on a sign-in page is worse than a blank one: at least a blank page can be
+      described on the telephone.
+    -->
+    <script>
+      (function () {
+        var HEALED = 'sm_boot_healed'
+        var root = document.getElementById('root')
+
+        function stillEmpty() {
+          return !root || root.childElementCount === 0
+        }
+        function already() {
+          try { return sessionStorage.getItem(HEALED) === '1' } catch (e) { return false }
+        }
+        function remember() {
+          try { sessionStorage.setItem(HEALED, '1') } catch (e) { /* private mode */ }
+        }
+
+        function explain(why) {
+          if (!stillEmpty()) return
+          var box = document.createElement('div')
+          box.setAttribute('role', 'alert')
+          box.style.cssText = 'font:16px/1.5 system-ui,-apple-system,Segoe UI,sans-serif;'
+            + 'max-width:30rem;margin:12vh auto;padding:0 1.25rem;color:#1e293b'
+          var h = document.createElement('h1')
+          h.style.cssText = 'font-size:1.25rem;margin:0 0 .5rem'
+          h.textContent = 'This page did not finish loading'
+          var p1 = document.createElement('p')
+          p1.style.cssText = 'margin:0 0 .75rem;color:#475569'
+          p1.textContent = why
+          var p2 = document.createElement('p')
+          p2.style.cssText = 'margin:0 0 1.25rem;color:#475569'
+          p2.textContent = 'Your data is safe and nothing has been lost. This is '
+            + 'the page failing to arrive, not the school records.'
+          var b = document.createElement('button')
+          b.type = 'button'
+          b.textContent = 'Load it again'
+          b.style.cssText = 'font:inherit;font-weight:600;cursor:pointer;color:#fff;'
+            + 'background:#4f46e5;border:0;border-radius:.5rem;padding:.7rem 1.1rem'
+          b.onclick = function () { hardReload() }
+          box.appendChild(h); box.appendChild(p1); box.appendChild(p2); box.appendChild(b)
+          ;(root || document.body).appendChild(box)
+        }
+
+        function hardReload() {
+          location.replace(
+            location.pathname + '?fresh=' + Date.now() + location.hash,
+          )
+        }
+
+        // Throw away everything that could be holding the old page, then come
+        // back for a clean one. Both stores are cleared: the service worker's
+        // cache is the likeliest culprit and the HTTP cache is bypassed by the
+        // changed URL.
+        function heal() {
+          if (already()) {
+            explain('We tried reloading it once already and it still did not arrive.')
+            return
+          }
+          remember()
+          var jobs = []
+          try {
+            if (window.caches && caches.keys) {
+              jobs.push(caches.keys().then(function (names) {
+                return Promise.all(names.map(function (n) { return caches.delete(n) }))
+              }))
+            }
+            if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+              jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) {
+                return Promise.all(rs.map(function (r) { return r.unregister() }))
+              }))
+            }
+          } catch (e) { /* nothing to clear */ }
+          var done = function () { hardReload() }
+          if (!jobs.length) { done(); return }
+          Promise.all(jobs).then(done, done)
+        }
+
+        // THE PRECISE SIGNAL. Capture phase, because a script's error event
+        // does not bubble.
+        document.addEventListener('error', function (e) {
+          var t = e.target
+          if (t && t.tagName === 'SCRIPT' && t.getAttribute
+              && t.getAttribute('type') === 'module') {
+            heal()
+          }
+        }, true)
+
+        // THE BACKSTOP. Says something; never reloads. Long, so a slow
+        // connection is left alone to finish.
+        window.addEventListener('load', function () {
+          setTimeout(function () {
+            explain('It has been a while and the page is still empty. The '
+              + 'connection may have dropped part way through.')
+          }, 25000)
+        })
+      })()
+    </script>
+
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
