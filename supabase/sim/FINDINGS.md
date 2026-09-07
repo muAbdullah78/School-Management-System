@@ -624,3 +624,61 @@ whole-school aggregates rather than per-child reads: fee reconciliation,
 head-wise dues and the dashboard. None is a problem at this size. All three
 scale with the number of invoice lines, so they are the ones to re-measure at
 1,000 children.
+
+---
+
+## F19. ANALYZE at the wrong moment made a three-minute paste take twenty
+
+**Not a defect in the product. An operational finding about how a long paste
+behaves, and it applies to your migration bundles too.**
+
+The simulation runs in about six minutes when `supabase/sim/run.sh` drives it,
+one file per psql invocation. Turned into files for the Supabase SQL editor, the
+same work took over twenty minutes and was still in year two of three when it
+was killed. Three measurements to find out why:
+
+| where the `ANALYZE` was | file 2 took |
+| --- | --- |
+| at the start of each section | **20+ minutes**, killed |
+| at the end of each section, so only the next file sees it | 7m 15s |
+| nowhere at all | **3m 44s** |
+
+**Statistics that say "small" freeze bad plans into the rest of a long
+transaction.** Running `ANALYZE` when `students` holds 120 rows records "this
+table is nearly empty", and the planner then chooses nested loops for three
+minutes of work while the table grows underneath it. With no `ANALYZE`,
+Postgres falls back to its own default estimates, which are far more
+conservative and produce better plans for a table being filled. That is why
+`run.sh` was fast all along: its database has never been analyzed.
+
+Moving it to the end of each section only pushed the problem one file along:
+file 1 finished by recording 120 students, and file 2 opened with that as truth.
+
+The paste set now runs one `ANALYZE`, in the last file, after the writing is
+over, where the only thing it can affect is how fast the school's first screen
+is afterwards.
+
+**Why this matters beyond the simulation.** Anything that writes a lot inside
+one transaction has this shape, which includes a bundle that backfills a table
+and then reads it. It is a reason to prefer "write, commit, then read" over one
+long transaction, and a reason never to sprinkle `ANALYZE` into the middle of a
+migration for luck.
+
+### The paste set, measured
+
+Seven files, in order, each its own transaction, against a database in exactly
+the state a real project is in (migrations applied, school signed up, no data):
+
+| file | time |
+| --- | --- |
+| 1 set the school up | 0s |
+| 2 two and a half years | 224s |
+| 3 the register | 69s |
+| 4 tests and exams | 7s |
+| 5 the drawer | 8s |
+| 6 set the clock | 25s |
+| 7 check it worked | 2s |
+| **total** | **about 6 minutes** |
+
+Ending: `BELIEVABLE. 368,242 rows, 222 children on the roll, 89,634 attendance
+rows over 589 days, 716 result cards, audit log spans 784 days.`
