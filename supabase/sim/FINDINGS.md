@@ -682,3 +682,69 @@ the state a real project is in (migrations applied, school signed up, no data):
 
 Ending: `BELIEVABLE. 368,242 rows, 222 children on the roll, 89,634 attendance
 rows over 589 days, 716 result cards, audit log spans 784 days.`
+
+---
+
+## F20. The ceiling is around 1,000 children, and it is the whole-school aggregates
+
+**Where the product actually stops being fast, measured rather than guessed.**
+
+The finished school was pushed to a five-year, 1,000-child shape (52,947
+invoices, 198,639 invoice lines) and the same read sweep re-run, **with all of
+migration 0118's indexes in place**.
+
+| Screen | 222 children | 1,003 children |
+| --- | --- | --- |
+| Reports: fee reconciliation | 116 ms | **3,013 ms** |
+| Fees: head-wise dues | 89 ms | **2,044 ms** |
+| Fees: defaulters | 65 ms | **1,514 ms** |
+| **Dashboard** | 67 ms | **1,445 ms** |
+| Reports: unpaid invoices | 13 ms | **1,250 ms** |
+| Students, page 5 | 58 ms | 502 ms |
+| Cash drawer summary | 59 ms | 471 ms |
+| Reports: balance sheet | 25 ms | 226 ms |
+| Students, page 1 | 18 ms | **135 ms** |
+| Fees: recent payments | 52 ms | 55 ms |
+| Fees: class dues, one section | 25 ms | 41 ms |
+| **Global search** | 11 ms | **22 ms** |
+
+### What this means commercially, plainly
+
+- **Up to about 400 children the product is comfortably fast.** Every screen
+  stays well inside a couple of hundred milliseconds.
+- **At around 1,000 children the dashboard crosses a second** and the fee
+  reports reach three. That is the point at which a school starts describing
+  the software as slow.
+- **The per-child and per-section reads do not degrade at all.** A child's
+  ledger, a section's register, class dues, recent payments and the search bar
+  are all flat or nearly flat. So the ceiling is specifically the **whole-school
+  aggregates**, which read every invoice line in the school on every call.
+- For the ten to twenty Pakistani private schools of 200 to 400 children this
+  business is aimed at, there is nothing to do here. It matters when a
+  1,000-pupil school signs up, and it is worth knowing before that conversation
+  rather than during it.
+
+The fix, when it is needed, is not more indexes: it is a nightly or on-write
+rollup of per-month per-class totals, so the reports read a summary table
+instead of the ledger. That is a design change and it should wait until a real
+school needs it.
+
+### One number in the first sweep was my benchmark's fault, not the product's
+
+`fn_family_sheet()` came out at **2,954 ms**, an 800x degradation for what should
+be a single-family read. It is an artefact: the synthetic children were all
+given the same `family_id`, so that one family held 782 children. Re-timed on a
+family with a realistic two children: **5.8 ms**. Recorded because a sweep that
+reports a number like that without checking it is how a fake finding gets
+believed.
+
+### And one that is real but is a decision, not a defect
+
+`fn_student_list()` page 1 costs 135 ms at 1,000 children, up from 18 ms. The
+function already avoids calling `student_balance()` per row (somebody optimised
+that, and the comment says so). What remains is
+`counted as (select count(*) as n from base)`: the total for the pagination
+footer, recomputed over the whole filtered set on every page. That is a
+reasonable thing to want and an O(school) cost to pay for it. Counting only on
+the first page, or dropping the exact total, is a product decision rather than a
+bug fix.
