@@ -16,19 +16,43 @@
   # that does not, and covers every non-HTML response as well.
   X-Robots-Tag: noindex
 
+# NOTHING IS CACHED HARD UNLESS IT IS FINGERPRINTED, and this rule has to come
+# FIRST so the fingerprinted rule below can override it.
+#
+# THE RULE THIS REPLACES DID NOT COVER A SINGLE PAGE ANYBODY VISITS. It was
+#
+#     /index.html
+#       Cache-Control: no-cache
+#
+# and every URL a person actually opens is /, /login, /parents or /portal.
+# wrangler.jsonc serves index.html for those, but it serves it UNDER THAT PATH,
+# and Cloudflare matches _headers against the REQUEST path. So /login matched
+# only /* and got no Cache-Control from us at all, while the one path the rule
+# named is the one nobody navigates to.
+#
+# That mattered because Vite fingerprints its output. A browser holding a
+# cached index.html asks for an asset name that no longer exists, the SPA
+# fallback answers it with index.html at 200 as text/html, and Chrome refuses
+# to execute HTML as a module script: a completely blank page, a 200 in the
+# network tab, and one console line the school will never open. Reported by a
+# school, reproduced, and traced in full in web/index.html.
+#
+# no-cache does not mean "do not store", it means "revalidate before use", so a
+# 304 still costs nothing on a good connection and the page can never be stale.
+/*
+  Cache-Control: no-cache
+
 # Vite fingerprints these filenames, so a changed file gets a changed name and
-# can be cached permanently.
+# can be cached permanently. LATER than /* on purpose: Cloudflare applies every
+# matching rule in file order and lets a later one replace an earlier one that
+# set the same header, so this is what makes the two rules compose instead of
+# fight.
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
 
-# These three must never be cached hard, or a school stays on an old build
-# after a fix — the worst possible failure for a bug we have already fixed.
-/index.html
-  Cache-Control: no-cache
-/sw.js
-  Cache-Control: no-cache
-/manifest.webmanifest
-  Cache-Control: no-cache
+# /sw.js and /manifest.webmanifest used to be named here with no-cache. They no
+# longer need to be: /* covers them, and a service worker served from a stale
+# cache is how the last one stayed installed for a month.
 
 # Artwork, and the one file a crawler reads before anything else. Neither is
 # fingerprinted, so neither can be cached permanently, but a day is safe.
