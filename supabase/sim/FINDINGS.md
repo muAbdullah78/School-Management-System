@@ -296,3 +296,155 @@ ERROR:  A refundable charge must be billed on its own challan, not mixed with
 
 This was a direct table insert as the table owner, bypassing every function, and
 the invariant still held. That is the correct place for a rule of that kind.
+
+---
+
+## F10. Press Year Rollover and last year's result cards can never be printed. **Fixed in migration 0119.**
+
+**Severity: high. It destroys nothing, and it permanently blocks a document
+parents ask for. It fails silently and the screen says everything is fine.**
+
+The sequence, and it is the natural one rather than a mistake:
+
+1. Final exams in March. Every paper marked, every mark entered.
+2. The new session starts on 1 April. The office presses **Year Rollover**,
+   because that is what produces the new class lists and the teachers are
+   waiting for their rosters. Nothing warns them to do anything first.
+3. In May a parent asks for last year's result card.
+4. Exams → Final Term → Generate result cards. **It reports nothing and
+   produces nothing.** `fn_result_readiness` returns zero rows, so the screen
+   says the class is ready.
+
+`fn_rollover` marks the finished session's enrollments `promoted` (or
+`graduated` for the leaving class), which is correct: they are not the current
+roll any more. But both `fn_generate_result_cards` and `fn_result_readiness`
+selected the pupils for a card with
+
+```sql
+and e.status = 'active'
+```
+
+so after the rollover a past term has no pupils, a class with no pupils
+generates no cards, and a class with no pupils has no problems to report. Every
+mark is still in the table. Only the ability to turn them into the document is
+gone, and nothing anywhere says why.
+
+### Measured, on the simulated school with three real rollovers behind it
+
+One class, three terms:
+
+```
+before   {"generated": 0,  "provisional": false, "missing_marks": 0}
+         {"generated": 0,  ...}
+         {"generated": 0,  ...}        and fn_result_readiness returned zero rows
+
+after    {"generated": 11, "provisional": false, "missing_marks": 0}
+         {"generated": 17, "provisional": true,  "missing_marks": 8}
+         {"generated": 17, "provisional": false, "missing_marks": 0}
+```
+
+The provisional card in the middle is the machinery working: those eight pupils
+were admitted after the mid-term, so they sat no papers, so the card says so.
+That is exactly the distinction the `active` predicate was flattening to zero.
+
+### The fix
+
+The right predicate is not "on the roll now" but "was in this class that year":
+
+```sql
+and e.status in ('active', 'promoted', 'retained', 'graduated')
+```
+
+`left` and `struck_off` stay excluded on purpose: a child who left in November
+did not finish the year and does not get a final card. `graduated` is included
+because the leaving class sat the same final exam as everybody else, and theirs
+is the card that matters most.
+
+Applied as a **patch** to the stored bodies rather than a restatement, because
+`fn_generate_result_cards` is getting on for 300 lines and has already been
+patched by 0089 (the GPA scale), 0100 (the attendance formula), 0105 (the leave
+counts) and 0110 (the write gate). Retyping it to change one predicate is how a
+stack of earlier fixes gets silently reverted. Three sites in total: one in the
+generator, two in readiness. Verified zero remaining.
+
+### The guard asserts behaviour, not text
+
+A grep for the new predicate would pass on a function carrying it in a comment.
+The migration builds a finished session with a **promoted** pupil, a paper and a
+mark, asks for a card and requires one, then rolls the whole probe back.
+Verified against the unfixed code:
+
+```
+ERROR:  0119: a promoted pupil still gets NO result card. Every school that has
+        pressed Year Rollover is unable to print the cards for the year it
+        rolled out of.
+```
+
+Two things the guard learned the hard way, both of them the schema being right:
+`profiles.id` references `auth.users`, so a probe needs a login before it can
+have an owner; and `mark_entries.max_marks` is `not null`, because a mark
+carries its paper's maximum with it so that a later edit to `exam_subjects`
+cannot silently restate what a printed card said.
+
+---
+
+## F11. The practical flag belongs to the subject, and the schema knows it
+
+Not a defect. `fn_upsert_exam_subject` refuses a paper with practical marks
+unless the subject itself is flagged:
+
+```
+Mark this subject as having a practical before giving it practical marks
+```
+
+A subject that carries 25 practical marks in one term and none in the next is a
+data-entry mistake rather than a curriculum decision, so the flag lives one
+level up on `subjects` and only `fn_set_subject_details` sets it. The
+simulation's first draft set it on the paper and was correctly refused.
+
+---
+
+## F12. The audit log is seven times the size of the data it audits
+
+**Severity: medium, and it is a cost-of-goods problem rather than a bug.**
+
+On the simulated school, 2.5 years, 221 children on the roll:
+
+| table | size |
+| --- | --- |
+| `audit_log` | **266 MB** |
+| `attendance_daily` | 37 MB |
+| everything else | under 6 MB each |
+
+`audit_log` is **68% of the whole database**. `trg_audit_attend` is
+`FOR EACH ROW` on INSERT, UPDATE and DELETE of `attendance_daily`, and
+`audit_trigger()` stores a full `before`/`after` jsonb of the row. So marking a
+class of thirty writes thirty audit rows, and finalising the day writes thirty
+more.
+
+**Of the 269,233 attendance audit rows, not one carries a `reason`.** Every
+single one is routine marking or finalisation. Meanwhile the correction trail
+that actually matters lives on the row itself, in
+`attendance_daily.corrected_from` and `.correction_reason`, and
+`fn_attendance_corrections` reads those columns and not the audit log.
+
+Extrapolated: 220 children × 220 school days is ~48,000 attendance rows a year,
+so ~96,000 audit rows and roughly **90 MB of audit log per school per year**,
+for a table nothing reads. Twenty schools is 1.8 GB a year of paid storage
+carrying no information.
+
+**Proposed fix, not applied here:** make the attendance audit conditional, so it
+records a change that carries a `correction_reason` and ignores a first-time
+mark and a finalisation. That is a change to `audit_trigger()` or to the trigger
+'s `WHEN` clause, it needs its own test suite, and it should be its own pass
+rather than a corner of this one.
+
+---
+
+## F13. Result cards, tests and exams all work, and the two mark paths coexist
+
+`mark_entries` is shared by tests (`assessment_id`) and exams
+(`exam_subject_id`) under two partial unique indexes, and both were exercised:
+**5,898 test marks across 663 tests**, and **4,917 exam marks across 380 papers
+in 5 terms**. The publish gate holds: one term is deliberately left unpublished
+so the portal has something to correctly refuse.

@@ -425,6 +425,20 @@ emit supabase/bundles/23_which_door_you_came_through.sql \
 emit supabase/bundles/24_a_balance_should_not_read_the_whole_ledger.sql \
      supabase/migrations/0118*.sql
 
+# A TWENTY-FIFTH bundle. 24 is not frozen yet, but keeping one migration to a
+# bundle here costs nothing and means a school that has already pasted 24 does
+# not have to be told to paste it again.
+#
+# 0119 is data a school loses by pressing one button in the natural order. The
+# office presses Year Rollover on 1 April because the teachers need the new
+# class lists; fn_rollover marks the finished year's enrollments `promoted`;
+# and both fn_generate_result_cards and fn_result_readiness selected pupils
+# with `e.status = 'active'`. So from that moment last year's result cards
+# cannot be produced, the generator reports nothing and readiness reports no
+# problem. The marks are all still there.
+emit supabase/bundles/25_last_year_still_gets_its_result_cards.sql \
+     supabase/migrations/0119*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

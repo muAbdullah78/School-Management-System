@@ -867,7 +867,18 @@ with sig(migration, object, present) as (values
                join pg_namespace n on n.oid = rel.relnamespace
                join pg_attribute a on a.attrelid = rel.oid and a.attnum = i.indkey[0]
               where n.nspname = 'public' and rel.relname = 'audit_log'
-                and a.attname = 'school_id' and i.indnatts > 1))
+                and a.attname = 'school_id' and i.indnatts > 1)),
+  -- Absence of the OLD predicate, not presence of the new text: a function
+  -- carrying the corrected predicate in a comment would satisfy the other way
+  -- round.
+  ('0119_last_year_still_gets_its_result_cards', 'a promoted pupil can still get a result card',
+     not exists (select 1 from pg_proc p
+                   join pg_namespace n on n.oid = p.pronamespace
+                  where n.nspname = 'public'
+                    and p.proname in ('fn_generate_result_cards', 'fn_result_readiness', 'fn_set_exam_remark',
+                                      'fn_exam_remarks', 'fn_exam_marksheet',
+                                      'fn_assessment_marksheet', 'fn_position_holders')
+                    and p.prosrc ~ 'e\.status\s*=\s*''active'''))
 )
 select migration,
        object                                   as looked_for,

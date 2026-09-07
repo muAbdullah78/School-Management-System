@@ -2050,6 +2050,32 @@ select 'a balance does not read the whole ledger (0118)',
        end
 
 union all
+-- 0119. Not a hole and not a slowdown: data a school loses by pressing one
+-- button in the order anybody would press it. fn_rollover marks the finished
+-- year's enrollments `promoted`, and the two functions behind the result card
+-- selected pupils with `e.status = 'active'`, so from the moment a school rolls
+-- over it can no longer print the cards for the year it rolled out of. The
+-- generator reports nothing, readiness reports no problem, and every mark is
+-- still in the table.
+select 'last year still gets its result cards (0119)',
+       case when exists (
+              select 1 from pg_proc p
+                join pg_namespace n on n.oid = p.pronamespace
+               where n.nspname = 'public'
+                 -- Named, not swept: 19 other functions carry this predicate
+                 -- correctly, because they are about who is on the roll today.
+                 and p.proname in ('fn_generate_result_cards', 'fn_result_readiness', 'fn_set_exam_remark',
+                                    'fn_exam_remarks', 'fn_exam_marksheet',
+                                    'fn_assessment_marksheet', 'fn_position_holders')
+                 and p.prosrc ~ 'e\.status\s*=\s*''active''')
+         then 'FAIL - once this school has pressed Year Rollover it cannot reach '
+              || 'the result cards, marksheets, class positions or remarks for '
+              || 'the year it rolled out of; apply '
+              || 'supabase/bundles/25_last_year_still_gets_its_result_cards.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS — no schools yet, as expected'
