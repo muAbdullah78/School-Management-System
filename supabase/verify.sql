@@ -2076,6 +2076,26 @@ select 'last year still gets its result cards (0119)',
        end
 
 union all
+-- 0120. The house rule is no em dashes anywhere, and
+-- scripts/check-no-emdash.py enforced it over site/ and web/src while every
+-- `raise exception` message in the database sat outside its scope. Those are
+-- not comments: they are what the software says when it refuses. A static
+-- script cannot tell which migration holds a function's latest definition, so
+-- the rule is asserted here, against the live database, where the question has
+-- a real answer.
+select 'no em dash in anything the software says (0120)',
+       case when (select count(*)
+                    from pg_proc p
+                    join pg_namespace n on n.oid = p.pronamespace
+                    cross join lateral regexp_matches(
+                      p.prosrc, 'raise\s+exception[^;]*[\u2014\u2013][^;]*;', 'gi') m
+                   where n.nspname = 'public') > 0
+         then 'FAIL - a school is shown an em dash when the software refuses; apply '
+              || 'supabase/bundles/26_the_em_dash_a_clerk_reads.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS — no schools yet, as expected'

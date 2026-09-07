@@ -878,7 +878,14 @@ with sig(migration, object, present) as (values
                     and p.proname in ('fn_generate_result_cards', 'fn_result_readiness', 'fn_set_exam_remark',
                                       'fn_exam_remarks', 'fn_exam_marksheet',
                                       'fn_assessment_marksheet', 'fn_position_holders')
-                    and p.prosrc ~ 'e\.status\s*=\s*''active'''))
+                    and p.prosrc ~ 'e\.status\s*=\s*''active''')),
+  ('0120_the_em_dash_a_clerk_reads', 'no em dash in anything the software says',
+     not exists (select 1
+                   from pg_proc p
+                   join pg_namespace n on n.oid = p.pronamespace
+                   cross join lateral regexp_matches(
+                     p.prosrc, 'raise\s+exception[^;]*[\u2014\u2013][^;]*;', 'gi') m
+                  where n.nspname = 'public'))
 )
 select migration,
        object                                   as looked_for,

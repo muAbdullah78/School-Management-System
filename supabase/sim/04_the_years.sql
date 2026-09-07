@@ -94,6 +94,7 @@ declare
   v_res     jsonb;
   v_nboy int; v_ngirl int; v_nfam int; v_ndad int; v_nmum int;
   v_gen int := 0; v_paid int := 0; v_fined int := 0; v_disc int := 0;
+  v_chronic boolean;
   v_enq_made int := 0; v_adm int := 0; v_left int := 0;
   v_cat_sal uuid; v_cat_util uuid; v_cat_rent uuid; v_cat_stat uuid; v_cat_maint uuid;
   v_head_dep uuid;
@@ -319,6 +320,8 @@ begin
       for v_fam in
         select f.id,
                (hashtextextended(f.id::text || v_month::text, 17) % 100 + 100) % 100 as luck,
+               -- On the family and NOT on the month: see the note below.
+               ((hashtextextended(f.id::text, 909) % 100 + 100) % 100) < 9 as chronic,
                sum(public.student_balance(st.id)) as owed
           from public.families f
           join public.students st on st.family_id = f.id
@@ -326,14 +329,32 @@ begin
          where f.school_id = v_school and e.status = 'active'
          group by f.id
       loop
+        v_chronic := v_fam.chronic;
         continue when v_fam.owed is null or v_fam.owed <= 0;
-        -- One family in seven pays nothing this month and becomes a defaulter.
-        continue when v_fam.luck < 14;
+
+        -- A DEFAULTER STAYS A DEFAULTER, and getting this wrong produced a
+        -- school with a 98.6% collection rate.
+        --
+        -- The first version drew the "did not pay this month" card per family
+        -- PER MONTH. One family in seven skipped a month, and then the next
+        -- month the same roll came up differently and they paid the whole
+        -- accumulated balance, clearing their arrears. Over 31 months that
+        -- left 86 unpaid challans out of 6,177: no defaulter list, no ageing,
+        -- nothing for the fee reports to be right or wrong about, and a school
+        -- no Pakistani principal would recognise.
+        --
+        -- So chronic default is a property of the FAMILY (hashed on the family
+        -- id alone) and not of the month. About one family in eleven is
+        -- persistently behind and pays roughly half of what it owes when it
+        -- pays at all, which is what actually generates arrears that survive.
+        continue when v_chronic and (v_fam.luck < 55);
+        continue when (not v_chronic) and v_fam.luck < 9;
 
         v_pay := case
-          when v_fam.luck < 24 then round((v_fam.owed * 0.4)::numeric)      -- short payment
-          when v_fam.luck < 32 then round((v_fam.owed * 0.7)::numeric)      -- part payment
-          else v_fam.owed end;                                    -- paid in full
+          when v_chronic       then round((v_fam.owed * 0.45)::numeric)
+          when v_fam.luck < 20 then round((v_fam.owed * 0.4)::numeric)  -- short payment
+          when v_fam.luck < 30 then round((v_fam.owed * 0.7)::numeric)  -- part payment
+          else v_fam.owed end;                                          -- paid in full
         if v_pay <= 0 then continue; end if;
 
         v_method := (array['cash','cash','cash','cash','bank_challan','jazzcash','easypaisa','bank_transfer'])
@@ -379,35 +400,39 @@ begin
       -- because fn_record_expense accepts one.
       perform public.fn_record_expense(
         round((21 * 32000 * (1 + (extract(year from v_month) - 2024) * 0.08))::numeric),
-        v_cat_sal, (v_month + interval '1 month - 3 days')::date,
+        -- least(..., current_date): salaries go out at the end of the month
+        -- and this month has not ended, so an unclamped date books three
+        -- payrolls that have not happened yet.
+        v_cat_sal, least((v_month + interval '1 month - 3 days')::date, current_date),
         'Staff salaries', 'bank_transfer', to_char(v_month, 'Mon YYYY') || ' payroll');
       perform public.fn_record_expense(
         round((38000 + ((hashtextextended(v_month::text, 21) % 20000 + 20000) % 20000))::numeric),
-        v_cat_util, (v_month + interval '12 days')::date,
+        v_cat_util, least((v_month + interval '12 days')::date, current_date),
         'IESCO and SNGPL', 'cash', 'Electricity and gas');
       if extract(month from v_month) in (4, 7, 10, 1) then
         perform public.fn_record_expense(180000, v_cat_rent,
-          (v_month + interval '5 days')::date, 'Building owner', 'bank_transfer', 'Quarterly rent');
+          least((v_month + interval '5 days')::date, current_date),
+          'Building owner', 'bank_transfer', 'Quarterly rent');
       end if;
       if (hashtextextended(v_month::text, 33) % 3 + 3) % 3 = 0 then
         perform public.fn_record_expense(
           round((6000 + ((hashtextextended(v_month::text, 44) % 25000 + 25000) % 25000))::numeric),
-          v_cat_maint, (v_month + interval '18 days')::date,
+          v_cat_maint, least((v_month + interval '18 days')::date, current_date),
           'Local contractor', 'cash', 'Repairs and whitewash');
       end if;
       perform public.fn_record_expense(
         round((9000 + ((hashtextextended(v_month::text, 55) % 12000 + 12000) % 12000))::numeric),
-        v_cat_stat, (v_month + interval '8 days')::date,
+        v_cat_stat, least((v_month + interval '8 days')::date, current_date),
         'Ghauri Book Depot', 'cash', 'Registers, chalk and printing');
 
       -- Money in that is not fees: the tuck shop rent and the odd donation.
       perform public.fn_record_other_income(
         round((12000 + ((hashtextextended(v_month::text, 66) % 8000 + 8000) % 8000))::numeric),
-        'Canteen rent', (v_month + interval '4 days')::date, 'cash', null);
+        'Canteen rent', least((v_month + interval '4 days')::date, current_date), 'cash', null);
       if (hashtextextended(v_month::text, 77) % 5 + 5) % 5 = 0 then
         perform public.fn_record_other_income(
           round((25000 + ((hashtextextended(v_month::text, 88) % 50000 + 50000) % 50000))::numeric),
-          'Donation', (v_month + interval '20 days')::date, 'bank_transfer',
+          'Donation', least((v_month + interval '20 days')::date, current_date), 'bank_transfer',
           'From a parent, towards the science lab');
       end if;
     end loop;

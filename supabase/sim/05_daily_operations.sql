@@ -184,43 +184,8 @@ $sim$;
 
 commit;
 
--- --- 4. Make the clock agree ---------------------------------------------------
--- Everything above was written by functions that stamp created_at with the wall
--- clock, so at this point two years of attendance all claims to have been
--- entered in the same second. The business dates (attendance_date,
--- staff_attendance.attendance_date) are already right; these are the AUDIT
--- timestamps, and they have to agree with them or every "recent activity" and
--- "changed since" reading in the product is nonsense.
---
--- Done as the table owner because created_at is not writable by a school, and
--- that is correct: an application that let a school rewrite its own audit
--- timestamps would have no audit trail at all. This is the seed reaching around
--- a rule that should exist, and it is the only place in this simulation that
--- does.
-reset role;
-begin;
-update public.attendance_daily set created_at = attendance_date + time '08:20',
-                                   updated_at = attendance_date + time '08:20'
- where created_at::date <> attendance_date;
-update public.staff_attendance set created_at = attendance_date + time '07:50',
-                                   checked_at = attendance_date + time '07:50'
- where created_at::date <> attendance_date;
-commit;
-
--- Failed gate attempts, roughly twice a month. staff_checkin_attempts exists to
--- answer "somebody says the code did not work", and a screen that has only ever
--- been looked at with nothing on it has not been tested.
-insert into public.staff_checkin_attempts (school_id, presented, reason, device, created_at)
-select s.id,
-       'CPHS' || lpad(((hashtextextended(d::text, 5) % 9000 + 9000) % 9000 + 1000)::text, 4, '0'),
-       case when (hashtextextended(d::text, 2) % 3 + 3) % 3 = 0 then 'no such code'
-            when (hashtextextended(d::text, 2) % 3 + 3) % 3 = 1 then 'outside the school'
-            else 'code expired' end,
-       case when (hashtextextended(d::text, 4) % 2 + 2) % 2 = 0
-            then 'Android 14; Infinix' else 'iPhone; Safari' end,
-       d + time '07:52'
-  from public.schools s
-  cross join generate_series(date '2024-02-01', current_date, interval '1 day') g(d)
- where s.name = 'Chaudhary Puclix High School Ghauriii'
-   and extract(dow from d) <> 0
-   and (hashtextextended(d::text, 11) % 30 + 30) % 30 = 0;
+-- The clock is NOT set here. Every timestamp in this simulation is moved onto
+-- its real date by 08_the_clock.sql, in one place, as the table owner, because
+-- created_at is not writable by a school. An earlier draft did the register
+-- half here and the rest there, which is two places to look for one rule and
+-- meant this file reported "0 rows moved" once 08 existed.

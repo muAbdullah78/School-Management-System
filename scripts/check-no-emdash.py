@@ -31,6 +31,20 @@ is recorded in docs/STATUS.md rather than pretended away. Extend SCOPE below one
 directory at a time as each is swept, so this check only ever asserts what is
 actually true.
 
+THE HOLE IN THAT REASONING, AND WHERE IT IS NOW CLOSED. "Almost all of those are
+in code comments" was true and not sufficient: supabase/ also holds every
+`raise exception` message in the product, and those are the sentences the
+software says out loud when it refuses. A clerk voiding a paid challan was
+shown one for as long as this check had been passing.
+
+Those cannot be checked from here. A static script cannot tell which migration
+holds a function's latest definition, and a message rewritten by a later
+migration does not matter. So that half of the rule is asserted in
+supabase/verify.sql, against the live database, where "does any stored function
+say this to a user" has a real answer; migration 0120 repunctuated the 27 that
+existed. If you widen SCOPE to supabase/ one day, that verify row is the thing
+that has been holding the line in the meantime, not this file.
+
 Usage: python3 scripts/check-no-emdash.py
 """
 import sys

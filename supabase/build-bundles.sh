@@ -439,6 +439,16 @@ emit supabase/bundles/24_a_balance_should_not_read_the_whole_ledger.sql \
 emit supabase/bundles/25_last_year_still_gets_its_result_cards.sql \
      supabase/migrations/0119*.sql
 
+# A TWENTY-SIXTH bundle.
+#
+# 0120 is the em dash rule, applied to the one place under supabase/ where it
+# was never a comment: the sentences the software says out loud when it
+# refuses. 27 of them, each repunctuated by hand, because the dash was doing
+# three different jobs and a global swap would have produced "That invoice is
+# voided: allocate the payment elsewhere", which nobody would write.
+emit supabase/bundles/26_the_em_dash_a_clerk_reads.sql \
+     supabase/migrations/0120*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

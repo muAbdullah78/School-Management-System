@@ -448,3 +448,124 @@ rather than a corner of this one.
 **5,898 test marks across 663 tests**, and **4,917 exam marks across 380 papers
 in 5 terms**. The publish gate holds: one term is deliberately left unpublished
 so the portal has something to correctly refuse.
+
+---
+
+## F14. Twenty-seven sentences the software says out loud carry an em dash. **Fixed in migration 0120.**
+
+**Severity: medium, and it is a house-rule violation in user-facing text that
+had been passing its own guard all along.**
+
+A clerk voiding a paid challan was shown this:
+
+```
+Rs 759 has been paid against this challan. Reverse the payment first —
+Fees → the receipt → Reverse — so the money movement stays on the record,
+then cancel the charge.
+```
+
+That is, incidentally, one of the best error messages in the product: it names
+the amount, the exact path through the UI, and the reason. It also breaks the
+one absolute rule this house has about writing.
+
+### Why the guard missed it, and its reasoning was careful rather than lazy
+
+`scripts/check-no-emdash.py` counts about 2,900 em dashes under `supabase/` and
+argues, in its own docstring, that almost all of them are in code comments no
+school ever reads, so sweeping the directory would be *"a mechanical edit of
+three thousand comment lines with no review, which is how a real defect gets
+hidden inside a diff nobody can read."*
+
+That is correct. **The hole is the word "almost".** `supabase/` also holds every
+`raise exception` message in the product, and those are not comments. They are
+the sentences the software says when it refuses.
+
+Measured against the functions **as stored**, not against the migration text (a
+message rewritten by a later migration does not matter): **28 string fragments
+in 27 exception messages across 22 functions.**
+
+### Each one read and punctuated by hand
+
+The dash was doing three different jobs:
+
+| job | example |
+| --- | --- |
+| a colon, where the second half explains the first | `A cancellation needs a reason: it stays on the register permanently` |
+| a full stop, where the second half is a fresh instruction | `That invoice is voided. Allocate the payment elsewhere or leave it unallocated` |
+| a comma, where the clause simply continues | `...the school's records, and archiving is reversible.` |
+
+A global character swap would have produced `That invoice is voided: allocate
+the payment elsewhere`, which nobody would write. So migration 0120 is a table
+of 27 pairs, not a regexp.
+
+### The durable half of the fix is the verify row, not the migration
+
+A static script cannot tell which migration holds a function's latest
+definition. So the rule is now asserted in `supabase/verify.sql` against the
+live database, where *"does any stored function say this to a user"* has a real
+answer, and `check-no-emdash.py`'s docstring now records where that half of the
+rule lives. Migration 0120 could not edit the migrations that wrote the
+messages, because those sit inside frozen bundles.
+
+---
+
+## F15. Nothing ever drains the message outbox
+
+Every enquiry, admission and receipt queues a WhatsApp automatically. After two
+and a half years the outbox held **6,176 rows, every one of them `queued`**,
+because nothing in the product drains the queue by itself and nothing ages a row
+out.
+
+A school that never presses Send therefore accumulates them for ever, and
+`fn_unsent_receipts` keeps returning the whole history. `message_outbox` was
+already the third-largest table in the simulated database before the drawer and
+corrections passes ran.
+
+Not a defect exactly: a human is meant to press Send, and the queue is the
+worklist. But there is no cap, no age-out and no "these are older than a term,
+they are never going out now" state, so the worklist becomes unusable rather
+than merely long. Worth a decision rather than a fix.
+
+---
+
+## F16. `fn__ensure_till` opens a drawer nobody ever closes
+
+A cash payment with no open till calls `fn__ensure_till()`, which opens one.
+Nothing closes it. So two and a half years of collection produced **exactly one
+till session, still open, holding 2,236 cash payments** and Rs 9.8 lakh.
+
+That is a true picture of a school that never uses the close-drawer feature, and
+the consequence is that `fn_close_till`'s variance arithmetic had never run once
+in the life of the tenant. When the simulation finally closed it:
+
+```
+expected 9,813,150.75   counted 9,793,524   variance -19,626.75
+```
+
+The arithmetic is correct. The point is that a drawer nobody closes is a drawer
+nobody reconciles, and the product does not ask. A daily close is now simulated
+across the last 50 school days, with both a short and an over day, and four days
+left unapproved so `fn_approve_till` has something to clear.
+
+---
+
+## F17. The good parts, said plainly
+
+Worth recording, because a report that only lists faults is not an audit.
+
+- **The write boundary** (F2) is the best thing in the schema.
+- **The refusal messages are unusually good.** `fn_void_invoice` names the
+  amount, the UI path and the reason. `fn_set_enquiry_status` names the exact
+  function to use instead. `fn_add_enquiry` refuses a blank phone number with
+  "an enquiry nobody can ring is not an enquiry". These are the sentences that
+  made three separate diagnoses in this run take one reading instead of an
+  afternoon.
+- **The invariants hold under a raw insert as the table owner** (F9).
+- **`fn_rollover` is sound** (F6): three real rollovers, 113, 144 and 180
+  promoted, 10 graduated each, nothing unmapped, nothing skipped.
+- **`mark_entries.max_marks` is `not null`**, so a mark carries its paper's
+  maximum with it and a later edit to `exam_subjects` cannot silently restate
+  what a printed card said. That is a considered decision, not an accident.
+- **The practical flag lives on the subject** (F11), not on the paper.
+- **The provisional result card works**: children admitted after a mid-term
+  produce a card that says so, rather than a card with holes in it.
