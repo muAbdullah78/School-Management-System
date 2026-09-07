@@ -155,10 +155,20 @@ export function Login({ door = OFFICE_DOOR }: { door?: Door }) {
           with", which is true for an owner and useless for a parent, whose
           address was invented by the office and may never have been told to
           them properly. */}
-      {door.ifUnknown && (
-        <p className="mt-5 rounded-lg bg-slate-50 px-3.5 py-3 text-sm text-slate-600">
-          {door.ifUnknown}
-        </p>
+      {(door.ifUnknown || door.noAccount) && (
+        <div className="mt-5 space-y-2 rounded-lg bg-slate-50 px-3.5 py-3 text-sm text-slate-600">
+          {door.ifUnknown && <p>{door.ifUnknown}</p>}
+          {/* ONE BOX, TWO DIFFERENT PROBLEMS. Having an account and not
+              knowing its details, and having no account at all, are not the
+              same thing and need different answers. They were also going to
+              end up as two boxes both saying "ask the school office", which
+              reads as padding, so they share one. */}
+          {door.noAccount && (
+            <p className="border-t border-slate-200 pt-2 text-slate-700">
+              {door.noAccount}
+            </p>
+          )}
+        </div>
       )}
 
       {/* RECOVERY, AND HOW HONEST IT CAN BE.
@@ -189,59 +199,70 @@ export function Login({ door = OFFICE_DOOR }: { door?: Door }) {
         )}
       </div>
 
-      <div className="mt-5 space-y-2 border-t border-slate-200 pt-5 text-center text-sm text-slate-500">
-        {/* THE TRIAL LINK IS THE TRAP THIS FIXES, and it is only removed where
-            it is a trap. It was the only prominent alternative to the form, so
+      <div className="mt-5 space-y-4 border-t border-slate-200 pt-5">
+        {/* THE WAY-FINDING, AND IT USED TO BE 12px OF GREY TEXT.
+            It sat at the bottom of a stack of four other lines, and the person
+            it exists for is a parent who has been sent to the office door by
+            their school, a bookmark, or the website's own Sign in link. Nobody
+            finds a sentence that size, and the school reporting it was right.
+
+            An OUTLINED button, full width: unmissable, a real 44px target on a
+            phone, and still plainly subordinate to the filled Sign in button
+            above, so an office clerk signing in every morning is not invited to
+            press the wrong one.
+
+            IT IS A SIGNPOST AND NEVER A CORRECTION. Every door signs anybody
+            in, so this points at a page written for them rather than sending
+            them somewhere they are required to go. The caption says so, which
+            is what stops a parent who has already typed their password from
+            wondering whether they have to start again. */}
+        {door.otherDoor && (
+          <div>
+            <Link
+              to={door.otherDoor.to}
+              className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg
+                         border border-slate-300 bg-white px-4 py-2.5 text-base font-semibold
+                         text-brand-700 no-underline shadow-card
+                         hover:border-brand-600 hover:bg-brand-50
+                         focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500
+                         focus-visible:ring-offset-2"
+            >
+              {door.otherDoor.label}
+              <svg aria-hidden="true" viewBox="0 0 16 16" className="h-4 w-4 shrink-0" fill="none">
+                <path d="M6 3.5 10.5 8 6 12.5" stroke="currentColor" strokeWidth="1.9"
+                      strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </Link>
+            {door.otherDoor.caption && (
+              <p className="mt-2 text-center text-xs leading-relaxed text-slate-500">
+                {door.otherDoor.caption}
+              </p>
+            )}
+          </div>
+        )}
+        {/* LAST, AND QUIETEST, which is a change of order rather than of
+            content. With the trial link above the parent button it was a line
+            of 14px text sandwiched between two buttons, which reads as
+            something nobody meant to put there. It is also the least urgent
+            thing on this card: a school owner who needs to sign up arrived
+            from a website whose largest control is Start free trial, so this
+            is a convenience and not a path.
+
+            THE TRIAL LINK IS ALSO THE TRAP THIS FIXES, and it is only removed
+            where it is a trap. It was the only prominent alternative to the form, so
             it is what a parent or teacher who cannot get in presses. And it
             works: they get a whole new school and become its owner, the vendor
             gets an orphan tenant in the console, and the person believes they
             have signed in. */}
         {door.offerTrial && (
-          <p>
+          <p className="text-center text-sm text-slate-500">
             New school?{' '}
             <Link to={DOOR_PATH.signup} className="font-medium text-brand-700 hover:underline">
               Start a free 14-day trial
             </Link>
           </p>
         )}
-        {door.id === 'parents' && (
-          <p>
-            Your school has already signed up. There is nothing here for you to
-            buy.
-          </p>
-        )}
-        {/* THE WAY-FINDING, and it is a sentence rather than a gate.
-            The office door has to keep working for everybody, because every
-            bookmark and every redirect lands on it, so it points a parent at
-            theirs without turning anybody away. The operator door points a
-            school owner back, for the same reason in reverse. */}
-        {door.id === 'office' && (
-          <p className="text-xs">
-            Are you a parent?{' '}
-            <Link to={DOOR_PATH.parents} className="font-medium text-brand-700 hover:underline">
-              The parent portal is here
-            </Link>
-            , and you can sign in above just the same.
-          </p>
-        )}
-        {door.id === 'parents' && (
-          <p className="text-xs">
-            Work at the school?{' '}
-            <Link to={DOOR_PATH.office} className="font-medium text-brand-700 hover:underline">
-              Sign in for the office
-            </Link>
-            .
-          </p>
-        )}
-        {door.id === 'operator' && (
-          <p className="text-xs">
-            Not the operator?{' '}
-            <Link to={DOOR_PATH.office} className="font-medium text-brand-700 hover:underline">
-              Sign in to your school
-            </Link>
-            .
-          </p>
-        )}
+
       </div>
     </AuthLayout>
   )

@@ -31,8 +31,10 @@ it('renders each door, at desktop and at phone width', () => {
         + 'lands here. What changed: the column says what is BEHIND the door '
         + 'instead of what it costs, there is a sentence saying what to do if you '
         + 'do not know your details, the reset link carries the truth about '
-        + 'invented addresses, and one line points a parent at their own door '
-        + 'without turning anybody away.',
+        + 'invented addresses, and a full-width BUTTON opens the parent portal '
+        + 'without turning anybody away. It was one line of 12px grey text at '
+        + 'the foot of a stack of four others, and a school reported that '
+        + 'parents sent to this door could not find it.',
       profile: null,
       node: <Login door={OFFICE_DOOR} />,
     },
@@ -42,7 +44,9 @@ it('renders each door, at desktop and at phone width', () => {
         + 'to the form, so it is what a parent who cannot get in presses, and it '
         + 'works - they get a whole new school and become its owner. In its place, '
         + 'the answer to the question parents actually ask the office: there is '
-        + 'nothing here for you to buy.',
+        + 'nothing here for you to buy. Under the form, the sentence that says '
+        + 'where an account comes from at all, which is the school and only the '
+        + 'school; at the foot, the way to the office door as a button.',
       profile: null,
       node: <Login door={PARENT_DOOR} />,
     },
@@ -52,7 +56,7 @@ it('renders each door, at desktop and at phone width', () => {
         + 'nobody to persuade, and an austere page is also the one least likely to '
         + 'be mistaken for a school’s own sign-in. The one thing it adds is the '
         + 'way out for a school owner who found the address, because a person at '
-        + 'the wrong door should be redirected by a sentence and never by a '
+        + 'the wrong door should be redirected by a signpost and never by a '
         + 'refusal.',
       profile: null,
       node: <Login door={OPERATOR_DOOR} />,

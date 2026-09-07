@@ -588,21 +588,49 @@ describe('the sign-in doors', () => {
     // same answer, and the strip is the half a phone still shows when the
     // support column is gone.
     expect(queryAllByText(/ask the school office/i).length).toBeGreaterThan(0)
+    // WHERE AN ACCOUNT COMES FROM, which is a different question from "what
+    // are my details" and had no answer anywhere in the product. A parent
+    // cannot make their own, by design, so the page has to say who can.
+    // Two facts, not one sentence: who an account comes from, and what to do
+    // about it. Either alone leaves the reader stuck.
+    expect(queryByText(/school can create one/i)).not.toBeNull()
+    expect(queryByText(/contact the school office/i)).not.toBeNull()
+    // And the way back to the office door, as a control rather than a phrase:
+    // see the office-door test below for why that distinction is the point.
+    const toOffice = container.querySelector('a[href="/login"]')
+    expect(toOffice).not.toBeNull()
+    expect(toOffice?.closest('p')).toBeNull()
   })
 
   it('keeps the office door working for everybody and points a parent at theirs', async () => {
     // /login has to keep serving all three audiences, because every bookmark
     // and every ProtectedRoute redirect lands on it. So it way-finds with a
     // sentence and never with a refusal.
-    const { queryByText } = await door('office')
+    const { queryByText, container } = await door('office')
     // The EYEBROW, not the heading: "Sign in" is both the h1 and the submit
     // button on this door, which is right, and the eyebrow is what names the
     // door. Three applications sit behind this form and nothing on the old page
     // said which one the visitor was standing in front of.
     expect(queryByText('School office')).not.toBeNull()
     expect(queryByText(/Start a free 14-day trial/i)).not.toBeNull()
-    expect(queryByText(/The parent portal is here/i)).not.toBeNull()
-    expect(queryByText(/you can sign in above just the same/i)).not.toBeNull()
+    // A CONTROL, AND NOT A SENTENCE, which is the whole of what a school
+    // reported. The pointer used to be a 12px line of grey text at the foot of
+    // a stack of four other lines, and parents sent to this door by their own
+    // school did not find it.
+    //
+    // The old assertion here matched that sentence's WORDS, so it would have
+    // gone on passing while the thing stayed unfindable, and it broke the
+    // moment the words changed rather than when the behaviour did. These two
+    // hold what a sentence cannot satisfy: there is an anchor addressed at the
+    // parent door, and it is not a phrase buried in a paragraph of prose.
+    const toPortal = container.querySelector('a[href="/parents"]')
+    expect(toPortal).not.toBeNull()
+    expect(toPortal?.textContent).toMatch(/parent portal/i)
+    expect(toPortal?.closest('p')).toBeNull()
+    // The caption underneath is what keeps it a signpost rather than a
+    // correction. Every door signs anybody in, so a parent who has already
+    // typed their password here does not have to start again.
+    expect(queryByText(/same details work on both pages/i)).not.toBeNull()
   })
 
   it('gives the operator the plainest page in the product', async () => {
