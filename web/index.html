@@ -74,6 +74,21 @@
       the page is still empty long afterwards. Auto-healing is reserved for a
       proven load failure; explaining is safe in every case.
 
+      AND THE TIMER IS ARMED INSIDE THE LOAD HANDLER, WHICH IS THE ACTUAL
+      PROTECTION. Not the 25 seconds: `load` does not fire until the module
+      script has finished, so the timer cannot start while the bundle is still
+      arriving and therefore cannot interrupt a slow download at all. Measured,
+      because the first version of this comment credited the duration and that
+      was wrong: with the timer cut to one second and the bundle held back
+      eight, nothing appeared during the download and the app rendered normally
+      when it landed. Moving this out of the load handler to make it "fire
+      sooner" would reintroduce exactly the hazard it is written to avoid.
+
+      What is left for it, then, is narrow and real: the document arrived,
+      `load` fired, and #root is STILL empty. A throw inside main.tsx before
+      React mounts looks like that, and ErrorBoundary cannot catch it because
+      ErrorBoundary is one of the things that did not get to run.
+
       AND IT HEALS AT MOST ONCE. sessionStorage guards it, because a reload loop
       on a sign-in page is worse than a blank one: at least a blank page can be
       described on the telephone.
@@ -163,8 +178,9 @@
           }
         }, true)
 
-        // THE BACKSTOP. Says something; never reloads. Long, so a slow
-        // connection is left alone to finish.
+        // THE BACKSTOP. Says something; never reloads. Inside the load
+        // handler on purpose, and that placement is what keeps it off a slow
+        // connection's back: see the note above.
         window.addEventListener('load', function () {
           setTimeout(function () {
             explain('It has been a while and the page is still empty. The '

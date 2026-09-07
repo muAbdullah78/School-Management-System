@@ -100,6 +100,25 @@ if index:
             problems.append(
                 "web/index.html's rescue script is a module. It would fail by the "
                 "same mechanism it exists to catch. It has to be a classic script.")
+    # THE TIMER MUST STAY INSIDE THE LOAD HANDLER. `load` does not fire until
+    # the module script has finished, so that placement is the only reason the
+    # backstop cannot interrupt a bundle that is still arriving over a bad
+    # line. Measured: with the timer at one second and the bundle held back
+    # eight, nothing appeared during the download. Somebody moving it out to
+    # make it "fire sooner" would start reloading schools mid-download.
+    rescue = before_module
+    load_at = rescue.find("addEventListener('load'")
+    if load_at == -1:
+        load_at = rescue.find('addEventListener("load"')
+    timer_at = rescue.find("setTimeout")
+    if timer_at != -1 and (load_at == -1 or timer_at < load_at):
+        problems.append(
+            "web/index.html's rescue arms its backstop timer outside the load "
+            "handler. `load` does not fire until the module script has "
+            "finished, and that is the ONLY thing stopping the backstop from "
+            "firing while a 350 kB bundle is still arriving over a slow "
+            "connection.")
+
     if "sessionStorage" not in before_module:
         problems.append(
             "web/index.html's rescue does not guard against repeating itself. A "
