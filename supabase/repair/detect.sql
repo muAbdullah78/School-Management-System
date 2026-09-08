@@ -1021,7 +1021,26 @@ with sig(migration, object, present) as (values
                          and a.attnum > 0 and not a.attisdropped)
           and not exists (select 1 from pg_trigger t
                            where t.tgrelid = con.confrelid and not t.tgisinternal
-                             and t.tgtype & 8 = 8 and t.tgtype & 2 = 2)))
+                             and t.tgtype & 8 = 8 and t.tgtype & 2 = 2))),
+  -- Three parts: the helper, the trigger that guarantees a calendar exists to
+  -- check against, and the count of functions still taking an unbounded date.
+  ('0130_a_school_year_has_dates',
+     'a date cannot be recorded outside the school''s academic year',
+     to_regprocedure('public.fn__assert_date_in_session(uuid,date,text,boolean)') is not null
+     and to_regprocedure('public.fn__assert_date_in_calendar(date,text)') is not null
+     and (select count(*) from pg_constraint
+           where conrelid = 'public.academic_sessions'::regclass
+             and conname in ('academic_sessions_dates_ordered',
+                             'academic_sessions_length_sane')) = 2
+     and (select count(*) from pg_proc p
+            join pg_namespace n2 on n2.oid = p.pronamespace
+           where n2.nspname = 'public'
+             and p.proname in ('fn_mark_attendance', 'fn_bill_student_month',
+                               'fn_generate_class_invoices', 'fn_record_expense',
+                               'fn_record_other_income', 'fn_charge_deposit',
+                               'fn_set_fee_amount', 'fn_fee_increment',
+                               'fn_upsert_exam_subject', 'fn_set_staff_attendance')
+             and p.prosrc ~ 'fn__assert_date_in_(session|calendar)') = 10)
 )
 select migration,
        object                                   as looked_for,

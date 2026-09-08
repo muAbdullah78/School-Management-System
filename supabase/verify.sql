@@ -2654,6 +2654,48 @@ select 'a teacher''s reach, and the lock (0129)',
        end
 
 union all
+-- Nothing recorded outside the school's own calendar (0130).
+select 'dates inside the academic year (0130)',
+       case
+         when to_regprocedure('public.fn__assert_date_in_session(uuid,date,text,boolean)') is null
+           then 'FAIL: attendance, challans, expenses and fee changes accept '
+                || 'any date at all, including 2099; apply '
+                || 'supabase/bundles/36_a_school_year_has_dates.sql'
+         when (select count(*) from pg_constraint
+                where conrelid = 'public.academic_sessions'::regclass
+                  and conname in ('academic_sessions_dates_ordered',
+                                  'academic_sessions_length_sane')) <> 2
+           then 'FAIL: an academic year can be saved ending before it starts, '
+                || 'or lasting a century, and every date bound in the product '
+                || 'is derived from those two dates; re-apply '
+                || 'supabase/bundles/36_a_school_year_has_dates.sql'
+         else 'PASS'
+       end
+
+union all
+-- WHO STILL HAS NO DATES. A note rather than a FAIL: it is the state every
+-- school set up through the first-run wizard is in, because that screen only
+-- ever asked for the year's NAME. Nothing is refused for such a year and
+-- nothing is wrong with the database; the bounds simply cannot apply until
+-- somebody fills the two fields in. Reported every time until they do.
+select 'academic years with no dates',
+       case
+         when (select count(*) from public.academic_sessions
+                where starts_on is null or ends_on is null) = 0
+           then 'PASS'
+         else 'note: ' || (select string_agg(
+                  s.name || ' / ' || a.name
+                    || case when a.is_current then ' (current)' else '' end,
+                  '; ' order by s.name, a.name)
+                from public.academic_sessions a
+                join public.schools s on s.id = a.school_id
+               where a.starts_on is null or a.ends_on is null)
+              || '. Fill in the first and last day under Settings, Sessions. '
+              || 'Until then the software cannot tell when that year ends, and '
+              || 'a date typed into it is not checked.'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS: no schools yet, as expected'

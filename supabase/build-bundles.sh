@@ -685,6 +685,36 @@ emit supabase/bundles/34_a_plans_student_limit_means_something.sql \
 emit supabase/bundles/35_the_register_belongs_to_a_class.sql \
      supabase/migrations/0129*.sql
 
+# A THIRTY-SIXTH bundle. Five caller-supplied dates were unbounded, and two
+# calls to the app's own function put a real school's register between 1900 and
+# 2099:
+#
+#     ACCEPTED a 2099 date: {"total": 1, "marked": 1, "skipped": 0}
+#     ACCEPTED an 1900 date: {"total": 1, "marked": 1, "skipped": 0}
+#     the register now runs 1900-01-01 to 2099-12-31
+#
+# The harm is a typed year rather than an attacker. attendance_daily is keyed on
+# (enrollment_id, attendance_date), so 2062 for 2026 creates a row that appears
+# on no screen, is counted in the percentage the parent portal shows, and can
+# never be found again. A challan due in 2062 never becomes overdue, so that
+# family never appears on the defaulter list. A fee effective from 1900 reprices
+# every challan the school has ever raised.
+#
+# AND THE CALENDAR IT SHOULD BE BOUNDED BY DID NOT EXIST. The first-run wizard
+# asked for the academic year's NAME and nothing else, so setupSchool() passed
+# `starts_on: null, ends_on: null` and every school ever set up through the app
+# has a current year with no dates on it. So this bundle does the dates first
+# (required on new sessions, sane, at most 60 per school) and the bounds second,
+# and the wizard now asks for them, pre-filled for an April to March year.
+#
+# A YEAR THAT ALREADY HAS NO DATES IS LEFT EXACTLY AS IT IS. Deriving
+# "April to March" from a name would be a guess, and a wrong guess puts wrong
+# dates on a live school's academic year and then rejects its real register. The
+# migration reports them, verify.sql keeps reporting them, and the bound arrives
+# the moment somebody fills the two fields in.
+emit supabase/bundles/36_a_school_year_has_dates.sql \
+     supabase/migrations/0130*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

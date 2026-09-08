@@ -1368,6 +1368,21 @@ jobs:
         # signup is unlimited pupils for nothing, for ever.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/plan_and_term.sql
 
+      - name: Nothing is recorded outside the school's own academic calendar
+        # Assertions 1, 2, 6, 8, 9, 13, 14, 24, 26 and 27 are the half that
+        # matters, and there are more of them than of the refusals: the bound is
+        # the school's OWN calendar, so it has to refuse nothing a school does.
+        # Today's register, last Friday's, LAST YEAR'S through an unlock, a
+        # challan due after the year ends (a fifth of the demo school's are), an
+        # expense from before the first session began, an eighteen-month
+        # transition year, and a school whose academic year has no dates at all,
+        # which is every school the first-run wizard ever set up.
+        #
+        # Assertion 17 is the one that is easy to get wrong: a refused expense
+        # must not consume a voucher number, or a numbered series somebody files
+        # with the tax office grows gaps.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/dates_in_the_calendar.sql
+
       - name: A teacher's reach is one class, and a lock holds against a delete
         # EVERY ASSERTION RUNS AS `authenticated`, and that is the whole point.
         # This suite runs as the table owner, for whom both row security and
