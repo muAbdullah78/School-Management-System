@@ -2,7 +2,7 @@
 -- GENERATED FILE. DO NOT EDIT except for the one line marked below.
 -- Built from supabase/sim/ by scripts/build-sim-bundle.py
 --
--- TWO YEARS OF ONE SCHOOL'S USE. FILE 3 OF 7: the register
+-- TWO YEARS OF ONE SCHOOL'S USE. FILE 6 OF 10: the register
 --
 -- 589 school days of student and staff attendance, finalised for every day except today, and twenty of those days reopened afterwards and corrected the way a school corrects one: a father turns up with the leave application. About a minute.
 --
@@ -31,7 +31,7 @@
 --      free trial. Once the trial has ended there is no undo.
 --   2. Only run it against a school you are willing to fill with invented
 --      data. It writes nothing outside the one tenant named below.
---   3. It creates NO logins. See the note at the end of file 7.
+--   3. It creates NO logins. See the note at the end of file 10.
 -- =============================================================================
 
 -- ---------------------------------------------------------------------------

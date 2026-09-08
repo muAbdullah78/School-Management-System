@@ -2,7 +2,7 @@
 -- GENERATED FILE. DO NOT EDIT except for the one line marked below.
 -- Built from supabase/sim/ by scripts/build-sim-bundle.py
 --
--- TWO YEARS OF ONE SCHOOL'S USE. FILE 6 OF 7: set the clock
+-- TWO YEARS OF ONE SCHOOL'S USE. FILE 9 OF 10: set the clock
 --
 -- Moves 133,000 timestamps onto their real dates, so two years of school life stops claiming to have been entered this afternoon. Under a minute.
 --
@@ -31,7 +31,7 @@
 --      free trial. Once the trial has ended there is no undo.
 --   2. Only run it against a school you are willing to fill with invented
 --      data. It writes nothing outside the one tenant named below.
---   3. It creates NO logins. See the note at the end of file 7.
+--   3. It creates NO logins. See the note at the end of file 10.
 -- =============================================================================
 
 -- ---------------------------------------------------------------------------

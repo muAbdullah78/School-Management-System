@@ -2,7 +2,7 @@
 -- GENERATED FILE. DO NOT EDIT except for the one line marked below.
 -- Built from supabase/sim/ by scripts/build-sim-bundle.py
 --
--- TWO YEARS OF ONE SCHOOL'S USE. FILE 1 OF 7: set the school up
+-- TWO YEARS OF ONE SCHOOL'S USE. FILE 1 OF 10: set the school up
 --
 -- The school profile, four academic years, 12 classes, 17 sections, 76 subjects, 7 fee heads with a full fee sheet, 23 staff, and the 120 children who were already on the roll in February 2024. Seconds.
 --
@@ -31,7 +31,7 @@
 --      free trial. Once the trial has ended there is no undo.
 --   2. Only run it against a school you are willing to fill with invented
 --      data. It writes nothing outside the one tenant named below.
---   3. It creates NO logins. See the note at the end of file 7.
+--   3. It creates NO logins. See the note at the end of file 10.
 -- =============================================================================
 
 -- ---------------------------------------------------------------------------

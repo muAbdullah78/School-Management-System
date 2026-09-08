@@ -59,11 +59,49 @@ GROUPS = [
      "The school profile, four academic years, 12 classes, 17 sections, 76 "
      "subjects, 7 fee heads with a full fee sheet, 23 staff, and the 120 "
      "children who were already on the roll in February 2024. Seconds."),
-    ("two_and_a_half_years",
+    # ONE FILE PER ACADEMIC YEAR, AND NOT FOR TIDINESS.
+    #
+    # These were one file, and a school pasting it got
+    #
+    #     Error: Failed to fetch (api.supabase.com)
+    #
+    # which is not a SQL error at all: it is the browser losing a request that
+    # ran too long. `set local statement_timeout = 0` at the top of every file
+    # lifts the DATABASE's limit and cannot touch the dashboard API's own, and
+    # all four years in one request takes about four and a half minutes.
+    #
+    # Split, the same work takes 76 SECONDS INSTEAD OF 262, because each year
+    # commits and the next one plans against real statistics rather than
+    # against hundreds of thousands of uncommitted rows. That is the ANALYZE
+    # finding in FINDINGS.md arriving from the other direction.
+    #
+    # Each year is independent and safe to paste twice: it draws its children
+    # from its own fixed slice of the name pool, and it skips itself if this
+    # session already carries monthly challans.
+    ("year_2023_2024",
      ["04_the_years.sql"],
-     "The long one: about three minutes. Enquiries and admissions year by "
-     "year, monthly challans, collection with real defaulters, late fines, "
-     "discounts, expenses, and THREE year-end rollovers."),
+     "February and March 2024: the first two months, six admissions, and the "
+     "year-end rollover that carries the whole school into 2024-2025. "
+     "Seconds.",
+     "2023-2024"),
+    ("year_2024_2025",
+     ["04_the_years.sql"],
+     "A full year: 45 admissions out of 135 enquiries, twelve months of "
+     "challans and collection, fines, discounts, expenses, leavers, and the "
+     "rollover into 2025-2026. Half a minute.",
+     "2024-2025"),
+    ("year_2025_2026",
+     ["04_the_years.sql"],
+     "The biggest year: 50 admissions, twelve months of billing against a "
+     "roll that has grown twice, and the rollover into the current year. "
+     "About half a minute.",
+     "2025-2026"),
+    ("year_2026_2027",
+     ["04_the_years.sql"],
+     "The current year, as far as today and no further: this April onwards, "
+     "with the months still to come left unbilled the way a real school's "
+     "are. Twenty seconds.",
+     "2026-2027"),
     ("the_register",
      ["05_daily_operations.sql"],
      "589 school days of student and staff attendance, finalised for every "
@@ -88,7 +126,9 @@ GROUPS = [
      "Asserts the result is a school somebody would recognise. Instant. This "
      "is the one whose output to read."),
 ]
-PARTS = [f for _, files, _ in GROUPS for f in files]
+# A group is (name, files, blurb) or (name, files, blurb, academic_year).
+GROUPS = [g if len(g) == 4 else (g[0], g[1], g[2], None) for g in GROUPS]
+PARTS = sorted({f for _, files, _, _ in GROUPS for f in files})
 
 HEADER = """-- =============================================================================
 -- GENERATED FILE. DO NOT EDIT except for the one line marked below.
@@ -133,7 +173,7 @@ HEADER = """-- =================================================================
 -- does not, the file stops with "No owner session." and writes nothing.
 -- ---------------------------------------------------------------------------
 set local "sim.school" = '{school}';
-
+{year_line}
 -- Some of these files take minutes, which is longer than the editor's default
 -- limit. Only a superuser can lift it, which the SQL editor is.
 set local statement_timeout = 0;
@@ -273,6 +313,16 @@ begin
 end $prereq$;
 """
 
+# Filled into the header of the four per-year files. 04_the_years.sql runs one
+# academic year when this is set and all four when it is not, so one source file
+# serves both this split and a psql run that wants the lot in one go.
+YEAR_LINE = """
+-- WHICH ACADEMIC YEAR THIS FILE IS. Do not change it, and run the four year
+-- files IN ORDER: each one ends by rolling the whole school forward into the
+-- next, and there is nothing for the next file to bill until it has.
+set local "sim.year" = '{year}';
+"""
+
 FOOTER = """
 -- =============================================================================
 -- ABOUT THE LOGINS, WHICH THESE FILES DELIBERATELY DID NOT CREATE
@@ -353,7 +403,7 @@ def clean(text: str, name: str) -> str:
     )
 
 
-def check(text: str, files: list, is_last: bool) -> list:
+def check(text: str, files: list, is_last: bool, year=None) -> list:
     """The properties that each way this generator has been wrong would fail."""
     bad = []
     if "\\set" in text:
@@ -367,6 +417,22 @@ def check(text: str, files: list, is_last: bool) -> list:
                    + " times; it must appear once, on the line the reader edits")
     if "current_setting('sim.school')" not in text:
         bad.append("nothing reads the school setting, so editing it would do nothing")
+    if year is not None:
+        # AN EXECUTABLE LINE, not a substring anywhere in the file. The first
+        # version of this asked whether the text `set local "sim.year" = '...'`
+        # appeared, and a COMMENTED-OUT copy of that line satisfies it: the
+        # guard passed on a file that would have run all four years and timed
+        # out. Same trap as every other check in this repository, and it caught
+        # me while writing a check about it.
+        sets_year = [ln for ln in text.split("\n")
+                     if ln.lstrip().startswith('set local "sim.year"')
+                     and ("'" + year + "'") in ln]
+        if not sets_year:
+            bad.append("no executable line sets sim.year to " + year
+                       + ", so this file would run every year at once and time"
+                       + " out in the SQL editor the way the unsplit one did")
+        if "current_setting('sim.year', true)" not in text:
+            bad.append("nothing reads the year setting, so the split does nothing")
     if text.count("\nreset role;\n") != len(files):
         bad.append("a section does not reset the role, so it can inherit "
                    "`authenticated` from the section before it and fail to write")
@@ -389,9 +455,10 @@ def main() -> int:
         stale.unlink()
 
     total = 0
-    for i, (name, files, blurb) in enumerate(GROUPS, start=1):
+    for i, (name, files, blurb, year) in enumerate(GROUPS, start=1):
         head = HEADER.format(n=i, of=len(GROUPS), title=name.replace("_", " "),
-                             blurb=blurb, school=SCHOOL)
+                             blurb=blurb, school=SCHOOL,
+                             year_line=YEAR_LINE.format(year=year) if year else "")
         chunks = [head] + [clean((SIM / f).read_text(), f) for f in files]
         if i == len(GROUPS):
             # The one ANALYZE in the whole set: the writing is over, so the only
@@ -400,7 +467,7 @@ def main() -> int:
             chunks.append(FOOTER)
         text = "\n".join(chunks)
 
-        problems = check(text, files, i == len(GROUPS))
+        problems = check(text, files, i == len(GROUPS), year)
         if problems:
             print("REFUSING TO WRITE " + name + ":", file=sys.stderr)
             for x in problems:
