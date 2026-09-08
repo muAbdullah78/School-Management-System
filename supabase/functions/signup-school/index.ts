@@ -59,6 +59,24 @@ Deno.serve(async (req) => {
     const password = String(body.password ?? '')
     const phone = String(body.phone ?? '').trim()
     const city = String(body.city ?? '').trim()
+    // THE PLAN AND THE TERM THE SCHOOL PICKED ON THE FORM.
+    //
+    // Both optional, and both defaulted BY THE DATABASE rather than here.
+    // fn_signup_school's two new parameters carry defaults of 'starter' and 12,
+    // which is exactly what this function used to produce, so a deployment of
+    // this file that predates migration 0127 and a database that predates this
+    // file both keep working. That is what makes the two deployable in either
+    // order.
+    //
+    // NOT VALIDATED HERE beyond the type. The database refuses a plan that does
+    // not exist, one that is no longer sold, one priced by arrangement (which
+    // has no student limit, so it would be unlimited pupils for nothing), and
+    // any term that is not one of the three on the price list. This is the one
+    // public unauthenticated entry point in the product: a body posted straight
+    // at it has to meet the same wall as the form, and a second copy of the
+    // rules here would be a second thing to keep in step.
+    const planCode = body.plan_code == null ? undefined : String(body.plan_code).trim()
+    const termMonths = body.term_months == null ? undefined : Number(body.term_months)
 
     if (schoolName.length < 2) return json({ error: 'Please enter your school name.' }, 400)
     if (!fullName) return json({ error: 'Please enter your name.' }, 400)
@@ -68,13 +86,44 @@ Deno.serve(async (req) => {
     // 1) School + trial. fn_signup_school is the unguarded twin of
     //    fn_provision_school: reachable by service role only, never granted to
     //    any client role, so signup cannot be used to mint schools from the app.
-    const { data: provisioned, error: provErr } = await admin.rpc('fn_signup_school', {
+    const base = {
       p_name: schoolName,
       p_city: city || null,
       p_contact_name: fullName,
       p_contact_phone: phone || null,
       p_contact_email: email,
-    })
+    }
+    // fn_signup_school_on_plan IS THE ONE THAT ASKS. The five-argument
+    // fn_signup_school is still there as a delegate that passes Starter and a
+    // yearly term, which is exactly what this function used to get.
+    //
+    // WHY TWO NAMES AND NOT TWO OVERLOADS: the existing five parameters carry
+    // defaults, Postgres requires any added parameter to carry one too, and a
+    // five-argument call then matches both candidates and is refused as not
+    // unique. Migration 0127's header has it in full, with the error text.
+    //
+    // THE FALLBACK IS WHAT MAKES THIS DEPLOYABLE IN EITHER ORDER. Redeployed
+    // before bundle 33 is pasted, the first call fails with "does not exist"
+    // and the second does what today's deployment does: the school is still
+    // created, on Starter, and can change the plan from Settings afterwards.
+    // Without it, redeploying first would break signup outright until the
+    // bundle landed.
+    let provisioned: unknown = null
+    let provErr: { message?: string } | null = null
+    {
+      const r = await admin.rpc('fn_signup_school_on_plan', {
+        ...base,
+        p_plan_code: planCode ?? 'starter',
+        p_term_months: Number.isFinite(termMonths) ? termMonths : 12,
+      })
+      provisioned = r.data
+      provErr = r.error
+      if (provErr && /does not exist|could not find|schema cache/i.test(provErr.message ?? '')) {
+        const legacy = await admin.rpc('fn_signup_school', base)
+        provisioned = legacy.data
+        provErr = legacy.error
+      }
+    }
     if (provErr) return json({ error: provErr.message }, 400)
     const schoolId = (provisioned as { school_id: string }).school_id
 

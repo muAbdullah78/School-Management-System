@@ -888,17 +888,50 @@ union all
 -- `anon` usage on the schema. Each function refused on its own gate, so nothing
 -- leaked — but the next one to forget its gate would have been open to the
 -- internet rather than to this school's staff.
+-- ONE COPY OF THE PREDICATE, and the first version of this row had two: the
+-- PASS test and the FAIL message each carried their own. They disagreed the
+-- moment the exemption below was added, and the row rendered as
+--
+--     unauthenticated callers can run nothing (0071)|
+--
+-- with an empty verdict, because the FAIL branch excluded the exempted name
+-- from the list it names, string_agg over an empty set is null, and
+-- 'FAIL: ' || null is null. A diagnostic that goes blank when it fails is
+-- worse than no diagnostic. So the list of offenders IS the test: null means
+-- nothing is open.
 select 'unauthenticated callers can run nothing (0071)',
-       case when not exists (select 1 from pg_proc p
-                              join pg_namespace n on n.oid = p.pronamespace
-                              where n.nspname = 'public'
-                                and has_function_privilege('anon', p.oid, 'execute'))
-       then 'PASS' else 'FAIL: re-run bundle 7 ('
-            || (select count(*)::text from pg_proc p
-                 join pg_namespace n on n.oid = p.pronamespace
-                where n.nspname = 'public'
-                  and has_function_privilege('anon', p.oid, 'execute'))
-            || ' functions still open)' end
+       coalesce(
+         'FAIL: ' || (
+           select string_agg(p.proname, ', ' order by p.proname)
+             from pg_proc p
+             join pg_namespace n on n.oid = p.pronamespace
+            where n.nspname = 'public'
+              and has_function_privilege('anon', p.oid, 'execute')
+              -- THE ONE EXEMPTION, AND IT HAS TO EARN ITSELF ON EVERY RUN.
+              -- fn_signup_plans (0127) is read by the signup form, which has
+              -- no login: the form shows three plans and nine prices, and
+              -- fn__plan_price is a rule and not a lookup, so a browser copy
+              -- of it would quote a figure the first invoice contradicts the
+              -- moment any of the nine rates moves. It exposes nothing new,
+              -- because `plans` already carries a SELECT policy for anon for
+              -- the same reason.
+              --
+              -- Not a bare name, though. The exemption holds only while the
+              -- function cannot write (stable or immutable) and touches
+              -- nothing in public except the published price list. Widen it to
+              -- a tenant table, or make it volatile, and it is named here like
+              -- anything else.
+              and not (
+                p.proname = 'fn_signup_plans'
+                and p.provolatile in ('i', 's')
+                and not exists (
+                  select 1 from regexp_matches(p.prosrc, 'public\.(\w+)', 'g') m
+                   where m[1] not in ('plans', 'fn__plan_price')))
+         ) || ' can be called by an unauthenticated request. Re-run bundle 7. '
+           || 'If the name above is fn_signup_plans, it no longer meets the '
+           || 'terms of its exemption: it must be stable and must read nothing '
+           || 'in public but the price list.',
+         'PASS')
 
 union all
 -- 0072. Two lookups resolved a row by NAME or TYPE across every school: the
@@ -2272,6 +2305,394 @@ select 'the migration ledger cannot be written from a browser (0125)',
               || 'installed; apply '
               || 'supabase/bundles/31_the_harness_could_not_see_a_function_grant.sql'
          else 'PASS'
+       end
+
+union all
+-- 0126. Eighty-four per cent of a two-year school's database was its audit log,
+-- and 206,809 of those 214,787 rows were the register and the mark sheet copied
+-- into it: a full row for every attendance mark, and another for every pupil
+-- when the day was finalised.
+--
+-- Three clauses, and the second and third are the ones that matter. The trigger
+-- has to carry the skip; and BOTH functions have to write the row that replaces
+-- what the skip drops. A database with the skip and without those rows has no
+-- record of who closed a register or locked a test at all, which is a worse
+-- state than the one this migration is fixing, and it is reachable by applying
+-- half the bundle.
+select 'the register is not copied into the audit log (0126)',
+       case when position('0126' in
+              coalesce(pg_get_functiondef('public.audit_trigger()'::regprocedure), '')) = 0
+         then 'FAIL: every attendance mark and every finalised day writes a '
+              || 'kilobyte of audit log that says nothing the register does not, '
+              || 'which was 84% of one school''s whole database; apply '
+              || 'supabase/bundles/32_the_register_was_written_twice.sql'
+         when position('ATTENDANCE_FINALIZE' in
+              coalesce(pg_get_functiondef(
+                'public.fn_finalize_attendance(uuid,uuid,uuid,date)'::regprocedure), '')) = 0
+         then 'FAIL: the audit log no longer records who finalised a register, '
+              || 'because the per-pupil rows are skipped and nothing writes the '
+              || 'one row that replaces them; re-apply '
+              || 'supabase/bundles/32_the_register_was_written_twice.sql'
+         when position('ASSESSMENT_LOCK' in
+              coalesce(pg_get_functiondef(
+                'public.fn_lock_assessment(uuid)'::regprocedure), '')) = 0
+         then 'FAIL: the audit log no longer records who locked a test, and '
+              || '`assessments` carries no audit trigger of its own, so nothing '
+              || 'records it at all; re-apply '
+              || 'supabase/bundles/32_the_register_was_written_twice.sql'
+         else 'PASS'
+       end
+
+union all
+-- The same migration's other half, which is about the rows already written. The
+-- fold-and-delete only runs when the bundle is applied, so a database that has
+-- the functions and still holds the old rows was upgraded and then restored, or
+-- had the bundle interrupted. It is not a failure (nothing is broken and no
+-- data is wrong), so it reports as a note with the number, which is the figure
+-- a school needs to decide whether to care.
+select 'the audit log is not mostly the register (0126)',
+       case when (select count(*) from public.audit_log
+                   where action = 'INSERT'
+                     and entity in ('attendance_daily', 'mark_entries',
+                                    'staff_attendance')) = 0
+         then 'PASS'
+         else 'note: ' || (select count(*)::text from public.audit_log
+                            where action = 'INSERT'
+                              and entity in ('attendance_daily', 'mark_entries',
+                                             'staff_attendance'))
+              || ' audit rows still copy a register row that carries the same '
+              || 'actor and the same timestamp. Re-run '
+              || 'supabase/bundles/32_the_register_was_written_twice.sql to fold '
+              || 'and remove them, then `vacuum full public.audit_log;` on its '
+              || 'own to give the space back'
+       end
+
+union all
+-- 0127. Reported as "a starter plan is by default, annual payment showing in
+-- the settings". fn_signup_school hardcoded the plan and left the term at the
+-- column default, so every school was on Starter paying annually whatever had
+-- been agreed. Two clauses, and the second one is the money.
+select 'a school picks its plan and its term (0127)',
+       case when to_regprocedure('public.fn_signup_school_on_plan'
+              || '(text,text,text,text,text,text,integer)') is null
+         then 'FAIL: nobody is asked which plan or how often they will pay, so '
+              || 'every new school is put on Starter paying yearly and quoted a '
+              || 'figure it did not choose; apply '
+              || 'supabase/bundles/33_a_school_picks_its_plan_and_how_it_pays.sql'
+         -- The five-argument name has to survive alongside it. 0071 is inside a
+         -- bundle a school has already pasted and grants exactly that
+         -- signature; without it, bundle 7 rolls back on a re-paste and eleven
+         -- function bodies come out different. Found by CI, not by reading.
+         when to_regprocedure(
+                'public.fn_signup_school(text,text,text,text,text)') is null
+         then 'FAIL: fn_signup_school(text,text,text,text,text) is gone, and '
+              || 'bundle 7 grants exactly that signature, so re-pasting the '
+              || 'bundles now rolls bundle 7 back; re-apply '
+              || 'supabase/bundles/33_a_school_picks_its_plan_and_how_it_pays.sql'
+         when not exists (select 1 from pg_enum e
+                            join pg_type ty on ty.oid = e.enumtypid
+                            join pg_namespace n on n.oid = ty.typnamespace
+                           where n.nspname = 'public'
+                             and ty.typname = 'billing_cycle'
+                             and e.enumlabel = 'quarterly')
+         then 'FAIL: a school paying every three months is recorded as monthly, '
+              || 'on its invoice and in the console, because billing_cycle has no '
+              || 'quarterly; re-apply '
+              || 'supabase/bundles/33_a_school_picks_its_plan_and_how_it_pays.sql'
+         else 'PASS'
+       end
+
+union all
+-- The one that is a wrong number sent to a customer. The invoice is priced by
+-- fn__renewals_due on subscriptions.term_months; these two worked the months
+-- out from the cycle instead. A school on a monthly term whose last period was
+-- yearly has Rs 2,000 coming and was told Rs 20,000, by the console and by the
+-- message we send it.
+select 'the renewal quote matches the renewal invoice (0127)',
+       case when exists (
+              select 1 from pg_proc p
+                join pg_namespace n on n.oid = p.pronamespace
+               where n.nspname = 'public' and p.prokind = 'f'
+                 and p.prosrc ~ 'cycle = ''yearly'' then 12 else 1 end')
+         then 'FAIL: ' || (select string_agg(p.proname, ', ' order by p.proname)
+                             from pg_proc p
+                             join pg_namespace n on n.oid = p.pronamespace
+                            where n.nspname = 'public' and p.prokind = 'f'
+                              and p.prosrc ~ 'cycle = ''yearly'' then 12 else 1 end')
+              || ' works the renewal out from the billing cycle while the invoice '
+              || 'is priced on term_months, so a school can be quoted twelve times '
+              || 'or a third of what it will actually be charged; apply '
+              || 'supabase/bundles/33_a_school_picks_its_plan_and_how_it_pays.sql'
+         else 'PASS'
+       end
+
+union all
+-- And the loophole found while writing the signup form. Every plan priced by
+-- arrangement has student_limit NULL, which means no limit at all, and
+-- price_monthly 0, which means every renewal invoice is for Rs 0. Reachable
+-- from signup it is unlimited pupils for nothing, for ever.
+--
+-- READ OFF THE FUNCTION TEXT AND NOT BY CALLING IT, and the first version of
+-- this row did call it. A reference to a function is resolved when the
+-- statement is PARSED, not when the branch is reached, so
+-- `select ... from jsonb_array_elements(public.fn_signup_plans())` inside a
+-- CASE arm brought the WHOLE of verify.sql down on any database that has not
+-- had bundle 33 applied yet:
+--
+--     ERROR:  function public.fn_signup_plans() does not exist
+--
+-- which is every database this file exists to diagnose. to_regprocedure is a
+-- runtime string lookup and is safe; calling the function is not.
+select 'signup cannot reach a plan priced by arrangement (0127)',
+       case when to_regprocedure('public.fn_signup_plans()') is null
+         then 'note: the signup form has no plan list of its own to read, so it '
+              || 'offers nothing and falls back to the first plan on sale'
+         -- pg_get_functiondef(to_regprocedure(...)) AND NOT ::regprocedure.
+         -- Casting a CONSTANT to regprocedure is folded before the CASE arm is
+         -- reached and throws on a database where the function does not exist
+         -- yet, which brought the whole file down. to_regprocedure returns null
+         -- instead, and pg_get_functiondef(null) is null.
+         when position('price_monthly > 0' in coalesce(pg_get_functiondef(
+                to_regprocedure('public.fn_signup_plans()')::oid), '')) = 0
+           or position('price_monthly > 0' in coalesce(pg_get_functiondef(
+                to_regprocedure('public.fn_signup_school_on_plan'
+                  || '(text,text,text,text,text,text,integer)')::oid), '')) = 0
+         then 'FAIL: signup can reach a plan with no price, which has no student '
+              || 'limit either: a school choosing it gets unlimited pupils for '
+              || 'nothing and every renewal invoice for Rs 0; re-apply '
+              || 'supabase/bundles/33_a_school_picks_its_plan_and_how_it_pays.sql'
+         else 'PASS'
+       end
+
+union all
+-- 0128. Reported as "the school is only allowed to have 150 students but it
+-- exceeds to 200 plus". Nothing enforced it, and fn_my_licence's own words to
+-- the school were "Nothing stops working."
+--
+-- Two clauses, and the second is the one that would hurt a school. A database
+-- with the gate on fn_rollover cannot start its academic year.
+select 'a plan''s student limit is enforced (0128)',
+       case when to_regprocedure(
+              'public.fn__assert_room_for_students(uuid,integer)') is null
+         then 'FAIL: a school can admit as many pupils as it likes whatever '
+              || 'its plan covers, and is told "nothing stops working" while it '
+              || 'does; apply '
+              || 'supabase/bundles/34_a_plans_student_limit_means_something.sql'
+         when (select count(*) from pg_proc p
+                 join pg_namespace n on n.oid = p.pronamespace
+                where n.nspname = 'public'
+                  and p.proname in ('fn_admit_student', 'fn_set_student_status',
+                                    'fn_import_students')
+                  and p.prosrc ~ 'fn__assert_room_for_students') <> 3
+         then 'FAIL: only some of the three paths that can raise a roll check '
+              || 'the limit (admission, coming back from a leaving state, and '
+              || 'the importer); re-apply '
+              || 'supabase/bundles/34_a_plans_student_limit_means_something.sql'
+         when (select p.prosrc ~ 'fn__assert_room_for_students' from pg_proc p
+                 join pg_namespace n on n.oid = p.pronamespace
+                where n.nspname = 'public' and p.proname = 'fn_rollover')
+         then 'FAIL: fn_rollover checks the student limit, so a school at its '
+              || 'limit cannot start its academic year at all: no register, no '
+              || 'challans, no classes. Rolling a year over is the same '
+              || 'children a year older. Re-apply '
+              || 'supabase/bundles/34_a_plans_student_limit_means_something.sql'
+         else 'PASS'
+       end
+
+union all
+-- The same migration's other half: the way out. A block with no request box is
+-- a school on the phone.
+select 'a school can ask for more room (0128)',
+       case when to_regprocedure('public.fn_request_student_limit(integer,text,text)') is null
+              or to_regprocedure(
+                   'public.fn_platform_grant_student_limit(uuid,integer,text)') is null
+         then 'FAIL: admissions can be blocked and there is no way for a school '
+              || 'to ask for more room, nor for an operator to grant it; apply '
+              || 'supabase/bundles/34_a_plans_student_limit_means_something.sql'
+         when exists (select 1 from pg_policies
+                       where schemaname = 'public'
+                         and tablename = 'student_limit_requests'
+                         and cmd <> 'SELECT')
+         then 'FAIL: a school can write its own row in student_limit_requests, '
+              || 'so it can insert one already marked granted; re-apply '
+              || 'supabase/bundles/34_a_plans_student_limit_means_something.sql'
+         when has_function_privilege('authenticated',
+                to_regprocedure('public.fn_platform_grant_student_limit'
+                  || '(uuid,integer,text)')::oid, 'EXECUTE')
+              and not exists (select 1 from pg_proc p
+                                join pg_namespace n on n.oid = p.pronamespace
+                               where n.nspname = 'public'
+                                 and p.proname = 'fn_platform_grant_student_limit'
+                                 and p.prosrc ~ 'is_platform_admin')
+         then 'FAIL: fn_platform_grant_student_limit does not check '
+              || 'is_platform_admin, so a school could grant itself room, which '
+              || 'is the loophole this bundle closes wearing a different hat; '
+              || 're-apply '
+              || 'supabase/bundles/34_a_plans_student_limit_means_something.sql'
+         else 'PASS'
+       end
+
+union all
+-- And a note, not a failure: who is over right now. Every school named here
+-- can read, print and export everything and cannot admit another pupil until
+-- the console grants it room.
+-- THE ALLOWANCE IS READ THROUGH to_jsonb AND NOT BY NAME, and fn__student_limit
+-- is not called at all. Both a column reference and a function name are
+-- resolved when the statement is PARSED, not when the CASE arm is reached, so
+-- naming either brought the whole of verify.sql down on any database without
+-- bundle 34:
+--
+--     ERROR:  function public.fn__student_limit(uuid) does not exist
+--
+-- which is every database this file exists to diagnose. `to_jsonb(sub) ->>
+-- 'student_limit_override'` yields NULL for a column that is not there yet,
+-- and coalescing it onto the plan's limit gives the same answer either way.
+select 'no school is over the limit it is allowed (0128)',
+       case when not exists (select 1 from information_schema.columns
+                              where table_schema = 'public'
+                                and table_name = 'subscriptions'
+                                and column_name = 'student_limit_override')
+         then 'note: the limit is not enforced on this database yet, so a '
+              || 'school can be over it and nothing will say so'
+         when (select count(*) from public.schools s
+                 join public.subscriptions sub on sub.school_id = s.id
+                 join public.plans pl on pl.code = sub.plan_code
+                where s.active
+                  and coalesce((to_jsonb(sub) ->> 'student_limit_override')::integer,
+                               pl.student_limit) is not null
+                  and public.fn_count_students(s.id)
+                      > coalesce((to_jsonb(sub) ->> 'student_limit_override')::integer,
+                                 pl.student_limit)) = 0
+         then 'PASS'
+         else 'note: ' || (select string_agg(
+                  s.name || ' (' || public.fn_count_students(s.id)::text || ' of '
+                    || coalesce((to_jsonb(sub) ->> 'student_limit_override')::integer,
+                                pl.student_limit)::text || ')', '; ' order by s.name)
+                from public.schools s
+                join public.subscriptions sub on sub.school_id = s.id
+                join public.plans pl on pl.code = sub.plan_code
+               where s.active
+                 and coalesce((to_jsonb(sub) ->> 'student_limit_override')::integer,
+                              pl.student_limit) is not null
+                 and public.fn_count_students(s.id)
+                     > coalesce((to_jsonb(sub) ->> 'student_limit_override')::integer,
+                                pl.student_limit))
+              || '. They keep everything they have and cannot admit another '
+              || 'pupil. Grant an allowance from the console, or wait for them '
+              || 'to ask.'
+       end
+
+union all
+-- A teacher's reach, and what a lock is worth against a DELETE (0129).
+--
+-- TWO SEPARATE THINGS IN ONE ROW because neither is any use alone. A policy
+-- that narrows a teacher to their own class is worth nothing if deleting the
+-- parent row destroys the marks anyway, and the delete guard is worth nothing
+-- if anybody may set an exam for any class.
+--
+-- The cascade half is read off the catalogue rather than from a list of three
+-- table names, so a CASCADE added by a later migration into anything carrying
+-- is_locked shows up here as a FAIL rather than as a school losing its results.
+select 'a teacher''s reach, and the lock (0129)',
+       case
+         when to_regprocedure('public.fn_may_manage_enrollment(uuid)') is null
+           then 'FAIL: an exam or a register can be written for a class the '
+                || 'teacher does not teach; apply '
+                || 'supabase/bundles/35_the_register_belongs_to_a_class.sql'
+         when exists (
+           select 1 from pg_policy pol
+             join pg_class c on c.oid = pol.polrelid
+             join pg_namespace n on n.oid = c.relnamespace
+            where n.nspname = 'public' and pol.polcmd <> 'r'
+              and (coalesce(pg_get_expr(pol.polqual, pol.polrelid), '') || ' '
+                   || coalesce(pg_get_expr(pol.polwithcheck, pol.polrelid), ''))
+                  ~ 'class_teacher|subject_teacher'
+              and (coalesce(pg_get_expr(pol.polqual, pol.polrelid), '') || ' '
+                   || coalesce(pg_get_expr(pol.polwithcheck, pol.polrelid), ''))
+                  !~ 'fn_may_')
+           then 'FAIL: ' || (select string_agg(c.relname || '.' || pol.polname, ', ')
+                  from pg_policy pol
+                  join pg_class c on c.oid = pol.polrelid
+                  join pg_namespace n on n.oid = c.relnamespace
+                 where n.nspname = 'public' and pol.polcmd <> 'r'
+                   and (coalesce(pg_get_expr(pol.polqual, pol.polrelid), '') || ' '
+                        || coalesce(pg_get_expr(pol.polwithcheck, pol.polrelid), ''))
+                       ~ 'class_teacher|subject_teacher'
+                   and (coalesce(pg_get_expr(pol.polqual, pol.polrelid), '') || ' '
+                        || coalesce(pg_get_expr(pol.polwithcheck, pol.polrelid), ''))
+                       !~ 'fn_may_')
+                || ' let a teacher write any row in the school; re-apply '
+                || 'supabase/bundles/35_the_register_belongs_to_a_class.sql'
+         when exists (
+           select 1 from pg_constraint con
+             join pg_namespace n on n.oid = con.connamespace
+            where con.contype = 'f' and n.nspname = 'public'
+              and con.confdeltype = 'c'
+              and exists (select 1 from pg_attribute a
+                           where a.attrelid = con.conrelid and a.attname = 'is_locked'
+                             and a.attnum > 0 and not a.attisdropped)
+              and not exists (select 1 from pg_trigger t
+                               where t.tgrelid = con.confrelid and not t.tgisinternal
+                                 and t.tgtype & 8 = 8 and t.tgtype & 2 = 2))
+           then 'FAIL: ' || (select string_agg(distinct
+                    con.confrelid::regclass::text, ', ')
+                  from pg_constraint con
+                  join pg_namespace n on n.oid = con.connamespace
+                 where con.contype = 'f' and n.nspname = 'public'
+                   and con.confdeltype = 'c'
+                   and exists (select 1 from pg_attribute a
+                                where a.attrelid = con.conrelid and a.attname = 'is_locked'
+                                  and a.attnum > 0 and not a.attisdropped)
+                   and not exists (select 1 from pg_trigger t
+                                    where t.tgrelid = con.confrelid and not t.tgisinternal
+                                      and t.tgtype & 8 = 8 and t.tgtype & 2 = 2))
+                || ' cascade into a table that can be locked and refuse nothing '
+                || 'before doing it, so one delete destroys finalised marks; '
+                || 're-apply '
+                || 'supabase/bundles/35_the_register_belongs_to_a_class.sql'
+         else 'PASS'
+       end
+
+union all
+-- Nothing recorded outside the school's own calendar (0130).
+select 'dates inside the academic year (0130)',
+       case
+         when to_regprocedure('public.fn__assert_date_in_session(uuid,date,text,boolean)') is null
+           then 'FAIL: attendance, challans, expenses and fee changes accept '
+                || 'any date at all, including 2099; apply '
+                || 'supabase/bundles/36_a_school_year_has_dates.sql'
+         when (select count(*) from pg_constraint
+                where conrelid = 'public.academic_sessions'::regclass
+                  and conname in ('academic_sessions_dates_ordered',
+                                  'academic_sessions_length_sane')) <> 2
+           then 'FAIL: an academic year can be saved ending before it starts, '
+                || 'or lasting a century, and every date bound in the product '
+                || 'is derived from those two dates; re-apply '
+                || 'supabase/bundles/36_a_school_year_has_dates.sql'
+         else 'PASS'
+       end
+
+union all
+-- WHO STILL HAS NO DATES. A note rather than a FAIL: it is the state every
+-- school set up through the first-run wizard is in, because that screen only
+-- ever asked for the year's NAME. Nothing is refused for such a year and
+-- nothing is wrong with the database; the bounds simply cannot apply until
+-- somebody fills the two fields in. Reported every time until they do.
+select 'academic years with no dates',
+       case
+         when (select count(*) from public.academic_sessions
+                where starts_on is null or ends_on is null) = 0
+           then 'PASS'
+         else 'note: ' || (select string_agg(
+                  s.name || ' / ' || a.name
+                    || case when a.is_current then ' (current)' else '' end,
+                  '; ' order by s.name, a.name)
+                from public.academic_sessions a
+                join public.schools s on s.id = a.school_id
+               where a.starts_on is null or a.ends_on is null)
+              || '. Fill in the first and last day under Settings, Sessions. '
+              || 'Until then the software cannot tell when that year ends, and '
+              || 'a date typed into it is not checked.'
        end
 
 union all

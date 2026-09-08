@@ -410,7 +410,25 @@ with sig(migration, object, present) as (values
      (select not exists (select 1 from pg_proc p
                           join pg_namespace n on n.oid = p.pronamespace
                           where n.nspname = 'public'
-                            and has_function_privilege('anon', p.oid, 'execute'))
+                            and has_function_privilege('anon', p.oid, 'execute')
+            -- THE ONE EXEMPTION, AND IT HAS TO EARN ITSELF ON EVERY RUN.
+            -- fn_signup_plans (0127) is read by the signup form, which has no
+            -- login: the form has to show three plans and nine prices, and
+            -- fn__plan_price is a rule and not a lookup, so a browser copy of
+            -- it would quote a figure the first invoice contradicts the moment
+            -- any of the nine rates moves. It exposes nothing new: `plans`
+            -- already carries a SELECT policy for anon for the same reason.
+            --
+            -- Not a bare name, though. The exemption holds only while the
+            -- function cannot write (stable or immutable) and touches nothing
+            -- in public except the published price list. Widen it to a tenant
+            -- table, or make it volatile, and this fails.
+            and not (
+              p.proname = 'fn_signup_plans'
+              and p.provolatile in ('i', 's')
+              and not exists (
+                select 1 from regexp_matches(p.prosrc, 'public\.(\w+)', 'g') m
+                 where m[1] not in ('plans', 'fn__plan_price'))))
          and exists (select 1 from pg_proc p
                       join pg_namespace n on n.oid = p.pronamespace
                       where n.nspname = 'public' and p.proname = 'fn_signup_school'
@@ -930,7 +948,99 @@ with sig(migration, object, present) as (values
                   where n.nspname = 'public'
                     and (p.proname like 'fn\_\_%' or p.proname = 'fn_record_migration')
                     and (has_function_privilege('authenticated', p.oid, 'execute')
-                         or has_function_privilege('anon', p.oid, 'execute'))))
+                         or has_function_privilege('anon', p.oid, 'execute')))),
+  -- Three parts, because two of the three are what make the first one safe.
+  -- The trigger has to carry the skip; and the two functions have to write the
+  -- rows that replace what the skip drops. A database with the skip and
+  -- without those rows has no record of who closed a register or locked a test
+  -- at all, and `assessments` carries no audit trigger of its own to fall back
+  -- on. That state is worse than the one 0126 fixes and it is reachable, so it
+  -- reads as MISSING rather than as present.
+  ('0126_the_register_was_written_twice', 'the register is not copied into the audit log',
+     position('0126' in coalesce(
+       pg_get_functiondef('public.audit_trigger()'::regprocedure), '')) > 0
+     and position('ATTENDANCE_FINALIZE' in coalesce(pg_get_functiondef(
+           'public.fn_finalize_attendance(uuid,uuid,uuid,date)'::regprocedure), '')) > 0
+     and position('ASSESSMENT_LOCK' in coalesce(pg_get_functiondef(
+           'public.fn_lock_assessment(uuid)'::regprocedure), '')) > 0),
+  -- Three parts. The function has to take the two new arguments; the enum has
+  -- to be able to say quarterly; and nothing may still work the renewal out
+  -- from the cycle, which is the half that sends a school the wrong figure.
+  ('0127_a_school_picks_its_plan_and_how_it_pays', 'a school picks its plan and its term',
+     to_regprocedure('public.fn_signup_school_on_plan'
+       || '(text,text,text,text,text,text,integer)') is not null
+     -- And the five-argument name still there for 0071's grant: see verify.sql.
+     and to_regprocedure('public.fn_signup_school(text,text,text,text,text)') is not null
+     and exists (select 1 from pg_enum e
+                   join pg_type ty on ty.oid = e.enumtypid
+                   join pg_namespace n2 on n2.oid = ty.typnamespace
+                  where n2.nspname = 'public' and ty.typname = 'billing_cycle'
+                    and e.enumlabel = 'quarterly')
+     and not exists (select 1 from pg_proc p
+                       join pg_namespace n2 on n2.oid = p.pronamespace
+                      where n2.nspname = 'public' and p.prokind = 'f'
+                        and p.prosrc ~ 'cycle = ''yearly'' then 12 else 1 end')),
+  -- Four parts, and the third is the one that would hurt a school: the gate
+  -- must be on the three paths that raise a roll and NOT on fn_rollover, which
+  -- carries the same children into next year. The fourth is the way out; a
+  -- block with no request box is a school on the phone.
+  ('0128_a_plans_student_limit_means_something', 'a plan''s student limit is enforced',
+     to_regprocedure('public.fn__assert_room_for_students(uuid,integer)') is not null
+     and (select count(*) from pg_proc p
+            join pg_namespace n2 on n2.oid = p.pronamespace
+           where n2.nspname = 'public'
+             and p.proname in ('fn_admit_student', 'fn_set_student_status',
+                               'fn_import_students')
+             and p.prosrc ~ 'fn__assert_room_for_students') = 3
+     and not coalesce((select p.prosrc ~ 'fn__assert_room_for_students'
+                         from pg_proc p
+                         join pg_namespace n2 on n2.oid = p.pronamespace
+                        where n2.nspname = 'public' and p.proname = 'fn_rollover'),
+                      false)
+     and to_regprocedure('public.fn_request_student_limit(integer,text,text)') is not null),
+  -- Three parts. The enrolment check is the policy half; the trigger count is
+  -- the lock half; and the third asks the catalogue whether ANY cascade still
+  -- reaches a lockable table unguarded, so a school that half-applied this file
+  -- is told rather than left with a lock that one delete ignores.
+  ('0129_the_register_belongs_to_a_class_and_a_lock_means_locked',
+     'a teacher''s reach is one class, and a lock holds against a delete',
+     to_regprocedure('public.fn_may_manage_enrollment(uuid)') is not null
+     and (select count(*) from pg_trigger t
+            join pg_class c on c.oid = t.tgrelid
+            join pg_proc p on p.oid = t.tgfoid
+            join pg_namespace n2 on n2.oid = c.relnamespace
+           where n2.nspname = 'public' and not t.tgisinternal
+             and p.proname = 'fn__refuse_destroying_locked_marks') = 3
+     and not exists (
+       select 1 from pg_constraint con
+         join pg_namespace n2 on n2.oid = con.connamespace
+        where con.contype = 'f' and n2.nspname = 'public'
+          and con.confdeltype = 'c'
+          and exists (select 1 from pg_attribute a
+                       where a.attrelid = con.conrelid and a.attname = 'is_locked'
+                         and a.attnum > 0 and not a.attisdropped)
+          and not exists (select 1 from pg_trigger t
+                           where t.tgrelid = con.confrelid and not t.tgisinternal
+                             and t.tgtype & 8 = 8 and t.tgtype & 2 = 2))),
+  -- Three parts: the helper, the trigger that guarantees a calendar exists to
+  -- check against, and the count of functions still taking an unbounded date.
+  ('0130_a_school_year_has_dates',
+     'a date cannot be recorded outside the school''s academic year',
+     to_regprocedure('public.fn__assert_date_in_session(uuid,date,text,boolean)') is not null
+     and to_regprocedure('public.fn__assert_date_in_calendar(date,text)') is not null
+     and (select count(*) from pg_constraint
+           where conrelid = 'public.academic_sessions'::regclass
+             and conname in ('academic_sessions_dates_ordered',
+                             'academic_sessions_length_sane')) = 2
+     and (select count(*) from pg_proc p
+            join pg_namespace n2 on n2.oid = p.pronamespace
+           where n2.nspname = 'public'
+             and p.proname in ('fn_mark_attendance', 'fn_bill_student_month',
+                               'fn_generate_class_invoices', 'fn_record_expense',
+                               'fn_record_other_income', 'fn_charge_deposit',
+                               'fn_set_fee_amount', 'fn_fee_increment',
+                               'fn_upsert_exam_subject', 'fn_set_staff_attendance')
+             and p.prosrc ~ 'fn__assert_date_in_(session|calendar)') = 10)
 )
 select migration,
        object                                   as looked_for,

@@ -5,8 +5,10 @@ import { myBilling, myPlatformInvoice, reportSubscriptionPayment } from '@/lib/d
 import type { MyBillingDocument } from '@/lib/db'
 import { InvoiceDoc } from '@/components/InvoiceDoc'
 import { formatPkr } from '@/lib/licence'
+import { termSentence } from '@/lib/plans'
 import { fmtDate, fmtDateTime } from '@/lib/format'
 import { NextPaymentPanel } from './NextPayment'
+import { RoomForPupils } from './RoomForPupils'
 
 const FIELD = 'w-full rounded border border-slate-300 px-2 py-1.5 text-sm'
 
@@ -74,6 +76,12 @@ export function Subscription() {
           answer: the trial simply ended and the software stopped. */}
       <NextPaymentPanel />
 
+      {/* HOW MANY PUPILS THEY MAY HAVE, and the box for asking for more. The
+          error a school sees when Admit is refused names this screen, so this
+          panel is the difference between that message being true and being a
+          lie. Quiet below 90% of the limit; it opens on a click. */}
+      <RoomForPupils />
+
       {/* --- where the licence stands ---------------------------------------- */}
       <section className="rounded-lg border border-slate-200 bg-white p-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -93,10 +101,21 @@ export function Subscription() {
                 daysLeft >= 0 ? ` · ${daysLeft} day(s) left` : ` · ${Math.abs(daysLeft)} day(s) ago`
               )}
             </div>
-            <div className="mt-1 text-sm text-slate-500">
-              {Number(lic.student_count ?? 0).toLocaleString()} students
-              {lic.student_limit ? ` of ${Number(lic.student_limit).toLocaleString()} covered` : ''}
+            {/* HOW OFTEN, BESIDE WHAT. This block could say what a year costs
+                and could not say whether this school pays yearly, while the
+                panel above it knew: fn_my_licence returned the price for all
+                three terms and not term_months. Which is how the same screen
+                quoted an annual figure to a school on a monthly term, and is
+                the complaint that started migration 0127. */}
+            <div className="mt-1 text-sm text-slate-600">
+              Paid {termSentence(lic.term_months as number | null | undefined)}
             </div>
+            {/* THE ROLL LINE MOVED OUT of this block, into the room panel
+                below. It said "148 students of 150 covered" while the panel an
+                inch further down says how many places are left, whether any of
+                them were granted rather than bought, and what happens when the
+                last one goes. Two statements of the same fact, one of which did
+                not know about an allowance, is one statement too many. */}
           </div>
           <div className="text-right">
             <div className="text-xs uppercase tracking-wide text-slate-500">Outstanding</div>

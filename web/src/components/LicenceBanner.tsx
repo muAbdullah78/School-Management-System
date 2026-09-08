@@ -1,6 +1,6 @@
 import { useAuth } from '@/auth/AuthProvider'
 import { useLicence } from '@/hooks/useLicence'
-import { expiryMessage, expiryUrgency, type Urgency } from '@/lib/licence'
+import { expiryMessage, expiryUrgency, limitBanner, type Urgency } from '@/lib/licence'
 
 const STYLES: Record<Exclude<Urgency, 'none'>, string> = {
   info: 'bg-sky-50 text-sky-900 border-sky-200',
@@ -17,19 +17,29 @@ const STYLES: Record<Exclude<Urgency, 'none'>, string> = {
  *    needs to know the app stops accepting entries on Friday, because they are
  *    the one who will be standing in front of parents when it does.
  *
- *  - The student-limit notice goes to the OWNER AND PRINCIPAL ONLY. A clerk can
- *    do nothing about the school outgrowing its plan, and showing them a
- *    "you are over your limit" warning while they admit students reads as "stop
- *    admitting students". The exact behaviour the soft-limit rule exists to
- *    avoid.
+ *  - The student-limit notice comes in TWO WORDINGS, one for the people who can
+ *    do something about it and one for the people who cannot.
  *
- * WHEN the limit notice appears is decided by the server, not here. 0068 nulls
- * `limit_notice` unless the renewal is within 30 days or the licence is already
- * in grace/locked/cancelled: 0067 made the student count live, so before that
- * change a principal was told they had outgrown their plan the same afternoon
- * they admitted the 101st child. The rule sits in fn_my_licence because a rule
- * living in one screen is a rule the next screen will not have, so this
- * component simply renders whatever the server was willing to say.
+ *    It used to go to the owner and principal only, and while the limit was
+ *    advisory that was right: a clerk shown "you are over your plan" reads it
+ *    as "stop admitting children", which is the exact behaviour a soft limit
+ *    exists to avoid. Migration 0128 inverted that reasoning by making the
+ *    limit real. The clerk is the person who presses Admit, so a clerk who is
+ *    told nothing now meets the refusal for the first time with a parent
+ *    standing at the desk. They get `limit_notice_staff`, which says what is
+ *    happening, that it is not their doing, and who can fix it, and which does
+ *    not send them to a Settings screen their role cannot open.
+ *
+ * WHEN either notice appears is decided by the server, not here, and the gate
+ * is the notice being non-null and nothing else.
+ *
+ * IT USED TO BE `limit_state !== 'ok' && limit_notice`, which was wrong in the
+ * one case that matters most. limit_state is 'ok' while the count is at or
+ * BELOW the limit, so a school sitting exactly ON its limit - the moment the
+ * next admission is refused - had its notice suppressed by this component while
+ * the server was willing to say it. Same for the whole 90% warning band 0128
+ * added. A rule living in one screen is a rule the next screen will not have:
+ * fn_my_licence decides, this renders.
  */
 export function LicenceBanner() {
   const { profile } = useAuth()
@@ -39,10 +49,12 @@ export function LicenceBanner() {
 
   const urgency = expiryUrgency(data)
   const expiry = expiryMessage(data)
-  const isLeadership = profile?.role === 'owner' || profile?.role === 'principal'
-  const showLimit = isLeadership && data.limit_state !== 'ok' && data.limit_notice
+  // Who is told what, and how loudly, lives in lib/licence.ts where it can be
+  // tested. It is the decision this component got wrong for the whole of the
+  // band that matters, so it does not live here any more.
+  const limit = limitBanner(data, profile?.role)
 
-  if (urgency === 'none' && !showLimit) return null
+  if (urgency === 'none' && !limit) return null
 
   return (
     <div className="space-y-px">
@@ -61,15 +73,15 @@ export function LicenceBanner() {
         </div>
       )}
 
-      {showLimit && (
+      {limit && (
         <div
           className={`border-b px-4 py-2 text-sm ${
-            data.limit_state === 'over'
+            limit.atLimit
               ? 'border-amber-200 bg-amber-50 text-amber-900'
               : 'border-slate-200 bg-slate-50 text-slate-700'
           }`}
         >
-          {data.limit_notice}
+          {limit.text}
         </div>
       )}
     </div>

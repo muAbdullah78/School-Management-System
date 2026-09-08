@@ -12,11 +12,17 @@
 -- fails it writes nothing and can be fixed and re-run on its own.
 --
 -- WHAT THE SET DOES. It finds the school named below and fills it with February
--- 2024 to today: about 220 children on the roll, 589 school days of register,
--- three year-end rollovers, 6,000 challans, 4,600 payments, 663 class tests,
--- 5 exam terms, 715 result cards, a cash drawer counted daily, and today half
--- marked the way a real register is at eleven in the morning. About 370,000
--- rows.
+-- 2024 to today: about 225 children on the roll, 590 school days of register,
+-- three year-end rollovers, 6,100 challans, 5,100 payments, 663 class tests,
+-- 5 exam terms, 723 result cards, a cash drawer counted daily, and today half
+-- marked the way a real register is at eleven in the morning. About 172,000
+-- rows and roughly 110 MB.
+--
+-- IT WAS 439,000 ROWS AND 571 MB UNTIL MIGRATION 0126, and 84% of that was the
+-- audit log holding a second copy of the register. If this project has not had
+-- supabase/bundles/32_the_register_was_written_twice.sql applied, file 1 will
+-- say so and file 13 will refuse: on a free Supabase project this seed used to
+-- fill the whole 500 MB allowance with one school.
 --
 -- Every row arrives through the application's OWN functions, with a real
 -- signed-in owner's session and Row Level Security on. Raw inserts would fill
@@ -79,6 +85,24 @@ begin
       'supabase/verify.sql, paste every bundle it names in a FAIL row (the '
       'first of them is 27_a_finalised_register_can_be_reopened.sql), then '
       'start this set again.';
+  end if;
+
+  -- 1b. AND IS IT NEW ENOUGH NOT TO FILL YOUR WHOLE PROJECT? Asked separately,
+  --     because the answer is not "you are behind" but "this will cost you
+  --     468 MB". Without migration 0126 the audit trigger writes a full
+  --     before/after copy of every attendance mark and of every pupil on every
+  --     finalised day: this seed then produces 439,000 rows and 571 MB instead
+  --     of 172,000 and 110 MB, which is the entire free allowance spent on one
+  --     school. That is not a hypothetical: it is what happened to the first
+  --     project this set was run on.
+  if position('0126' in coalesce(
+       pg_get_functiondef('public.audit_trigger()'::regprocedure), '')) = 0 then
+    raise exception 'Paste supabase/bundles/'
+      '32_the_register_was_written_twice.sql first. Without it every '
+      'attendance mark this seed makes is copied into the audit log as a '
+      'kilobyte of before/after JSON, and so is every pupil of every finalised '
+      'day: 571 MB for this one school instead of 110 MB, which is more than a '
+      'free Supabase project has. Nothing else about this set changes.';
   end if;
 
   -- 2. Did the school name survive as far as this statement? `set local` only
@@ -278,6 +302,27 @@ begin
   -- April to March, the Punjab private-school year. Four of them, because the
   -- school joined mid-2023-2024 and today is inside 2026-2027: three year-end
   -- rollovers happen inside this simulation, not the two originally asked for.
+  -- INSERT WHAT IS MISSING, THEN CORRECT THE DATES ON WHAT WAS ALREADY THERE.
+  --
+  -- The second half is not belt and braces. A school reported the seed running
+  -- to completion and producing no current year at all: 2023-2024 through
+  -- 2025-2026 were full, and 2026-2027 held nothing. The cause was two lines
+  -- away from here.
+  --
+  --   name      | is_current | starts_on | ends_on | enrolments
+  --   2026-2027 | false      | null      | null    | 0
+  --
+  -- They had created a session called 2026-2027 themselves, through the
+  -- first-run wizard, which accepts an academic year with the dates left blank.
+  -- The insert below found the name and skipped it, so the nulls stayed. Both
+  -- the year driver and the register then select sessions with
+  -- `ends_on >= date '2024-02-01' and starts_on <= current_date`, and against
+  -- null those predicates are neither true nor false: the session was silently
+  -- excluded from every loop. Four files ran, reported success and did nothing.
+  --
+  -- These four names are this file's to own, so it now asserts their dates
+  -- rather than assuming them. It corrects nulls and wrong dates alike, and
+  -- touches no session it did not name.
   insert into public.academic_sessions (name, starts_on, ends_on, is_current)
   select v.name, v.s, v.e, false
     from (values
@@ -288,6 +333,22 @@ begin
     ) as v(name, s, e)
    where not exists (select 1 from public.academic_sessions a
                       where a.school_id = v_school and a.name = v.name);
+
+  update public.academic_sessions a
+     set starts_on = v.s, ends_on = v.e
+    from (values
+      ('2023-2024', date '2023-04-01', date '2024-03-31'),
+      ('2024-2025', date '2024-04-01', date '2025-03-31'),
+      ('2025-2026', date '2025-04-01', date '2026-03-31'),
+      ('2026-2027', date '2026-04-01', date '2027-03-31')
+    ) as v(name, s, e)
+   where a.school_id = v_school and a.name = v.name
+     and (a.starts_on is distinct from v.s or a.ends_on is distinct from v.e);
+  if found then
+    raise notice 'corrected the dates on an academic year that had none: a '
+      'session with a null starts_on or ends_on is excluded from every loop in '
+      'this seed, silently';
+  end if;
 
   select id into v_sess_2324 from public.academic_sessions
    where school_id = v_school and name = '2023-2024';

@@ -265,11 +265,40 @@ def main() -> int:
     # install. This is the check that stops it being committed. Any migration
     # adding a function to a database whose default privileges were set before
     # 0071 must revoke explicitly.
+    #
+    # ONE NAMED EXEMPTION, AND IT HAS TO EARN ITSELF ON EVERY RUN.
+    #
+    # fn_signup_plans (0127) is read by the signup form, which has no login:
+    # the form shows three plans and nine prices, and fn__plan_price is a rule
+    # and not a lookup (it takes the cheaper of the laddered price and the
+    # cheapest single standard term that covers the period, and falls back to
+    # the monthly rate when a quarterly rate is zero). A browser copy of that
+    # would quote a figure the first invoice contradicts the moment any of the
+    # nine rates moves, on the screen where a school decides to buy. It exposes
+    # nothing new: `plans` already carries a SELECT policy for anon.
+    #
+    # The exemption is NOT a bare name. It holds only while the function cannot
+    # write (stable or immutable) and references nothing in public except the
+    # published price list. Widen it to a tenant table, or make it volatile,
+    # and it is listed here like anything else.
+    #
+    # THE SAME PREDICATE IS IN THREE OTHER PLACES, and that is on purpose:
+    # verify.sql's 0071 row, detect.sql's 0071 signature, and (by name only,
+    # with a comment pointing here) the count in scripts/preflight.sh. 0125's
+    # whole lesson was four guards for one rule where the harness could not
+    # express the defect, so this one is written out in full wherever the rule
+    # is asserted rather than centralised into a place a reader would not find.
     anon_callable = [row[0] for row in q("""
         select p.proname
           from pg_proc p join pg_namespace n on n.oid = p.pronamespace
          where n.nspname = 'public'
            and has_function_privilege('anon', p.oid, 'execute')
+           and not (
+             p.proname = 'fn_signup_plans'
+             and p.provolatile in ('i', 's')
+             and not exists (
+               select 1 from regexp_matches(p.prosrc, 'public\\.(\\w+)', 'g') m
+                where m[1] not in ('plans', 'fn__plan_price')))
          order by 1
     """)]
     if anon_callable:
@@ -284,7 +313,10 @@ def main() -> int:
               'new function.\n'
               'Add to the migration that creates it:\n'
               '  revoke execute on function public.<name>(<arg types>) from public, anon;\n'
-              'and grant it to `authenticated` explicitly if the app calls it.',
+              'and grant it to `authenticated` explicitly if the app calls it.\n'
+              '\nIf the name above is fn_signup_plans, it has stopped meeting the '
+              'terms of its exemption: it must be stable or immutable, and must '
+              'reference nothing in public except plans and fn__plan_price.',
               file=sys.stderr)
         return 1
 

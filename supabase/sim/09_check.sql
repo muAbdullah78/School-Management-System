@@ -12,6 +12,21 @@
 
 \set ON_ERROR_STOP on
 
+-- APPENDING TO v_fail: USE array_append, OR format(), NEVER `v_fail || '...'`.
+--
+-- `text[] || 'a bare literal'` does not append. The literal has no type yet, so
+-- Postgres prefers `anyarray || anyarray` over `anyarray || anyelement`, tries
+-- to parse the string as an array, and raises
+--
+--     ERROR: malformed array literal: "today's register is already finalised"
+--     DETAIL: Array value must start with "{" or dimension information.
+--
+-- Eight of these shipped. Every one is inside `if <assertion failed> then`, so
+-- none of them could fire on a run where the school came out right, and all my
+-- runs came out right. The first school to hit a genuine assertion failure got
+-- that error instead of being told what was wrong with their data: the crash
+-- was in the error reporter. scripts/build-sim-bundle.py now refuses to emit
+-- this file if the shape comes back.
 do $check$
 declare
   v_school uuid;
@@ -49,13 +64,32 @@ begin
 
   select count(*) into v_n from public.payments
    where school_id = v_school and created_at::date = current_date;
-  if v_n < 1 then v_fail := v_fail || 'no money taken today'; end if;
+  if v_n < 1 then v_fail := array_append(v_fail, 'no money taken today'); end if;
 
   -- 3. TODAY IS NOT FINISHED EITHER. A register that is already locked at 11am
   --    is yesterday's register.
+  --
+  --    TWO CAUSES, TWO MESSAGES, because one message for both misled the first
+  --    school to see it. They had no rows for today at all, and were told
+  --    "today's register is already finalised", which sent them looking at
+  --    locks when the real cause was a session with a null starts_on that had
+  --    excluded the whole current year from the register loop. An assertion
+  --    that reports the wrong cause is worse than one that reports none.
   select count(*) into v_n from public.attendance_daily
+   where school_id = v_school and attendance_date = current_date;
+  select count(*) into v_m from public.attendance_daily
    where school_id = v_school and attendance_date = current_date and not is_locked;
-  if v_n = 0 then v_fail := v_fail || 'today''s register is already finalised'; end if;
+  if v_n = 0 then
+    v_fail := array_append(v_fail,
+      'today has no register at all: nothing was marked. If the year files '
+      'reported success, check that the current academic session has a '
+      'starts_on and an ends_on, because a null one is excluded from every '
+      'loop in this seed');
+  elsif v_m = 0 then
+    v_fail := array_append(v_fail, format(
+      'today''s register is already finalised: all %s rows are locked, and a '
+      'register locked before the day is over is yesterday''s register', v_n));
+  end if;
 
   -- 4. THE REGISTER IS DENSE. This is the one that caught the module-by-module
   --    seed: 6,098 section-days holding 21,123 rows, 3.4 children each.
@@ -96,10 +130,10 @@ begin
   -- 7. THE CORRECTION PATHS HAVE BEEN WALKED.
   select count(*) into v_n from public.payments
    where school_id = v_school and reversal_of is not null;
-  if v_n < 1 then v_fail := v_fail || 'no payment has ever been reversed'; end if;
+  if v_n < 1 then v_fail := array_append(v_fail, 'no payment has ever been reversed'); end if;
   select count(*) into v_n from public.invoices
    where school_id = v_school and status = 'void';
-  if v_n < 1 then v_fail := v_fail || 'no challan has ever been voided'; end if;
+  if v_n < 1 then v_fail := array_append(v_fail, 'no challan has ever been voided'); end if;
 
   --     AND THE REGISTER HAS BEEN PUT RIGHT. This one was zero for the whole
   --     of the first build, and chasing that down is what found the bug in
@@ -124,10 +158,10 @@ begin
   --    and no shorts, which is half a test.
   select count(*) into v_n from public.till_sessions
    where school_id = v_school and status <> 'open' and variance < 0;
-  if v_n < 1 then v_fail := v_fail || 'no drawer has ever come up short'; end if;
+  if v_n < 1 then v_fail := array_append(v_fail, 'no drawer has ever come up short'); end if;
   select count(*) into v_n from public.till_sessions
    where school_id = v_school and status <> 'open' and variance > 0;
-  if v_n < 1 then v_fail := v_fail || 'no drawer has ever come up over'; end if;
+  if v_n < 1 then v_fail := array_append(v_fail, 'no drawer has ever come up over'); end if;
 
   -- 9. RESULTS EXIST AND ONE TERM IS STILL UNPUBLISHED, so the portal has
   --    something to correctly refuse.
@@ -137,31 +171,120 @@ begin
   -- 10. THE AUDIT LOG READS LIKE A LOG. Ordered by created_at on the one screen
   --     that shows it, so a log where every entry claims the same second is not
   --     a log. This is what the clock pass exists for.
-  select count(distinct created_at::date) into v_n
-    from public.audit_log where school_id = v_school;
-  if v_n < 300 then
-    v_fail := v_fail || format('the audit log spans only %s distinct days', v_n);
+  --
+  --     CONCENTRATION AND NOT A DAY COUNT, and the first version was a day
+  --     count: `distinct created_at::date >= 300`. That asserts how much
+  --     HISTORY the log holds, which is not what the clock pass is responsible
+  --     for, and it fails on a school whose audit log was trimmed by hand to
+  --     free space. On that school the log is short and every row is on the
+  --     right day, which is a pass by any reading and was a failure by this
+  --     one. What actually distinguishes a clock pass that ran from one that
+  --     did not is whether the rows are all piled on the same day: unrun, every
+  --     row carries the minute the seed ran, so one day holds all of them.
+  select count(*) into v_n from public.audit_log where school_id = v_school;
+  if v_n >= 500 then
+    select max(c) into v_m from (
+      select count(*) as c from public.audit_log
+       where school_id = v_school group by created_at::date) q;
+    if v_m > v_n / 2 then
+      v_fail := v_fail || format('%s of the audit log''s %s rows are on one '
+        || 'single day, so the clock pass did not run: every row still claims '
+        || 'the minute the seed ran. Re-run 12_set_the_clock.sql', v_m, v_n);
+    end if;
   end if;
 
-  -- 11. THE OUTBOX HAS BEEN WORKED, AND STILL HAS A BACKLOG.
+  -- 11. THE AUDIT LOG IS NOT THE REGISTER, WRITTEN A SECOND TIME.
+  --
+  --     This is the assertion that would have saved a school an afternoon. The
+  --     first run of this simulation on a real project filled the free tier:
+  --     214,787 audit rows at 479 MB against 92 MB for the entire rest of the
+  --     database, and 206,809 of those rows were attendance marks and mark
+  --     entries copied out of the tables that already held them. Migration
+  --     0126 stops it, and a project that has not applied bundle 32 gets the
+  --     old behaviour from this seed with no warning at all: the seed works,
+  --     and then the dashboard says the database is full.
+  --
+  --     Both halves, because the first without the second is worse than
+  --     neither: with the copies skipped and nothing writing the day-level row,
+  --     the log would hold no record of a register ever being closed.
+  select count(*) into v_n from public.audit_log
+   where school_id = v_school and action = 'INSERT'
+     and entity in ('attendance_daily', 'mark_entries', 'staff_attendance');
+  if v_n > 0 then
+    v_fail := v_fail || format('%s audit rows copy a register row that already '
+      || 'carries the same actor and the same timestamp, which is what fills a '
+      || 'free tier. Apply '
+      || 'supabase/bundles/32_the_register_was_written_twice.sql', v_n);
+  end if;
+  --     The other half is REPORTED AND NOT ASSERTED, and the reason is worth
+  --     writing down. On a school seeded after bundle 32 there is one
+  --     ATTENDANCE_FINALIZE row per section-day, about 9,600 of them. On a
+  --     school whose registers were closed BEFORE bundle 32, or whose audit log
+  --     was trimmed by hand to free space, there are none and there is no way
+  --     to make any: the per-pupil rows they would have been rebuilt from are
+  --     gone. Failing on that would stop this file reporting anything else
+  --     about a school that is otherwise fine, over something its owner cannot
+  --     put right. The invariant itself is asserted where it can be acted on:
+  --     verify.sql and detect.sql both check that both functions write the row,
+  --     and supabase/tests/audit_volume.sql checks that they do it once per day
+  --     and once per test.
+  select count(*) into v_n from public.audit_log
+   where school_id = v_school and action = 'ATTENDANCE_FINALIZE';
+  if v_n < 300 then
+    raise notice 'the audit log holds % record(s) of a register being closed, '
+      'against % section-days of finalised register. Either these registers '
+      'were closed before bundle 32 was applied, or the log has been trimmed by '
+      'hand: both leave the closings unrecorded and neither can be rebuilt, '
+      'because the per-pupil rows they would come from are what was removed. '
+      'Everything closed from now on is recorded.', v_n,
+      (select count(*) from (
+        select distinct ad.attendance_date, e.class_id, e.section_id
+          from public.attendance_daily ad
+          join public.enrollments e on e.id = ad.enrollment_id
+         where ad.school_id = v_school and ad.is_locked) q);
+  end if;
+
+  -- 12. THE ROW TRIGGERS ARE ALL BACK ON. 08_the_clock.sql turns them off for
+  --     the fifteen tables it re-dates, because the BEFORE UPDATE trigger that
+  --     stamps updated_at silently discarded half of what it set. It turns them
+  --     back on in the same transaction and checks that it did. This checks
+  --     again from outside, because a school pasting the files by hand can stop
+  --     between two of them, and a school running with its audit triggers off
+  --     records nothing and cannot tell.
+  select count(*) into v_n from pg_trigger tg
+    join pg_class c on c.oid = tg.tgrelid
+   where not tg.tgisinternal and tg.tgenabled = 'D'
+     and c.relnamespace = 'public'::regnamespace;
+  if v_n > 0 then
+    v_fail := v_fail || format('%s row trigger(s) in public are still disabled, '
+      || 'so nothing is being audited and the student counts are not being kept '
+      || 'up to date. Re-run 12_set_the_clock.sql, which turns them off and back '
+      || 'on inside one transaction', v_n);
+  end if;
+
+  -- 13. THE OUTBOX HAS BEEN WORKED, AND STILL HAS A BACKLOG.
   select count(*) into v_n from public.message_outbox
    where school_id = v_school and status = 'sent';
-  if v_n < 100 then v_fail := v_fail || 'nothing has ever been sent from the outbox'; end if;
+  if v_n < 100 then v_fail := array_append(v_fail, 'nothing has ever been sent from the outbox'); end if;
   select count(*) into v_n from public.message_outbox
    where school_id = v_school and status = 'queued';
-  if v_n < 10 then v_fail := v_fail || 'the outbox has no backlog, which no school has'; end if;
+  if v_n < 10 then v_fail := array_append(v_fail, 'the outbox has no backlog, which no school has'); end if;
 
   if array_length(v_fail, 1) > 0 then
     raise exception E'this is not a believable school:\n  - %',
       array_to_string(v_fail, E'\n  - ');
   end if;
 
-  raise notice 'BELIEVABLE. % rows, % children on the roll, % attendance rows over % days, % result cards, audit log spans % days',
+  raise notice 'BELIEVABLE. % rows, % children on the roll, % attendance rows over % days, % result cards, audit log spans % days, audit log is % of the database',
     (select sum(n_live_tup) from pg_stat_user_tables),
     (select count(*) from public.students where school_id=v_school and status='active'),
     (select count(*) from public.attendance_daily where school_id=v_school),
     (select count(distinct attendance_date) from public.attendance_daily where school_id=v_school),
     (select count(*) from public.result_cards where school_id=v_school),
-    (select count(distinct created_at::date) from public.audit_log where school_id=v_school);
+    (select count(distinct created_at::date) from public.audit_log where school_id=v_school),
+    -- The one number that decides whether a school fits on the free tier, in
+    -- the report rather than buried: it was 84% before migration 0126.
+    round(100.0 * pg_total_relation_size('public.audit_log')
+          / greatest(pg_database_size(current_database()), 1), 1) || '%';
 end
 $check$;

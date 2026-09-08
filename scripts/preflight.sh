@@ -17,7 +17,14 @@
 # So: one command, everything, in the order that fails cheapest first.
 #
 #   scripts/preflight.sh              full run
-#   scripts/preflight.sh --quick      skip the fresh-database rebuilds
+#   scripts/preflight.sh --quick      the static checks and the app only
+#
+# --quick IS NOT A SHORTER FULL RUN. It skips everything that needs a database
+# of its own, and that includes EVERY SQL SUITE. What is left is the static
+# checkers, the web build and tests, and the checks against $PGDATABASE. It
+# exists for a fast loop while editing, not for deciding whether to push.
+# The closing message lists what it skipped, derived from this file rather than
+# typed, because a hand-written list of that drifted within the hour.
 #
 # It needs a Postgres to talk to:
 #   su pguser -c "/usr/lib/postgresql/16/bin/pg_ctl -D /tmp/pgd/data \
@@ -91,6 +98,7 @@ echo "== the cheap ones =="
 step "bundles are in sync with the migrations" bash -c \
   './supabase/build-bundles.sh >/dev/null && git diff --exit-code --stat supabase/bundles/'
 step "no em dashes" python3 scripts/check-no-emdash.py
+step "RAISE takes a bare %" python3 scripts/check-raise-format.py
 step "no browser dialogs (prompt/alert/confirm)" python3 scripts/check-no-browser-dialogs.py
 step "a stale shell cannot go blank silently" python3 scripts/check-stale-shell.py
 step "every CI step can find its own files" python3 scripts/check-ci-workdir.py
@@ -242,8 +250,20 @@ SQL
     done
     [ "$ok" = 1 ] && printf '%-52s ok\n' "$mode apply cleanly"
 
-    n=$(psql -tA -d "$db" -c "select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and has_function_privilege('anon', p.oid,'execute')" 2>/dev/null)
-    if [ "${n:-1}" = 0 ]; then printf '%-52s ok\n' "$mode: anon can execute nothing"
+    # ONE NAMED EXEMPTION, and it is excluded here by name only. The SHAPE of
+    # the exemption (fn_signup_plans must be stable and must touch nothing in
+    # public but the published price list) is asserted by verify.sql's 0071 row
+    # and by detect.sql's 0071 signature, both of which run below on this same
+    # database. This step is the cheap count that still reports if verify.sql
+    # itself is broken; it is deliberately weaker rather than a second opinion.
+    #
+    # The exemption exists because the signup form has no login and has to show
+    # nine prices, and fn__plan_price is a rule rather than a lookup: a browser
+    # copy of it quotes a figure the first invoice contradicts the moment any
+    # rate moves. It exposes nothing new, because `plans` already carries a
+    # SELECT policy for anon.
+    n=$(psql -tA -d "$db" -c "select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and has_function_privilege('anon', p.oid,'execute') and p.proname <> 'fn_signup_plans'" 2>/dev/null)
+    if [ "${n:-1}" = 0 ]; then printf '%-52s ok\n' "$mode: anon can execute nothing but the price list"
     else printf '%-52s FAIL (%s open)\n' "$mode: anon can execute nothing" "$n"; fails=$((fails + 1)); fi
 
     verify_clean "$db" "$mode: verify.sql renders and has no FAIL row"
@@ -536,6 +556,40 @@ python3 scripts/preflight-gaps.py
 
 echo
 if [ "$fails" = 0 ]; then
+  # --quick SAYS SO, AND THE FIRST VERSION DID NOT. It printed the same
+  # "PREFLIGHT CLEAN. Safe to push." as a full run while skipping the four
+  # passes that only exist because a school pastes bundles by hand: the fresh
+  # installs, the CRLF spelling, the RE-PASTE comparison and the upgrade path.
+  #
+  # That cost a red CI on migration 0127. It added two parameters to
+  # fn_signup_school by dropping the five-argument version, and 0071 grants
+  # exactly that signature, hardcoded, inside a bundle a school has already
+  # pasted. Bundle 7's second paste then failed on the grant and rolled the
+  # whole bundle back, and because later bundles patch functions from their own
+  # text, ELEVEN function bodies came out different. The re-paste comparison is
+  # what catches that, and a clean quick run had said it was safe to push.
+  #
+  # A checker that does not say what it skipped is claiming more than it
+  # checked, which is the same fault as one that lies. The line above this
+  # block says exactly that about the CI steps; it was not true of the mode.
+  if [ "$QUICK" = 1 ]; then
+    echo "QUICK PREFLIGHT CLEAN, AND QUICK IS NOT THE WHOLE OF IT."
+    echo
+    echo "Skipped, every section that needs a database of its own:"
+    # DERIVED FROM THIS FILE, NOT TYPED. The first version of this list was
+    # typed, and it was wrong within the hour: it named the four bundle passes
+    # and left out EVERY SQL SUITE, which is the section that then caught a
+    # real failure in CI (operator_billing.sql assertion 23). A hand-kept list
+    # of what a checker skipped is a second thing to keep in step, and this
+    # whole message exists because the first one was not kept in step.
+    sed -n '/^if \[ "\$QUICK" = 0 \]; then$/,/^fi$/p' "$0" \
+      | grep -oE '^ *echo "== .* =="' | sed -E 's/^ *echo "== /  /; s/ ==" *$//'
+    echo
+    echo "So: no SQL suite ran, no bundle was pasted, and nothing was checked"
+    echo "on a database built the way a school's is. Run it without --quick"
+    echo "before pushing anything at all that touches supabase/."
+    exit 0
+  fi
   echo "PREFLIGHT CLEAN. Safe to push."
   exit 0
 fi

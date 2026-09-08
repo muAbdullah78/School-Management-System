@@ -366,10 +366,25 @@ select public.fn_activate_subscription(
   pg_temp.sch('Iqbal Model School'), 'starter', 6, null,
   'Downgrading at their request', true) as over \gset
 
+-- THE AMOUNT IS THE ASSERTION, and it has not moved: this suite pins
+-- price_quarterly to zero, so six months falls back to six times the monthly
+-- rate, 5,700, rather than being pro-rated off the yearly price.
+--
+-- THE LABEL CHANGED, and deliberately. Until migration 0127 the billing_cycle
+-- enum held only `monthly` and `yearly`, so fn_activate_subscription wrote
+-- `case when p_months >= 12 then 'yearly' else 'monthly' end` and called a
+-- six-month term monthly. plans.price_quarterly has existed and been charged
+-- all along; there was simply no value to record it with, so a school paying
+-- every three months got an invoice that said monthly. 0127 adds `quarterly`
+-- and puts the rule in one place, public.fn__cycle_for_months: twelve months
+-- or more is yearly, three to eleven is quarterly, less is monthly. Six months
+-- is therefore quarterly, which is the nearest standard term at or below its
+-- length and is what the price ladder charges it as.
 select pg_temp.ok(
-  (select cycle::text = 'monthly' and months = 6 and amount = 5700
+  (select cycle::text = 'quarterly' and months = 6 and amount = 5700
      from public.platform_invoices where school_id = pg_temp.sch('Iqbal Model School')),
-  '23. six months on starter is charged monthly — 6 × 950 — not a pro-rated year');
+  '23. six months on starter is charged 6 × 950, not a pro-rated year, and is '
+  || 'labelled quarterly rather than monthly (0127)');
 
 select pg_temp.ok(
   (select note like '%Downgrading at their request%'

@@ -540,6 +540,181 @@ emit supabase/bundles/30_a_failed_signup_leaves_nothing_behind.sql \
 emit supabase/bundles/31_the_harness_could_not_see_a_function_grant.sql \
      supabase/migrations/0125*.sql
 
+# A THIRTY-SECOND bundle. 0126 is the largest single thing this project has
+# ever done to a school's storage, and it is one measurement:
+#
+#   audit_log                      214,787 rows      479 MB
+#   the whole rest of the database                    92 MB
+#
+# 206,809 of those rows were the register and the mark sheet, copied. The audit
+# trigger wrote a full row for every attendance mark (where `after` IS the row
+# and the actor IS its marked_by, checked on all 112,082 of them) and another
+# for every pupil when the day was finalised (where the only key that differed
+# was `is_locked`, on all 94,727 of them). So the trigger now skips exactly
+# those two cases on exactly three tables, fn_finalize_attendance and
+# fn_lock_assessment each write ONE row saying what happened, and the rows
+# already written are folded into those and removed. Measured after:
+#
+#   audit_log      11 MB      the database      103 MB
+#
+# 468 MB back on one school, which is the difference between one school over
+# the free tier's 500 MB and four schools inside it. Money is untouched: the
+# next entity down the list is payments at 4,845 rows, and no money or
+# permission table is named anywhere in the rule.
+#
+# THE READER MUST RUN ONE MORE THING BY HAND. A delete marks rows dead and does
+# not shrink the file, so after this bundle:  vacuum full public.audit_log;
+# on its own, because VACUUM cannot run inside a transaction and a pasted file
+# is one.
+emit supabase/bundles/32_the_register_was_written_twice.sql \
+     supabase/migrations/0126*.sql
+
+# A THIRTY-THIRD bundle. Reported by the vendor looking at Settings on a school
+# he had just created: "a starter plan is by default, annual payment showing in
+# the settings". He is right, and it is not a display bug.
+#
+#   insert into public.subscriptions (school_id, plan_code, status, trial_ends_on)
+#   values (v_id, 'starter', 'trialing', current_date + 14);
+#
+# That is the whole of what fn_signup_school wrote. Plan hardcoded, cycle left
+# to the column default of yearly, term_months left to the column default of
+# 12. So every school in the console was on Starter paying annually whatever
+# was agreed on the phone, and fn_my_next_payment quoted them Rs 20,000 when
+# they had agreed Rs 2,000 a month.
+#
+# Pulling on it found two more, both about money and both wrong today.
+#
+# `quarterly` was not a value of the billing_cycle enum, although
+# plans.price_quarterly is populated, is charged by fn__plan_price and is one of
+# the three terms fn_my_next_payment offers. So a school paying every three
+# months got an invoice that said monthly.
+#
+# And fn_platform_due_soon and fn_platform_renewal_message both worked out how
+# many months the next invoice covers as
+# `case when cycle = 'yearly' then 12 else 1 end`, while the invoice is priced
+# by fn__renewals_due on term_months, which fn_activate_subscription never
+# wrote. Staged on a real database: a school on a monthly term whose last
+# period was yearly has an invoice of Rs 2,000 coming, and the console's
+# renewals worklist and the WhatsApp message to the school both said Rs 20,000.
+# Ten times the truth, sent to the customer.
+#
+# Also closes a loophole found while writing the signup form rather than while
+# reading the function: the `custom` plan is active, has student_limit NULL and
+# price_monthly 0, so a school choosing it would have got unlimited pupils for
+# nothing for ever, with every renewal invoice for Rs 0. Signup now takes only
+# a plan that has a price, which is a clause a second by-arrangement plan
+# cannot walk through either.
+emit supabase/bundles/33_a_school_picks_its_plan_and_how_it_pays.sql \
+     supabase/migrations/0127*.sql
+
+# A THIRTY-FOURTH bundle. Reported by the vendor of a real school in his own
+# console: "the school is only allowed to have 150 students but it exceeds to
+# 200 plus students so this is a loophole. We should not allow any school
+# exceed their limit. If they want more entries for their students we have to
+# create a request box that directly goes to our admin."
+#
+# Nothing enforced it, and the code said so out loud: fn_my_licence computed
+# the breach and then told the school "We will move you to the right plan at
+# your next renewal. Nothing stops working." A school could sit at 228 pupils
+# on a 150 plan for a year, paying Rs 2,000 a month for Rs 3,500 a month of
+# use.
+#
+# THE BLOCK STOPS EVERYONE, INCLUDING THE OWNER, which is the vendor's own
+# decision taken against the recommendation and recorded as such in the
+# migration header. What blunts it: the warning starts at 90% of the limit
+# whatever the renewal date, there are always two ways out (mark a child who
+# has left as left, which frees a place and needs nobody, or the request box,
+# which reaches the console and offers room-on-this-plan and move-us-up as
+# separate answers), and the block is on ADMISSION ONLY. Nothing already
+# entered is touched, no screen closes, no report stops.
+#
+# It does NOT say "move up a plan yourself". Nothing in this product lets a
+# school change its own plan, and 0128 carries a guard that fails if any of the
+# three functions that talk to a school ever claims otherwise.
+#
+# THE THREE PATHS IT GATES, and the one it must not:
+#   fn_admit_student        the only function in the schema that inserts a
+#                           pupil; fn_enquiry_admit and fn_import_students both
+#                           come through it
+#   fn_set_student_status   bringing a child back from a leaving state, which
+#                           reactivates their enrolment and so raises the roll
+#   fn_import_students      asked once for the whole file, so a 300-row import
+#                           into a 150 plan is refused up front rather than
+#                           importing 150 and failing 150 times
+#   fn_rollover             NOT GATED. It inserts enrolments for next year,
+#                           which is the same children a year older. Gating it
+#                           would leave a school over its limit with no
+#                           register, no challans and no classes for the new
+#                           year.
+#
+# No grandfathering: the migration REPORTS which schools are over and by how
+# much, and the console grants allowances. Auto-granting every over-limit
+# school its current count would make the limit change nothing on the one day
+# it starts existing.
+emit supabase/bundles/34_a_plans_student_limit_means_something.sql \
+     supabase/migrations/0128*.sql
+
+# A THIRTY-FIFTH bundle, and the only one so far that is a security fix rather
+# than a feature. It closes what migration 0024 closed in 2024, on the table
+# 0024 missed.
+#
+# 0024's own words: "the blanket table grant (0001) + role-only RLS let a
+# teacher write attendance_daily / mark_entries DIRECTLY via PostgREST,
+# bypassing fn_may_manage_class". It revoked the direct DML on those two and
+# left `assessments` alone, with blanket INSERT, UPDATE and DELETE for
+# `authenticated` and a policy checking only the school and the role.
+#
+# assessments is the one with a CASCADE under it. mark_entries.assessment_id is
+# ON DELETE CASCADE, and a cascade is not subject to row security, to any
+# function's checks, or to mark_entries.is_locked. Measured on the finished demo
+# school, as one subject teacher, in one statement:
+#
+#     BEFORE: 663 assessments, 10944 marks (5364 locked)
+#     AFTER:    0 assessments,  4983 marks (   0 locked)
+#
+# So: the assessment policies narrow to the class AND subject the teacher
+# actually teaches, deleting an assessment is owner and principal only, and
+# three BEFORE DELETE triggers refuse any delete that would destroy a finalised
+# mark, whichever route it came in by. Removing an exam paper nobody has marked
+# still works, and the marks that go with it are audited with their count.
+#
+# It also tightens the attendance and marks policies to match the grant 0024
+# revoked. Nothing changes today, because the grant is what holds them shut;
+# what changes is that re-granting direct DML for a bulk import no longer
+# reopens the hole.
+emit supabase/bundles/35_the_register_belongs_to_a_class.sql \
+     supabase/migrations/0129*.sql
+
+# A THIRTY-SIXTH bundle. Five caller-supplied dates were unbounded, and two
+# calls to the app's own function put a real school's register between 1900 and
+# 2099:
+#
+#     ACCEPTED a 2099 date: {"total": 1, "marked": 1, "skipped": 0}
+#     ACCEPTED an 1900 date: {"total": 1, "marked": 1, "skipped": 0}
+#     the register now runs 1900-01-01 to 2099-12-31
+#
+# The harm is a typed year rather than an attacker. attendance_daily is keyed on
+# (enrollment_id, attendance_date), so 2062 for 2026 creates a row that appears
+# on no screen, is counted in the percentage the parent portal shows, and can
+# never be found again. A challan due in 2062 never becomes overdue, so that
+# family never appears on the defaulter list. A fee effective from 1900 reprices
+# every challan the school has ever raised.
+#
+# AND THE CALENDAR IT SHOULD BE BOUNDED BY DID NOT EXIST. The first-run wizard
+# asked for the academic year's NAME and nothing else, so setupSchool() passed
+# `starts_on: null, ends_on: null` and every school ever set up through the app
+# has a current year with no dates on it. So this bundle does the dates first
+# (required on new sessions, sane, at most 60 per school) and the bounds second,
+# and the wizard now asks for them, pre-filled for an April to March year.
+#
+# A YEAR THAT ALREADY HAS NO DATES IS LEFT EXACTLY AS IT IS. Deriving
+# "April to March" from a name would be a guess, and a wrong guess puts wrong
+# dates on a live school's academic year and then rejects its real register. The
+# migration reports them, verify.sql keeps reporting them, and the bound arrives
+# the moment somebody fills the two fields in.
+emit supabase/bundles/36_a_school_year_has_dates.sql \
+     supabase/migrations/0130*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

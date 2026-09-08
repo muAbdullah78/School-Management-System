@@ -188,6 +188,22 @@ jobs:
         working-directory: .
         run: python3 scripts/check-no-emdash.py
 
+      - name: RAISE takes a bare % and not a printf placeholder
+        # plpgsql's RAISE substitutes each argument at a bare `%`. It has no
+        # %s, %d, %I or %L: those belong to format(). Write one by habit and
+        # the `%` still consumes the argument and the letter is left in the
+        # sentence:
+        #
+        #   raise exception 'The %s plan is priced by arrangement', v_name;
+        #   ERROR: The Custom (601+ students - contact us)s plan is priced ...
+        #
+        # Silent until somebody actually hits the error, which is the moment
+        # they most need the sentence to read cleanly. Two were in the tree and
+        # neither had ever been printed. Only the FORMAT STRING is scanned, so
+        # format('%s', x) passed as a RAISE argument is correct and not flagged.
+        working-directory: .
+        run: python3 scripts/check-raise-format.py
+
       - name: No school action depends on a browser dialog
         # window.prompt asked for money amounts and audit reasons at twelve call
         # sites: applying a fine, waiving one, adjusting a balance, reversing a
@@ -1312,6 +1328,98 @@ jobs:
         # Assertion 20 is the point of the role boundary: a subject teacher can
         # ENTER marks, which is exactly why they must not be able to audit them.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/corrections.sql
+
+      - name: The audit log records what happened, and not the register twice
+        # 0126 took 84% of a two-year school's database away, and the whole of
+        # that 84% was the register and the mark sheet copied into the audit
+        # log. The risk in a change of that shape is one-sided: skip one row
+        # too many and a school cannot answer a parent, and nobody finds out
+        # until the parent asks. So this suite asserts both halves.
+        #
+        # Assertions 3, 4, 14 and 15 are the half that matters: a CHANGED mark
+        # or status still writes a full row WITH its before image, because that
+        # is the one thing the register row cannot hold.
+        #
+        # Assertion 12 is the deliberate asymmetry: closing a day is skipped,
+        # reopening one is not, so a second unlock path written later cannot go
+        # unrecorded by forgetting to audit it.
+        #
+        # Assertions 22 and 23 are the negative that guards the scope: nothing
+        # about a payment changed. It is what fails if somebody widens the skip
+        # list "while they are in there".
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/audit_volume.sql
+
+      - name: A school picks its plan and its term, and one column prices it
+        # Assertions 26 to 29 are the money. The invoice is built by
+        # fn__renewals_due from subscriptions.term_months; fn_platform_due_soon
+        # and fn_platform_renewal_message worked the months out from the cycle
+        # instead, and fn_activate_subscription never wrote term_months at all.
+        # Staged on a real database before this suite existed: a school on a
+        # monthly term whose last period was yearly had Rs 2,000 coming, and
+        # both the console worklist and the WhatsApp message said Rs 20,000.
+        #
+        # Assertion 12 is what makes the migration and the Edge Function
+        # deployable in either order: five arguments still means Starter on a
+        # yearly term.
+        #
+        # Assertions 13 to 18 are the refusals, including the loophole found
+        # while writing the form rather than while reading the function: a plan
+        # priced by arrangement has student_limit NULL, so reaching one from
+        # signup is unlimited pupils for nothing, for ever.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/plan_and_term.sql
+
+      - name: Nothing is recorded outside the school's own academic calendar
+        # Assertions 1, 2, 6, 8, 9, 13, 14, 24, 26 and 27 are the half that
+        # matters, and there are more of them than of the refusals: the bound is
+        # the school's OWN calendar, so it has to refuse nothing a school does.
+        # Today's register, last Friday's, LAST YEAR'S through an unlock, a
+        # challan due after the year ends (a fifth of the demo school's are), an
+        # expense from before the first session began, an eighteen-month
+        # transition year, and a school whose academic year has no dates at all,
+        # which is every school the first-run wizard ever set up.
+        #
+        # Assertion 17 is the one that is easy to get wrong: a refused expense
+        # must not consume a voucher number, or a numbered series somebody files
+        # with the tax office grows gaps.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/dates_in_the_calendar.sql
+
+      - name: A teacher's reach is one class, and a lock holds against a delete
+        # EVERY ASSERTION RUNS AS `authenticated`, and that is the whole point.
+        # This suite runs as the table owner, for whom both row security and
+        # table grants are silent, so without the role switch each of these
+        # passes while proving nothing.
+        #
+        # Assertions 1 and 2 defend what migration 0024 already did (it revoked
+        # direct DML on the register and the marks) so a re-grant for a bulk
+        # import cannot pass unnoticed. Assertion 5 is the one that stops the
+        # rest passing because the door is shut to everybody: the Maths teacher
+        # of class A must still be able to set a Maths test for class A.
+        #
+        # Assertion 9 is the hole this fixed. Before 0129 that exact statement,
+        # from a subject teacher's own browser, removed 663 assessments and
+        # 5,961 marks from the demo school, all 5,364 finalised ones among them.
+        # 13 and 14 are the other half: an exam nobody has marked can still be
+        # deleted, because a test set up wrongly has to be removable, and the
+        # marks that go with it are audited with their count.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/register_authority.sql
+
+      - name: A plan's student limit is a limit, and only on what is a limit
+        # The first four assertions are the block. Assertions 10 to 18 and 55
+        # to 58 are the half that makes a block like this safe, and they matter
+        # more: reading still works, marking a child as LEFT always works, a
+        # no-limit plan is never touched, and above all fn_rollover is NOT
+        # gated. Rolling a year over is the same children a year older, and
+        # refusing it would leave a school over its limit with no register, no
+        # challans and no classes for the new year.
+        #
+        # Assertions 8 and 9 record a decision rather than a discovery: the
+        # vendor was offered "block the clerk, let the owner override" and
+        # chose "block everyone", so the absence of an override is asserted.
+        #
+        # Assertion 21 is the importer's whole point: a five-row file into a
+        # three-pupil plan creates NOTHING, rather than importing three and
+        # failing twice and leaving the file no longer safe to re-run.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/student_limit.sql
 
       - name: Remarks and position holders — do ties and remarks survive?
         # Assertion 12 is why exam_remarks is its own table rather than a column

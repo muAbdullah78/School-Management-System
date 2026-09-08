@@ -1273,7 +1273,7 @@ Diary, Salary Issue | nosql:student_diary | nosql:salary_slips | why:both on the
 Every list is a real table | file:web/src/components/DataTable.tsx | app:DataTable | noapp:DataTableEverywhere | why:five screens use it; the rest are still hand-rolled tables
 Global search in the header | file:web/src/components/GlobalSearch.tsx | sql:fn_global_search | app:globalSearch
 Module search in the sidebar | file:web/src/components/ModuleSearch.tsx | app:ModuleSearch
-Multi-campus | noapp:campus | noapp:CampusSelector
+Multi-campus | noapp:campus_id | noapp:CampusSelector | why:campus_id rather than the bare word campus, which fired on a placeholder reading "we are opening a second campus in April"; a campus column on every list is what campus_id would mean
 Print-first reports | file:web/src/pages/reports/ReportsPage.tsx | app:printId | noapp:ReportGrid | why:tabs with one print button, not a grid of named reports each with its own
 Dashboard tiles that link to a report | file:web/src/pages/Dashboard.tsx | app:LinkTile | noapp:ViewReportTile | why:every tile navigates, to the module rather than to a named report
 Running session shown in the footer | sql:academic_sessions | app:sessionEnded | app:No session set

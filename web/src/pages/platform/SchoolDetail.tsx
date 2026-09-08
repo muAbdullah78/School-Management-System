@@ -1,7 +1,13 @@
-import { useQuery } from '@tanstack/react-query'
-import { schoolDetail, type ReadinessItem, type SchoolDetail as Detail } from '@/lib/platform'
+import { useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  clearStudentLimit, grantStudentLimit, schoolDetail,
+  type ReadinessItem, type SchoolDetail as Detail,
+} from '@/lib/platform'
 import { formatPkr } from '@/lib/licence'
 import { fmtDate, fmtDateTime } from '@/lib/format'
+
+const FIELD = 'w-full rounded border border-slate-300 px-2 py-1.5 text-sm'
 
 /**
  * One school, everything the operator can know without opening it.
@@ -118,6 +124,18 @@ function Body({ d }: { d: Detail }) {
                 {d.licence.student_limit !== null && (
                   <span className="text-slate-400"> / {d.licence.student_limit.toLocaleString()}</span>
                 )}
+                {/* The plan's own number, only when it differs, so the chip
+                    above reads as an allowance rather than as a licence that
+                    disagrees with the price list. */}
+                {d.licence.limit_override != null
+                  && d.licence.plan_student_limit != null && (
+                  <span className="ml-1 text-xs text-slate-500">
+                    ({d.licence.plan_student_limit.toLocaleString()} on{' '}
+                    {d.licence.plan_code}, plus{' '}
+                    {(d.licence.limit_override - d.licence.plan_student_limit).toLocaleString()}{' '}
+                    granted)
+                  </span>
+                )}
                 {d.licence.limit_state === 'over' && (
                   <span className="ml-2 rounded bg-due-100 px-1.5 py-0.5 text-xs font-medium text-due-800">
                     over limit
@@ -125,11 +143,18 @@ function Body({ d }: { d: Detail }) {
                   </span>
                 )}
               </div>
+              {/* THIS USED TO SAY "Move them to growth at renewal", which was
+                  fine while the limit was advisory and became wrong the day
+                  0128 made it real: nothing waits for a renewal any more, the
+                  school is refusing admissions today. The Student limit block
+                  below is what an operator does about it. */}
               {d.licence.limit_state === 'over'
                 && d.licence.suggested_plan
                 && d.licence.suggested_plan !== d.licence.plan_code && (
                 <div className="text-due-800">
-                  Move them to <span className="font-medium">{d.licence.suggested_plan}</span> at renewal.
+                  New admissions are refused right now.{' '}
+                  <span className="font-medium">{d.licence.suggested_plan}</span>{' '}
+                  is the plan that fits their roll.
                 </div>
               )}
               <div className="text-xs text-slate-400">
@@ -141,6 +166,7 @@ function Body({ d }: { d: Detail }) {
               No subscription row at all. This school cannot use the software.
             </p>
           )}
+          {d.licence && <StudentLimitBlock schoolId={d.school.id} lic={d.licence} />}
         </div>
 
         <div className="rounded border border-slate-200 p-3">
@@ -244,6 +270,207 @@ function Since({ label, at }: { label: string; at: string | null }) {
       <span className={stale ? 'font-medium text-due-700' : 'text-slate-700'}>
         {days <= 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`}
       </span>
+    </div>
+  )
+}
+
+/**
+ * How many pupils this school may have, and the two buttons that change it.
+ *
+ * SEPARATE FROM THE REQUEST QUEUE ON PURPOSE. The queue answers a school that
+ * asked; this answers the school that phoned, or the one we are about to
+ * refuse without either of us noticing. Most allowances get granted from here,
+ * because the conversation that produces one happens on the phone and the
+ * operator is looking at the school, not at a list.
+ *
+ * TAKING ONE BACK IS THE DANGEROUS BUTTON, not granting. Clearing an allowance
+ * from a school sitting above its plan's limit stops the next admission the
+ * moment it is saved, so the count is spelled out beside it and the reason is
+ * mandatory: somebody will ask, and the answer needs to exist.
+ */
+function StudentLimitBlock({ schoolId, lic }: {
+  schoolId: string; lic: NonNullable<Detail['licence']>
+}) {
+  const qc = useQueryClient()
+  const [mode, setMode] = useState<'none' | 'grant' | 'clear'>('none')
+  const req = lic.limit_request ?? null
+  const plan = lic.plan_student_limit ?? lic.student_limit
+
+  // A by-arrangement plan has no limit and nothing to grant against. Saying so
+  // beats an empty block that reads as a feature that failed to load.
+  if (plan === null && lic.limit_override == null) {
+    return (
+      <p className="mt-2 border-t border-slate-100 pt-2 text-xs text-slate-500">
+        Their plan has no student limit, so there is nothing to grant.
+      </p>
+    )
+  }
+
+  return (
+    <div className="mt-2 border-t border-slate-100 pt-2">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Student limit
+        </div>
+        <div className="flex gap-2 text-xs">
+          <button onClick={() => setMode(mode === 'grant' ? 'none' : 'grant')}
+            className="text-brand-700 hover:underline">
+            {lic.limit_override == null ? 'Give them room' : 'Change the allowance'}
+          </button>
+          {lic.limit_override != null && (
+            <button onClick={() => setMode(mode === 'clear' ? 'none' : 'clear')}
+              className="text-slate-400 hover:text-slate-700 hover:underline">
+              Take it back
+            </button>
+          )}
+        </div>
+      </div>
+
+      {lic.limit_override != null ? (
+        <p className="mt-1 text-xs text-slate-600">
+          Allowed {lic.limit_override.toLocaleString()} by an allowance
+          {lic.limit_override_by && <> that {lic.limit_override_by} granted</>}
+          {lic.limit_override_at && <> on {fmtDate(lic.limit_override_at)}</>}.
+          {lic.limit_override_reason && (
+            <span className="block text-slate-500">“{lic.limit_override_reason}”</span>
+          )}
+        </p>
+      ) : (
+        <p className="mt-1 text-xs text-slate-500">
+          Their {lic.plan_code} plan&rsquo;s own limit applies: {plan?.toLocaleString()} pupils.
+        </p>
+      )}
+
+      {/* The request, if one is waiting. An operator granting from this page
+          rather than from the queue would otherwise be granting blind: they
+          cannot see that the school has already asked, for how many, or why. */}
+      {req && (
+        <div className="mt-1.5 rounded bg-amber-50 px-2 py-1 text-xs text-amber-900">
+          <span className="font-medium">
+            They have asked{req.wants === 'move_up' ? ' to move up' : ' for room'} for{' '}
+            {req.requested_limit.toLocaleString()} pupils
+          </span>{' '}
+          on {fmtDate(req.requested_at)}. “{req.reason}”
+          {req.wants === 'move_up' && (
+            <span className="block">
+              They asked to move up, so the answer is the Activate dialog on the
+              Billing tab, not an allowance. Grant one here only if they need the
+              room before the invoice is settled.
+            </span>
+          )}
+        </div>
+      )}
+
+      {mode !== 'none' && (
+        <LimitForm
+          schoolId={schoolId} lic={lic} mode={mode}
+          onDone={() => {
+            setMode('none')
+            void qc.invalidateQueries({ queryKey: ['schoolDetail'] })
+            void qc.invalidateQueries({ queryKey: ['platformSchools'] })
+            void qc.invalidateQueries({ queryKey: ['limitRequests'] })
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function LimitForm({ schoolId, lic, mode, onDone }: {
+  schoolId: string
+  lic: NonNullable<Detail['licence']>
+  mode: 'grant' | 'clear'
+  onDone: () => void
+}) {
+  const plan = lic.plan_student_limit ?? lic.student_limit
+  const [limit, setLimit] = useState(
+    String(lic.limit_request?.requested_limit ?? lic.limit_override ?? ((plan ?? 0) + 50)),
+  )
+  const [note, setNote] = useState('')
+  const [err, setErr] = useState<string | null>(null)
+
+  const want = Number(limit)
+  const valid = Number.isInteger(want) && want >= 1
+  // Below the plan's own number is a REDUCTION, which the database refuses
+  // without a reason, and is also what a mistyped 15 for 150 looks like.
+  const reduction = mode === 'grant' && valid && plan !== null && want < plan
+  // Clearing while they are above the plan's limit stops the next admission the
+  // moment it saves. Said as a number, not as a warning about a possibility.
+  const cutsThemOff = mode === 'clear' && plan !== null
+    && lic.student_count >= plan
+  const noteNeeded = mode === 'clear' || reduction
+  const noteOk = note.trim().length >= 8
+
+  const act = useMutation({
+    mutationFn: () => mode === 'clear'
+      ? clearStudentLimit(schoolId, note.trim())
+      : grantStudentLimit(schoolId, want, note.trim() || null),
+    onSuccess: onDone,
+    onError: (e) => setErr((e as Error).message),
+  })
+
+  return (
+    <div className="mt-2 rounded border border-slate-200 bg-slate-50 p-2">
+      {err && <p className="mb-1.5 rounded bg-danger-50 px-2 py-1 text-xs text-danger-700">{err}</p>}
+
+      {mode === 'grant' ? (
+        <label className="block">
+          <span className="text-xs font-medium text-slate-600">Pupils they may have</span>
+          <input type="number" min={1} step={1} className={FIELD} value={limit}
+            onChange={(e) => setLimit(e.target.value)} />
+          <span className="mt-0.5 block text-xs text-slate-400">
+            Replaces their plan&rsquo;s limit on whatever plan they are on, and does
+            not expire. It bills them nothing on its own.
+          </span>
+        </label>
+      ) : (
+        <p className="text-xs text-slate-700">
+          Their {lic.plan_code} plan&rsquo;s limit of {plan?.toLocaleString()} pupils
+          comes back.
+        </p>
+      )}
+
+      {reduction && (
+        <p className="mt-1.5 rounded bg-danger-50 px-2 py-1 text-xs text-danger-700">
+          Their plan already covers {plan?.toLocaleString()}, so {want} is a
+          reduction and will stop them admitting anybody the moment you save it.
+          Check the number.
+        </p>
+      )}
+      {cutsThemOff && (
+        <p className="mt-1.5 rounded bg-danger-50 px-2 py-1 text-xs text-danger-700">
+          They have {lic.student_count.toLocaleString()} on the roll and their plan
+          covers {plan?.toLocaleString()}, so this stops their next admission the
+          moment you save it. They will see your reason on their own screen.
+        </p>
+      )}
+
+      <label className="mt-1.5 block">
+        <span className="text-xs font-medium text-slate-600">
+          Reason{noteNeeded && <span className="text-danger-600"> *</span>}
+        </span>
+        <textarea rows={2} className={FIELD} value={note}
+          onChange={(e) => setNote(e.target.value)} />
+        <span className="mt-0.5 block text-xs text-slate-400">
+          Shown to the school, and kept on their audit trail with your name on it.
+        </span>
+      </label>
+
+      <button
+        disabled={act.isPending || (mode === 'grant' && !valid) || (noteNeeded && !noteOk)}
+        onClick={() => { setErr(null); act.mutate() }}
+        className={`mt-2 rounded px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50 ${
+          mode === 'clear' ? 'bg-slate-700 hover:bg-slate-800'
+            : 'bg-emerald-600 hover:bg-emerald-700'}`}>
+        {act.isPending ? 'Saving…'
+          : mode === 'clear' ? 'Take the allowance back'
+          : `Allow ${valid ? want : '…'} pupils`}
+      </button>
+      {noteNeeded && !noteOk && (
+        <span className="ml-2 text-xs text-slate-400">
+          A reason is required, and eight characters is the floor.
+        </span>
+      )}
     </div>
   )
 }

@@ -427,6 +427,17 @@ declare
     -- through fn_my_report_payment, and a school-writable `status` column would
     -- be a school writing money.
     'platform_payment_claims',
+    -- 0128. A school asking for more room than its plan covers, and our
+    -- answer. Exactly the platform_payment_claims shape and on this list for
+    -- the same reason: TWO select policies, one on current_school_id plus
+    -- may_view so the school can see its own request and what we said, and one
+    -- on is_platform_admin so the console can work the queue. 4b would reject
+    -- the second for not naming current_school_id, and it would be rejecting a
+    -- policy that is entirely correct. No write policy: fn_request_student_limit
+    -- inserts it and only the two fn_platform_ functions decide it, because a
+    -- school able to write this table could insert a row already marked
+    -- `granted` and give itself room.
+    'student_limit_requests',
     -- 0112. How a school pays. Exactly the operator_sessions shape and on this
     -- list for the same reason: TWO select policies, one on current_school_id
     -- plus has_role so the school can see and revoke its own saved method, and

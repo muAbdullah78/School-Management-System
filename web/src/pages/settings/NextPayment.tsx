@@ -293,6 +293,17 @@ function TermChooser({ terms, current, onDone }: {
           )
         })}
       </div>
+      {/* A TERM NO BUTTON REPRESENTS. fn_choose_term sells three; an operator
+          can invoice any number of months from 1 to 60, and since 0127
+          activating a subscription records the term it invoiced. So a school
+          can legitimately be on six months, and before this line none of the
+          three buttons lit up and the screen said nothing about why. */}
+      {!rows.some((t) => t.months === current) && (
+        <p className="mt-1.5 text-xs text-slate-600">
+          You are on a {current} month term, arranged with us. Pressing one of
+          these moves you onto the price list from your next payment.
+        </p>
+      )}
       {/* SAID BEFORE IT IS PRESSED, not after. A school switching from monthly
           to yearly halfway through a paid month would otherwise wonder whether
           it has just been billed for a year on top of what it already paid. */}
