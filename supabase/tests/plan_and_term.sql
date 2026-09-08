@@ -91,8 +91,8 @@ $$;
 do $$
 declare r jsonb; s record;
 begin
-  r := public.fn_signup_school('Term A', 'Lahore', 'Owner A', '03001111111',
-                               'a@term.test', 'growth', 1);
+  r := public.fn_signup_school_on_plan('Term A', 'Lahore', 'Owner A',
+                                       '03001111111', 'a@term.test', 'growth', 1);
   perform pg_temp.ok(r->>'plan_code' = 'growth' and (r->>'term_months')::int = 1,
     '1  signup echoes back the plan and the term it recorded');
   perform pg_temp.ok((r->>'first_amount')::numeric = 2000
@@ -119,8 +119,8 @@ end $$;
 do $$
 declare r jsonb; s record;
 begin
-  r := public.fn_signup_school('Term B', null, 'Owner B', null, 'b@term.test',
-                               'starter', 3);
+  r := public.fn_signup_school_on_plan('Term B', null, 'Owner B', null,
+                                       'b@term.test', 'starter', 3);
   select sub.* into s from public.subscriptions sub
     join public.schools sc on sc.id = sub.school_id where sc.name = 'Term B';
   perform pg_temp.ok(s.cycle::text = 'quarterly',
@@ -142,11 +142,18 @@ begin
 end $$;
 
 -- =============================================================================
--- 3. GIVEN NOTHING, IT DOES WHAT IT DID BEFORE
+-- 3. THE OLD FIVE-ARGUMENT NAME STILL DOES WHAT IT DID BEFORE
 --
--- Both parameters default, so a deployment of the Edge Function that predates
--- this migration keeps working. That is what makes the two deployable in
--- either order.
+-- It survives for two reasons, and the second one is the load-bearing one.
+--
+-- An Edge Function deployment that predates this migration calls it, and must
+-- keep working: that is what makes the two deployable in either order.
+--
+-- AND 0071 GRANTS EXACTLY THAT SIGNATURE, hardcoded, inside a bundle a school
+-- has already pasted. The first version of 0127 dropped it to add two
+-- parameters; bundle 7's second paste then failed on the grant and rolled the
+-- whole bundle back, and eleven function bodies came out different because
+-- later bundles patch functions from their own text. Assertions 33 to 35.
 -- =============================================================================
 do $$
 declare s record;
@@ -156,7 +163,10 @@ begin
     join public.schools sc on sc.id = sub.school_id where sc.name = 'Term C';
   perform pg_temp.ok(s.plan_code = 'starter' and s.term_months = 12
                  and s.cycle::text = 'yearly',
-    '12 five arguments still means Starter on a yearly term');
+    '12 the five-argument name still means Starter on a yearly term');
+  perform pg_temp.ok(s.trial_ends_on = current_date + 14,
+    '12b and a fourteen day trial, so an Edge Function deployment that '
+    || 'predates this migration behaves exactly as it did');
 end $$;
 
 -- =============================================================================
@@ -165,13 +175,13 @@ end $$;
 do $$
 begin
   perform pg_temp.ok(pg_temp.raises(
-    $q$select public.fn_signup_school('Term D', null, null, null, 'd@term.test',
-                                      'platinum', 12)$q$,
+    $q$select public.fn_signup_school_on_plan('Term D', null, null, null,
+                                              'd@term.test', 'platinum', 12)$q$,
     'there is no plan called'),
     '13 a plan that does not exist is refused');
   perform pg_temp.ok(pg_temp.raises(
-    $q$select public.fn_signup_school('Term D', null, null, null, 'd@term.test',
-                                      'platinum', 12)$q$,
+    $q$select public.fn_signup_school_on_plan('Term D', null, null, null,
+                                              'd@term.test', 'platinum', 12)$q$,
     'starter'),
     '14 and the refusal lists the plans that ARE on sale');
 
@@ -179,15 +189,15 @@ begin
   -- at it. A new school must not be able to land on one.
   update public.plans set active = false where code = 'institution';
   perform pg_temp.ok(pg_temp.raises(
-    $q$select public.fn_signup_school('Term D', null, null, null, 'd@term.test',
-                                      'institution', 12)$q$,
+    $q$select public.fn_signup_school_on_plan('Term D', null, null, null,
+                                              'd@term.test', 'institution', 12)$q$,
     'there is no plan called'),
     '15 a plan no longer sold is refused as well');
   update public.plans set active = true where code = 'institution';
 
   perform pg_temp.ok(pg_temp.raises(
-    $q$select public.fn_signup_school('Term D', null, null, null, 'd@term.test',
-                                      'starter', 6)$q$,
+    $q$select public.fn_signup_school_on_plan('Term D', null, null, null,
+                                              'd@term.test', 'starter', 6)$q$,
     'one month, three months or a year'),
     '16 a term that is not sold is refused, naming the three that are');
   perform pg_temp.ok(pg_temp.raises(
@@ -326,7 +336,7 @@ end $$;
 -- =============================================================================
 do $$
 declare v_sig text :=
-  'public.fn_signup_school(text,text,text,text,text,text,integer)';
+  'public.fn_signup_school_on_plan(text,text,text,text,text,text,integer)';
 begin
   perform pg_temp.ok(
     not has_function_privilege('authenticated', v_sig::regprocedure, 'EXECUTE')
@@ -338,7 +348,28 @@ begin
   perform pg_temp.ok(
     (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
       where n.nspname = 'public' and p.proname = 'fn_signup_school') = 1,
-    '32 and there is exactly one of it, so no call is ambiguous');
+    '32 and exactly one fn_signup_school, so no five-argument call is ambiguous');
+
+  -- 0071 IS INSIDE A BUNDLE A SCHOOL HAS ALREADY PASTED and it hardcodes
+  -- `grant execute on function public.fn_signup_school(text, text, text, text,
+  -- text) to service_role`. The first version of 0127 DROPPED that signature to
+  -- add two parameters, and bundle 7's second paste then failed on the grant
+  -- and rolled the whole bundle back. That is not harmless: later bundles patch
+  -- functions from their own text, so with bundle 7's definitions absent from
+  -- the replay, ELEVEN function bodies came out different. Pasting a bundle
+  -- twice is what a school does when it is not sure the first one took. Caught
+  -- by CI; these three are what stop it coming back.
+  perform pg_temp.ok(
+    to_regprocedure('public.fn_signup_school(text,text,text,text,text)') is not null,
+    '33 the five-argument signature bundle 7 grants is still there');
+  perform pg_temp.ok(
+    has_function_privilege('service_role',
+      'public.fn_signup_school(text,text,text,text,text)'::regprocedure, 'EXECUTE'),
+    '34 and service_role can still call it, which is what that grant is for');
+  perform pg_temp.ok(
+    position('fn_signup_school_on_plan' in pg_get_functiondef(
+      'public.fn_signup_school(text,text,text,text,text)'::regprocedure)) > 0,
+    '35 and it delegates rather than holding a second copy of the rules');
 end $$;
 
 rollback;

@@ -549,6 +549,33 @@ python3 scripts/preflight-gaps.py
 
 echo
 if [ "$fails" = 0 ]; then
+  # --quick SAYS SO, AND THE FIRST VERSION DID NOT. It printed the same
+  # "PREFLIGHT CLEAN. Safe to push." as a full run while skipping the four
+  # passes that only exist because a school pastes bundles by hand: the fresh
+  # installs, the CRLF spelling, the RE-PASTE comparison and the upgrade path.
+  #
+  # That cost a red CI on migration 0127. It added two parameters to
+  # fn_signup_school by dropping the five-argument version, and 0071 grants
+  # exactly that signature, hardcoded, inside a bundle a school has already
+  # pasted. Bundle 7's second paste then failed on the grant and rolled the
+  # whole bundle back, and because later bundles patch functions from their own
+  # text, ELEVEN function bodies came out different. The re-paste comparison is
+  # what catches that, and a clean quick run had said it was safe to push.
+  #
+  # A checker that does not say what it skipped is claiming more than it
+  # checked, which is the same fault as one that lies. The line above this
+  # block says exactly that about the CI steps; it was not true of the mode.
+  if [ "$QUICK" = 1 ]; then
+    echo "QUICK PREFLIGHT CLEAN, and quick is not the whole of it. Skipped:"
+    echo "  the two fresh-database installs (migrations, and bundles)"
+    echo "  the CRLF pass"
+    echo "  re-pasting every bundle and comparing every function body"
+    echo "  the upgrade of an existing school onto the newest bundle"
+    echo "  verify.sql and detect.sql on those databases, at every stage"
+    echo "Run it without --quick before pushing anything that adds, drops or"
+    echo "rewrites a function, or that touches a bundle."
+    exit 0
+  fi
   echo "PREFLIGHT CLEAN. Safe to push."
   exit 0
 fi

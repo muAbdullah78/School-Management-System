@@ -86,17 +86,44 @@ Deno.serve(async (req) => {
     // 1) School + trial. fn_signup_school is the unguarded twin of
     //    fn_provision_school: reachable by service role only, never granted to
     //    any client role, so signup cannot be used to mint schools from the app.
-    const { data: provisioned, error: provErr } = await admin.rpc('fn_signup_school', {
+    const base = {
       p_name: schoolName,
       p_city: city || null,
       p_contact_name: fullName,
       p_contact_phone: phone || null,
       p_contact_email: email,
-      // Omitted rather than sent as null when the form did not say, so the
-      // database's own defaults apply. Sent as null they would override them.
-      ...(planCode ? { p_plan_code: planCode } : {}),
-      ...(Number.isFinite(termMonths) ? { p_term_months: termMonths } : {}),
-    })
+    }
+    // fn_signup_school_on_plan IS THE ONE THAT ASKS. The five-argument
+    // fn_signup_school is still there as a delegate that passes Starter and a
+    // yearly term, which is exactly what this function used to get.
+    //
+    // WHY TWO NAMES AND NOT TWO OVERLOADS: the existing five parameters carry
+    // defaults, Postgres requires any added parameter to carry one too, and a
+    // five-argument call then matches both candidates and is refused as not
+    // unique. Migration 0127's header has it in full, with the error text.
+    //
+    // THE FALLBACK IS WHAT MAKES THIS DEPLOYABLE IN EITHER ORDER. Redeployed
+    // before bundle 33 is pasted, the first call fails with "does not exist"
+    // and the second does what today's deployment does: the school is still
+    // created, on Starter, and can change the plan from Settings afterwards.
+    // Without it, redeploying first would break signup outright until the
+    // bundle landed.
+    let provisioned: unknown = null
+    let provErr: { message?: string } | null = null
+    {
+      const r = await admin.rpc('fn_signup_school_on_plan', {
+        ...base,
+        p_plan_code: planCode ?? 'starter',
+        p_term_months: Number.isFinite(termMonths) ? termMonths : 12,
+      })
+      provisioned = r.data
+      provErr = r.error
+      if (provErr && /does not exist|could not find|schema cache/i.test(provErr.message ?? '')) {
+        const legacy = await admin.rpc('fn_signup_school', base)
+        provisioned = legacy.data
+        provErr = legacy.error
+      }
+    }
     if (provErr) return json({ error: provErr.message }, 400)
     const schoolId = (provisioned as { school_id: string }).school_id
 

@@ -307,27 +307,47 @@ begin
 end $msg$;
 
 -- ---------------------------------------------------------------------------
--- 5. fn_signup_school asks
+-- 5. SIGNUP ASKS, AND THE OLD FIVE-ARGUMENT SIGNATURE HAS TO SURVIVE
 --
--- DROPPED AND RECREATED, not create-or-replace. create-or-replace cannot change
--- an argument list, and adding two defaulted parameters as a second function
--- leaves the old five-argument one in place and every existing five-argument
--- call AMBIGUOUS between them. 0048 hit exactly this and had to drop three
--- functions to add a reason parameter.
+-- THE FIRST VERSION OF THIS DROPPED IT, and CI caught what that costs. 0071 is
+-- inside a bundle a school has already pasted, and it contains, hardcoded:
 --
--- Both new parameters default, so the Edge Function keeps working through a
--- deploy in either order: an old deployment calling with five arguments gets
--- Starter on a yearly term, which is what it gets today, and a new one passes
--- the school's answers.
+--     grant execute on function
+--       public.fn_signup_school(text, text, text, text, text) to service_role;
 --
--- VALIDATED HERE AND NOT ONLY IN THE FORM. The Edge Function runs as the
--- service role and is the one public unauthenticated entry point in the
+-- Drop that signature and the second paste of bundle 7 fails on the grant and
+-- rolls the whole bundle back. Bundle 7 rolling back is not harmless: later
+-- bundles patch functions from their own text, so with bundle 7's own
+-- definitions absent from the replay, ELEVEN function bodies came out
+-- different. Pasting a bundle twice is exactly what a school does when it is
+-- not sure the first one took, which is why that check exists.
+--
+-- SO WHY NOT TWO OVERLOADS OF ONE NAME. Because Postgres will not allow the
+-- only shape that would work. The existing five parameters carry defaults on
+-- arguments two to five, and "input parameters after one with a default value
+-- must also have defaults", so a seven-argument version has to default its
+-- last two as well. A five-argument call then matches both candidates:
+--
+--     ERROR:  function f(unknown, unknown, unknown, unknown, unknown) is not unique
+--     HINT:   Could not choose a best candidate function.
+--
+-- Both shapes tried on Postgres 16 before this was written. It is the same trap
+-- 0048 hit adding a reason parameter, and it is why the answer is a SECOND
+-- NAME rather than a second signature.
+--
+-- fn_signup_school_on_plan holds the implementation. fn_signup_school keeps its
+-- exact signature and becomes a delegate that passes the two defaults it used
+-- to hardcode, so 0071's grant resolves for ever, an Edge Function deployment
+-- that predates this migration keeps working unchanged, and there is still one
+-- copy of the rules.
+--
+-- VALIDATED IN THE DATABASE AND NOT ONLY IN THE FORM. The Edge Function runs as
+-- the service role and is the one public unauthenticated entry point in the
 -- product; a body posted straight at it must not be able to put a school on a
--- plan that does not exist, on a retired plan, or on a 47-month term.
+-- plan that does not exist, on a retired plan, on a plan priced by arrangement,
+-- or on a 47-month term.
 -- ---------------------------------------------------------------------------
-drop function if exists public.fn_signup_school(text, text, text, text, text);
-
-create or replace function public.fn_signup_school(
+create or replace function public.fn_signup_school_on_plan(
   p_name          text,
   p_city          text default null,
   p_contact_name  text default null,
@@ -354,13 +374,14 @@ begin
   --
   -- `price_monthly > 0` MATTERS MORE, and it was found by writing the signup
   -- form rather than by reading this function. The `custom` plan is active, is
-  -- named "Custom (601+ students - contact us)", has price_monthly, price_yearly
-  -- and price_quarterly all zero, and has student_limit NULL. Null means no
-  -- limit at all: plan_margin_limit(null) is null and fn_my_licence reports
-  -- limit_state 'ok' for any roll. So a school choosing it at signup would get
-  -- unlimited pupils, for nothing, for ever, and every renewal invoice would be
-  -- for Rs 0. It is the correct plan for a 900-pupil school and it is priced in
-  -- a conversation, which is exactly why it cannot be self-served.
+  -- named "Custom (601+ students - contact us)", has price_monthly,
+  -- price_yearly and price_quarterly all zero, and has student_limit NULL. Null
+  -- means no limit at all: plan_margin_limit(null) is null and fn_my_licence
+  -- reports limit_state 'ok' for any roll. So a school choosing it at signup
+  -- would get unlimited pupils, for nothing, for ever, and every renewal
+  -- invoice would be for Rs 0. It is the correct plan for a 900-pupil school
+  -- and it is priced in a conversation, which is exactly why it cannot be
+  -- self-served.
   --
   -- Expressed as "has a price" rather than as "is not called custom", so a
   -- second by-arrangement plan added later is barred by the same clause instead
@@ -371,11 +392,11 @@ begin
   if not found then
     if exists (select 1 from public.plans
                 where code = btrim(p_plan_code) and active and price_monthly = 0) then
-      -- `%` and not `%s`. RAISE's only placeholder is a bare percent, so
-      -- `%s` consumes the argument AND leaves a stray "s" in the sentence:
-      -- this line read "The Custom (601+ students - contact us)s plan" until
-      -- it was actually triggered and read. scripts/check-raise-format.py now
-      -- refuses the shape.
+      -- `%` and not `%s`. RAISE's only placeholder is a bare percent, so `%s`
+      -- consumes the argument AND leaves a stray "s" in the sentence: this line
+      -- read "The Custom (601+ students - contact us)s plan" until it was
+      -- actually triggered and read. scripts/check-raise-format.py now refuses
+      -- the shape.
       raise exception 'The "%" plan is priced by arrangement rather than from '
         'the price list, so it cannot be chosen at signup. Start on any of '
         'these and we will move you: %',
@@ -427,15 +448,52 @@ begin
 end;
 $$;
 
--- The same grants the five-argument version carried: service role only, which
--- is what stops signup being a way to mint schools from a browser.
-revoke all on function
-  public.fn_signup_school(text, text, text, text, text, text, integer)
-  from public, anon, authenticated;
-grant execute on function
-  public.fn_signup_school(text, text, text, text, text, text, integer)
-  to service_role;
+revoke all on function public.fn_signup_school_on_plan(
+  text, text, text, text, text, text, integer) from public, anon, authenticated;
+grant execute on function public.fn_signup_school_on_plan(
+  text, text, text, text, text, text, integer) to service_role;
 
+-- The old name, the same signature, now a delegate. `create or replace` and
+-- NOT a drop: the signature is untouched, so the grant 0071 makes on it is
+-- untouched too and nothing has to re-grant anything.
+create or replace function public.fn_signup_school(
+  p_name          text,
+  p_city          text default null,
+  p_contact_name  text default null,
+  p_contact_phone text default null,
+  p_contact_email text default null)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+begin
+  -- The two defaults this function used to hardcode, passed on explicitly. An
+  -- Edge Function deployment that predates 0127 lands here and behaves exactly
+  -- as it did before: Starter, a yearly term, a fourteen day trial.
+  return public.fn_signup_school_on_plan(
+    p_name, p_city, p_contact_name, p_contact_phone, p_contact_email,
+    'starter', 12);
+end;
+$$;
+
+-- ITS GRANTS RESTATED, AND NOT LEFT TO `create or replace` TO PRESERVE.
+--
+-- On a database where this signature still exists, create-or-replace keeps the
+-- ACL 0071 gave it and these two lines change nothing. On one where it does not
+-- (a database that had an earlier draft of this migration applied, which
+-- dropped it), the statement above is a CREATE, and on a real Supabase project
+-- a newly created function is granted to `anon` by default privilege. That is
+-- migration 0125 exactly: `revoke ... from public, anon` without
+-- `authenticated` left an explicit grant standing, and four guards read clean
+-- because both harnesses granted TABLES only.
+--
+-- Caught here by check-definer-idor.py on the one local database that had had
+-- the earlier draft applied, and nowhere else: a fresh install from the bundles
+-- passed, because there the function already existed and its ACL was inherited.
+-- An ACL that depends on which draft of a migration a database saw first is not
+-- an ACL, so it is stated.
+revoke all on function public.fn_signup_school(text, text, text, text, text)
+  from public, anon, authenticated;
+grant execute on function public.fn_signup_school(text, text, text, text, text)
+  to service_role;
 -- ---------------------------------------------------------------------------
 -- 6. fn_my_licence SAYS HOW OFTEN, AS WELL AS HOW MUCH
 --
@@ -543,25 +601,55 @@ begin
       '(found % of monthly, quarterly, yearly)', v_n;
   end if;
 
-  -- 2. Exactly one fn_signup_school, so no call of it is ambiguous.
+  -- 2. EXACTLY ONE fn_signup_school, and it is still the five-argument one.
+  --    Two overloads of this name make every five-argument call ambiguous,
+  --    because arguments two to five carry defaults and Postgres requires any
+  --    added parameter to carry one too. That is why the new work has a second
+  --    NAME rather than a second signature.
   select count(*) into v_n from pg_proc p
     join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'fn_signup_school';
   if v_n <> 1 then
     raise exception '0127: there are % functions named fn_signup_school. Two '
-      'overloads make every existing five-argument call ambiguous, which is '
-      'why the old one is dropped rather than replaced.', v_n;
+      'overloads of it make every five-argument call ambiguous.', v_n;
   end if;
 
-  -- 3. It is still service-role only. This is the one public unauthenticated
-  --    path in the product; reachable from a browser it mints schools.
-  if has_function_privilege('authenticated',
-       'public.fn_signup_school(text,text,text,text,text,text,integer)'::regprocedure, 'EXECUTE')
-     or has_function_privilege('anon',
-       'public.fn_signup_school(text,text,text,text,text,text,integer)'::regprocedure, 'EXECUTE') then
-    raise exception '0127: fn_signup_school is callable from a browser, which '
-      'is a way to create schools without signing up';
+  -- 2b. AND THE SIGNATURE 0071 GRANTS STILL EXISTS. 0071 sits inside a bundle
+  --     a school has already pasted and hardcodes `grant execute on function
+  --     public.fn_signup_school(text, text, text, text, text) to
+  --     service_role`. Drop that signature and the second paste of bundle 7
+  --     fails on the grant and rolls the whole bundle back, and later bundles
+  --     that patch functions from their own text then leave eleven different
+  --     bodies behind. CI caught it; this is what stops it coming back.
+  if to_regprocedure('public.fn_signup_school(text,text,text,text,text)') is null then
+    raise exception '0127: fn_signup_school(text,text,text,text,text) does not '
+      'exist. 0071 grants exactly that signature and cannot be edited, so its '
+      'bundle would roll back on a re-paste and eleven function bodies would '
+      'come out different.';
   end if;
+
+  -- 2c. And the delegate really delegates, so there is one copy of the rules.
+  if position('fn_signup_school_on_plan' in coalesce(pg_get_functiondef(
+       to_regprocedure('public.fn_signup_school(text,text,text,text,text)')::oid), '')) = 0 then
+    raise exception '0127: fn_signup_school no longer calls '
+      'fn_signup_school_on_plan, so signup has two implementations and they '
+      'will drift';
+  end if;
+
+  -- 3. Both are still service-role only. This is the one public
+  --    unauthenticated path in the product; reachable from a browser it mints
+  --    schools.
+  for v_src in
+    select p.proname from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and p.proname in ('fn_signup_school', 'fn_signup_school_on_plan')
+       and (has_function_privilege('authenticated', p.oid, 'EXECUTE')
+            or has_function_privilege('anon', p.oid, 'EXECUTE'))
+  loop
+    raise exception '0127: % is callable from a browser, which is a way to '
+      'create schools without signing up', v_src;
+  end loop;
 
   -- 4. Nothing decides what a term is called by hand any more.
   for v_src in
@@ -601,8 +689,8 @@ begin
      where active and price_monthly = 0 order by sort_order limit 1;
     if v_free is not null then
       begin
-        perform public.fn_signup_school('0127 probe', null, null, null, null,
-                                        v_free, 12);
+        perform public.fn_signup_school_on_plan('0127 probe', null, null,
+                                                null, null, v_free, 12);
         raise exception '0127: fn_signup_school accepted the "%" plan, which has '
           'no price and no student limit, so that is unlimited pupils for '
           'nothing for ever', v_free;

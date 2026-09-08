@@ -2373,11 +2373,21 @@ union all
 -- column default, so every school was on Starter paying annually whatever had
 -- been agreed. Two clauses, and the second one is the money.
 select 'a school picks its plan and its term (0127)',
-       case when to_regprocedure(
-              'public.fn_signup_school(text,text,text,text,text,text,integer)') is null
+       case when to_regprocedure('public.fn_signup_school_on_plan'
+              || '(text,text,text,text,text,text,integer)') is null
          then 'FAIL: nobody is asked which plan or how often they will pay, so '
               || 'every new school is put on Starter paying yearly and quoted a '
               || 'figure it did not choose; apply '
+              || 'supabase/bundles/33_a_school_picks_its_plan_and_how_it_pays.sql'
+         -- The five-argument name has to survive alongside it. 0071 is inside a
+         -- bundle a school has already pasted and grants exactly that
+         -- signature; without it, bundle 7 rolls back on a re-paste and eleven
+         -- function bodies come out different. Found by CI, not by reading.
+         when to_regprocedure(
+                'public.fn_signup_school(text,text,text,text,text)') is null
+         then 'FAIL: fn_signup_school(text,text,text,text,text) is gone, and '
+              || 'bundle 7 grants exactly that signature, so re-pasting the '
+              || 'bundles now rolls bundle 7 back; re-apply '
               || 'supabase/bundles/33_a_school_picks_its_plan_and_how_it_pays.sql'
          when not exists (select 1 from pg_enum e
                             join pg_type ty on ty.oid = e.enumtypid
@@ -2445,7 +2455,7 @@ select 'signup cannot reach a plan priced by arrangement (0127)',
          when position('price_monthly > 0' in coalesce(pg_get_functiondef(
                 to_regprocedure('public.fn_signup_plans()')::oid), '')) = 0
            or position('price_monthly > 0' in coalesce(pg_get_functiondef(
-                to_regprocedure('public.fn_signup_school'
+                to_regprocedure('public.fn_signup_school_on_plan'
                   || '(text,text,text,text,text,text,integer)')::oid), '')) = 0
          then 'FAIL: signup can reach a plan with no price, which has no student '
               || 'limit either: a school choosing it gets unlimited pupils for '

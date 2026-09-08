@@ -967,8 +967,10 @@ with sig(migration, object, present) as (values
   -- to be able to say quarterly; and nothing may still work the renewal out
   -- from the cycle, which is the half that sends a school the wrong figure.
   ('0127_a_school_picks_its_plan_and_how_it_pays', 'a school picks its plan and its term',
-     to_regprocedure(
-       'public.fn_signup_school(text,text,text,text,text,text,integer)') is not null
+     to_regprocedure('public.fn_signup_school_on_plan'
+       || '(text,text,text,text,text,text,integer)') is not null
+     -- And the five-argument name still there for 0071's grant: see verify.sql.
+     and to_regprocedure('public.fn_signup_school(text,text,text,text,text)') is not null
      and exists (select 1 from pg_enum e
                    join pg_type ty on ty.oid = e.enumtypid
                    join pg_namespace n2 on n2.oid = ty.typnamespace

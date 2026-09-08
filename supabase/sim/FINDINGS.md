@@ -1630,3 +1630,87 @@ ERROR:  function public.fn_signup_plans() does not exist
 `pg_get_functiondef(to_regprocedure('...')::oid)` is the safe idiom:
 `to_regprocedure` returns null for a missing function and
 `pg_get_functiondef(null)` is null.
+
+### And then CI failed on the push, three steps away from the cause
+
+`re-pasting the bundles changed a function body`, naming eleven of them:
+`fn_enter_marks`, `fn_generate_result_cards`, `fn_global_search`,
+`fn_platform_ledger`, `may_view` and six more. None of which 0127 goes near.
+
+The chain, established by reproducing it rather than by reading: built the
+bundles database at bundle 32 and re-pasted, which changed nothing; built it at
+33 and re-pasted, which did. Bundles 1 and 3 roll back on a second paste and
+always have (`type "user_role" already exists`), and that is harmless. **Bundle
+7 started rolling back too**, on this:
+
+```
+ERROR:  function public.fn_signup_school(text, text, text, text, text) does not exist
+CONTEXT:  grant execute on function
+          public.fn_signup_school(text, text, text, text, text) to service_role
+```
+
+0071 grants that signature, hardcoded, and 0071 is inside a bundle a school has
+already pasted, so it cannot be edited. 0127 dropped the signature to add two
+parameters. Bundle 7 is otherwise idempotent, so unlike bundles 1 and 3 it
+normally re-applies cleanly and reaches that grant. Rolling back meant bundle
+7's own definitions were absent from the replay, and the later bundles that
+patch functions from their own text then patched a different starting text.
+Pasting a bundle twice is exactly what a school does when it is not sure the
+first one took.
+
+**Two overloads of one name would not have worked either.** The existing five
+parameters carry defaults on arguments two to five, and Postgres requires any
+added parameter to carry one too, so a five-argument call matches both
+candidates:
+
+```
+ERROR:  function f(unknown, unknown, unknown, unknown, unknown) is not unique
+HINT:   Could not choose a best candidate function.
+```
+
+Both shapes tried on Postgres 16. So the answer is a second NAME:
+`fn_signup_school_on_plan` holds the implementation, and `fn_signup_school`
+keeps its exact signature as a delegate passing the two defaults it used to
+hardcode. 0071's grant resolves for ever, an Edge Function deployment that
+predates the migration keeps working, and there is one copy of the rules. The
+Edge Function calls the new name and falls back to the old one on "does not
+exist", so the two are deployable in either order.
+
+Asserted three ways now: guard 2b inside the migration, a `verify.sql` clause,
+and assertions 33 to 35 of the suite.
+
+### Fixing that exposed one more, on one database out of four
+
+`check-definer-idor.py` reported `fn_signup_school` callable without a login,
+on `migcheck` and on none of the fresh installs. Because on a fresh install the
+five-argument function already exists and `create or replace` inherits its ACL;
+on `migcheck`, which had had the drop-and-recreate draft applied, the same
+statement was a CREATE, and **on a real Supabase project a newly created
+function is granted to `anon` by default privilege.** That is F25 exactly. An
+ACL that depends on which draft of a migration a database happened to see first
+is not an ACL, so both signatures now have their grants stated outright.
+
+### The durable fix is about the tooling, not the code
+
+`scripts/preflight.sh --quick` printed the same **"PREFLIGHT CLEAN. Safe to
+push."** as a full run, while skipping the four passes that exist only because a
+school pastes bundles by hand: the fresh installs, the CRLF spelling, the
+re-paste comparison, and the upgrade. The re-paste comparison is the one that
+catches this, and a clean quick run had said it was safe.
+
+The script already carried this, in a comment above the CI-gaps block:
+
+> A checker that does not say what it skipped is claiming more than it checked,
+> which is the same fault as one that lies.
+
+True of the CI steps it lists, and not true of its own mode. Quick mode now
+names all four skipped passes and says to run the full one before pushing
+anything that adds, drops or rewrites a function.
+
+**A static checker was written for this and then deleted.** It extracted every
+`grant execute on function` signature from every migration and asserted each
+still existed. It found **fourteen** pre-existing cases, all harmless, because
+their bundles roll back earlier on a second paste and never reach the grant.
+Distinguishing harmful from harmless needs exactly the two-pass database
+comparison that already exists, so the checker would have been fourteen
+exemptions nobody maintains: a guard that cries wolf, which is worse than none.
