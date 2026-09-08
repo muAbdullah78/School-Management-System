@@ -153,6 +153,40 @@ step "rendering harnesses still render" bash -c 'cd web && npm run harness:node2
 
 echo
 echo "== the database, against \$PGDATABASE =="
+
+# A GUARD ON THE GUARDS, and it exists because four of them read clean on a real
+# defect. Several checks below assert that no internal fn__ helper is executable
+# by `authenticated`. Whether a function HAS such a grant depends entirely on the
+# default privileges of the database it was created in: a real Supabase project
+# grants functions to authenticated, so `revoke ... from public` leaves an
+# explicit grant behind, while a database built with the TABLES line alone
+# produces functions with no grant at all and nothing for those checks to find.
+#
+# 0123 shipped a helper that was reachable from a browser. verify.sql,
+# detect.sql, check-definer-idor.py and check-reachable.sh ALL pass on it here,
+# and a school found it by running verify.sql on its own project. So this asks
+# whether the database being checked can express the defect, and refuses to
+# report on it if it cannot.
+step "\$PGDATABASE can express a function grant" bash -c '
+  n=$(psql -tA -c "select count(*) from pg_default_acl d
+                     join pg_namespace n on n.oid = d.defaclnamespace
+                    where n.nspname = '"'"'public'"'"'
+                      and d.defaclobjtype = '"'"'f'"'"'
+                      and array_to_string(d.defaclacl, '"'"' '"'"') like '"'"'%authenticated=%'"'"'" 2>/dev/null)
+  if [ "${n:-0}" -ge 1 ]; then exit 0; fi
+  echo "      $PGDATABASE has no default privilege granting FUNCTIONS to"
+  echo "      authenticated, so every function in it carries no such grant and"
+  echo "      the fn__ reachability checks below cannot fail. Rebuild it with"
+  echo "      the same three lines a real Supabase project has:"
+  echo
+  echo "        alter default privileges in schema public"
+  echo "          grant all on tables, functions and sequences to postgres, anon,"
+  echo "          authenticated, service_role;   (one line each)"
+  echo
+  echo "      supabase/reset.sql has them; a database built from an older copy"
+  echo "      of this script does not."
+  exit 1'
+
 for g in check-columns-used.sh check-constraint-functions.sh check-reachable.sh check-rpc-contract.sh; do
   step "$g" bash -c "./supabase/$g"
 done
@@ -186,6 +220,13 @@ do $$ begin
   if not exists (select 1 from pg_roles where rolname='service_role') then create role service_role nologin; end if;
 end $$;
 alter default privileges in schema public grant all on tables to postgres, anon, authenticated, service_role;
+-- Functions and sequences as well, because a real Supabase project grants them
+-- and that changes what a new function's ACL looks like. See 0125: with only
+-- the TABLES line, a function created by a migration carries no grant to
+-- `authenticated`, so every guard asserting "no fn__ helper is reachable from a
+-- browser" passes on a database where it could not have failed.
+alter default privileges in schema public grant all on functions to postgres, anon, authenticated, service_role;
+alter default privileges in schema public grant all on sequences to postgres, anon, authenticated, service_role;
 SQL
     if [ "$mode" = migrations ]; then
       files=$(ls supabase/migrations/*.sql)
@@ -242,6 +283,13 @@ do $$ begin
   if not exists (select 1 from pg_roles where rolname='service_role') then create role service_role nologin; end if;
 end $$;
 alter default privileges in schema public grant all on tables to postgres, anon, authenticated, service_role;
+-- Functions and sequences as well, because a real Supabase project grants them
+-- and that changes what a new function's ACL looks like. See 0125: with only
+-- the TABLES line, a function created by a migration carries no grant to
+-- `authenticated`, so every guard asserting "no fn__ helper is reachable from a
+-- browser" passes on a database where it could not have failed.
+alter default privileges in schema public grant all on functions to postgres, anon, authenticated, service_role;
+alter default privileges in schema public grant all on sequences to postgres, anon, authenticated, service_role;
 SQL
   rm -rf /tmp/pf-crlf && mkdir -p /tmp/pf-crlf
   for b in supabase/bundles/*.sql; do sed 's/$/\r/' "$b" > "/tmp/pf-crlf/$(basename "$b")"; done
@@ -322,6 +370,13 @@ do $$ begin
   if not exists (select 1 from pg_roles where rolname='service_role') then create role service_role nologin; end if;
 end $$;
 alter default privileges in schema public grant all on tables to postgres, anon, authenticated, service_role;
+-- Functions and sequences as well, because a real Supabase project grants them
+-- and that changes what a new function's ACL looks like. See 0125: with only
+-- the TABLES line, a function created by a migration carries no grant to
+-- `authenticated`, so every guard asserting "no fn__ helper is reachable from a
+-- browser" passes on a database where it could not have failed.
+alter default privileges in schema public grant all on functions to postgres, anon, authenticated, service_role;
+alter default privileges in schema public grant all on sequences to postgres, anon, authenticated, service_role;
 SQL
   ok=1
   for b in $(ls supabase/bundles/*.sql | sort -V); do
@@ -402,6 +457,13 @@ do $$ begin
   if not exists (select 1 from pg_roles where rolname='service_role') then create role service_role nologin; end if;
 end $$;
 alter default privileges in schema public grant all on tables to postgres, anon, authenticated, service_role;
+-- Functions and sequences as well, because a real Supabase project grants them
+-- and that changes what a new function's ACL looks like. See 0125: with only
+-- the TABLES line, a function created by a migration carries no grant to
+-- `authenticated`, so every guard asserting "no fn__ helper is reachable from a
+-- browser" passes on a database where it could not have failed.
+alter default privileges in schema public grant all on functions to postgres, anon, authenticated, service_role;
+alter default privileges in schema public grant all on sequences to postgres, anon, authenticated, service_role;
 SQL
     for b in $(ls supabase/bundles/*.sql | sort -V                | awk -F/ -v n="$upto" '{ x = $NF; sub(/_.*/, "", x); if (x + 0 <= n + 0) print }'); do
       psql -q -d "$db" -v ON_ERROR_STOP=1 -f "$b" >/dev/null 2>&1
