@@ -189,6 +189,59 @@ export const IconLogout = svg(
   </>,
 )
 
+/**
+ * A birthday cake with three lit candles.
+ *
+ * Birthdays and Enquiries were the only two rows in the sidebar with no glyph
+ * at all: `NAV_ICONS[item.path]` came back undefined and AppShell rendered the
+ * empty badge, so both rows showed a blank square where every other row shows
+ * a symbol. A row that draws an empty box is worse than a row with no box,
+ * because the box says "something belongs here" and then withholds it. The
+ * test in navigation.test.ts now makes that state impossible to reach.
+ */
+export const IconBirthday = svg(
+  <>
+    <path d="M4 20v-6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v6z" />
+    <path d="M4 16.5h16" />
+    <path d="M8 12V9M12 12V8M16 12V9" />
+    <path d="M8 6.6h.01M12 5.6h.01M16 6.6h.01" />
+  </>,
+)
+
+/**
+ * A question inside a circle: somebody asked.
+ *
+ * NOT a speech bubble, which is what an enquiry first suggests, because
+ * IconWhatsApp is already a bubble and sits four rows away in the same
+ * sidebar. Two bubbles would leave the reader counting rows again, which is
+ * the whole thing the icons are there to stop.
+ */
+export const IconEnquiries = svg(
+  <>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M9.4 9.2a2.7 2.7 0 0 1 5.2.9c0 1.8-2.6 2.2-2.6 3.9" />
+    <path d="M12 17.2h.01" />
+  </>,
+)
+
+/**
+ * The cash drawer, seen from above: three coin compartments and a note slot.
+ *
+ * Accounts and Cash drawer BOTH drew IconWallet, which is the same failure as
+ * a missing icon wearing a disguise: the reader looks for the money row and
+ * finds two identical ones. Accounts keeps the wallet, because it is about the
+ * money as a total; the drawer gets the tray, because it is about the cash in
+ * front of you.
+ */
+export const IconDrawer = svg(
+  <>
+    <rect x="2.5" y="7" width="19" height="11" rx="2" />
+    <path d="M2.5 11.5h19" />
+    <path d="M8 7v4.5M16 7v4.5" />
+    <circle cx="12" cy="14.9" r="1.7" />
+  </>,
+)
+
 /** Nav path -> icon, so the shell stays declarative. */
 export const NAV_ICONS: Record<string, (p: IconProps) => JSX.Element> = {
   '/': IconDashboard,
@@ -205,6 +258,8 @@ export const NAV_ICONS: Record<string, (p: IconProps) => JSX.Element> = {
   '/my-class': IconMyClass,
   '/platform': IconPlatform,
   '/accounts': IconWallet,
-  '/till': IconWallet,
+  '/till': IconDrawer,
   '/messages': IconWhatsApp,
+  '/birthdays': IconBirthday,
+  '/enquiries': IconEnquiries,
 }
