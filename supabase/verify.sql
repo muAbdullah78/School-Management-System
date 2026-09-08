@@ -888,17 +888,50 @@ union all
 -- `anon` usage on the schema. Each function refused on its own gate, so nothing
 -- leaked — but the next one to forget its gate would have been open to the
 -- internet rather than to this school's staff.
+-- ONE COPY OF THE PREDICATE, and the first version of this row had two: the
+-- PASS test and the FAIL message each carried their own. They disagreed the
+-- moment the exemption below was added, and the row rendered as
+--
+--     unauthenticated callers can run nothing (0071)|
+--
+-- with an empty verdict, because the FAIL branch excluded the exempted name
+-- from the list it names, string_agg over an empty set is null, and
+-- 'FAIL: ' || null is null. A diagnostic that goes blank when it fails is
+-- worse than no diagnostic. So the list of offenders IS the test: null means
+-- nothing is open.
 select 'unauthenticated callers can run nothing (0071)',
-       case when not exists (select 1 from pg_proc p
-                              join pg_namespace n on n.oid = p.pronamespace
-                              where n.nspname = 'public'
-                                and has_function_privilege('anon', p.oid, 'execute'))
-       then 'PASS' else 'FAIL: re-run bundle 7 ('
-            || (select count(*)::text from pg_proc p
-                 join pg_namespace n on n.oid = p.pronamespace
-                where n.nspname = 'public'
-                  and has_function_privilege('anon', p.oid, 'execute'))
-            || ' functions still open)' end
+       coalesce(
+         'FAIL: ' || (
+           select string_agg(p.proname, ', ' order by p.proname)
+             from pg_proc p
+             join pg_namespace n on n.oid = p.pronamespace
+            where n.nspname = 'public'
+              and has_function_privilege('anon', p.oid, 'execute')
+              -- THE ONE EXEMPTION, AND IT HAS TO EARN ITSELF ON EVERY RUN.
+              -- fn_signup_plans (0127) is read by the signup form, which has
+              -- no login: the form shows three plans and nine prices, and
+              -- fn__plan_price is a rule and not a lookup, so a browser copy
+              -- of it would quote a figure the first invoice contradicts the
+              -- moment any of the nine rates moves. It exposes nothing new,
+              -- because `plans` already carries a SELECT policy for anon for
+              -- the same reason.
+              --
+              -- Not a bare name, though. The exemption holds only while the
+              -- function cannot write (stable or immutable) and touches
+              -- nothing in public except the published price list. Widen it to
+              -- a tenant table, or make it volatile, and it is named here like
+              -- anything else.
+              and not (
+                p.proname = 'fn_signup_plans'
+                and p.provolatile in ('i', 's')
+                and not exists (
+                  select 1 from regexp_matches(p.prosrc, 'public\.(\w+)', 'g') m
+                   where m[1] not in ('plans', 'fn__plan_price')))
+         ) || ' can be called by an unauthenticated request. Re-run bundle 7. '
+           || 'If the name above is fn_signup_plans, it no longer meets the '
+           || 'terms of its exemption: it must be stable and must read nothing '
+           || 'in public but the price list.',
+         'PASS')
 
 union all
 -- 0072. Two lookups resolved a row by NAME or TYPE across every school: the
@@ -2332,6 +2365,93 @@ select 'the audit log is not mostly the register (0126)',
               || 'supabase/bundles/32_the_register_was_written_twice.sql to fold '
               || 'and remove them, then `vacuum full public.audit_log;` on its '
               || 'own to give the space back'
+       end
+
+union all
+-- 0127. Reported as "a starter plan is by default, annual payment showing in
+-- the settings". fn_signup_school hardcoded the plan and left the term at the
+-- column default, so every school was on Starter paying annually whatever had
+-- been agreed. Two clauses, and the second one is the money.
+select 'a school picks its plan and its term (0127)',
+       case when to_regprocedure(
+              'public.fn_signup_school(text,text,text,text,text,text,integer)') is null
+         then 'FAIL: nobody is asked which plan or how often they will pay, so '
+              || 'every new school is put on Starter paying yearly and quoted a '
+              || 'figure it did not choose; apply '
+              || 'supabase/bundles/33_a_school_picks_its_plan_and_how_it_pays.sql'
+         when not exists (select 1 from pg_enum e
+                            join pg_type ty on ty.oid = e.enumtypid
+                            join pg_namespace n on n.oid = ty.typnamespace
+                           where n.nspname = 'public'
+                             and ty.typname = 'billing_cycle'
+                             and e.enumlabel = 'quarterly')
+         then 'FAIL: a school paying every three months is recorded as monthly, '
+              || 'on its invoice and in the console, because billing_cycle has no '
+              || 'quarterly; re-apply '
+              || 'supabase/bundles/33_a_school_picks_its_plan_and_how_it_pays.sql'
+         else 'PASS'
+       end
+
+union all
+-- The one that is a wrong number sent to a customer. The invoice is priced by
+-- fn__renewals_due on subscriptions.term_months; these two worked the months
+-- out from the cycle instead. A school on a monthly term whose last period was
+-- yearly has Rs 2,000 coming and was told Rs 20,000, by the console and by the
+-- message we send it.
+select 'the renewal quote matches the renewal invoice (0127)',
+       case when exists (
+              select 1 from pg_proc p
+                join pg_namespace n on n.oid = p.pronamespace
+               where n.nspname = 'public' and p.prokind = 'f'
+                 and p.prosrc ~ 'cycle = ''yearly'' then 12 else 1 end')
+         then 'FAIL: ' || (select string_agg(p.proname, ', ' order by p.proname)
+                             from pg_proc p
+                             join pg_namespace n on n.oid = p.pronamespace
+                            where n.nspname = 'public' and p.prokind = 'f'
+                              and p.prosrc ~ 'cycle = ''yearly'' then 12 else 1 end')
+              || ' works the renewal out from the billing cycle while the invoice '
+              || 'is priced on term_months, so a school can be quoted twelve times '
+              || 'or a third of what it will actually be charged; apply '
+              || 'supabase/bundles/33_a_school_picks_its_plan_and_how_it_pays.sql'
+         else 'PASS'
+       end
+
+union all
+-- And the loophole found while writing the signup form. Every plan priced by
+-- arrangement has student_limit NULL, which means no limit at all, and
+-- price_monthly 0, which means every renewal invoice is for Rs 0. Reachable
+-- from signup it is unlimited pupils for nothing, for ever.
+--
+-- READ OFF THE FUNCTION TEXT AND NOT BY CALLING IT, and the first version of
+-- this row did call it. A reference to a function is resolved when the
+-- statement is PARSED, not when the branch is reached, so
+-- `select ... from jsonb_array_elements(public.fn_signup_plans())` inside a
+-- CASE arm brought the WHOLE of verify.sql down on any database that has not
+-- had bundle 33 applied yet:
+--
+--     ERROR:  function public.fn_signup_plans() does not exist
+--
+-- which is every database this file exists to diagnose. to_regprocedure is a
+-- runtime string lookup and is safe; calling the function is not.
+select 'signup cannot reach a plan priced by arrangement (0127)',
+       case when to_regprocedure('public.fn_signup_plans()') is null
+         then 'note: the signup form has no plan list of its own to read, so it '
+              || 'offers nothing and falls back to the first plan on sale'
+         -- pg_get_functiondef(to_regprocedure(...)) AND NOT ::regprocedure.
+         -- Casting a CONSTANT to regprocedure is folded before the CASE arm is
+         -- reached and throws on a database where the function does not exist
+         -- yet, which brought the whole file down. to_regprocedure returns null
+         -- instead, and pg_get_functiondef(null) is null.
+         when position('price_monthly > 0' in coalesce(pg_get_functiondef(
+                to_regprocedure('public.fn_signup_plans()')::oid), '')) = 0
+           or position('price_monthly > 0' in coalesce(pg_get_functiondef(
+                to_regprocedure('public.fn_signup_school'
+                  || '(text,text,text,text,text,text,integer)')::oid), '')) = 0
+         then 'FAIL: signup can reach a plan with no price, which has no student '
+              || 'limit either: a school choosing it gets unlimited pupils for '
+              || 'nothing and every renewal invoice for Rs 0; re-apply '
+              || 'supabase/bundles/33_a_school_picks_its_plan_and_how_it_pays.sql'
+         else 'PASS'
        end
 
 union all

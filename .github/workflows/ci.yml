@@ -188,6 +188,22 @@ jobs:
         working-directory: .
         run: python3 scripts/check-no-emdash.py
 
+      - name: RAISE takes a bare % and not a printf placeholder
+        # plpgsql's RAISE substitutes each argument at a bare `%`. It has no
+        # %s, %d, %I or %L: those belong to format(). Write one by habit and
+        # the `%` still consumes the argument and the letter is left in the
+        # sentence:
+        #
+        #   raise exception 'The %s plan is priced by arrangement', v_name;
+        #   ERROR: The Custom (601+ students - contact us)s plan is priced ...
+        #
+        # Silent until somebody actually hits the error, which is the moment
+        # they most need the sentence to read cleanly. Two were in the tree and
+        # neither had ever been printed. Only the FORMAT STRING is scanned, so
+        # format('%s', x) passed as a RAISE argument is correct and not flagged.
+        working-directory: .
+        run: python3 scripts/check-raise-format.py
+
       - name: No school action depends on a browser dialog
         # window.prompt asked for money amounts and audit reasons at twelve call
         # sites: applying a fine, waiving one, adjusting a balance, reversing a
@@ -1332,6 +1348,25 @@ jobs:
         # about a payment changed. It is what fails if somebody widens the skip
         # list "while they are in there".
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/audit_volume.sql
+
+      - name: A school picks its plan and its term, and one column prices it
+        # Assertions 26 to 29 are the money. The invoice is built by
+        # fn__renewals_due from subscriptions.term_months; fn_platform_due_soon
+        # and fn_platform_renewal_message worked the months out from the cycle
+        # instead, and fn_activate_subscription never wrote term_months at all.
+        # Staged on a real database before this suite existed: a school on a
+        # monthly term whose last period was yearly had Rs 2,000 coming, and
+        # both the console worklist and the WhatsApp message said Rs 20,000.
+        #
+        # Assertion 12 is what makes the migration and the Edge Function
+        # deployable in either order: five arguments still means Starter on a
+        # yearly term.
+        #
+        # Assertions 13 to 18 are the refusals, including the loophole found
+        # while writing the form rather than while reading the function: a plan
+        # priced by arrangement has student_limit NULL, so reaching one from
+        # signup is unlimited pupils for nothing, for ever.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/plan_and_term.sql
 
       - name: Remarks and position holders — do ties and remarks survive?
         # Assertion 12 is why exam_remarks is its own table rather than a column

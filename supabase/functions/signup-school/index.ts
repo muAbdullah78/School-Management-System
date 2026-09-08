@@ -59,6 +59,24 @@ Deno.serve(async (req) => {
     const password = String(body.password ?? '')
     const phone = String(body.phone ?? '').trim()
     const city = String(body.city ?? '').trim()
+    // THE PLAN AND THE TERM THE SCHOOL PICKED ON THE FORM.
+    //
+    // Both optional, and both defaulted BY THE DATABASE rather than here.
+    // fn_signup_school's two new parameters carry defaults of 'starter' and 12,
+    // which is exactly what this function used to produce, so a deployment of
+    // this file that predates migration 0127 and a database that predates this
+    // file both keep working. That is what makes the two deployable in either
+    // order.
+    //
+    // NOT VALIDATED HERE beyond the type. The database refuses a plan that does
+    // not exist, one that is no longer sold, one priced by arrangement (which
+    // has no student limit, so it would be unlimited pupils for nothing), and
+    // any term that is not one of the three on the price list. This is the one
+    // public unauthenticated entry point in the product: a body posted straight
+    // at it has to meet the same wall as the form, and a second copy of the
+    // rules here would be a second thing to keep in step.
+    const planCode = body.plan_code == null ? undefined : String(body.plan_code).trim()
+    const termMonths = body.term_months == null ? undefined : Number(body.term_months)
 
     if (schoolName.length < 2) return json({ error: 'Please enter your school name.' }, 400)
     if (!fullName) return json({ error: 'Please enter your name.' }, 400)
@@ -74,6 +92,10 @@ Deno.serve(async (req) => {
       p_contact_name: fullName,
       p_contact_phone: phone || null,
       p_contact_email: email,
+      // Omitted rather than sent as null when the form did not say, so the
+      // database's own defaults apply. Sent as null they would override them.
+      ...(planCode ? { p_plan_code: planCode } : {}),
+      ...(Number.isFinite(termMonths) ? { p_term_months: termMonths } : {}),
     })
     if (provErr) return json({ error: provErr.message }, 400)
     const schoolId = (provisioned as { school_id: string }).school_id

@@ -91,6 +91,7 @@ echo "== the cheap ones =="
 step "bundles are in sync with the migrations" bash -c \
   './supabase/build-bundles.sh >/dev/null && git diff --exit-code --stat supabase/bundles/'
 step "no em dashes" python3 scripts/check-no-emdash.py
+step "RAISE takes a bare %" python3 scripts/check-raise-format.py
 step "no browser dialogs (prompt/alert/confirm)" python3 scripts/check-no-browser-dialogs.py
 step "a stale shell cannot go blank silently" python3 scripts/check-stale-shell.py
 step "every CI step can find its own files" python3 scripts/check-ci-workdir.py
@@ -242,8 +243,20 @@ SQL
     done
     [ "$ok" = 1 ] && printf '%-52s ok\n' "$mode apply cleanly"
 
-    n=$(psql -tA -d "$db" -c "select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and has_function_privilege('anon', p.oid,'execute')" 2>/dev/null)
-    if [ "${n:-1}" = 0 ]; then printf '%-52s ok\n' "$mode: anon can execute nothing"
+    # ONE NAMED EXEMPTION, and it is excluded here by name only. The SHAPE of
+    # the exemption (fn_signup_plans must be stable and must touch nothing in
+    # public but the published price list) is asserted by verify.sql's 0071 row
+    # and by detect.sql's 0071 signature, both of which run below on this same
+    # database. This step is the cheap count that still reports if verify.sql
+    # itself is broken; it is deliberately weaker rather than a second opinion.
+    #
+    # The exemption exists because the signup form has no login and has to show
+    # nine prices, and fn__plan_price is a rule rather than a lookup: a browser
+    # copy of it quotes a figure the first invoice contradicts the moment any
+    # rate moves. It exposes nothing new, because `plans` already carries a
+    # SELECT policy for anon.
+    n=$(psql -tA -d "$db" -c "select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and has_function_privilege('anon', p.oid,'execute') and p.proname <> 'fn_signup_plans'" 2>/dev/null)
+    if [ "${n:-1}" = 0 ]; then printf '%-52s ok\n' "$mode: anon can execute nothing but the price list"
     else printf '%-52s FAIL (%s open)\n' "$mode: anon can execute nothing" "$n"; fails=$((fails + 1)); fi
 
     verify_clean "$db" "$mode: verify.sql renders and has no FAIL row"

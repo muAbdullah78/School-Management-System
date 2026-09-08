@@ -28,6 +28,9 @@ export interface Licence {
   days_left: number | null
   student_count: number
   student_limit: number | null
+  /** How many months the NEXT invoice covers. 1, 3 or 12 from the price list;
+   *  an operator can invoice any number from 1 to 60. */
+  term_months?: number | null
   margin_limit: number | null
   limit_state: LimitState
   limit_notice: string | null

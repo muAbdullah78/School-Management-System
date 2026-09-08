@@ -1440,3 +1440,193 @@ this whole pass exists to fix.
   real databases: the trimmed school passes, and the same school with
   `update audit_log set created_at = now()` fails with *2000 of the audit log's
   2000 rows are on one single day, so the clock pass did not run.*
+
+---
+
+## F28. Nobody was ever asked which plan they were on, and three places disagreed about what the answer was. **Fixed in migration 0127.**
+
+**Severity: high. Two of the three faults are wrong numbers about money, and one
+of them is a wrong number sent to the customer.**
+
+Reported by the vendor, looking at Settings on a school he had just created:
+*"a starter plan is by default, annual payment showing in the settings. When
+they create a school the system should give them a choice to pick a plan and
+pick how they will want to continue: monthly, quarterly or yearly."*
+
+### Fault 1: the choice is not offered, and the default is silent
+
+`fn_signup_school`, in full, on the subscription it creates:
+
+```sql
+insert into public.subscriptions (school_id, plan_code, status, trial_ends_on)
+values (v_id, 'starter', 'trialing', current_date + 14);
+```
+
+Plan hardcoded. `cycle` left to the column default of `yearly`. `term_months`
+left to the column default of 12. So every school in the console is on Starter
+paying annually whatever was agreed on the phone. It is not a display bug:
+`fn_my_next_payment` prices the next charge from `term_months`, so a school that
+agreed Rs 2,000 a month is shown **Rs 20,000** and told that is what is due when
+the trial ends.
+
+### Fault 2: quarterly is priced and cannot be recorded
+
+`plans.price_quarterly` is populated for all three sold plans, is charged by
+`fn__plan_price`, and is one of the three terms `fn_my_next_payment` offers the
+school. And:
+
+```
+select enumlabel from pg_enum ... where typname = 'billing_cycle'
+  monthly
+  yearly
+```
+
+There is no `quarterly`. `fn_activate_subscription` writes
+`case when p_months >= 12 then 'yearly' else 'monthly' end`, so a school paying
+every three months gets an invoice, a console entry and a credit note that all
+say monthly.
+
+### Fault 3: the renewal quote is worked out from the wrong column
+
+Two places decide how many months the next invoice covers by guessing from the
+cycle:
+
+```
+fn_platform_due_soon         case when b.cycle = 'yearly' then 12 else 1 end
+fn_platform_renewal_message  case when v.cycle = 'yearly' then 12 else 1 end
+```
+
+The invoice is not built that way. `fn__renewals_due`, which actually creates
+it, prices `fn__plan_price(sub.plan_code, sub.term_months)`. And
+`fn_activate_subscription` never wrote `term_months` at all, so the two diverge
+the moment a school uses the term chooser in Settings:
+
+| cycle | term_months | quoted | invoiced | the school is told |
+| --- | --- | --- | --- | --- |
+| yearly | 12 | 12 months | 12 months | correctly |
+| monthly | 3 | 1 month | 3 months | a **third** of the truth |
+| monthly | 12 | 1 month | 12 months | a **twelfth** of the truth |
+| yearly | 1 | 12 months | 1 month | **twelve times** the truth |
+
+Staged on the pre-0127 schema rather than reasoned about:
+
+```
+BEFORE 0127: cycle=yearly term_months=1
+  invoice will be Rs 2,000
+  console worklist quotes Rs 20,000
+  WhatsApp message to the school says Rs 20,000
+```
+
+`fn_platform_due_soon`'s own comment says *"priced on the plan they SHOULD be on
+and the cycle they are on now, so the number in the reminder is the number on
+the invoice"*. That is the right intention and the code does not do it.
+
+### And a loophole found by building the form, not by reading the code
+
+The `custom` plan is active, is named "Custom (601+ students - contact us)", has
+`price_monthly`, `price_quarterly` and `price_yearly` all zero, and has
+`student_limit` **NULL**. Null means no limit at all:
+`plan_margin_limit(null)` is null and `fn_my_licence` reports `limit_state` `ok`
+for any roll. So a school choosing it on the signup form would have got
+unlimited pupils, for nothing, for ever, with every renewal invoice for Rs 0.
+
+Signup now accepts only a plan with `price_monthly > 0`, expressed as "has a
+price" rather than as "is not called custom", so a second by-arrangement plan
+added later is barred by the same clause instead of walking straight through it.
+
+### What does not change, and it was checked rather than assumed
+
+* `fn_choose_term` still does not touch `cycle`, which is correct. `cycle`
+  labels the period that was invoiced; `term_months` is the intent for the next
+  one. A school switching to monthly halfway through a year it has paid for must
+  not have that year relabelled.
+* The 14-day trial applies to every plan and every term. A trial is fourteen
+  days of the software, not fourteen days of a price, and making it depend on
+  the plan would give a school a reason to pick the wrong one.
+* No existing school's plan, term or cycle is rewritten. The migration cannot
+  know what a school that was never asked would have said, and guessing would
+  put a school on a plan it did not pick. What it does instead is make the
+  choice reachable and visible.
+
+### On the form
+
+Monthly is the preselected term, not yearly, and that is a deliberate reversal
+of what the code did by accident. Preselecting the largest charge on a buying
+screen is a dark pattern, and it is the exact complaint that started this. The
+yearly saving is shown in rupees beside the yearly button so a school can choose
+it for its own reasons. It converts better too: the first invoice after the
+trial is Rs 2,000 rather than Rs 20,000.
+
+The prices come from `fn_signup_plans`, granted to `anon`, and not from the
+browser. `fn__plan_price` is a rule and not a lookup: it takes the cheaper of
+the laddered price and the cheapest single standard term that covers the period,
+and falls back to the monthly rate when a quarterly rate is zero. A browser copy
+would agree with the invoice until any of the nine rates moved. Worked through
+the cases: on a price list where `price_quarterly` is zero, a three-month term
+costs `least(monthly * 3, yearly)`, which a naive copy would get wrong.
+
+### Three things found in the writing
+
+**`ALTER TYPE ... ADD VALUE` inside the one transaction a pasted bundle is.**
+Allowed on Postgres 12 and later; what is not allowed is USING the new value in
+that same transaction. Verified both ways on Postgres 16:
+
+```
+begin; alter type bc add value 'c'; select 'c'::bc;
+ERROR:  unsafe use of new value "c" of enum type bc
+HINT:   New enum values must be committed before they can be used.
+```
+
+So the existence check reads `pg_enum` by label text and never casts;
+`fn__cycle_for_months` is plpgsql rather than sql, because a plpgsql body is
+parsed on first execution and a sql body is parsed at CREATE, where the literal
+would be checked and refused; and nothing else in the file evaluates the value.
+
+**`RAISE` takes a bare `%`, not `%s`.** Written by habit as
+`'The %s plan is priced by arrangement'`, which printed
+`The Custom (601+ students - contact us)s plan`: the `%` consumes the argument
+and the letter is left in the sentence. Silent until somebody hits the error,
+which is the moment they most need it to read cleanly.
+`scripts/check-raise-format.py` now refuses the shape across 2,476 RAISE format
+strings, scanning only the format string so `format('%s', x)` passed as a RAISE
+argument stays legal. It found one other, in 0056, which is frozen inside a
+shipped bundle and is therefore recorded rather than fixed.
+
+**A FOURTH guard for one rule, and I had updated three.** Granting
+`fn_signup_plans` to `anon` trips "unauthenticated callers can run nothing",
+asserted in `verify.sql`, `detect.sql`, `scripts/preflight.sh` and
+`supabase/check-definer-idor.py`. A grep for `has_function_privilege('anon'`
+found three; preflight found the fourth. This is F25's lesson repeating inside
+the same week.
+
+The exemption is not a bare name in any of them. It holds only while the
+function cannot write (stable or immutable) and references nothing in `public`
+except `plans` and `fn__plan_price`. Proved to fail both ways: by making the
+function volatile, and by opening a second function to `anon`.
+
+And fixing that exposed a broken diagnostic of my own. The `verify.sql` row
+carried **two** copies of the predicate, one for the PASS test and one for the
+FAIL message, and the FAIL message excluded the exempted name from the list it
+names. So when the exemption itself failed, `string_agg` over an empty set was
+null, `'FAIL: ' || null` was null, and the row rendered as:
+
+```
+unauthenticated callers can run nothing (0071)|
+```
+
+An empty verdict. A diagnostic that goes blank when it fails is worse than no
+diagnostic. The list of offenders IS the test now: null means nothing is open.
+
+**And `verify.sql` cannot CALL a function it is checking for.** A function
+reference is resolved when the statement is parsed, not when the CASE arm is
+reached, and casting a constant to `regprocedure` is folded at plan time. Both
+spellings brought the whole file down on any database without bundle 33, which
+is every database the file exists to diagnose:
+
+```
+ERROR:  function public.fn_signup_plans() does not exist
+```
+
+`pg_get_functiondef(to_regprocedure('...')::oid)` is the safe idiom:
+`to_regprocedure` returns null for a missing function and
+`pg_get_functiondef(null)` is null.

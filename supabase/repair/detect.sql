@@ -410,7 +410,25 @@ with sig(migration, object, present) as (values
      (select not exists (select 1 from pg_proc p
                           join pg_namespace n on n.oid = p.pronamespace
                           where n.nspname = 'public'
-                            and has_function_privilege('anon', p.oid, 'execute'))
+                            and has_function_privilege('anon', p.oid, 'execute')
+            -- THE ONE EXEMPTION, AND IT HAS TO EARN ITSELF ON EVERY RUN.
+            -- fn_signup_plans (0127) is read by the signup form, which has no
+            -- login: the form has to show three plans and nine prices, and
+            -- fn__plan_price is a rule and not a lookup, so a browser copy of
+            -- it would quote a figure the first invoice contradicts the moment
+            -- any of the nine rates moves. It exposes nothing new: `plans`
+            -- already carries a SELECT policy for anon for the same reason.
+            --
+            -- Not a bare name, though. The exemption holds only while the
+            -- function cannot write (stable or immutable) and touches nothing
+            -- in public except the published price list. Widen it to a tenant
+            -- table, or make it volatile, and this fails.
+            and not (
+              p.proname = 'fn_signup_plans'
+              and p.provolatile in ('i', 's')
+              and not exists (
+                select 1 from regexp_matches(p.prosrc, 'public\.(\w+)', 'g') m
+                 where m[1] not in ('plans', 'fn__plan_price'))))
          and exists (select 1 from pg_proc p
                       join pg_namespace n on n.oid = p.pronamespace
                       where n.nspname = 'public' and p.proname = 'fn_signup_school'
@@ -944,7 +962,22 @@ with sig(migration, object, present) as (values
      and position('ATTENDANCE_FINALIZE' in coalesce(pg_get_functiondef(
            'public.fn_finalize_attendance(uuid,uuid,uuid,date)'::regprocedure), '')) > 0
      and position('ASSESSMENT_LOCK' in coalesce(pg_get_functiondef(
-           'public.fn_lock_assessment(uuid)'::regprocedure), '')) > 0)
+           'public.fn_lock_assessment(uuid)'::regprocedure), '')) > 0),
+  -- Three parts. The function has to take the two new arguments; the enum has
+  -- to be able to say quarterly; and nothing may still work the renewal out
+  -- from the cycle, which is the half that sends a school the wrong figure.
+  ('0127_a_school_picks_its_plan_and_how_it_pays', 'a school picks its plan and its term',
+     to_regprocedure(
+       'public.fn_signup_school(text,text,text,text,text,text,integer)') is not null
+     and exists (select 1 from pg_enum e
+                   join pg_type ty on ty.oid = e.enumtypid
+                   join pg_namespace n2 on n2.oid = ty.typnamespace
+                  where n2.nspname = 'public' and ty.typname = 'billing_cycle'
+                    and e.enumlabel = 'quarterly')
+     and not exists (select 1 from pg_proc p
+                       join pg_namespace n2 on n2.oid = p.pronamespace
+                      where n2.nspname = 'public' and p.prokind = 'f'
+                        and p.prosrc ~ 'cycle = ''yearly'' then 12 else 1 end'))
 )
 select migration,
        object                                   as looked_for,

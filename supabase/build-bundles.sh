@@ -569,6 +569,44 @@ emit supabase/bundles/31_the_harness_could_not_see_a_function_grant.sql \
 emit supabase/bundles/32_the_register_was_written_twice.sql \
      supabase/migrations/0126*.sql
 
+# A THIRTY-THIRD bundle. Reported by the vendor looking at Settings on a school
+# he had just created: "a starter plan is by default, annual payment showing in
+# the settings". He is right, and it is not a display bug.
+#
+#   insert into public.subscriptions (school_id, plan_code, status, trial_ends_on)
+#   values (v_id, 'starter', 'trialing', current_date + 14);
+#
+# That is the whole of what fn_signup_school wrote. Plan hardcoded, cycle left
+# to the column default of yearly, term_months left to the column default of
+# 12. So every school in the console was on Starter paying annually whatever
+# was agreed on the phone, and fn_my_next_payment quoted them Rs 20,000 when
+# they had agreed Rs 2,000 a month.
+#
+# Pulling on it found two more, both about money and both wrong today.
+#
+# `quarterly` was not a value of the billing_cycle enum, although
+# plans.price_quarterly is populated, is charged by fn__plan_price and is one of
+# the three terms fn_my_next_payment offers. So a school paying every three
+# months got an invoice that said monthly.
+#
+# And fn_platform_due_soon and fn_platform_renewal_message both worked out how
+# many months the next invoice covers as
+# `case when cycle = 'yearly' then 12 else 1 end`, while the invoice is priced
+# by fn__renewals_due on term_months, which fn_activate_subscription never
+# wrote. Staged on a real database: a school on a monthly term whose last
+# period was yearly has an invoice of Rs 2,000 coming, and the console's
+# renewals worklist and the WhatsApp message to the school both said Rs 20,000.
+# Ten times the truth, sent to the customer.
+#
+# Also closes a loophole found while writing the signup form rather than while
+# reading the function: the `custom` plan is active, has student_limit NULL and
+# price_monthly 0, so a school choosing it would have got unlimited pupils for
+# nothing for ever, with every renewal invoice for Rs 0. Signup now takes only
+# a plan that has a price, which is a clause a second by-arrangement plan
+# cannot walk through either.
+emit supabase/bundles/33_a_school_picks_its_plan_and_how_it_pays.sql \
+     supabase/migrations/0127*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

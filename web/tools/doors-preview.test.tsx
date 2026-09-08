@@ -75,6 +75,33 @@ it('renders each door, at desktop and at phone width', () => {
         + 'addressed for the first time to the person it was written for.',
       profile: null,
       node: <Signup />,
+      // THE PRICE LIST, SEEDED, because the plan chooser is the thing this
+      // page gained in 0127 and an unseeded query renders its "we could not
+      // load the plans" fallback. Both states matter and both are worth
+      // looking at, so the case below renders the same page without it.
+      seeds: [[['signupPlans'], [
+        { code: 'starter', name: 'Starter (up to 150 students)', student_limit: 150,
+          terms: [{ months: 1, amount: 2000, saving: 0 },
+                  { months: 3, amount: 5700, saving: 300 },
+                  { months: 12, amount: 20000, saving: 4000 }] },
+        { code: 'growth', name: 'Growth (151-350 students)', student_limit: 350,
+          terms: [{ months: 1, amount: 3500, saving: 0 },
+                  { months: 3, amount: 10000, saving: 500 },
+                  { months: 12, amount: 35000, saving: 7000 }] },
+        { code: 'institution', name: 'Institution (351-600 students)', student_limit: 600,
+          terms: [{ months: 1, amount: 5500, saving: 0 },
+                  { months: 3, amount: 15700, saving: 800 },
+                  { months: 12, amount: 55000, saving: 11000 }] },
+      ]]],
+    },
+    {
+      caption: 'THE SAME PAGE WHEN THE PRICE LIST WILL NOT LOAD. A signup form '
+        + 'that refuses to submit because a price could not be fetched loses a '
+        + 'customer over a network blip, so it says what it can and gets out of '
+        + 'the way: the school is created on a 14-day trial either way and can '
+        + 'pick the plan from Settings.',
+      profile: null,
+      node: <Signup />,
     },
   ])
 })

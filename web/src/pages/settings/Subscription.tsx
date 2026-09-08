@@ -5,6 +5,7 @@ import { myBilling, myPlatformInvoice, reportSubscriptionPayment } from '@/lib/d
 import type { MyBillingDocument } from '@/lib/db'
 import { InvoiceDoc } from '@/components/InvoiceDoc'
 import { formatPkr } from '@/lib/licence'
+import { termSentence } from '@/lib/plans'
 import { fmtDate, fmtDateTime } from '@/lib/format'
 import { NextPaymentPanel } from './NextPayment'
 
@@ -92,6 +93,15 @@ export function Subscription() {
               {daysLeft !== null && (
                 daysLeft >= 0 ? ` · ${daysLeft} day(s) left` : ` · ${Math.abs(daysLeft)} day(s) ago`
               )}
+            </div>
+            {/* HOW OFTEN, BESIDE WHAT. This block could say what a year costs
+                and could not say whether this school pays yearly, while the
+                panel above it knew: fn_my_licence returned the price for all
+                three terms and not term_months. Which is how the same screen
+                quoted an annual figure to a school on a monthly term, and is
+                the complaint that started migration 0127. */}
+            <div className="mt-1 text-sm text-slate-600">
+              Paid {termSentence(lic.term_months as number | null | undefined)}
             </div>
             <div className="mt-1 text-sm text-slate-500">
               {Number(lic.student_count ?? 0).toLocaleString()} students
