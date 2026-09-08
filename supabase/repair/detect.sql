@@ -930,7 +930,21 @@ with sig(migration, object, present) as (values
                   where n.nspname = 'public'
                     and (p.proname like 'fn\_\_%' or p.proname = 'fn_record_migration')
                     and (has_function_privilege('authenticated', p.oid, 'execute')
-                         or has_function_privilege('anon', p.oid, 'execute'))))
+                         or has_function_privilege('anon', p.oid, 'execute')))),
+  -- Three parts, because two of the three are what make the first one safe.
+  -- The trigger has to carry the skip; and the two functions have to write the
+  -- rows that replace what the skip drops. A database with the skip and
+  -- without those rows has no record of who closed a register or locked a test
+  -- at all, and `assessments` carries no audit trigger of its own to fall back
+  -- on. That state is worse than the one 0126 fixes and it is reachable, so it
+  -- reads as MISSING rather than as present.
+  ('0126_the_register_was_written_twice', 'the register is not copied into the audit log',
+     position('0126' in coalesce(
+       pg_get_functiondef('public.audit_trigger()'::regprocedure), '')) > 0
+     and position('ATTENDANCE_FINALIZE' in coalesce(pg_get_functiondef(
+           'public.fn_finalize_attendance(uuid,uuid,uuid,date)'::regprocedure), '')) > 0
+     and position('ASSESSMENT_LOCK' in coalesce(pg_get_functiondef(
+           'public.fn_lock_assessment(uuid)'::regprocedure), '')) > 0)
 )
 select migration,
        object                                   as looked_for,

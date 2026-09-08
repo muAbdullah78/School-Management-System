@@ -2275,6 +2275,66 @@ select 'the migration ledger cannot be written from a browser (0125)',
        end
 
 union all
+-- 0126. Eighty-four per cent of a two-year school's database was its audit log,
+-- and 206,809 of those 214,787 rows were the register and the mark sheet copied
+-- into it: a full row for every attendance mark, and another for every pupil
+-- when the day was finalised.
+--
+-- Three clauses, and the second and third are the ones that matter. The trigger
+-- has to carry the skip; and BOTH functions have to write the row that replaces
+-- what the skip drops. A database with the skip and without those rows has no
+-- record of who closed a register or locked a test at all, which is a worse
+-- state than the one this migration is fixing, and it is reachable by applying
+-- half the bundle.
+select 'the register is not copied into the audit log (0126)',
+       case when position('0126' in
+              coalesce(pg_get_functiondef('public.audit_trigger()'::regprocedure), '')) = 0
+         then 'FAIL: every attendance mark and every finalised day writes a '
+              || 'kilobyte of audit log that says nothing the register does not, '
+              || 'which was 84% of one school''s whole database; apply '
+              || 'supabase/bundles/32_the_register_was_written_twice.sql'
+         when position('ATTENDANCE_FINALIZE' in
+              coalesce(pg_get_functiondef(
+                'public.fn_finalize_attendance(uuid,uuid,uuid,date)'::regprocedure), '')) = 0
+         then 'FAIL: the audit log no longer records who finalised a register, '
+              || 'because the per-pupil rows are skipped and nothing writes the '
+              || 'one row that replaces them; re-apply '
+              || 'supabase/bundles/32_the_register_was_written_twice.sql'
+         when position('ASSESSMENT_LOCK' in
+              coalesce(pg_get_functiondef(
+                'public.fn_lock_assessment(uuid)'::regprocedure), '')) = 0
+         then 'FAIL: the audit log no longer records who locked a test, and '
+              || '`assessments` carries no audit trigger of its own, so nothing '
+              || 'records it at all; re-apply '
+              || 'supabase/bundles/32_the_register_was_written_twice.sql'
+         else 'PASS'
+       end
+
+union all
+-- The same migration's other half, which is about the rows already written. The
+-- fold-and-delete only runs when the bundle is applied, so a database that has
+-- the functions and still holds the old rows was upgraded and then restored, or
+-- had the bundle interrupted. It is not a failure (nothing is broken and no
+-- data is wrong), so it reports as a note with the number, which is the figure
+-- a school needs to decide whether to care.
+select 'the audit log is not mostly the register (0126)',
+       case when (select count(*) from public.audit_log
+                   where action = 'INSERT'
+                     and entity in ('attendance_daily', 'mark_entries',
+                                    'staff_attendance')) = 0
+         then 'PASS'
+         else 'note: ' || (select count(*)::text from public.audit_log
+                            where action = 'INSERT'
+                              and entity in ('attendance_daily', 'mark_entries',
+                                             'staff_attendance'))
+              || ' audit rows still copy a register row that carries the same '
+              || 'actor and the same timestamp. Re-run '
+              || 'supabase/bundles/32_the_register_was_written_twice.sql to fold '
+              || 'and remove them, then `vacuum full public.audit_log;` on its '
+              || 'own to give the space back'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS: no schools yet, as expected'

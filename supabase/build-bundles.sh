@@ -540,6 +540,35 @@ emit supabase/bundles/30_a_failed_signup_leaves_nothing_behind.sql \
 emit supabase/bundles/31_the_harness_could_not_see_a_function_grant.sql \
      supabase/migrations/0125*.sql
 
+# A THIRTY-SECOND bundle. 0126 is the largest single thing this project has
+# ever done to a school's storage, and it is one measurement:
+#
+#   audit_log                      214,787 rows      479 MB
+#   the whole rest of the database                    92 MB
+#
+# 206,809 of those rows were the register and the mark sheet, copied. The audit
+# trigger wrote a full row for every attendance mark (where `after` IS the row
+# and the actor IS its marked_by, checked on all 112,082 of them) and another
+# for every pupil when the day was finalised (where the only key that differed
+# was `is_locked`, on all 94,727 of them). So the trigger now skips exactly
+# those two cases on exactly three tables, fn_finalize_attendance and
+# fn_lock_assessment each write ONE row saying what happened, and the rows
+# already written are folded into those and removed. Measured after:
+#
+#   audit_log      11 MB      the database      103 MB
+#
+# 468 MB back on one school, which is the difference between one school over
+# the free tier's 500 MB and four schools inside it. Money is untouched: the
+# next entity down the list is payments at 4,845 rows, and no money or
+# permission table is named anywhere in the rule.
+#
+# THE READER MUST RUN ONE MORE THING BY HAND. A delete marks rows dead and does
+# not shrink the file, so after this bundle:  vacuum full public.audit_log;
+# on its own, because VACUUM cannot run inside a transaction and a pasted file
+# is one.
+emit supabase/bundles/32_the_register_was_written_twice.sql \
+     supabase/migrations/0126*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

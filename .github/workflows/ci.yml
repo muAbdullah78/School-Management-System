@@ -1313,6 +1313,26 @@ jobs:
         # ENTER marks, which is exactly why they must not be able to audit them.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/corrections.sql
 
+      - name: The audit log records what happened, and not the register twice
+        # 0126 took 84% of a two-year school's database away, and the whole of
+        # that 84% was the register and the mark sheet copied into the audit
+        # log. The risk in a change of that shape is one-sided: skip one row
+        # too many and a school cannot answer a parent, and nobody finds out
+        # until the parent asks. So this suite asserts both halves.
+        #
+        # Assertions 3, 4, 14 and 15 are the half that matters: a CHANGED mark
+        # or status still writes a full row WITH its before image, because that
+        # is the one thing the register row cannot hold.
+        #
+        # Assertion 12 is the deliberate asymmetry: closing a day is skipped,
+        # reopening one is not, so a second unlock path written later cannot go
+        # unrecorded by forgetting to audit it.
+        #
+        # Assertions 22 and 23 are the negative that guards the scope: nothing
+        # about a payment changed. It is what fails if somebody widens the skip
+        # list "while they are in there".
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/audit_volume.sql
+
       - name: Remarks and position holders — do ties and remarks survive?
         # Assertion 12 is why exam_remarks is its own table rather than a column
         # on result_cards: fn_generate_result_cards INSERTS a new version rather

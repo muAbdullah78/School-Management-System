@@ -404,7 +404,7 @@ simulation's first draft set it on the paper and was correctly refused.
 
 ---
 
-## F12. The audit log is seven times the size of the data it audits
+## F12. The audit log is seven times the size of the data it audits. **Fixed in migration 0126, see F26.**
 
 **Severity: medium, and it is a cost-of-goods problem rather than a bug.**
 
@@ -438,6 +438,13 @@ records a change that carries a `correction_reason` and ignores a first-time
 mark and a finalisation. That is a change to `audit_trigger()` or to the trigger
 's `WHEN` clause, it needs its own test suite, and it should be its own pass
 rather than a corner of this one.
+
+**That is what migration 0126 did, and the shape of it changed once the rows
+were counted rather than reasoned about. See F26: the proposal above says
+"ignores a first-time mark and a finalisation", and a finalisation turned out
+to be the single biggest item in the table, bigger than the marks themselves.
+Skipping it without replacing it would have left a school unable to say who
+closed a register at all.**
 
 ---
 
@@ -1103,3 +1110,186 @@ The lesson generalises past this bug: **a test harness that differs from
 production in how it grants privileges cannot test authorisation.** Four
 independent guards agreeing means nothing if they are all reading the same wrong
 database.
+
+---
+
+## F26. 84% of a school's database was its audit log, and 96% of the audit log was the register copied into it. **Fixed in migration 0126.**
+
+**Severity: high, and it is the reason a school on the free tier ran out of
+space.** F12 measured this at 68% and proposed a fix in one sentence. This is
+that fix, and the sentence turned out to be half right in a way that would have
+destroyed information if it had been implemented as written.
+
+### What is actually in there
+
+The finished two-year school, 266 children, 589 school days:
+
+| | rows | on disk |
+| --- | --- | --- |
+| `audit_log` | 214,787 | **479 MB** |
+| the whole rest of the database | | 92 MB |
+
+And the audit log itself, by what the rows are about:
+
+| entity | action | rows | jsonb |
+| --- | --- | --- | --- |
+| `attendance_daily` | UPDATE | 89,432 | 87 MB |
+| `attendance_daily` | INSERT | 89,634 | 50 MB |
+| `staff_attendance` | INSERT | 11,654 | 7.5 MB |
+| `mark_entries` | INSERT | 10,794 | 7.3 MB |
+| `mark_entries` | UPDATE | 5,295 | 6.4 MB |
+| `payments` | INSERT | 4,845 | 2.9 MB |
+| everything else | | ~3,100 | 4.5 MB |
+
+**206,809 of the 214,787 rows are the register and the mark sheet.** The next
+line down is money, at 4,845 rows.
+
+### The two questions that decided the change
+
+Not "is attendance important" but "what does the audit row hold that the row it
+describes does not". Both answers were read off the rows.
+
+**1. An INSERT audit row on those three tables IS the row again.** `audit_log`
+holds `actor`, `actor_role`, `created_at` and `after`; `attendance_daily`,
+`mark_entries` and `staff_attendance` each carry `marked_by` and `created_at`
+of their own; the trigger runs in the same transaction, so the timestamps are
+the same value; and `after` is `to_jsonb(new)`, which is the row. Checked on
+every one of them:
+
+```
+entity              insert_rows   actor = after->>'marked_by'
+attendance_daily         89,634                       89,634
+mark_entries             10,794                       10,794
+staff_attendance         11,654                       11,654
+```
+
+No exceptions in 112,082 rows. The only field the audit row holds that the row
+does not is `actor_role`, and "what title did the teacher hold on the third of
+March" is not a question anybody asks about an attendance mark. 0126 gives that
+up and says so.
+
+**2. Every UPDATE audit row on those tables was one boolean.** Asked which keys
+actually differ between `before` and `after`:
+
+```
+entity              changed keys     rows
+attendance_daily    {is_locked}    89,432
+mark_entries        {is_locked}     5,295
+```
+
+Nothing else, anywhere. That is `fn_finalize_attendance` and
+`fn_lock_assessment`, which set `is_locked` on every pupil of a section-day or
+every mark of a test in one statement: 210 rows of a kilobyte each to record
+one act by one person.
+
+### Where F12's proposal was wrong
+
+F12 said "ignores a first-time mark and a finalisation". The first half is safe.
+**The second half would have deleted the only record of who closed a register.**
+`fn_finalize_attendance` and `fn_lock_assessment` wrote no audit row of their
+own, and `assessments` carries no audit trigger at all, so those 94,727 rows
+were the entire trail. Skipping them and stopping there is a bigger loss than
+the 87 MB is a gain.
+
+So 0126 does the replacement first. Both functions now write one row, in the
+same shape `fn_unlock_attendance` already used since 0121:
+
+```
+ATTENDANCE_FINALIZE   one row per section-day, entity_id = the date,
+                      after = {locked, rows, session_id, class_id, section_id}
+ASSESSMENT_LOCK       one row per test, entity_id = the assessment
+```
+
+210 rows become 1, and the 1 is a sentence: *Miss Ayesha finalised 5-A for 3
+March, 34 pupils*. Thirty-four rows each saying a boolean changed is not.
+
+### The skip is deliberately one-directional
+
+`false -> true` is dropped; `true -> false` is not. Reopening a register is
+already audited by `fn_unlock_attendance` with its reason, so the per-pupil
+rows for an unlock are redundant too and skipping them would save a few
+thousand more. It is still wrong. Today `fn_unlock_attendance` is the only
+route that clears the lock; the day a second route is added and its author
+forgets the audit row, a one-directional skip still records it and a symmetric
+one loses it silently. A few thousand rows is a cheap price for not having to
+be right about the future.
+
+### The rows already written
+
+A rule that only applies going forward leaves every existing school paying for
+the old one, which is the actual complaint that started this. So 0126 removes
+them, and nothing is lost doing it:
+
+* the lock rows are **folded first** into the `ATTENDANCE_FINALIZE` and
+  `ASSESSMENT_LOCK` rows they should always have been, carrying the original
+  actor, role, timestamp and count, and only the exact ids that were folded are
+  then deleted;
+* an insert row is deleted only if **its own** `actor` equals the `marked_by`
+  on **its own** `after` image, so the losslessness is checked per row rather
+  than trusted from the survey above;
+* anything that fails either test is kept, and the migration says how many and
+  why.
+
+Checked afterwards against the register itself: all 9,505 rebuilt
+`ATTENDANCE_FINALIZE` rows carry a pupil count equal to the number of locked
+rows in that section-day. Zero disagreements. All 570 `ASSESSMENT_LOCK` rows
+agree with their assessment's mark count. Every rebuilt row kept its actor and
+its role.
+
+### Measured after
+
+```
+audit_log      214,787 rows  479 MB   ->   18,053 rows  11 MB
+the database                 571 MB   ->                103 MB
+```
+
+**468 MB back on one school, in 16 seconds.** On Supabase's 500 MB free tier
+that is the difference between one school over quota and four schools inside
+it. Extrapolating F12's arithmetic, the ~90 MB of audit log per school per year
+becomes about 5 MB.
+
+Deleting does not return the space on its own: Postgres marks a row dead and
+reuses the page later, and the file does not shrink. Demonstrated separately, a
+table of 40,000 rows at 79 MB, minus 39,800 rows, is still 79 MB, and
+`vacuum full` rewrites it to 408 kB. So the bundle ends by telling the reader to
+run `vacuum full public.audit_log;` on its own, because VACUUM cannot run inside
+a transaction and a pasted file is one.
+
+### Two things found on the way
+
+**`fn_finalize_attendance` was not idempotent, and its return value was wrong.**
+Its UPDATE had no `and not ad.is_locked`, so it rewrote every row of the
+section-day whether open or closed. The number it returned was therefore
+"pupils in this section-day", which the screen prints as *Finalized & locked 34
+rows*, and finalising an already finalised day said 34 again. It also made
+0126's own audit row wrong: a second press recorded a second closing of a day
+that was already closed. Caught by assertion 9 of the new suite. Now it locks
+what is open, says how many, and a second press is a no-op. A partly marked day
+gets the right answer too: mark 30 of 34, finalise (30), mark the last 4,
+finalise again (4, not 34).
+
+**Settings -> Audit log was unreadable, in two different ways, and 0126 forced
+both.** The screen printed the database's own words:
+
+```
+INSERT   attendance_daily
+UPDATE   mark_entries
+```
+
+which is a table name and a SQL verb. Worse, it reads the most recent 300 rows
+with no filter, so a school that marked its registers this morning saw 300 rows
+of `INSERT attendance_daily` and nothing else: the discount somebody gave and
+the payment somebody reversed were behind 90,000 attendance marks. The log
+recorded everything and showed nothing. And shipping `ATTENDANCE_FINALIZE` to
+that screen raw would have been worse than what was there before. Every pair the
+database can produce is now named in English, an unmapped pair still renders as
+a sentence rather than vanishing, the timestamp shows the time as well as the
+date, and there is a search box over who, what and why.
+
+### Still open
+
+The audit log screen shows the most recent 300 rows and has no date range. With
+the volume down by 96% those 300 rows now cover months rather than this morning,
+which is most of the value, but a school asking about a specific week last year
+still cannot get there. That is a paged, date-filtered read and it is its own
+piece of work.
