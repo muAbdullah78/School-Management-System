@@ -142,10 +142,23 @@ GROUPS = [
      "Guardians, the cash drawer counted daily, payment reversals, "
      "adjustments, voids, defers, deposit refunds, and the outbox worked down "
      "to a realistic backlog. Seconds."),
+    # THIS FILE IS NOT SPLIT, and it was going to be. It lost its request on a
+    # real project with `Failed to fetch (api.supabase.com)` and the obvious
+    # answer was to break it into its table groups the way the years and the
+    # register are broken up. Then it turned out to be spending almost all of
+    # its time on work it should never have done: every one of the 133,000
+    # UPDATEs fired the audit trigger, so the file wrote a full before/after row
+    # per timestamp it moved and deleted them all again at the end. It now
+    # disables the row triggers on the fifteen tables it re-dates for the
+    # duration, which took it from 15.9 SECONDS TO 2.1 and fixed a silent
+    # failure at the same time (the BEFORE UPDATE trigger that stamps
+    # updated_at was discarding half of what the file set). A two-second file
+    # does not need splitting, and one more file to paste is a real cost to the
+    # person pasting them.
     ("set_the_clock",
      ["08_the_clock.sql"],
-     "Moves 133,000 timestamps onto their real dates, so two years of school "
-     "life stops claiming to have been entered this afternoon. Under a minute."),
+     "Moves 120,000 timestamps onto their real dates, so two years of school "
+     "life stops claiming to have been entered this afternoon. Seconds."),
     ("check_it_worked",
      ["09_check.sql"],
      "Asserts the result is a school somebody would recognise. Instant. This "
@@ -169,11 +182,17 @@ HEADER = """-- =================================================================
 -- fails it writes nothing and can be fixed and re-run on its own.
 --
 -- WHAT THE SET DOES. It finds the school named below and fills it with February
--- 2024 to today: about 220 children on the roll, 589 school days of register,
--- three year-end rollovers, 6,000 challans, 4,600 payments, 663 class tests,
--- 5 exam terms, 715 result cards, a cash drawer counted daily, and today half
--- marked the way a real register is at eleven in the morning. About 370,000
--- rows.
+-- 2024 to today: about 225 children on the roll, 590 school days of register,
+-- three year-end rollovers, 6,100 challans, 5,100 payments, 663 class tests,
+-- 5 exam terms, 723 result cards, a cash drawer counted daily, and today half
+-- marked the way a real register is at eleven in the morning. About 172,000
+-- rows and roughly 110 MB.
+--
+-- IT WAS 439,000 ROWS AND 571 MB UNTIL MIGRATION 0126, and 84% of that was the
+-- audit log holding a second copy of the register. If this project has not had
+-- supabase/bundles/32_the_register_was_written_twice.sql applied, file 1 will
+-- say so and file 13 will refuse: on a free Supabase project this seed used to
+-- fill the whole 500 MB allowance with one school.
 --
 -- Every row arrives through the application's OWN functions, with a real
 -- signed-in owner's session and Row Level Security on. Raw inserts would fill
@@ -236,6 +255,24 @@ begin
       'supabase/verify.sql, paste every bundle it names in a FAIL row (the '
       'first of them is 27_a_finalised_register_can_be_reopened.sql), then '
       'start this set again.';
+  end if;
+
+  -- 1b. AND IS IT NEW ENOUGH NOT TO FILL YOUR WHOLE PROJECT? Asked separately,
+  --     because the answer is not "you are behind" but "this will cost you
+  --     468 MB". Without migration 0126 the audit trigger writes a full
+  --     before/after copy of every attendance mark and of every pupil on every
+  --     finalised day: this seed then produces 439,000 rows and 571 MB instead
+  --     of 172,000 and 110 MB, which is the entire free allowance spent on one
+  --     school. That is not a hypothetical: it is what happened to the first
+  --     project this set was run on.
+  if position('0126' in coalesce(
+       pg_get_functiondef('public.audit_trigger()'::regprocedure), '')) = 0 then
+    raise exception 'Paste supabase/bundles/'
+      '32_the_register_was_written_twice.sql first. Without it every '
+      'attendance mark this seed makes is copied into the audit log as a '
+      'kilobyte of before/after JSON, and so is every pupil of every finalised '
+      'day: 571 MB for this one school instead of 110 MB, which is more than a '
+      'free Supabase project has. Nothing else about this set changes.';
   end if;
 
   -- 2. Did the school name survive as far as this statement? `set local` only

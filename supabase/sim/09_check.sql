@@ -177,7 +177,56 @@ begin
     v_fail := v_fail || format('the audit log spans only %s distinct days', v_n);
   end if;
 
-  -- 11. THE OUTBOX HAS BEEN WORKED, AND STILL HAS A BACKLOG.
+  -- 11. THE AUDIT LOG IS NOT THE REGISTER, WRITTEN A SECOND TIME.
+  --
+  --     This is the assertion that would have saved a school an afternoon. The
+  --     first run of this simulation on a real project filled the free tier:
+  --     214,787 audit rows at 479 MB against 92 MB for the entire rest of the
+  --     database, and 206,809 of those rows were attendance marks and mark
+  --     entries copied out of the tables that already held them. Migration
+  --     0126 stops it, and a project that has not applied bundle 32 gets the
+  --     old behaviour from this seed with no warning at all: the seed works,
+  --     and then the dashboard says the database is full.
+  --
+  --     Both halves, because the first without the second is worse than
+  --     neither: with the copies skipped and nothing writing the day-level row,
+  --     the log would hold no record of a register ever being closed.
+  select count(*) into v_n from public.audit_log
+   where school_id = v_school and action = 'INSERT'
+     and entity in ('attendance_daily', 'mark_entries', 'staff_attendance');
+  if v_n > 0 then
+    v_fail := v_fail || format('%s audit rows copy a register row that already '
+      || 'carries the same actor and the same timestamp, which is what fills a '
+      || 'free tier. Apply '
+      || 'supabase/bundles/32_the_register_was_written_twice.sql', v_n);
+  end if;
+  select count(*) into v_n from public.audit_log
+   where school_id = v_school and action = 'ATTENDANCE_FINALIZE';
+  if v_n < 300 then
+    v_fail := v_fail || format('only %s register(s) recorded as finalised in the '
+      || 'audit log, so nothing says who closed a day. Apply '
+      || 'supabase/bundles/32_the_register_was_written_twice.sql', v_n);
+  end if;
+
+  -- 12. THE ROW TRIGGERS ARE ALL BACK ON. 08_the_clock.sql turns them off for
+  --     the fifteen tables it re-dates, because the BEFORE UPDATE trigger that
+  --     stamps updated_at silently discarded half of what it set. It turns them
+  --     back on in the same transaction and checks that it did. This checks
+  --     again from outside, because a school pasting the files by hand can stop
+  --     between two of them, and a school running with its audit triggers off
+  --     records nothing and cannot tell.
+  select count(*) into v_n from pg_trigger tg
+    join pg_class c on c.oid = tg.tgrelid
+   where not tg.tgisinternal and tg.tgenabled = 'D'
+     and c.relnamespace = 'public'::regnamespace;
+  if v_n > 0 then
+    v_fail := v_fail || format('%s row trigger(s) in public are still disabled, '
+      || 'so nothing is being audited and the student counts are not being kept '
+      || 'up to date. Re-run 12_set_the_clock.sql, which turns them off and back '
+      || 'on inside one transaction', v_n);
+  end if;
+
+  -- 13. THE OUTBOX HAS BEEN WORKED, AND STILL HAS A BACKLOG.
   select count(*) into v_n from public.message_outbox
    where school_id = v_school and status = 'sent';
   if v_n < 100 then v_fail := array_append(v_fail, 'nothing has ever been sent from the outbox'); end if;
@@ -190,12 +239,16 @@ begin
       array_to_string(v_fail, E'\n  - ');
   end if;
 
-  raise notice 'BELIEVABLE. % rows, % children on the roll, % attendance rows over % days, % result cards, audit log spans % days',
+  raise notice 'BELIEVABLE. % rows, % children on the roll, % attendance rows over % days, % result cards, audit log spans % days, audit log is % of the database',
     (select sum(n_live_tup) from pg_stat_user_tables),
     (select count(*) from public.students where school_id=v_school and status='active'),
     (select count(*) from public.attendance_daily where school_id=v_school),
     (select count(distinct attendance_date) from public.attendance_daily where school_id=v_school),
     (select count(*) from public.result_cards where school_id=v_school),
-    (select count(distinct created_at::date) from public.audit_log where school_id=v_school);
+    (select count(distinct created_at::date) from public.audit_log where school_id=v_school),
+    -- The one number that decides whether a school fits on the free tier, in
+    -- the report rather than buried: it was 84% before migration 0126.
+    round(100.0 * pg_total_relation_size('public.audit_log')
+          / greatest(pg_database_size(current_database()), 1), 1) || '%';
 end
 $check$;

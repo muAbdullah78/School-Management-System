@@ -1293,3 +1293,126 @@ the volume down by 96% those 300 rows now cover months rather than this morning,
 which is most of the value, but a school asking about a specific week last year
 still cannot get there. That is a paged, date-filtered read and it is its own
 piece of work.
+
+---
+
+## F27. The clock pass set 133,000 timestamps and a trigger threw half of them away. **Fixed in the same pass, and the file went from 15.9 seconds to 2.1.**
+
+**Severity: medium, and it is the third file in this simulation to report success
+and do less than it said.** `08_the_clock.sql` is the one file that reaches
+around the schema as the table owner, because `payments` has no business date
+(F1). It sets `created_at` AND `updated_at` on fifteen tables. Measured after it
+had run:
+
+| | rows | `created_at` on the right day | `updated_at` on the right day |
+| --- | --- | --- | --- |
+| `attendance_daily` | 89,634 | 89,634 | **202** |
+
+Every one of the 89,634 `updated_at = attendance_date + time '08:20'`
+assignments was discarded, and all 89,634 values carried the minute the seed
+ran. `trg_attendance_updated` is a BEFORE UPDATE trigger whose entire body is
+`new.updated_at := now()`, so it overwrote each one on the way past. The same
+trigger sits on `students`, `enrollments`, `families`, `invoices` and
+`mark_entries`: six of the fifteen tables, and roughly half the timestamps the
+file claims to move.
+
+Nothing failed. The file printed `attendance 89634` and it had indeed written
+89,634 rows, half correctly.
+
+### Turning the row triggers off fixes that and three other things
+
+`alter table ... disable trigger user` on the fifteen tables, for the duration,
+inside the same transaction as the re-enable so there is no committed state in
+which they are off.
+
+* **The `updated_at` assignments land.** 89,634 of 89,634, and students,
+  invoices and mark_entries all check out too.
+* **120,000 audit rows are no longer written and then deleted.** Every re-dating
+  is an UPDATE and the audit triggers fire on updates, so the file used to write
+  a full before/after row per timestamp it moved and delete them all again by
+  watermark: about 120 MB of churn producing nothing, and a delete does not
+  shrink the file, so the school was left needing a `vacuum full` afterwards.
+  Migration 0126 does not help here, and it is worth saying why: 0126 skips the
+  audit row when the ONLY difference is `is_locked`, and this file changes
+  `created_at`.
+* **1,634 count refreshes do not fire.** `fn__refresh_counts_touched` is an
+  AFTER trigger on `students` and `enrollments`, and the file updates every row
+  of both.
+* **15.9 seconds becomes 2.1.**
+
+The cost, stated: an ACCESS EXCLUSIVE lock on each of the fifteen tables while
+it runs, and table ownership, which the SQL editor has and a school never does.
+If it cannot get ownership the file now stops with that as the reason instead of
+half-working. And `09_check.sql` asserts from outside that every row trigger in
+`public` is enabled, because a school pasting files by hand can stop between two
+of them and a school running with its audit triggers off records nothing and
+cannot tell.
+
+### It was going to be split, and did not need to be
+
+This file lost its request on a real project with
+`Failed to fetch (api.supabase.com)`, and the plan was to break it into its
+table groups the way the four years and the four registers are already broken
+up. At 2.1 seconds that would be one more file to paste for no reason. One more
+file is a real cost to the person pasting them.
+
+### Two more things the same pass found
+
+**Migration 0126 made this file incomplete, in a way only counting would show.**
+`fn_finalize_attendance` and `fn_lock_assessment` now write one audit row each,
+keyed on the DATE and on the ASSESSMENT rather than on a row id, so none of the
+five id joins can reach them. On the finished school that is 9,598 finalise rows
+out of 18,527 in the whole log: leaving them out means the MAJORITY of the audit
+log still claims two years of registers were closed this afternoon. Each now has
+its own statement, dated to when the thing actually happens (a register closes at
+half past one, a reopening happens at twenty to ten the next morning when the
+father turns up with the letter, a test is locked at five).
+
+**Six statements had no skip guard, so the count they printed was "rows
+rewritten" while the line above said "timestamps moved onto their real dates".**
+Same species of untruth as the rest of this finding. One of the six was worse
+than untidy: `admission_enquiries.updated_at` was computed from `admitted_at`,
+which the same statement overwrites, so a second run read what the first had
+written and produced a different answer. Every statement now skips the rows that
+are already right, and a second run reports zero and means it. Verified: run,
+run again, all zeros.
+
+### The whole set, end to end, from a database built out of the bundles
+
+All thirteen generated paste files, each its own transaction, in order:
+
+```
+1_set_the_school_up      0s     8_register_2025_2026    17s
+2_year_2023_2024         3s     9_register_2026_2027    10s
+3_year_2024_2025        85s    10_tests_and_exams        6s
+4_year_2025_2026        40s    11_the_drawer             9s
+5_year_2026_2027        26s    12_set_the_clock          2s
+6_register_2023_2024     3s    13_check_it_worked        1s
+7_register_2024_2025    15s
+                                            total     217s
+```
+
+`13_check_it_worked` reports: *BELIEVABLE. 173,173 rows, 224 children on the
+roll, 90,474 attendance rows over 590 days, 722 result cards, audit log spans
+790 days, audit log is 18.4% of the database.* The database is 114 MB. Before
+0126 the same school was 439,000 rows and 571 MB.
+
+**The longest file is now file 3 at 85 seconds**, not file 12. If anything in
+this set loses its request on a slow instance again, that is where to look
+first.
+
+### The seed now refuses to run without bundle 32
+
+Every file's prerequisite block gained a question. Without migration 0126 this
+seed produces 571 MB for one school, which is more than a free Supabase project
+has in total, and the failure arrives days later as a full database rather than
+as an error. So file 1 says so instead:
+
+```
+ERROR:  Paste supabase/bundles/32_the_register_was_written_twice.sql first.
+        Without it every attendance mark this seed makes is copied into the
+        audit log as a kilobyte of before/after JSON, and so is every pupil of
+        every finalised day: 571 MB for this one school instead of 110 MB,
+        which is more than a free Supabase project has. Nothing else about this
+        set changes.
+```
