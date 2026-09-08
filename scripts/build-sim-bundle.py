@@ -102,12 +102,37 @@ GROUPS = [
      "with the months still to come left unbilled the way a real school's "
      "are. Twenty seconds.",
      "2026-2027"),
-    ("the_register",
+    # THE REGISTER, ALSO ONE FILE PER YEAR, and for the same reason as the
+    # years above: whole, it took 84 seconds on a fast local disk, which made
+    # it the longest file in the set and the next one certain to lose its
+    # request on a shared instance.
+    #
+    # Sections 2 to 4 of 05_daily_operations.sql are NOT per-year (the staff
+    # register is per member of staff per day, and the corrections pass has to
+    # wait until every day is finalised), so they carry a guard that runs them
+    # in the LAST of these four files only.
+    ("register_2023_2024",
      ["05_daily_operations.sql"],
-     "589 school days of student and staff attendance, finalised for every "
-     "day except today, and twenty of those days reopened afterwards and "
+     "February and March 2024 of the register, section by section, day by "
+     "day, finalised. Seconds.",
+     "2023-2024"),
+    ("register_2024_2025",
+     ["05_daily_operations.sql"],
+     "The 2024-2025 register: every school day of it, for a roll that grew "
+     "through the year. Half a minute.",
+     "2024-2025"),
+    ("register_2025_2026",
+     ["05_daily_operations.sql"],
+     "The 2025-2026 register, the biggest of the four. Half a minute.",
+     "2025-2026"),
+    ("register_2026_2027",
+     ["05_daily_operations.sql"],
+     "This year's register up to today, with today deliberately left "
+     "unfinalised the way a real one is at eleven in the morning. Then the "
+     "staff register, the gate codes, and twenty finalised days reopened and "
      "corrected the way a school corrects one: a father turns up with the "
-     "leave application. About a minute."),
+     "leave application. Under a minute.",
+     "2026-2027"),
     ("tests_and_exams",
      ["06_academics.sql"],
      "663 class tests, 5 exam terms, 380 papers, result cards, teacher "

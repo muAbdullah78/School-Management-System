@@ -2,9 +2,9 @@
 -- GENERATED FILE. DO NOT EDIT except for the one line marked below.
 -- Built from supabase/sim/ by scripts/build-sim-bundle.py
 --
--- TWO YEARS OF ONE SCHOOL'S USE. FILE 6 OF 10: the register
+-- TWO YEARS OF ONE SCHOOL'S USE. FILE 8 OF 13: register 2025 2026
 --
--- 589 school days of student and staff attendance, finalised for every day except today, and twenty of those days reopened afterwards and corrected the way a school corrects one: a father turns up with the leave application. About a minute.
+-- The 2025-2026 register, the biggest of the four. Half a minute.
 --
 -- HOW TO RUN THE SET. Paste each file into the Supabase SQL editor and press
 -- Run, IN ORDER, waiting for each to finish before starting the next. Exactly
@@ -31,7 +31,7 @@
 --      free trial. Once the trial has ended there is no undo.
 --   2. Only run it against a school you are willing to fill with invented
 --      data. It writes nothing outside the one tenant named below.
---   3. It creates NO logins. See the note at the end of file 10.
+--   3. It creates NO logins. See the note at the end of file 13.
 -- =============================================================================
 
 -- ---------------------------------------------------------------------------
@@ -41,6 +41,11 @@
 -- does not, the file stops with "No owner session." and writes nothing.
 -- ---------------------------------------------------------------------------
 set local "sim.school" = 'Chaudhary Puclix High School Ghauriii';
+
+-- WHICH ACADEMIC YEAR THIS FILE IS. Do not change it, and run the four year
+-- files IN ORDER: each one ends by rolling the whole school forward into the
+-- next, and there is nothing for the next file to bill until it has.
+set local "sim.year" = '2025-2026';
 
 -- Some of these files take minutes, which is longer than the editor's default
 -- limit. Only a superuser can lift it, which the SQL editor is.
@@ -261,11 +266,28 @@ begin
       cross join public.academic_sessions a
      where c.school_id = v_school and a.school_id = v_school
        and a.ends_on >= date '2024-02-01' and a.starts_on <= current_date
+       -- ONE ACADEMIC YEAR AT A TIME WHEN ASKED, for the same reason
+       -- 04_the_years.sql is: the Supabase SQL editor is reached over an HTTP
+       -- API whose timeout `set statement_timeout = 0` cannot touch, and this
+       -- file whole took 84 seconds on a fast local disk, which is the longest
+       -- of the set and the next one certain to fail on a shared instance.
+       and coalesce(nullif(btrim(current_setting('sim.year', true)), ''), a.name) = a.name
      order by a.starts_on, c.level_order, s.sort_order
   loop
+    -- ALREADY MARKED? Skipped, so re-pasting a year file after a timeout costs
+    -- seconds rather than redoing the register. fn_mark_attendance is an upsert
+    -- and would not corrupt anything, but it would refuse every finalised day
+    -- and then spend a minute discovering that.
     for v_day in
       select d from sim_day
        where d between greatest(r.starts_on, date '2024-02-01') and least(r.ends_on, current_date)
+         and not exists (
+           select 1 from public.attendance_daily ad
+             join public.enrollments e on e.id = ad.enrollment_id
+            where ad.school_id = v_school
+              and ad.attendance_date = sim_day.d
+              and e.section_id = r.section_id
+              and e.session_id = r.session_id)
     loop
       select jsonb_agg(jsonb_build_object('enrollment_id', q.id, 'status', q.st))
         into v_marks
@@ -323,6 +345,24 @@ declare
   v_school uuid := public.current_school_id();
   r record; v_day date; v_n bigint := 0; v_status public.attendance_status;
 begin
+  -- ONCE, NOT ONCE PER YEAR. Sections 2 to 4 are not scoped to an academic
+  -- session: the staff register is per member of staff per day, the gate codes
+  -- are per year but cheap and created by name, and the corrections pass needs
+  -- every day of the register already finalised before it can reopen any of
+  -- them. Section 1 above is emitted once per year by
+  -- scripts/build-sim-bundle.py, so these run in the LAST of those files only.
+  if coalesce(nullif(btrim(current_setting('sim.year', true)), ''),
+              (select a.name from public.academic_sessions a
+                where a.school_id = v_school and a.starts_on <= current_date
+                order by a.starts_on desc limit 1))
+     is distinct from
+     (select a.name from public.academic_sessions a
+       where a.school_id = v_school and a.starts_on <= current_date
+       order by a.starts_on desc limit 1) then
+    raise notice 'skipped here: this part runs once, with the last year';
+    return;
+  end if;
+
   for r in select id, joined_on, left_on from public.staff where school_id = v_school loop
     for v_day in
       select d from sim_day
@@ -357,6 +397,24 @@ declare
   v_school uuid := public.current_school_id();
   v_code jsonb;
 begin
+  -- ONCE, NOT ONCE PER YEAR. Sections 2 to 4 are not scoped to an academic
+  -- session: the staff register is per member of staff per day, the gate codes
+  -- are per year but cheap and created by name, and the corrections pass needs
+  -- every day of the register already finalised before it can reopen any of
+  -- them. Section 1 above is emitted once per year by
+  -- scripts/build-sim-bundle.py, so these run in the LAST of those files only.
+  if coalesce(nullif(btrim(current_setting('sim.year', true)), ''),
+              (select a.name from public.academic_sessions a
+                where a.school_id = v_school and a.starts_on <= current_date
+                order by a.starts_on desc limit 1))
+     is distinct from
+     (select a.name from public.academic_sessions a
+       where a.school_id = v_school and a.starts_on <= current_date
+       order by a.starts_on desc limit 1) then
+    raise notice 'skipped here: this part runs once, with the last year';
+    return;
+  end if;
+
   v_code := public.fn_generate_checkin_code('Gate board 2024-2025', date '2024-04-01', date '2025-03-31', true, false);
   v_code := public.fn_generate_checkin_code('Gate board 2025-2026', date '2025-04-01', date '2026-03-31', true, false);
   v_code := public.fn_generate_checkin_code('Gate board 2026-2027', date '2026-04-01', date '2027-03-31', true, true);
@@ -399,6 +457,24 @@ declare
   ];
 begin
   if v_school is null then raise exception 'No owner session.'; end if;
+
+  -- ONCE, NOT ONCE PER YEAR. Sections 2 to 4 are not scoped to an academic
+  -- session: the staff register is per member of staff per day, the gate codes
+  -- are per year but cheap and created by name, and the corrections pass needs
+  -- every day of the register already finalised before it can reopen any of
+  -- them. Section 1 above is emitted once per year by
+  -- scripts/build-sim-bundle.py, so these run in the LAST of those files only.
+  if coalesce(nullif(btrim(current_setting('sim.year', true)), ''),
+              (select a.name from public.academic_sessions a
+                where a.school_id = v_school and a.starts_on <= current_date
+                order by a.starts_on desc limit 1))
+     is distinct from
+     (select a.name from public.academic_sessions a
+       where a.school_id = v_school and a.starts_on <= current_date
+       order by a.starts_on desc limit 1) then
+    raise notice 'skipped here: this part runs once, with the last year';
+    return;
+  end if;
 
   -- EVERY Nth CANDIDATE, not a hash, and the difference matters. A hash filter
   -- (`% 400 = 0` over the roughly 5,000 locked absences) averaged twelve days

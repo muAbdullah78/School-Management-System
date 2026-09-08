@@ -1,4 +1,197 @@
 -- =============================================================================
+-- GENERATED FILE. DO NOT EDIT except for the one line marked below.
+-- Built from supabase/sim/ by scripts/build-sim-bundle.py
+--
+-- TWO YEARS OF ONE SCHOOL'S USE. FILE 7 OF 13: register 2024 2025
+--
+-- The 2024-2025 register: every school day of it, for a roll that grew through the year. Half a minute.
+--
+-- HOW TO RUN THE SET. Paste each file into the Supabase SQL editor and press
+-- Run, IN ORDER, waiting for each to finish before starting the next. Exactly
+-- like the numbered migration bundles. Each file is one transaction, so if one
+-- fails it writes nothing and can be fixed and re-run on its own.
+--
+-- WHAT THE SET DOES. It finds the school named below and fills it with February
+-- 2024 to today: about 220 children on the roll, 589 school days of register,
+-- three year-end rollovers, 6,000 challans, 4,600 payments, 663 class tests,
+-- 5 exam terms, 715 result cards, a cash drawer counted daily, and today half
+-- marked the way a real register is at eleven in the morning. About 370,000
+-- rows.
+--
+-- Every row arrives through the application's OWN functions, with a real
+-- signed-in owner's session and Row Level Security on. Raw inserts would fill
+-- the tables faster and prove nothing, because it is those functions that keep
+-- the ledger balanced and the receipt numbers gapless.
+--
+-- BEFORE YOU START
+--
+--   1. IT IS NOT REVERSIBLE BY THESE FILES. To undo it, sign in as the owner
+--      and clear the school's data from Settings, which calls
+--      fn_reset_school_data. That works only while the school is still on its
+--      free trial. Once the trial has ended there is no undo.
+--   2. Only run it against a school you are willing to fill with invented
+--      data. It writes nothing outside the one tenant named below.
+--   3. It creates NO logins. See the note at the end of file 13.
+-- =============================================================================
+
+-- ---------------------------------------------------------------------------
+-- THE ONE LINE TO EDIT, and it must be the same in every file of the set: the
+-- exact name of the school to fill. It must match
+-- Settings -> School Profile -> School name character for character. If it
+-- does not, the file stops with "No owner session." and writes nothing.
+-- ---------------------------------------------------------------------------
+set local "sim.school" = 'Chaudhary Puclix High School Ghauriii';
+
+-- WHICH ACADEMIC YEAR THIS FILE IS. Do not change it, and run the four year
+-- files IN ORDER: each one ends by rolling the whole school forward into the
+-- next, and there is nothing for the next file to bill until it has.
+set local "sim.year" = '2024-2025';
+
+-- Some of these files take minutes, which is longer than the editor's default
+-- limit. Only a superuser can lift it, which the SQL editor is.
+set local statement_timeout = 0;
+
+-- ---------------------------------------------------------------------------
+-- CAN THIS FILE DO ANYTHING AT ALL? Four questions, asked here at the top
+-- rather than found out four minutes into a file, and each one answered with
+-- WHAT IS ACTUALLY THERE rather than with the fact that something is wrong.
+--
+-- THE FIRST VERSION OF THIS ASKED ONLY THE FIRST QUESTION, and the file then
+-- died on the school name with
+--
+--     ERROR: No owner session. Is the school name exactly right?
+--
+-- seven times in a row. That message names the right suspect and then leaves
+-- the reader with nowhere to go: the name is in Settings, truncated in the
+-- sidebar, and the difference is usually a trailing space or one letter. A
+-- diagnostic that can read the answer and does not print it is not a
+-- diagnostic. So this one lists the school names it can see.
+-- ---------------------------------------------------------------------------
+do $prereq$
+declare
+  -- NOT btrim'd: see question 3. `nullif` on the raw value only asks whether
+  -- anything arrived at all.
+  v_name   text := coalesce(current_setting('sim.school', true), '');
+  v_school uuid;
+  v_near   integer;   -- schools whose name differs only in case or spacing
+  v_owners integer;
+  v_all    text;
+begin
+  -- 1. Is the schema new enough? The register section reopens a finalised day
+  --    and corrects it, which no database could do before migration 0121.
+  if to_regprocedure('public.fn_unlock_attendance(uuid,uuid,uuid,date,text)') is null then
+    raise exception 'This project is behind the application. Run '
+      'supabase/verify.sql, paste every bundle it names in a FAIL row (the '
+      'first of them is 27_a_finalised_register_can_be_reopened.sql), then '
+      'start this set again.';
+  end if;
+
+  -- 2. Did the school name survive as far as this statement? `set local` only
+  --    holds for the transaction, and pressing Run on a pasted file makes the
+  --    whole file one transaction. Run a SELECTION of it and the setting is
+  --    gone by the time anything reads it, and every later error then blames
+  --    the school name instead of the way it was run. Outside a transaction
+  --    `set local` does not fail: it warns, and reads back EMPTY.
+  if btrim(v_name) = '' then
+    raise exception 'The school name never arrived: "sim.school" is empty here. '
+      'Paste and run the WHOLE file in one go rather than a selection of it, '
+      'because the line that sets the name only holds for as long as the file '
+      'runs as one batch.';
+  end if;
+
+  -- 3. Is there a school of that name? And if not, SAY WHAT THERE IS, and fix
+  --    it where the answer is not in doubt.
+  --
+  --    THE COMPARISON HERE IS EXACTLY THE ONE THE REST OF THE FILE USES: plain
+  --    equality on schools.name. An earlier version trimmed the setting before
+  --    comparing, which made this check PASS on a name the body then failed on,
+  --    and a check that disagrees with the code it guards is worse than no
+  --    check. So instead of loosening the comparison, this loosens the SEARCH
+  --    and then corrects the setting, which every later statement reads.
+  --
+  --    IT SEARCHES BOTH NAME COLUMNS, and that is not belt and braces: it is
+  --    the defect migration 0123 fixes. school_settings.name is the only one a
+  --    school can edit, schools.name is the one this file matches on, and until
+  --    0123 nothing kept them in step. So a school reading its own name off its
+  --    own screen and pasting it in here would be pasting the OTHER column, and
+  --    every file in the set refused. That is exactly how it was reported.
+  select id into v_school from public.schools where name = v_name;
+
+  if v_school is null then
+    -- The name the school sees on its own screens, which is the one a reader
+    -- copies. Matched exactly first, before any fuzziness.
+    select s.id, s.name into v_school, v_all
+      from public.schools s
+      join public.school_settings st on st.school_id = s.id
+     where st.name = v_name;
+
+    if v_school is not null then
+      raise notice 'That is the name on this school''s own screens. In the '
+        'database it is still stored as "%", which is what the console and its '
+        'invoices show: two names for one school, which '
+        'supabase/bundles/29_a_school_has_one_name.sql puts right. Continuing '
+        'with the stored one.', v_all;
+      perform set_config('sim.school', v_all, true);
+      v_name := v_all;
+    else
+      -- One near miss and no ambiguity, across either column: almost always a
+      -- trailing space, which is invisible in Settings and in the sidebar, or a
+      -- capital letter. Fix it and say so loudly enough that nobody could think
+      -- a different school was filled by accident.
+      select count(*), min(s.name) into v_near, v_all
+        from public.schools s
+        left join public.school_settings st on st.school_id = s.id
+       where lower(btrim(s.name))  = lower(btrim(v_name))
+          or lower(btrim(st.name)) = lower(btrim(v_name));
+
+      if v_near = 1 then
+        raise notice 'The name given was "%" and this school is stored as "%". '
+          'Same school, so continuing with the stored spelling.', v_name, v_all;
+        perform set_config('sim.school', v_all, true);
+        v_name := v_all;
+      else
+        -- BOTH names per school, because the whole difficulty here is that a
+        -- school has two and can only see one of them.
+        select string_agg('"' || s.name || '"'
+                 || case when st.name is distinct from s.name
+                           then ' (its own screens say "' || st.name || '")'
+                         else '' end, ', ' order by s.name)
+          into v_all
+          from public.schools s
+          left join public.school_settings st on st.school_id = s.id;
+        raise exception 'No school is named "%". This project holds %. Copy the '
+          'one you want, character for character including any spaces, into the '
+          '"sim.school" line at the top of every file in this set.',
+          v_name, coalesce(v_all, 'no schools at all');
+      end if;
+    end if;
+    select id into v_school from public.schools where name = v_name;
+  end if;
+
+  -- 4. Is there an owner to act as? Every row in this set is written through
+  --    the application's own functions with a real signed-in owner's session,
+  --    so without one there is nobody to be. Kept separate from question 3 on
+  --    purpose: the two were one message before, and "is the school name
+  --    right?" is unanswerable advice when the name was right all along.
+  select count(*) into v_owners from public.profiles
+   where school_id = v_school and role = 'owner' and active;
+  if v_owners = 0 then
+    raise exception 'The school "%" exists but has no active owner login, and '
+      'this set writes as its owner. Sign in as the school and check Settings, '
+      'Users & Roles.', v_name;
+  end if;
+
+  raise notice 'Filling "%", which has an owner to write as. This whole file is '
+    'one transaction: if it stops, it writes nothing.', v_name;
+end $prereq$;
+
+
+
+-- ------------------------------------------------------------------------
+-- 05_daily_operations.sql
+-- ------------------------------------------------------------------------
+reset role;
+-- =============================================================================
 -- SIMULATION, PART 4: every school day from February 2024 to today.
 --
 -- THE CALENDAR IS THE POINT. A seed that marks attendance on all 365 days of
@@ -18,18 +211,17 @@
 -- Run: psql -v ON_ERROR_STOP=1 -f supabase/sim/04_daily_operations.sql
 -- =============================================================================
 
-\set ON_ERROR_STOP on
 
-begin;
 
 select set_config('request.jwt.claims',
   jsonb_build_object('sub', p.id::text, 'role','authenticated')::text, true)
 from public.profiles p join public.schools s on s.id = p.school_id
-where s.name = 'Chaudhary Puclix High School Ghauriii'
+where s.name = current_setting('sim.school')
   and p.role = 'owner' and p.active limit 1;
 set local role authenticated;
 
 -- --- The school calendar ------------------------------------------------------
+drop table if exists sim_day;
 create temp table sim_day(d date primary key) on commit drop;
 insert into sim_day(d)
 select g::date
@@ -331,7 +523,6 @@ begin
 end
 $sim$;
 
-commit;
 
 -- The clock is NOT set here. Every timestamp in this simulation is moved onto
 -- its real date by 08_the_clock.sql, in one place, as the table owner, because

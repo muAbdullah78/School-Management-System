@@ -2,7 +2,7 @@
 -- GENERATED FILE. DO NOT EDIT except for the one line marked below.
 -- Built from supabase/sim/ by scripts/build-sim-bundle.py
 --
--- TWO YEARS OF ONE SCHOOL'S USE. FILE 4 OF 10: year 2025 2026
+-- TWO YEARS OF ONE SCHOOL'S USE. FILE 4 OF 13: year 2025 2026
 --
 -- The biggest year: 50 admissions, twelve months of billing against a roll that has grown twice, and the rollover into the current year. About half a minute.
 --
@@ -31,7 +31,7 @@
 --      free trial. Once the trial has ended there is no undo.
 --   2. Only run it against a school you are willing to fill with invented
 --      data. It writes nothing outside the one tenant named below.
---   3. It creates NO logins. See the note at the end of file 10.
+--   3. It creates NO logins. See the note at the end of file 13.
 -- =============================================================================
 
 -- ---------------------------------------------------------------------------
