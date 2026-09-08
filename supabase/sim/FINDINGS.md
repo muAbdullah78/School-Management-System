@@ -1017,3 +1017,89 @@ The Edge Function now calls it **and reads the result**, and says so with a
 reference if the school could not be removed, rather than leaving somebody to
 find it in the console later with no idea where it came from. It has to be
 redeployed for new signups to use it.
+
+## F25. An internal helper was reachable from a browser, four guards existed for exactly that, and every one of them read clean. **Fixed in migration 0125.**
+
+**Severity: the defect itself is minor. The blindness that hid it is the
+finding, and it is the worst one in this document.**
+
+A school pasted the two bundles from F23 and F24, ran `verify.sql`, and got one
+FAIL out of seventy-four:
+
+```
+one school cannot reach another's families or fees (0070)
+  FAIL: re-run bundle 7 (cross-tenant leak is OPEN)
+```
+
+Nothing to do with bundle 7. That row's third clause asserts a blanket
+property: **no function named `fn__` may be executable by `authenticated`.** The
+prefix is this schema's word for "internal, called only by something that has
+already scoped the ids", and `check-definer-idor.py` exempts `fn__` functions
+from its per-parameter scoping analysis on precisely that basis. A grant turns
+the exemption into a hole, which is not hypothetical: `fn__apply_discount_lines`
+once carried the prefix *and* a grant, and one school could write a discount
+line onto another school's invoice.
+
+Two functions were open:
+
+| | |
+|---|---|
+| `fn__mirror_school_name` | added by **0123, four hours earlier**, whose migration says `revoke execute ... from public, anon` and stops |
+| `fn_record_migration` | open since 0069. Writes `schema_migrations`, the table `verify.sql` and `detect.sql` read to answer "what is installed here", so a signed-in user could make both of them lie |
+
+### Why revoking from `public` was not enough
+
+A new function carries EXECUTE for PUBLIC by default, so `revoke from public`
+looks total. On a real Supabase project it is not, because the project's
+bootstrap runs
+
+```sql
+alter default privileges in schema public
+  grant all on functions to postgres, anon, authenticated, service_role;
+```
+
+so every new function *also* gets an explicit grant to `authenticated`, which a
+revoke of PUBLIC does not touch. The spelling that works is
+`revoke ... from public, anon, authenticated`, and it is the one
+`check-definer-idor.py` prints when it fails.
+
+### And why nothing here caught it
+
+`scripts/preflight.sh` and `.github/workflows/ci.yml` build their databases with
+
+```sql
+alter default privileges in schema public grant all on tables to ...
+```
+
+and **no equivalent line for functions**. So in every database this project has
+ever tested against, a function created by a migration comes out with no grant
+to `authenticated` at all, and there is nothing for those guards to find. Four
+of them, all correct, all reading a database in which the defect they exist for
+cannot be represented:
+
+| guard | on my harness | on a Supabase-shaped database |
+|---|---|---|
+| `verify.sql` row 0070 | PASS | **FAIL** |
+| `detect.sql` 0070 | present | **MISSING** |
+| `check-definer-idor.py` | ok | **names `fn__mirror_school_name`, prints the remedy** |
+| `check-reachable.sh` | ok | **FAIL, and separately finds `fn_record_migration`** |
+
+Reproduced by building one database the way Supabase does and applying the same
+125 migrations. That is the whole diagnosis.
+
+### The fix, in three parts
+
+1. **0125** revokes both, and sweeps every `fn__` function rather than the one
+   that was known, so the next one added without a revoke is closed by
+   re-pasting this instead of by a sixth migration.
+2. **Both harnesses** now grant functions and sequences too, at all eight sites.
+   With the harness fixed and 0125 absent, all four guards fail.
+3. **A guard on the guards.** `preflight.sh` now refuses to report on the
+   database it was pointed at unless that database has a default privilege
+   granting functions to `authenticated`, and says how to rebuild it. A checker
+   that cannot express the defect it checks for should say so rather than pass.
+
+The lesson generalises past this bug: **a test harness that differs from
+production in how it grants privileges cannot test authorisation.** Four
+independent guards agreeing means nothing if they are all reading the same wrong
+database.

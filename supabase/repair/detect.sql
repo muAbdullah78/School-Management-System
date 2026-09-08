@@ -919,7 +919,18 @@ with sig(migration, object, present) as (values
   ('0124_a_failed_signup_leaves_nothing_behind', 'a failed signup can be rolled back',
      to_regprocedure('public.fn_signup_rollback(uuid)') is not null
      and not has_function_privilege('authenticated',
-           to_regprocedure('public.fn_signup_rollback(uuid)')::oid, 'EXECUTE'))
+           to_regprocedure('public.fn_signup_rollback(uuid)')::oid, 'EXECUTE')),
+  -- Absence of a grant, which is the only shape this signature can take: 0125
+  -- adds no function, it takes EXECUTE away from two. Reads as present on a
+  -- database whose default privileges never gave the grant in the first place,
+  -- and that is correct: there is nothing there to close.
+  ('0125_the_harness_could_not_see_a_function_grant', 'no internal helper is reachable from a browser',
+     not exists (select 1 from pg_proc p
+                   join pg_namespace n on n.oid = p.pronamespace
+                  where n.nspname = 'public'
+                    and (p.proname like 'fn\_\_%' or p.proname = 'fn_record_migration')
+                    and (has_function_privilege('authenticated', p.oid, 'execute')
+                         or has_function_privilege('anon', p.oid, 'execute'))))
 )
 select migration,
        object                                   as looked_for,

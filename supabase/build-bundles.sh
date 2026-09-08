@@ -520,6 +520,26 @@ emit supabase/bundles/29_a_school_has_one_name.sql \
 emit supabase/bundles/30_a_failed_signup_leaves_nothing_behind.sql \
      supabase/migrations/0124*.sql
 
+# A THIRTY-FIRST bundle, and bundle 29 is NOT reopened to fix what it shipped,
+# because a school has already pasted it.
+#
+# 0125 closes two functions a browser could execute: fn__mirror_school_name,
+# which 0123 added four hours earlier with `revoke ... from public, anon` and no
+# `authenticated`, and fn_record_migration, open since 0069, which writes the
+# ledger that verify.sql and detect.sql read to answer "what is installed here".
+#
+# THE REASON NEITHER WAS CAUGHT is worth more than the fix. A real Supabase
+# project grants FUNCTIONS to authenticated by default privilege, so a new
+# function carries an explicit grant and revoking PUBLIC leaves it. Both
+# harnesses in this repository granted TABLES only, so every function they
+# created carried no such grant, and all four guards that assert "no fn__ helper
+# is reachable from a browser" passed on a database where they could not fail. A
+# school found it by running verify.sql. Both harnesses are fixed in the same
+# commit, and preflight now refuses to report on a database that cannot express
+# the defect at all.
+emit supabase/bundles/31_the_harness_could_not_see_a_function_grant.sql \
+     supabase/migrations/0125*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

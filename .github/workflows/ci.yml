@@ -366,6 +366,19 @@ jobs:
           -- stayed green.
           alter default privileges in schema public
             grant all on tables to postgres, anon, authenticated, service_role;
+          -- FUNCTIONS AND SEQUENCES TOO, and the omission was not cosmetic. A
+          -- real Supabase project grants these, so every function created by a
+          -- migration comes out with an EXPLICIT grant to `authenticated`, and
+          -- `revoke ... from public` does not remove it. With only the TABLES
+          -- line here, a new function came out with no grant at all, so the
+          -- four guards that assert "no fn__ helper is reachable from a
+          -- browser" all read clean on every database this project tests
+          -- against. 0123 shipped one that WAS reachable and a school found it
+          -- by running verify.sql. See 0125.
+          alter default privileges in schema public
+            grant all on functions to postgres, anon, authenticated, service_role;
+          alter default privileges in schema public
+            grant all on sequences to postgres, anon, authenticated, service_role;
           SQL
       - name: Apply all migrations in order
         # --single-transaction is not a nicety, it is the point.
@@ -433,6 +446,19 @@ jobs:
           -- Supabase's own default privileges — see the note in the first stub.
           alter default privileges in schema public
             grant all on tables to postgres, anon, authenticated, service_role;
+          -- FUNCTIONS AND SEQUENCES TOO, and the omission was not cosmetic. A
+          -- real Supabase project grants these, so every function created by a
+          -- migration comes out with an EXPLICIT grant to `authenticated`, and
+          -- `revoke ... from public` does not remove it. With only the TABLES
+          -- line here, a new function came out with no grant at all, so the
+          -- four guards that assert "no fn__ helper is reachable from a
+          -- browser" all read clean on every database this project tests
+          -- against. 0123 shipped one that WAS reachable and a school found it
+          -- by running verify.sql. See 0125.
+          alter default privileges in schema public
+            grant all on functions to postgres, anon, authenticated, service_role;
+          alter default privileges in schema public
+            grant all on sequences to postgres, anon, authenticated, service_role;
           SQL
           for b in $(ls supabase/bundles/*.sql | sort -V); do
             echo "── $b"
@@ -542,6 +568,19 @@ jobs:
           end $$;
           alter default privileges in schema public
             grant all on tables to postgres, anon, authenticated, service_role;
+          -- FUNCTIONS AND SEQUENCES TOO, and the omission was not cosmetic. A
+          -- real Supabase project grants these, so every function created by a
+          -- migration comes out with an EXPLICIT grant to `authenticated`, and
+          -- `revoke ... from public` does not remove it. With only the TABLES
+          -- line here, a new function came out with no grant at all, so the
+          -- four guards that assert "no fn__ helper is reachable from a
+          -- browser" all read clean on every database this project tests
+          -- against. 0123 shipped one that WAS reachable and a school found it
+          -- by running verify.sql. See 0125.
+          alter default privileges in schema public
+            grant all on functions to postgres, anon, authenticated, service_role;
+          alter default privileges in schema public
+            grant all on sequences to postgres, anon, authenticated, service_role;
           SQL
           mkdir -p /tmp/crlf
           for b in supabase/bundles/*.sql; do
@@ -665,6 +704,19 @@ jobs:
           -- Supabase's own default privileges — see the note in the first stub.
           alter default privileges in schema public
             grant all on tables to postgres, anon, authenticated, service_role;
+          -- FUNCTIONS AND SEQUENCES TOO, and the omission was not cosmetic. A
+          -- real Supabase project grants these, so every function created by a
+          -- migration comes out with an EXPLICIT grant to `authenticated`, and
+          -- `revoke ... from public` does not remove it. With only the TABLES
+          -- line here, a new function came out with no grant at all, so the
+          -- four guards that assert "no fn__ helper is reachable from a
+          -- browser" all read clean on every database this project tests
+          -- against. 0123 shipped one that WAS reachable and a school found it
+          -- by running verify.sql. See 0125.
+          alter default privileges in schema public
+            grant all on functions to postgres, anon, authenticated, service_role;
+          alter default privileges in schema public
+            grant all on sequences to postgres, anon, authenticated, service_role;
           SQL
 
           echo "── the school as it was: migrations 0001-0037 (the real cutoff)"

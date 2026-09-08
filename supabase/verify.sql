@@ -2249,6 +2249,32 @@ select 'a failed signup leaves nothing behind (0124)',
        end
 
 union all
+-- 0125. The 0070 row above already asserts that no fn__ helper is executable by
+-- `authenticated`, and it is what caught this: a school ran verify.sql and got
+-- one FAIL out of seventy-four, on fn__mirror_school_name, which 0123 had added
+-- four hours earlier with `revoke ... from public, anon` and no `authenticated`.
+--
+-- This row is for the part 0070's is not about: the migration LEDGER. Nothing in
+-- the application calls fn_record_migration. Its only caller is the recording
+-- block at the foot of every bundle, which runs as the table owner in the SQL
+-- editor. A signed-in school user could write rows into schema_migrations, and
+-- that is the table this file and detect.sql read to answer "what is installed
+-- here", so poisoning it makes both of them lie about it.
+select 'the migration ledger cannot be written from a browser (0125)',
+       case when to_regprocedure('public.fn_record_migration(text,text,text)') is null
+         then 'PASS: no ledger yet, so nothing to reach'
+         when has_function_privilege('authenticated',
+                to_regprocedure('public.fn_record_migration(text,text,text)')::oid, 'EXECUTE')
+           or has_function_privilege('anon',
+                to_regprocedure('public.fn_record_migration(text,text,text)')::oid, 'EXECUTE')
+         then 'FAIL: a signed-in user can write this database''s migration '
+              || 'ledger, which is what this file reads to tell you what is '
+              || 'installed; apply '
+              || 'supabase/bundles/31_the_harness_could_not_see_a_function_grant.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS: no schools yet, as expected'
