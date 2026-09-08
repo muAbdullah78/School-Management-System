@@ -2,9 +2,9 @@
 -- GENERATED FILE. DO NOT EDIT except for the one line marked below.
 -- Built from supabase/sim/ by scripts/build-sim-bundle.py
 --
--- TWO YEARS OF ONE SCHOOL'S USE. FILE 2 OF 7: two and a half years
+-- TWO YEARS OF ONE SCHOOL'S USE. FILE 4 OF 13: year 2025 2026
 --
--- The long one: about three minutes. Enquiries and admissions year by year, monthly challans, collection with real defaulters, late fines, discounts, expenses, and THREE year-end rollovers.
+-- The biggest year: 50 admissions, twelve months of billing against a roll that has grown twice, and the rollover into the current year. About half a minute.
 --
 -- HOW TO RUN THE SET. Paste each file into the Supabase SQL editor and press
 -- Run, IN ORDER, waiting for each to finish before starting the next. Exactly
@@ -31,7 +31,7 @@
 --      free trial. Once the trial has ended there is no undo.
 --   2. Only run it against a school you are willing to fill with invented
 --      data. It writes nothing outside the one tenant named below.
---   3. It creates NO logins. See the note at the end of file 7.
+--   3. It creates NO logins. See the note at the end of file 13.
 -- =============================================================================
 
 -- ---------------------------------------------------------------------------
@@ -41,6 +41,11 @@
 -- does not, the file stops with "No owner session." and writes nothing.
 -- ---------------------------------------------------------------------------
 set local "sim.school" = 'Chaudhary Puclix High School Ghauriii';
+
+-- WHICH ACADEMIC YEAR THIS FILE IS. Do not change it, and run the four year
+-- files IN ORDER: each one ends by rolling the whole school forward into the
+-- next, and there is nothing for the next file to bill until it has.
+set local "sim.year" = '2025-2026';
 
 -- Some of these files take minutes, which is longer than the editor's default
 -- limit. Only a superuser can lift it, which the SQL editor is.
@@ -304,16 +309,51 @@ begin
   select id into v_cat_maint from public.expense_categories where school_id=v_school and name='Maintenance';
   select id into v_head_dep  from public.fee_heads where school_id=v_school and name='Security Deposit';
 
-  -- The pool index for new children continues where the opening roll stopped.
-  v_seq := 120;
+  -- The pool index for new children starts where the opening roll stopped. It
+  -- is NOT a running counter any more: see the per-year slice below.
 
   for v_ses in
-    select id, name, starts_on, ends_on from public.academic_sessions
-     where school_id = v_school and ends_on >= date '2024-02-01'
-       and starts_on <= current_date
-     order by starts_on
+    select q.* from (
+      select id, name, starts_on, ends_on,
+             row_number() over (order by starts_on) as idx
+        from public.academic_sessions
+       where school_id = v_school and ends_on >= date '2024-02-01'
+         and starts_on <= current_date
+    ) q
+    -- ONE YEAR AT A TIME WHEN ASKED. The Supabase SQL editor is reached through
+    -- an HTTP API with its own timeout, and `set statement_timeout = 0` lifts
+    -- the DATABASE's limit and cannot touch that one. All four years in a
+    -- single request takes about four minutes and the browser gives up with
+    -- "Failed to fetch" long before, which reads like a broken file and is
+    -- really a request that was too long to hold. So scripts/build-sim-bundle.py
+    -- can emit this file once per year, each setting sim.year, and each of them
+    -- finishes in a fraction of the time.
+    where coalesce(nullif(btrim(current_setting('sim.year', true)), ''), q.name) = q.name
+     order by q.starts_on
   loop
     raise notice '--- session % (% to %) ---', v_ses.name, v_ses.starts_on, v_ses.ends_on;
+
+    -- ALREADY DONE? An exact question, because each of these files is ONE
+    -- transaction: a year either completed or wrote nothing at all, so a
+    -- MONTHLY challan for this session means this year finished. Without the
+    -- guard, re-pasting a year would bill it twice, and re-pasting is exactly
+    -- what somebody does after a request times out.
+    --
+    -- `period_month is not null` is load-bearing, and the first version left it
+    -- out. 03_students.sql admits the opening roll through fn_admit_student,
+    -- which raises an ADMISSION FEE invoice per child, and those carry a null
+    -- period_month. So 2023-2024 arrived here already holding 110 invoices, the
+    -- guard skipped the whole year in 0 seconds, and because the year's
+    -- rollover never ran, the 120 children on the opening roll were never
+    -- enrolled into 2024-2025 either. Every later year then came out about half
+    -- size: 2,767 challans instead of 5,826, from one predicate.
+    if exists (select 1 from public.invoices
+                where school_id = v_school and session_id = v_ses.id
+                  and period_month is not null) then
+      raise notice '    already billed, so this year is done. Nothing to do.';
+      continue;
+    end if;
+
     perform public.fn_set_current_session(v_ses.id);
 
     -- ===== 1. The annual fee increase ======================================
@@ -342,7 +382,13 @@ begin
       else 45 end;
 
     for v_i in 1..(v_intake * 3) loop
-      v_seq := v_seq + 1;
+      -- A FIXED SLICE PER YEAR, 200 wide, rather than a counter carried across
+      -- the loop. Every name, CNIC, phone number, class and date below derives
+      -- from v_seq, so a running counter made a year's children depend on
+      -- whether the years before it had run in the same request. Sliced, each
+      -- year draws the same children whether it runs alone, twice, or after a
+      -- timeout. The widest year takes 150 of its 200.
+      v_seq := 120 + 200 * (v_ses.idx - 1)::int + v_i;
       v_boy := (v_seq % 100) < 54;
       v_first := case when v_boy
         then (select n from sim_boy  offset ((v_seq * 7) % v_nboy)  limit 1)
