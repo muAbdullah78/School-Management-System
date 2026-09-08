@@ -3151,6 +3151,91 @@ export async function cancelCertificate(certificateId: string, reason: string): 
   if (error) throw new Error(error.message)
 }
 
+// ---- The plan's student limit, and asking for more room ----
+
+/**
+ * How much room the school has, and any request in flight.
+ *
+ * ONE READ FOR BOTH, so the banner and the request box on the same screen
+ * cannot disagree about whether a request is waiting. `warn` is the 90% line
+ * and it is computed in the database rather than here: every surface that
+ * shows it has to agree about when the warning starts, and a rule in one
+ * screen is a rule the next screen will not have.
+ */
+export type LimitWants = 'more_room' | 'move_up'
+
+export interface MyStudentLimit {
+  students: number
+  /** Null means no limit at all, which is what the by-arrangement plan has. */
+  limit: number | null
+  room: number | null
+  at_limit: boolean
+  warn: boolean
+  granted_extra: boolean
+  plan_code: string | null
+  /** What the PLAN covers, beside `limit`, which includes any allowance. */
+  plan_covers: number | null
+  term_months: number | null
+  /**
+   * The cheapest plan on sale that is bigger than what they have now, priced
+   * for the term they already pay on. Null when nothing on the price list is
+   * bigger, which is the by-arrangement case and needs a conversation.
+   */
+  next_plan: {
+    code: string; name: string; covers: number
+    price: number; term_months: number
+  } | null
+  request: {
+    id: string
+    status: 'pending' | 'granted' | 'declined' | 'withdrawn'
+    requested_limit: number
+    requested_at: string
+    reason: string
+    wants: LimitWants
+    granted_limit: number | null
+    decision_note: string | null
+    decided_at: string | null
+  } | null
+}
+
+export async function myStudentLimit(): Promise<MyStudentLimit> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_my_student_limit')
+  if (error) throw new Error(error.message)
+  return data as MyStudentLimit
+}
+
+/**
+ * Ask for more room. Owner and principal only, and the database says so.
+ *
+ * The reason is not a formality. The operator is deciding about a school they
+ * cannot see inside, so "we are opening a second campus in April" is the whole
+ * difference between a yes and a guess. Eight characters is the floor, the
+ * same one fn_unlock_attendance uses for reopening a register.
+ *
+ * `wants` is the difference between "let us past our limit on this plan" and
+ * "move us up to the plan that covers it". A value rather than prose, because
+ * the two are completely different acts for us and guessing which one a
+ * sentence meant costs a phone call on every request.
+ */
+export async function requestStudentLimit(
+  requested: number, reason: string, wants: LimitWants = 'more_room',
+): Promise<{ id: string; status: string; what_next: string; wants: LimitWants }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_request_student_limit', {
+    p_requested: requested, p_reason: reason, p_wants: wants,
+  })
+  if (error) throw new Error(error.message)
+  return data as { id: string; status: string; what_next: string; wants: LimitWants }
+}
+
+/** Take a request back, for the school that moved up a plan instead. */
+export async function withdrawStudentLimitRequest(): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_withdraw_student_limit_request')
+  if (error) throw new Error(error.message)
+}
+
 // ---- Audit log (owner/principal read-only via RLS) ----
 export interface AuditRow {
   id: number; actor: string | null; actor_role: string | null; action: string

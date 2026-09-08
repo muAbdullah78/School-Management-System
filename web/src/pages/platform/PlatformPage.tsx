@@ -20,14 +20,15 @@ import { NewSchoolDialog } from './NewSchool'
 import { Business } from './Business'
 import { Publishing } from './Publishing'
 import { LeftBehind } from './LeftBehind'
+import { RoomRequests } from './RoomRequests'
 import { UnattachedLogins } from './UnattachedLogins'
 import { Reviews } from './Reviews'
-import { paymentClaims, dueSoon, platformSettings, orphanReport, unattachedLogins } from '@/lib/platform'
+import { paymentClaims, dueSoon, platformSettings, orphanReport, unattachedLogins, limitRequests } from '@/lib/platform'
 
 const FIELD = 'rounded border border-slate-300 px-2 py-1.5 text-sm'
 
 type Tab = 'schools' | 'renewals' | 'claims' | 'business' | 'publishing' | 'billing'
-  | 'leftbehind' | 'reviews' | 'strandedlogins'
+  | 'leftbehind' | 'reviews' | 'strandedlogins' | 'roomrequests'
 
 // What each screen is FOR, in one line, because the heading alone does not say.
 // "Renewals" and "Payments reported" are both about money arriving and a person
@@ -36,6 +37,7 @@ const TAB_SUBTITLE: Record<Tab, string> = {
   schools: '',
   renewals: 'Licences ending soon, worst first. This is the call list.',
   claims: 'Schools that say they have paid, waiting to be matched to the bank.',
+  roomrequests: 'Schools that have filled their plan and cannot admit the next child.',
   business: 'What the company is worth: revenue, churn and the plan mix.',
   publishing: 'The desktop installer, and notices every school sees.',
   billing: 'Our own NTN and bank details, printed on every invoice we raise.',
@@ -48,6 +50,7 @@ const TAB_TITLE: Record<Tab, string> = {
   schools: 'Schools',
   renewals: 'Renewals',
   claims: 'Payments reported',
+  roomrequests: 'Requests for more room',
   business: 'The business',
   publishing: 'Downloads and notices',
   billing: 'Our billing details',
@@ -103,6 +106,16 @@ export function PlatformPage() {
   const renewalCount = useQuery({
     queryKey: ['dueSoon', 45], queryFn: () => dueSoon(45),
     enabled: isAdmin.data === true,
+  })
+  // Schools asking for room for more pupils than their plan covers. Badged and
+  // warned, because unlike every other queue in this console the school at the
+  // other end of one of these is REFUSING ADMISSIONS while it waits: migration
+  // 0128 blocks the admission and tells them to ask us. A day in this queue is a
+  // day of families being turned away, so it outranks the renewals call list.
+  const roomCount = useQuery({
+    queryKey: ['limitRequests', 'pending'], queryFn: () => limitRequests('pending'),
+    enabled: isAdmin.data === true,
+    retry: false,
   })
   // A warning dot on the tab rather than a banner on every screen. An invoice
   // printed without an NTN is useless to the school receiving it and they will
@@ -261,6 +274,15 @@ export function PlatformPage() {
             badge={renewalCount.data?.length} />
           <TabButton now={tab} me="claims" set={setTab} label="Payments reported"
             badge={claimCount.data?.length} />
+          {/* Only when there IS something, the same rule the two panels below
+              follow: a permanently empty tab teaches people to stop reading the
+              nav. Warned as well as badged, which the payment queue is not,
+              because a payment report waiting a day costs us nothing and a room
+              request waiting a day is a school turning a family away. */}
+          {(roomCount.data?.length ?? 0) > 0 && (
+            <TabButton now={tab} me="roomrequests" set={setTab} label="Requests for more room"
+              badge={roomCount.data?.length} warn />
+          )}
           <TabButton now={tab} me="business" set={setTab} label="The business" />
           <TabButton now={tab} me="publishing" set={setTab} label="Downloads & notices" />
           {/* Deliberately NOT badged with a count. A badge means "there is
@@ -307,6 +329,15 @@ export function PlatformPage() {
           />
         )}
         {tab === 'claims' && <Claims />}
+        {tab === 'roomrequests' && (
+          <RoomRequests
+            onOpenSchool={(id) => {
+              // Into their Billing tab, because the question behind every one of
+              // these requests is which plan they are on and what they pay.
+              setTab('schools'); setDrawerTab('billing'); setOpenId(id)
+            }}
+          />
+        )}
         {tab === 'business' && <Business />}
         {tab === 'publishing' && <Publishing />}
         {tab === 'billing' && <BillingSettings />}

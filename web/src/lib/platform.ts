@@ -691,9 +691,27 @@ export interface SchoolDetail {
   licence: {
     plan_code: string; plan_name: string; status: string; cycle: string
     expires_on: string | null; days_left: number | null
-    student_count: number; student_limit: number | null; margin_limit: number | null
+    student_count: number
+    /** What the school is ALLOWED, which is the plan's number unless an
+     *  operator granted an allowance. 0128. */
+    student_limit: number | null
+    margin_limit: number | null
     counted_at: string | null; over_limit_since: string | null
     limit_state: LimitState; suggested_plan: string | null
+    // ---- 0128: the allowance, and any request waiting ----
+    /** The plan's own limit, beside `student_limit`. Optional so the console
+     *  still renders against a database without the migration. */
+    plan_student_limit?: number | null
+    limit_override?: number | null
+    limit_override_reason?: string | null
+    limit_override_at?: string | null
+    /** The name of whoever granted it. "Who agreed to this?" is the first
+     *  question asked about an exception six months later. */
+    limit_override_by?: string | null
+    limit_request?: {
+      id: string; requested_limit: number; reason: string
+      wants: 'more_room' | 'move_up'; requested_at: string
+    } | null
   } | null
   money: {
     invoiced: number; paid: number; outstanding: number
@@ -1139,6 +1157,112 @@ export interface PaymentClaim {
   decision_note: string | null
   payment_id: string | null
   outstanding: number
+}
+
+/**
+ * A school asking for more room than its plan covers, and what we said.
+ *
+ * WHY THIS QUEUE EXISTS. Migration 0128 made the plan's student limit a limit:
+ * an admission past it is refused, for everyone including the owner. A block
+ * with no way out is a school on the phone, so the refusal names two ways out
+ * and one of them is this: the owner or principal asks, and it lands here.
+ *
+ * `students_now` AND `count_at_request` ARE BOTH HERE ON PURPOSE. A request is
+ * decided days or weeks after it is made and the school carries on admitting
+ * in between, so "they asked for room for 200 when they had 148, and they have
+ * 161 today" is the sentence an operator needs. One figure would hide it.
+ *
+ * `suggested_plan` is the cheapest plan on sale that would cover the request,
+ * and it is null when nothing does. Most of these requests are a school that
+ * has simply outgrown its plan, and the right answer is usually to move them
+ * up rather than to grant an exception; a null is the case that genuinely
+ * needs a conversation.
+ */
+export interface LimitRequest {
+  id: string
+  school_id: string
+  school_name: string
+  contact_name: string | null
+  contact_phone: string | null
+  plan_code: string
+  requested_limit: number
+  reason: string
+  /**
+   * Which of the two things they asked for. An exception on their current plan,
+   * or to be moved up to the one that covers it. The operator's answer is a
+   * completely different act in each case, which is why it is a value on the
+   * row and not something to read out of `reason`.
+   */
+  wants: 'more_room' | 'move_up'
+  requested_at: string
+  count_at_request: number
+  students_now: number
+  plan_covers: number | null
+  effective_limit: number | null
+  suggested_plan: string | null
+  suggested_plan_covers: number | null
+  status: 'pending' | 'granted' | 'declined' | 'withdrawn'
+  decided_at: string | null
+  granted_limit: number | null
+  decision_note: string | null
+}
+
+export async function limitRequests(
+  status: 'pending' | 'granted' | 'declined' | 'withdrawn' | 'all' = 'pending',
+): Promise<LimitRequest[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_limit_requests', { p_status: status })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as LimitRequest[]
+}
+
+/**
+ * Grant a school room, and answer its request in the same breath.
+ *
+ * The database does both in one transaction, so there is never a state where a
+ * school has the room and no record of being given it, or a request marked
+ * granted and no room. A note below the plan's own limit is mandatory: that is
+ * a REDUCTION, it is legitimate (a school moved down a plan and we are holding
+ * them to it), and it is also how somebody cuts a school off at fifteen pupils
+ * by mistyping.
+ */
+export async function grantStudentLimit(
+  schoolId: string, limit: number, note?: string | null,
+): Promise<{ limit: number; was: number | null; partial: boolean }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_grant_student_limit', {
+    p_school_id: schoolId, p_limit: limit, p_note: note?.trim() || null,
+  })
+  if (error) throw new Error(error.message)
+  return data as { limit: number; was: number | null; partial: boolean }
+}
+
+/** Decline one. The reason is mandatory: it is what the school reads. */
+export async function declineStudentLimit(
+  requestId: string, note: string,
+): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_platform_decline_student_limit', {
+    p_request_id: requestId, p_note: note,
+  })
+  if (error) throw new Error(error.message)
+}
+
+/**
+ * Take an allowance back, for the school that shrank or the exception that has
+ * run its course. Separate from granting so it cannot happen by passing a null
+ * limit, and the reason is mandatory because it may stop them admitting a
+ * pupil tomorrow.
+ */
+export async function clearStudentLimit(
+  schoolId: string, note: string,
+): Promise<{ was: number | null; limit: number | null }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_clear_student_limit', {
+    p_school_id: schoolId, p_note: note,
+  })
+  if (error) throw new Error(error.message)
+  return data as { was: number | null; limit: number | null }
 }
 
 export async function paymentClaims(

@@ -1368,6 +1368,24 @@ jobs:
         # signup is unlimited pupils for nothing, for ever.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/plan_and_term.sql
 
+      - name: A plan's student limit is a limit, and only on what is a limit
+        # The first four assertions are the block. Assertions 10 to 18 and 55
+        # to 58 are the half that makes a block like this safe, and they matter
+        # more: reading still works, marking a child as LEFT always works, a
+        # no-limit plan is never touched, and above all fn_rollover is NOT
+        # gated. Rolling a year over is the same children a year older, and
+        # refusing it would leave a school over its limit with no register, no
+        # challans and no classes for the new year.
+        #
+        # Assertions 8 and 9 record a decision rather than a discovery: the
+        # vendor was offered "block the clerk, let the owner override" and
+        # chose "block everyone", so the absence of an override is asserted.
+        #
+        # Assertion 21 is the importer's whole point: a five-row file into a
+        # three-pupil plan creates NOTHING, rather than importing three and
+        # failing twice and leaving the file no longer safe to re-run.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/student_limit.sql
+
       - name: Remarks and position holders — do ties and remarks survive?
         # Assertion 12 is why exam_remarks is its own table rather than a column
         # on result_cards: fn_generate_result_cards INSERTS a new version rather

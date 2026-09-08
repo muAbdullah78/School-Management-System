@@ -21,7 +21,10 @@ export interface Licence {
   can_operate: boolean
   plan_code: string
   plan_name: string
-  cycle: 'monthly' | 'yearly'
+  /** 0127 added 'quarterly' to this enum. Nothing in the app narrows on it,
+   *  but a union that omits a value the database can return is a type that
+   *  lies, and the next `switch` written against it would silently miss a case. */
+  cycle: 'monthly' | 'quarterly' | 'yearly'
   price_monthly: number
   price_yearly: number
   expires_on: string | null
@@ -34,6 +37,21 @@ export interface Licence {
   margin_limit: number | null
   limit_state: LimitState
   limit_notice: string | null
+  // ---- 0128: the limit stopped being advisory ----
+  /** What the PLAN covers, beside `student_limit`, which now includes any
+   *  allowance an operator granted this school. */
+  plan_student_limit?: number | null
+  limit_is_granted?: boolean
+  /** Places left, or null when the plan has no limit at all. */
+  room?: number | null
+  /** At or above the limit: an admission is refused right now. */
+  at_limit?: boolean
+  /** At or above 90% of it, which is when the warning starts. */
+  warn_limit?: boolean
+  /** The same news worded for somebody who cannot act on it: a clerk is the
+   *  person who presses Admit, and telling them nothing means they meet the
+   *  refusal with a parent standing at the desk. */
+  limit_notice_staff?: string | null
 }
 
 export interface LicenceUnavailable {
@@ -91,6 +109,44 @@ export function expiryMessage(lic: Licence): string | null {
     default:
       return null
   }
+}
+
+/**
+ * The student-limit strip: what to say, to whom, and how loudly.
+ *
+ * Pure, and out here rather than inside LicenceBanner, because this is the
+ * decision that went wrong. The component used to gate on
+ * `limit_state !== 'ok' && limit_notice`, and limit_state is 'ok' while the
+ * count is at or BELOW the limit. So a school sitting exactly on its limit, the
+ * moment migration 0128 starts refusing the next admission, had its warning
+ * suppressed here while the server was willing to give it. A rule that lives
+ * inside a component is a rule nothing can test.
+ *
+ * Two wordings, because two audiences:
+ *
+ *   owner, principal   `limit_notice`, which names Settings then Subscription
+ *                      and both ways out, because they can take one.
+ *   admin_clerk        `limit_notice_staff`, which says what is happening, that
+ *                      it is not their doing, and who can fix it. They are the
+ *                      person who presses Admit and meets the refusal.
+ *   everyone else      nothing. A teacher does not admit pupils.
+ *
+ * Returns null when there is nothing to say, which is the ordinary case: below
+ * 90% of the limit the server sends no notice at all, because a banner a school
+ * sees every day is a banner it stops reading.
+ */
+export function limitBanner(
+  lic: Licence, role: string | null | undefined,
+): { text: string; atLimit: boolean } | null {
+  const text = role === 'owner' || role === 'principal'
+    ? lic.limit_notice
+    : role === 'admin_clerk'
+      ? (lic.limit_notice_staff ?? null)
+      : null
+  if (!text) return null
+  // `at_limit` arrived with 0128. The fallback stops an app running against a
+  // database without it from painting every warning as a wall.
+  return { text, atLimit: lic.at_limit ?? lic.limit_state === 'over' }
 }
 
 export function formatPkr(amount: number): string {

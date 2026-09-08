@@ -346,6 +346,11 @@ describe('the operator console', () => {
     // unstubbed RPC comes back as an error and the tab would then be absent for
     // the wrong reason.
     fn_platform_unattached_logins: [],
+    // 0128. Empty in every case but the one that asserts the tab, for the same
+    // reason as the logins above: the tab only renders when the queue is not
+    // empty, so an unstubbed RPC would make it absent for the wrong reason and
+    // the assertion would pass without the screen existing.
+    fn_platform_limit_requests: [],
     // 0113. The Renewals tab now opens with the run strip, which reads the run
     // history the moment "Past runs" is pressed and nothing before that. Stubbed
     // so a missing RPC cannot make the tab look broken in this suite while
@@ -1024,5 +1029,231 @@ describe('a finalised register has a way back', () => {
     await waitFor(() => expect(queryByText(/finalized and locked/i)).not.toBeNull())
     expect(queryByRole('button', { name: /reopen this day/i })).toBeNull()
     expect(queryByText(/ask the owner or the principal/i)).not.toBeNull()
+  })
+})
+
+/**
+ * The two screens migration 0128 shipped: the queue and the request box.
+ *
+ * These are worth a mount each rather than a line in the list above, because
+ * both exist to keep a promise made in an error message. At its plan's limit
+ * the database refuses an admission and tells the school to ask for room from
+ * Settings then Subscription; the console tab is where that request lands. A
+ * blank panel on either side turns the refusal into a dead end.
+ */
+describe('the plan limit, both ends of it', () => {
+  afterEach(cleanup)
+
+  const REQUEST = {
+    id: 'req-1', school_id: 'sch-1', school_name: 'Al Qalam School',
+    contact_name: 'Basha Salamat', contact_phone: '0300-1234567',
+    plan_code: 'starter', requested_limit: 300,
+    reason: 'we are opening a second campus in April',
+    wants: 'more_room' as const,
+    requested_at: '2026-09-01T09:00:00Z',
+    count_at_request: 198, students_now: 200,
+    plan_covers: 200, effective_limit: 200,
+    suggested_plan: 'growth', suggested_plan_covers: 350,
+    status: 'pending' as const,
+    decided_at: null, granted_limit: null, decision_note: null,
+  }
+
+  it('shows the requests tab only when a school is waiting on us', async () => {
+    current.opts = {
+      rpc: {
+        is_platform_admin: true, fn_platform_schools: [],
+        fn_platform_revenue: {
+          net_invoiced: 0, collected: 0, cash_received: 0, tax_withheld: 0,
+          discounted: 0, outstanding_total: 0, voided: 0,
+          tax_certificates_awaited: 0, schools_owing: [],
+        },
+        fn_platform_schema_state: { applied_count: 1, latest: 'x', gaps: [], gaps_total: 0 },
+        fn_platform_due_soon: [], fn_platform_payment_claims: [],
+        fn_platform_settings: { missing: [] }, fn_platform_orphan_report: [],
+        fn_platform_unattached_logins: [],
+        fn_platform_limit_requests: [REQUEST],
+      },
+    }
+    const { PlatformPage } = await import('@/pages/platform/PlatformPage')
+    const { queryByText, getByText } = await mount(PlatformPage)
+    await waitFor(() => expect(queryByText('Requests for more room')).not.toBeNull())
+    getByText('Requests for more room').click()
+    // The school, what it asked for, and the sentence that makes an upgrade the
+    // default answer rather than an exception.
+    await waitFor(() => expect(queryByText(/Al Qalam School/)).not.toBeNull())
+    expect(queryByText(/opening a second campus/)).not.toBeNull()
+    expect(queryByText(/plan covers\s*350 pupils/)).not.toBeNull()
+    // And the fact that matters most: they are refusing admissions right now.
+    expect(queryByText(/cannot admit anybody until you answer/i)).not.toBeNull()
+  })
+
+  it('hides the tab when nobody is waiting, rather than showing an empty queue', async () => {
+    // A permanently empty tab teaches an operator to stop reading the nav, and
+    // the nav is the only thing in this console that says what needs doing.
+    current.opts = {
+      rpc: {
+        is_platform_admin: true, fn_platform_schools: [],
+        fn_platform_revenue: {
+          net_invoiced: 0, collected: 0, cash_received: 0, tax_withheld: 0,
+          discounted: 0, outstanding_total: 0, voided: 0,
+          tax_certificates_awaited: 0, schools_owing: [],
+        },
+        fn_platform_schema_state: { applied_count: 1, latest: 'x', gaps: [], gaps_total: 0 },
+        fn_platform_due_soon: [], fn_platform_payment_claims: [],
+        fn_platform_settings: { missing: [] }, fn_platform_orphan_report: [],
+        fn_platform_unattached_logins: [], fn_platform_limit_requests: [],
+      },
+    }
+    const { PlatformPage } = await import('@/pages/platform/PlatformPage')
+    const { queryByText } = await mount(PlatformPage)
+    expect(queryByText('Requests for more room')).toBeNull()
+  })
+
+  it('gives a full school the box the refusal told it to look for', async () => {
+    current.opts = {
+      rpc: {
+        fn_my_billing: {
+          ok: true, licence: { plan_code: 'starter', plan_name: 'Starter', status: 'active', term_months: 12 },
+          balance: { billed: 0, paid: 0, outstanding: 0 },
+          documents: [], reports: [], how_to_pay: 'Bank transfer.',
+          pay_to: { account: null, support_phone: null, support_email: null },
+        },
+        fn_my_student_limit: {
+          students: 200, limit: 200, room: 0, at_limit: true, warn: true,
+          granted_extra: false, plan_code: 'starter', plan_covers: 200,
+          term_months: 12,
+          next_plan: { code: 'growth', name: 'Growth', covers: 350, price: 96000, term_months: 12 },
+          request: null,
+        },
+      },
+    }
+    const { Subscription } = await import('@/pages/settings/Subscription')
+    const { queryByText, container } = await mount(Subscription)
+    await waitFor(() => expect(queryByText(/Your roll is full/i)).not.toBeNull())
+    // What has stopped, and that nothing else has. A school reading this
+    // arrived from a refused admission.
+    expect(queryByText(/New admissions are paused/i)).not.toBeNull()
+    expect(container.textContent).toMatch(/nothing has been deleted/i)
+    // Both ways out, and the upgrade one carries a price, because a school
+    // choosing between them is choosing about money.
+    expect(queryByText(/Give us room on the plan we have/i)).not.toBeNull()
+    expect(queryByText(/Move us up to Growth/i)).not.toBeNull()
+    expect(container.textContent).toMatch(/96,000/)
+  })
+
+  it('stays out of the way for a school nowhere near its limit', async () => {
+    current.opts = {
+      rpc: {
+        fn_my_billing: {
+          ok: true, licence: { plan_code: 'starter', plan_name: 'Starter', status: 'active', term_months: 12 },
+          balance: { billed: 0, paid: 0, outstanding: 0 },
+          documents: [], reports: [], how_to_pay: 'Bank transfer.',
+          pay_to: { account: null, support_phone: null, support_email: null },
+        },
+        fn_my_student_limit: {
+          students: 60, limit: 200, room: 140, at_limit: false, warn: false,
+          granted_extra: false, plan_code: 'starter', plan_covers: 200,
+          term_months: 12, next_plan: null, request: null,
+        },
+      },
+    }
+    const { Subscription } = await import('@/pages/settings/Subscription')
+    const { queryByText, container } = await mount(Subscription)
+    await waitFor(() => expect(queryByText(/Need room for more\?/i)).not.toBeNull())
+    // One line and a link. No form, no warning, nothing to read every day.
+    expect(container.textContent).toMatch(/60\s*of the 200 pupils your plan covers/)
+    expect(queryByText(/Why you need it/i)).toBeNull()
+  })
+
+  it('offers no upgrade to a school already on the biggest plan', async () => {
+    // next_plan null is the by-arrangement case. An option that leads nowhere
+    // is worse than no option: the school picks it and waits for an answer we
+    // have no plan to give.
+    current.opts = {
+      rpc: {
+        fn_my_billing: {
+          ok: true, licence: { plan_code: 'custom', plan_name: 'Custom', status: 'active', term_months: 12 },
+          balance: { billed: 0, paid: 0, outstanding: 0 },
+          documents: [], reports: [], how_to_pay: 'Bank transfer.',
+          pay_to: { account: null, support_phone: null, support_email: null },
+        },
+        fn_my_student_limit: {
+          students: 640, limit: 640, room: 0, at_limit: true, warn: true,
+          granted_extra: false, plan_code: 'institution', plan_covers: 640,
+          term_months: 12, next_plan: null, request: null,
+        },
+      },
+    }
+    const { Subscription } = await import('@/pages/settings/Subscription')
+    const { queryByText } = await mount(Subscription)
+    await waitFor(() => expect(queryByText(/Your roll is full/i)).not.toBeNull())
+    expect(queryByText(/Move us up to/i)).toBeNull()
+    expect(queryByText(/Give us room on the plan we have/i)).not.toBeNull()
+  })
+
+  it('shows a waiting request instead of a second form', async () => {
+    // Two requests from one school is a queue the operator has to disambiguate,
+    // and the database refuses the second. So the screen must not offer one.
+    current.opts = {
+      rpc: {
+        fn_my_billing: {
+          ok: true, licence: { plan_code: 'starter', plan_name: 'Starter', status: 'active', term_months: 12 },
+          balance: { billed: 0, paid: 0, outstanding: 0 },
+          documents: [], reports: [], how_to_pay: 'Bank transfer.',
+          pay_to: { account: null, support_phone: null, support_email: null },
+        },
+        fn_my_student_limit: {
+          students: 200, limit: 200, room: 0, at_limit: true, warn: true,
+          granted_extra: false, plan_code: 'starter', plan_covers: 200,
+          term_months: 12,
+          next_plan: { code: 'growth', name: 'Growth', covers: 350, price: 96000, term_months: 12 },
+          request: {
+            id: 'r1', status: 'pending', requested_limit: 300,
+            requested_at: '2026-09-01T09:00:00Z',
+            reason: 'second campus in April', wants: 'more_room',
+            granted_limit: null, decision_note: null, decided_at: null,
+          },
+        },
+      },
+    }
+    const { Subscription } = await import('@/pages/settings/Subscription')
+    const { queryByText } = await mount(Subscription)
+    await waitFor(() => expect(queryByText(/You asked for room for 300 pupils/i)).not.toBeNull())
+    expect(queryByText(/Take this request back/i)).not.toBeNull()
+    expect(queryByText(/Why you need it/i)).toBeNull()
+  })
+
+  it('shows the answer, with the reason, when we said no', async () => {
+    // A request that goes quiet is the thing that produces a phone call, and
+    // this screen is where the school was told the answer would appear.
+    current.opts = {
+      rpc: {
+        fn_my_billing: {
+          ok: true, licence: { plan_code: 'starter', plan_name: 'Starter', status: 'active', term_months: 12 },
+          balance: { billed: 0, paid: 0, outstanding: 0 },
+          documents: [], reports: [], how_to_pay: 'Bank transfer.',
+          pay_to: { account: null, support_phone: null, support_email: null },
+        },
+        fn_my_student_limit: {
+          students: 200, limit: 200, room: 0, at_limit: true, warn: true,
+          granted_extra: false, plan_code: 'starter', plan_covers: 200,
+          term_months: 12, next_plan: null,
+          request: {
+            id: 'r1', status: 'declined', requested_limit: 300,
+            requested_at: '2026-09-01T09:00:00Z',
+            reason: 'second campus', wants: 'more_room',
+            granted_limit: null,
+            decision_note: 'Three hundred is the Growth band; happy to move you across.',
+            decided_at: '2026-09-03T09:00:00Z',
+          },
+        },
+      },
+    }
+    const { Subscription } = await import('@/pages/settings/Subscription')
+    const { queryByText } = await mount(Subscription)
+    await waitFor(() => expect(queryByText(/We could not do this one/i)).not.toBeNull())
+    expect(queryByText(/happy to move you across/)).not.toBeNull()
+    // And the form is back, because a declined request is not a closed door.
+    expect(queryByText(/Why you need it/i)).not.toBeNull()
   })
 })

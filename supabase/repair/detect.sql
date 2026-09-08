@@ -979,7 +979,25 @@ with sig(migration, object, present) as (values
      and not exists (select 1 from pg_proc p
                        join pg_namespace n2 on n2.oid = p.pronamespace
                       where n2.nspname = 'public' and p.prokind = 'f'
-                        and p.prosrc ~ 'cycle = ''yearly'' then 12 else 1 end'))
+                        and p.prosrc ~ 'cycle = ''yearly'' then 12 else 1 end')),
+  -- Four parts, and the third is the one that would hurt a school: the gate
+  -- must be on the three paths that raise a roll and NOT on fn_rollover, which
+  -- carries the same children into next year. The fourth is the way out; a
+  -- block with no request box is a school on the phone.
+  ('0128_a_plans_student_limit_means_something', 'a plan''s student limit is enforced',
+     to_regprocedure('public.fn__assert_room_for_students(uuid,integer)') is not null
+     and (select count(*) from pg_proc p
+            join pg_namespace n2 on n2.oid = p.pronamespace
+           where n2.nspname = 'public'
+             and p.proname in ('fn_admit_student', 'fn_set_student_status',
+                               'fn_import_students')
+             and p.prosrc ~ 'fn__assert_room_for_students') = 3
+     and not coalesce((select p.prosrc ~ 'fn__assert_room_for_students'
+                         from pg_proc p
+                         join pg_namespace n2 on n2.oid = p.pronamespace
+                        where n2.nspname = 'public' and p.proname = 'fn_rollover'),
+                      false)
+     and to_regprocedure('public.fn_request_student_limit(integer,text,text)') is not null)
 )
 select migration,
        object                                   as looked_for,

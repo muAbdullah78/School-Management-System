@@ -2465,6 +2465,124 @@ select 'signup cannot reach a plan priced by arrangement (0127)',
        end
 
 union all
+-- 0128. Reported as "the school is only allowed to have 150 students but it
+-- exceeds to 200 plus". Nothing enforced it, and fn_my_licence's own words to
+-- the school were "Nothing stops working."
+--
+-- Two clauses, and the second is the one that would hurt a school. A database
+-- with the gate on fn_rollover cannot start its academic year.
+select 'a plan''s student limit is enforced (0128)',
+       case when to_regprocedure(
+              'public.fn__assert_room_for_students(uuid,integer)') is null
+         then 'FAIL: a school can admit as many pupils as it likes whatever '
+              || 'its plan covers, and is told "nothing stops working" while it '
+              || 'does; apply '
+              || 'supabase/bundles/34_a_plans_student_limit_means_something.sql'
+         when (select count(*) from pg_proc p
+                 join pg_namespace n on n.oid = p.pronamespace
+                where n.nspname = 'public'
+                  and p.proname in ('fn_admit_student', 'fn_set_student_status',
+                                    'fn_import_students')
+                  and p.prosrc ~ 'fn__assert_room_for_students') <> 3
+         then 'FAIL: only some of the three paths that can raise a roll check '
+              || 'the limit (admission, coming back from a leaving state, and '
+              || 'the importer); re-apply '
+              || 'supabase/bundles/34_a_plans_student_limit_means_something.sql'
+         when (select p.prosrc ~ 'fn__assert_room_for_students' from pg_proc p
+                 join pg_namespace n on n.oid = p.pronamespace
+                where n.nspname = 'public' and p.proname = 'fn_rollover')
+         then 'FAIL: fn_rollover checks the student limit, so a school at its '
+              || 'limit cannot start its academic year at all: no register, no '
+              || 'challans, no classes. Rolling a year over is the same '
+              || 'children a year older. Re-apply '
+              || 'supabase/bundles/34_a_plans_student_limit_means_something.sql'
+         else 'PASS'
+       end
+
+union all
+-- The same migration's other half: the way out. A block with no request box is
+-- a school on the phone.
+select 'a school can ask for more room (0128)',
+       case when to_regprocedure('public.fn_request_student_limit(integer,text,text)') is null
+              or to_regprocedure(
+                   'public.fn_platform_grant_student_limit(uuid,integer,text)') is null
+         then 'FAIL: admissions can be blocked and there is no way for a school '
+              || 'to ask for more room, nor for an operator to grant it; apply '
+              || 'supabase/bundles/34_a_plans_student_limit_means_something.sql'
+         when exists (select 1 from pg_policies
+                       where schemaname = 'public'
+                         and tablename = 'student_limit_requests'
+                         and cmd <> 'SELECT')
+         then 'FAIL: a school can write its own row in student_limit_requests, '
+              || 'so it can insert one already marked granted; re-apply '
+              || 'supabase/bundles/34_a_plans_student_limit_means_something.sql'
+         when has_function_privilege('authenticated',
+                to_regprocedure('public.fn_platform_grant_student_limit'
+                  || '(uuid,integer,text)')::oid, 'EXECUTE')
+              and not exists (select 1 from pg_proc p
+                                join pg_namespace n on n.oid = p.pronamespace
+                               where n.nspname = 'public'
+                                 and p.proname = 'fn_platform_grant_student_limit'
+                                 and p.prosrc ~ 'is_platform_admin')
+         then 'FAIL: fn_platform_grant_student_limit does not check '
+              || 'is_platform_admin, so a school could grant itself room, which '
+              || 'is the loophole this bundle closes wearing a different hat; '
+              || 're-apply '
+              || 'supabase/bundles/34_a_plans_student_limit_means_something.sql'
+         else 'PASS'
+       end
+
+union all
+-- And a note, not a failure: who is over right now. Every school named here
+-- can read, print and export everything and cannot admit another pupil until
+-- the console grants it room.
+-- THE ALLOWANCE IS READ THROUGH to_jsonb AND NOT BY NAME, and fn__student_limit
+-- is not called at all. Both a column reference and a function name are
+-- resolved when the statement is PARSED, not when the CASE arm is reached, so
+-- naming either brought the whole of verify.sql down on any database without
+-- bundle 34:
+--
+--     ERROR:  function public.fn__student_limit(uuid) does not exist
+--
+-- which is every database this file exists to diagnose. `to_jsonb(sub) ->>
+-- 'student_limit_override'` yields NULL for a column that is not there yet,
+-- and coalescing it onto the plan's limit gives the same answer either way.
+select 'no school is over the limit it is allowed (0128)',
+       case when not exists (select 1 from information_schema.columns
+                              where table_schema = 'public'
+                                and table_name = 'subscriptions'
+                                and column_name = 'student_limit_override')
+         then 'note: the limit is not enforced on this database yet, so a '
+              || 'school can be over it and nothing will say so'
+         when (select count(*) from public.schools s
+                 join public.subscriptions sub on sub.school_id = s.id
+                 join public.plans pl on pl.code = sub.plan_code
+                where s.active
+                  and coalesce((to_jsonb(sub) ->> 'student_limit_override')::integer,
+                               pl.student_limit) is not null
+                  and public.fn_count_students(s.id)
+                      > coalesce((to_jsonb(sub) ->> 'student_limit_override')::integer,
+                                 pl.student_limit)) = 0
+         then 'PASS'
+         else 'note: ' || (select string_agg(
+                  s.name || ' (' || public.fn_count_students(s.id)::text || ' of '
+                    || coalesce((to_jsonb(sub) ->> 'student_limit_override')::integer,
+                                pl.student_limit)::text || ')', '; ' order by s.name)
+                from public.schools s
+                join public.subscriptions sub on sub.school_id = s.id
+                join public.plans pl on pl.code = sub.plan_code
+               where s.active
+                 and coalesce((to_jsonb(sub) ->> 'student_limit_override')::integer,
+                              pl.student_limit) is not null
+                 and public.fn_count_students(s.id)
+                     > coalesce((to_jsonb(sub) ->> 'student_limit_override')::integer,
+                                pl.student_limit))
+              || '. They keep everything they have and cannot admit another '
+              || 'pupil. Grant an allowance from the console, or wait for them '
+              || 'to ask.'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS: no schools yet, as expected'

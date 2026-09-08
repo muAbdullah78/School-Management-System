@@ -175,16 +175,38 @@ begin
     raise exception 'FAIL: an over-limit school was locked';
   end if;
 
-  -- 0068. Mid-term, the SCHOOL is told nothing.
+  -- 0068 SAID: mid-term, the SCHOOL is told nothing. 0128 CHANGED THAT, and
+  -- deliberately.
   --
-  -- 0067 made student_count live, so without this the banner appears the same
-  -- afternoon the 101st child is admitted — on the admissions screen, while the
-  -- school is earning money. limit_state stays truthful; only the sentence
-  -- meant to be rendered is withheld.
-  if lic->>'limit_notice' is not null then
+  -- 0067 made student_count live, and 0068's worry was that the banner would
+  -- appear the same afternoon the 101st child was admitted, on the admissions
+  -- screen, while the school was earning money. That was the right worry while
+  -- the limit was advisory: the notice ended "Nothing stops working", so it was
+  -- a nag and nothing more.
+  --
+  -- 0128 makes it a limit. An admission past it is refused. A warning withheld
+  -- until a renewal is thirty days away then arrives AFTER the first refusal,
+  -- which is the one thing worse than a nag. So the notice now appears from 90%
+  -- of the limit whatever the renewal date, and this school is at 249 of 150.
+  --
+  -- Still nothing below 90%: a banner a school sees every day is a banner it
+  -- stops reading. That half is asserted in the margin block below and in
+  -- supabase/tests/student_limit.sql assertion 26.
+  if lic->>'limit_notice' is null then
     raise exception
-      'FAIL: an over-limit school 90 days from renewal was nagged: %',
-      lic->>'limit_notice';
+      'FAIL: an over-limit school was told nothing, 90 days from renewal or '
+      'not. Since 0128 the admission is refused, so a warning that waits for '
+      'the renewal conversation arrives after the refusal.';
+  end if;
+  if lic->>'limit_notice' not like '%admissions are paused%' then
+    raise exception
+      'FAIL: the notice does not say that admissions are paused, which is the '
+      'thing that is actually true now: %', lic->>'limit_notice';
+  end if;
+  if lic->>'limit_notice' like '%Nothing stops working%' then
+    raise exception
+      'FAIL: the notice still promises that nothing stops working, which 0128 '
+      'made false: %', lic->>'limit_notice';
   end if;
 
   -- ...and in the same breath, the OPERATOR is told everything. This pair of
@@ -234,7 +256,11 @@ begin
     raise exception 'FAIL: over-limit school was not flagged to the platform';
   end if;
 
-  raise notice 'ok: over the limit never blocks — school flagged, not stopped';
+  raise notice 'ok: over the limit is flagged to the operator, warned to the '
+    'school, and blocks only the next ADMISSION (0128). This block''s raw '
+    'insert above bypasses fn_admit_student on purpose: it is asserting that '
+    'nothing else about an over-limit school changes, and the gate itself is '
+    'asserted in supabase/tests/student_limit.sql.';
 end $limits$;
 
 -- Within the margin: no flag, no notice of trouble.
@@ -273,23 +299,41 @@ begin
     raise exception 'FAIL: a school inside its margin was flagged';
   end if;
 
-  -- 0068: 'within_margin' produces no sentence at all, EVEN NOW — the block
-  -- above left the renewal 20 days out, so the timing gate is open and the only
-  -- thing keeping this silent is the state itself. Its old text read "You are
-  -- still inside the allowance — nothing to do today", which is a banner whose
-  -- content is that there is nothing to read. Noise like that is how the banner
-  -- that will one day matter gets ignored.
-  if (lic->>'days_left')::int > 30 then
-    -- RAISE takes a literal format string, not an expression, so this stays on
-    -- one line rather than being concatenated.
-    raise exception 'FAIL: premise broken — this assertion only means something with the renewal inside 30 days, and it is % away', lic->>'days_left';
+  -- 0068 SAID: 'within_margin' produces no sentence at all. Its old text read
+  -- "You are still inside the allowance, nothing to do today", which is a
+  -- banner whose content is that there is nothing to read, and noise like that
+  -- is how the banner that will one day matter gets ignored. Correct while the
+  -- limit was advisory.
+  --
+  -- 0128 MAKES THE MARGIN A REPORTING BAND AND NOT A PERMISSION ONE. The block
+  -- is at the limit exactly: at 156 of 150 this school cannot admit anybody,
+  -- so telling it nothing is not restraint, it is withholding the reason its
+  -- next admission will be refused. The margin still means something to the
+  -- OPERATOR, which the flag assertion above covers: more than 10% over is the
+  -- signal that this school really does need a bigger plan rather than an
+  -- allowance.
+  --
+  -- The silence that IS still asserted is the one that matters: below 90% of
+  -- the limit nothing is said at all. supabase/tests/student_limit.sql
+  -- assertion 26 covers it, on a school at a third of its limit.
+  --
+  -- And note what this school's state implies since 0128: it can only BE over
+  -- its limit because it was over before the bundle was pasted, or because an
+  -- allowance was later reduced. There is no route through the application
+  -- that puts a 151st pupil on a 150 plan.
+  if lic->>'limit_notice' is null then
+    raise exception 'FAIL: a school inside its margin was told nothing, when '
+      'its next admission will be refused: % of %',
+      lic->>'student_count', lic->>'student_limit';
   end if;
-  if lic->>'limit_notice' is not null then
-    raise exception 'FAIL: a school inside its margin was shown a banner: %',
-      lic->>'limit_notice';
+  if lic->>'limit_notice' not like '%admissions are paused%' then
+    raise exception 'FAIL: the notice does not say what is actually happening '
+      'to a school over its limit: %', lic->>'limit_notice';
   end if;
 
-  raise notice 'ok: inside the margin is silent (% students)', lic->>'student_count';
+  raise notice 'ok: inside the margin is no longer silent, because the '
+    'admission is refused (% students, limit %)',
+    lic->>'student_count', lic->>'student_limit';
 end $$;
 
 -- =============================================================================

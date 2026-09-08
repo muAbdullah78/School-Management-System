@@ -607,6 +607,53 @@ emit supabase/bundles/32_the_register_was_written_twice.sql \
 emit supabase/bundles/33_a_school_picks_its_plan_and_how_it_pays.sql \
      supabase/migrations/0127*.sql
 
+# A THIRTY-FOURTH bundle. Reported by the vendor of a real school in his own
+# console: "the school is only allowed to have 150 students but it exceeds to
+# 200 plus students so this is a loophole. We should not allow any school
+# exceed their limit. If they want more entries for their students we have to
+# create a request box that directly goes to our admin."
+#
+# Nothing enforced it, and the code said so out loud: fn_my_licence computed
+# the breach and then told the school "We will move you to the right plan at
+# your next renewal. Nothing stops working." A school could sit at 228 pupils
+# on a 150 plan for a year, paying Rs 2,000 a month for Rs 3,500 a month of
+# use.
+#
+# THE BLOCK STOPS EVERYONE, INCLUDING THE OWNER, which is the vendor's own
+# decision taken against the recommendation and recorded as such in the
+# migration header. What blunts it: the warning starts at 90% of the limit
+# whatever the renewal date, there are always two ways out (mark a child who
+# has left as left, which frees a place and needs nobody, or the request box,
+# which reaches the console and offers room-on-this-plan and move-us-up as
+# separate answers), and the block is on ADMISSION ONLY. Nothing already
+# entered is touched, no screen closes, no report stops.
+#
+# It does NOT say "move up a plan yourself". Nothing in this product lets a
+# school change its own plan, and 0128 carries a guard that fails if any of the
+# three functions that talk to a school ever claims otherwise.
+#
+# THE THREE PATHS IT GATES, and the one it must not:
+#   fn_admit_student        the only function in the schema that inserts a
+#                           pupil; fn_enquiry_admit and fn_import_students both
+#                           come through it
+#   fn_set_student_status   bringing a child back from a leaving state, which
+#                           reactivates their enrolment and so raises the roll
+#   fn_import_students      asked once for the whole file, so a 300-row import
+#                           into a 150 plan is refused up front rather than
+#                           importing 150 and failing 150 times
+#   fn_rollover             NOT GATED. It inserts enrolments for next year,
+#                           which is the same children a year older. Gating it
+#                           would leave a school over its limit with no
+#                           register, no challans and no classes for the new
+#                           year.
+#
+# No grandfathering: the migration REPORTS which schools are over and by how
+# much, and the console grants allowances. Auto-granting every over-limit
+# school its current count would make the limit change nothing on the one day
+# it starts existing.
+emit supabase/bundles/34_a_plans_student_limit_means_something.sql \
+     supabase/migrations/0128*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.
