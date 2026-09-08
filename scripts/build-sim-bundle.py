@@ -431,6 +431,18 @@ def clean(text: str, name: str) -> str:
 def check(text: str, files: list, is_last: bool, year=None) -> list:
     """The properties that each way this generator has been wrong would fail."""
     bad = []
+    # `text[] || 'a bare literal'` does not append. The literal has no type yet,
+    # so Postgres prefers `anyarray || anyarray`, tries to read the string as an
+    # array, and raises "malformed array literal". EIGHT of these shipped in
+    # 09_check.sql. Every one sat inside `if <assertion failed> then`, so none
+    # could fire on a run where the school came out right, and every run of mine
+    # did. The first school to hit a genuine assertion failure got that error
+    # instead of being told what was wrong with their data: the crash was in the
+    # error reporter itself.
+    if re.search(r"v_fail := v_fail \|\| '", text):
+        bad.append("an assertion appends a bare literal to v_fail, which raises "
+                   "'malformed array literal' instead of reporting the failure. "
+                   "Use array_append(v_fail, '...') or format().")
     if "\\set" in text:
         bad.append("a psql meta-command survived")
     for tok in ("\nbegin;", "\ncommit;"):

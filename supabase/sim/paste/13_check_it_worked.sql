@@ -199,6 +199,21 @@ reset role;
 -- =============================================================================
 
 
+-- APPENDING TO v_fail: USE array_append, OR format(), NEVER `v_fail || '...'`.
+--
+-- `text[] || 'a bare literal'` does not append. The literal has no type yet, so
+-- Postgres prefers `anyarray || anyarray` over `anyarray || anyelement`, tries
+-- to parse the string as an array, and raises
+--
+--     ERROR: malformed array literal: "today's register is already finalised"
+--     DETAIL: Array value must start with "{" or dimension information.
+--
+-- Eight of these shipped. Every one is inside `if <assertion failed> then`, so
+-- none of them could fire on a run where the school came out right, and all my
+-- runs came out right. The first school to hit a genuine assertion failure got
+-- that error instead of being told what was wrong with their data: the crash
+-- was in the error reporter. scripts/build-sim-bundle.py now refuses to emit
+-- this file if the shape comes back.
 do $check$
 declare
   v_school uuid;
@@ -236,13 +251,32 @@ begin
 
   select count(*) into v_n from public.payments
    where school_id = v_school and created_at::date = current_date;
-  if v_n < 1 then v_fail := v_fail || 'no money taken today'; end if;
+  if v_n < 1 then v_fail := array_append(v_fail, 'no money taken today'); end if;
 
   -- 3. TODAY IS NOT FINISHED EITHER. A register that is already locked at 11am
   --    is yesterday's register.
+  --
+  --    TWO CAUSES, TWO MESSAGES, because one message for both misled the first
+  --    school to see it. They had no rows for today at all, and were told
+  --    "today's register is already finalised", which sent them looking at
+  --    locks when the real cause was a session with a null starts_on that had
+  --    excluded the whole current year from the register loop. An assertion
+  --    that reports the wrong cause is worse than one that reports none.
   select count(*) into v_n from public.attendance_daily
+   where school_id = v_school and attendance_date = current_date;
+  select count(*) into v_m from public.attendance_daily
    where school_id = v_school and attendance_date = current_date and not is_locked;
-  if v_n = 0 then v_fail := v_fail || 'today''s register is already finalised'; end if;
+  if v_n = 0 then
+    v_fail := array_append(v_fail,
+      'today has no register at all: nothing was marked. If the year files '
+      'reported success, check that the current academic session has a '
+      'starts_on and an ends_on, because a null one is excluded from every '
+      'loop in this seed');
+  elsif v_m = 0 then
+    v_fail := array_append(v_fail, format(
+      'today''s register is already finalised: all %s rows are locked, and a '
+      'register locked before the day is over is yesterday''s register', v_n));
+  end if;
 
   -- 4. THE REGISTER IS DENSE. This is the one that caught the module-by-module
   --    seed: 6,098 section-days holding 21,123 rows, 3.4 children each.
@@ -283,10 +317,10 @@ begin
   -- 7. THE CORRECTION PATHS HAVE BEEN WALKED.
   select count(*) into v_n from public.payments
    where school_id = v_school and reversal_of is not null;
-  if v_n < 1 then v_fail := v_fail || 'no payment has ever been reversed'; end if;
+  if v_n < 1 then v_fail := array_append(v_fail, 'no payment has ever been reversed'); end if;
   select count(*) into v_n from public.invoices
    where school_id = v_school and status = 'void';
-  if v_n < 1 then v_fail := v_fail || 'no challan has ever been voided'; end if;
+  if v_n < 1 then v_fail := array_append(v_fail, 'no challan has ever been voided'); end if;
 
   --     AND THE REGISTER HAS BEEN PUT RIGHT. This one was zero for the whole
   --     of the first build, and chasing that down is what found the bug in
@@ -311,10 +345,10 @@ begin
   --    and no shorts, which is half a test.
   select count(*) into v_n from public.till_sessions
    where school_id = v_school and status <> 'open' and variance < 0;
-  if v_n < 1 then v_fail := v_fail || 'no drawer has ever come up short'; end if;
+  if v_n < 1 then v_fail := array_append(v_fail, 'no drawer has ever come up short'); end if;
   select count(*) into v_n from public.till_sessions
    where school_id = v_school and status <> 'open' and variance > 0;
-  if v_n < 1 then v_fail := v_fail || 'no drawer has ever come up over'; end if;
+  if v_n < 1 then v_fail := array_append(v_fail, 'no drawer has ever come up over'); end if;
 
   -- 9. RESULTS EXIST AND ONE TERM IS STILL UNPUBLISHED, so the portal has
   --    something to correctly refuse.
@@ -333,10 +367,10 @@ begin
   -- 11. THE OUTBOX HAS BEEN WORKED, AND STILL HAS A BACKLOG.
   select count(*) into v_n from public.message_outbox
    where school_id = v_school and status = 'sent';
-  if v_n < 100 then v_fail := v_fail || 'nothing has ever been sent from the outbox'; end if;
+  if v_n < 100 then v_fail := array_append(v_fail, 'nothing has ever been sent from the outbox'); end if;
   select count(*) into v_n from public.message_outbox
    where school_id = v_school and status = 'queued';
-  if v_n < 10 then v_fail := v_fail || 'the outbox has no backlog, which no school has'; end if;
+  if v_n < 10 then v_fail := array_append(v_fail, 'the outbox has no backlog, which no school has'); end if;
 
   if array_length(v_fail, 1) > 0 then
     raise exception E'this is not a believable school:\n  - %',

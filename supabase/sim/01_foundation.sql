@@ -92,6 +92,27 @@ begin
   -- April to March, the Punjab private-school year. Four of them, because the
   -- school joined mid-2023-2024 and today is inside 2026-2027: three year-end
   -- rollovers happen inside this simulation, not the two originally asked for.
+  -- INSERT WHAT IS MISSING, THEN CORRECT THE DATES ON WHAT WAS ALREADY THERE.
+  --
+  -- The second half is not belt and braces. A school reported the seed running
+  -- to completion and producing no current year at all: 2023-2024 through
+  -- 2025-2026 were full, and 2026-2027 held nothing. The cause was two lines
+  -- away from here.
+  --
+  --   name      | is_current | starts_on | ends_on | enrolments
+  --   2026-2027 | false      | null      | null    | 0
+  --
+  -- They had created a session called 2026-2027 themselves, through the
+  -- first-run wizard, which accepts an academic year with the dates left blank.
+  -- The insert below found the name and skipped it, so the nulls stayed. Both
+  -- the year driver and the register then select sessions with
+  -- `ends_on >= date '2024-02-01' and starts_on <= current_date`, and against
+  -- null those predicates are neither true nor false: the session was silently
+  -- excluded from every loop. Four files ran, reported success and did nothing.
+  --
+  -- These four names are this file's to own, so it now asserts their dates
+  -- rather than assuming them. It corrects nulls and wrong dates alike, and
+  -- touches no session it did not name.
   insert into public.academic_sessions (name, starts_on, ends_on, is_current)
   select v.name, v.s, v.e, false
     from (values
@@ -102,6 +123,22 @@ begin
     ) as v(name, s, e)
    where not exists (select 1 from public.academic_sessions a
                       where a.school_id = v_school and a.name = v.name);
+
+  update public.academic_sessions a
+     set starts_on = v.s, ends_on = v.e
+    from (values
+      ('2023-2024', date '2023-04-01', date '2024-03-31'),
+      ('2024-2025', date '2024-04-01', date '2025-03-31'),
+      ('2025-2026', date '2025-04-01', date '2026-03-31'),
+      ('2026-2027', date '2026-04-01', date '2027-03-31')
+    ) as v(name, s, e)
+   where a.school_id = v_school and a.name = v.name
+     and (a.starts_on is distinct from v.s or a.ends_on is distinct from v.e);
+  if found then
+    raise notice 'corrected the dates on an academic year that had none: a '
+      'session with a null starts_on or ends_on is excluded from every loop in '
+      'this seed, silently';
+  end if;
 
   select id into v_sess_2324 from public.academic_sessions
    where school_id = v_school and name = '2023-2024';
