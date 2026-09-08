@@ -1368,6 +1368,26 @@ jobs:
         # signup is unlimited pupils for nothing, for ever.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/plan_and_term.sql
 
+      - name: A teacher's reach is one class, and a lock holds against a delete
+        # EVERY ASSERTION RUNS AS `authenticated`, and that is the whole point.
+        # This suite runs as the table owner, for whom both row security and
+        # table grants are silent, so without the role switch each of these
+        # passes while proving nothing.
+        #
+        # Assertions 1 and 2 defend what migration 0024 already did (it revoked
+        # direct DML on the register and the marks) so a re-grant for a bulk
+        # import cannot pass unnoticed. Assertion 5 is the one that stops the
+        # rest passing because the door is shut to everybody: the Maths teacher
+        # of class A must still be able to set a Maths test for class A.
+        #
+        # Assertion 9 is the hole this fixed. Before 0129 that exact statement,
+        # from a subject teacher's own browser, removed 663 assessments and
+        # 5,961 marks from the demo school, all 5,364 finalised ones among them.
+        # 13 and 14 are the other half: an exam nobody has marked can still be
+        # deleted, because a test set up wrongly has to be removable, and the
+        # marks that go with it are audited with their count.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/register_authority.sql
+
       - name: A plan's student limit is a limit, and only on what is a limit
         # The first four assertions are the block. Assertions 10 to 18 and 55
         # to 58 are the half that makes a block like this safe, and they matter

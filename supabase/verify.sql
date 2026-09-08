@@ -2583,6 +2583,77 @@ select 'no school is over the limit it is allowed (0128)',
        end
 
 union all
+-- A teacher's reach, and what a lock is worth against a DELETE (0129).
+--
+-- TWO SEPARATE THINGS IN ONE ROW because neither is any use alone. A policy
+-- that narrows a teacher to their own class is worth nothing if deleting the
+-- parent row destroys the marks anyway, and the delete guard is worth nothing
+-- if anybody may set an exam for any class.
+--
+-- The cascade half is read off the catalogue rather than from a list of three
+-- table names, so a CASCADE added by a later migration into anything carrying
+-- is_locked shows up here as a FAIL rather than as a school losing its results.
+select 'a teacher''s reach, and the lock (0129)',
+       case
+         when to_regprocedure('public.fn_may_manage_enrollment(uuid)') is null
+           then 'FAIL: an exam or a register can be written for a class the '
+                || 'teacher does not teach; apply '
+                || 'supabase/bundles/35_the_register_belongs_to_a_class.sql'
+         when exists (
+           select 1 from pg_policy pol
+             join pg_class c on c.oid = pol.polrelid
+             join pg_namespace n on n.oid = c.relnamespace
+            where n.nspname = 'public' and pol.polcmd <> 'r'
+              and (coalesce(pg_get_expr(pol.polqual, pol.polrelid), '') || ' '
+                   || coalesce(pg_get_expr(pol.polwithcheck, pol.polrelid), ''))
+                  ~ 'class_teacher|subject_teacher'
+              and (coalesce(pg_get_expr(pol.polqual, pol.polrelid), '') || ' '
+                   || coalesce(pg_get_expr(pol.polwithcheck, pol.polrelid), ''))
+                  !~ 'fn_may_')
+           then 'FAIL: ' || (select string_agg(c.relname || '.' || pol.polname, ', ')
+                  from pg_policy pol
+                  join pg_class c on c.oid = pol.polrelid
+                  join pg_namespace n on n.oid = c.relnamespace
+                 where n.nspname = 'public' and pol.polcmd <> 'r'
+                   and (coalesce(pg_get_expr(pol.polqual, pol.polrelid), '') || ' '
+                        || coalesce(pg_get_expr(pol.polwithcheck, pol.polrelid), ''))
+                       ~ 'class_teacher|subject_teacher'
+                   and (coalesce(pg_get_expr(pol.polqual, pol.polrelid), '') || ' '
+                        || coalesce(pg_get_expr(pol.polwithcheck, pol.polrelid), ''))
+                       !~ 'fn_may_')
+                || ' let a teacher write any row in the school; re-apply '
+                || 'supabase/bundles/35_the_register_belongs_to_a_class.sql'
+         when exists (
+           select 1 from pg_constraint con
+             join pg_namespace n on n.oid = con.connamespace
+            where con.contype = 'f' and n.nspname = 'public'
+              and con.confdeltype = 'c'
+              and exists (select 1 from pg_attribute a
+                           where a.attrelid = con.conrelid and a.attname = 'is_locked'
+                             and a.attnum > 0 and not a.attisdropped)
+              and not exists (select 1 from pg_trigger t
+                               where t.tgrelid = con.confrelid and not t.tgisinternal
+                                 and t.tgtype & 8 = 8 and t.tgtype & 2 = 2))
+           then 'FAIL: ' || (select string_agg(distinct
+                    con.confrelid::regclass::text, ', ')
+                  from pg_constraint con
+                  join pg_namespace n on n.oid = con.connamespace
+                 where con.contype = 'f' and n.nspname = 'public'
+                   and con.confdeltype = 'c'
+                   and exists (select 1 from pg_attribute a
+                                where a.attrelid = con.conrelid and a.attname = 'is_locked'
+                                  and a.attnum > 0 and not a.attisdropped)
+                   and not exists (select 1 from pg_trigger t
+                                    where t.tgrelid = con.confrelid and not t.tgisinternal
+                                      and t.tgtype & 8 = 8 and t.tgtype & 2 = 2))
+                || ' cascade into a table that can be locked and refuse nothing '
+                || 'before doing it, so one delete destroys finalised marks; '
+                || 're-apply '
+                || 'supabase/bundles/35_the_register_belongs_to_a_class.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS: no schools yet, as expected'

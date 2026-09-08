@@ -997,7 +997,31 @@ with sig(migration, object, present) as (values
                          join pg_namespace n2 on n2.oid = p.pronamespace
                         where n2.nspname = 'public' and p.proname = 'fn_rollover'),
                       false)
-     and to_regprocedure('public.fn_request_student_limit(integer,text,text)') is not null)
+     and to_regprocedure('public.fn_request_student_limit(integer,text,text)') is not null),
+  -- Three parts. The enrolment check is the policy half; the trigger count is
+  -- the lock half; and the third asks the catalogue whether ANY cascade still
+  -- reaches a lockable table unguarded, so a school that half-applied this file
+  -- is told rather than left with a lock that one delete ignores.
+  ('0129_the_register_belongs_to_a_class_and_a_lock_means_locked',
+     'a teacher''s reach is one class, and a lock holds against a delete',
+     to_regprocedure('public.fn_may_manage_enrollment(uuid)') is not null
+     and (select count(*) from pg_trigger t
+            join pg_class c on c.oid = t.tgrelid
+            join pg_proc p on p.oid = t.tgfoid
+            join pg_namespace n2 on n2.oid = c.relnamespace
+           where n2.nspname = 'public' and not t.tgisinternal
+             and p.proname = 'fn__refuse_destroying_locked_marks') = 3
+     and not exists (
+       select 1 from pg_constraint con
+         join pg_namespace n2 on n2.oid = con.connamespace
+        where con.contype = 'f' and n2.nspname = 'public'
+          and con.confdeltype = 'c'
+          and exists (select 1 from pg_attribute a
+                       where a.attrelid = con.conrelid and a.attname = 'is_locked'
+                         and a.attnum > 0 and not a.attisdropped)
+          and not exists (select 1 from pg_trigger t
+                           where t.tgrelid = con.confrelid and not t.tgisinternal
+                             and t.tgtype & 8 = 8 and t.tgtype & 2 = 2)))
 )
 select migration,
        object                                   as looked_for,

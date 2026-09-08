@@ -654,6 +654,37 @@ emit supabase/bundles/33_a_school_picks_its_plan_and_how_it_pays.sql \
 emit supabase/bundles/34_a_plans_student_limit_means_something.sql \
      supabase/migrations/0128*.sql
 
+# A THIRTY-FIFTH bundle, and the only one so far that is a security fix rather
+# than a feature. It closes what migration 0024 closed in 2024, on the table
+# 0024 missed.
+#
+# 0024's own words: "the blanket table grant (0001) + role-only RLS let a
+# teacher write attendance_daily / mark_entries DIRECTLY via PostgREST,
+# bypassing fn_may_manage_class". It revoked the direct DML on those two and
+# left `assessments` alone, with blanket INSERT, UPDATE and DELETE for
+# `authenticated` and a policy checking only the school and the role.
+#
+# assessments is the one with a CASCADE under it. mark_entries.assessment_id is
+# ON DELETE CASCADE, and a cascade is not subject to row security, to any
+# function's checks, or to mark_entries.is_locked. Measured on the finished demo
+# school, as one subject teacher, in one statement:
+#
+#     BEFORE: 663 assessments, 10944 marks (5364 locked)
+#     AFTER:    0 assessments,  4983 marks (   0 locked)
+#
+# So: the assessment policies narrow to the class AND subject the teacher
+# actually teaches, deleting an assessment is owner and principal only, and
+# three BEFORE DELETE triggers refuse any delete that would destroy a finalised
+# mark, whichever route it came in by. Removing an exam paper nobody has marked
+# still works, and the marks that go with it are audited with their count.
+#
+# It also tightens the attendance and marks policies to match the grant 0024
+# revoked. Nothing changes today, because the grant is what holds them shut;
+# what changes is that re-granting direct DML for a bulk import no longer
+# reopens the hole.
+emit supabase/bundles/35_the_register_belongs_to_a_class.sql \
+     supabase/migrations/0129*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.
