@@ -98,36 +98,69 @@ begin
   --    it where the answer is not in doubt.
   --
   --    THE COMPARISON HERE IS EXACTLY THE ONE THE REST OF THE FILE USES: plain
-  --    equality on the name. An earlier version trimmed the setting before
+  --    equality on schools.name. An earlier version trimmed the setting before
   --    comparing, which made this check PASS on a name the body then failed on,
   --    and a check that disagrees with the code it guards is worse than no
   --    check. So instead of loosening the comparison, this loosens the SEARCH
   --    and then corrects the setting, which every later statement reads.
+  --
+  --    IT SEARCHES BOTH NAME COLUMNS, and that is not belt and braces: it is
+  --    the defect migration 0123 fixes. school_settings.name is the only one a
+  --    school can edit, schools.name is the one this file matches on, and until
+  --    0123 nothing kept them in step. So a school reading its own name off its
+  --    own screen and pasting it in here would be pasting the OTHER column, and
+  --    every file in the set refused. That is exactly how it was reported.
   select id into v_school from public.schools where name = v_name;
 
   if v_school is null then
-    -- One near miss and no ambiguity: almost always a trailing space, which is
-    -- invisible in Settings and in the sidebar, or a capital letter. Fix it and
-    -- say so loudly enough that nobody could think a different school was
-    -- filled by accident.
-    select count(*), min(name) into v_near, v_all
-      from public.schools
-     where lower(btrim(name)) = lower(btrim(v_name));
+    -- The name the school sees on its own screens, which is the one a reader
+    -- copies. Matched exactly first, before any fuzziness.
+    select s.id, s.name into v_school, v_all
+      from public.schools s
+      join public.school_settings st on st.school_id = s.id
+     where st.name = v_name;
 
-    if v_near = 1 then
-      raise notice 'The name given was "%" and this school is stored as "%". '
-        'Same school, so continuing with the stored spelling.', v_name, v_all;
+    if v_school is not null then
+      raise notice 'That is the name on this school''s own screens. In the '
+        'database it is still stored as "%", which is what the console and its '
+        'invoices show: two names for one school, which '
+        'supabase/bundles/29_a_school_has_one_name.sql puts right. Continuing '
+        'with the stored one.', v_all;
       perform set_config('sim.school', v_all, true);
       v_name := v_all;
-      select id into v_school from public.schools where name = v_name;
     else
-      select string_agg('"' || name || '"', ', ' order by name) into v_all
-        from public.schools;
-      raise exception 'No school is named "%". This project holds %. Copy the '
-        'one you want, character for character including any spaces, into the '
-        '"sim.school" line at the top of every file in this set.',
-        v_name, coalesce(v_all, 'no schools at all');
+      -- One near miss and no ambiguity, across either column: almost always a
+      -- trailing space, which is invisible in Settings and in the sidebar, or a
+      -- capital letter. Fix it and say so loudly enough that nobody could think
+      -- a different school was filled by accident.
+      select count(*), min(s.name) into v_near, v_all
+        from public.schools s
+        left join public.school_settings st on st.school_id = s.id
+       where lower(btrim(s.name))  = lower(btrim(v_name))
+          or lower(btrim(st.name)) = lower(btrim(v_name));
+
+      if v_near = 1 then
+        raise notice 'The name given was "%" and this school is stored as "%". '
+          'Same school, so continuing with the stored spelling.', v_name, v_all;
+        perform set_config('sim.school', v_all, true);
+        v_name := v_all;
+      else
+        -- BOTH names per school, because the whole difficulty here is that a
+        -- school has two and can only see one of them.
+        select string_agg('"' || s.name || '"'
+                 || case when st.name is distinct from s.name
+                           then ' (its own screens say "' || st.name || '")'
+                         else '' end, ', ' order by s.name)
+          into v_all
+          from public.schools s
+          left join public.school_settings st on st.school_id = s.id;
+        raise exception 'No school is named "%". This project holds %. Copy the '
+          'one you want, character for character including any spaces, into the '
+          '"sim.school" line at the top of every file in this set.',
+          v_name, coalesce(v_all, 'no schools at all');
+      end if;
     end if;
+    select id into v_school from public.schools where name = v_name;
   end if;
 
   -- 4. Is there an owner to act as? Every row in this set is written through

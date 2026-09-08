@@ -905,7 +905,21 @@ with sig(migration, object, present) as (values
                    from pg_proc p
                    join pg_namespace n on n.oid = p.pronamespace
                   where n.nspname = 'public'
-                    and regexp_replace(p.prosrc, '--.*$', '', 'gn') ~ '[\u2014\u2013]'))
+                    and regexp_replace(p.prosrc, '--.*$', '', 'gn') ~ '[\u2014\u2013]')),
+  -- The trigger AND the fact it is attached: a function nothing calls leaves
+  -- the two names free to diverge on the next rename.
+  ('0123_a_school_has_one_name', 'one school, one name',
+     to_regprocedure('public.fn__mirror_school_name()') is not null
+     and exists (select 1 from pg_trigger t
+                  where t.tgrelid = to_regclass('public.school_settings')
+                    and not t.tgisinternal
+                    and t.tgfoid = to_regprocedure('public.fn__mirror_school_name()')::oid)),
+  -- The grant as well as the function: one callable from a browser would be a
+  -- way to delete a school that has not admitted its first pupil.
+  ('0124_a_failed_signup_leaves_nothing_behind', 'a failed signup can be rolled back',
+     to_regprocedure('public.fn_signup_rollback(uuid)') is not null
+     and not has_function_privilege('authenticated',
+           to_regprocedure('public.fn_signup_rollback(uuid)')::oid, 'EXECUTE'))
 )
 select migration,
        object                                   as looked_for,

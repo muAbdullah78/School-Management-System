@@ -2187,6 +2187,68 @@ select 'no em dash in anything the software says or sends (0122)',
        end
 
 union all
+-- 0123. Reported by a school: Settings said "Chaudhary Puclix High School
+-- Ghauriii" and the operator console said "Choudhary Public School", for one
+-- school. There are two name columns and public.schools carries only SELECT
+-- policies, so the school could edit school_settings.name and could never
+-- change schools.name, which is what the console reads and what
+-- platform_invoices.school_name copies onto the bill.
+--
+-- Asserted as the PROPERTY and not as the trigger's existence: no school in
+-- this database may carry two names. A trigger whose body returned without
+-- doing anything would satisfy a catalogue check and leave the defect in place.
+-- The placeholder is excluded, because school_settings.name is NOT NULL DEFAULT
+-- 'Your School' and mirroring that over a real name would be worse than the
+-- divergence.
+select 'a school has one name (0123)',
+       case when (select count(*)
+                    from public.schools s
+                    join public.school_settings st on st.school_id = s.id
+                   where coalesce(btrim(st.name), '') not in ('', 'Your School')
+                     and s.name is distinct from btrim(st.name)) > 0
+         then 'FAIL: ' || (select count(*)::text
+                             from public.schools s
+                             join public.school_settings st on st.school_id = s.id
+                            where coalesce(btrim(st.name), '') not in ('', 'Your School')
+                              and s.name is distinct from btrim(st.name))
+              || ' school(s) have one name on their own screens and a different '
+              || 'one in the console and on their invoices; apply '
+              || 'supabase/bundles/29_a_school_has_one_name.sql'
+         when to_regprocedure('public.fn__mirror_school_name()') is null
+         then 'FAIL: the names agree today but nothing keeps them in step, so '
+              || 'the next school that renames itself will diverge again; apply '
+              || 'supabase/bundles/29_a_school_has_one_name.sql'
+         else 'PASS'
+       end
+
+union all
+-- 0124. The other half of what one school reported with 0123: they signed up
+-- twice with one email and were left with a school nobody could open and they
+-- could not delete. signup-school's rollback was `from('schools').delete()`,
+-- which could never work (a trigger creates school_settings the instant the
+-- school is inserted, and that foreign key is ON DELETE NO ACTION), and its
+-- result was never read.
+--
+-- Two clauses. The function has to exist, and it has to be reachable by the
+-- service role only: the Edge Function is its one caller, and a browser able
+-- to call it could delete a school that had not yet admitted its first pupil.
+select 'a failed signup leaves nothing behind (0124)',
+       case when to_regprocedure('public.fn_signup_rollback(uuid)') is null
+         then 'FAIL: a signup that stops halfway leaves an ownerless school '
+              || 'that only a platform admin can remove, and only by archiving '
+              || 'and exporting it first; apply '
+              || 'supabase/bundles/30_a_failed_signup_leaves_nothing_behind.sql'
+         when has_function_privilege('authenticated',
+                to_regprocedure('public.fn_signup_rollback(uuid)')::oid, 'EXECUTE')
+           or has_function_privilege('anon',
+                to_regprocedure('public.fn_signup_rollback(uuid)')::oid, 'EXECUTE')
+         then 'FAIL: fn_signup_rollback is callable from a browser, which is a '
+              || 'way to delete a school that has no pupils yet; re-apply '
+              || 'supabase/bundles/30_a_failed_signup_leaves_nothing_behind.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS: no schools yet, as expected'

@@ -482,6 +482,44 @@ emit supabase/bundles/27_a_finalised_register_can_be_reopened.sql \
 emit supabase/bundles/28_the_em_dash_a_parent_receives.sql \
      supabase/migrations/0122*.sql
 
+# A TWENTY-NINTH bundle.
+#
+# 0123 was reported by a school: two screens showed two different names for it,
+# Settings said one thing and the operator console another. There are two name
+# columns, schools.name and school_settings.name, and public.schools carries
+# only SELECT policies, so a signed-in user could never change the first one by
+# any route. The moment a school edited its own name the two diverged for good,
+# and the school was then billed under a name it had not chosen.
+#
+# Fixed as a trigger rather than a new RPC, because an RPC fixes the two screens
+# that exist and leaves the next one free to diverge again. The backfill heals
+# the schools already carrying two names, skipping the "Your School" placeholder
+# so a real name is never overwritten by it.
+emit supabase/bundles/29_a_school_has_one_name.sql \
+     supabase/migrations/0123*.sql
+
+# A THIRTIETH bundle.
+#
+# 0124 is the second half of what the same school reported. They signed up
+# twice with one email, the second attempt was correctly refused, and it left a
+# school behind that nobody could open and they could not delete.
+#
+# signup-school already tried to roll the school back, with
+# `from('schools').delete()`, and that statement could never once have worked: a
+# trigger creates the school_settings row the instant the school is inserted,
+# school_settings.school_id is ON DELETE NO ACTION, and a signup writes rows in
+# six tables. Every attempt died on a foreign key violation whose result nobody
+# read, so the friendly "that email already has an account" was returned and the
+# school stayed.
+#
+# fn_signup_rollback walks every table with a foreign key to schools, derived
+# from the catalogue rather than a list, and refuses anything with a login, a
+# pupil, a payment or an invoice against it. THE EDGE FUNCTION MUST BE
+# REDEPLOYED for new signups to use it; this bundle is what makes the function
+# exist for it to call.
+emit supabase/bundles/30_a_failed_signup_leaves_nothing_behind.sql \
+     supabase/migrations/0124*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

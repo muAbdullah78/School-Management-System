@@ -95,13 +95,44 @@ Deno.serve(async (req) => {
     })
 
     if (createErr || !created.user) {
-      // Roll the school back so a failed signup leaves nothing behind. Without
-      // this, "email already registered" would strand an empty school that the
-      // owner cannot reach and we would have to clean up by hand.
-      await admin.from('schools').delete().eq('id', schoolId)
+      // Roll the school back so a failed signup leaves nothing behind.
+      //
+      // NOT `from('schools').delete()`, which is what this was and which could
+      // never once have worked. A trigger on schools creates the
+      // school_settings row the instant the school is inserted, and
+      // school_settings.school_id is ON DELETE NO ACTION, so that statement
+      // failed with a foreign key violation every single time:
+      //
+      //     ERROR: update or delete on table "schools" violates foreign key
+      //            constraint "school_settings_school_id_fkey"
+      //
+      // Its result was never read, so this returned the correct friendly
+      // message and left the school standing. A signup writes rows in six
+      // tables, so no single delete was going to do it. Reported by a school
+      // that tried signing up twice with one email and was left with an
+      // ownerless school it could not remove: getting rid of one needs a
+      // platform admin to archive it, export it and then purge it, which are
+      // three safeguards written for a REAL school.
+      //
+      // fn_signup_rollback (migration 0124) walks every table with a foreign
+      // key to schools, refuses anything that has a login, a pupil, a payment
+      // or an invoice against it, and records what it did. Its result IS read.
+      const { error: rbErr } = await admin.rpc('fn_signup_rollback', {
+        p_school_id: schoolId,
+      })
       const msg = /already registered|already been registered|duplicate/i.test(createErr?.message ?? '')
         ? 'That email address already has an account. Try signing in instead.'
         : (createErr?.message ?? 'Could not create your login.')
+      if (rbErr) {
+        // The school did not go. Say so rather than leaving somebody to find
+        // it in the console later with no idea where it came from.
+        return json({
+          error: msg + ' An empty school was left behind and could not be '
+            + 'removed automatically; please send us this reference and do not '
+            + 'sign up again: ' + schoolId,
+          school_id: schoolId,
+        }, 400)
+      }
       return json({ error: msg }, 400)
     }
 
