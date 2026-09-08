@@ -1416,3 +1416,27 @@ ERROR:  Paste supabase/bundles/32_the_register_was_written_twice.sql first.
         which is more than a free Supabase project has. Nothing else about this
         set changes.
 ```
+
+### The two assertions that would have failed on a school that trimmed its own log
+
+Both were written the same afternoon and both were wrong in the same way: they
+asserted how much HISTORY the audit log holds, on a database whose owner had
+just deleted most of it by hand to free space, which is exactly the situation
+this whole pass exists to fix.
+
+* *at least 300 registers recorded as finalised* is now REPORTED and not
+  asserted. On a school seeded after bundle 32 there is one row per section-day,
+  about 9,600. On a school whose registers were closed before bundle 32, or
+  whose log was trimmed, there are none and there is no way to make any: the
+  per-pupil rows they would be rebuilt from are what was removed. Failing there
+  would stop the file reporting anything else about a school that is otherwise
+  fine, over something its owner cannot put right. The invariant is asserted
+  where it can be acted on: `verify.sql`, `detect.sql` and
+  `supabase/tests/audit_volume.sql`.
+* *the audit log spans at least 300 distinct days* is now a CONCENTRATION test.
+  What distinguishes a clock pass that ran from one that did not is not how long
+  the history is, it is whether every row is piled on the same day. So: if more
+  than half the rows share one date, the pass did not run. Proved both ways on
+  real databases: the trimmed school passes, and the same school with
+  `update audit_log set created_at = now()` fails with *2000 of the audit log's
+  2000 rows are on one single day, so the clock pass did not run.*

@@ -171,10 +171,26 @@ begin
   -- 10. THE AUDIT LOG READS LIKE A LOG. Ordered by created_at on the one screen
   --     that shows it, so a log where every entry claims the same second is not
   --     a log. This is what the clock pass exists for.
-  select count(distinct created_at::date) into v_n
-    from public.audit_log where school_id = v_school;
-  if v_n < 300 then
-    v_fail := v_fail || format('the audit log spans only %s distinct days', v_n);
+  --
+  --     CONCENTRATION AND NOT A DAY COUNT, and the first version was a day
+  --     count: `distinct created_at::date >= 300`. That asserts how much
+  --     HISTORY the log holds, which is not what the clock pass is responsible
+  --     for, and it fails on a school whose audit log was trimmed by hand to
+  --     free space. On that school the log is short and every row is on the
+  --     right day, which is a pass by any reading and was a failure by this
+  --     one. What actually distinguishes a clock pass that ran from one that
+  --     did not is whether the rows are all piled on the same day: unrun, every
+  --     row carries the minute the seed ran, so one day holds all of them.
+  select count(*) into v_n from public.audit_log where school_id = v_school;
+  if v_n >= 500 then
+    select max(c) into v_m from (
+      select count(*) as c from public.audit_log
+       where school_id = v_school group by created_at::date) q;
+    if v_m > v_n / 2 then
+      v_fail := v_fail || format('%s of the audit log''s %s rows are on one '
+        || 'single day, so the clock pass did not run: every row still claims '
+        || 'the minute the seed ran. Re-run 12_set_the_clock.sql', v_m, v_n);
+    end if;
   end if;
 
   -- 11. THE AUDIT LOG IS NOT THE REGISTER, WRITTEN A SECOND TIME.
@@ -200,12 +216,32 @@ begin
       || 'free tier. Apply '
       || 'supabase/bundles/32_the_register_was_written_twice.sql', v_n);
   end if;
+  --     The other half is REPORTED AND NOT ASSERTED, and the reason is worth
+  --     writing down. On a school seeded after bundle 32 there is one
+  --     ATTENDANCE_FINALIZE row per section-day, about 9,600 of them. On a
+  --     school whose registers were closed BEFORE bundle 32, or whose audit log
+  --     was trimmed by hand to free space, there are none and there is no way
+  --     to make any: the per-pupil rows they would have been rebuilt from are
+  --     gone. Failing on that would stop this file reporting anything else
+  --     about a school that is otherwise fine, over something its owner cannot
+  --     put right. The invariant itself is asserted where it can be acted on:
+  --     verify.sql and detect.sql both check that both functions write the row,
+  --     and supabase/tests/audit_volume.sql checks that they do it once per day
+  --     and once per test.
   select count(*) into v_n from public.audit_log
    where school_id = v_school and action = 'ATTENDANCE_FINALIZE';
   if v_n < 300 then
-    v_fail := v_fail || format('only %s register(s) recorded as finalised in the '
-      || 'audit log, so nothing says who closed a day. Apply '
-      || 'supabase/bundles/32_the_register_was_written_twice.sql', v_n);
+    raise notice 'the audit log holds % record(s) of a register being closed, '
+      'against % section-days of finalised register. Either these registers '
+      'were closed before bundle 32 was applied, or the log has been trimmed by '
+      'hand: both leave the closings unrecorded and neither can be rebuilt, '
+      'because the per-pupil rows they would come from are what was removed. '
+      'Everything closed from now on is recorded.', v_n,
+      (select count(*) from (
+        select distinct ad.attendance_date, e.class_id, e.section_id
+          from public.attendance_daily ad
+          join public.enrollments e on e.id = ad.enrollment_id
+         where ad.school_id = v_school and ad.is_locked) q);
   end if;
 
   -- 12. THE ROW TRIGGERS ARE ALL BACK ON. 08_the_clock.sql turns them off for
