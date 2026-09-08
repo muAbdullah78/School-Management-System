@@ -1714,3 +1714,50 @@ their bundles roll back earlier on a second paste and never reach the grant.
 Distinguishing harmful from harmless needs exactly the two-pass database
 comparison that already exists, so the checker would have been fourteen
 exemptions nobody maintains: a guard that cries wolf, which is worse than none.
+
+### The second red CI, and it was the same root cause as the first
+
+`operator_billing.sql` assertion 23:
+
+```
+FAIL  23. six months on starter is charged monthly - 6 x 950 - not a pro-rated year
+```
+
+That assertion is about the AMOUNT, and the amount had not moved: the suite pins
+`price_quarterly` to zero, so six months falls back to six times the monthly
+rate, 5,700, rather than being pro-rated off the yearly price. What it ALSO
+asserted, incidentally, was `cycle = 'monthly'`, which was only ever true
+because the enum had no other value to offer. 0127 gives it one. Six months is
+quarterly now, which is the nearest standard term at or below its length and is
+what the price ladder charges it as. The assertion says so, and says why.
+
+**And the same root cause as the first red CI: I pushed on a quick preflight.**
+Quick mode does not run the two fresh-database installs, the CRLF pass, the
+re-paste comparison, the part-way diagnostics, or **any SQL suite at all**. My
+first fix for that wrote the skipped list by hand, and it was wrong within the
+hour: it named the four bundle passes and left out the sixty-seven SQL suites,
+which is the section that then caught this. A hand-kept list of what a checker
+skipped is a second thing to keep in step, and the whole message existed
+because the first one had not been kept in step.
+
+It is derived from the script now, by reading its own `if [ "$QUICK" = 0 ]`
+block for section headers, so adding a section adds it to the list:
+
+```
+QUICK PREFLIGHT CLEAN, AND QUICK IS NOT THE WHOLE OF IT.
+
+Skipped, every section that needs a database of its own:
+  fresh databases, both install paths
+  the same bundles, on a database whose bodies are CRLF
+  the diagnostics, on a database part-way through the bundles
+  every SQL suite, on the fresh migrations database
+
+So: no SQL suite ran, no bundle was pasted, and nothing was checked
+on a database built the way a school's is. Run it without --quick
+before pushing anything at all that touches supabase/.
+```
+
+The full run, which is what should have happened twice already: 80 verify rows
+none failing on four separate databases, 336 function bodies unchanged by a
+re-paste, 334 bodies stored CRLF, the upgrade path, and 67 SQL suites forwards
+and in reverse. `PREFLIGHT CLEAN. Safe to push.`

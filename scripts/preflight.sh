@@ -17,7 +17,14 @@
 # So: one command, everything, in the order that fails cheapest first.
 #
 #   scripts/preflight.sh              full run
-#   scripts/preflight.sh --quick      skip the fresh-database rebuilds
+#   scripts/preflight.sh --quick      the static checks and the app only
+#
+# --quick IS NOT A SHORTER FULL RUN. It skips everything that needs a database
+# of its own, and that includes EVERY SQL SUITE. What is left is the static
+# checkers, the web build and tests, and the checks against $PGDATABASE. It
+# exists for a fast loop while editing, not for deciding whether to push.
+# The closing message lists what it skipped, derived from this file rather than
+# typed, because a hand-written list of that drifted within the hour.
 #
 # It needs a Postgres to talk to:
 #   su pguser -c "/usr/lib/postgresql/16/bin/pg_ctl -D /tmp/pgd/data \
@@ -566,14 +573,21 @@ if [ "$fails" = 0 ]; then
   # checked, which is the same fault as one that lies. The line above this
   # block says exactly that about the CI steps; it was not true of the mode.
   if [ "$QUICK" = 1 ]; then
-    echo "QUICK PREFLIGHT CLEAN, and quick is not the whole of it. Skipped:"
-    echo "  the two fresh-database installs (migrations, and bundles)"
-    echo "  the CRLF pass"
-    echo "  re-pasting every bundle and comparing every function body"
-    echo "  the upgrade of an existing school onto the newest bundle"
-    echo "  verify.sql and detect.sql on those databases, at every stage"
-    echo "Run it without --quick before pushing anything that adds, drops or"
-    echo "rewrites a function, or that touches a bundle."
+    echo "QUICK PREFLIGHT CLEAN, AND QUICK IS NOT THE WHOLE OF IT."
+    echo
+    echo "Skipped, every section that needs a database of its own:"
+    # DERIVED FROM THIS FILE, NOT TYPED. The first version of this list was
+    # typed, and it was wrong within the hour: it named the four bundle passes
+    # and left out EVERY SQL SUITE, which is the section that then caught a
+    # real failure in CI (operator_billing.sql assertion 23). A hand-kept list
+    # of what a checker skipped is a second thing to keep in step, and this
+    # whole message exists because the first one was not kept in step.
+    sed -n '/^if \[ "\$QUICK" = 0 \]; then$/,/^fi$/p' "$0" \
+      | grep -oE '^ *echo "== .* =="' | sed -E 's/^ *echo "== /  /; s/ ==" *$//'
+    echo
+    echo "So: no SQL suite ran, no bundle was pasted, and nothing was checked"
+    echo "on a database built the way a school's is. Run it without --quick"
+    echo "before pushing anything at all that touches supabase/."
     exit 0
   fi
   echo "PREFLIGHT CLEAN. Safe to push."
