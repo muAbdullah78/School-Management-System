@@ -103,16 +103,30 @@ These are real, current, and none of them is a bug:
   off. None of that prevents it happening again: only leaving that setting alone
   does.
 
-- **The em dash ban is enforced on published surfaces only, so far.** The rule
-  applies to all writing in this project. `scripts/check-no-emdash.py` enforces
-  it in CI across `site/` and the four authentication screens, which is
-  everything a school reads. It is not yet enforced across the rest of the
-  codebase: `web/src` carries about 930 instances across 121 of 144 files and
-  `supabase/` about 2,900, almost all of them inside code comments. That is a
-  mechanical sweep of roughly three thousand comment lines, and doing it in one
-  unreviewable diff is how a real defect gets hidden, so it is a separate job.
-  The scope list in that script grows one directory at a time as each is swept,
-  which keeps the check honest about what it actually asserts.
+- **The em dash ban is enforced on everything anybody outside this repository
+  reads. What is left is comments.** The rule applies to all writing in this
+  project, and it is now held by three checks rather than one.
+
+  `scripts/check-no-emdash.py` sweeps `site/`, `site-src/`, the whole of
+  `web/src` (885 instances across 118 files, fixed rather than exempted), the
+  desktop shell's connect screen and `robots.txt`. It also scans the string
+  *literals* in the operator SQL scripts a school pastes and reads the output
+  of, `supabase/verify.sql` and `supabase/reset.sql`, which said `FAIL — ...`
+  ninety-seven times in their own output while passing every other check.
+
+  What a static script cannot answer is which migration holds a function's
+  latest definition, so what the *database* says is asserted against the live
+  database in `supabase/verify.sql`: migration 0120 for every `raise exception`
+  message, and 0122 for everything else a function says or sends, including the
+  six message templates that were going out to parents by SMS ending
+  `Thank you — {school}.` and the placeholder dash printed in every empty cell
+  of thirteen reports.
+
+  Still not swept: code comments under `supabase/`, about 2,900 of them, which
+  nobody outside this repository will ever see. The text inside
+  `supabase/migrations/` and `supabase/bundles/` cannot be swept at all, because
+  a bundle a school has already pasted must never change; the two verify rows
+  are what hold that line, against the database rather than the file.
 
 Product decisions live in [`09-DECISIONS-LOCKED.md`](09-DECISIONS-LOCKED.md).
 The money engine's reasoning is in [`10-MONEY-ENGINE-V2.md`](10-MONEY-ENGINE-V2.md).

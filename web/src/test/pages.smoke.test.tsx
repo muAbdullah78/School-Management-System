@@ -26,7 +26,7 @@
  */
 import { describe, expect, it, vi, beforeAll, afterEach } from 'vitest'
 import { createElement, type ComponentType } from 'react'
-import { cleanup, render, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { fakeSupabase, type FakeOptions } from './fakeSupabase'
@@ -921,4 +921,108 @@ describe('a screen survives a database function that returns an older shape', ()
       expect(queryByText(/Utilities/)).not.toBeNull()
     })
   }
+})
+
+describe('a finalised register has a way back', () => {
+  /**
+   * Until migration 0121 this screen's "This day is finalized and locked. It is
+   * read-only." was the literal truth at every privilege level: a child marked
+   * absent by mistake stayed absent on the register and on the attendance
+   * percentage printed on every result card afterwards. The database now has
+   * fn_unlock_attendance, and a fix a school cannot reach is not a fix, so what
+   * is asserted here is that the door is on the screen and only the two roles
+   * that may open it are shown it.
+   *
+   * Driven through the class picker rather than by reaching into state, because
+   * an owner arrives with nothing selected and the roster does not load until
+   * they choose: a test that skipped that step would be asserting against a
+   * screen no owner ever sees.
+   */
+  const LOCKED_DAY = {
+    rows: {
+      academic_sessions: [{ id: 'sess-1', name: '2026-2027', is_current: true }],
+      classes: [{ id: 'cls-1', name: 'Class 4', level_order: 4 }],
+      sections: [],
+    },
+    rpc: {
+      fn_section_roster: [{
+        enrollment_id: 'enr-1', student_id: 'stu-1', roll_no: '1',
+        full_name: 'Ali Raza', father_name: 'Raza Sahib',
+        status: 'absent', is_locked: true,
+      }],
+      fn_unlock_attendance: 1,
+    },
+  }
+
+  async function openLockedDay(profile: Profile) {
+    const { AttendancePage } = await import('@/pages/attendance/AttendancePage')
+    const utils = await mount(AttendancePage, '/', {}, profile)
+    const picker = utils.container.querySelector('select')
+    expect(picker).not.toBeNull()
+    fireEvent.change(picker as HTMLSelectElement, { target: { value: 'cls-1' } })
+    await waitFor(() => expect(utils.queryByText(/finalized and locked/i)).not.toBeNull())
+    return utils
+  }
+
+  it('the owner is offered a way to reopen it', async () => {
+    current.opts = LOCKED_DAY
+    const { getByRole, queryByText } = await openLockedDay(OWNER)
+    expect(getByRole('button', { name: /reopen this day/i })).not.toBeNull()
+    // And the two write controls stay gone: reopening is a separate act from
+    // editing, and the day is still locked until it happens.
+    expect(queryByText(/^Save attendance$/)).toBeNull()
+    expect(queryByText(/Finalize & lock/)).toBeNull()
+  })
+
+  it('and reopening it asks why, then calls the database', async () => {
+    const seen = { tables: new Set<string>(), rpcs: new Set<string>() }
+    current.opts = { ...LOCKED_DAY, seen }
+    const { getByRole, getByLabelText, queryByText } = await openLockedDay(OWNER)
+    fireEvent.click(getByRole('button', { name: /reopen this day/i }))
+
+    // The reason is not optional, and the dialog says so before the database
+    // has to. A four-character reason is refused by fn_unlock_attendance, and
+    // finding that out after typing is how a clerk loses what they wrote.
+    const confirm = getByRole('button', { name: /reopen the day/i }) as HTMLButtonElement
+    expect(confirm.disabled).toBe(true)
+    fireEvent.change(getByLabelText(/why is it being reopened/i),
+      { target: { value: 'father produced the leave application' } })
+    expect((getByRole('button', { name: /reopen the day/i }) as HTMLButtonElement).disabled).toBe(false)
+
+    // From here the server reports the day OPEN, which is what makes the rest
+    // of this test worth having: reopening invalidates the roster, and the
+    // first version of the screen put its "reopened" message in the same state
+    // that the roster-loaded effect clears, so the notice was wiped by its own
+    // refetch and the owner saw nothing happen.
+    current.opts = {
+      ...LOCKED_DAY, seen,
+      rpc: { ...LOCKED_DAY.rpc,
+             fn_section_roster: [{ ...LOCKED_DAY.rpc.fn_section_roster[0], is_locked: false }] },
+    }
+    fireEvent.click(getByRole('button', { name: /reopen the day/i }))
+    await waitFor(() => expect(seen.rpcs.has('fn_unlock_attendance')).toBe(true))
+    await waitFor(() => expect(queryByText(/Reopened, and it is on the school/i)).not.toBeNull())
+    // And the day is editable again, with a way to close it. By role, because
+    // the notice itself names that button and a text match finds both.
+    expect(getByRole('button', { name: /finalize & lock/i })).not.toBeNull()
+  })
+
+  it('a class teacher is told who to ask instead', async () => {
+    current.opts = {
+      ...LOCKED_DAY,
+      rpc: {
+        ...LOCKED_DAY.rpc,
+        fn_my_assignments: [{ class_id: 'cls-1', class_name: 'Class 4', level_order: 4,
+                              section_id: null, section_name: null }],
+      },
+    }
+    const { AttendancePage } = await import('@/pages/attendance/AttendancePage')
+    // A teacher with one assignment lands on it, so there is no picker to use.
+    const { queryByRole, queryByText } = await mount(AttendancePage, '/', {}, {
+      ...OWNER, role: 'class_teacher', full_name: 'Test Teacher',
+    })
+    await waitFor(() => expect(queryByText(/finalized and locked/i)).not.toBeNull())
+    expect(queryByRole('button', { name: /reopen this day/i })).toBeNull()
+    expect(queryByText(/ask the owner or the principal/i)).not.toBeNull()
+  })
 })

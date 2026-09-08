@@ -2,14 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getCurrentSession, listClasses, listSections, getRoster,
-  markAttendance, finalizeAttendance, getMyAssignments,
+  markAttendance, finalizeAttendance, unlockAttendance, getMyAssignments,
   type AttendanceStatus, type RosterRow,
 } from '@/lib/db'
 import { ATTENDANCE_STATUSES } from '@/lib/constants'
 import { todayISO } from '@/lib/format'
 import { AskDialog } from '@/components/AskDialog'
 import { useAuth } from '@/auth/AuthProvider'
-import { isTeacher } from '@/auth/roles'
+import { isTeacher, canWrite, APPROVER_ROLES, type Role } from '@/auth/roles'
 import { enqueueAttendance, isNetworkError, attendanceKey, cachedSchoolId } from '@/lib/offlineQueue'
 import { offlineFirst } from '@/lib/offlineCache'
 import { AttendanceSheet, type AttendanceSheetData } from './AttendanceSheet'
@@ -192,6 +192,37 @@ export function AttendancePage() {
     },
   })
 
+  /**
+   * REOPENING A FINALISED DAY (migration 0121).
+   *
+   * Until 0121 there was no way back from Finalize at any privilege level, and
+   * this screen's "It is read-only" was the literal truth: a child marked
+   * absent by mistake stayed absent on the register and on the attendance
+   * percentage printed on every result card afterwards.
+   *
+   * Owner and principal only, which the database enforces as well. The button
+   * is hidden rather than disabled for everybody else, because the thing they
+   * would need is not a button but a person: the banner tells them who to ask.
+   */
+  const reopen = useMutation({
+    mutationFn: (reason: string) => unlockAttendance(sessionId!, classId, sectionId, date, reason),
+    onSuccess: () => {
+      // NOT saveMsg. The effect on `roster.data` above clears saveMsg every
+      // time a roster loads, and reopening invalidates the roster, so a
+      // message put there is wiped by its own refetch. Remembering WHICH
+      // section-day was reopened also means the notice disappears by itself
+      // when the user moves to another class or date, instead of following
+      // them around.
+      setReopened(`${classId}|${sectionId ?? ''}|${date}`)
+      setConfirmReopen(false)
+      qc.invalidateQueries({ queryKey: ['roster', sessionId, classId, sectionId ?? 'none', date] })
+    },
+  })
+  const [confirmReopen, setConfirmReopen] = useState(false)
+  const [reopened, setReopened] = useState<string | null>(null)
+  const justReopened = reopened === `${classId}|${sectionId ?? ''}|${date}`
+  const mayReopen = !!profile && canWrite(profile.role) && APPROVER_ROLES.includes(profile.role as Role)
+
   function openSheet() {
     const cls = classes.data?.find((c) => c.id === classId)
     const sec = sections.data?.find((s) => s.id === sectionId)
@@ -337,8 +368,39 @@ export function AttendancePage() {
             </div>
 
             {dayLocked && (
-              <div className="border-x border-slate-200 bg-slate-100 px-3 py-1.5 text-xs text-slate-500">
-                This day is finalized and locked. It is read-only.
+              <div className="border-x border-slate-200 bg-slate-100 px-3 py-2 text-xs text-slate-500">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                  <span>This day is finalized and locked. It is read-only.</span>
+                  {mayReopen && !online ? (
+                    // Not a disabled button: reopening writes on the server and
+                    // cannot be queued the way marking can, so saying why is
+                    // more use than a greyed-out control.
+                    <span>Reconnect to reopen it: this one cannot be done offline.</span>
+                  ) : mayReopen ? (
+                    <button
+                      onClick={() => { setSaveMsg(null); setConfirmReopen(true) }}
+                      disabled={reopen.isPending}
+                      className="rounded border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                    >
+                      {reopen.isPending ? 'Reopening…' : 'Reopen this day'}
+                    </button>
+                  ) : (
+                    <span>
+                      If a mark here is wrong, ask the owner or the principal: only they can reopen it.
+                    </span>
+                  )}
+                </div>
+                {reopen.isError && (
+                  <p className="mt-1.5 text-red-600">{(reopen.error as Error)?.message}</p>
+                )}
+              </div>
+            )}
+
+            {!dayLocked && justReopened && (
+              <div className="border-x border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                Reopened, and it is on the school&rsquo;s history with your reason. Correct the
+                register, then press <b>Finalize &amp; lock</b> again so it cannot be changed
+                after this.
               </div>
             )}
 
@@ -411,6 +473,30 @@ export function AttendancePage() {
                 error={finalize.error ? (finalize.error as Error).message : null}
                 onCancel={() => setConfirmFinalize(false)}
                 onSubmit={() => finalize.mutate()}
+              />
+            )}
+
+            {confirmReopen && (
+              <AskDialog
+                title="Reopen this day?"
+                intro={<>
+                  The register for <b>{date}</b> becomes editable again so a wrong mark can be
+                  put right. Say why: it goes on the school’s history with your name against
+                  it, and it is what answers the question if anybody asks later. Finalize the
+                  day again when you have corrected it.
+                </>}
+                reason={{
+                  label: 'Why is it being reopened?',
+                  hint: 'The school sees this in History. A few words is enough.',
+                  required: true,
+                  minLength: 8,
+                  placeholder: 'father produced the leave application the next morning',
+                }}
+                confirmLabel="Reopen the day"
+                busy={reopen.isPending}
+                error={reopen.error ? (reopen.error as Error).message : null}
+                onCancel={() => setConfirmReopen(false)}
+                onSubmit={(v) => reopen.mutate(v.reason)}
               />
             )}
 

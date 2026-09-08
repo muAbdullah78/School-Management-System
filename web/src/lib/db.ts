@@ -779,6 +779,32 @@ export async function finalizeAttendance(
   return Number(data)
 }
 
+/**
+ * Reopen a day that has been finalised, so the mark on it can be corrected.
+ *
+ * Owner and principal only, and the database enforces that: deliberately NOT
+ * the class teacher who finalised it, or finalising would mean nothing. The
+ * reason is required and goes on the audit log, which is what stands in for the
+ * date window this deliberately does not have.
+ *
+ * It does not change any mark. It clears the lock; the correction then goes
+ * through markAttendance exactly as a same-day fix does, which is what records
+ * `corrected_from` and the reason on the row so the corrections report can show
+ * it. See migration 0121.
+ */
+export async function unlockAttendance(
+  sessionId: string, classId: string, sectionId: string | null,
+  date: string, reason: string,
+): Promise<number> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_unlock_attendance', {
+    p_session_id: sessionId, p_class_id: classId, p_section_id: sectionId,
+    p_date: date, p_reason: reason,
+  })
+  if (error) throw new Error(error.message)
+  return Number(data)
+}
+
 export async function attendanceSummary(
   enrollmentId: string, from: string, to: string,
 ): Promise<AttendanceSummary> {

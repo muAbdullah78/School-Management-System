@@ -409,6 +409,79 @@ emit supabase/bundles/22_the_school_keeps_the_keys.sql \
 emit supabase/bundles/23_which_door_you_came_through.sql \
      supabase/migrations/0117*.sql
 
+# A TWENTY-FOURTH bundle. 23 is frozen above, and it has been pasted.
+#
+# 0118 is the first bundle in this project that is purely about speed, and the
+# reason it needed a migration rather than a note is that the cost is invisible
+# for the first year. student_balance() joins four tables and two of them had no
+# index on the column it joins by; measured at a five-year school it is 10.13 ms
+# a call against 1.76 ms, and at a one-year school there is no difference at all.
+# So the schools that would feel it are the ones that have been paying longest,
+# and nobody would ever connect the two. Same shape of gap on the audit log:
+# 33,016 buffers to show a screen of 200 rows, against 471.
+#
+# Found by simulating two years of one school's use (supabase/sim/) rather than
+# by reading the schema, which is the only way a cost like this shows up.
+emit supabase/bundles/24_a_balance_should_not_read_the_whole_ledger.sql \
+     supabase/migrations/0118*.sql
+
+# A TWENTY-FIFTH bundle. 24 is not frozen yet, but keeping one migration to a
+# bundle here costs nothing and means a school that has already pasted 24 does
+# not have to be told to paste it again.
+#
+# 0119 is data a school loses by pressing one button in the natural order. The
+# office presses Year Rollover on 1 April because the teachers need the new
+# class lists; fn_rollover marks the finished year's enrollments `promoted`;
+# and both fn_generate_result_cards and fn_result_readiness selected pupils
+# with `e.status = 'active'`. So from that moment last year's result cards
+# cannot be produced, the generator reports nothing and readiness reports no
+# problem. The marks are all still there.
+emit supabase/bundles/25_last_year_still_gets_its_result_cards.sql \
+     supabase/migrations/0119*.sql
+
+# A TWENTY-SIXTH bundle.
+#
+# 0120 is the em dash rule, applied to the one place under supabase/ where it
+# was never a comment: the sentences the software says out loud when it
+# refuses. 27 of them, each repunctuated by hand, because the dash was doing
+# three different jobs and a global swap would have produced "That invoice is
+# voided: allocate the payment elsewhere", which nobody would write.
+emit supabase/bundles/26_the_em_dash_a_clerk_reads.sql \
+     supabase/migrations/0120*.sql
+
+# A TWENTY-SEVENTH bundle.
+#
+# 0121 is the one finding from the two-year simulation that a school could not
+# have worked around. A class teacher marks a child absent by mistake and
+# presses Finalize; fn_finalize_attendance sets is_locked, fn_mark_attendance
+# skips a locked row, and NOTHING in the schema at any privilege level cleared
+# that flag. Reproduced as the owner, on their own school, with a reason: the
+# register did not change.
+#
+# It matters more than a wrong mark. The attendance percentage on the result
+# card is computed from attendance_daily, so the wrong figure is printed and
+# sent home every term, and the least privileged user in the product was the
+# one who could create a state the owner could not undo.
+emit supabase/bundles/27_a_finalised_register_can_be_reopened.sql \
+     supabase/migrations/0121*.sql
+
+# A TWENTY-EIGHTH bundle.
+#
+# 0122 is 0120 finished. 0120 swept the em dash out of every `raise exception`
+# message and left every other string alone, which turned out to be the half
+# that people actually read: six message templates sent to PARENTS by SMS
+# ("Fee received. Thank you — {school}."), the missing-value placeholder in
+# thirteen report and search functions, and twenty-seven sentences the software
+# says while working rather than while refusing.
+#
+# It repairs the data too. fn__default_message_templates runs once, at signup,
+# so patching the function does nothing for a school that already exists: their
+# message_templates rows, and any message queued and not yet sent, are
+# repunctuated by the exact fragment only, so a template a school has edited
+# for itself keeps its own wording.
+emit supabase/bundles/28_the_em_dash_a_parent_receives.sql \
+     supabase/migrations/0122*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

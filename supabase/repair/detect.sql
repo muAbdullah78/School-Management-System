@@ -852,7 +852,60 @@ with sig(migration, object, present) as (values
                      from pg_class c
                     where c.oid = to_regclass('public.login_secrets')), false)),
   ('0117_which_door_you_came_through', 'a login with no school is told which kind',
-     to_regprocedure('public.fn_my_login_state()') is not null)
+     to_regprocedure('public.fn_my_login_state()') is not null),
+  -- The column, not the index name: an index on the wrong column would pass a
+  -- name check and leave every balance calculation reading a whole table.
+  ('0118_a_balance_should_not_read_the_whole_ledger', 'the balance and audit indexes',
+     exists (select 1 from pg_index i
+               join pg_class rel on rel.oid = i.indrelid
+               join pg_namespace n on n.oid = rel.relnamespace
+               join pg_attribute a on a.attrelid = rel.oid and a.attnum = i.indkey[0]
+              where n.nspname = 'public' and rel.relname = 'invoice_lines'
+                and a.attname = 'invoice_id')
+     and exists (select 1 from pg_index i
+               join pg_class rel on rel.oid = i.indrelid
+               join pg_namespace n on n.oid = rel.relnamespace
+               join pg_attribute a on a.attrelid = rel.oid and a.attnum = i.indkey[0]
+              where n.nspname = 'public' and rel.relname = 'audit_log'
+                and a.attname = 'school_id' and i.indnatts > 1)),
+  -- Absence of the OLD predicate, not presence of the new text: a function
+  -- carrying the corrected predicate in a comment would satisfy the other way
+  -- round.
+  ('0119_last_year_still_gets_its_result_cards', 'a promoted pupil can still get a result card',
+     not exists (select 1 from pg_proc p
+                   join pg_namespace n on n.oid = p.pronamespace
+                  where n.nspname = 'public'
+                    and p.proname in ('fn_generate_result_cards', 'fn_result_readiness', 'fn_set_exam_remark',
+                                      'fn_exam_remarks', 'fn_exam_marksheet',
+                                      'fn_assessment_marksheet', 'fn_position_holders')
+                    and p.prosrc ~ 'e\.status\s*=\s*''active''')),
+  ('0120_the_em_dash_a_clerk_reads', 'no em dash in anything the software says',
+     not exists (select 1
+                   from pg_proc p
+                   join pg_namespace n on n.oid = p.pronamespace
+                   cross join lateral regexp_matches(
+                     p.prosrc, 'raise\s+exception[^;]*[\u2014\u2013][^;]*;', 'gi') m
+                  where n.nspname = 'public')),
+  -- Not the function's existence: a stub returning 0 would satisfy that while
+  -- the register stayed shut. The body must clear the flag, and the grant must
+  -- let a signed-in owner call it, because a function nobody may execute is
+  -- the same as no function at all.
+  ('0121_a_finalised_register_can_be_reopened', 'an owner can reopen a locked day',
+     exists (select 1 from pg_proc p
+               join pg_namespace n on n.oid = p.pronamespace
+              where n.nspname = 'public'
+                and p.proname = 'fn_unlock_attendance'
+                and p.prosrc ~ 'is_locked\s*=\s*false'
+                and has_function_privilege('authenticated', p.oid, 'EXECUTE'))),
+  -- With the comments stripped, because supabase/ is full of em dashes in
+  -- comments and none of those are things the software says. What is left
+  -- after stripping them is string literals.
+  ('0122_the_em_dash_a_parent_receives', 'no em dash in what the software says or sends',
+     not exists (select 1
+                   from pg_proc p
+                   join pg_namespace n on n.oid = p.pronamespace
+                  where n.nspname = 'public'
+                    and regexp_replace(p.prosrc, '--.*$', '', 'gn') ~ '[\u2014\u2013]'))
 )
 select migration,
        object                                   as looked_for,
