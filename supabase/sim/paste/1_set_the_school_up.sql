@@ -47,23 +47,137 @@ set local "sim.school" = 'Chaudhary Puclix High School Ghauriii';
 set local statement_timeout = 0;
 
 -- ---------------------------------------------------------------------------
--- IS THIS DATABASE NEW ENOUGH? Asked here, at the top, rather than found out
--- thirteen minutes into a file.
+-- CAN THIS FILE DO ANYTHING AT ALL? Four questions, asked here at the top
+-- rather than found out four minutes into a file, and each one answered with
+-- WHAT IS ACTUALLY THERE rather than with the fact that something is wrong.
 --
--- The register section reopens a finalised day and corrects it, which is what
--- the corrections report exists to show and which no database could do before
--- migration 0121. On a database that is behind, that call fails with "function
--- does not exist" AFTER the file has done all its work, and because each file
--- is one transaction the whole lot is rolled back with nothing to show for it.
+-- THE FIRST VERSION OF THIS ASKED ONLY THE FIRST QUESTION, and the file then
+-- died on the school name with
+--
+--     ERROR: No owner session. Is the school name exactly right?
+--
+-- seven times in a row. That message names the right suspect and then leaves
+-- the reader with nowhere to go: the name is in Settings, truncated in the
+-- sidebar, and the difference is usually a trailing space or one letter. A
+-- diagnostic that can read the answer and does not print it is not a
+-- diagnostic. So this one lists the school names it can see.
 -- ---------------------------------------------------------------------------
 do $prereq$
+declare
+  -- NOT btrim'd: see question 3. `nullif` on the raw value only asks whether
+  -- anything arrived at all.
+  v_name   text := coalesce(current_setting('sim.school', true), '');
+  v_school uuid;
+  v_near   integer;   -- schools whose name differs only in case or spacing
+  v_owners integer;
+  v_all    text;
 begin
+  -- 1. Is the schema new enough? The register section reopens a finalised day
+  --    and corrects it, which no database could do before migration 0121.
   if to_regprocedure('public.fn_unlock_attendance(uuid,uuid,uuid,date,text)') is null then
     raise exception 'This project is behind the application. Run '
       'supabase/verify.sql, paste every bundle it names in a FAIL row (the '
       'first of them is 27_a_finalised_register_can_be_reopened.sql), then '
       'start this set again.';
   end if;
+
+  -- 2. Did the school name survive as far as this statement? `set local` only
+  --    holds for the transaction, and pressing Run on a pasted file makes the
+  --    whole file one transaction. Run a SELECTION of it and the setting is
+  --    gone by the time anything reads it, and every later error then blames
+  --    the school name instead of the way it was run. Outside a transaction
+  --    `set local` does not fail: it warns, and reads back EMPTY.
+  if btrim(v_name) = '' then
+    raise exception 'The school name never arrived: "sim.school" is empty here. '
+      'Paste and run the WHOLE file in one go rather than a selection of it, '
+      'because the line that sets the name only holds for as long as the file '
+      'runs as one batch.';
+  end if;
+
+  -- 3. Is there a school of that name? And if not, SAY WHAT THERE IS, and fix
+  --    it where the answer is not in doubt.
+  --
+  --    THE COMPARISON HERE IS EXACTLY THE ONE THE REST OF THE FILE USES: plain
+  --    equality on schools.name. An earlier version trimmed the setting before
+  --    comparing, which made this check PASS on a name the body then failed on,
+  --    and a check that disagrees with the code it guards is worse than no
+  --    check. So instead of loosening the comparison, this loosens the SEARCH
+  --    and then corrects the setting, which every later statement reads.
+  --
+  --    IT SEARCHES BOTH NAME COLUMNS, and that is not belt and braces: it is
+  --    the defect migration 0123 fixes. school_settings.name is the only one a
+  --    school can edit, schools.name is the one this file matches on, and until
+  --    0123 nothing kept them in step. So a school reading its own name off its
+  --    own screen and pasting it in here would be pasting the OTHER column, and
+  --    every file in the set refused. That is exactly how it was reported.
+  select id into v_school from public.schools where name = v_name;
+
+  if v_school is null then
+    -- The name the school sees on its own screens, which is the one a reader
+    -- copies. Matched exactly first, before any fuzziness.
+    select s.id, s.name into v_school, v_all
+      from public.schools s
+      join public.school_settings st on st.school_id = s.id
+     where st.name = v_name;
+
+    if v_school is not null then
+      raise notice 'That is the name on this school''s own screens. In the '
+        'database it is still stored as "%", which is what the console and its '
+        'invoices show: two names for one school, which '
+        'supabase/bundles/29_a_school_has_one_name.sql puts right. Continuing '
+        'with the stored one.', v_all;
+      perform set_config('sim.school', v_all, true);
+      v_name := v_all;
+    else
+      -- One near miss and no ambiguity, across either column: almost always a
+      -- trailing space, which is invisible in Settings and in the sidebar, or a
+      -- capital letter. Fix it and say so loudly enough that nobody could think
+      -- a different school was filled by accident.
+      select count(*), min(s.name) into v_near, v_all
+        from public.schools s
+        left join public.school_settings st on st.school_id = s.id
+       where lower(btrim(s.name))  = lower(btrim(v_name))
+          or lower(btrim(st.name)) = lower(btrim(v_name));
+
+      if v_near = 1 then
+        raise notice 'The name given was "%" and this school is stored as "%". '
+          'Same school, so continuing with the stored spelling.', v_name, v_all;
+        perform set_config('sim.school', v_all, true);
+        v_name := v_all;
+      else
+        -- BOTH names per school, because the whole difficulty here is that a
+        -- school has two and can only see one of them.
+        select string_agg('"' || s.name || '"'
+                 || case when st.name is distinct from s.name
+                           then ' (its own screens say "' || st.name || '")'
+                         else '' end, ', ' order by s.name)
+          into v_all
+          from public.schools s
+          left join public.school_settings st on st.school_id = s.id;
+        raise exception 'No school is named "%". This project holds %. Copy the '
+          'one you want, character for character including any spaces, into the '
+          '"sim.school" line at the top of every file in this set.',
+          v_name, coalesce(v_all, 'no schools at all');
+      end if;
+    end if;
+    select id into v_school from public.schools where name = v_name;
+  end if;
+
+  -- 4. Is there an owner to act as? Every row in this set is written through
+  --    the application's own functions with a real signed-in owner's session,
+  --    so without one there is nobody to be. Kept separate from question 3 on
+  --    purpose: the two were one message before, and "is the school name
+  --    right?" is unanswerable advice when the name was right all along.
+  select count(*) into v_owners from public.profiles
+   where school_id = v_school and role = 'owner' and active;
+  if v_owners = 0 then
+    raise exception 'The school "%" exists but has no active owner login, and '
+      'this set writes as its owner. Sign in as the school and check Settings, '
+      'Users & Roles.', v_name;
+  end if;
+
+  raise notice 'Filling "%", which has an owner to write as. This whole file is '
+    'one transaction: if it stops, it writes nothing.', v_name;
 end $prereq$;
 
 
@@ -185,9 +299,29 @@ begin
    where school_id = v_school and name = '2026-2027';
 
   -- The school starts the simulation in its 2023-2024 year. fn_rollover moves
-  -- this forward three times later on, which is the point.
-  update public.academic_sessions set is_current = (id = v_sess_2324)
-   where school_id = v_school;
+  -- this forward three times in 04_the_years.sql, which is the point.
+  --
+  -- GUARDED, AND THIS FILE CLAIMED TO BE IDEMPOTENT WITHOUT IT. Every insert
+  -- above is guarded by a `not exists`; this line is an UPDATE, and it was the
+  -- one destructive statement in the file. Re-running it on a finished school
+  -- rewound the current year from 2026-2027 to 2023-2024, so the dashboard,
+  -- the register, the fee screens and the class lists all went blank: they read
+  -- the current session, and the current session suddenly had nothing in it.
+  -- Measured on the finished simulation, which is how this was found.
+  --
+  -- Anybody who re-runs a set of seven files "to be sure" would hit that, and
+  -- would reasonably conclude the data had been lost when it was all still
+  -- there. The guard is enrolments in a later year: on a first run there are
+  -- none, and after 04_the_years.sql there are hundreds.
+  if not exists (select 1 from public.enrollments e
+                  where e.school_id = v_school
+                    and e.session_id is distinct from v_sess_2324) then
+    update public.academic_sessions set is_current = (id = v_sess_2324)
+     where school_id = v_school;
+  else
+    raise notice 'this school has already been rolled past 2023-2024, so the '
+      'current session is left as it is';
+  end if;
 
   -- --- 3. Classes ------------------------------------------------------------
   -- Nursery to Class 10: a high school, which is what the name says. level_order

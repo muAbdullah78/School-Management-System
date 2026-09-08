@@ -889,3 +889,131 @@ text inside `supabase/migrations/` and `supabase/bundles/`, which cannot be
 swept because a bundle a school has already pasted must never change. The two
 verify rows are what hold that line, against the live database rather than the
 file.
+
+## F23. A school had two names, and could only ever edit one of them. **Fixed in migration 0123.**
+
+**Severity: high, and it is the first finding here reported by a real school
+rather than found by the simulation. What found it was the simulation refusing
+to run.**
+
+They pasted all seven demo files and every one refused:
+
+```
+ERROR: No owner session. Is the school name exactly right?
+```
+
+The name they had put in the files was the name on their own Settings screen.
+Their project held this:
+
+| | `schools.name` | its own screens say |
+|---|---|---|
+| | Al Qalam School | Al Qalam School |
+| theirs | **Choudhary Public School** | **Chaudhary Puclix High School Ghauriii** |
+
+### Why
+
+There are two name columns.
+
+| column | written by | read by |
+|---|---|---|
+| `schools.name` | `fn_signup_school` at signup, and the operator console | the console, `platform_invoices.school_name` on the bill sent to the school, and anything that finds a school by name |
+| `school_settings.name` | seeded from `schools.name` by a trigger, and thereafter the **only** one a school can edit: the first-run wizard and Settings both write it | the sidebar, receipts, challans, certificates, result cards |
+
+And `public.schools` carries **only SELECT policies**. No INSERT, UPDATE or
+DELETE policy exists on it at all, so with row level security on, a signed-in
+user cannot change `schools.name` by any route. The application had not
+forgotten to write it; it structurally could not. From the moment a school
+edited its own name the two diverged permanently, and nothing in the product
+could bring them back together.
+
+So the school was **billed under a name it never chose**, support opened a
+console naming it something the school would not recognise, and every
+name-based lookup missed it.
+
+### The fix, and why it is a trigger
+
+`fn__mirror_school_name()`, `after insert or update of name on school_settings`.
+A new RPC would have fixed the two screens that exist and left the next one free
+to diverge again, and the app cannot write `schools` in any case. As a trigger
+the two columns become one fact for every write path, including the first-run
+wizard that already existed.
+
+`school_settings.name` wins, because it is the one the school chose and the one
+printed on everything the school hands to a parent. **Except the placeholder:**
+that column is `NOT NULL DEFAULT 'Your School'`, and `fn_set_current_session`
+inserts the row with no name if it is somehow missing, so a blind copy could
+rename a real school to "Your School" on its own invoices. The placeholder is
+never mirrored, in the trigger or in the backfill.
+
+The backfill was tested against the reported state and turns it into one name.
+The verify row asserts the property, not the trigger: **no school in this
+database may carry two names**, with a second clause for "they agree today but
+nothing keeps them in step".
+
+The seed now also searches both columns, so a school reading its own name off
+its own screen is found either way, and says which bundle puts it right.
+
+## F24. A signup that stopped halfway left a school nobody could open or delete, and the rollback that was supposed to prevent it could never have worked. **Fixed in migration 0124.**
+
+**Severity: medium, reported by the same school in the same breath.**
+
+They tried signing up twice with one email address. The second attempt was
+correctly refused, and it left this behind:
+
+```
+[Chaudhary School]   0 active owners, 0 students
+```
+
+`supabase/functions/signup-school` does the only thing it can in the order it
+must: the school has to exist before the login, because the login's profile
+needs a school to attach to. So on failure it rolled the school back:
+
+```ts
+await admin.from('schools').delete().eq('id', schoolId)
+```
+
+That statement **cannot succeed, and never once had**. A trigger on `schools`
+creates the `school_settings` row the instant the school is inserted, and
+`school_settings.school_id` is `ON DELETE NO ACTION`. Reproduced:
+
+```
+ERROR: update or delete on table "schools" violates foreign key constraint
+       "school_settings_school_id_fkey" on table "school_settings"
+```
+
+The result of that call was never read, so the function returned its correct,
+friendly "that email address already has an account" and the school stayed. A
+signup writes rows in **six** tables (`audit_log` 8, `expense_categories` 8,
+`message_templates` 7, `operator_actions` 1, `school_settings` 1,
+`subscriptions` 1), so no single delete was ever going to do it.
+
+What it cost: an ownerless school sitting in the console looking like an
+ordinary new customer, and removing one takes a platform admin **archiving it,
+exporting it and then purging it**, three deliberate safeguards written for a
+real school and exactly the wrong ceremony for a signup that never happened.
+
+### The fix
+
+`fn_signup_rollback(school_id)`, service role only, which:
+
+- refuses anything with a login, a pupil, a payment, an invoice or a platform
+  payment against it. **The safety property is "no owner and no pupil", not a
+  time window:** a real school always has an owner profile, a school with a
+  pupil is real whatever else is true, and a school ownerless for a month is
+  still a signup that never completed;
+- never touches `platform_invoices` or `platform_payments`, which are the
+  vendor's accounting record and outlive the school on purpose;
+- walks every table with a foreign key to `schools`, **derived from
+  `pg_constraint` rather than a list**. The first version used
+  `fn__school_data_tables()` and failed its own probe on
+  `operator_actions_school_id_fkey`: that helper lists the 51 tables holding a
+  *school's* data, 59 carry a foreign key to `schools`, and a signup writes to
+  two of the eight it leaves out;
+- records what it did before deleting anything, with `school_id` null so the
+  record survives the school it describes. Same trick as
+  `fn_platform_purge_school`, and for the same reason.
+
+The Edge Function now calls it **and reads the result**, and says so with a
+reference if the school could not be removed, rather than leaving somebody to
+find it in the console later with no idea where it came from. It has to be
+redeployed for new signups to use it.
