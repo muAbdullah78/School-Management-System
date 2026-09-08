@@ -113,9 +113,29 @@ begin
    where school_id = v_school and name = '2026-2027';
 
   -- The school starts the simulation in its 2023-2024 year. fn_rollover moves
-  -- this forward three times later on, which is the point.
-  update public.academic_sessions set is_current = (id = v_sess_2324)
-   where school_id = v_school;
+  -- this forward three times in 04_the_years.sql, which is the point.
+  --
+  -- GUARDED, AND THIS FILE CLAIMED TO BE IDEMPOTENT WITHOUT IT. Every insert
+  -- above is guarded by a `not exists`; this line is an UPDATE, and it was the
+  -- one destructive statement in the file. Re-running it on a finished school
+  -- rewound the current year from 2026-2027 to 2023-2024, so the dashboard,
+  -- the register, the fee screens and the class lists all went blank: they read
+  -- the current session, and the current session suddenly had nothing in it.
+  -- Measured on the finished simulation, which is how this was found.
+  --
+  -- Anybody who re-runs a set of seven files "to be sure" would hit that, and
+  -- would reasonably conclude the data had been lost when it was all still
+  -- there. The guard is enrolments in a later year: on a first run there are
+  -- none, and after 04_the_years.sql there are hundreds.
+  if not exists (select 1 from public.enrollments e
+                  where e.school_id = v_school
+                    and e.session_id is distinct from v_sess_2324) then
+    update public.academic_sessions set is_current = (id = v_sess_2324)
+     where school_id = v_school;
+  else
+    raise notice 'this school has already been rolled past 2023-2024, so the '
+      'current session is left as it is';
+  end if;
 
   -- --- 3. Classes ------------------------------------------------------------
   -- Nursery to Class 10: a high school, which is what the name says. level_order
