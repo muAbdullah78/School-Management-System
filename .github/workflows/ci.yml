@@ -1421,6 +1421,29 @@ jobs:
         # failing twice and leaving the file no longer safe to re-run.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/student_limit.sql
 
+      - name: A discount is a promise, and every way it can go wrong
+        # The ordinary case (twenty percent off, once) is the one anybody would
+        # have got right. These are the ones that end in a billing dispute: a
+        # flat discount larger than the price giving a ZERO invoice and not a
+        # negative one; the terms frozen on redemption so editing a code does
+        # not reach a school already on it; 'once' coming off exactly one
+        # invoice; an 'until' code judged against the period being invoiced
+        # rather than against the day the invoice is raised; a trial extension
+        # that moves a date and never touches an invoice; and an operator's
+        # hand-typed amount NOT being discounted on top of itself.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/discounts.sql
+
+      - name: A school choosing its own plan, and the four things it may not do
+        # While trialing it may change both the plan and the term, because no
+        # money has moved. Once active it may change the term (that prices the
+        # next renewal) but NOT the plan: upward it would get a bigger student
+        # limit free until renewal, downward it would lose a limit it has paid
+        # for, and the honest fix for either is a pro-rata invoice this product
+        # does not raise. It may never move onto the by-arrangement plan, which
+        # has no student limit and no price, and never down into a plan smaller
+        # than the roll it already has.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/plan_choice.sql
+
       - name: Remarks and position holders — do ties and remarks survive?
         # Assertion 12 is why exam_remarks is its own table rather than a column
         # on result_cards: fn_generate_result_cards INSERTS a new version rather

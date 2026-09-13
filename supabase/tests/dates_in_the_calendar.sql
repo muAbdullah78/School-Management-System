@@ -205,9 +205,18 @@ begin
     format($q$select public.fn_mark_attendance('1900-01-01'::date, %L::jsonb)$q$, v_marks),
     'outside it'),
     '4  and one in 1900, which no guard anywhere refused before');
+  -- TOMORROW IN KARACHI, NOT TOMORROW IN UTC, and the difference is five hours
+  -- of every day rather than an edge case. fn_mark_attendance refuses anything
+  -- after `(now() at time zone 'Asia/Karachi')::date`, and its own comment says
+  -- why: a school marking a register at 9am in Karachi is still yesterday in
+  -- UTC. Between 19:00 and midnight UTC the two dates differ, `current_date + 1`
+  -- is TODAY as the product sees it, the function correctly accepts it, and
+  -- this assertion failed. Found at 19:02 UTC, which is the only reason it was
+  -- found at all: a test that is wrong for five hours a day is worse than no
+  -- test, because it teaches people that a red run means run it again.
   perform pg_temp.ok(pg_temp.raises(
     format($q$select public.fn_mark_attendance(%L::date, %L::jsonb)$q$,
-           current_date + 1, v_marks),
+           (now() at time zone 'Asia/Karachi')::date + 1, v_marks),
     'has not happened yet'),
     '5  tomorrow is refused too. Marking a class present for the rest of the '
     || 'term in advance is 200 days of fiction, and the date picker''s max is '

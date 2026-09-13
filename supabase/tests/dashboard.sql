@@ -327,7 +327,24 @@ begin
       -- and platform_invoices is unreadable by a school through RLS —
       -- platform_billing.sql assertion 87b proves that. It is also a trigger
       -- function, revoked from every app role, so nothing can call it directly.
-      'fn__assign_doc_no'
+      'fn__assign_doc_no',
+      -- 0131. Both read subscription_discounts ACROSS every school, and that is
+      -- the entire question they answer: "how many schools took this code up"
+      -- and "has anybody used it, so may it be deleted". A per-school version of
+      -- either is meaningless. Same category as fn__assign_doc_no above: the
+      -- offer belongs to the VENDOR, not to a school.
+      --
+      -- Not a leak, on three counts. Both open with is_platform_admin() and
+      -- raise 42501 otherwise; both return counts rather than rows, so no
+      -- school's data crosses to another; and subscription_discounts carries
+      -- RLS with no policy at all, so nothing reaches it except through a
+      -- definer function like these.
+      --
+      -- Its sibling fn_platform_discount_usage is NOT here, and the difference
+      -- is worth the line: that one returns per-school rows, so it names
+      -- school_id and passes this check on its own terms.
+      'fn_platform_discounts',
+      'fn_platform_delete_discount'
     );
 
   if v_bad is not null then

@@ -299,6 +299,16 @@ def main() -> int:
              and not exists (
                select 1 from regexp_matches(p.prosrc, 'public\\.(\\w+)', 'g') m
                 where m[1] not in ('plans', 'fn__plan_price')))
+           -- 0132. The four provinces and the three territories, which the
+           -- signup form needs before anybody has a login and which exists so
+           -- that the form and the check constraint on schools.region cannot
+           -- disagree about a spelling. Immutable, and its whole body is an
+           -- array literal: it reads nothing at all, which is the term of the
+           -- exemption and is checked rather than asserted.
+           and not (
+             p.proname = 'fn_signup_regions'
+             and p.provolatile = 'i'
+             and p.prosrc !~ 'public\\.')
          order by 1
     """)]
     if anon_callable:
@@ -314,7 +324,8 @@ def main() -> int:
               'Add to the migration that creates it:\n'
               '  revoke execute on function public.<name>(<arg types>) from public, anon;\n'
               'and grant it to `authenticated` explicitly if the app calls it.\n'
-              '\nIf the name above is fn_signup_plans, it has stopped meeting the '
+              '\nIf the name above is fn_signup_plans or fn_signup_regions, it '
+              'has stopped meeting the '
               'terms of its exemption: it must be stable or immutable, and must '
               'reference nothing in public except plans and fn__plan_price.',
               file=sys.stderr)

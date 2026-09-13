@@ -164,6 +164,12 @@ const SCREENS: [string, () => Promise<Record<string, unknown>>, string][] = [
   // is the opposite of the truth and sends the office off to set new ones.
   ['Settings/KeyRing', () => import('@/pages/settings/KeyRing'), 'KeyRing'],
   ['Feedback', () => import('@/pages/FeedbackPage'), 'FeedbackPage'],
+  // 0131/0132. Step two of signup and the screen Settings links to for a plan
+  // change. It reads the price list, the licence and a discount preview, and
+  // its whole job is arithmetic, so "does it open with no data" is exactly the
+  // question: an empty price list is what a new school sees when the network
+  // hiccups on the one screen where it decides to buy.
+  ['ChoosePlan', () => import('@/pages/ChoosePlan'), 'ChoosePlan'],
 ]
 
 /**
@@ -355,6 +361,11 @@ describe('the operator console', () => {
     // history the moment "Past runs" is pressed and nothing before that. Stubbed
     // so a missing RPC cannot make the tab look broken in this suite while
     // being fine in the app, or the reverse.
+    // 0131. Both empty in every case but the discounts test below. An
+    // unstubbed RPC comes back as an error, and the panel would then show its
+    // error state rather than its empty state, which is a different screen.
+    fn_platform_discounts: [],
+    fn_platform_discount_usage: [],
     fn_platform_renewal_runs: [],
     fn_platform_run_renewals: {
       run_id: 'r1', dry_run: true, as_at: '2026-09-06',
@@ -400,6 +411,50 @@ describe('the operator console', () => {
     expect(queryByPlaceholderText(/search a school/i)).not.toBeNull()
     expect(queryByText('Al Qalam School')).not.toBeNull()
     expect(queryByText('Beaconhouse Multan')).not.toBeNull()
+  })
+
+  it('opens the discounts screen with codes and a roster', async () => {
+    // 0131. The two panels answer different questions and both have to render:
+    // what is on offer, and which schools are actually on it. An empty roster
+    // and a populated code list is the state on the day a campaign launches,
+    // which is exactly when nobody wants to find out the screen throws.
+    current.opts = {
+      rpc: {
+        ...ADMIN_RPCS,
+        fn_platform_discounts: [{
+          code: 'SPRING20', description: 'Spring campaign', kind: 'percent',
+          value: 20, duration: 'forever', duration_months: null,
+          duration_until: null, redeem_from: null, redeem_until: '2026-12-31',
+          max_redemptions: 50, plan_codes: null, min_term_months: 12,
+          active: true, created_at: '2026-09-01T00:00:00Z',
+          summary: '20% off, on every invoice from now on',
+          redeemed: 3, live: 2, total_saved: 12000, deletable: false,
+        }],
+        fn_platform_discount_usage: [{
+          school_id: 'sch-1', school_name: 'Al Qalam School', code: 'SPRING20',
+          kind: 'percent', value: 20, duration: 'forever', ends_on: null,
+          uses_left: null, times_applied: 2, total_saved: 8000,
+          trial_days_added: null, redeemed_at: '2026-09-02T09:00:00Z',
+          removed_at: null, removed_reason: null,
+          plan_code: 'starter', status: 'active', state: 'active',
+        }],
+      },
+    }
+    const { PlatformPage } = await import('@/pages/platform/PlatformPage')
+    const { queryByText, queryAllByText, getByText } = await mount(PlatformPage)
+    // The tab's two queries only start when it is opened, so mount()'s wait
+    // for a quiet query client happened before either of them existed.
+    fireEvent.click(getByText('Discounts'))
+    // TWICE, and that is the assertion rather than an inconvenience: the code
+    // appears in the offer list AND against the school in the roster, which is
+    // the whole point of having two panels.
+    await waitFor(() => expect(queryAllByText('SPRING20').length).toBe(2))
+    expect(queryByText(/Spring campaign/)).not.toBeNull()
+    // The roster names the school, which is the answer the tab exists for.
+    expect(queryByText('Al Qalam School')).not.toBeNull()
+    // Redeemed by somebody, so the delete button must not be offered: from
+    // then on it is part of a billing record and can only be retired.
+    expect(queryByText('Delete')).toBeNull()
   })
 
   it('says what a status means instead of printing the database enum', async () => {

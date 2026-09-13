@@ -397,6 +397,13 @@ declare
   platform_tables text[] := array[
     'schools', 'plans', 'subscriptions', 'student_count_snapshots',
     'platform_admins', 'platform_invoices', 'platform_payments',
+    -- 0131. The offers the VENDOR makes, which is the vendor's commercial
+    -- position and not any school's data: a code has no school_id because it
+    -- has not been given to anybody yet. The redemption table beside it,
+    -- subscription_discounts, DOES carry school_id and is checked like every
+    -- other tenant table, which is the right split: what is on offer is ours,
+    -- what a school was promised is theirs.
+    'discount_codes',
     -- The deployment record added by 0069. It has no school_id because it
     -- describes the database, and its only policy is a SELECT gated on
     -- is_platform_admin() — a schema history is not a tenant's business, and a

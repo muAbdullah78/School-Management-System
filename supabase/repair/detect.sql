@@ -201,6 +201,11 @@ with sig(migration, object, present) as (values
               and proname not in ('fn_may_manage_class', 'fn_may_write_school_file',
                                   'fn_may_mark_subject',
                                   'fn_pending_invites',
+                                  -- fn_preview_discount (0131): what a code takes
+                                  -- off a plan. Reads the code list and the price
+                                  -- list and nothing belonging to the school, so
+                                  -- may_view has nothing to say about it.
+                                  'fn_preview_discount',
                                   'fn_checkin_display',
                                   'fn_support_visits',
                                   'fn_my_next_payment',
@@ -428,7 +433,19 @@ with sig(migration, object, present) as (values
               and p.provolatile in ('i', 's')
               and not exists (
                 select 1 from regexp_matches(p.prosrc, 'public\.(\w+)', 'g') m
-                 where m[1] not in ('plans', 'fn__plan_price'))))
+                 where m[1] not in ('plans', 'fn__plan_price')))
+            -- THE SECOND EXEMPTION, 0132, and it earns itself the same way.
+            -- fn_signup_regions returns the four provinces and the three
+            -- territories, which the signup form needs before anybody has a
+            -- login and which is not a secret in any sense. It exists so the
+            -- form and the check constraint on schools.region cannot disagree
+            -- about a spelling, which is how a signup is refused at the last
+            -- step of a six-field form. Immutable, and it reads nothing at
+            -- all: the whole body is an array literal.
+            and not (
+              p.proname = 'fn_signup_regions'
+              and p.provolatile = 'i'
+              and p.prosrc !~ 'public\.'))
          and exists (select 1 from pg_proc p
                       join pg_namespace n on n.oid = p.pronamespace
                       where n.nspname = 'public' and p.proname = 'fn_signup_school'
@@ -1040,7 +1057,42 @@ with sig(migration, object, present) as (values
                                'fn_record_other_income', 'fn_charge_deposit',
                                'fn_set_fee_amount', 'fn_fee_increment',
                                'fn_upsert_exam_subject', 'fn_set_staff_attendance')
-             and p.prosrc ~ 'fn__assert_date_in_(session|calendar)') = 10)
+             and p.prosrc ~ 'fn__assert_date_in_(session|calendar)') = 10),
+  -- The discount engine. Four parts, and the third is the one that goes wrong
+  -- silently: fn_activate_subscription can be present and correct in every
+  -- other respect while no longer asking for the discount, and the only
+  -- symptom is schools quietly charged full price at renewal.
+  ('0131_a_discount_is_a_promise_with_an_end_date',
+     'a discount survives to the next invoice instead of living in one note',
+     to_regclass('public.discount_codes') is not null
+     and to_regclass('public.subscription_discounts') is not null
+     and to_regprocedure('public.fn__discount_live(uuid,date)') is not null
+     and (select count(*) from pg_proc p
+            join pg_namespace n2 on n2.oid = p.pronamespace
+           where n2.nspname = 'public' and p.proname = 'fn_activate_subscription'
+             and p.prosrc like '%fn__discount_live%') = 1
+     and exists (select 1 from pg_indexes
+                  where schemaname = 'public'
+                    and indexname = 'uq_subscription_discount_live')),
+  ('0132_where_the_school_is_and_which_plan_it_chose',
+     'a school can record its region and choose its own plan while trialing',
+     exists (select 1 from information_schema.columns
+              where table_schema = 'public' and table_name = 'schools'
+                and column_name = 'region')
+     and to_regprocedure('public.fn_my_choose_plan(text,integer)') is not null
+     and to_regprocedure('public.fn_signup_regions()') is not null
+     and to_regprocedure('public.fn_signup_school_on_plan_in_region'
+       || '(text,text,text,text,text,text,integer,text)') is not null
+     -- None of the three names in the signup chain may be overloaded: a call
+     -- that matches two candidates is refused as not unique and public signup
+     -- stops working.
+     and not exists (select 1 from pg_proc p
+                       join pg_namespace n2 on n2.oid = p.pronamespace
+                      where n2.nspname = 'public'
+                        and p.proname in ('fn_signup_school',
+                                          'fn_signup_school_on_plan',
+                                          'fn_signup_school_on_plan_in_region')
+                      group by p.proname having count(*) > 1))
 )
 select migration,
        object                                   as looked_for,
