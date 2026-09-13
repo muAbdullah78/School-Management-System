@@ -83,6 +83,6 @@ end $$;
 -- Delete them in the dashboard: Authentication → Users → select all → Delete.
 -- That is the supported route and it cleans up sessions and identities too.
 --
--- The SQL equivalent is `delete from auth.users;` — it normally works from the
+-- The SQL equivalent is `delete from auth.users,` — it normally works from the
 -- SQL Editor, but the dashboard is the safer path and takes ten seconds.
 -- =============================================================================

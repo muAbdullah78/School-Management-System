@@ -98,7 +98,7 @@ $hd$;
 -- restore, a point-in-time recovery, `session_replication_role = 'replica'` —
 -- leave the flag standing, and `ALTER TABLE … VALIDATE CONSTRAINT` on an
 -- already-validated constraint returns success WITHOUT RE-SCANNING, so it cannot
--- even be used to find out. Both reproduced; supabase/tests/orphan_data.sql
+-- even be used to find out. Both reproduced, supabase/tests/orphan_data.sql
 -- assertions 22-23 hold them in place.
 --
 -- On a live project that inversion reported PASS over a real orphan. A checker
@@ -324,7 +324,7 @@ select 'photographs and school logo (0057)',
                       'fn_may_read_school_file', 'fn_may_write_school_file')) = 7
                  -- The RENAMED columns, not the old ones. 0057 renames
                  -- photo_url → photo_path and logo_url → logo_path, because the
-                 -- column holds a storage path and never a URL; finding the old
+                 -- column holds a storage path and never a URL, finding the old
                  -- name means the rename did not happen and every read in the
                  -- app is looking at a column that is not there.
                  and exists (select 1 from information_schema.columns
@@ -373,7 +373,7 @@ select 'exam computation (0058)',
                                   where n.nspname='public' and p.proname='fn_generate_result_cards'
                                     and p.pronargs = 2)
                  -- And it must actually consult the stream rule. The function has
-                 -- existed since 0005; its presence proves nothing, exactly as
+                 -- existed since 0005, its presence proves nothing, exactly as
                  -- with 0055's rollover fix.
                  and exists (select 1 from pg_proc p
                               join pg_namespace n on n.oid = p.pronamespace
@@ -460,7 +460,7 @@ select 'the observer role (0059)',
                                            -- 0116, and the strongest case of the
                                            -- lot. fn_login_email_available asks
                                            -- the whole platform whether an
-                                           -- address is taken; fn_school_key_ring
+                                           -- address is taken, fn_school_key_ring
                                            -- lists the passwords this school gave
                                            -- its parents. may_view is true for an
                                            -- observer AND during a support visit,
@@ -518,7 +518,7 @@ select 'refundable deposits (0060)',
                                 and tgrelid = 'public.invoice_lines'::regclass
                                 and not tgisinternal)
                  -- THE ONE THAT MATTERS. Both money functions must actually
-                 -- exclude deposits; their mere presence proves nothing, since
+                 -- exclude deposits, their mere presence proves nothing, since
                  -- both have existed since 0030/0045.
                  and exists (select 1 from pg_proc p
                               join pg_namespace n on n.oid = p.pronamespace
@@ -677,7 +677,7 @@ select 'invite-only provisioning (0065)',
                        where n.nspname='public' and p.proname in
                          ('fn_invite_user','fn_revoke_invite','fn_pending_invites')) = 3
                  -- THE ONE THAT MATTERS, and it is a NEGATIVE. handle_new_user
-                 -- has existed since 0011; its presence proves nothing. What
+                 -- has existed since 0011, its presence proves nothing. What
                  -- 0065 changed is that it no longer believes a role the BROWSER
                  -- sent, which is what let any parent sign up again as
                  -- 'principal' and get it, active.
@@ -686,7 +686,7 @@ select 'invite-only provisioning (0065)',
                  -- out of the trigger into fn__attach_login so the trigger, the
                  -- repair sweep and the operator's repair button could not
                  -- drift apart. The POSITIVE facts need only hold wherever the
-                 -- decision now lives; the NEGATIVE one must hold in both,
+                 -- decision now lives, the NEGATIVE one must hold in both,
                  -- because a re-read of the untrusted field reintroduced in
                  -- either place is the same tenant breach.
                  and exists (select 1 from pg_proc p
@@ -711,7 +711,7 @@ select 'fee setup (0066)',
                      ('fn_upsert_fee_head','fn_set_fee_head_active','fn_fee_heads',
                       'fn_set_fee_amount','fn_fee_structure')) = 5
                  -- THE ONES THAT MATTER, and they are facts about BODIES. Both
-                 -- billers have existed since 0017/0020; what 0066 changed is
+                 -- billers have existed since 0017/0020, what 0066 changed is
                  -- that they honour effective_from. Without it a school that
                  -- schedules a fee rise bills every parent the old price PLUS
                  -- the new one, and the "monthly fee" figure is the sum of every
@@ -858,7 +858,7 @@ union all
 -- is rendered to the owner and principal — so without 0068 a principal is told
 -- they have outgrown their plan the same afternoon they admit the 101st child,
 -- on the admissions screen, while the school is earning money. The operator
--- still learns immediately; only the school's copy is timed.
+-- still learns immediately, only the school's copy is timed.
 --
 -- The signature is the gate variable, because fn_my_licence has existed since
 -- 0026 and its presence proves nothing.
@@ -958,7 +958,7 @@ select 'unauthenticated callers can run nothing (0071)',
 union all
 -- 0072. Two lookups resolved a row by NAME or TYPE across every school: the
 -- admission fee head, and the importer's class-by-name. The first attached
--- another school's fee head to a new school's very first admission invoice; the
+-- another school's fee head to a new school's very first admission invoice, the
 -- second made the go-live importer refuse rows for a class the school owns,
 -- because another school had registered the same name first. Every Pakistani
 -- school calls its classes the same things, so that bites at any real number of
@@ -1078,7 +1078,7 @@ union all
 -- 0079 and 0080. Can a school be stopped, and can it leave?
 --
 -- Both were impossible. Locking was purely calendar-driven, so a school that had
--- stopped paying and stopped answering stayed live until its renewal date; and 37
+-- stopped paying and stopped answering stayed live until its renewal date, and 37
 -- tables reference public.schools with ON DELETE NO ACTION, so a delete failed on
 -- the first foreign key and no function in the schema even tried.
 select 'a school can be suspended, archived and deleted (0079, 0080)',
@@ -1175,7 +1175,7 @@ union all
 -- Family allocation is oldest-month-first ACROSS SIBLINGS, and the payment
 -- function returned four numbers and no detail — so a father paying Rs 9,000 for
 -- three children got a receipt saying "Rs 9,000" and nothing about whose dues
--- moved. The allocations were in payment_allocations the whole time; nothing
+-- moved. The allocations were in payment_allocations the whole time, nothing
 -- read them.
 select 'a fee receipt names the child and the month (0084)',
        case
@@ -1519,7 +1519,7 @@ select 'deleting a record',
 
 union all
 -- 0096. Trial only, owner only, and it must type-check the school's name. The
--- row is about the function existing; the rules inside it are asserted by
+-- row is about the function existing, the rules inside it are asserted by
 -- supabase/tests/reset.sql.
 select 'a school on trial can start again',
        case when to_regprocedure('public.fn_reset_school_data(text)') is not null
@@ -2154,7 +2154,7 @@ select 'no em dash in anything the software says (0120)',
 union all
 -- 0121. Attendance, and the only finding from the two-year simulation that a
 -- school could not have worked around by doing something else. A class teacher
--- marks a child absent by mistake and presses Finalize; fn_finalize_attendance
+-- marks a child absent by mistake and presses Finalize, fn_finalize_attendance
 -- sets is_locked, fn_mark_attendance's upsert carries `where not ad.is_locked`,
 -- and nothing in the schema at any privilege level cleared that flag. The owner,
 -- on their own school, with a reason, got {"marked": 0, "skipped": 1} and a
@@ -2212,7 +2212,7 @@ select 'no em dash in anything the software says or sends (0122)',
                      -- for neatness: scripts/check-no-emdash.py scans the
                      -- string literals in this file, so a check with the
                      -- character in it fails its own rule. Postgres regex
-                     -- understands \uXXXX; LIKE does not, which is why every
+                     -- understands \uXXXX, LIKE does not, which is why every
                      -- pattern here is a regex and not a LIKE.
                      and regexp_replace(p.prosrc, '--.*$', '', 'gn')
                          ~ '[\u2014\u2013]') > 0
@@ -2221,7 +2221,7 @@ select 'no em dash in anything the software says or sends (0122)',
               || 'supabase/bundles/28_the_em_dash_a_parent_receives.sql'
          -- Anchored on THIS SOFTWARE'S OWN sign-off shapes, not on the
          -- character. A school may write an em dash in a template of its own
-         -- and that is the school's writing, not ours; a row that failed here
+         -- and that is the school's writing, not ours, a row that failed here
          -- for that would have no remedy and the whole check would be ignored.
          when (select count(*) from public.message_templates
                 where body ~ '[\u2014\u2013]\s*\{school\}') > 0
@@ -2336,7 +2336,7 @@ union all
 -- when the day was finalised.
 --
 -- Three clauses, and the second and third are the ones that matter. The trigger
--- has to carry the skip; and BOTH functions have to write the row that replaces
+-- has to carry the skip, and BOTH functions have to write the row that replaces
 -- what the skip drops. A database with the skip and without those rows has no
 -- record of who closed a register or locked a test at all, which is a worse
 -- state than the one this migration is fixing, and it is reachable by applying
@@ -2403,7 +2403,7 @@ select 'a school picks its plan and its term (0127)',
               || 'supabase/bundles/33_a_school_picks_its_plan_and_how_it_pays.sql'
          -- The five-argument name has to survive alongside it. 0071 is inside a
          -- bundle a school has already pasted and grants exactly that
-         -- signature; without it, bundle 7 rolls back on a re-paste and eleven
+         -- signature, without it, bundle 7 rolls back on a re-paste and eleven
          -- function bodies come out different. Found by CI, not by reading.
          when to_regprocedure(
                 'public.fn_signup_school(text,text,text,text,text)') is null
@@ -2426,7 +2426,7 @@ select 'a school picks its plan and its term (0127)',
 
 union all
 -- The one that is a wrong number sent to a customer. The invoice is priced by
--- fn__renewals_due on subscriptions.term_months; these two worked the months
+-- fn__renewals_due on subscriptions.term_months, these two worked the months
 -- out from the cycle instead. A school on a monthly term whose last period was
 -- yearly has Rs 2,000 coming and was told Rs 20,000, by the console and by the
 -- message we send it.
@@ -2464,7 +2464,7 @@ union all
 --     ERROR:  function public.fn_signup_plans() does not exist
 --
 -- which is every database this file exists to diagnose. to_regprocedure is a
--- runtime string lookup and is safe; calling the function is not.
+-- runtime string lookup and is safe, calling the function is not.
 select 'signup cannot reach a plan priced by arrangement (0127)',
        case when to_regprocedure('public.fn_signup_plans()') is null
          then 'note: the signup form has no plan list of its own to read, so it '
@@ -2698,7 +2698,7 @@ union all
 -- WHO STILL HAS NO DATES. A note rather than a FAIL: it is the state every
 -- school set up through the first-run wizard is in, because that screen only
 -- ever asked for the year's NAME. Nothing is refused for such a year and
--- nothing is wrong with the database; the bounds simply cannot apply until
+-- nothing is wrong with the database, the bounds simply cannot apply until
 -- somebody fills the two fields in. Reported every time until they do.
 select 'academic years with no dates',
        case
@@ -2730,7 +2730,7 @@ select 'a discount survives to the next invoice (0131)',
                 || 'at renewal; apply '
                 || 'supabase/bundles/37_a_discount_and_a_plan_you_can_choose.sql'
          -- THE ONE THAT GOES WRONG SILENTLY. Every invoice comes out of
-         -- fn_activate_subscription; if a later change rewrites it from an older
+         -- fn_activate_subscription, if a later change rewrites it from an older
          -- copy the discount stops applying and the invoice still looks normal.
          when coalesce((select p.prosrc from pg_proc p
                           join pg_namespace n on n.oid = p.pronamespace
@@ -2760,7 +2760,7 @@ select 'a discount survives to the next invoice (0131)',
 -- on any school that has not pasted bundle 37 yet. to_regclass inside a case
 -- does not save it: the case decides which branch RUNS, not which names are
 -- resolved. The structural check above uses the catalogue only and is safe at
--- every bundle level; the roster itself lives in the operator console, which
+-- every bundle level, the roster itself lives in the operator console, which
 -- is where somebody would look for it anyway.
 
 union all

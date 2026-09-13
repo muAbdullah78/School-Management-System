@@ -8,7 +8,7 @@
 -- There is no migration ledger in this project, so nothing recorded what a
 -- given database had already applied. When a school reported a broken install I
 -- guessed their history from the error message, guessed WRONG (I said fifteen
--- migrations were missing; it was two), and handed them a repair file that
+-- migrations were missing, it was two), and handed them a repair file that
 -- failed on its first statement because it began with a migration they already
 -- had.
 --
@@ -108,7 +108,7 @@ with sig(migration, object, present) as (values
                       and pronamespace = 'public'::regnamespace
                       and strpos(prosrc, $q$, '\%'$q$) > 0))),
   -- 0052 added a TIE-BREAK to an ORDER BY, so the signature is that second sort
-  -- key. fn_recent_payments has existed since 0038; its presence proves nothing,
+  -- key. fn_recent_payments has existed since 0038, its presence proves nothing,
   -- and the first version of this row looked for a 'nulls last' clause 0052 does
   -- not contain, which reported a complete database as broken.
   ('0052_recent_payments_order','recent payments order has a tie-break',
@@ -123,7 +123,7 @@ with sig(migration, object, present) as (values
                       where table_schema = 'public' and table_name = 'students'
                         and column_name = 'left_on'))),
   -- 0055 scoped fn_rollover, which has existed since 0014. Its presence proves
-  -- nothing; the missing school filter WAS the defect.
+  -- nothing, the missing school filter WAS the defect.
   ('0055_rollover_scoping',     'rollover scoped to one school',
      (select exists (select 1 from pg_proc where proname = 'fn_rollover'
                       and pronamespace = 'public'::regnamespace
@@ -144,7 +144,7 @@ with sig(migration, object, present) as (values
          and exists (select 1 from pg_proc where proname = 'fn_set_student_photo'
                       and pronamespace = 'public'::regnamespace))),
   -- 0058 REWROTE fn_generate_result_cards, which has existed since 0005. Its
-  -- presence proves nothing; what has to be true is that it reads the stream
+  -- presence proves nothing, what has to be true is that it reads the stream
   -- rule, because without that a class-9 card was computed over every paper in
   -- the class and turned two A+ pupils into a C and a D.
   ('0058_exam_computation',     'result cards read the stream rule',
@@ -219,7 +219,7 @@ with sig(migration, object, present) as (values
               -- trace.
               -- 0116, and the strongest case of the lot.
               -- fn_login_email_available asks the whole platform whether an
-              -- address is taken; fn_school_key_ring lists the passwords this
+              -- address is taken, fn_school_key_ring lists the passwords this
               -- school gave its parents. may_view is true for an observer AND
               -- during a support visit, so gating either on it would let an
               -- observer enumerate the platform's addresses and let the VENDOR
@@ -276,7 +276,7 @@ with sig(migration, object, present) as (values
                       where conname = 'staff_attendance_not_future'
                         and conrelid = 'public.staff_attendance'::regclass))),
   -- 0063 is a GRANT, so the signature is the privilege itself and not any object.
-  -- A CHECK constraint's function runs as the writing user; fn_photo_path_ok was
+  -- A CHECK constraint's function runs as the writing user, fn_photo_path_ok was
   -- revoked from PUBLIC and never granted to authenticated, which made students,
   -- staff and school_settings unwritable by every signed-in user. Nobody could
   -- admit a child. Asked as a question about privileges, so it also covers a
@@ -307,7 +307,7 @@ with sig(migration, object, present) as (values
                       where table_schema = 'public'
                         and table_name = 'platform_payments'))),
   -- 0065's signature is a NEGATIVE plus two positives. handle_new_user dates
-  -- from 0011, so "does it exist" proves nothing; what must be true is that it
+  -- from 0011, so "does it exist" proves nothing, what must be true is that it
   -- no longer reads a ROLE or a SCHOOL from the field the browser writes, and
   -- that both trusted channels are wired. A database missing 0065 lets any
   -- parent sign up again as 'principal'.
@@ -408,7 +408,7 @@ with sig(migration, object, present) as (values
   --
   -- The signature is the outcome, not the statement: anon can execute nothing in
   -- public, AND the signup Edge Function's entry point is reachable by
-  -- service_role (0071 grants that explicitly; before it, signup worked only
+  -- service_role (0071 grants that explicitly, before it, signup worked only
   -- because Supabase's project bootstrap had granted routines to service_role by
   -- accident).
   ('0071_function_grants',      'anon can execute nothing in public',
@@ -516,9 +516,9 @@ with sig(migration, object, present) as (values
                       and pronamespace = 'public'::regnamespace))),
   -- 0077. Document numbers and the two corrections. Four predicates, because
   -- each one is a defect on its own: no doc_no means an accountant cannot pay
-  -- against anything; no net_total means every total is computed by hand in six
-  -- places; no tax_withheld means the receivable is permanently wrong for any
-  -- school that withholds tax at source; and no numbering trigger means the
+  -- against anything, no net_total means every total is computed by hand in six
+  -- places, no tax_withheld means the receivable is permanently wrong for any
+  -- school that withholds tax at source, and no numbering trigger means the
   -- series breaks the moment anything inserts an invoice by another path.
   ('0077_invoice_documents',    'doc numbers, void, credit notes, withholding tax',
      (select (select count(*) from information_schema.columns
@@ -967,7 +967,7 @@ with sig(migration, object, present) as (values
                     and (has_function_privilege('authenticated', p.oid, 'execute')
                          or has_function_privilege('anon', p.oid, 'execute')))),
   -- Three parts, because two of the three are what make the first one safe.
-  -- The trigger has to carry the skip; and the two functions have to write the
+  -- The trigger has to carry the skip, and the two functions have to write the
   -- rows that replace what the skip drops. A database with the skip and
   -- without those rows has no record of who closed a register or locked a test
   -- at all, and `assessments` carries no audit trigger of its own to fall back
@@ -980,8 +980,8 @@ with sig(migration, object, present) as (values
            'public.fn_finalize_attendance(uuid,uuid,uuid,date)'::regprocedure), '')) > 0
      and position('ASSESSMENT_LOCK' in coalesce(pg_get_functiondef(
            'public.fn_lock_assessment(uuid)'::regprocedure), '')) > 0),
-  -- Three parts. The function has to take the two new arguments; the enum has
-  -- to be able to say quarterly; and nothing may still work the renewal out
+  -- Three parts. The function has to take the two new arguments, the enum has
+  -- to be able to say quarterly, and nothing may still work the renewal out
   -- from the cycle, which is the half that sends a school the wrong figure.
   ('0127_a_school_picks_its_plan_and_how_it_pays', 'a school picks its plan and its term',
      to_regprocedure('public.fn_signup_school_on_plan'
@@ -999,7 +999,7 @@ with sig(migration, object, present) as (values
                         and p.prosrc ~ 'cycle = ''yearly'' then 12 else 1 end')),
   -- Four parts, and the third is the one that would hurt a school: the gate
   -- must be on the three paths that raise a roll and NOT on fn_rollover, which
-  -- carries the same children into next year. The fourth is the way out; a
+  -- carries the same children into next year. The fourth is the way out, a
   -- block with no request box is a school on the phone.
   ('0128_a_plans_student_limit_means_something', 'a plan''s student limit is enforced',
      to_regprocedure('public.fn__assert_room_for_students(uuid,integer)') is not null
@@ -1015,8 +1015,8 @@ with sig(migration, object, present) as (values
                         where n2.nspname = 'public' and p.proname = 'fn_rollover'),
                       false)
      and to_regprocedure('public.fn_request_student_limit(integer,text,text)') is not null),
-  -- Three parts. The enrolment check is the policy half; the trigger count is
-  -- the lock half; and the third asks the catalogue whether ANY cascade still
+  -- Three parts. The enrolment check is the policy half, the trigger count is
+  -- the lock half, and the third asks the catalogue whether ANY cascade still
   -- reaches a lockable table unguarded, so a school that half-applied this file
   -- is told rather than left with a lock that one delete ignores.
   ('0129_the_register_belongs_to_a_class_and_a_lock_means_locked',
