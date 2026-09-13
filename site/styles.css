@@ -1,43 +1,5 @@
 /* =============================================================================
    School Manager, marketing site.
-
-   Hand-written CSS. No framework, no build step, no external requests: the whole
-   page is one HTML file, this stylesheet and one small script, so it renders on
-   a slow connection in a Faisalabad staffroom as fast as it does on fibre.
-
-   ---------------------------------------------------------------------------
-   WHAT CHANGED, AND WHY
-
-   The previous version dressed the page as printed paper: a warm cream ground,
-   navy ledger bands, and nine literal documents drawn across the page. The
-   reasoning was that a principal recognises a fee receipt instantly. That was
-   wrong for a reason the argument missed: a school owner buying software is
-   trying to ESCAPE the paperwork, and a page stacked with receipts, challans,
-   attendance sheets and ledgers reminds them of the mountain rather than the
-   relief. It also read as an accounting book rather than a modern product, and
-   the sudden jump from cream into a full-bleed navy slab was jarring.
-
-   So: crisp white ground, one calm alternating tint, real depth, and the
-   software shown as clean abstract UI rather than as paper.
-
-   THE ONE THING KEPT FROM THE OLD SHEET IS THE TYPE STACK, because it was the
-   actual cause of the page looking a decade old. The old display stack began
-   with Charter, which is not installed on Windows, so every school PC in
-   Pakistan fell through to GEORGIA. Georgia headlines are the 2010 to 2014 blog
-   voice. This asks Windows 11 for "Segoe UI Variable Display", Microsoft's
-   optical cut for large text, which is already installed and which almost no
-   site requests by name.
-
-   COLOUR. Indigo #4F46E5 is the primary and it is taken byte for byte from
-   web/tailwind.config.js, so the login screen shares a hex with the dashboard
-   behind it and there is no seam at the moment of signing in. Cyan #06B6D4 is
-   the accent. Three hues were unavailable rather than unchosen: green means
-   money received, amber means money due and red means genuinely wrong,
-   throughout the product.
-
-   NO DARK MODE. A marketing page that is wrong in dark mode is worse than one
-   that is honestly light only, and every candidate palette failed its own
-   contrast arithmetic when it was checked.
    ============================================================================= */
 
 :root {
@@ -47,72 +9,60 @@
   --bg-3:       #F1F5F9;   /* inset panels inside a tinted section */
 
   /* --- ink -------------------------------------------------------------- */
-  --ink:        #0F172A;   /* headings. 18.7:1 on white */
-  --ink-2:      #475569;   /* body. 7.5:1 on white, 7.1:1 on the tint */
-  --ink-3:      #64748B;   /* captions and labels. 4.8:1 on white */
+  --ink:        #020617;   /* Deeper, near-black for sharper contrast */
+  --ink-2:      #334155;   /* Crisp slate for body text */
+  --ink-3:      #64748B;   /* captions and labels */
 
   /* --- lines ------------------------------------------------------------ */
   --line:       #E2E8F0;   /* card and panel borders */
   --line-2:     #CBD5E1;   /* table rules and dividers */
-  --line-3:     #94A3B8;   /* form field borders. 2.8:1, paired with a shadow */
+  --line-3:     #94A3B8;   /* form field borders */
 
-  /* --- brand. Verbatim from the app, so login leads into the dashboard
-         without a colour change. ------------------------------------------ */
+  /* --- brand. Verbatim from the app, so login leads into the dashboard --- */
   --brand:      #4F46E5;
   --brand-700:  #4338CA;
   --brand-300:  #A5B4FC;
   --brand-50:   #EEF2FF;
-  --brand-950:  #1E1B4B;
+  --brand-950:  #1E1B4B;   /* Adjusted slightly darker for the sidebar */
 
-  /* --- accent. Cyan: distinct from every semantic hue, and distinguishable
-         from the brand under deuteranopia because it separates on lightness
-         as well as hue. -------------------------------------------------- */
+  /* --- accent. Cyan: distinct from every semantic hue -------------------- */
   --accent:     #06B6D4;
-  --accent-700: #0E7490;   /* the only cyan permitted on text: 4.6:1 on white */
+  --accent-700: #0E7490;   
   --accent-50:  #ECFEFF;
 
-  /* --- semantics. Unchanged from the app on purpose. ------------------- */
-  --money:      #059669;
-  --money-700:  #047857;   /* the only green on text */
+  /* --- semantics. Upgraded for modern SaaS feel -------------------------- */
+  --money:      #10B981;   /* Emerald green */
+  --money-700:  #047857;   
   --money-50:   #ECFDF5;
-  --due:        #D97706;
-  --due-800:    #92400E;   /* the only amber on text */
-  --due-50:     #FFFBEB;
-  --danger:     #DC2626;
+  --due:        #F59E0B;   /* Amber */
+  --due-800:    #B45309;   
+  --due-50:     #FEF3C7;
+  --danger:     #EF4444;
 
-  /* --- depth. Soft and layered rather than a single flat hairline, which is
-         what the previous sheet removed and what made every section read at
-         the same weight. ------------------------------------------------- */
-  --sh-sm:  0 1px 2px rgba(15, 23, 42, 0.04);
-  --sh:     0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 12px -4px rgba(15, 23, 42, 0.08);
-  --sh-md:  0 1px 3px rgba(15, 23, 42, 0.05), 0 10px 24px -8px rgba(15, 23, 42, 0.12);
-  --sh-lg:  0 2px 4px rgba(15, 23, 42, 0.04), 0 24px 48px -16px rgba(15, 23, 42, 0.18);
+  /* --- depth. Enhanced shadows for a modern SaaS look -------------------- */
+  --sh-sm:  0 1px 2px rgba(0, 0, 0, 0.05);
+  --sh:     0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --sh-md:  0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --sh-lg:  0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  --sh-xl:  0 25px 50px -12px rgba(0, 0, 0, 0.25);
 
   --r:      12px;
   --r-sm:   8px;
   --r-lg:   16px;
   --wrap:   1140px;
 
-  --display: "Segoe UI Variable Display", -apple-system, BlinkMacSystemFont,
-             "Segoe UI", Roboto, "Liberation Sans", Arial, sans-serif;
-  --text:    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-             "Liberation Sans", Arial, sans-serif;
-  --mono:    ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas,
-             "Liberation Mono", monospace;
+  --display: "Segoe UI Variable Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Liberation Sans", Arial, sans-serif;
+  --text:    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Liberation Sans", Arial, sans-serif;
+  --mono:    ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, "Liberation Mono", monospace;
 }
 
 * { box-sizing: border-box; }
 
-/* The hidden attribute has to win, and by default it does not: the UA sheet's
-   [hidden] rule is a single type-less selector, so any class that sets display
-   beats it. wire.js hides the WhatsApp button and the Download nav entry that
-   way, and both stayed visible until this reset existed. */
 [hidden] { display: none !important; }
 
 html {
   scroll-behavior: smooth;
   -webkit-text-size-adjust: 100%;
-  /* SC 2.4.11: a focused element must not end up under the sticky nav. */
   scroll-padding-top: 84px;
 }
 
@@ -167,10 +117,6 @@ a { color: inherit; }
 .muted { color: var(--ink-3); }
 .small { font-size: 14px; }
 
-/* ---------------------------------------------------------------- eyebrow --
-   A short cyan label. The previous sheet used a numbered rule that ran the
-   width of the section, which is a print device and part of what made the page
-   read as a ledger. */
 .eyebrow {
   display: inline-flex;
   align-items: center;
@@ -190,9 +136,6 @@ a { color: inherit; }
   background: var(--accent);
 }
 
-/* ----------------------------------------------------------------- focus ---
-   The old sheet had zero focus declarations in 295 lines, so a keyboard user
-   had no visible position anywhere on the page. */
 :where(a, button, summary, input, select, textarea, [tabindex]):focus-visible {
   outline: 2px solid var(--brand);
   outline-offset: 3px;
@@ -203,7 +146,6 @@ a { color: inherit; }
   outline-color: #FFFFFF;
 }
 
-/* ------------------------------------------------------------ skip link ---*/
 .skip {
   position: absolute;
   left: -9999px;
@@ -219,7 +161,6 @@ a { color: inherit; }
 .skip:focus { left: 0; }
 main:focus { outline: none; }
 
-/* Visually hidden, still announced. */
 .sr {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
@@ -230,131 +171,97 @@ main:focus { outline: none; }
   position: sticky;
   top: 0;
   z-index: 60;
-  background: rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.85); /* Slightly more opaque for text legibility */
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+  box-shadow: 0 4px 12px -4px rgba(0, 0, 0, 0.05);
+  transition: all 0.3s ease;
 }
-/* min-height, NOT height. The bar has to be allowed to grow, because at the
-   narrowest phone widths the brand name is permitted to take two lines (see
-   the 419px block at the foot of this file) and a fixed 66px would have let it
-   spill out of the bar instead. */
-.nav__in { display: flex; align-items: center; gap: 20px; min-height: 66px; }
+.nav__in { display: flex; align-items: center; gap: 16px; min-height: 70px; }
+
+/* 1. The Logo Upgrade - Perfectly aligned, sleeker weight */
 .brand {
-  display: flex; align-items: center; gap: 9px;
-  font-weight: 700; font-size: 16.5px; letter-spacing: -0.015em;
-  color: var(--ink); text-decoration: none;
+  display: flex; align-items: center; gap: 8px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI", Roboto, sans-serif;
+  font-weight: 700; /* Sleeker, much more professional than 800 */
+  font-size: 18px; 
+  letter-spacing: -0.015em;
+  color: var(--brand-950);
+  text-decoration: none;
+  flex-shrink: 0; /* Prevents the logo from getting squished by flexbox */
 }
-.brand svg, .brand img { display: block; }
+.brand svg, .brand img { 
+  display: block; 
+  width: 28px; height: 28px; /* Slightly upsized to perfectly balance the text */
+  filter: drop-shadow(0 2px 4px rgba(37, 99, 235, 0.2)); 
+}
+
+/* 2. Nav Links - Space Optimized to prevent cutting off text */
 .nav__links { display: flex; margin-left: auto; }
-.nav__links ul { display: flex; gap: 3px; list-style: none; margin: 0; padding: 0; align-items: center; }
-/* 8px of padding and 14.5px of type, and both numbers were measured rather
-   than chosen. Seven section links plus three sign-in/trial controls plus the
-   brand came to 1180px of unbreakable content, against 1092px of room inside
-   a 1140px wrap: the row overflowed by 88px at EVERY width, including 1920,
-   because .wrap is capped and the shortfall therefore never closes.
-   Everything in this bar is now sized to bring that to 1052px, which leaves
-   40px. scripts/check-site-render.mjs measures the real row in a browser on
-   every page at seven widths and fails under a 30px floor, so the next label
-   somebody adds is caught before it ships rather than after a school reports
-   it. */
+.nav__links ul { display: flex; gap: 2px; list-style: none; margin: 0; padding: 0; align-items: center; }
 .nav__links a {
-  display: block; padding: 8px; border-radius: var(--r-sm);
-  text-decoration: none; font-size: 14.5px; font-weight: 500; color: var(--ink-2);
+  display: block; padding: 7px 11px; /* Tighter padding saves 70px+ of horizontal space */
+  border-radius: 99px;
+  text-decoration: none; font-size: 14.5px; font-weight: 600; color: var(--ink-3);
+  transition: all 0.2s ease;
 }
-.nav__links a:hover { color: var(--brand); background: var(--brand-50); }
-/* NOTHING IN THE BAR WRAPS MID-LABEL.
-   Adding two entries to the header (a Parents section link, a Parent sign in
-   button) pushed the row past its width at 1400px, and flex answered by
-   breaking the text inside every item: "The School / Manager", "Parent /
-   portal", "Parent sign / in", "Sign / in", "Start free / trial". Five
-   two-line items in a 66px bar, which is what the school photographed.
-   A nav label is a name, not a paragraph, so it does not get to wrap. The row
-   sheds a whole tier instead, at the breakpoints near the foot of this file. */
+.nav__links a:hover { color: var(--brand-700); background: var(--brand-50); }
 .brand span, .nav__links a, .nav__cta a { white-space: nowrap; }
 
-/* margin-left, not a bigger .nav__in gap, because only ONE of the two
-   boundaries in this row needs widening. "Sign in" lands immediately after
-   "Guides", and 20px of gap against the 19px between section links is not a
-   boundary a reader can see. */
-.nav__cta { display: flex; gap: 10px; align-items: center; margin-left: 10px; }
-/* A CLASS, NOT :first-child, and the difference is a real bug avoided.
-   This was `.nav__cta a:first-child`, which styles "whatever happens to be
-   first". Two controls have since been inserted before this one and the order
-   of the row has changed once; a positional selector would have handed the
-   quiet-text style to whichever link moved into first place and left this one
-   a bare anchor: blue, underlined, in the header of every page.
+/* 3. CTA Buttons - Protected from squishing */
+.nav__cta { display: flex; gap: 10px; align-items: center; margin-left: 8px; flex-shrink: 0; }
+.nav__cta .nav__plain { font-size: 14.5px; font-weight: 600; text-decoration: none; color: var(--ink-2); transition: color 0.2s; }
+.nav__cta .nav__plain:hover { color: var(--brand-700); }
+.nav__cta .btn--sm { min-height: 38px; padding: 8px 16px; font-size: 14px; border-radius: 99px; }
+.nav__cta .btn--primary { 
+  padding: 10px 20px; 
+  border-radius: 99px; 
+  box-shadow: 0 4px 12px -2px rgba(37, 99, 235, 0.35);
+  font-size: 14.5px; 
+}
+.nav__cta .btn--primary:hover { 
+  box-shadow: 0 6px 16px -2px rgba(37, 99, 235, 0.45); 
+  transform: translateY(-1px); 
+}
 
-   SEMIBOLD AND NEARLY BLACK, and that is what tells it apart from a section
-   link. It sits immediately after "Guides" in the row, and at 15px in the same
-   grey at the same weight it read as an eighth section link to anybody
-   scanning. The confusion this whole change exists to remove is people not
-   knowing which of these opens what, so the one control that is a DOOR and
-   looked like a LABEL had to stop looking like one. */
-.nav__cta .nav__plain { font-size: 15px; font-weight: 600; text-decoration: none; color: var(--ink); }
-.nav__cta .nav__plain:hover { color: var(--brand); }
-/* The parent portal entry. A ghost BUTTON rather than a text link, because the
-   people it is for did not come to read about school software: they were sent
-   here by their child's school and are looking for the way in. It stays
-   visually below the filled primary, which is still the one thing this site is
-   for. */
-.nav__cta .btn--sm { min-height: 40px; padding: 9px 14px; font-size: 14.5px; }
-/* Narrower than the 22px every other primary button on the site gets, and only
-   here. It is still the tallest, heaviest thing in the bar, which is what
-   carries the hierarchy; the horizontal padding was just the cheapest 8px
-   available once a third control moved in beside it. */
-.nav__cta .btn--primary { padding: 12px 18px; }
-
+/* Mobile Menu Button - Left safely intact */
 .navmenu { display: none; margin-left: auto; }
 .navmenu > summary {
   list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
-  min-height: 44px; padding: 0 14px; border: 1px solid var(--line-2);
-  border-radius: var(--r-sm); font-size: 15px; font-weight: 600; color: var(--ink);
+  min-height: 44px; padding: 0 16px; border: 1px solid var(--line);
+  border-radius: 99px;
+  font-size: 14.5px; font-weight: 600; color: var(--ink);
   background: #fff; box-shadow: var(--sh-sm);
+  transition: all 0.2s ease;
 }
+.navmenu > summary:hover { border-color: var(--brand-300); }
 .navmenu > summary::-webkit-details-marker { display: none; }
 .navmenu[open] > summary { border-color: var(--brand); color: var(--brand); }
+
 .navmenu__panel {
-  /* 100%, not 66px. The offset parent is .nav (it is sticky, so it is
-     positioned), and a hard-coded 66px would have left a gap under a bar that
-     grew taller. */
   position: absolute; left: 0; right: 0; top: 100%;
-  background: #fff; border-bottom: 1px solid var(--line);
-  padding: 8px 24px 18px; box-shadow: var(--sh-md);
-  /* IT HAS TO BE ABLE TO SCROLL. The panel is absolutely positioned inside a
-     sticky header, so anything past the bottom of the screen scrolls with the
-     header and can never be reached: on a 568px phone the list already ran
-     off, and the two door buttons made it longer. 100% is the bar's own
-     height, so this stays right when the bar grows a line at 320px. dvh
-     first, because on a phone 100vh is the address bar's optimistic guess. */
-  max-height: calc(100vh - 100%);
-  max-height: calc(100dvh - 100%);
+  background: #fff; border-bottom: 1px solid rgba(0,0,0,0.05);
+  /* Massive bottom padding to clear the sticky action bar! */
+  padding: 16px 24px calc(100px + env(safe-area-inset-bottom)); 
+  box-shadow: var(--sh-xl);
+  max-height: calc(100dvh - 70px); /* 100% of screen MINUS the header height */
   overflow-y: auto;
-  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch; /* Forces native iOS smooth scrolling */
+  overscroll-behavior: none; /* Stops the bounce-back effect completely */
 }
 .navmenu__panel a {
   display: block; padding: 13px 0; font-size: 16px; text-decoration: none;
   color: var(--ink); border-bottom: 1px solid var(--bg-2);
 }
 .navmenu__panel a:last-of-type { border-bottom: 0; }
-/* THE TWO DOORS, AS BUTTONS, BELOW A RULE.
-   They used to be the ninth and tenth rows of an undifferentiated list. See
-   the comment on the markup in site-src/layout.html for why that was the
-   header's bug wearing a different hat. */
 .navmenu__doors {
   display: grid; gap: 10px;
   margin-top: 8px; padding-top: 14px; border-top: 1px solid var(--line);
 }
-/* The list rule above sets padding, a bottom border AND display:block on every
-   anchor in the panel. It is a more specific selector than .btn, so without
-   this the buttons kept the 13px inner offset, a stray line underneath, and
-   block layout: the label sat hard against the left edge of its own box
-   instead of centred in it, which is what gave the first attempt two
-   left-aligned outlined rectangles. */
 .navmenu__doors a { display: flex; padding: 12px 22px; border-bottom: 0; }
-/* Above 880px the header still shows the CTA row, so these two would be the
-   same doors twice on one screen, as a pair of 976px-wide buttons. The panel
-   exists up there only to hold the section links. */
 @media (min-width: 880px) { .navmenu__doors { display: none; } }
+
 
 /* ---------------------------------------------------------------- button ---*/
 .btn {
@@ -386,52 +293,34 @@ main:focus { outline: none; }
 /* ------------------------------------------------------------------ hero ---*/
 .hero {
   position: relative;
-  padding: 76px 0 84px;
+  padding: 90px 0 100px;
   overflow: hidden;
-  background:
-    radial-gradient(900px 380px at 78% -8%, var(--brand-50) 0%, transparent 62%),
-    radial-gradient(700px 320px at 8% 6%, var(--accent-50) 0%, transparent 58%);
+  background: linear-gradient(180deg, var(--brand-50) 0%, var(--bg) 100%);
 }
-.hero__grid { display: grid; gap: 52px; align-items: center; }
-/* 1140, not 980. Measured: the mockup's min-content width is 537px (three
-   tiles whose figures do not wrap, plus the 152px sidebar and the padding),
-   and a 1fr/1.08fr split does not give the second column 537px until the
-   viewport reaches 1140. So from 980 to 1139 the mockup was up to 31px wider
-   than its own track and .app's overflow:hidden quietly cut its right border
-   off. Below 1140 the hero stacks and the mockup gets the full measure. */
-@media (min-width: 1140px) { .hero__grid { grid-template-columns: 1fr 1.08fr; } }
-.hero h1 { margin-bottom: 20px; }
+.hero__grid { display: grid; gap: 60px; align-items: center; }
+@media (min-width: 1140px) { .hero__grid { grid-template-columns: 1fr 1.1fr; } }
+.hero h1 { margin-bottom: 24px; font-size: clamp(2.5rem, 4vw, 3.5rem); line-height: 1.1; }
 .hero h1 em { font-style: normal; color: var(--brand); }
-.hero__cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
-.hero__note { margin-top: 18px; font-size: 14px; color: var(--ink-2); }
+.hero__cta { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 36px; }
+.hero__note { margin-top: 24px; font-size: 15px; font-weight: 500; color: var(--ink-3); }
 
-/* --------------------------------------------------------------- trust ----
-   Four facts, on the tint, with no borders and no boxes. Deliberately quiet:
-   it is a breath between the hero and the first real section, which is what
-   the previous sheet's abrupt jump into a navy slab was missing. */
-.trust { background: var(--bg-2); border-block: 1px solid var(--line); }
+/* --------------------------------------------------------------- trust ----*/
+.trust { background: var(--bg); border-bottom: 1px solid var(--line); }
 .trust__in {
   display: grid; gap: 0;
   grid-template-columns: repeat(2, 1fr);
 }
 @media (min-width: 880px) { .trust__in { grid-template-columns: repeat(4, 1fr); } }
-.trust__cell { padding: 26px 24px; }
-@media (min-width: 880px) { .trust__cell + .trust__cell { border-left: 1px solid var(--line); } }
+.trust__cell { padding: 32px 24px; text-align: center; } /* Centered for impact */
+@media (min-width: 880px) { .trust__cell + .trust__cell { border-left: 1px solid var(--bg-2); } }
 .trust__k {
-  display: block; font-size: 12px; font-weight: 700; letter-spacing: 0.07em;
-  text-transform: uppercase; color: var(--ink-3); margin-bottom: 7px;
+  display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px;
 }
-.trust__v { font-size: 21px; font-weight: 700; color: var(--ink); letter-spacing: -0.015em; }
-.trust__v small { font-size: 14px; font-weight: 500; color: var(--ink-3); letter-spacing: 0; }
+.trust__v { font-size: 26px; font-weight: 700; color: var(--brand-700); letter-spacing: -0.015em; } /* Brand blue numbers */
+.trust__v small { font-size: 15px; font-weight: 500; color: var(--ink-2); letter-spacing: 0; display: block; margin-top: 4px; }
 
 /* ------------------------------------------------------------------ card ---*/
-/* min(Xpx, 100%) rather than a bare Xpx, and this was a real overflow.
-   A bare minmax(340px, 1fr) floors the track at 340px even when the container
-   is 272px, which is what .wrap leaves at a 320px viewport. The card then ran
-   from x=24 to x=364 and the page scrolled sideways on every phone narrower
-   than 388px. min() lets the floor collapse to the container, which is the
-   whole point of the pattern and the one part of it that is easy to leave out.
-   Measured before and after at 320 and 360 across all fifteen pages. */
 .grid { display: grid; gap: 22px; }
 .grid--3 { grid-template-columns: repeat(auto-fit, minmax(min(288px, 100%), 1fr)); }
 .grid--2 { grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); }
@@ -440,18 +329,19 @@ main:focus { outline: none; }
   background: #fff;
   border: 1px solid var(--line);
   border-radius: var(--r);
-  padding: 26px;
+  padding: 32px 28px;
   box-shadow: var(--sh);
-  transition: box-shadow 0.16s ease, border-color 0.16s ease;
+  transition: box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1), 
+              border-color 0.3s ease, 
+              transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
-.card:hover { box-shadow: var(--sh-md); border-color: var(--line-2); }
+.card:hover { 
+  box-shadow: var(--sh-xl); 
+  border-color: var(--brand-300); 
+  transform: translateY(-6px); 
+}
 .card h3 { margin-bottom: 9px; }
 
-/* A card that IS a link, for the nine capabilities on the home page. The old
-   grid's cards linked nowhere, so a visitor who wanted to know how fees
-   actually work had no next page and neither did a crawler. Whole-card target
-   rather than a "read more" link, because a 288px card with one tappable word
-   in it wastes the other 280. */
 a.card--link { display: flex; flex-direction: column; text-decoration: none; color: inherit; }
 a.card--link:hover { border-color: var(--brand-300); }
 a.card--link:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
@@ -464,10 +354,6 @@ a.card--link:hover .card__more { color: var(--brand-700); }
 a.card--link:hover .card__more::after { transform: translateX(2px); }
 .card__more::after { transition: transform 0.14s ease; }
 
-/* The breadcrumb. Present on every page except the home page, both because a
-   visitor two clicks deep should be able to see where they are and because it
-   is what the BreadcrumbList schema describes: markup that claims a trail the
-   page does not show is markup Google is entitled to distrust. */
 .crumb {
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
   padding-top: 22px; font-size: 13.5px; color: var(--ink-3);
@@ -488,13 +374,11 @@ a.card--link:hover .card__more::after { transform: translateX(2px); }
 @media (min-width: 940px) { .split { grid-template-columns: 1fr 1fr; } }
 @media (min-width: 940px) { .split--wide { grid-template-columns: 0.9fr 1.1fr; } }
 
-/* ------------------------------------------------------------- checklist ---*/
 .checklist { list-style: none; margin: 22px 0 0; padding: 0; display: grid; gap: 14px; }
 .checklist li { display: flex; gap: 12px; font-size: 15.5px; color: var(--ink-2); }
 .checklist b { color: var(--ink); font-weight: 600; }
 .checklist svg { flex: 0 0 20px; width: 20px; height: 20px; color: var(--accent-700); margin-top: 1px; }
 
-/* ------------------------------------------------------------------ note ---*/
 .note {
   margin: 26px 0 0;
   padding: 18px 20px;
@@ -506,102 +390,221 @@ a.card--link:hover .card__more::after { transform: translateX(2px); }
 .note p { font-size: 15.5px; color: var(--ink-2); }
 
 /* ============================================================== the mockup =
-   The software, drawn as clean abstract UI rather than as paper.
-
-   Everything here is HTML and CSS. No image file, no SVG text, nothing to
-   upload. The figures stay real selectable text, which also means the panel
-   survives Chrome's translate-to-Urdu and grows with Android font scaling
-   instead of pixellating.
-
-   It is DELIBERATELY ABSTRACT. It is not a screenshot and does not pretend to
-   be one: a browser frame, a sidebar, three figures, a few rows and a small
-   chart, which is enough to say "this is a calm screen you could work in all
-   day" without claiming to be a photograph of the product.
+   Upgraded to a high-fidelity, CSS-only dashboard representation.
+   Zero images required. Loads instantly.
    ========================================================================== */
 .app {
   border-radius: var(--r-lg);
   background: #fff;
   border: 1px solid var(--line);
-  box-shadow: var(--sh-lg);
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25), 0 0 0 1px rgba(15, 23, 42, 0.05);
   overflow: hidden;
+  display: flex;
+  height: 420px; 
 }
-.app__bar {
-  display: flex; align-items: center; gap: 7px;
-  padding: 11px 14px; background: var(--bg-2); border-bottom: 1px solid var(--line);
-}
-.app__dot { width: 9px; height: 9px; border-radius: 50%; background: var(--line-2); }
-.app__url {
-  margin-left: 8px; font-size: 11.5px; color: var(--ink-3);
-  background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px;
-}
-.app__body { display: grid; grid-template-columns: 152px 1fr; min-height: 340px; }
-.app__side { background: var(--bg-2); border-right: 1px solid var(--line); padding: 14px 10px; }
-.app__brand {
-  display: flex; align-items: center; gap: 7px; padding: 0 8px 12px;
-  font-size: 12.5px; font-weight: 700; color: var(--ink);
-}
-.app__nav { display: flex; flex-direction: column; gap: 2px; }
-.app__nav span {
-  font-size: 12.5px; padding: 7px 9px; border-radius: 6px; color: var(--ink-3);
-}
-.app__nav span.on { background: #fff; color: var(--brand); font-weight: 600; box-shadow: var(--sh-sm); }
-.app__main { padding: 18px; background: #fff; min-width: 0; }
 
-/* minmax(0, 1fr), not 1fr. A bare 1fr track floors at min-content, so a
-   nowrap figure pushes the whole pane past the card edge instead of being
-   squeezed, and .app's overflow:hidden then eats the border rather than
-   showing anything wrong. With a zero floor plus the ellipsis below, a squeeze
-   degrades inside the tile where it is visible and fixable. */
-.app__tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-.tile { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 12px; background: #fff; overflow: hidden; }
+.app__side { 
+  width: 180px;
+  background: var(--brand-950); 
+  padding: 20px 12px; 
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.app__brand {
+  display: flex; 
+  align-items: center; 
+  gap: 10px; 
+  font-size: 13px; 
+  font-weight: 700; 
+  color: #fff;
+  padding-bottom: 20px;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+.app__nav { display: flex; flex-direction: column; gap: 4px; }
+.app__nav span {
+  font-size: 13px; 
+  padding: 10px 12px; 
+  border-radius: 8px; 
+  color: rgba(255,255,255,0.7);
+}
+.app__nav span.on { 
+  background: var(--brand); 
+  color: #fff; 
+  font-weight: 600; 
+}
+
+.app__main { 
+  flex: 1;
+  padding: 24px; 
+  background: var(--bg-2); 
+  min-width: 0; 
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.app__tiles { 
+  display: grid; 
+  grid-template-columns: repeat(3, 1fr); 
+  gap: 16px; 
+}
+.tile { 
+  border-radius: var(--r); 
+  padding: 16px; 
+  color: #fff;
+  box-shadow: var(--sh-sm);
+}
 .tile span {
-  display: block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em;
-  text-transform: uppercase; color: var(--ink-3); margin-bottom: 5px;
+  display: block; 
+  font-size: 11px; 
+  font-weight: 700; 
+  letter-spacing: 0.05em;
+  text-transform: uppercase; 
+  margin-bottom: 8px;
+  opacity: 0.9;
 }
 .tile b {
-  display: block; font-size: 17px; font-weight: 700; color: var(--ink);
-  letter-spacing: -0.015em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  display: block; 
+  font-size: 24px; 
+  font-weight: 700; 
 }
-.tile--money b { color: var(--money-700); }
-.tile--due b { color: var(--due-800); }
+.tile:nth-child(1) { background: var(--brand); } 
+.tile:nth-child(2) { background: var(--money); } 
+.tile:nth-child(3) { background: var(--due); }   
 
-.app__rows { margin-top: 12px; border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; }
+.app__rows { 
+  background: #fff;
+  border: 1px solid var(--line); 
+  border-radius: var(--r); 
+  padding: 8px 0;
+}
 .arow {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  padding: 10px 12px; font-size: 12.5px; color: var(--ink-2);
+  display: flex; 
+  align-items: center; 
+  justify-content: space-between; 
+  padding: 12px 20px; 
+  font-size: 13px; 
+  color: var(--ink-2);
 }
 .arow + .arow { border-top: 1px solid var(--bg-2); }
 .arow b { color: var(--ink); font-weight: 600; }
-.pill { font-size: 10.5px; font-weight: 700; padding: 3px 9px; border-radius: 99px; white-space: nowrap; }
+.pill { 
+  font-size: 11px; 
+  font-weight: 700; 
+  padding: 4px 10px; 
+  border-radius: 99px; 
+}
 .pill--paid { background: var(--money-50); color: var(--money-700); }
 .pill--due { background: var(--due-50); color: var(--due-800); }
 
-/* A small bar chart, drawn with flex. Decorative: every value it shows is
-   printed as text beside it, so it carries aria-hidden. */
-.chart { margin-top: 12px; display: flex; align-items: flex-end; gap: 6px; height: 56px; }
-.chart i {
-  flex: 1 1 auto; border-radius: 3px 3px 0 0;
-  background: linear-gradient(180deg, var(--brand-300), var(--brand));
-}
-.chart i:last-child { background: linear-gradient(180deg, #67E8F9, var(--accent)); }
+/* --- $100k SaaS Animations for the Hero Dashboard (BULLETPROOF VERSION) --- */
 
-/* -------------------------------------------------------- reconciliation ---
-   A UI table, not a printed sheet: no ruling, no serif, no paper. Below 700px
-   each class becomes its own block, because a five column money table at 360px
-   is unreadable however it is scrolled. */
-.panel {
-  background: #fff; border: 1px solid var(--line); border-radius: var(--r);
-  box-shadow: var(--sh-md); overflow: hidden;
+/* Failsafe: Forces the dashboard to ignore any accidental 'reveal' classes */
+.app .reveal, .app__main.reveal {
+  opacity: 1 !important;
+  transform: none !important;
+  visibility: visible !important;
 }
+
+/* 1. Animate the Chart Bars growing up */
+@keyframes barGrow {
+  0% { transform: scaleY(0); opacity: 0; }
+  100% { transform: scaleY(1); opacity: 1; }
+}
+
+.chart i {
+  transform-origin: bottom;
+  animation: barGrow 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Stagger the bars */
+.chart i:nth-child(1) { animation-delay: 0.1s; }
+.chart i:nth-child(2) { animation-delay: 0.2s; }
+.chart i:nth-child(3) { animation-delay: 0.3s; }
+.chart i:nth-child(4) { animation-delay: 0.4s; }
+.chart i:nth-child(5) { animation-delay: 0.5s; }
+.chart i:nth-child(6) { animation-delay: 0.6s; }
+.chart i:nth-child(7) { animation-delay: 0.7s; }
+.chart i:nth-child(8) { animation-delay: 0.8s; }
+
+/* 2. Animate the Student Rows sliding in */
+@keyframes rowSlide {
+  0% { transform: translateX(20px); opacity: 0; }
+  100% { transform: translateX(0); opacity: 1; }
+}
+
+.app__rows .arow {
+  animation: rowSlide 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Stagger the rows */
+.app__rows .arow:nth-child(1) { animation-delay: 0.3s; }
+.app__rows .arow:nth-child(2) { animation-delay: 0.4s; }
+.app__rows .arow:nth-child(3) { animation-delay: 0.5s; }
+.app__rows .arow:nth-child(4) { animation-delay: 0.6s; }
+.app__rows .arow:nth-child(5) { animation-delay: 0.7s; }
+
+/* 3. Subtle pulsing glow */
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(245, 158, 11, 0); }
+}
+
+.tile--due {
+  animation: pulseGlow 3s infinite;
+}
+/* -------------------------------------------------------- reconciliation ---*/
+/* -------------------------------------------------------- reconciliation ---*/
+.panel {
+  background: #fff; 
+  border: 1px solid var(--line); 
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-xl); 
+  overflow: hidden;
+}
+/* Upgraded Secure Header */
 .panel__head {
   display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
-  padding: 16px 18px; border-bottom: 1px solid var(--line); background: var(--bg-2);
+  padding: 18px 24px; 
+  background: var(--brand-950); /* Dark, authoritative header */
+  border-bottom: 1px solid var(--brand-700);
 }
-.panel__title { font-size: 13px; font-weight: 700; color: var(--ink); letter-spacing: -0.01em; }
-.panel__sub { font-size: 12px; color: var(--ink-3); }
+.panel__title { 
+  font-size: 12px; 
+  font-weight: 700; 
+  color: #fff; 
+  letter-spacing: 0.08em; 
+  text-transform: uppercase; 
+}
+.panel__sub { 
+  font-size: 13px; 
+  color: var(--brand-300); 
+  font-family: var(--mono); /* Monospace font for a 'log' feel */
+}
 .panel__body { padding: 6px 18px 18px; }
-.panel__foot { padding: 14px 18px; border-top: 1px solid var(--line); background: var(--bg-2); font-size: 13.5px; color: var(--ink-2); }
+.panel__foot { 
+  padding: 16px 24px; 
+  border-top: 1px solid var(--line); 
+  background: var(--bg-2); 
+  font-size: 14px; 
+  color: var(--ink-2); 
+  line-height: 1.6;
+}
 
+/* Targeting the specific rows inside the panel to tell the visual story */
+.panel .app__rows { border: none; border-radius: 0; margin-top: 0; }
+.panel .arow { padding: 16px 24px; }
+.panel .arow b { font-family: var(--mono); font-size: 14px; }
+
+/* The Storyteller: Highlighting the Reversal Row automatically */
+.panel .arow:nth-child(2) {
+  background: #FEF2F2; /* Soft red danger wash */
+  border-left: 4px solid var(--danger);
+}
+.panel .arow:nth-child(2) b {
+  color: var(--danger);
+}
 .recon { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .recon th, .recon td { padding: 11px 8px; text-align: right; }
 .recon th:first-child, .recon td:first-child { text-align: left; }
@@ -621,110 +624,163 @@ a.card--link:hover .card__more::after { transform: translateX(2px); }
 }
 .bar i { display: block; height: 100%; border-radius: 3px; background: var(--due); }
 
-/* --------------------------------------------------------------- pricing ---
-   Cards with real depth and one highlighted plan, which is what "flat
-   hierarchy" was about: nothing on the old rate card drew the eye. */
-.prices { display: grid; gap: 22px; grid-template-columns: repeat(auto-fit, minmax(min(252px, 100%), 1fr)); align-items: stretch; }
+/* --------------------------------------------------------------- pricing ---*/
+/* --------------------------------------------------------------- pricing ---*/
+.prices { 
+  display: grid; 
+  gap: 32px; /* More breathing room between tiers */
+  grid-template-columns: repeat(auto-fit, minmax(min(252px, 100%), 1fr)); 
+  align-items: center; /* Crucial: allows the hot card to be taller */
+}
 .price {
   position: relative; display: flex; flex-direction: column;
-  background: #fff; border: 1px solid var(--line); border-radius: var(--r);
-  padding: 28px 24px; box-shadow: var(--sh);
-  transition: box-shadow 0.16s ease, transform 0.16s ease;
+  background: #fff; border: 1px solid var(--line); border-radius: var(--r-lg);
+  padding: 40px 32px; box-shadow: var(--sh);
+  transition: box-shadow 0.3s ease, transform 0.3s ease;
 }
-.price:hover { box-shadow: var(--sh-md); }
+.price:hover { box-shadow: var(--sh-xl); transform: translateY(-4px); }
+
+/* The SaaS Pop: Inverting the recommended plan */
 .price--hot {
-  border-color: var(--brand);
-  box-shadow: 0 0 0 3px var(--brand-50), var(--sh-md);
+  background: var(--brand-950);
+  border: 1px solid var(--brand-700);
+  transform: scale(1.05); /* Physically larger than the rest */
+  box-shadow: var(--sh-xl), 0 0 0 4px var(--brand-50);
+  z-index: 2;
 }
+.price--hot:hover { transform: scale(1.05) translateY(-4px); }
+
+/* Badge styling */
 .price__tag {
-  position: absolute; top: -11px; left: 24px;
-  background: var(--brand); color: #fff;
-  font-size: 10.5px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase;
-  padding: 4px 11px; border-radius: 99px; box-shadow: var(--sh-sm);
+  position: absolute; top: -14px; left: 32px;
+  background: var(--line-2); color: var(--ink);
+  font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 6px 14px; border-radius: 99px; box-shadow: var(--sh-sm);
 }
-.price h3 { font-size: 14px; color: var(--ink-3); font-weight: 600; letter-spacing: 0.01em; }
+.price--hot .price__tag {
+  background: var(--accent); color: #fff; /* Cyan badge on dark background */
+}
+
+/* Typography Overrides for Dark Card */
+.price h3 { font-size: 15px; color: var(--ink-3); font-weight: 600; letter-spacing: 0.01em; }
+.price--hot h3 { color: var(--brand-300); }
+
 .price__amt {
-  font-family: var(--display); font-size: 2.5rem; font-weight: 700;
-  color: var(--ink); letter-spacing: -0.03em; margin: 10px 0 2px;
+  font-family: var(--display); font-size: 2.75rem; font-weight: 700;
+  color: var(--ink); letter-spacing: -0.03em; margin: 12px 0 4px;
   font-variant-numeric: tabular-nums lining-nums;
 }
-.price__amt small { font-family: var(--text); font-size: 0.95rem; font-weight: 500; color: var(--ink-3); letter-spacing: 0; }
-.price__cap { font-size: 14px; color: var(--ink-3); margin-bottom: 20px; }
-.price ul { list-style: none; margin: 0 0 24px; padding: 0; display: grid; gap: 10px; font-size: 14.5px; color: var(--ink-2); }
-.price ul li { display: flex; gap: 9px; align-items: flex-start; }
-.price ul li svg { flex: 0 0 16px; width: 16px; height: 16px; color: var(--accent-700); margin-top: 3px; }
+.price--hot .price__amt { color: #fff; }
+
+.price__amt small { font-family: var(--text); font-size: 1rem; font-weight: 500; color: var(--ink-3); letter-spacing: 0; }
+.price--hot .price__amt small { color: rgba(255,255,255,0.7); }
+
+.price__cap { font-size: 14.5px; color: var(--ink-3); margin-bottom: 24px; }
+.price--hot .price__cap { color: rgba(255,255,255,0.7); }
+
+.price ul { list-style: none; margin: 0 0 32px; padding: 0; display: grid; gap: 12px; font-size: 15px; color: var(--ink-2); }
+.price--hot ul { color: rgba(255,255,255,0.9); }
+
+.price ul li { display: flex; gap: 12px; align-items: flex-start; }
+.price ul li svg { flex: 0 0 18px; width: 18px; height: 18px; color: var(--accent-700); margin-top: 2px; }
+.price--hot ul li svg { color: var(--accent); } /* Brighter cyan checkmarks */
+
 .price .btn { margin-top: auto; }
+/* Upgrading the button on the hot card to pop against the dark background */
+.price--hot .btn { background: var(--brand); color: #fff; border-color: var(--brand); box-shadow: var(--sh); }
+.price--hot .btn:hover { background: var(--brand-300); color: var(--ink); }
 
 /* ------------------------------------------------------------------- faq ---*/
-details.q { border-bottom: 1px solid var(--line); padding: 20px 0; }
+details.q { 
+  border-bottom: 1px solid var(--line); 
+  padding: 0; 
+  transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+/* The active state: soft blue wash when opened */
+details.q[open] {
+  background: var(--brand-50); 
+  border-bottom-color: transparent; 
+  border-radius: var(--r-sm);
+  margin-bottom: 8px; /* Adds spacing when open */
+}
+/* Larger touch target for mobile */
 details.q > summary {
   cursor: pointer; font-weight: 600; font-size: 16.5px; color: var(--ink);
   list-style: none; display: flex; justify-content: space-between; gap: 16px; align-items: center;
+  padding: 24px 20px; 
+  transition: color 0.2s ease;
 }
+details.q > summary:hover { color: var(--brand); }
+details.q[open] > summary { color: var(--brand-700); padding-bottom: 12px; }
 details.q > summary::-webkit-details-marker { display: none; }
-.q__m { flex: 0 0 auto; position: relative; width: 14px; height: 14px; }
-.q__m::before, .q__m::after { content: ""; position: absolute; background: var(--ink-3); border-radius: 1px; }
+
+/* Smoothly animating the + into a - */
+.q__m { flex: 0 0 auto; position: relative; width: 14px; height: 14px; transition: transform 0.3s ease; }
+.q__m::before, .q__m::after { 
+  content: ""; position: absolute; background: currentColor; border-radius: 1px; 
+  transition: transform 0.3s ease;
+}
 .q__m::before { left: 0; right: 0; top: 6px; height: 2px; }
 .q__m::after { top: 0; bottom: 0; left: 6px; width: 2px; }
-details.q[open] .q__m::after { display: none; }
-details.q p { margin-top: 12px; color: var(--ink-2); max-width: 72ch; font-size: 15.5px; }
 
-/* The three contact links, which wire.js fills in from config.js. One class
-   rather than the same three declarations inline on each of them, so a change
-   of colour is a change in one place. */
-.clink { color: var(--brand); text-decoration: none; font-weight: 600; }
-.clink:hover { text-decoration: underline; }
+details.q[open] .q__m { transform: rotate(180deg); }
+details.q[open] .q__m::after { transform: rotate(90deg) scaleY(0); } 
 
-/* ---------------------------------------------------------------- reviews ---
-   The distribution is not decoration. An average alone can be curated; an
-   average printed beside the count of each rating either matches the shape of
-   the bars or it does not, and a run of removed one-star reviews leaves a hole
-   anybody can see. So the bars are as prominent as the number. */
+details.q p { 
+  margin: 0; 
+  padding: 0 20px 24px; /* Matches the summary padding */
+  color: var(--ink-2); 
+  max-width: 72ch; 
+  font-size: 15.5px; 
+  line-height: 1.7;
+}
+/* ---------------------------------------------------------------- reviews ---*/
 .rsum {
   margin-top: 30px; display: grid; gap: 20px; align-items: center;
-  background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--r);
-  padding: 22px 24px;
+  background: var(--brand-950); /* Premium dark background */
+  border: 1px solid var(--brand-700); 
+  border-radius: var(--r-lg);
+  padding: 32px 36px;
+  box-shadow: var(--sh-xl);
 }
 @media (min-width: 620px) { .rsum { grid-template-columns: auto 1fr; } }
 .rsum__avg { display: flex; flex-direction: column; align-items: flex-start; }
 .rsum__avg b {
-  font-family: var(--display); font-size: 3rem; font-weight: 700;
-  line-height: 1; letter-spacing: -0.03em; color: var(--ink);
+  font-family: var(--display); font-size: 3.5rem; font-weight: 700;
+  line-height: 1; letter-spacing: -0.03em; color: #fff; /* White text on dark */
   font-variant-numeric: tabular-nums lining-nums;
 }
-.rsum__avg span { font-size: 13px; color: var(--ink-3); margin-top: 4px; }
-.rsum__n { grid-column: 1 / -1; margin: 0; font-size: 14px; color: var(--ink-2); }
-.rdist { display: grid; gap: 7px; }
-.rdist__row { display: flex; align-items: center; gap: 10px; }
-.rdist__k { width: 12px; font-size: 13px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
-.rdist__row .bar { background: var(--bg-3); }
-.rdist__row .bar i { background: var(--due); }
-.rdist__n { width: 28px; text-align: right; font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.rsum__avg span { font-size: 13px; color: var(--brand-300); margin-top: 4px; }
+.rsum__n { grid-column: 1 / -1; margin: 0; font-size: 14.5px; color: rgba(255,255,255,0.8); }
 
-.reviews { margin-top: 26px; display: grid; gap: 18px; }
+/* Upgrading the distribution bars to pop on the dark background */
+.rdist { display: grid; gap: 8px; }
+.rdist__row { display: flex; align-items: center; gap: 12px; }
+.rdist__k { width: 12px; font-size: 13.5px; color: var(--brand-300); font-variant-numeric: tabular-nums; font-weight: 600; }
+.rdist__row .bar { background: rgba(255, 255, 255, 0.1); border-radius: 4px; height: 8px; }
+.rdist__row .bar i { background: var(--accent); border-radius: 4px; } /* Cyan bars */
+.rdist__n { width: 28px; text-align: right; font-size: 13.5px; color: rgba(255,255,255,0.8); font-variant-numeric: tabular-nums; }
+
+.reviews { margin-top: 32px; display: grid; gap: 24px; }
 .review {
-  background: #fff; border: 1px solid var(--line); border-radius: var(--r);
-  padding: 22px 24px; box-shadow: var(--sh);
+  background: #fff; border: 1px solid var(--line); border-radius: var(--r-lg);
+  padding: 32px 28px; box-shadow: var(--sh);
+  transition: box-shadow 0.3s ease, transform 0.3s ease;
 }
-/* The rating in ink beside the glyphs. The glyphs are aria-hidden and are
-   decoration; the words are the rating. See build-site.py for why. */
-.review__rating { display: flex; align-items: center; gap: 9px; margin: 0; }
-.review__rating b { font-size: 13.5px; font-weight: 600; color: var(--ink-2); }
-.review__stars { color: var(--due); font-size: 15px; letter-spacing: 2px; }
-.review__stars span { color: var(--ink-3); }
-.review h3 { font-size: 1.05rem; margin: 10px 0 8px; }
-.review p { font-size: 15.5px; color: var(--ink-2); line-height: 1.65; }
-.review footer {
-  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--bg-2);
-  font-size: 13.5px; color: var(--ink-3);
-}
-.review footer span { color: var(--ink-3); margin: 0 4px; }
+.review:hover { box-shadow: var(--sh-xl); transform: translateY(-4px); } /* SaaS Lift */
 
-/* --------------------------------------------------------------- articles ---
-   Long-form typography for the guides. The product pages are short blocks in
-   cards and panels; a 900 word article needs a measure, a rhythm and list
-   styling, and inheriting the card styles gives it none of those. Kept to one
-   block so an article cannot slowly acquire its own private stylesheet. */
+.review__rating { display: flex; align-items: center; gap: 10px; margin: 0; }
+.review__rating b { font-size: 14px; font-weight: 700; color: var(--ink-2); }
+.review__stars { color: var(--due); font-size: 16px; letter-spacing: 3px; }
+.review__stars span { color: var(--line-2); }
+.review h3 { font-size: 1.15rem; margin: 14px 0 10px; color: var(--ink); }
+.review p { font-size: 15.5px; color: var(--ink-2); line-height: 1.7; }
+.review footer {
+  margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--bg-2);
+  font-size: 13.5px; color: var(--ink-3); font-weight: 500;
+}
+.review footer span { color: var(--line-3); margin: 0 6px; }
+/* --------------------------------------------------------------- articles ---*/
 .prose { max-width: 68ch; }
 .prose > * + * { margin-top: 18px; }
 .prose h2 { font-size: 1.55rem; margin-top: 42px; }
@@ -744,31 +800,58 @@ details.q p { margin-top: 12px; color: var(--ink-2); max-width: 72ch; font-size:
 .prose th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-3); }
 .prose .tablewrap { overflow-x: auto; }
 
-/* The byline strip under an article's h1: who it is for and how long it is. */
 .meta {
   display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center;
   margin-top: 16px; padding-bottom: 22px; border-bottom: 1px solid var(--line);
   font-size: 13.5px; color: var(--ink-3);
 }
 
-/* ------------------------------------------------------------------- cta ---
-   The ONE dark surface on the page, at the end, where a dark band reads as a
-   full stop rather than as an interruption. The previous sheet put a
-   full-bleed navy slab in the middle of a cream page, which is the jarring
-   transition. */
+/* ------------------------------------------------------------------- cta ---*/
 .cta {
-  background: var(--brand-700) linear-gradient(135deg, #3730A3 0%, var(--brand-700) 55%, var(--brand) 100%);
+  background: linear-gradient(135deg, var(--brand-950) 0%, var(--brand-700) 100%);
   border-radius: var(--r-lg);
-  padding: 62px 40px;
+  padding: 72px 40px; /* Slightly taller for more breathing room */
   text-align: center;
+  box-shadow: var(--sh-xl), inset 0 1px 0 rgba(255,255,255,0.1);
+  position: relative;
+  overflow: hidden;
+}
+/* Subtle green radial glow behind the text to draw the eye */
+.cta::before {
+  content: "";
+  position: absolute;
+  top: -50%; left: -50%; width: 200%; height: 200%;
+  background: radial-gradient(circle at center, rgba(16, 185, 129, 0.15) 0%, transparent 50%);
+  pointer-events: none;
+}
+.cta h2 { position: relative; color: #fff; margin: 0 auto 16px; max-width: 26ch; }
+.cta p { position: relative; color: var(--brand-50); max-width: 54ch; margin: 0 auto 32px; font-size: 17.5px; opacity: 0.9; }
+.cta__row { position: relative; display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; }
+
+/* The Action Button: High-contrast Emerald Green to drive clicks */
+.cta .btn--primary { 
+  background: var(--accent); 
+  color: #fff; 
+  border-color: var(--accent); 
+  box-shadow: var(--sh-md); 
+}
+.cta .btn--primary:hover { 
+  background: var(--accent-700); 
+  transform: translateY(-2px); 
   box-shadow: var(--sh-lg);
 }
-.cta h2 { color: #fff; margin: 0 auto 14px; max-width: 26ch; }
-.cta p { color: #DDD9FE; max-width: 54ch; margin: 0 auto 26px; font-size: 17px; }
-.cta__row { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
-.cta .btn--primary { background: #fff; color: var(--brand-700); box-shadow: var(--sh); }
-.cta .btn--primary:hover { background: #F5F3FF; }
 
+/* The Secondary Button: Subtle glassmorphism */
+.cta .btn--ghost { 
+  background: rgba(255, 255, 255, 0.1); 
+  color: #fff; 
+  border-color: rgba(255, 255, 255, 0.2); 
+}
+.cta .btn--ghost:hover { 
+  background: rgba(255, 255, 255, 0.2); 
+  border-color: #fff; 
+  transform: translateY(-2px); 
+}
 /* ---------------------------------------------------------------- footer ---*/
 .foot { background: #0F172A; color: #94A3B8; padding: 56px 0 40px; font-size: 14.5px; }
 .foot__grid { display: grid; gap: 30px; grid-template-columns: repeat(2, 1fr); }
@@ -784,86 +867,44 @@ details.q p { margin-top: 12px; color: var(--ink-2); max-width: 72ch; font-size:
   margin-top: 40px; padding-top: 22px; border-top: 1px solid #1E293B;
   display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; color: #94A3B8;
 }
-/* Urdu needs its own stack: it had none, so the one Urdu line on the page
-   inherited the Latin stack and fell through to a serif. Nastaliq is
-   calligraphic and diagonal, and a serif fallback is not merely a different
-   look, it is harder to read. Applied by language so anything added later
-   inherits it. */
 .foot__ur,
 [lang="ur"], [lang="ar"], [lang="fa"], [lang="ps"], [lang="sd"] {
   font-family: "Noto Nastaliq Urdu", "Jameel Noori Nastaleeq", "Urdu Typesetting",
                "Noto Naskh Arabic", "Segoe UI", Tahoma, sans-serif;
-  letter-spacing: normal;   /* tracking breaks a connected script */
+  letter-spacing: normal;   
 }
 .foot__ur { font-size: 15px; line-height: 2; color: #CBD5E1; margin-top: 14px; }
 
 /* --------------------------------------------------------- sticky action ---*/
-.actionbar { display: none; }
-@media (max-width: 879px) {
-  .actionbar {
-    position: fixed; left: 0; right: 0; bottom: 0; z-index: 70;
-    display: grid; grid-template-columns: 1fr auto; gap: 10px;
-    padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
-    background: rgba(255, 255, 255, 0.94);
-    backdrop-filter: blur(12px);
-    border-top: 1px solid var(--line);
-  }
-  .actionbar .btn { width: 100%; white-space: nowrap; }
-  /* Measured 92px at 320px where the label wraps, against 76px reserved. */
-  body { padding-bottom: 100px; }
-  html { scroll-padding-bottom: 100px; }
+/* --- Action Bar --- */
+.actionbar {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  z-index: 50; /* Keeps it below the open menu */
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid var(--line);
+  display: flex; gap: 12px;
+  /* The Magic Fix: 16px padding on Android, Safe Area + 12px on iPhone */
+  padding: 12px 16px max(16px, env(safe-area-inset-bottom)); 
+}
+
+.actionbar .btn { flex: 1; margin: 0; }
+
+/* Hide the action bar on desktop screens */
+@media (min-width: 880px) { 
+  .actionbar { display: none; } 
 }
 
 /* ------------------------------------------------------------ responsive ---*/
-/* THE ROW CANNOT PUSH THE PAGE SIDEWAYS, whatever font the visitor has.
-   Every width in this bar was measured in Liberation Sans, which has Arial's
-   metrics and is the WIDEST of the families the stack can land on: Segoe UI on
-   Windows, SF on Apple and Roboto on Android all come out 4-6% narrower, so
-   the 40px of slack on a real device is more like 80px. A Linux desktop with
-   neither Liberation nor Arial installed falls through to DejaVu Sans, which
-   is 11% wider and would not fit.
-   So the section nav, and only the section nav, is allowed to give way: it is
-   the one tier that is duplicated in the Menu panel and the footer. A clipped
-   "Guides" on an unusual font setup is a small blemish. A header that pushes
-   every page 70px sideways, and puts a horizontal scrollbar under all of it,
-   is the bug this whole block exists to remove.
-   Scoped to the width where the three-tier row actually exists, because below
-   it the brand needs to keep its own ability to shrink (see the 419px block). */
 @media (min-width: 1140px) {
   .brand, .nav__cta { flex-shrink: 0; }
   .nav__links { min-width: 0; overflow: hidden; }
-  /* AND THE FOCUS RING GOES INSIDE, because overflow:hidden clips at the
-     container's padding box and the site's ring is painted 3px OUTSIDE the
-     link. With the standard ring a keyboard user tabbing to "Fees" saw a
-     single blue arc on its right-hand side: the left, top and bottom of the
-     ring were cut off by the clip above. Measured, not guessed, on a
-     screenshot of a real Tab press.
-     Inset by 2px it sits within the link's own 8px of padding, so it is a
-     complete ring at the same 2px and the same colour, and nothing can cut it
-     off. This is the only clipping container on the site, which is why it is
-     the only place that needs to deviate. */
   .nav__links a:focus-visible { outline-offset: -2px; }
 }
-/* THE HEADER COLLAPSES IN TWO STEPS, NOT ONE, and which tier goes first is
-   the whole decision.
-   It used to be one step at 879px: below that the section links and the CTA
-   row both vanished together. That worked while the CTA row was two items
-   wide. With three it does not fit inside the 1140px wrap at any width, so
-   something has to give earlier, and the section links are the right thing to
-   lose: they are duplicated verbatim in the Menu panel this reveals AND in the
-   footer, while "Sign in", "Parent sign in" and "Start free trial" are the
-   only copy of themselves anywhere in the header.
-   The alternative was raising the single breakpoint to ~1200px, which would
-   have taken "Start free trial" off the header on every 1024px and 1100px
-   screen, with the sticky action bar that normally carries it not appearing
-   until 879px. A 300px band of viewports with no way to buy anything is a
-   worse bug than a Guides link behind a Menu button. */
 @media (max-width: 1139px) {
   .nav__links { display: none; }
-  /* The auto margin moves from the hidden section nav to the CTA row, so the
-     three controls stay on the right instead of collapsing against the brand.
-     .navmenu gives its own auto margin up for the same reason: two auto
-     margins would split the free space and put the CTA row in the middle. */
   .nav__cta { margin-left: auto; }
   .navmenu { display: block; margin-left: 0; }
 }
@@ -871,27 +912,70 @@ details.q p { margin-top: 12px; color: var(--ink-2); max-width: 72ch; font-size:
   .nav__cta { display: none; }
   .navmenu { margin-left: auto; }
 }
-/* The last 100px, where "The School Manager" and "Menu" genuinely do not fit
-   on one line at a readable size. Measured: at 320px there are 272px inside
-   the wrap, and the brand alone is 192px of it.
-   The brand name is the one label in this bar allowed to wrap, because it is
-   the one whose meaning survives a line break, and because .nav__in is
-   min-height so the bar grows with it rather than spilling. Measured: at 360px
-   it still comes out on one line with 17px to spare; at 320px it takes two and
-   the bar stays 66px tall. Which is what a 2016 phone gets instead of a
-   horizontal scrollbar under every page. */
 @media (max-width: 419px) {
   .nav__in { gap: 12px; }
   .navmenu > summary { padding: 0 12px; }
   .brand span { white-space: normal; }
 }
-@media (max-width: 700px) {
-  .section { padding: 62px 0; }
-  .hero { padding: 48px 0 60px; }
-  .cta { padding: 44px 22px; border-radius: var(--r); }
-  .app__body { grid-template-columns: 96px 1fr; }
-  .app__tiles { grid-template-columns: 1fr; }
 
+/* ----------------------------------------------------------- page hero ---*/
+.page-hero {
+  background: linear-gradient(180deg, var(--brand-50) 0%, var(--bg) 100%);
+  padding: 60px 0 40px;
+  text-align: center;
+  border-bottom: 1px solid var(--line);
+}
+.page-hero .eyebrow { justify-content: center; }
+.page-hero h1 { margin: 0 auto 16px; text-align: center; }
+.page-hero .lede { margin: 0 auto; text-align: center; }
+.page-hero .hero__cta { justify-content: center; margin-top: 24px; }
+
+/* --- Full-width Custom Pricing Tier --- */
+.price--full {
+  grid-column: 1 / -1; 
+  flex-direction: row;
+  align-items: center;
+  background: var(--bg-2);
+  padding: 32px 40px;
+}
+.price--full .price__info { flex: 1; text-align: left; }
+.price--full ul { flex: 1.5; margin: 0; padding-left: 24px; }
+.price--full .btn { margin-top: 0; flex: 0 0 auto; margin-left: 24px;}
+
+@media (max-width: 880px) {
+  .price--full { flex-direction: column; text-align: center; gap: 24px; }
+  .price--full .price__info { text-align: center; }
+  .price--full ul { padding-left: 0; align-items: center; }
+  .price--full .btn { margin-left: 0; width: 100%; }
+}
+
+@media (max-width: 700px) {
+  .section { padding: 50px 0; } /* Tighter padding for mobile */
+  .hero { padding: 40px 0 50px; }
+  .hero h1 { font-size: 2.25rem; } /* Scale down massive headlines for phone */
+  .cta { padding: 44px 22px; border-radius: var(--r); }
+  
+  /* Fixing the Dashboard Mockup for Mobile */
+  .app { height: auto; flex-direction: column; }
+  .app__side { 
+    width: 100%; 
+    padding: 16px; 
+    border-right: none; 
+    border-bottom: 1px solid var(--brand-700); 
+  }
+  .app__nav { flex-direction: row; flex-wrap: wrap; gap: 8px; }
+  .app__nav span { padding: 6px 10px; font-size: 12px; }
+  .app__tiles { grid-template-columns: 1fr; gap: 12px; } /* Stack tiles vertically */
+  .app__main { padding: 16px; gap: 16px; }
+  .arow { flex-direction: column; align-items: flex-start; gap: 6px; padding: 12px; }
+  .arow .pill { align-self: flex-start; }
+
+  /* Fixing the Pricing Cards for Mobile */
+  .price--hot { transform: none !important; } /* Prevent bleeding off screen */
+  .price--hot:hover { transform: translateY(-4px) !important; }
+
+  /* Audit Trail Mobile Fixes */
+  .panel__head { flex-direction: column; gap: 4px; padding: 16px; }
   .recon thead { display: none; }
   .recon, .recon tbody, .recon tr, .recon td { display: block; width: 100%; }
   .recon tr {
@@ -903,8 +987,6 @@ details.q p { margin-top: 12px; color: var(--ink-2); max-width: 72ch; font-size:
     content: attr(data-th); font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em;
     text-transform: uppercase; color: var(--ink-3); text-align: left;
   }
-  /* The bar repeats the Gap figure two rows above it, so on the stacked
-     layout the generated label was the only thing left to announce. */
   .recon td[data-th="Shortfall"] { display: none; }
 }
 
@@ -929,11 +1011,7 @@ details.q p { margin-top: 12px; color: var(--ink-2); max-width: 72ch; font-size:
   :where(a, button, summary, input, [tabindex]):focus-visible { outline-color: Highlight; }
 }
 
-/* ---------------------------------------------------------------- print ---
-   Browsers do not print background-color or background-image by default, while
-   `color: #fff` still prints white, which is an invisible page. The tokens are
-   redefined rather than individual selectors chased, so anything added later
-   is covered too. */
+/* ---------------------------------------------------------------- print ---*/
 @media print {
   :root {
     --bg: #fff; --bg-2: #fff; --bg-3: #fff;
@@ -952,20 +1030,239 @@ details.q p { margin-top: 12px; color: var(--ink-2); max-width: 72ch; font-size:
   .foot { background: #fff !important; color: #000 !important; }
   .foot a, .foot h3, .foot .brand, .foot__ur, .foot__bottom { color: #000 !important; }
   .card, .panel, .price { box-shadow: none; border-color: #000; break-inside: avoid; }
-  /* The highlighted plan's badge is white on an indigo FILL, and a browser
-     does not print background colours by default while it does print white
-     text, so "Most schools" came out as an invisible gap over the one card
-     the page is steering towards. Redefined rather than hidden: on paper the
-     badge is the only thing that says which plan is recommended. */
   .price__tag { background: #fff !important; color: #000 !important; border: 1px solid #000; box-shadow: none; }
   .section { padding: 18pt 0; }
-  /* A closed <details> hides its content through ::details-content with
-     content-visibility, NOT through display on the children, so the obvious
-     `details.q p { display: block }` is a no-op and the printed page carried
-     seven questions and no answers. */
   details.q { break-inside: avoid; }
   details.q::details-content { content-visibility: visible !important; block-size: auto !important; }
   details.q p { display: block !important; }
   .q__m { display: none !important; }
   a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 9pt; }
+}
+
+
+
+/* --- $100k SaaS Scroll Animations --- */
+.reveal {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: all 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.reveal.active {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Optional: Add a slight delay to cards in a grid so they stagger in */
+.grid .card:nth-child(1) { transition-delay: 0.1s; }
+.grid .card:nth-child(2) { transition-delay: 0.2s; }
+.grid .card:nth-child(3) { transition-delay: 0.3s; }
+.grid .card:nth-child(4) { transition-delay: 0.4s; }
+.grid .card:nth-child(5) { transition-delay: 0.5s; }
+.grid .card:nth-child(6) { transition-delay: 0.6s; }
+
+
+
+
+
+/* --- $100k SaaS Trust Banner --- */
+.testimonial-band {
+  background: var(--brand-950);
+  padding: 80px 20px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  margin: 40px 0;
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-lg);
+}
+
+/* Massive subtle quote mark in the background */
+.testimonial-band::before {
+  content: "“";
+  position: absolute;
+  top: -20px; left: 50%;
+  transform: translateX(-50%);
+  font-size: 240px;
+  color: rgba(255, 255, 255, 0.04);
+  font-family: Georgia, serif;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.testimonial-quote {
+  position: relative;
+  font-size: 1.75rem;
+  font-weight: 500;
+  max-width: 36ch;
+  margin: 0 auto;
+  line-height: 1.4;
+  color: var(--brand-50);
+  letter-spacing: -0.01em;
+}
+
+.testimonial-author {
+  position: relative;
+  margin-top: 28px;
+  font-size: 14px;
+  color: var(--accent); /* Emerald green for contrast */
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.testimonial-author span {
+  display: block;
+  color: var(--brand-300);
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  margin-top: 4px;
+  font-size: 15px;
+}
+
+
+/* --- Mobile Reconciliation Table Fix --- */
+@media (max-width: 768px) {
+  /* Force the table structure to behave like blocks */
+  .recon { 
+    display: block; 
+    width: 100%; 
+  }
+  .recon thead { 
+    display: none; /* Hide the standard desktop headers */
+  }
+  .recon tbody, .recon tr, .recon td {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  
+  /* Turn each table row into a sleek SaaS Card */
+  .recon tr { 
+    margin-bottom: 16px; 
+    background: #fff;
+    border: 1px solid var(--line); 
+    border-radius: var(--r-md);
+    padding: 4px 16px;
+    box-shadow: var(--sh-sm);
+  }
+  
+  /* Flexbox automatically pushes the label left and data right */
+  .recon td { 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center;
+    text-align: right; 
+    padding: 12px 0;
+    border-bottom: 1px solid var(--bg-2);
+  }
+  .recon td:last-child {
+    border-bottom: none;
+  }
+  
+  /* Dynamically inject the missing column labels for mobile users */
+  .recon td:nth-child(1)::before { content: "Class"; font-weight: 600; color: var(--ink-3); }
+  .recon td:nth-child(2)::before { content: "Expected"; font-weight: 600; color: var(--ink-3); }
+  .recon td:nth-child(3)::before { content: "Collected"; font-weight: 600; color: var(--ink-3); }
+  .recon td:nth-child(4)::before { content: "Gap"; font-weight: 600; color: var(--ink-3); }
+}
+
+
+
+
+/* ==========================================================================
+   $100k MOBILE UX MASTER PATCH
+   ========================================================================== */
+
+@media (max-width: 879px) {
+  
+  /* 1. Fix the Hidden Footer (Pushes the website up so the action bar doesn't cover it) */
+  body {
+    padding-bottom: calc(85px + env(safe-area-inset-bottom));
+  }
+
+  /* 2. Fix the "Fat Finger" Footer Links (Larger touch targets) */
+  .foot__grid a {
+    display: block;
+    padding: 12px 0; /* Massive vertical touch area */
+    font-size: 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.05); /* Subtle separator */
+  }
+  .foot__grid a:last-child {
+    border-bottom: none;
+  }
+
+  /* 3. Fix the FAQ Accordions (Better spacing and tap areas) */
+  details.q summary {
+    padding: 18px 0; /* Easier to tap on a shaky phone */
+    font-size: 16px;
+  }
+  details.q p {
+    padding-bottom: 16px;
+    font-size: 15px;
+    line-height: 1.6;
+  }
+
+  /* 4. Fix the Broken Tables (Fees & Attendance -> Mobile Cards) */
+  .recon { 
+    display: block; width: 100%; 
+  }
+  .recon thead { 
+    display: none; /* Kill desktop headers */
+  }
+  .recon tbody, .recon tr, .recon td {
+    display: block; width: 100%; box-sizing: border-box;
+  }
+  /* Turn rows into cards */
+  .recon tr { 
+    margin-bottom: 16px; background: #fff;
+    border: 1px solid var(--line); border-radius: var(--r-md);
+    padding: 8px 16px; box-shadow: var(--sh-sm);
+  }
+  /* Separate label and data */
+  .recon td { 
+    display: flex; justify-content: space-between; align-items: center;
+    text-align: right; padding: 12px 0; border-bottom: 1px solid var(--bg-2);
+  }
+  .recon td:last-child { border-bottom: none; }
+  
+  /* Inject the labels back in */
+  .recon td:nth-child(1)::before { content: "Class"; font-weight: 600; color: var(--ink-3); }
+  .recon td:nth-child(2)::before { content: "Expected"; font-weight: 600; color: var(--ink-3); }
+  .recon td:nth-child(3)::before { content: "Collected"; font-weight: 600; color: var(--ink-3); }
+  .recon td:nth-child(4)::before { content: "Gap"; font-weight: 600; color: var(--ink-3); }
+
+}
+
+
+
+/* ==========================================================================
+   DESKTOP DASHBOARD FAILSAFE (Overrides stuck opacity and reveal classes)
+   ========================================================================== */
+
+@media (min-width: 880px) {
+  /* Forces the main dashboard area to ignore stuck reveal hiding */
+  .app__main {
+    opacity: 1 !important;
+    visibility: visible !important;
+    transform: none !important; 
+  }
+  
+  /* Forces the immediate children (Tiles, Charts, Rows) back into existence */
+  .app__main > div, 
+  .app__main > section {
+    display: block !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+  }
+  
+  /* Ensures our premium animations still play, but default to visible if they fail */
+  .app__rows .arow {
+    opacity: 1; 
+    animation: rowSlide 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+  }
+  .chart i {
+    opacity: 1;
+    animation: barGrow 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+  }
 }

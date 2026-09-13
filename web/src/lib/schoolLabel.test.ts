@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { clusters, schoolLabel } from './schoolLabel'
+import {
+  FIT_MAX_LINES, capacity, clusters, fitSchoolName, schoolLabel,
+} from './schoolLabel'
 
 describe('clusters', () => {
   it('keeps a surrogate pair together', () => {
@@ -74,5 +76,98 @@ describe('schoolLabel', () => {
   it('measures the budget against the fallback too, so a long fallback cannot overflow', () => {
     const out = schoolLabel('', 'A very long placeholder that nobody would choose', 10)
     expect(clusters(out.text).length).toBe(11)
+  })
+})
+
+describe('fitSchoolName', () => {
+  // The real box, and it is the mobile drawer's rather than the desktop
+  // sidebar's: the drawer is narrower once its close button is taken off.
+  // The arithmetic is in AppShell beside NAME_BOX_PX.
+  const BOX = 142
+
+  it('leaves an ordinary name at full size, whole and on one line', () => {
+    const f = fitSchoolName('Iqra Model School', 'Your school', BOX)
+    expect(f.text).toBe('Iqra Model School')
+    expect(f.size).toBe(14)
+    expect(f.lines).toBe(1)
+    expect(f.clipped).toBe(false)
+  })
+
+  it('shows the whole of the long names this market actually has', () => {
+    // Every one of these was truncated by the old `truncate` at roughly twenty
+    // characters, on the school's own name, in the school's own software.
+    for (const name of [
+      'Beaconhouse School System',
+      'The City School Gulberg Campus',
+      'Government Girls Higher Secondary School Chaklala',
+      'Allama Iqbal Public Higher Secondary School Rawalpindi Cantt',
+    ]) {
+      const f = fitSchoolName(name, 'Your school', BOX)
+      expect(f.text, name).toBe(name)
+      expect(f.clipped, name).toBe(false)
+      expect(f.lines, name).toBeLessThanOrEqual(FIT_MAX_LINES)
+    }
+  })
+
+  it('steps down rather than cutting: a longer name gets a smaller size', () => {
+    const short = fitSchoolName('City School', 'Your school', BOX)
+    const long = fitSchoolName(
+      'Allama Iqbal Public Higher Secondary School Rawalpindi Cantt', 'Your school', BOX)
+    expect(long.size).toBeLessThan(short.size)
+  })
+
+  it('picks a step the name genuinely fits in', () => {
+    // The property the whole ladder exists for. Whatever step is chosen, the
+    // name has to fit the box at that size on that many lines. A ramp of sizes
+    // picked by eye passes the examples above and fails this.
+    for (let n = 1; n <= 200; n++) {
+      const f = fitSchoolName('x'.repeat(n), 'Your school', BOX)
+      expect(clusters(f.text).length, `${n} clusters`)
+        .toBeLessThanOrEqual(capacity(BOX, f.size, f.lines))
+    }
+  })
+
+  it('never needs more lines than the caller clamps at', () => {
+    for (let n = 1; n <= 200; n++) {
+      expect(fitSchoolName('y'.repeat(n), 'Your school', BOX).lines)
+        .toBeLessThanOrEqual(FIT_MAX_LINES)
+    }
+  })
+
+  it('cuts only what is not a school name, and says so when it does', () => {
+    const absurd = 'A'.repeat(400)
+    const f = fitSchoolName(absurd, 'Your school', BOX)
+    expect(f.clipped).toBe(true)
+    expect(f.text.endsWith('…')).toBe(true)
+    // clipped is what tells the sidebar a tooltip is load bearing rather than
+    // decorative, so it must never be true for a name that was shown in full.
+    expect(fitSchoolName('Iqra Model School', 'Your school', BOX).clipped).toBe(false)
+  })
+
+  it('falls back while the field is empty', () => {
+    expect(fitSchoolName('', 'Your school', BOX).text).toBe('Your school')
+    expect(fitSchoolName('   ', 'Your school', BOX).text).toBe('Your school')
+  })
+
+  it('hands an Urdu name to the browser to shape, with no tracking on it', () => {
+    const f = fitSchoolName('گورنمنٹ ہائی اسکول راولپنڈی', 'Your school', BOX)
+    expect(f.rtl).toBe(true)
+    expect(f.style.letterSpacing).toBe('normal')
+    expect(f.style.fontFamily).toContain('Nastaliq')
+  })
+
+  it('never cuts through a surrogate pair', () => {
+    const f = fitSchoolName('🏫'.repeat(300), 'Your school', BOX)
+    expect(f.text).not.toContain('�')
+    // Every code point but the ellipsis is a whole school. Spreading a string
+    // iterates code points rather than UTF-16 units, so a pair cut down the
+    // middle shows up here as a lone surrogate and not as a shorter string.
+    expect([...f.text.replace('…', '')].every((c) => c === '🏫')).toBe(true)
+  })
+
+  it('gives a wider box more room before it steps down', () => {
+    const name = 'Government Girls Higher Secondary School Chaklala'
+    expect(fitSchoolName(name, 'Your school', 300).size)
+      .toBeGreaterThanOrEqual(fitSchoolName(name, 'Your school', BOX).size)
   })
 })

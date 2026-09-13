@@ -2,14 +2,68 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ------------------------------------------------------------ the ground --
+   THE ONE COLOUR THIS APPLICATION SITS ON.
+
+   A phone paints something in the gap when a scroll is dragged past its end,
+   and what it paints there is not the element you were scrolling. It is the
+   canvas: the background of the root element, and failing that the background
+   of the body, propagated up. Anything that leaves that undecided gets whatever
+   the browser felt like, and on this app that came out DARK BLUE at every edge
+   of every screen -- the theme-color in index.html was the sidebar's indigo, so
+   the browser tinted its own chrome and the band it reveals on a bounce to
+   match a sidebar that is not even on screen on a phone any more.
+
+   So: one variable, set on the root element and on the body so neither can be
+   the one that decides, and the SAME literal is in the theme-color meta tag in
+   index.html. The two of them are what a phone paints outside the page, and
+   they now paint the same thing, which is why the seam cannot come back.
+   src/test/appChrome.test.ts fails if they ever drift apart.
+
+   color-scheme: light is the other half. Without it a phone in dark mode is
+   entitled to invert this page for us, and Chrome's auto-dark does exactly
+   that: it repaints the canvas, the form controls and the scrollbars dark
+   behind a design that has one theme and is built for paper. Declaring the
+   theme takes that decision back.
+
+   overscroll-behavior-y stops the bounce chaining out to the document at all,
+   so a flick at the bottom of a list does not drag the whole app down and show
+   the gap in the first place. It also switches off pull-to-refresh, which on a
+   screen where somebody is halfway through marking a register is a feature
+   rather than a loss.
+
+   ON THE Y AXIS ONLY, and that is deliberate. The shorthand would set x as
+   well, and on the x axis there is nothing to contain -- the document does not
+   scroll sideways at any width, which is the whole point of the drawer -- while
+   what it WOULD do is switch off the browser's own two finger swipe back. That
+   is a gesture an office uses on a laptop every day and it is not this change's
+   to take away.
+
+   -webkit-text-size-adjust: 100% stops iOS Safari inflating the text when a
+   phone is turned to landscape, which it does silently and which breaks every
+   table in the product by a different amount. */
+:root {
+  --app-canvas: #f1f5f9; /* slate-100 */
+  color-scheme: light;
+}
+
 html,
 body,
 #root {
   height: 100%;
 }
 
+html {
+  background-color: var(--app-canvas);
+  overscroll-behavior-y: none;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
-  @apply bg-slate-100 text-slate-800 antialiased;
+  @apply text-slate-800 antialiased;
+  background-color: var(--app-canvas);
+  overscroll-behavior-y: none;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 

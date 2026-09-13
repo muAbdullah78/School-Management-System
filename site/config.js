@@ -20,20 +20,20 @@ window.SITE_CONFIG = {
      Cloudflare gives you something like
      https://school-management-system.<account>.workers.dev until you point a
      domain at it. */
-  APP_URL: '',
+  APP_URL: 'https://app.theschoolmanager.site',
 
   /* Supabase project URL and anon key, the same two values as the app's
      VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY. Used for two reads only:
      prices, and the current installer. Leave blank and the page falls back to
      the prices written into the HTML, which a CI check keeps in step with the
      database. */
-  SUPABASE_URL: '',
-  SUPABASE_ANON_KEY: '',
+  SUPABASE_URL: 'https://gtknkvcbjiuuwgndkztc.supabase.co',
+  SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd0a25rdmNiaml1dXdnbmRrenRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY5NjMxMzMsImV4cCI6MjEwMjUzOTEzM30.cLmkd48CtX9gXiHCvr1dXf2BAI72_0MKp-oVhJreCGA',
 
   /* Shown in the footer and on the contact card. */
-  CONTACT_PHONE: '',
-  CONTACT_WHATSAPP: '',
-  CONTACT_EMAIL: '',
+  CONTACT_PHONE: '+92 333 1663011',
+  CONTACT_WHATSAPP: '+92 333 1663011',
+  CONTACT_EMAIL: 'muabdullah9987@gmail.com',
 
   /* Set to false to take the trial buttons down, during a migration, or when
      you are at capacity and do not want twenty new schools in one week. The
