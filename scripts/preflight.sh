@@ -98,6 +98,7 @@ echo "== the cheap ones =="
 step "bundles are in sync with the migrations" bash -c \
   './supabase/build-bundles.sh >/dev/null && git diff --exit-code --stat supabase/bundles/'
 step "no em dashes" python3 scripts/check-no-emdash.py
+step "the pasted files survive being pasted" python3 scripts/check-pasteable.py
 step "RAISE takes a bare %" python3 scripts/check-raise-format.py
 step "no browser dialogs (prompt/alert/confirm)" python3 scripts/check-no-browser-dialogs.py
 step "a stale shell cannot go blank silently" python3 scripts/check-stale-shell.py

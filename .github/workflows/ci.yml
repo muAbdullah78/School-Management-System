@@ -188,6 +188,15 @@ jobs:
         working-directory: .
         run: python3 scripts/check-no-emdash.py
 
+      - name: The files a vendor pastes survive being pasted
+        # verify.sql is the file whose whole job is to be pasted into the
+        # Supabase SQL editor, and it could not be: a semicolon inside a comment
+        # on line 689 cut the file there, and the editor handed Postgres a
+        # statement beginning "the NEGATIVE one must hold in both," which it
+        # reported as `relation "the" does not exist`. Reported by the vendor.
+        working-directory: .
+        run: python3 scripts/check-pasteable.py
+
       - name: RAISE takes a bare % and not a printf placeholder
         # plpgsql's RAISE substitutes each argument at a bare `%`. It has no
         # %s, %d, %I or %L: those belong to format(). Write one by habit and
