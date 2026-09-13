@@ -9,32 +9,25 @@ changefreq: weekly
   <div class="wrap hero__grid">
     <div>
       <span class="eyebrow">Built for Pakistani schools</span>
-      <h1>One parent. One payment. <em>One receipt.</em></h1>
+      <h1>Your entire school.<br><em>One simple dashboard.</em></h1>
       <p class="lede">
-        A father with three children hands over one bundle of cash. Most software
-        makes your clerk do that three times. This does it once, and tells you at
-        the end of the month exactly how much should have come in and how much
-        actually did.
+        Replace messy registers and spreadsheets. Manage fees, track attendance, and print result cards seamlessly, even when the internet goes down.
       </p>
       <div class="hero__cta">
         <a class="btn btn--primary btn--lg" href="/pricing" data-app="signup">Start 14 day free trial</a>
         <a class="btn btn--ghost btn--lg" href="/fee-management">See how fees work</a>
       </div>
-      <p class="hero__note">No card required. Set up in an afternoon. Your data stays yours.</p>
+      <p class="hero__note">✓ No card required &nbsp; ✓ Set up in an afternoon &nbsp; ✓ Your data stays yours</p>
       <p id="signup-closed" hidden class="hero__note">
         We are at capacity this month. Get in touch and we will put you next in line.
       </p>
     </div>
 
     <div class="app">
-      <div class="app__bar" aria-hidden="true">
-        <span class="app__dot"></span><span class="app__dot"></span><span class="app__dot"></span>
-        <span class="app__url">Fees, collect</span>
-      </div>
       <div class="app__body">
         <div class="app__side" aria-hidden="true">
           <div class="app__brand">
-            <svg width="16" height="16" viewBox="0 0 24 24">
+            <svg width="24" height="24" viewBox="0 0 24 24">
               <rect width="24" height="24" rx="6" fill="#4F46E5"/>
               <g fill="#fff"><circle cx="12" cy="7.5" r="1.4"/><path fill-rule="evenodd" d="M5.5 12.5h13v6h-13zm2.5 1.5h8v1h-8zm0 2h8v1h-8z"/></g>
             </svg>
@@ -53,9 +46,9 @@ changefreq: weekly
         </div>
         <div class="app__main">
           <div class="app__tiles">
-            <div class="tile tile--money"><span>Collected</span><b class="tnum">Rs 84,500</b></div>
+            <div class="tile"><span>Active Students</span><b class="tnum">486</b></div>
+            <div class="tile tile--money"><span>Collected Today</span><b class="tnum">Rs 84,500</b></div>
             <div class="tile tile--due"><span>Outstanding</span><b class="tnum">Rs 312,000</b></div>
-            <div class="tile"><span>Students</span><b class="tnum">486</b></div>
           </div>
           <div class="app__rows">
             <div class="arow"><b>Muhammad Aslam</b><span class="muted">3 children</span></div>
@@ -75,12 +68,7 @@ changefreq: weekly
   </div>
 </header>
 
-<!-- ================================================================= trust
-     A breath between the hero and the first section. The previous version cut
-     straight from a cream hero into a full-bleed navy slab, which is the
-     jarring transition.
-     ================================================================= -->
-<div class="trust">
+<div class="trust reveal">
   <div class="wrap trust__in">
     <div class="trust__cell">
       <span class="trust__k">From</span>
@@ -101,73 +89,74 @@ changefreq: weekly
   </div>
 </div>
 
-<!-- =========================================================== what it does ===
-     Nine capabilities, each linking to the page that covers it properly. This
-     replaces the old feature grid whose cards linked nowhere: a visitor who
-     wanted to know how fees actually work had no next page to go to, and
-     neither did a search engine. -->
 <section class="section" id="what">
   <div class="wrap">
-    <span class="eyebrow">What it does</span>
-    <h2>The whole school, not just the fee counter</h2>
-    <p class="lede" style="margin-top:12px">
+    <span class="eyebrow reveal">WHAT IT DOES</span>
+    <h2 class="reveal">The whole school, not just the fee counter</h2>
+    <p class="lede reveal" style="margin-top:14px">
       One price. Every module. No add-ons to buy later.
     </p>
-
-    <div class="grid grid--3" style="margin-top:38px">
+    <div class="grid grid--3" style="margin-top:48px">
+      
+      <!-- Card 1: Fees (Green/Money) -->
       <a class="card card--link" href="/fee-management">
+        <div class="card__icon" style="background: var(--money-50); color: var(--money-700);">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        </div>
         <h3>Fees and challans</h3>
-        <p>
-          One parent pays once for all their children. Monthly challans, arrears
-          carried forward, partial payments, fines, approved discounts, and a
-          receipt number that cannot skip.
-        </p>
+        <p>One parent pays once for all their children. Monthly challans, arrears carried forward, partial payments, fines, approved discounts, and a receipt number that cannot skip.</p>
         <span class="card__more">How fee collection works</span>
       </a>
+
+      <!-- Card 2: Attendance (Brand Blue) -->
       <a class="card card--link" href="/attendance">
+        <div class="card__icon">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        </div>
         <h3>Attendance</h3>
-        <p>
-          A daily register per class, marked from a phone in the classroom, that
-          keeps working when the internet does not. Finalise, lock, and print the
-          monthly sheet.
-        </p>
+        <p>A daily register per class, marked from a phone in the classroom, that keeps working when the internet does not. Finalise, lock, and print the monthly sheet.</p>
         <span class="card__more">How attendance works</span>
       </a>
+
+      <!-- Card 3: Exams (Brand Blue) -->
       <a class="card card--link" href="/exams-and-results">
+        <div class="card__icon">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+        </div>
         <h3>Exams and result cards</h3>
-        <p>
-          Marks per paper, practicals and weightage, grades computed on your own
-          scale, then printed result cards, tabulation sheets and class positions.
-        </p>
+        <p>Marks per paper, practicals and weightage, grades computed on your own scale, then printed result cards, tabulation sheets and class positions.</p>
         <span class="card__more">How exams work</span>
       </a>
+
+      <!-- Card 4: Accounts (Amber/Due) -->
       <a class="card card--link" href="/accounts">
+        <div class="card__icon" style="background: var(--due-50); color: var(--due-800);">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+        </div>
         <h3>Accounts and payroll</h3>
-        <p>
-          An expense ledger with categories, other income, cash drawer sessions,
-          a day book, staff salaries, and the monthly profit that follows from
-          all of it.
-        </p>
+        <p>An expense ledger with categories, other income, cash drawer sessions, a day book, staff salaries, and the monthly profit that follows from all of it.</p>
         <span class="card__more">How the accounts work</span>
       </a>
+
+      <!-- Card 5: Parent Portal (Cyan/Accent) -->
       <a class="card card--link" href="/parent-portal">
+        <div class="card__icon card__icon--accent">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+        </div>
         <h3>Parent portal</h3>
-        <p>
-          Parents sign in on their own phone and see their own children only:
-          balance, every receipt, attendance day by day, and results once you
-          publish them.
-        </p>
+        <p>Parents sign in on their own phone and see their own children only: balance, every receipt, attendance day by day, and results once you publish them.</p>
         <span class="card__more">How the portal works</span>
       </a>
-      <div class="card">
+
+      <!-- Card 6: Rest of it (Gray/Neutral) -->
+      <div class="card reveal"> 
+        <div class="card__icon" style="background: var(--bg-3); color: var(--ink-2);">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+        </div>
         <h3>And the rest of it</h3>
-        <p>
-          Admissions with automatic GR numbers and sibling linking. Staff records
-          and teacher logins. Leaving, character and bonafide certificates on
-          tracked serial registers. Student and staff ID cards. Year end rollover
-          for the whole school in one pass.
-        </p>
+        <p>Admissions with automatic GR numbers and sibling linking. Staff records and teacher logins. Leaving, character and bonafide certificates on tracked serial registers. Student and staff ID cards. Year end rollover for the whole school in one pass.</p>
       </div>
+
     </div>
   </div>
 </section>
@@ -211,10 +200,25 @@ changefreq: weekly
   </div>
 </section>
 
+
+<section class="section">
+  <div class="wrap">
+    <div class="testimonial-band reveal">
+      <p class="testimonial-quote">
+        "It cut our month-end fee reconciliation from three days of paperwork and arguments down to a fifteen-minute coffee break. It just works."
+      </p>
+      <div class="testimonial-author">
+        Ahmad R.
+        <span>Principal, Private School</span>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ==================================================================== cta ===-->
 <section class="section">
   <div class="wrap">
-    <div class="cta on-dark">
+    <div class="cta reveal"> S
       <h2>Try it with one class first</h2>
       <p>
         Fourteen days, no card, no commitment. Put one class in, run a month's

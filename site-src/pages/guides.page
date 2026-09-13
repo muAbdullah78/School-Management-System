@@ -8,49 +8,49 @@ schema: org
 priority: 0.7
 ---
 
-<section class="section">
+<header class="page-hero">
   <div class="wrap">
     <span class="eyebrow">Guides</span>
     <h1>Guides for a school office</h1>
-    <p class="lede" style="margin-top:14px;max-width:64ch">
+    <p class="lede" style="max-width:64ch">
       Written for the clerk, the accountant and the principal, about the work
       itself rather than about our software. Every one of them is useful whether
       or not you ever buy anything from us.
     </p>
+  </div>
+</header>
 
-    <div class="grid grid--3" style="margin-top:38px">
+<section class="section">
+  <div class="wrap">
+    <div class="grid grid--3">
       <a class="card card--link" href="/guides/fee-challan-pakistan">
+        <div class="card__icon">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+        </div>
         <h3>What a fee challan has to say</h3>
-        <p>
-          The eight things a challan must carry before a parent can be expected
-          to pay it without a phone call, and the two that cause almost every
-          dispute.
-        </p>
+        <p>The eight things a challan must carry before a parent can be expected to pay it without a phone call, and the two that cause almost every dispute.</p>
         <span class="card__more">Read the guide</span>
       </a>
       <a class="card card--link" href="/guides/expected-vs-collected">
+        <div class="card__icon card__icon--accent">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+        </div>
         <h3>Finding fees that were never recorded</h3>
-        <p>
-          Gapless receipts catch under-recording. They cannot catch cash that was
-          never entered at all. Here is the check that can, and how to run it on
-          paper if you have to.
-        </p>
+        <p>Gapless receipts catch under-recording. They cannot catch cash that was never entered at all. Here is the check that can, and how to run it on paper if you have to.</p>
         <span class="card__more">Read the guide</span>
       </a>
       <a class="card card--link" href="/guides/moving-from-paper-registers">
+        <div class="card__icon" style="background: var(--due-50); color: var(--due-800);">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+        </div>
         <h3>Moving off paper registers</h3>
-        <p>
-          The order to do it in, what to type up and what to leave alone, and why
-          the two weeks of running both is the part nobody should skip.
-        </p>
+        <p>The order to do it in, what to type up and what to leave alone, and why the two weeks of running both is the part nobody should skip.</p>
         <span class="card__more">Read the guide</span>
       </a>
     </div>
 
-    <p style="margin-top:34px">
-      There is also <a href="/guide.html">the handbook</a>, which is sixteen
-      chapters on running a school on this software specifically, with real
-      screenshots. It is free to read before you buy anything.
+    <p style="margin-top:34px; text-align: center;">
+      There is also <a class="clink" href="/guide.html">the handbook</a>, which is sixteen chapters on running a school on this software specifically, with real screenshots. It is free to read before you buy anything.
     </p>
   </div>
 </section>

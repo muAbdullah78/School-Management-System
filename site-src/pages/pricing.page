@@ -9,17 +9,20 @@ priority: 1.0
 changefreq: weekly
 ---
 
-<section class="section">
+<header class="page-hero">
   <div class="wrap">
     <span class="eyebrow">Pricing</span>
     <h1>Priced for a real Pakistani school</h1>
-    <p class="lede" style="margin-top:14px;max-width:64ch">
+    <p class="lede" style="max-width:64ch">
       Every plan includes every feature. You pay for size, not for modules. Take
-      three months and save about five percent; pay yearly and get two months
-      free.
+      three months and save about five percent; pay yearly and get two months free.
     </p>
+  </div>
+</header>
 
-<div class="prices" style="margin-top:38px">
+<section class="section">
+  <div class="wrap">
+    <div class="prices">
       <div class="price" data-plan="starter">
         <h3>Starter</h3>
         <div class="price__amt"><span data-price-monthly>Rs 2,000</span><small>/month</small></div>
@@ -69,10 +72,12 @@ changefreq: weekly
       </div>
       <!-- /plan -->
 
-      <div class="price" data-plan="custom">
-        <h3>Larger institutions</h3>
-        <div class="price__amt">Let's talk</div>
-        <p class="price__cap">More than 1,000 students</p>
+      <div class="price price--full" data-plan="custom">
+        <div class="price__info">
+          <h3>Larger institutions</h3>
+          <div class="price__amt">Let's talk</div>
+          <p class="price__cap" style="margin-bottom: 0;">More than 1,000 students</p>
+        </div>
         <ul>
           <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Multiple campuses</li>
           <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Migration from your current system</li>
@@ -80,8 +85,6 @@ changefreq: weekly
         </ul>
         <a class="btn btn--ghost" href="/contact">Contact us</a>
       </div>
-      <!-- /plan -->
-    </div>
 
     <p class="small muted" style="margin-top:20px;max-width:70ch">
       Grow past your plan mid year and nothing stops working. Admissions are never

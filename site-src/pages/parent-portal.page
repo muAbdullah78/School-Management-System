@@ -17,11 +17,11 @@ schema: org software
 priority: 0.8
 ---
 
-<section class="section">
+<header class="page-hero">
   <div class="wrap">
     <span class="eyebrow">Parent portal</span>
     <h1>The answer, without the phone call</h1>
-    <p class="lede" style="margin-top:14px;max-width:62ch">
+    <p class="lede" style="max-width:62ch">
       Most calls to a school office are one of three questions: how much do I
       owe, was my child in school on Tuesday, and what did she get in the test.
       A parent can answer all three themselves, on the phone in their hand, with
@@ -32,7 +32,7 @@ priority: 0.8
       <a class="btn btn--ghost btn--lg" href="/contact" data-app="portal">Open the portal</a>
     </div>
   </div>
-</section>
+</header>
 
 <!-- ============================================================ FOR PARENTS =
      WHY THIS SITS SECOND, ABOVE EVERYTHING ELSE ON THE PAGE.
@@ -50,19 +50,19 @@ priority: 0.8
      own account, by design, so "sign up" is not an answer and neither is
      silence. The answer is "ask your school", said out loud.
 -->
-<section class="section" id="for-parents" style="padding-top:0">
+<section class="section" id="for-parents">
   <div class="wrap">
-    <div class="card" style="max-width:62ch">
-      <span class="eyebrow">For parents</span>
+    <div class="card" style="max-width:800px; margin: 0 auto; text-align: center; padding: 48px 32px; border-top: 4px solid var(--brand);">
+      <span class="eyebrow" style="justify-content: center;">For parents</span>
       <h2 style="margin-top:12px">Are you a parent?</h2>
-      <p style="margin-top:12px">
+      <p style="margin-top:16px; font-size: 16.5px; color: var(--ink-2);">
         Sign in with the email address and password your child&rsquo;s school
         gave you. You will see your own children, and nobody else&rsquo;s.
       </p>
-      <p style="margin-top:16px">
+      <div style="margin-top:24px; display: flex; justify-content: center;">
         <a class="btn btn--primary btn--lg" href="/contact" data-app="portal">Parent sign in</a>
-      </p>
-      <div class="note">
+      </div>
+      <div class="note" style="margin-top:32px; text-align: left;">
         <p>
           <b>No account yet?</b> Only your child&rsquo;s school can create one.
           Contact the school office and ask them to make you a parent account:
@@ -70,7 +70,7 @@ priority: 0.8
           nothing here for you to buy and no form to fill in, and it takes the
           school a few seconds.
         </p>
-        <p style="margin-top:10px">
+        <p style="margin-top:12px">
           <b>Forgotten your password?</b> Ask the office as well. The address a
           school gives you does not have to be a real mailbox, so a reset email
           may never arrive, and the office can look your password up and read
@@ -86,6 +86,9 @@ priority: 0.8
     <h2>What a parent sees, and what they cannot</h2>
     <div class="grid grid--2" style="margin-top:32px">
       <div class="card">
+        <div class="card__icon">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+        </div>
         <h3>Their own children, all of them</h3>
         <p>
           One login for the family. A father with three children in the school
@@ -94,6 +97,9 @@ priority: 0.8
         </p>
       </div>
       <div class="card">
+        <div class="card__icon" style="background: var(--money-50); color: var(--money-700);">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+        </div>
         <h3>Every receipt, not just the balance</h3>
         <p>
           The full history: what was charged, what was paid, when, and by which
@@ -102,14 +108,20 @@ priority: 0.8
         </p>
       </div>
       <div class="card">
+        <div class="card__icon" style="background: var(--due-50); color: var(--due-800);">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+        </div>
         <h3>Attendance day by day</h3>
         <p>
           Present, absent, late, half day or leave, per day. Not a percentage
-          with no detail behind it, because a percentage is exactly what starts
-          the argument a school wants to avoid.
+          with no detail behind it, because a percentage is exactly what
+          starts the argument a school wants to avoid.
         </p>
       </div>
       <div class="card">
+        <div class="card__icon card__icon--accent">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+        </div>
         <h3>Results, once you release them</h3>
         <p>
           Nothing appears until the school publishes it. Marks being entered and
@@ -118,17 +130,6 @@ priority: 0.8
         </p>
       </div>
     </div>
-
-    <div class="note" style="margin-top:26px">
-      <p>
-        <b>A parent cannot see another family's child.</b> Not because a menu is
-        hidden: a parent account has no direct access to any table at all, and
-        every read it makes goes through a function scoped to that parent's own
-        children. A parent who tried a different address would get nothing back
-        rather than somebody else's data.
-      </p>
-    </div>
-  </div>
 </section>
 
 <section class="section">
@@ -155,16 +156,25 @@ priority: 0.8
     <h2>What is next to this</h2>
     <div class="grid grid--3" style="margin-top:26px">
       <a class="card card--link" href="/fee-management">
+        <div class="card__icon" style="background: var(--money-50); color: var(--money-700);">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        </div>
         <h3>Fee management</h3>
         <p>The balance a parent reads, and where the number comes from.</p>
         <span class="card__more">See fees</span>
       </a>
       <a class="card card--link" href="/exams-and-results">
+        <div class="card__icon">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+        </div>
         <h3>Exams and results</h3>
         <p>What a released result card contains, and how it is computed.</p>
         <span class="card__more">See exams</span>
       </a>
       <a class="card card--link" href="/guide.html">
+        <div class="card__icon" style="background: var(--bg-3); color: var(--ink-2);">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
+        </div>
         <h3>The handbook</h3>
         <p>Three chapters cover the portal, with real screenshots.</p>
         <span class="card__more">Read it</span>
