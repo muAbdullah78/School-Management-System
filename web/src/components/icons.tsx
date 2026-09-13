@@ -242,6 +242,24 @@ export const IconDrawer = svg(
   </>,
 )
 
+/* The two glyphs the mobile drawer is built out of. Three bars and a cross are
+   the only two icons in this file that every user already knows by heart, so
+   they are drawn plainly and given no decoration at all. */
+export const IconMenu = svg(
+  <>
+    <path d="M4 7h16" />
+    <path d="M4 12h16" />
+    <path d="M4 17h16" />
+  </>,
+)
+
+export const IconX = svg(
+  <>
+    <path d="m6 6 12 12" />
+    <path d="m18 6-12 12" />
+  </>,
+)
+
 /** Nav path -> icon, so the shell stays declarative. */
 export const NAV_ICONS: Record<string, (p: IconProps) => JSX.Element> = {
   '/': IconDashboard,

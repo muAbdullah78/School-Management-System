@@ -79,7 +79,7 @@ export function Account() {
   }
 
   return (
-    <div className="flex min-h-screen items-start justify-center bg-slate-100 p-4 sm:items-center">
+    <div className="flex min-h-full items-start justify-center bg-slate-100 p-4 sm:items-center">
       <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow">
         <h1 className="text-lg font-semibold text-slate-800">Change your password</h1>
 

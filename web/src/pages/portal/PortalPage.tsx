@@ -136,7 +136,7 @@ export function PortalPage() {
 
   if (me.isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 text-sm text-slate-500">
+      <div className="flex min-h-full items-center justify-center bg-slate-50 text-sm text-slate-500">
         Loading…
       </div>
     )
@@ -144,7 +144,7 @@ export function PortalPage() {
 
   if (me.isError) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
+      <div className="flex min-h-full items-center justify-center bg-slate-50 p-6">
         <EmptyState
           icon={<IconAlert />}
           title="Could not load your account"
@@ -160,7 +160,12 @@ export function PortalPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    /* min-h-full rather than min-h-screen, here and in the two states above.
+       100vh on a mobile browser is the height the page would have if the
+       address bar were hidden, so a parent with one child and a short statement
+       had a page a few pixels taller than the window and it bounced when there
+       was nothing to scroll. #root is a true 100% of the viewport. */
+    <div className="min-h-full bg-slate-50">
       {/* Header */}
       <header className="bg-gradient-to-br from-brand-700 to-brand-900 px-4 pb-16 pt-5 text-white">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">

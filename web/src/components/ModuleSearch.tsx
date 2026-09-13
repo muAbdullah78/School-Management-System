@@ -32,7 +32,7 @@ export function ModuleSearch({
   }
 
   return (
-    <div className="px-2 pb-1 pt-2 print:hidden">
+    <div className="shrink-0 px-2 pb-1 pt-2 print:hidden">
       <input
         value={term}
         onChange={(e) => apply(e.target.value)}
