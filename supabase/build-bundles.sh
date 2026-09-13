@@ -715,6 +715,26 @@ emit supabase/bundles/35_the_register_belongs_to_a_class.sql \
 emit supabase/bundles/36_a_school_year_has_dates.sql \
      supabase/migrations/0130*.sql
 
+# --- 37 ----------------------------------------------------------------------
+# A discount is a promise, and a plan a school can actually choose.
+#
+# TWO MIGRATIONS IN ONE BUNDLE because they ship as one change to the signup
+# flow: 0131 gives the vendor something to sell other than the price list, and
+# 0132 gives a school a plan screen that can write what it chose. Split across
+# two bundles, a school that pasted only the first would have a discount box on
+# a screen that cannot save the plan it is attached to.
+#
+# Both are additive. 0131 creates two tables and replaces
+# fn_activate_subscription with the same function plus a discount block. 0132
+# adds schools.region, and DROPS AND RECREATES fn_signup_school_on_plan to take
+# an eighth parameter, which is the one thing in here that is not a pure
+# addition: an overload would make the Edge Function's seven-argument call
+# ambiguous and take public signup down, so the old signature goes first. The
+# new parameter is last and defaulted, so an Edge Function deployment that
+# predates this bundle keeps working.
+emit supabase/bundles/37_a_discount_and_a_plan_you_can_choose.sql \
+     supabase/migrations/0131*.sql supabase/migrations/0132*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

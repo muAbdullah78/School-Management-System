@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { setupSchool } from '@/lib/db'
 import { useAuth } from '@/auth/AuthProvider'
+import { useSchoolName } from '@/hooks/useSchoolName'
 
 /**
  * First-run setup, shown once to a brand-new school.
@@ -24,6 +25,35 @@ import { useAuth } from '@/auth/AuthProvider'
  * Pre-filled from the same April-to-March assumption the name already uses, and
  * editable, because a Sindh school running August to June needs to change them
  * and most Punjab schools will not.
+ *
+ * IT NO LONGER ASKS FOR THE SCHOOL NAME. It was the first field on the screen
+ * and the owner had typed it into the signup form minutes earlier, so the
+ * software was asking a question it already knew the answer to, on the screen
+ * where a new customer decides whether this thing is any good. Worse, it was a
+ * blank box: an owner who typed a shortened version here silently overwrote the
+ * name they had signed up with, and that name prints on every receipt and
+ * certificate. It is inherited and editable in Settings, where renaming a
+ * school is a deliberate act rather than a form field nobody meant to touch.
+ *
+ * AND SECTIONS ARE NOW OPTIONAL, which is a data-model fix rather than a
+ * cosmetic one. The screen used to pre-fill "A" and create a section called A
+ * inside every class, unconditionally. Most Pakistani private schools have one
+ * class per year and no sections at all, so the commonest case was given a
+ * subdivision it does not have: every register, every result card and every
+ * challan then read "Class 5 / A" for a class with no sections, and the class
+ * and its only section were two rows describing one room.
+ *
+ * The class is the master entity. enrollments.section_id has been nullable
+ * since 0001 and every screen in the product already copes with a class that
+ * has none, so the fix is entirely in what this screen creates.
+ *
+ * WHY IT ASKS FOR ALL THE SECTION NAMES AND NOT JUST THE EXTRA ONES. The
+ * obvious version of "do not force an A" is to treat the class itself as A and
+ * let a school add B and C beside it. That leaves a two-section class as one
+ * unnamed section and one called B, which is worse than the problem: the
+ * register would offer "Class 5" and "Class 5 / B" as if they were different
+ * kinds of thing. A class has either no sections or a complete set of them, and
+ * the answer to Yes is prefilled "A, B" so a school that wants two gets two.
  */
 
 // The usual ladder in Pakistani private schools. Pre-filled, fully editable:
@@ -54,22 +84,33 @@ function defaultSessionDates(): { startsOn: string; endsOn: string } {
 export function SetupWizard({ onDone }: { onDone: () => void }) {
   const { profile } = useAuth()
   const qc = useQueryClient()
-  const [schoolName, setSchoolName] = useState('')
+  // Inherited from signup rather than asked for again. useSchoolName falls back
+  // to the build-time default until the row loads, which is the same value the
+  // rest of the app shows in that moment.
+  const schoolName = useSchoolName()
   const [sessionName, setSessionName] = useState(defaultSessionName())
   const [startsOn, setStartsOn] = useState(defaultSessionDates().startsOn)
   const [endsOn, setEndsOn] = useState(defaultSessionDates().endsOn)
   const [classText, setClassText] = useState(DEFAULT_CLASSES.join('\n'))
-  const [sectionText, setSectionText] = useState('A')
+  // NO by default, because most schools here have one class per year. The
+  // prefill is "A, B" rather than "B", so a Yes produces a complete set of
+  // named sections instead of one unnamed one and one called B.
+  const [wantSections, setWantSections] = useState(false)
+  const [sectionText, setSectionText] = useState('A, B')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const classNames = classText.split('\n').map((s) => s.trim()).filter(Boolean)
-  const sectionNames = sectionText.split(',').map((s) => s.trim()).filter(Boolean)
+  const sectionNames = wantSections
+    ? sectionText.split(',').map((s) => s.trim()).filter(Boolean)
+    : []
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!schoolName.trim()) return setError('Please enter your school name.')
     if (!classNames.length) return setError('Please list at least one class.')
+    if (wantSections && !sectionNames.length) {
+      return setError('Name the sections, or turn them off.')
+    }
     // Checked here as well as in the database, because the database's message
     // has to explain the rule to whoever hits it from anywhere, and this one
     // can just point at the two fields on the screen.
@@ -83,12 +124,18 @@ export function SetupWizard({ onDone }: { onDone: () => void }) {
     setError(null)
     try {
       await setupSchool({
+        // Passed through unchanged, so this screen cannot rename a school by
+        // accident. setupSchool still writes it, which keeps that function's
+        // contract intact for anything else that calls it.
         schoolName,
         sessionName,
         startsOn,
         endsOn,
         classNames,
-        sectionsPerClass: sectionNames.length ? sectionNames : ['A'],
+        // AN EMPTY ARRAY MEANS NO SECTIONS, and setupSchool already treats it
+        // that way: `if (sections.length && made?.length)`. It used to be given
+        // ['A'] whatever the school said, which is the whole defect.
+        sectionsPerClass: sectionNames,
       })
       await qc.invalidateQueries()
       onDone()
@@ -112,11 +159,19 @@ export function SetupWizard({ onDone }: { onDone: () => void }) {
           </p>
 
           <form onSubmit={onSubmit} className="mt-5 space-y-4">
-            <label className="block">
-              <span className="text-sm font-medium text-slate-700">School name</span>
-              <span className="block text-xs text-slate-500">Exactly as it should print on receipts and certificates.</span>
-              <input required value={schoolName} onChange={(e) => setSchoolName(e.target.value)} className={field} />
-            </label>
+            {/* The school's name, shown rather than asked for. It was typed at
+                signup and it prints on every receipt and certificate, so a
+                blank box here was a way to overwrite it without meaning to. */}
+            <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2.5">
+              <span className="block text-xs text-slate-500">Setting up</span>
+              <span className="block truncate text-sm font-medium text-slate-800">
+                {schoolName}
+              </span>
+              <span className="mt-0.5 block text-xs text-slate-500">
+                This is what prints on receipts and certificates. Change it in
+                Settings if it is not exactly right.
+              </span>
+            </div>
 
             <label className="block">
               <span className="text-sm font-medium text-slate-700">Academic session</span>
@@ -156,22 +211,64 @@ export function SetupWizard({ onDone }: { onDone: () => void }) {
               <span className="mt-1 block text-xs text-slate-500">{classNames.length} classes</span>
             </label>
 
-            <label className="block">
-              <span className="text-sm font-medium text-slate-700">Sections in each class</span>
-              <span className="block text-xs text-slate-500">
-                Separated by commas: for example <span className="font-mono">A, B</span>. Just “A” is fine if you
-                have one section per class.
+            <div>
+              <span className="text-sm font-medium text-slate-700">
+                Does a class split into more than one section?
               </span>
-              <input value={sectionText} onChange={(e) => setSectionText(e.target.value)} className={field} />
-            </label>
+              <span className="block text-xs text-slate-500">
+                Most schools have one class per year and answer No. Say Yes only
+                if you really run, for example, Class 5 A and Class 5 B as
+                separate rooms with separate registers.
+              </span>
+              <div className="mt-2 flex gap-2">
+                {[false, true].map((yes) => (
+                  <label
+                    key={String(yes)}
+                    className={`flex-1 cursor-pointer rounded border px-3 py-2 text-center text-sm font-medium ${
+                      wantSections === yes
+                        ? 'border-brand-600 bg-brand-600 text-white'
+                        : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'}`}
+                  >
+                    <input
+                      type="radio" name="wantSections" className="sr-only"
+                      checked={wantSections === yes}
+                      onChange={() => setWantSections(yes)}
+                    />
+                    {yes ? 'Yes' : 'No'}
+                  </label>
+                ))}
+              </div>
+              {wantSections && (
+                <label className="mt-3 block">
+                  <span className="text-sm font-medium text-slate-700">Section names</span>
+                  <span className="block text-xs text-slate-500">
+                    Separated by commas, and name all of them:{' '}
+                    <span className="font-mono">A, B</span>. Every class gets the
+                    same set, and you can change any single class afterwards in
+                    Settings.
+                  </span>
+                  <input value={sectionText} onChange={(e) => setSectionText(e.target.value)} className={field} />
+                </label>
+              )}
+            </div>
 
             {error && <p className="text-sm text-red-600">{error}</p>}
 
             <div className="rounded border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
-              This creates <span className="font-medium">{classNames.length}</span> classes with{' '}
-              <span className="font-medium">{sectionNames.length || 1}</span> section
-              {(sectionNames.length || 1) === 1 ? '' : 's'} each,{' '}
-              <span className="font-medium">{classNames.length * (sectionNames.length || 1)}</span> in total.
+              {sectionNames.length === 0 ? (
+                <>
+                  This creates <span className="font-medium">{classNames.length}</span>{' '}
+                  classes and no sections. The class is the register.
+                </>
+              ) : (
+                <>
+                  This creates <span className="font-medium">{classNames.length}</span> classes with{' '}
+                  <span className="font-medium">{sectionNames.length}</span> section
+                  {sectionNames.length === 1 ? '' : 's'} each,{' '}
+                  <span className="font-medium">{classNames.length * sectionNames.length}</span>{' '}
+                  registers in total.
+                </>
+              )}
             </div>
 
             <button

@@ -59,6 +59,10 @@ Deno.serve(async (req) => {
     const password = String(body.password ?? '')
     const phone = String(body.phone ?? '').trim()
     const city = String(body.city ?? '').trim()
+    // 0132. Validated by the database against the same list fn_signup_regions
+    // hands the form, so there is no second copy of seven province names here
+    // to drift out of step with the check constraint.
+    const region = String(body.region ?? '').trim()
     // THE PLAN AND THE TERM THE SCHOOL PICKED ON THE FORM.
     //
     // Both optional, and both defaulted BY THE DATABASE rather than here.
@@ -108,17 +112,47 @@ Deno.serve(async (req) => {
     // created, on Starter, and can change the plan from Settings afterwards.
     // Without it, redeploying first would break signup outright until the
     // bundle landed.
+    //
+    // THE DEFAULT TERM IS ONE MONTH AND NOT TWELVE, and that changed with the
+    // two-step form. The form no longer sends a plan or a term at all: step one
+    // creates the school and step two writes what the school actually chooses.
+    // Leaving the old `?? 12` here would put every new school on a yearly term
+    // between the two screens, which is the exact defect 0127 was written to
+    // fix ("every school in the console was on Starter paying annually
+    // whatever had actually been agreed"), reintroduced through a default.
+    // One month is the smallest commitment and the honest placeholder for a
+    // choice nobody has made yet.
+    //
+    // THREE ATTEMPTS, NEWEST FIRST, so this file and the database can be
+    // deployed in either order. Eight arguments needs bundle 37; seven needs
+    // bundle 33; the five-argument legacy name has been there since 0025. Each
+    // fallback loses one thing and keeps the school: without 37 the region is
+    // not recorded, without 33 the plan and term are not either, and in both
+    // cases the school exists, the trial is real, and the plan screen fixes it.
     let provisioned: unknown = null
     let provErr: { message?: string } | null = null
+    const missing = (e: { message?: string } | null) =>
+      !!e && /does not exist|could not find|schema cache/i.test(e.message ?? '')
     {
-      const r = await admin.rpc('fn_signup_school_on_plan', {
+      const withPlan = {
         ...base,
         p_plan_code: planCode ?? 'starter',
-        p_term_months: Number.isFinite(termMonths) ? termMonths : 12,
-      })
+        p_term_months: Number.isFinite(termMonths) ? termMonths : 1,
+      }
+      // THE NEWEST NAME, NOT AN EIGHTH ARGUMENT TO THE OLD ONE. 0132 adds the
+      // region under its own name for the reason 0127 gave for adding
+      // fn_signup_school_on_plan beside fn_signup_school: an overload makes
+      // every call ambiguous and takes public signup down.
+      const r = await admin.rpc('fn_signup_school_on_plan_in_region',
+        { ...withPlan, p_region: region || null })
       provisioned = r.data
       provErr = r.error
-      if (provErr && /does not exist|could not find|schema cache/i.test(provErr.message ?? '')) {
+      if (missing(provErr)) {
+        const noRegion = await admin.rpc('fn_signup_school_on_plan', withPlan)
+        provisioned = noRegion.data
+        provErr = noRegion.error
+      }
+      if (missing(provErr)) {
         const legacy = await admin.rpc('fn_signup_school', base)
         provisioned = legacy.data
         provErr = legacy.error

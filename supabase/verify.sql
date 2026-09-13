@@ -420,6 +420,16 @@ select 'the observer role (0059)',
                                            'fn_may_mark_subject',
                                            'fn_checkin_display',
                                            'fn_pending_invites',
+                                           -- fn_preview_discount (0131) works
+                                           -- out what a discount code would take
+                                           -- off a plan. It reads discount_codes
+                                           -- and the price list and NOTHING
+                                           -- belonging to the school, so may_view
+                                           -- has nothing to say about it: the
+                                           -- role check is there to narrow who
+                                           -- can probe for valid codes, not to
+                                           -- gate a read of the school's records.
+                                           'fn_preview_discount',
                                            -- 0074: which support visits the
                                            -- VENDOR made to this school is
                                            -- accountability to whoever signed
@@ -927,6 +937,18 @@ select 'unauthenticated callers can run nothing (0071)',
                 and not exists (
                   select 1 from regexp_matches(p.prosrc, 'public\.(\w+)', 'g') m
                    where m[1] not in ('plans', 'fn__plan_price')))
+              -- THE SECOND EXEMPTION, 0132, and it earns itself the same way.
+              -- fn_signup_regions returns the four provinces and the three
+              -- territories, which the signup form needs before anybody has a
+              -- login and which is not a secret in any sense. It exists so the
+              -- form and the check constraint on schools.region cannot disagree
+              -- about a spelling, which is how a signup is refused at the last
+              -- step of a six-field form. Immutable, and it reads nothing at
+              -- all: the whole body is an array literal.
+              and not (
+                p.proname = 'fn_signup_regions'
+                and p.provolatile = 'i'
+                and p.prosrc !~ 'public\.')
          ) || ' can be called by an unauthenticated request. Re-run bundle 7. '
            || 'If the name above is fn_signup_plans, it no longer meets the '
            || 'terms of its exemption: it must be stable and must read nothing '
@@ -2693,6 +2715,90 @@ select 'academic years with no dates',
               || '. Fill in the first and last day under Settings, Sessions. '
               || 'Until then the software cannot tell when that year ends, and '
               || 'a date typed into it is not checked.'
+       end
+
+union all
+-- 0131. There was no way to sell a school anything but the price list: a
+-- discount lived in one invoice's note, nothing carried it to the next one, and
+-- nobody could answer "which schools are on a discount".
+select 'a discount survives to the next invoice (0131)',
+       case
+         when to_regclass('public.discount_codes') is null
+           or to_regclass('public.subscription_discounts') is null
+           then 'FAIL: there is no way to record a discount, so every deal is a '
+                || 'figure typed into one invoice and the school pays full price '
+                || 'at renewal; apply '
+                || 'supabase/bundles/37_a_discount_and_a_plan_you_can_choose.sql'
+         -- THE ONE THAT GOES WRONG SILENTLY. Every invoice comes out of
+         -- fn_activate_subscription; if a later change rewrites it from an older
+         -- copy the discount stops applying and the invoice still looks normal.
+         when coalesce((select p.prosrc from pg_proc p
+                          join pg_namespace n on n.oid = p.pronamespace
+                         where n.nspname = 'public'
+                           and p.proname = 'fn_activate_subscription'), '')
+              not like '%fn__discount_live%'
+           then 'FAIL: invoices are raised without asking whether the school has '
+                || 'a discount, so every discounted school is being charged full '
+                || 'price and the invoice looks perfectly normal; re-apply '
+                || 'supabase/bundles/37_a_discount_and_a_plan_you_can_choose.sql'
+         when not exists (select 1 from pg_indexes
+                           where schemaname = 'public'
+                             and indexname = 'uq_subscription_discount_live')
+           then 'FAIL: a school could carry two live discounts at once, and which '
+                || 'one applies would depend on row order; re-apply '
+                || 'supabase/bundles/37_a_discount_and_a_plan_you_can_choose.sql'
+         else 'PASS'
+       end
+
+-- WHO IS ON A DISCOUNT was a note row here and had to come out, for the reason
+-- written above the 0127 row: this file is ONE statement, so Postgres resolves
+-- every relation in it at parse time and a `select ... from
+-- public.subscription_discounts` brings the whole file down with
+--
+--     ERROR:  relation "public.subscription_discounts" does not exist
+--
+-- on any school that has not pasted bundle 37 yet. to_regclass inside a case
+-- does not save it: the case decides which branch RUNS, not which names are
+-- resolved. The structural check above uses the catalogue only and is safe at
+-- every bundle level; the roster itself lives in the operator console, which
+-- is where somebody would look for it anyway.
+
+union all
+-- 0132. The signup form promised "you can change the plan or the term any time
+-- from Settings" and no function in the product could write either field.
+select 'a school can choose its own plan (0132)',
+       case
+         when to_regprocedure('public.fn_signup_school_on_plan_in_region'
+                || '(text,text,text,text,text,text,integer,text)') is null
+           then 'FAIL: signup cannot record which province a school is in; apply '
+                || 'supabase/bundles/37_a_discount_and_a_plan_you_can_choose.sql'
+         when to_regprocedure('public.fn_my_choose_plan(text,integer)') is null
+           then 'FAIL: a school that picked the wrong band at signup has to '
+                || 'telephone the vendor, and the signup form promises otherwise; '
+                || 'apply supabase/bundles/37_a_discount_and_a_plan_you_can_choose.sql'
+         when not exists (select 1 from information_schema.columns
+                           where table_schema = 'public' and table_name = 'schools'
+                             and column_name = 'region')
+           then 'FAIL: there is nowhere to record which province a school is in, '
+                || 'so the console cannot group by one; re-apply '
+                || 'supabase/bundles/37_a_discount_and_a_plan_you_can_choose.sql'
+         -- AN OVERLOADED NAME IS A DEAD SIGNUP. A call that matches two
+         -- candidates is refused as "is not unique", and the three names in
+         -- the signup chain each have to be exactly one function. The first
+         -- draft of 0132 added an eighth parameter to the middle one and made
+         -- precisely this happen on any school that re-pasted bundle 33.
+         when exists (select 1 from pg_proc p
+                        join pg_namespace n on n.oid = p.pronamespace
+                       where n.nspname = 'public'
+                         and p.proname in ('fn_signup_school',
+                                           'fn_signup_school_on_plan',
+                                           'fn_signup_school_on_plan_in_region')
+                       group by p.proname having count(*) > 1)
+           then 'FAIL: a function in the signup chain is overloaded, so the '
+                || 'Edge Function''s call is ambiguous and public signup is '
+                || 'down; re-apply '
+                || 'supabase/bundles/37_a_discount_and_a_plan_you_can_choose.sql'
+         else 'PASS'
        end
 
 union all

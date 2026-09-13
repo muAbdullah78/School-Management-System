@@ -334,10 +334,32 @@ end $$;
 -- public unauthenticated path in the product. Dropping and recreating a
 -- function drops its grants with it, so this is asserted rather than assumed.
 -- =============================================================================
+--
+-- STILL SEVEN ARGUMENTS. 0132 added the region under a THIRD name rather than
+-- as an eighth parameter here, because an overload would make this call
+-- ambiguous and an outright replacement would be undone by any school that
+-- re-pastes the frozen bundle 33. Both names are checked below.
 do $$
 declare v_sig text :=
   'public.fn_signup_school_on_plan(text,text,text,text,text,text,integer)';
+  v_sig8 text :=
+  'public.fn_signup_school_on_plan_in_region(text,text,text,text,text,text,integer,text)';
 begin
+  perform pg_temp.ok(
+    not has_function_privilege('authenticated', v_sig8::regprocedure, 'EXECUTE')
+    and not has_function_privilege('anon', v_sig8::regprocedure, 'EXECUTE'),
+    '29 nor through the name that also takes a region (0132)');
+  -- An overloaded name is a dead signup: a call matching two candidates is
+  -- refused as "is not unique". Asserted here because the first draft of 0132
+  -- created exactly that state on any school that re-pasted bundle 33.
+  perform pg_temp.ok(
+    not exists (select 1 from pg_proc p
+                  join pg_namespace n on n.oid = p.pronamespace
+                 where n.nspname = 'public'
+                   and p.proname in ('fn_signup_school', 'fn_signup_school_on_plan',
+                                     'fn_signup_school_on_plan_in_region')
+                 group by p.proname having count(*) > 1),
+    '29b and no name in the signup chain is overloaded');
   perform pg_temp.ok(
     not has_function_privilege('authenticated', v_sig::regprocedure, 'EXECUTE')
     and not has_function_privilege('anon', v_sig::regprocedure, 'EXECUTE'),

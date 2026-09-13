@@ -1,11 +1,12 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { today } from '@/lib/dates'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { myBilling, myPlatformInvoice, reportSubscriptionPayment } from '@/lib/db'
 import type { MyBillingDocument } from '@/lib/db'
 import { InvoiceDoc } from '@/components/InvoiceDoc'
 import { formatPkr } from '@/lib/licence'
-import { termSentence } from '@/lib/plans'
+import { myDiscount, termSentence } from '@/lib/plans'
 import { fmtDate, fmtDateTime } from '@/lib/format'
 import { NextPaymentPanel } from './NextPayment'
 import { RoomForPupils } from './RoomForPupils'
@@ -35,6 +36,13 @@ const FIELD = 'w-full rounded border border-slate-300 px-2 py-1.5 text-sm'
  */
 export function Subscription() {
   const q = useQuery({ queryKey: ['myBilling'], queryFn: myBilling })
+  // Null when the school is on nothing, which is the ordinary case: the panel
+  // below simply does not render that line. A failure is treated the same way
+  // rather than shown as an error, because a discount that cannot be read is
+  // not a reason to break the page that says when the licence expires.
+  const discount = useQuery({
+    queryKey: ['myDiscount'], queryFn: myDiscount, retry: false,
+  })
   const [printing, setPrinting] = useState<string | null>(null)
   const [reporting, setReporting] = useState(false)
 
@@ -110,6 +118,29 @@ export function Subscription() {
             <div className="mt-1 text-sm text-slate-600">
               Paid {termSentence(lic.term_months as number | null | undefined)}
             </div>
+            {/* THE LINK THAT MAKES THE SIGNUP FORM HONEST. Its closing sentence
+                has always read "you can change the plan or the term any time
+                from Settings", and until 0132 no function in the product could
+                write either field: this screen showed the plan and nothing
+                more. The same screen serves the second step of signup, so there
+                is one place a plan is chosen rather than two that can disagree.
+                What it is allowed to change depends on the subscription and is
+                decided by fn_my_choose_plan, not here. */}
+            <Link
+              to="/plan"
+              className="mt-2 inline-flex items-center gap-1 text-sm font-medium text-brand-700 hover:underline"
+            >
+              {status === 'trialing' ? 'Choose your plan' : 'Change plan or payment term'}
+            </Link>
+            {discount.data && (
+              <p className="mt-2 rounded-lg bg-money-50 px-3 py-2 text-sm text-money-800 ring-1 ring-money-100">
+                <span className="font-medium">{discount.data.code}</span>:{' '}
+                {discount.data.summary}.
+                {discount.data.total_saved > 0
+                  ? ` Saved you ${formatPkr(discount.data.total_saved)} so far.`
+                  : ''}
+              </p>
+            )}
             {/* THE ROLL LINE MOVED OUT of this block, into the room panel
                 below. It said "148 students of 150 covered" while the panel an
                 inch further down says how many places are left, whether any of

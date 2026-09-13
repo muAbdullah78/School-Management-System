@@ -174,6 +174,10 @@ def main() -> int:
                                  -- a child's exam result.
                                  'fn_may_mark_subject',
                                  'fn_checkin_display', 'fn_pending_invites',
+                                 -- fn_preview_discount (0131): what a code
+                                 -- takes off a plan. Reads the code list and
+                                 -- the price list, never the school's records.
+                                 'fn_preview_discount',
                                  -- fn_support_visits is the same category again:
                                  -- 0074 shows a school which support visits the
                                  -- VENDOR made to it, and that is accountability

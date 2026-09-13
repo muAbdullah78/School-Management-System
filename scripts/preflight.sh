@@ -250,7 +250,7 @@ SQL
     done
     [ "$ok" = 1 ] && printf '%-52s ok\n' "$mode apply cleanly"
 
-    # ONE NAMED EXEMPTION, and it is excluded here by name only. The SHAPE of
+    # TWO NAMED EXEMPTIONS, and they are excluded here by name only. The SHAPE of
     # the exemption (fn_signup_plans must be stable and must touch nothing in
     # public but the published price list) is asserted by verify.sql's 0071 row
     # and by detect.sql's 0071 signature, both of which run below on this same
@@ -262,7 +262,13 @@ SQL
     # copy of it quotes a figure the first invoice contradicts the moment any
     # rate moves. It exposes nothing new, because `plans` already carries a
     # SELECT policy for anon.
-    n=$(psql -tA -d "$db" -c "select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and has_function_privilege('anon', p.oid,'execute') and p.proname <> 'fn_signup_plans'" 2>/dev/null)
+    #
+    # fn_signup_regions (0132) is the second, and a smaller claim: an immutable
+    # function whose entire body is an array literal of Pakistan's provinces and
+    # territories. It exists so the form and the check constraint on
+    # schools.region cannot disagree about a spelling and refuse a signup at the
+    # last step of a six-field form.
+    n=$(psql -tA -d "$db" -c "select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and has_function_privilege('anon', p.oid,'execute') and p.proname not in ('fn_signup_plans','fn_signup_regions')" 2>/dev/null)
     if [ "${n:-1}" = 0 ]; then printf '%-52s ok\n' "$mode: anon can execute nothing but the price list"
     else printf '%-52s FAIL (%s open)\n' "$mode: anon can execute nothing" "$n"; fails=$((fails + 1)); fi
 

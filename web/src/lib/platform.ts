@@ -1893,3 +1893,137 @@ export async function purgeOrphanData(schoolId: string): Promise<{
   if (error) throw new Error(error.message)
   return data as Awaited<ReturnType<typeof purgeOrphanData>>
 }
+
+/* --------------------------------------------------------------- discounts --
+   0131. The vendor's side of the discount engine.
+
+   Every one of these calls a SECURITY DEFINER function that checks
+   is_platform_admin() itself, so nothing here is a permission boundary: it is a
+   typed client for functions that refuse anybody else. */
+
+export type DiscountKind = 'percent' | 'flat' | 'trial_days'
+export type DiscountDuration = 'once' | 'forever' | 'months' | 'until'
+
+export interface DiscountCode {
+  code: string
+  description: string
+  kind: DiscountKind
+  value: number
+  duration: DiscountDuration
+  duration_months: number | null
+  duration_until: string | null
+  redeem_from: string | null
+  redeem_until: string | null
+  max_redemptions: number | null
+  plan_codes: string[] | null
+  min_term_months: number | null
+  active: boolean
+  created_at: string
+  /** The offer as one sentence, written by the database so both sides agree. */
+  summary: string
+  /** How many schools have ever taken it up. */
+  redeemed: number
+  /** How many of those are still getting something from it. */
+  live: number
+  total_saved: number
+  /** False once anybody has redeemed it: from then on it can only be retired. */
+  deletable: boolean
+}
+
+export interface DiscountUse {
+  school_id: string
+  school_name: string
+  code: string
+  kind: DiscountKind
+  value: number
+  duration: DiscountDuration
+  ends_on: string | null
+  uses_left: number | null
+  times_applied: number
+  total_saved: number
+  trial_days_added: number | null
+  redeemed_at: string
+  removed_at: string | null
+  removed_reason: string | null
+  plan_code: string | null
+  status: string | null
+  /** The four ways it can have stopped, decided by the database. */
+  state: 'active' | 'spent' | 'expired' | 'removed'
+}
+
+export async function listDiscounts(): Promise<DiscountCode[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_discounts')
+  if (error) throw new Error(error.message)
+  return (data ?? []) as DiscountCode[]
+}
+
+export async function listDiscountUsage(code?: string): Promise<DiscountUse[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_discount_usage',
+    { p_code: code ?? null })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as DiscountUse[]
+}
+
+export interface SaveDiscountInput {
+  code: string
+  description: string
+  kind: DiscountKind
+  value: number
+  duration: DiscountDuration
+  durationMonths?: number | null
+  durationUntil?: string | null
+  redeemFrom?: string | null
+  redeemUntil?: string | null
+  maxRedemptions?: number | null
+  planCodes?: string[] | null
+  minTermMonths?: number | null
+  active?: boolean
+}
+
+export async function saveDiscount(input: SaveDiscountInput): Promise<{
+  code: string; created: boolean; summary: string; note: string | null
+}> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_save_discount', {
+    p_code: input.code,
+    p_description: input.description,
+    p_kind: input.kind,
+    p_value: input.value,
+    p_duration: input.duration,
+    p_duration_months: input.durationMonths ?? null,
+    p_duration_until: input.durationUntil ?? null,
+    p_redeem_from: input.redeemFrom ?? null,
+    p_redeem_until: input.redeemUntil ?? null,
+    p_max_redemptions: input.maxRedemptions ?? null,
+    p_plan_codes: input.planCodes ?? null,
+    p_min_term_months: input.minTermMonths ?? null,
+    p_active: input.active ?? true,
+  })
+  if (error) throw new Error(error.message)
+  return data as { code: string; created: boolean; summary: string; note: string | null }
+}
+
+export async function deleteDiscount(code: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_platform_delete_discount', { p_code: code })
+  if (error) throw new Error(error.message)
+}
+
+/** Put a code on a school directly: how a deal agreed on the telephone is recorded. */
+export async function giveDiscount(schoolId: string, code: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_platform_give_discount', {
+    p_school_id: schoolId, p_code: code,
+  })
+  if (error) throw new Error(error.message)
+}
+
+export async function revokeDiscount(schoolId: string, reason: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_platform_remove_discount', {
+    p_school_id: schoolId, p_reason: reason,
+  })
+  if (error) throw new Error(error.message)
+}

@@ -17,6 +17,7 @@ import { FeedbackPage } from '@/pages/FeedbackPage'
 import { PlatformPage } from '@/pages/platform/PlatformPage'
 import { PortalLicenceGate } from '@/components/PortalLicenceGate'
 import { CheckIn } from '@/pages/CheckIn'
+import { ChoosePlan } from '@/pages/ChoosePlan'
 import { Dashboard } from '@/pages/Dashboard'
 import { FeesPage } from '@/pages/fees/FeesPage'
 import { AttendancePage } from '@/pages/attendance/AttendancePage'
@@ -145,6 +146,27 @@ export default function App() {
               element={
                 <ProtectedRoute>
                   <Account />
+                </ProtectedRoute>
+              }
+            />
+            {/* STEP TWO OF SIGNUP, and it sits outside the shell and outside
+                SetupGate on purpose. A school arrives here seconds after its
+                account exists, with no academic session yet, so SetupGate would
+                divert it into the first-run wizard before it had chosen a plan
+                and the two screens would fight over which comes first.
+
+                Outside LicenceGate too: a school whose licence has lapsed is
+                exactly the school that needs to be able to pick a plan, and
+                locking it out of this screen would be the one lock with no key.
+
+                PortalRoute is not needed because a parent has no subscription
+                to change; fn_my_choose_plan refuses anybody who is not the
+                owner or the principal, and the database is the enforcement. */}
+            <Route
+              path="/plan"
+              element={
+                <ProtectedRoute>
+                  <ChoosePlan />
                 </ProtectedRoute>
               }
             />

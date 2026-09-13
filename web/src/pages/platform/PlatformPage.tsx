@@ -17,6 +17,7 @@ import { BillingSettings } from './BillingSettings'
 import { LifecycleDialog } from './Lifecycle'
 import { OffboardDialog } from './Offboard'
 import { NewSchoolDialog } from './NewSchool'
+import { Discounts } from './Discounts'
 import { Business } from './Business'
 import { Publishing } from './Publishing'
 import { LeftBehind } from './LeftBehind'
@@ -28,7 +29,7 @@ import { paymentClaims, dueSoon, platformSettings, orphanReport, unattachedLogin
 const FIELD = 'rounded border border-slate-300 px-2 py-1.5 text-sm'
 
 type Tab = 'schools' | 'renewals' | 'claims' | 'business' | 'publishing' | 'billing'
-  | 'leftbehind' | 'reviews' | 'strandedlogins' | 'roomrequests'
+  | 'leftbehind' | 'reviews' | 'strandedlogins' | 'roomrequests' | 'discounts'
 
 // What each screen is FOR, in one line, because the heading alone does not say.
 // "Renewals" and "Payments reported" are both about money arriving and a person
@@ -38,6 +39,7 @@ const TAB_SUBTITLE: Record<Tab, string> = {
   renewals: 'Licences ending soon, worst first. This is the call list.',
   claims: 'Schools that say they have paid, waiting to be matched to the bank.',
   roomrequests: 'Schools that have filled their plan and cannot admit the next child.',
+  discounts: 'What we are offering off the price list, and which schools are on it.',
   business: 'What the company is worth: revenue, churn and the plan mix.',
   publishing: 'The desktop installer, and notices every school sees.',
   billing: 'Our own NTN and bank details, printed on every invoice we raise.',
@@ -51,6 +53,7 @@ const TAB_TITLE: Record<Tab, string> = {
   renewals: 'Renewals',
   claims: 'Payments reported',
   roomrequests: 'Requests for more room',
+  discounts: 'Discounts',
   business: 'The business',
   publishing: 'Downloads and notices',
   billing: 'Our billing details',
@@ -283,6 +286,11 @@ export function PlatformPage() {
             <TabButton now={tab} me="roomrequests" set={setTab} label="Requests for more room"
               badge={roomCount.data?.length} warn />
           )}
+          {/* Beside "The business" rather than under Schools, because a code is
+              a commercial instrument and not a property of any one school. Not
+              badged with a count: a number here would mean "action needed", and
+              a live discount needs no action. */}
+          <TabButton now={tab} me="discounts" set={setTab} label="Discounts" />
           <TabButton now={tab} me="business" set={setTab} label="The business" />
           <TabButton now={tab} me="publishing" set={setTab} label="Downloads & notices" />
           {/* Deliberately NOT badged with a count. A badge means "there is
@@ -338,6 +346,7 @@ export function PlatformPage() {
             }}
           />
         )}
+        {tab === 'discounts' && <Discounts />}
         {tab === 'business' && <Business />}
         {tab === 'publishing' && <Publishing />}
         {tab === 'billing' && <BillingSettings />}
