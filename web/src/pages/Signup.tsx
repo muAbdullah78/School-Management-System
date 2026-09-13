@@ -59,11 +59,39 @@ export function Signup() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  // Falls back to nothing rather than to a hardcoded list: a second copy of
-  // seven strings is the exact drift this function exists to prevent. With no
-  // list the field is still shown and still optional, and the school is created
-  // with no region, which is what every school created before today has.
+  /* THE REGION LIST, AND WHAT HAPPENS WHEN IT IS NOT THERE.
+   *
+   * The first version of this screen marked the field `required` while its
+   * options came from a network call, and the comment above it claimed the
+   * field stayed optional without a list. The code said otherwise. When
+   * fn_signup_regions could not be reached the select held one option, the
+   * empty placeholder, and `required` refuses that: the browser answers "Please
+   * select an item in the list" and there is no item to select. A DEAD SIGNUP
+   * FORM, on the one screen in the product with no login behind it, reported by
+   * the vendor on his own signup.
+   *
+   * It was not a hypothetical failure either. fn_signup_regions arrives with
+   * bundle 37, and between deploying this app and pasting that bundle every
+   * school saw an empty dropdown it could not get past.
+   *
+   * SO THE RULE IS: required when there is something to choose, and not
+   * rendered at all when there is not. Nothing about a school's own signup may
+   * depend on a read succeeding.
+   *
+   * AND IT IS HIDDEN RATHER THAN SHOWN EMPTY, which is the part worth arguing.
+   * If fn_signup_regions is missing then fn_signup_school_on_plan_in_region is
+   * missing too, because they arrive in the same bundle, and the Edge Function
+   * falls back to the name that has no region parameter. So a region chosen in
+   * that state is discarded on the way past. A field whose answer is thrown
+   * away is worse than a field that is not asked.
+   *
+   * NO HARDCODED FALLBACK LIST, for the same reason. It would offer seven
+   * provinces, let somebody pick one, and drop it. The vendor is told instead,
+   * by verify.sql's 0132 row, which is where a missing bundle belongs.
+   */
   const regions = useQuery({ queryKey: ['signupRegions'], queryFn: listRegions })
+  const regionOptions = regions.data ?? []
+  const askRegion = regions.isLoading || regionOptions.length > 0
 
   const set = (k: keyof typeof form) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -142,21 +170,29 @@ export function Signup() {
             qualifies the city under it, so it reads as the question it is:
             which province, then which town in it. Paired with the city in a
             two-column row it would be a 170px dropdown holding "Islamabad
-            Capital Territory". */}
-        <label className="block">
-          <span className={authLabel}>Region</span>
-          <select
-            required
-            value={form.region}
-            onChange={set('region')}
-            className={authField}
-          >
-            <option value="">Select a province or territory…</option>
-            {(regions.data ?? []).map((r) => (
-              <option key={r} value={r}>{r}</option>
-            ))}
-          </select>
-        </label>
+            Capital Territory".
+
+            Rendered only when there is a list to render. See the note beside
+            the query: required with no options is a form nobody can submit. */}
+        {askRegion && (
+          <label className="block">
+            <span className={authLabel}>Region</span>
+            <select
+              required={regionOptions.length > 0}
+              disabled={regions.isLoading}
+              value={form.region}
+              onChange={set('region')}
+              className={authField}
+            >
+              <option value="">
+                {regions.isLoading ? 'Loading…' : 'Select a province or territory…'}
+              </option>
+              {regionOptions.map((r) => (
+                <option key={r} value={r}>{r}</option>
+              ))}
+            </select>
+          </label>
+        )}
         <div className="grid grid-cols-2 gap-3">
           <label className="block">
             <span className={authLabel}>City</span>

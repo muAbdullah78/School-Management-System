@@ -69,6 +69,17 @@ it('renders step 1, the details', () => {
     [{ node: createElement(Signup), seeds, profile: null, route: '/signup' }])
 })
 
+/* The state the vendor actually hit: the app deployed, bundle 37 not pasted
+   yet, so fn_signup_regions does not answer. The field must be absent rather
+   than present and impossible. Seeded with an empty list because a harness
+   renders once and cannot fail a query. */
+it('renders step 1 with no region list to offer', () => {
+  writePage('../scratch/signup/step1-noregions.html',
+    [{ node: createElement(Signup),
+       seeds: [[['signupRegions'], []], [['signupPlans'], PLANS]],
+       profile: null, route: '/signup' }])
+})
+
 it('renders step 2, the plan and its invoice', () => {
   writePage('../scratch/signup/step2.html',
     [{ node: createElement(ChoosePlan), seeds, profile: OWNER, route: '/plan' }])

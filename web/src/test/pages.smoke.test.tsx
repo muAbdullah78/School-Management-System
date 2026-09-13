@@ -620,6 +620,71 @@ describe('the operator console', () => {
  * at all. The full critique is in web/src/auth/doors.ts; these hold the facts
  * that are checkable in a browser rather than by eye.
  */
+/**
+ * Signup must be submittable whatever fails behind it.
+ *
+ * It is the only screen in the product with no login behind it, so a read that
+ * fails there does not inconvenience somebody who is already a customer: it
+ * turns away somebody who was about to become one, silently, with no way for
+ * them to report it and no way for us to know.
+ *
+ * The Region field shipped `required` while its options came from
+ * fn_signup_regions, which arrives in bundle 37. Between deploying the app and
+ * pasting that bundle, the select held one option (the empty placeholder) and
+ * `required` refuses that: "Please select an item in the list", and no item to
+ * select. Reported by the vendor on his own signup.
+ */
+describe('signup survives a read that fails', () => {
+  afterEach(cleanup)
+
+  async function signup(opts: FakeOptions) {
+    current.opts = opts
+    const { Signup } = await import('@/pages/Signup')
+    return mount(Signup, '/signup', {}, null)
+  }
+
+  it('asks for a region when there is a list of them', async () => {
+    const { container } = await signup({ rpc: { fn_signup_regions: ['Punjab', 'Sindh'] } })
+    const select = container.querySelector('select')
+    expect(select).not.toBeNull()
+    // Every option, plus the placeholder.
+    expect(select!.querySelectorAll('option').length).toBe(3)
+    // Required only BECAUSE there is something to choose. The pairing is the
+    // whole rule and it is asserted as a pair.
+    expect(select!.required).toBe(true)
+  })
+
+  it('does not ask at all when the list cannot be read', async () => {
+    const { container, queryByText } = await signup({ failEverything: FAIL_MARKER })
+    // THE ASSERTION THAT MATTERS. Not "the field is optional": a select with
+    // nothing in it is a question with no answers, and the bundle that would
+    // supply the list is the same bundle that would store the answer, so a
+    // region chosen in this state is discarded on the way past.
+    expect(container.querySelector('select')).toBeNull()
+    expect(queryByText('Region')).toBeNull()
+    // And the rest of the form is still there and still usable.
+    expect(queryByText('School name')).not.toBeNull()
+    expect(queryByText('Next step')).not.toBeNull()
+  })
+
+  it('leaves nothing required that cannot be satisfied', async () => {
+    // The general form of the bug, so a future field added the same way is
+    // caught here rather than by a school that gives up and closes the tab.
+    for (const opts of [{ failEverything: FAIL_MARKER }, { rpc: { fn_signup_regions: [] } }]) {
+      const { container } = await signup(opts as FakeOptions)
+      for (const el of Array.from(container.querySelectorAll('select'))) {
+        const real = Array.from(el.querySelectorAll('option'))
+          .filter((o) => (o as HTMLOptionElement).value !== '')
+        expect(
+          el.required && real.length === 0,
+          'a required select with no selectable option makes the form impossible to submit',
+        ).toBe(false)
+      }
+      cleanup()
+    }
+  })
+})
+
 describe('the sign-in doors', () => {
   afterEach(cleanup)
 
