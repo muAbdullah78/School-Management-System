@@ -487,3 +487,49 @@
     start()
   }
 })()
+
+
+/* --- SaaS Scroll Reveal Animation --- */
+document.addEventListener("DOMContentLoaded", () => {
+  const reveals = document.querySelectorAll(".reveal");
+
+  const revealOptions = {
+    threshold: 0.15, // Triggers when 15% of the element is visible
+    rootMargin: "0px 0px -50px 0px" 
+  };
+
+  const revealOnScroll = new IntersectionObserver(function(entries, observer) {
+    entries.forEach(entry => {
+      if (!entry.isIntersecting) {
+        return;
+      } else {
+        entry.target.classList.add("active");
+        observer.unobserve(entry.target); // Stops observing once revealed
+      }
+    });
+  }, revealOptions);
+
+  reveals.forEach(reveal => {
+    revealOnScroll.observe(reveal);
+  });
+});
+
+
+
+
+/* --- Mobile Menu Scroll Lock --- */
+document.addEventListener("DOMContentLoaded", () => {
+  const navMenu = document.getElementById("navmenu");
+  
+  if (navMenu) {
+    navMenu.addEventListener("toggle", function() {
+      if (this.open) {
+        // Freeze the background website when menu is open
+        document.body.style.overflow = "hidden";
+      } else {
+        // Unfreeze when closed
+        document.body.style.overflow = "";
+      }
+    });
+  }
+});
