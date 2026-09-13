@@ -24,7 +24,8 @@
 #   * the download section exists with the ids wire.js writes into;
 #   * config.js has every key wire.js reads, so a new setting cannot be read
 #     before it is documented;
-#   * NOTHING in site/ contains a Supabase KEY, matched on the shape of a JWT
+#   * NOTHING in site/ contains a Supabase key other than the anon one, judged
+#     by decoding the token rather than by the shape of a JWT
 #     rather than on the word "service_role" — the first version of that check
 #     failed on config.js's own comment saying never to put one there.
 #
@@ -122,24 +123,66 @@ done
 # comment explaining why a function used has_role.
 #
 # A Supabase key is a JWT: three dot-separated base64url segments starting
-# `eyJ`. Looking for that catches BOTH keys, which is what is wanted — the anon
-# key is safe to publish but does not belong in the repository either, because a
-# committed project URL and key is a thing you cannot take back and the
-# deployment is where they belong.
-if grep -rlE 'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}' site/ >/dev/null 2>&1; then
-  echo "  a file in site/ contains what looks like a Supabase key (a JWT)."
-  echo "  Keys belong on the deployment, not in the repository. And if it is the"
-  echo "  service_role key: that one bypasses every row-level rule in the database"
-  echo "  and must never reach a file a browser can download."
-  grep -rlE 'eyJ[A-Za-z0-9_-]{10,}\.' site/ | sed 's/^/    /'
-  fail=1
-fi
-# A filled-in config is fine locally and must not be committed: it is how a real
-# project URL and a real phone number end up in a public git history.
-if grep -qE "^\s*(SUPABASE_URL|SUPABASE_ANON_KEY|APP_URL):\s*'[^']+'" "$CONF"; then
-  echo "  site/config.js has values filled in. Deploy-time settings belong on the"
-  echo "  deployment, not in the repository — leave the defaults empty here."
-  fail=1
+# `eyJ`. This used to refuse ANY of them on shape alone, and its own message
+# admitted it could not tell which key it had found: "And if it is the
+# service_role key". It now decodes the payload and judges by the role inside,
+# which makes it both stricter and quieter.
+#
+# WHY THE ANON KEY IS ALLOWED HERE, AND THIS IS A REVERSAL. The old rule said a
+# committed key "is a thing you cannot take back". True, and it protects nothing
+# in this case: the anon key and the project URL are compiled into web/dist by
+# Vite and served to every browser that opens the app. Refusing the same two
+# values in site/config.js while shipping them in the application bundle is not
+# a security boundary, it is a rule that only bites the person deploying.
+#
+# And it bit. The marketing site has no build step of its own: scripts/build-site.py
+# says in plain words that the deployment is a hand upload of site/ to
+# Cloudflare. "Leave the defaults empty here" therefore meant editing config.js
+# by hand after every build and before every upload, forever, from memory. The
+# first time that is forgotten the live site's buttons read "not yet pointed at
+# the software", which is the exact failure the rest of this file exists to
+# prevent. A rule that has to be remembered on every deploy is a rule that will
+# be broken on some deploy.
+#
+# THE SERVICE_ROLE KEY IS STILL REFUSED, and now refused BY NAME rather than by
+# resemblance. That one bypasses every row-level rule in the database, and a
+# file a browser can download must never contain it.
+found_keys=$(grep -rlE 'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}' site/ 2>/dev/null || true)
+if [ -n "$found_keys" ]; then
+  bad_keys=$(python3 - "$found_keys" <<'PYEOF'
+import base64, json, re, sys
+pat = re.compile(r'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}')
+bad = []
+for path in sys.argv[1].split():
+    try:
+        text = open(path, encoding='utf-8', errors='replace').read()
+    except OSError:
+        continue
+    for tok in pat.findall(text):
+        seg = tok.split('.')[1]
+        # base64url, and the padding is stripped in a JWT.
+        seg += '=' * (-len(seg) % 4)
+        try:
+            claims = json.loads(base64.urlsafe_b64decode(seg).decode('utf-8'))
+        except Exception:
+            # Undecodable means it is not a key we can vouch for, so it is
+            # named. Silence on a token we cannot read is the wrong default.
+            bad.append(f'{path}: a token that could not be decoded')
+            continue
+        role = claims.get('role')
+        if role != 'anon':
+            bad.append(f'{path}: a key with role {role!r}')
+print('\n'.join(bad))
+PYEOF
+)
+  if [ -n "$bad_keys" ]; then
+    echo "  a file in site/ contains a Supabase key that is not the anon key."
+    echo "  The service_role key bypasses every row-level rule in the database and"
+    echo "  must never reach a file a browser can download. Rotate it now if this"
+    echo "  has been committed or deployed."
+    printf '%s\n' "$bad_keys" | sed 's/^/    /'
+    fail=1
+  fi
 fi
 
 if [ "$fail" = 1 ]; then

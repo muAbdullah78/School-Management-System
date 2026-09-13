@@ -25,6 +25,17 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#FFFFFF">
 
+<!-- FAVICON. These are real files at fixed URLs, and that is the whole point.
+     This used to be a single <link rel="icon" href="data:image/svg+xml,...">.
+     A data: URI has no address, and Google fetches the favicon in a separate
+     request from the page, so there was nothing for it to ask for. There was
+     no /favicon.ico either, so Google's fallback route dead-ended too, and a
+     grey globe is what it shows when both fail.
+
+     Do NOT rename these files. Google caches a favicon against its URL, and a
+     new name means a recrawl before the icon changes. Generated from one
+     source by scripts/build-icons.mjs; scripts/check-site-seo.py refuses a
+     build where any of them is missing, is not square, or is a data: URI. -->
 <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
 <link rel="icon" type="image/png" href="/icon-192.png" sizes="192x192">
 <link rel="icon" type="image/svg+xml" href="/icon.svg">
@@ -136,6 +147,34 @@
         <li><a href="/faq">Questions</a></li>
         <li><a href="/guides">Guides</a></li></ul>
     </nav>
+    <!-- THREE AUDIENCES, THREE ENTRY POINTS, in increasing order of prominence
+         left to right, which is also increasing order of what this site is for.
+         A parent sent here by their child's school had none: the only mention
+         of the portal anywhere was a footer link, and the only thing in the
+         header that looked like a way in was "Sign in", which opens the school
+         office door.
+
+         The two sign-in doors sit next to each other and the trial button sits
+         apart, because that is the real division: two of these are for people
+         who already have an account and one is for somebody who has never
+         heard of us. The first arrangement put the plain "Sign in" link
+         between the two buttons, where a 15px text link reads as something
+         nobody meant to leave there.
+
+         Nothing here can send anybody to a dead end. Every door in the app
+         signs anybody in, so a parent who presses Sign in still gets where they
+         need to go: that page now carries a full-width button to theirs. This
+         just means they no longer have to.
+
+         "Parent sign in" and not "Parent portal", because the section nav now
+         carries a "Parents" entry that goes to the PAGE ABOUT the portal. Two
+         controls with one label going to two places is worse than no control,
+         and the label a parent needs is the one that says sign in.
+
+         data-app="portal" points it at the app's own parent door, and
+         site/wire.js rewrites the href to do it. The href here is the no-script
+         fallback, and /parent-portal is a better answer than nothing: the page
+         explains what the portal is and carries its own way in. -->
     <div class="nav__cta">
       <a class="nav__plain" href="/contact" data-app="signin">Sign in</a>
       <a class="btn btn--ghost btn--sm" href="/parent-portal" data-app="portal">Parent sign in</a>
@@ -149,6 +188,23 @@
         </svg>
         Menu
       </summary>
+      <!-- Below 880px the CTA row is display:none, so this panel is the ONLY
+           way in on a phone. Which is the device almost every parent will be
+           holding, so the portal has to be in here or the whole change is
+           desktop-only.
+
+           AND IT HAS TO BE MORE THAN A ROW IN THE LIST. The first version put
+           "Parent sign in" and "Sign in" at the bottom of ten identical rows,
+           in the same 16px black as "Guides" and "Contact": a parent scanning
+           for the way in had nothing to catch their eye, which is the exact
+           complaint that started this change, moved from the header to the
+           menu. They are buttons, below a rule, because they are the only two
+           things in here that are DOORS rather than pages.
+
+           "Start free trial" is deliberately not in this list. Below 880px the
+           sticky bar at the foot of every page carries it, and between 880 and
+           1139 the header CTA row still does, so it is never more than one
+           control away without being repeated three times. -->
       <div class="navmenu__panel">
         <a href="/fee-management">Fees</a>
         <a href="/attendance">Attendance</a>
