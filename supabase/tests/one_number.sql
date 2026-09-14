@@ -606,18 +606,19 @@ end $t$;
 -- 9. Money received says the same thing everywhere too
 --
 -- The other half of the question. A school reads "collected today" on the
--- dashboard, on the counter card, in the till report and in the finance
--- summary, and a difference between any two of them is an accusation against
--- whoever was on the counter.
+-- dashboard, on the counter card and in the finance summary, and a difference
+-- between any two of them is an accusation against whoever was on the counter.
+--
+-- The TILL REPORT was a fourth reader and 0136 removed it. Three surfaces still
+-- answer the same question from three different queries, which is what this
+-- section is for.
 -- =============================================================================
 do $t$
 declare
-  v_dash numeric; v_finance numeric; v_till numeric; v_counter numeric; v_profit numeric;
+  v_dash numeric; v_finance numeric; v_counter numeric; v_profit numeric;
 begin
   v_dash    := (public.fn_dashboard_summary() ->> 'collected_today')::numeric;
   v_finance := (public.fn_finance_summary(current_date, current_date) ->> 'total_income')::numeric;
-  select coalesce(sum(t.all_taken), 0) into v_till
-    from public.fn_till_report(current_date, current_date) t;
   v_counter := (public.fn_counter_summary() ->> 'income_today')::numeric;
   v_profit  := (public.fn_profit_snapshot() -> 'today' ->> 'total_income')::numeric;
 
@@ -629,9 +630,6 @@ begin
   end if;
   if v_profit <> v_dash then
     raise exception 'FAIL: dashboard collected % today, the profit snapshot says %', v_dash, v_profit;
-  end if;
-  if v_till <> v_dash then
-    raise exception 'FAIL: dashboard collected % today, the till report says %', v_dash, v_till;
   end if;
   raise notice '9. collected today is % on every screen — ok', v_dash;
 end $t$;

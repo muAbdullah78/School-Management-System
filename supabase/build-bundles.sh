@@ -760,6 +760,29 @@ emit supabase/bundles/37_a_discount_and_a_plan_you_can_choose.sql \
 emit supabase/bundles/38_the_register_belongs_to_the_teacher.sql \
      supabase/migrations/0133*.sql supabase/migrations/0134*.sql supabase/migrations/0135*.sql
 
+# --- 39 ----------------------------------------------------------------------
+# The cash drawer and the WhatsApp outbox come out.
+#
+# ONE MIGRATION, AND IT IS THE FIRST REMOVAL THIS PROJECT HAS SHIPPED. Twelve
+# functions are reproduced whole first, with their till and outbox lines taken
+# out, and only then is the feature sealed, so there is no window in which a
+# live call reaches something that is already closed.
+#
+# It SEALS rather than drops, and that is not caution. Bundles 4, 7, 8, 24 and
+# 28 are frozen by the MANIFEST below and name the three tables in plain DDL,
+# so a drop makes every one of them refuse to re-apply, and re-applying a
+# bundle is what verify.sql and supabase/repair/detect.sql tell a school to do.
+# The rows go, the policies go, RLS is FORCED so the seal binds the owner too,
+# and every till and outbox function is revoked from anon, authenticated and
+# service_role. Nothing on a screen, nothing in the API, nothing in the data.
+#
+# It must be pasted AFTER bundle 38 and not instead of it: 38 rewrote
+# fn_finalize_attendance, and 39 rewrites it again to take the absence-message
+# hook out. Pasted the other way round, 38 would put the hook back and the
+# function would call something that no longer exists.
+emit supabase/bundles/39_the_cash_drawer_and_the_outbox_come_out.sql \
+     supabase/migrations/0136*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

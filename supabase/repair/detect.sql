@@ -683,15 +683,15 @@ with sig(migration, object, present) as (values
   -- 0088. Two WhatsApp templates a school could switch on that nothing sent.
   -- The signature is the two HOOKS, because the queue functions existing on
   -- their own would leave both messages exactly as decorative as they were.
-  ('0088_wire_the_dead_templates', 'absence and result messages actually get queued',
+  -- 0088 WIRED TWO MESSAGES TO THE THINGS THAT SHOULD SEND THEM, and 0136
+  -- unwired them again when it retired the outbox: fn_finalize_attendance and
+  -- fn_publish_results no longer queue anything. Probing for those calls would
+  -- report every correctly upgraded school as missing 0088. What 0088 also
+  -- created, and what survives, is the uniqueness index that stopped the same
+  -- message being queued twice, so that is the signature now.
+  ('0088_wire_the_dead_templates', 'the outbox cannot hold the same message twice',
      (select exists (select 1 from pg_indexes where schemaname = 'public'
-                      and indexname = 'uq_outbox_ref')
-         and exists (select 1 from pg_proc where proname = 'fn_finalize_attendance'
-                      and pronamespace = 'public'::regnamespace
-                      and prosrc like '%fn_queue_absent_today%')
-         and exists (select 1 from pg_proc where proname = 'fn_publish_results'
-                      and pronamespace = 'public'::regnamespace
-                      and prosrc like '%fn_queue_result_published%'))),
+                      and indexname = 'uq_outbox_ref'))),
   -- 0089. Settings offered a GPA scale that nothing implemented. The signature
   -- is the AVERAGING inside fn_generate_result_cards as well as fn_grade_for
   -- reading the setting: with only the first, every card's overall figure would
@@ -1152,7 +1152,22 @@ with sig(migration, object, present) as (values
                   where polrelid = 'public.assessments'::regclass
                     and polname = 'assessments_insert'
                     and pg_get_expr(polwithcheck, polrelid)
-                        like '%fn_may_set_a_test%'))
+                        like '%fn_may_set_a_test%')),
+  -- 0136 is a REMOVAL, so its signature is an absence. Not the absence of the
+  -- TABLES though: bundles 4, 7, 8, 24 and 28 are frozen and name them, so
+  -- dropping them would make this file's own repair instruction fail. 0136
+  -- seals them instead, and the seal is what is probed. RLS FORCED on
+  -- message_outbox is the cheapest proof there is, because nothing else in
+  -- this schema forces RLS on anything.
+  ('0136_the_cash_drawer_and_the_outbox_come_out',
+     'the cash drawer and the message outbox are sealed',
+     exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+              where n.nspname = 'public' and c.relname = 'message_outbox'
+                and c.relforcerowsecurity)
+     and not exists (select 1 from pg_policies
+                      where schemaname = 'public'
+                        and tablename in ('till_sessions','message_outbox',
+                                          'message_templates')))
 )
 select migration,
        object                                   as looked_for,

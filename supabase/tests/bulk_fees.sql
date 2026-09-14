@@ -238,47 +238,15 @@ begin
       || ', paid ' || r.month_paid || ')');
 end $t$;
 
--- =============================================================================
--- 15-18: reminders
--- =============================================================================
-do $t$
-declare v_res jsonb; v_fam uuid; v_n int; v_keys text;
-begin
-  perform set_config('test.uid', '00000000-0000-0000-0000-000000bf0001', false);
-
-  v_res := public.fn_queue_class_reminders(pg_temp.ctx('session'), pg_temp.ctx('class'), null);
-
-  -- Sibling One is paid up; Sibling Two, Solo and NoPhone still owe. Sibling Two
-  -- shares a family with One, so that family still owes and gets ONE message.
-  perform pg_temp.ok((v_res->>'queued')::int >= 1,
-    '15. reminders were queued (' || (v_res->>'queued') || ' queued, '
-      || (v_res->>'skipped') || ' skipped)');
-
-  -- One message per family, never one per child.
-  select family_id into v_fam from public.students where full_name = 'BF Sibling Two';
-  select count(*) into v_n from public.message_outbox
-   where family_id = v_fam
-     and template_key in ('fee_reminder', 'fee_reminder_final')
-     and created_at >= date_trunc('month', now());
-  perform pg_temp.ok(v_n = 1,
-    '16. a father with two children owing gets ONE message, not two (' || v_n || ')');
-
-  -- A family that is paid up must not be chased.
-  perform pg_temp.ok(
-    (select count(*) from public.message_outbox m
-      join public.students s on s.family_id = m.family_id
-     where s.full_name = 'BF Solo' and m.template_key like 'fee_reminder%') = 1,
-    '17. the part-paying family is still reminded of the remainder');
-
-  -- Escalation: press it twice more and the third one is the final warning.
-  perform public.fn_queue_class_reminders(pg_temp.ctx('session'), pg_temp.ctx('class'), null);
-  perform public.fn_queue_class_reminders(pg_temp.ctx('session'), pg_temp.ctx('class'), null);
-  select string_agg(distinct template_key, ',') into v_keys
-  from public.message_outbox
-  where family_id = v_fam and created_at >= date_trunc('month', now());
-  perform pg_temp.ok(v_keys like '%fee_reminder_final%',
-    '18. the third reminder escalates to the final warning (' || v_keys || ')');
-end $t$;
+-- 15-18 WERE THE REMINDER QUEUE and went with it in 0136. They asserted that a
+-- father with two children owing got ONE message rather than two, and that a
+-- third press escalated to a final warning. Both were properties of
+-- message_outbox, which is now emptied and sealed: the outbox queued rows a
+-- person then sent by hand one at a time, so its state was only ever as true
+-- as their diligence in coming back to tick them off.
+--
+-- Nothing else in this file changed. Everything from 19 down is about the bulk
+-- COUNTER, which is untouched.
 
 -- =============================================================================
 -- 19-23: the guards
@@ -331,8 +299,7 @@ begin
 
   perform pg_temp.ok((select count(*) from information_schema.routine_privileges
                        where routine_schema = 'public'
-                         and routine_name in ('fn_class_dues','fn_record_bulk_payments',
-                                              'fn_queue_class_reminders')
+                         and routine_name in ('fn_class_dues','fn_record_bulk_payments')
                          and grantee = 'anon') = 0,
     '23. none of the bulk functions are reachable by anon');
 end $t$;

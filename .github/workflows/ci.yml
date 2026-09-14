@@ -1123,12 +1123,6 @@ jobs:
         # is_staff() — RLS policies OR together, so a leftover policy under an
         # old name silently re-opens a table.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/portal.sql
-      - name: Message outbox — receipts queued with the POST-payment balance
-        # The receipt trigger is DEFERRED on purpose: a plain AFTER INSERT fires
-        # before allocation and would quote every parent the balance they had
-        # BEFORE paying. Also asserts reversals and pending challans queue
-        # nothing, and that a family with no phone never blocks a payment.
-        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/outbox.sql
       - name: Fee operations — effective dating, the annual raise, vouchers
         # A raise dated 1 April must not change March. Preview writes nothing
         # and commits exactly what it showed. Every challan carries a unique
@@ -1509,6 +1503,22 @@ jobs:
         # owner can still mark, which 0134 argues for at length and which this
         # records so the decision is visible if it is ever reversed.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/who_marks_the_register.sql
+
+      - name: What survives removing the cash drawer and the WhatsApp outbox
+        # 0136 is the first migration here that is mostly a removal, and a
+        # removal is tested differently: what matters is not that the thing is
+        # gone but that nothing else went with it.
+        #
+        # It asserts a SEAL rather than an absence, and that is the decision in
+        # the migration. Bundles 4, 7, 8, 24 and 28 are frozen and name the
+        # three tables in plain DDL, so dropping them makes every one of those
+        # files refuse to re-apply, and re-applying a bundle is what verify.sql,
+        # detect.sql and the upgrade job below all tell a school to do. The
+        # first draft did drop them and this job is where that was caught. So
+        # the rows go, the policies go, RLS is FORCED so the seal binds the
+        # owner too, and every till and outbox function is revoked from anon,
+        # authenticated and service_role.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/removed_features.sql
 
       - name: Remarks and position holders — do ties and remarks survive?
         # Assertion 12 is why exam_remarks is its own table rather than a column
@@ -2199,22 +2209,6 @@ jobs:
         # visit, which is the assertion that keeps the vendor out.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/the_school_keeps_the_keys.sql
 
-      - name: The cash drawer never accuses the clerk
-        # One ordinary morning, seeded and run: open with a Rs 1,000 float, take
-        # Rs 3,000 cash, reverse it when the cheque bounces and hand the money
-        # back, take a Rs 2,000 admission fee in cash. The till expected
-        # Rs 4,000 and the drawer held Rs 3,000, so the clerk could not close
-        # without explaining a shortfall they had not caused, and the variance
-        # went on their record for an owner to sign off.
-        #
-        # 0031 attached cash to the collector's drawer by adding one line to the
-        # two payment entry points. fn_reverse_payment takes money OUT and
-        # fn_admit_student's admission fee, hardcoded 'cash', puts money IN, and
-        # neither got that line. The two partly cancelled, which is worse than
-        # either alone: a Rs 3,000 shortfall and a Rs 2,000 surplus presented as
-        # a Rs 1,000 mystery.
-        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/till_and_the_clerk.sql
-
       - name: Live student count — does a school outgrowing its plan get noticed?
         # It did not. subscriptions.student_count is a stored number driving the
         # console's count, limit_state, over_limit_flagged_at, suggested_plan and
@@ -2408,20 +2402,6 @@ jobs:
         # audited, owner-only action — and a cancelled challan must not print.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/write_boundary.sql
 
-      - name: The two WhatsApp messages nothing used to send (0088)
-        # absent_today and result_published were seeded into every school, listed
-        # in Settings -> Messages with their merge tags and an Enabled toggle, and
-        # queued by NOTHING — the function that DEFINES them was the only function
-        # in the database that mentioned either. A school would write the wording,
-        # switch it on, and no parent would ever receive one.
-        #
-        # The two assertions worth keeping are the ones the obvious wiring gets
-        # wrong: {children} is filled with the WHOLE FAMILY by fn_queue_message,
-        # so a family of four would be told "Ali, Fatima, Hassan and Zainab was
-        # marked absent today"; and {date} is today, so a register finalised on
-        # Monday for Friday would name the wrong day.
-        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/queued_messages.sql
-
       - name: The grade scale a school chooses is the one it gets (0089)
         # Settings offered "GPA (10-point)" and fn_grade_for never read
         # school_settings.grade_scale at all, so every card kept printing letters
@@ -2516,15 +2496,6 @@ jobs:
             exit 1
           fi
           echo "all $(ls supabase/tests/*.sql | wc -l) suites are run by a step above"
-
-      - name: Message settings — does switching a message off actually stop it?
-        # message_templates has carried an `enabled` flag since 0034 that
-        # nothing in the app could set. A toggle that only greys out a checkbox
-        # while parents keep receiving the message is worse than no toggle, so
-        # this asserts a disabled template writes NO outbox row — including
-        # through the bulk "WhatsApp everyone who owes" path, which loops and
-        # swallows per-family errors.
-        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/message_settings.sql
 
       - name: Dashboard — is every figure this school's own?
         # fn_dashboard_summary is SECURITY DEFINER, so RLS does not apply to it,

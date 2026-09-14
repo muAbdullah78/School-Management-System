@@ -43,7 +43,6 @@ const AREA: Record<string, string> = {
   expenses: 'Expenses',
   expense_categories: 'Expense categories',
   other_income: 'Other income',
-  till_sessions: 'Cash drawer',
   admission_enquiries: 'Enquiries',
   enquiry_contacts: 'Enquiry follow-ups',
   certificates: 'Certificates',
@@ -76,8 +75,6 @@ const PAIRS: Record<string, string> = {
   'DELETE student_links': 'Parent login removed',
   'INSERT teacher_assignments': 'Class teacher assigned',
   'DELETE teacher_assignments': 'Class teacher unassigned',
-  'INSERT till_sessions': 'Cash drawer opened',
-  'UPDATE till_sessions': 'Cash drawer counted',
 }
 
 const VERB: Record<string, string> = {

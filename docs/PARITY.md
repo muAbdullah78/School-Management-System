@@ -171,7 +171,7 @@ Their busiest screen, and the one ours gets most wrong. Theirs opens with:
 | Generate Fee **Decrement** | `missing` | We only ever built increment. |
 | **Bulk Fee Payment** | `have` | `fees/BulkCollect.tsx`. A bad batch is all-or-nothing — asserted in `supabase/tests/bulk_fees.sql`. |
 | Discounted Students | `partial` | We have a discount register. |
-| Accounts Settlement | `partial` | Our till covers the per-collector half. |
+| Accounts Settlement | `missing` | We had a cash drawer and 0136 removed it: for a school whose whole office is one person, the count at the end of the day IS the list of receipts. What is left is gapless receipt numbers and one figure for "collected today" on every screen. |
 | **Print Fee Vouchers** | `have` | `fees/ChallanPrint.tsx` — the 3-part bank-payable format, one per child or a batch per class, with a voucher code the counter can scan back. |
 
 ## 7. Expense Management
@@ -215,31 +215,36 @@ them into one, and that is probably wrong.
 | **Position Holders** | `have` (0049) | Top N per class, ties preserved as on the card (two firsts means no second), withheld results flagged before an announcement. |
 | **Print Admit Cards / Slips** | `have` | `AdmitCards.tsx`, reached from Exam Setup. Corrected as above. |
 | Print Marksheets | `have` | `exams/ResultsTab.tsx` prints them and holds the release gate: Publish and Withdraw are both there. Generating is not releasing — parents see nothing until somebody presses publish, because a mark a parent saw and then saw change turns every correction into an accusation. |
-| Send Marks / Marksheets to parents | `have` (0088) | WhatsApp, queued by **publishing**, not by generating — one message per child per term, ever. A **withheld** result is never announced, because the portal shows those families "Result withheld until outstanding fees are cleared" and telling them to go and look would be false for exactly the families most likely to. |
+| Send Marks / Marksheets to parents | `missing` | 0088 queued one per child on publish and 0136 removed the queue. Parents with a portal login see a released result immediately; there is a click-to-chat button on the child's profile for telling a family that has no login. |
 | Test / Exam Reports | `missing` | |
 
-## 10. Notifications — their SMS, our WhatsApp
+## 10. Notifications: their SMS, our click-to-chat
 
-Their **Automation Settings** pattern is worth copying exactly: every event has
-an editable template with `$merge_tags`, a **supported-tags** hint under the
-box, and an **Enabled** toggle so a school can silence any one of them.
+**REMOVED IN 0136, DELIBERATELY.** We built their Automation Settings pattern:
+editable templates with merge tags, an Enabled toggle, "Restore original", a
+live preview. Then we read the flow honestly and it was a to-do list. Finalising
+a register wrote rows into a queue, a screen listed them, and a person pressed a
+click-to-chat link one at a time and then pressed "mark as sent". The queue was
+bookkeeping about work a human still had to do by hand, and its state was only
+as true as their diligence in coming back to tick it off.
 
-**Built** — Settings → Messages (0043). Editable body, clickable merge tags
-drawn from the actual call sites rather than a guess, an Enabled toggle that
-genuinely blocks the message, "Restore original", and a live preview with sample
-values, which theirs does not have.
+What is left is the useful half: a **click-to-chat button** wherever a school
+would want to contact a parent (the defaulters list, a child's profile, the
+staff list, Birthdays). It opens WhatsApp with the message typed, stores
+nothing, and costs nothing. Their product sends real SMS through a paid
+gateway, which is a different thing we have not built.
 
 Their events, mapped to ours (excluded ones dropped):
 
 | Their template | Ours |
 |---|---|
 | Admission SMS | `missing` |
-| Inquiry Add / Inquiry Admit | `have` (0046) — WhatsApp, with the same triggers |
-| Exam Marks / Final Exam Marks | `have` (0088) — `result_published`, queued on publish |
-| First / Second / Third Fee Reminder | `partial` — **two** templates, escalating, sent from Bulk collect (0040). Theirs has three, and the note at the foot of this section says the third is the one to keep |
-| Absent SMS | `have` (0088) — `absent_today`, queued when the register is finalised |
+| Inquiry Add / Inquiry Admit | `missing` — the enquiry is recorded; nothing is sent |
+| Exam Marks / Final Exam Marks | `missing` (was 0088, removed in 0136) |
+| First / Second / Third Fee Reminder | `missing` — the defaulters list has a click-to-chat button per family instead |
+| Absent SMS | `missing` (was 0088, removed in 0136) |
 | Transfer Student | `missing` (needs campuses) |
-| Fee Payment / Direct Student Payment | `have` — receipt on payment |
+| Fee Payment / Direct Student Payment | `missing` — the receipt prints and can be handed over or photographed |
 | Leave Approval / Leave Reject | `missing` (needs a leave flow) |
 | Student / Staff Birthday Wish | `have` (0050) — click-to-chat from the Birthdays screen |
 | Parent Account Approve / Reject | `missing` |
@@ -1230,7 +1235,7 @@ Generate Fee Increment | file:web/src/pages/settings/FeeIncrement.tsx | sql:fn_f
 Generate Fee Decrement | nosql:fn_fee_decrement | noapp:FeeDecrement
 Bulk Fee Payment | file:web/src/pages/fees/BulkCollect.tsx | sql:fn_record_bulk_payments | app:recordBulkPayments
 Discounted Students | file:web/src/pages/fees/Discounts.tsx | sql:fn_add_discount | noapp:DiscountedStudentsRoster | why:a discount register, not a roster filtered to discounted pupils
-Accounts Settlement | file:web/src/pages/till/TillPage.tsx | sql:fn_close_till | noapp:AccountsSettlement | why:the per-collector half only; no whole-school settlement screen
+Accounts Settlement | nofile:web/src/pages/till/TillPage.tsx | noapp:fn_close_till | why:0136 retired the cash drawer. NOT nosql:, because migration 0031 created fn_close_till, 0031 is frozen inside bundle 1, and 0136 does not drop the function: it revokes it from anon, authenticated and service_role, so the name is in the schema for ever and nothing can call it
 Print Fee Vouchers | file:web/src/pages/fees/ChallanPrint.tsx | sql:fn_challan | app:getChallan
 Add / Manage Expense | file:web/src/pages/accounts/AccountsPage.tsx | sql:fn_record_expense | app:recordExpense
 Expense Categories | sql:expense_categories | app:expense_categories
@@ -1255,15 +1260,15 @@ Tabulation Sheet | file:web/src/pages/exams/TabulationSheet.tsx | app:Tabulation
 Position Holders | sql:fn_position_holders | app:getPositionHolders
 Print Admit Cards / Slips | file:web/src/pages/exams/AdmitCards.tsx | app:AdmitCards
 Print Marksheets | file:web/src/pages/exams/ResultCardPrint.tsx | sql:fn_publish_results | app:publishResults
-Send Marks / Marksheets to parents | sql:fn_queue_result_published | sql:result_published | app:result_published:
+Send Marks / Marksheets to parents | noapp:fn_queue_result_published | noapp:result_published: | why:0136 removed the outbox; a released result is visible in the portal and a click-to-chat button tells a family without a login
 Test / Exam Reports | nosql:fn_exam_report | noapp:ExamReports
 Admission SMS | nosql:admission_confirmed | noapp:admission_confirmed
-Inquiry Add / Inquiry Admit | sql:enquiry_received | sql:fn_queue_enquiry_message | app:listEnquiries
-Exam Marks / Final Exam Marks | sql:result_published | sql:fn_queue_result_published | app:result_published:
-First / Second / Third Fee Reminder | sql:fee_reminder_final | app:fee_reminder: | nosql:fee_reminder_third | why:two escalating templates, not their three
-Absent SMS | sql:absent_today | sql:fn_queue_absent_today | app:absent_today:
+Inquiry Add / Inquiry Admit | noapp:fn_queue_enquiry_message | noapp:enquiry_received | why:0136 removed the outbox; the enquiry is still recorded and still followed up
+Exam Marks / Final Exam Marks | noapp:result_published: | noapp:fn_queue_result_published | why:as above, 0136
+First / Second / Third Fee Reminder | noapp:fee_reminder_final | noapp:fee_reminder: | why:0136 removed the queue; the defaulters list has a click-to-chat button per family
+Absent SMS | noapp:absent_today: | noapp:fn_queue_absent_today | why:0136 removed the queue that finalising wrote into
 Transfer Student | nosql:transfer_student | noapp:transfer_student
-Fee Payment / Direct Student Payment | sql:payment_received | sql:fn__queue_payment_receipt | app:payment_received:
+Fee Payment / Direct Student Payment | noapp:payment_received: | noapp:fn__queue_payment_receipt | why:0136 removed the receipt queue; the receipt still prints
 Leave Approval / Leave Reject | nosql:leave_approved | noapp:leave_approved
 Student / Staff Birthday Wish | sql:fn_birthdays | app:waLink
 Parent Account Approve / Reject | nosql:parent_account_approved | noapp:parent_account_approved

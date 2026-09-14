@@ -11,7 +11,6 @@ import { ImportData } from './settings/ImportData'
 import { Rollover } from './settings/Rollover'
 import { AuditLog } from './settings/AuditLog'
 import { StaffCheckin } from './settings/StaffCheckin'
-import { MessageSettings } from './settings/MessageSettings'
 import { SupportVisits } from './settings/SupportVisits'
 import { Subscription } from './settings/Subscription'
 
@@ -32,7 +31,6 @@ const SECTIONS = [
   { key: 'checkin', label: 'Staff Check-in' },
   { key: 'import', label: 'Import' },
   { key: 'rollover', label: 'Year Rollover' },
-  { key: 'messages', label: 'Messages' },
   { key: 'users', label: 'Users & Roles' },
   // The school's own bill from us. Its own tab rather than a line on School
   // Profile, because it is the answer to four questions a school currently has
@@ -76,7 +74,6 @@ export function SettingsPage() {
         {section === 'rollover' && <Rollover />}
         {section === 'audit' && <AuditLog />}
         {section === 'support' && <SupportVisits />}
-        {section === 'messages' && <MessageSettings />}
         {section === 'users' && <Users />}
         {section === 'subscription' && <Subscription />}
         {section === 'backup' && <Backup />}

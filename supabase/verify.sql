@@ -1324,37 +1324,17 @@ select 'a mis-raised challan can be cancelled, and then will not print (0087)',
            then 'FAIL: nothing shows what was cancelled and why; re-run bundle 7'
          else 'PASS' end
 
-union all
--- 0088. Two WhatsApp messages a school could switch on that nothing would send.
+-- 0088 CHECKED THAT EVERY WHATSAPP TEMPLATE A SCHOOL COULD SWITCH ON HAD
+-- SOMETHING THAT SENT IT. 0136 retired the outbox: there is no Messages screen
+-- to switch a template on, message_templates is emptied and sealed, and
+-- fn__default_message_templates offers nothing. The sweep still runs green
+-- because it has nothing to walk, and a green row saying "every WhatsApp
+-- template has something that sends it" in a product with no WhatsApp module
+-- is noise a school has to decide how to read. It is deleted rather than left
+-- to pass vacuously.
 --
--- Written as a SWEEP over the template list rather than as two named checks, so
--- a sixth template added later with no caller shows up here too.
-select 'every WhatsApp template a school can switch on has something that sends it (0088)',
-       case
-         when not exists (select 1 from pg_proc
-                           where proname = 'fn__default_message_templates'
-                             and pronamespace = 'public'::regnamespace)
-           then 'n/a: 0043 not applied yet'
-         when (select string_agg(d.template_key, ', ')
-                 from public.fn__default_message_templates() d
-                where not exists (
-                        select 1 from pg_proc p
-                        join pg_namespace n on n.oid = p.pronamespace
-                        where n.nspname = 'public'
-                          and p.proname <> 'fn__default_message_templates'
-                          and p.prosrc like '%' || d.template_key || '%')) is not null
-           then 'FAIL: these are seeded, editable and switchable and NOTHING queues '
-                || 'them: '
-                || (select string_agg(d.template_key, ', ')
-                      from public.fn__default_message_templates() d
-                     where not exists (
-                             select 1 from pg_proc p
-                             join pg_namespace n on n.oid = p.pronamespace
-                             where n.nspname = 'public'
-                               and p.proname <> 'fn__default_message_templates'
-                               and p.prosrc like '%' || d.template_key || '%'))
-                || '. Re-run bundle 7.'
-         else 'PASS' end
+-- What 0088 was really protecting is now asserted by the 0136 row below, which
+-- requires that list to be empty, and by supabase/tests/removed_features.sql.
 
 union all
 -- 0089. Settings offered a GPA scale that nothing implemented.
@@ -1690,29 +1670,15 @@ select 'a payload key that is not read is refused (0101)',
          else 'PASS'
        end
 
-union all
--- 0102. Two functions moved cash without telling the till, so an honest clerk
--- who reversed a receipt and took an admission fee was Rs 1,000 short of a
--- drawer they had counted correctly.
-select 'every payment says which drawer it came from (0102)',
-       case
-         when to_regprocedure('public.fn__reversal_till(uuid,payment_method)') is null
-           then 'FAIL - apply supabase/bundles/12_one_number.sql'
-         when exists (
-           select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-           where n.nspname = 'public'
-             and p.prosrc like '%insert into public.payments%'
-             and p.prosrc not like '%till_session_id%')
-           then 'FAIL - '
-                || (select string_agg(p.proname, ', ' order by p.proname)
-                      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-                     where n.nspname = 'public'
-                       and p.prosrc like '%insert into public.payments%'
-                       and p.prosrc not like '%till_session_id%')
-                || ' still write cash without a drawer; '
-                || 'apply supabase/bundles/12_one_number.sql'
-         else 'PASS'
-       end
+-- 0102 ASSERTED THAT EVERY PAYMENT SAID WHICH DRAWER IT CAME FROM. 0136
+-- retired the cash drawer, so no payment names one any more: fn_record_payment
+-- and its siblings stopped writing payments.till_session_id and the column is
+-- blanked. This row would now FAIL on a correctly upgraded school and name the
+-- very functions 0136 fixed, which is the worst kind of check.
+--
+-- The defect 0102 fixed is gone with the feature rather than left unfixed: a
+-- reversal and an admission fee no longer need to tell a drawer anything,
+-- because there is no drawer that can end the day short.
 
 union all
 -- 0103. A refundable deposit is the family's money. It was on the office's
@@ -2919,6 +2885,67 @@ select 'a test is set and marked by the teacher (0135)',
          when to_regprocedure('public.fn_tests_overview(uuid,date,date)') is null
            then 'FAIL: the head cannot see which tests are marked; re-apply '
                 || 'supabase/bundles/38_the_register_belongs_to_the_teacher.sql'
+         else 'PASS'
+       end
+
+union all
+-- 0136. The cash drawer and the WhatsApp outbox come out.
+--
+-- THE SIGNATURE OF A REMOVAL IS AN ABSENCE, which is the one shape this file
+-- had not carried before. Every other row asks whether something arrived, and
+-- this one asks whether something left, which is exactly as checkable.
+--
+-- It asks about the SEAL rather than about the tables, and that is not the
+-- weaker question. The three tables cannot be dropped: bundles 4, 7, 8, 24 and
+-- 28 are frozen and name them in plain DDL, so a drop makes every one of those
+-- files refuse to re-apply, and re-applying a bundle is what this very report
+-- tells a school to do. 0136 empties them instead, drops every policy, forces
+-- RLS so the seal binds the table owner too, and revokes every till and outbox
+-- function from anon, authenticated and service_role. A request cannot reach
+-- any of it. That is what is checked here, one condition per way in.
+--
+-- It matters because the removal is not only a matter of screens. Until 0136
+-- ran, fn_record_payment wrote payments.till_session_id and finalising a
+-- register wrote rows into a queue nothing sent. A database with the new app
+-- and the old schema has a fee counter writing to a column the app no longer
+-- knows about.
+select 'the cash drawer and the message outbox are sealed (0136)',
+       case
+         when exists (select 1 from pg_proc p
+                        join pg_namespace n on n.oid = p.pronamespace
+                       where n.nspname = 'public'
+                         and (p.proname ~ 'till' or p.proname like 'fn%message%'
+                              or p.proname like 'fn_queue%'
+                              or p.proname in ('fn_unsent_receipts','fn_skip_message'))
+                         and p.proname <> 'fn_platform_renewal_message'
+                         and (has_function_privilege('authenticated', p.oid, 'execute')
+                              or has_function_privilege('anon', p.oid, 'execute')))
+           then 'FAIL: a till or WhatsApp function can still be called from a '
+                || 'browser; apply supabase/bundles/'
+                || '39_the_cash_drawer_and_the_outbox_come_out.sql'
+         when exists (select 1 from pg_policies
+                       where schemaname = 'public'
+                         and tablename in ('till_sessions','message_outbox',
+                                           'message_templates'))
+           then 'FAIL: the retired till and outbox tables are still readable; '
+                || 'apply supabase/bundles/'
+                || '39_the_cash_drawer_and_the_outbox_come_out.sql'
+         when exists (select 1 from pg_class c
+                        join pg_namespace n on n.oid = c.relnamespace
+                       where n.nspname = 'public'
+                         and c.relname in ('till_sessions','message_outbox',
+                                           'message_templates')
+                         and not c.relforcerowsecurity)
+           then 'FAIL: a retired table is not sealed against its own owner; '
+                || 'apply supabase/bundles/'
+                || '39_the_cash_drawer_and_the_outbox_come_out.sql'
+         when exists (select 1 from public.payments where till_session_id is not null)
+           then 'FAIL: a payment still names a cash drawer; re-apply '
+                || 'supabase/bundles/39_the_cash_drawer_and_the_outbox_come_out.sql'
+         when exists (select 1 from public.fn__default_message_templates())
+           then 'FAIL: a school is still offered a template nothing can send; '
+                || 're-apply supabase/bundles/'
+                || '39_the_cash_drawer_and_the_outbox_come_out.sql'
          else 'PASS'
        end
 

@@ -129,8 +129,12 @@ begin
     '1  the first enquiry is number 1, per school');
   perform pg_temp.ok((r->>'possible_duplicate') is null,
     '2  a first enquiry is not flagged as a duplicate of itself');
-  perform pg_temp.ok((r->>'message_queued')::boolean,
-    '3  the acknowledgement message is queued on recording');
+  -- 3 WAS 'the acknowledgement message is queued on recording'. 0136 removed
+  -- the outbox, so fn_add_enquiry no longer returns message_queued. A key that
+  -- is always false is worse than an absent one, so it is absent, and this
+  -- asserts that rather than leaving a hole where an assertion used to be.
+  perform pg_temp.ok(not (r ? 'message_queued'),
+    '3  and says nothing about a message, because there is no queue to put one in');
 end $$;
 
 -- Only two fields are required. Anything more and a clerk on the phone stops
@@ -292,8 +296,8 @@ begin
   perform pg_temp.ok(
     (select follow_up_on from public.admission_enquiries where id = v_e) is null,
     '24 an admitted enquiry stops asking to be followed up');
-  perform pg_temp.ok((r->>'message_queued')::boolean,
-    '25 the admission confirmation is queued');
+  perform pg_temp.ok(not (r ? 'message_queued'),
+    '25 and says nothing about a message: 0136 removed the outbox');
 end $$;
 
 -- THE load-bearing guard. A double-click here burns a GR number and leaves a
@@ -489,54 +493,17 @@ begin
     '51 a source with nothing decided has a null rate, not a fake 0%');
 end $$;
 
--- =============================================================================
--- 7. The WhatsApp toggle must genuinely block
--- =============================================================================
-do $$
-declare v_before int; v_after int; r jsonb;
-begin
-  update public.message_templates set enabled = false
-   where school_id = public.current_school_id() and template_key = 'enquiry_received';
-
-  select count(*) into v_before from public.message_outbox
-   where school_id = public.current_school_id();
-  r := pg_temp.add(jsonb_build_object('child_name','Silent Kid','phone','03007777777'));
-  select count(*) into v_after from public.message_outbox
-   where school_id = public.current_school_id();
-
-  perform pg_temp.ok(v_after = v_before,
-    '52 a disabled template writes NO outbox row — the toggle is not decorative');
-  perform pg_temp.ok(not (r->>'message_queued')::boolean,
-    '53 ...and the caller is told no message went out');
-  perform pg_temp.ok((r->>'enquiry_id') is not null,
-    '54 ...while the enquiry itself is still recorded');
-
-  update public.message_templates set enabled = true
-   where school_id = public.current_school_id() and template_key = 'enquiry_received';
-end $$;
-
--- WhatsApp number wins over the landline, same as everywhere else.
+-- SECTION 7 WAS THE WHATSAPP TOGGLE and went with the outbox in 0136.
 --
--- Looked up by enquiry_id, NOT by "the most recent outbox row": now() is
--- transaction-stable in Postgres, so every row this suite creates shares one
--- created_at and "most recent" is an arbitrary tie-break. That is also the
--- reason message_outbox.enquiry_id exists — without it a queued enquiry message
--- could not be traced back to its enquiry from the WhatsApp queue either.
-do $$
-declare r jsonb; v_to text; v_eid uuid;
-begin
-  r := pg_temp.add(jsonb_build_object('child_name','Wa Kid','phone','0511234567',
-                                      'whatsapp','03008888888'));
-  v_eid := (r->>'enquiry_id')::uuid;
-  select to_phone into v_to from public.message_outbox
-   where school_id = public.current_school_id() and enquiry_id = v_eid;
-  perform pg_temp.ok(v_to = '03008888888',
-    '55 the WhatsApp number is preferred over the landline');
-  perform pg_temp.ok(
-    (select count(*) from public.message_outbox
-      where school_id = public.current_school_id() and enquiry_id = v_eid) = 1,
-    '55b a queued enquiry message points back at its enquiry');
-end $$;
+-- It asserted that turning a message template off wrote no outbox row, and that
+-- the enquiry itself was still recorded. Only the second half was ever about
+-- enquiries, and it is still covered: assertion 54's property, that a failure
+-- anywhere in the messaging path never costs the school the enquiry, is now
+-- structural rather than tested, because there is no messaging path to fail.
+--
+-- The assertions about preferring a WhatsApp number over a landline went too.
+-- They were about which number the QUEUE addressed a row to. The number itself
+-- is still recorded on the enquiry, and the click-to-chat button still uses it.
 
 -- =============================================================================
 -- 8. Tenant isolation
@@ -684,18 +651,30 @@ begin
     '66d ...and the admitted enquiry was not quietly reopened');
 end $$;
 
--- The internal message helper must not be callable by a logged-in user.
+-- 67. fn_queue_enquiry_message stays revoked, and 0136 widened what that means.
+--
+-- The function is still in the catalogue and it is meant to be: bundle 7 is
+-- frozen and its 0088 sweep reads the outbox helpers, so 0136 could not drop
+-- them without making that bundle refuse to re-apply. What 0136 did instead is
+-- close every one of them to anon, authenticated AND service_role, so this
+-- assertion widened with it rather than being deleted.
 do $$
+declare v_open text;
 begin
-  begin
-    set local role authenticated;
-    perform public.fn_queue_enquiry_message('enquiry_received', pg_temp.eid(3));
-    reset role;
-    raise exception 'FAIL  67 fn_queue_enquiry_message is callable by authenticated';
-  exception when insufficient_privilege then
-    reset role;
-    raise notice 'PASS  67 the internal message helper is revoked from authenticated';
-  end;
+  select string_agg(r.rolname, ', ' order by r.rolname) into v_open
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    cross join (values ('anon'), ('authenticated'), ('service_role')) as r(rolname)
+   where n.nspname = 'public'
+     and p.proname = 'fn_queue_enquiry_message'
+     and has_function_privilege(r.rolname, p.oid, 'execute');
+  if v_open is not null then
+    raise exception 'FAIL  67 fn_queue_enquiry_message can be executed by %. '
+                    '0136 retired the outbox; nothing that can reach this '
+                    'database may call it.', v_open;
+  end if;
+  raise notice 'PASS  67 the internal message helper is closed to anon, '
+               'authenticated and service_role alike';
 end $$;
 
 rollback;

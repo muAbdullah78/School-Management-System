@@ -149,8 +149,6 @@ const SCREENS: [string, () => Promise<Record<string, unknown>>, string][] = [
   ['Certificates', () => import('@/pages/certificates/CertificatesPage'), 'CertificatesPage'],
   ['Reports', () => import('@/pages/reports/ReportsPage'), 'ReportsPage'],
   ['Settings', () => import('@/pages/SettingsPage'), 'SettingsPage'],
-  ['Till', () => import('@/pages/till/TillPage'), 'TillPage'],
-  ['Messages', () => import('@/pages/messages/MessagesPage'), 'MessagesPage'],
   // Settings renders its FIRST tab, so the others were never opened by
   // anything. Subscription is the one a school looks at when it is deciding
   // whether to pay.

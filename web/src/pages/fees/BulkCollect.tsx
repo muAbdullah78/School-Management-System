@@ -24,7 +24,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getCurrentSession, listClasses, listSections,
-  getClassDues, recordBulkPayments, queueClassReminders,
+  getClassDues, recordBulkPayments,
   type ClassDue, type BulkPaymentResult,
 } from '@/lib/db'
 import { fmtPKR, fmtDate, monthToDate } from '@/lib/format'
@@ -97,11 +97,6 @@ export function BulkCollect() {
       void qc.invalidateQueries({ queryKey: ['recentPayments'] })
       void qc.invalidateQueries({ queryKey: ['dashboardSummary'] })
     },
-  })
-
-  const remind = useMutation({
-    mutationFn: () => queueClassReminders(session.data!.id, classId, sectionId || null),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['outbox'] }),
   })
 
   function fillDue() {
@@ -233,13 +228,6 @@ export function BulkCollect() {
                   : `Take ${fmtPKR(batchTotal)} from ${batch.length} student${batch.length === 1 ? '' : 's'}`}
             </button>
 
-            <button
-              onClick={() => remind.mutate()}
-              disabled={remind.isPending || owing === 0}
-              className="rounded border border-money-300 bg-money-50 px-4 py-2 text-sm font-medium text-money-800 hover:bg-money-100 disabled:opacity-60"
-            >
-              {remind.isPending ? 'Queueing…' : 'WhatsApp everyone who owes'}
-            </button>
           </div>
 
           {pay.isError && <p className="mt-2 text-sm text-red-600">{(pay.error as Error).message}</p>}
@@ -260,21 +248,16 @@ export function BulkCollect() {
             </div>
           )}
 
-          {remind.isSuccess && (
-            <p className="mt-2 text-sm text-money-700">
-              {remind.data.queued} reminder{remind.data.queued === 1 ? '' : 's'} queued
-              {remind.data.skipped > 0 ? ` · ${remind.data.skipped} skipped (no number on file)` : ''}
-              . Open them under <strong>WhatsApp</strong> and press Send.
-            </p>
-          )}
-          {remind.isError && (
-            <p className="mt-2 text-sm text-red-600">{(remind.error as Error).message}</p>
-          )}
-
-          <p className="mt-4 text-xs text-slate-500">
-            One reminder per family, not per child. A father with three children owing gets a single
-            message. Pressing it again later escalates the wording rather than repeating it.
-          </p>
+          {/*
+            * "WhatsApp everyone who owes" went with the outbox in 0136. It
+            * queued one row per family into a list somebody then opened and
+            * sent by hand, one at a time, and came back to tick off, so what
+            * the screen called "queued" meant "written down as still to do".
+            *
+            * The defaulters list still has a click-to-chat button on each
+            * family, which is the same act without the bookkeeping in front
+            * of it.
+            */}
         </>
       )}
     </div>

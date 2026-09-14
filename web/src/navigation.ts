@@ -36,8 +36,6 @@ export const NAV: NavItem[] = [
   { path: '/exams', label: 'Exams & Results', roles: ['owner', 'principal', 'admin_clerk', 'readonly'], blurb: 'Exam terms, subject papers, marks entry, grading, class positions, printable result cards.' },
   { path: '/fees', label: 'Fees', roles: ['owner', 'principal', 'admin_clerk', 'accountant', 'readonly'], blurb: 'Fee heads, monthly challans, arrears, partial payments, fines, discounts, receipts, defaulters.' },
   { path: '/accounts', label: 'Accounts', roles: ['owner', 'principal', 'accountant', 'readonly'], blurb: 'Expenses, non-fee income, and the profit figure. Fee income is derived from receipts and never typed in.' },
-  { path: '/till', label: 'Cash drawer', roles: ['owner', 'principal', 'admin_clerk', 'accountant', 'readonly'], blurb: 'Count your drawer, explain any difference, and sign off the day.' },
-  { path: '/messages', label: 'WhatsApp', roles: ['owner', 'principal', 'admin_clerk', 'accountant'], blurb: 'Fee receipts and reminders, ready to send. Free click-to-chat, no credits.' },
   { path: '/staff', label: 'Staff', roles: ['owner', 'principal', 'admin_clerk', 'readonly'], blurb: 'Staff records and the link to teacher logins.' },
   { path: '/birthdays', label: 'Birthdays', roles: ['owner', 'principal', 'admin_clerk', 'class_teacher', 'readonly'], blurb: "Children and staff with a birthday today or soon, with a WhatsApp wish." },
   { path: '/enquiries', label: 'Enquiries', roles: ['owner', 'principal', 'admin_clerk', 'readonly'], blurb: 'Every parent who asked about admission, and who is still waiting for a call back.' },

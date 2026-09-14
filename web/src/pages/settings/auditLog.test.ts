@@ -18,7 +18,7 @@ const AUDITED_TABLES = [
   'adjustments', 'admission_enquiries', 'attendance_daily', 'certificates',
   'discounts', 'enquiry_contacts', 'exam_remarks', 'expense_categories',
   'expenses', 'families', 'mark_entries', 'other_income', 'payments',
-  'staff_attendance', 'student_links', 'teacher_assignments', 'till_sessions',
+  'staff_attendance', 'student_links', 'teacher_assignments',
 ]
 
 /** Written by a function rather than by the trigger, so entity varies. */
