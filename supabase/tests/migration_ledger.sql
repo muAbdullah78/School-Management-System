@@ -346,6 +346,80 @@ begin
   raise notice 'PASS  13. re-recording a migration keeps the date it FIRST landed';
 end $$;
 
+-- --- 8. The baseline back-fill, and the state it exists for --------------
+-- 0069 seeds 0001 to 0067 only when the ledger is EMPTY, and refuses to seed
+-- at all when its probes say the chain is incomplete. Those two rules meet
+-- badly exactly once: if the refusal lands on the paste that carries 0069,
+-- that same bundle's closing block then records its own files, the ledger is
+-- non-empty for ever, and the baseline can never arrive.
+--
+-- This was not a thought experiment. A real database reported 69 migrations
+-- applied when it had 136, with every object of all thirty-nine bundles
+-- present and correct: rows for 0068 upward and nothing labelled baseline.
+--
+-- Reproduced rather than described. The broken state is BUILT, the real
+-- migration file is run against it, and the result is counted. Running the
+-- file itself is the point: a hand-copied version of its logic would pass
+-- here while the shipped one was short by a filename.
+do $break$
+begin
+  delete from public.schema_migrations where filename < '0068';
+  if exists (select 1 from public.schema_migrations where filename < '0068') then
+    raise exception 'FAIL  14a. could not build the broken state';
+  end if;
+  raise notice 'PASS  14. the ledger can be left with no record of 0001 to 0067, '
+               'which is the state 0137 exists for and the one a count alone '
+               'reports as healthy';
+end $break$;
+
+\i supabase/migrations/0137_the_ledger_never_got_its_baseline.sql
+
+do $fixed$
+declare v_n int;
+begin
+  select count(*) into v_n from public.schema_migrations where filename < '0068';
+  if v_n <> 67 then
+    raise exception 'FAIL  15. after the back-fill the ledger records % of the 67 '
+                    'migrations below 0068', v_n;
+  end if;
+  if exists (select 1 from public.schema_migrations
+              where filename < '0068' and bundle is distinct from 'baseline') then
+    raise exception 'FAIL  15b. a back-filled row is not labelled baseline';
+  end if;
+  raise notice 'PASS  15. 0137 puts all 67 back, labelled baseline';
+end $fixed$;
+
+-- 16 IS THE ONE THAT KEEPS IT HONEST. Re-running must not move a date that is
+-- already right, because every file here is written to be re-runnable and this
+-- one will be pasted again by any school that pastes bundles in order.
+do $again$
+declare v_first timestamptz; v_second timestamptz; v_n int;
+begin
+  select applied_at into v_first from public.schema_migrations
+   where filename = '0001_core_schema.sql';
+  update public.schema_migrations
+     set applied_at = timestamptz '2020-01-01 00:00:00+05', bundle = 'first-time'
+   where filename = '0001_core_schema.sql';
+end $again$;
+
+\i supabase/migrations/0137_the_ledger_never_got_its_baseline.sql
+
+do $again2$
+declare v_at timestamptz; v_b text; v_n int;
+begin
+  select applied_at, bundle into v_at, v_b from public.schema_migrations
+   where filename = '0001_core_schema.sql';
+  if v_at <> timestamptz '2020-01-01 00:00:00+05' or v_b <> 'first-time' then
+    raise exception 'FAIL  16. a second run rewrote a row that was already there '
+                    '(% / %)', v_at, v_b;
+  end if;
+  select count(*) into v_n from public.schema_migrations where filename < '0068';
+  if v_n <> 67 then
+    raise exception 'FAIL  16b. a second run changed the count to %', v_n;
+  end if;
+  raise notice 'PASS  16. running it again adds nothing and rewrites nothing';
+end $again2$;
+
 select 'MIGRATION LEDGER: ALL TESTS PASSED' as result;
 
 rollback;

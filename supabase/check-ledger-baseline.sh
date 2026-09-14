@@ -65,6 +65,27 @@ echo "ok: 0069's baseline lists exactly the $(echo "$ondisk" | wc -l | tr -d ' '
 # but it CAN drift if the generator is edited, and the failure is silent: the
 # bundle applies perfectly and the ledger is simply missing rows. Nothing else
 # would notice.
+# 0137 BACK-FILLS THE SAME RANGE and needs the same protection. It records
+# 0001 to 0067, the files bundles 1 to 6 carry, for a database where 0069
+# refused to seed and then could never seed again. If a migration were ever
+# added below 0068 without being listed there, that database would stay short
+# by exactly that file and nothing would say so.
+BACKFILL=supabase/migrations/0137_the_ledger_never_got_its_baseline.sql
+if [ -f "$BACKFILL" ]; then
+  bf_listed=$(sed -n '/v_files   text\[\] := array\[/,/\];/p' "$BACKFILL" \
+                | grep -oE "'[0-9]{4}_[A-Za-z0-9_]+\.sql'" | tr -d "'" | sort)
+  bf_ondisk=$(cd supabase/migrations && ls *.sql | awk '$0 < "0068"' | sort)
+  bf_missing=$(comm -13 <(echo "$bf_listed") <(echo "$bf_ondisk"))
+  bf_extra=$(comm -23 <(echo "$bf_listed") <(echo "$bf_ondisk"))
+  if [ -n "$bf_missing" ] || [ -n "$bf_extra" ]; then
+    echo "0137's back-fill list does not match migrations 0001-0067:"
+    [ -n "$bf_missing" ] && echo "$bf_missing" | sed 's/^/  NOT LISTED: /'
+    [ -n "$bf_extra" ]   && echo "$bf_extra"   | sed 's/^/  LISTED BUT NOT ON DISK: /'
+    exit 1
+  fi
+  echo "ok: 0137 back-fills exactly the $(echo "$bf_listed" | wc -l | tr -d ' ') migrations below 0068"
+fi
+
 fail=0
 for b in supabase/bundles/*.sql; do
   files=$(grep -oE '^-- [0-9]{4}_[A-Za-z0-9_]+\.sql$' "$b" | sed 's/^-- //' | sort)
