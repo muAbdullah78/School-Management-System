@@ -1118,10 +1118,44 @@ begin
   if not public.has_role('owner') then
     -- 0085: class AND subject. The class check alone let the Physics
     -- teacher of Class 9 enter Class 9's Islamiat marks.
-    if not public.fn_may_set_a_test(
+    --
+    -- WRITTEN AS TWO CHECKS RATHER THAN ONE CALL TO fn_may_set_a_test, AND
+    -- BOTH REASONS MATTER.
+    --
+    -- The first is the school's. fn_may_set_a_test is fn_may_mark_subject with
+    -- the principal taken out, so one call collapses two quite different
+    -- refusals into one sentence. A principal needs to be told that marking is
+    -- the teacher's, and a Physics teacher who opened the Islamiat paper needs
+    -- to be told to ask the office about their subject assignment. Telling
+    -- either of them the other's sentence sends them to the wrong person.
+    --
+    -- The second is this repository's, and it cost a red CI run to learn.
+    -- MIGRATION 0085 IS A TEXT PATCH ON THIS FUNCTION, it is frozen inside
+    -- bundle 7, and its idempotency guard is
+    --
+    --     if v_old like '%fn_may_mark_subject%' then  (skip, already done)
+    --
+    -- A body that no longer contains that name is one the guard does not
+    -- recognise, so 0085 tries its regexp, matches nothing, and raises. Because
+    -- a bundle is ONE transaction that rolls back all of bundle 7, and
+    -- verify.sql tells a school in several of its FAIL messages to "re-run
+    -- bundle 7". The repair path would have been a dead end on exactly the
+    -- databases that needed it.
+    --
+    -- So the reference below is load bearing twice over: it is the check this
+    -- function genuinely needs, and it is the anchor a frozen migration reads.
+    -- Do not collapse it back into one call.
+    if not public.fn_may_mark_subject(
              v_a.session_id, v_a.class_id, v_a.section_id, v_a.subject_id) then
       raise exception 'You can only enter marks for a class and subject you teach. '
         'Ask the office to add you under Settings, Staff, Subject Teachers.'
+        using errcode = '42501';
+    end if;
+    if not public.fn_may_set_a_test(
+             v_a.session_id, v_a.class_id, v_a.section_id, v_a.subject_id) then
+      raise exception 'A test is marked by the teacher who set it. A principal '
+                      'can see which tests are marked and which are not, on the '
+                      'Tests screen.'
         using errcode = '42501';
     end if;
   end if;

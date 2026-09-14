@@ -541,11 +541,42 @@ jobs:
                  join pg_namespace n on n.oid = p.pronamespace
                 where n.nspname = 'public' order by 1"
           }
+          #
+          # AND A ROLLBACK IS ONLY FINE FOR ONE REASON. This loop used to print
+          # "which is fine" for every failure, and that is half right: `type
+          # "user_role" already exists` is a bundle declining to install itself
+          # twice and costs nothing. A MIGRATION'S OWN GUARD RAISING wears the
+          # same clothes and is not fine at all.
+          #
+          # What it hid: 0135 replaced fn_enter_assessment_marks, and 0085 is a
+          # TEXT PATCH on that function, frozen inside bundle 7, whose
+          # idempotency guard reads `if v_old like '%fn_may_mark_subject%'`. A
+          # body without that name is one 0085 does not recognise, so it tried
+          # its regexp, matched nothing and raised, and bundle 7 rolled back
+          # whole. verify.sql says "re-run bundle 7" in several of its FAIL
+          # messages, so that is a repair path dead-ending on exactly the
+          # database that needed it.
           fp > /tmp/paste1.txt
+          repaste_bad=0
           for b in $(ls supabase/bundles/*.sql | sort -V); do
-            PGDATABASE=bundlecheck psql -v ON_ERROR_STOP=1 -q --single-transaction -f "$b" \
-              >/dev/null 2>&1 || echo "   $b rolled back on the second paste, which is fine"
+            out=$(PGDATABASE=bundlecheck psql -v ON_ERROR_STOP=1 -q --single-transaction -f "$b" 2>&1) || true
+            err=$(printf '%s\n' "$out" | grep 'ERROR:' | head -1 | sed 's/.*ERROR:  //')
+            case "$err" in
+              '' ) ;;
+              *'already exists'* )
+                echo "   $b declined the second paste (${err}), which is fine" ;;
+              * )
+                echo "::error::$b cannot be re-pasted: $err"
+                repaste_bad=1 ;;
+            esac
           done
+          if [ "$repaste_bad" = 1 ]; then
+            echo "A bundle is ONE transaction, so the whole bundle rolled back."
+            echo "verify.sql tells schools to re-run bundles by name, so this is a"
+            echo "repair path that dead-ends. Usually a frozen TEXT PATCH whose"
+            echo "anchor a later migration removed: see 0085 and 0135."
+            exit 1
+          fi
           fp > /tmp/paste2.txt
           if ! diff -q /tmp/paste1.txt /tmp/paste2.txt >/dev/null; then
             echo "::error::re-pasting the bundles changed a function body"

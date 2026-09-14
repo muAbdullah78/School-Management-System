@@ -527,5 +527,53 @@ begin
     || 'spinner with no end');
 end $overview$;
 
+-- =============================================================================
+-- 34. The anchor a frozen migration reads is still CODE
+-- =============================================================================
+do $anchor$
+declare
+  v_src  text;
+  v_code text;
+begin
+  /*
+   * MIGRATION 0085 IS A TEXT PATCH ON fn_enter_assessment_marks AND IT IS
+   * FROZEN INSIDE BUNDLE 7. Its idempotency guard reads
+   *
+   *     if v_old like '%fn_may_mark_subject%' then   (skip, already done)
+   *
+   * so a body that no longer contains that name is one 0085 does not
+   * recognise: it tries its regexp, matches nothing, and raises. A bundle is
+   * ONE transaction, so that rolls back the whole of bundle 7, and verify.sql
+   * tells a school in several of its FAIL messages to "re-run bundle 7". The
+   * repair path dead-ends on exactly the database that needed it.
+   *
+   * 0135's first draft did precisely this by calling fn_may_set_a_test
+   * instead, and CI caught it. This assertion exists so the next person does
+   * not have to.
+   *
+   * COMMENTS ARE STRIPPED BEFORE LOOKING, and that is the point of the
+   * assertion rather than a detail. pg_get_functiondef returns the comments
+   * too, so a body that merely MENTIONS fn_may_mark_subject while calling
+   * something else satisfies 0085 by accident and satisfies nothing else. That
+   * is a guard passed by a comment, which is worse than no guard: it goes on
+   * passing after somebody deletes the code. What has to be true is that the
+   * call is still there.
+   */
+  v_src := pg_get_functiondef(
+    'public.fn_enter_assessment_marks(uuid, jsonb, text)'::regprocedure);
+  v_code := regexp_replace(v_src, '--[^' || chr(10) || ']*', '', 'g');
+
+  if position('fn_may_mark_subject' in v_code) = 0 then
+    raise exception 'FAIL  34. fn_enter_assessment_marks no longer CALLS '
+                    'fn_may_mark_subject. Migration 0085 is a frozen text '
+                    'patch on this function and keys its idempotency guard on '
+                    'that name, so re-pasting bundle 7 will raise and roll the '
+                    'whole bundle back. verify.sql tells schools to re-run '
+                    'bundle 7, so this breaks the repair path. See the long '
+                    'note in 0135 above the two checks.';
+  end if;
+  raise notice 'ok  34. the anchor migration 0085 reads is still a call, not a comment';
+end $anchor$;
+
 rollback;
 \echo 'WHO MARKS THE REGISTER: ALL TESTS PASSED'

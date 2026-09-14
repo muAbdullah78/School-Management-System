@@ -353,13 +353,50 @@ SQL
   # So every body is fingerprinted, every bundle is pasted again, and the
   # fingerprints have to match. A bundle that rolls back is fine; a bundle that
   # succeeds and changes a body is not.
+  #
+  # AND A ROLLBACK IS ONLY HARMLESS FOR ONE REASON. This loop used to end in
+  # `|| true` with stderr discarded, on the reasoning above, and that reasoning
+  # is half right: `type "user_role" already exists` is a bundle declining to
+  # install itself twice and costs nothing. A MIGRATION'S OWN GUARD RAISING is
+  # a different event wearing the same clothes, and swallowing it is how this
+  # script reported PREFLIGHT CLEAN on a branch CI then failed.
+  #
+  # What it swallowed: 0135 replaced fn_enter_assessment_marks, and 0085 is a
+  # TEXT PATCH on that function, frozen inside bundle 7, whose idempotency
+  # guard reads `if v_old like '%fn_may_mark_subject%'`. A body without that
+  # name is one 0085 does not recognise, so it tried its regexp, matched
+  # nothing and raised. Bundle 7 rolled back whole.
+  #
+  # That is not a curiosity. verify.sql says "re-run bundle 7" in several of
+  # its FAIL messages and repair/detect.sql sends schools to bundles by name,
+  # so a bundle that cannot be re-pasted is a repair path that dead-ends on
+  # exactly the database that needed it.
+  #
+  # So an error is now read. Anything matching "already exists" is the expected
+  # decline; anything else is reported with the message, because the message is
+  # the whole diagnosis.
   if [ "$ok" = 1 ]; then
     psql -tA -d preflight_bundles -c "select p.proname||'|'||md5(p.prosrc) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' order by 1" > /tmp/pf-paste1.txt 2>/dev/null
+    repaste_bad=""
     for b in $(ls supabase/bundles/*.sql | sort -V); do
-      psql -q -d preflight_bundles -v ON_ERROR_STOP=1 --single-transaction -f "$b" >/dev/null 2>&1 || true
+      out=$(psql -q -d preflight_bundles -v ON_ERROR_STOP=1 --single-transaction -f "$b" 2>&1) || true
+      err=$(printf '%s\n' "$out" | grep 'ERROR:' | head -1 | sed 's/.*ERROR:  //')
+      case "$err" in
+        '' | *'already exists'* ) ;;
+        * ) repaste_bad="$repaste_bad
+      ${b##*/}: $err" ;;
+      esac
     done
     psql -tA -d preflight_bundles -c "select p.proname||'|'||md5(p.prosrc) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' order by 1" > /tmp/pf-paste2.txt 2>/dev/null
-    if diff -q /tmp/pf-paste1.txt /tmp/pf-paste2.txt >/dev/null; then
+    if [ -n "$repaste_bad" ]; then
+      printf '%-52s FAIL\n' "a bundle a school is told to re-run cannot be re-run"
+      printf '%s\n' "$repaste_bad"
+      echo "      A bundle is ONE transaction, so this rolled the whole bundle back."
+      echo "      verify.sql tells schools to re-run bundles by name, so this is a"
+      echo "      repair path that dead-ends. Usually a frozen TEXT PATCH whose"
+      echo "      anchor a later migration removed: see 0085 and 0135."
+      fails=$((fails + 1))
+    elif diff -q /tmp/pf-paste1.txt /tmp/pf-paste2.txt >/dev/null; then
       printf '%-52s ok (%s bodies)\n' "re-pasting every bundle changes no function" \
         "$(wc -l < /tmp/pf-paste1.txt | tr -d ' ')"
     else
