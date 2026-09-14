@@ -783,6 +783,21 @@ emit supabase/bundles/38_the_register_belongs_to_the_teacher.sql \
 emit supabase/bundles/39_the_cash_drawer_and_the_outbox_come_out.sql \
      supabase/migrations/0136*.sql
 
+# --- 40 ----------------------------------------------------------------------
+# The ledger never got its baseline.
+#
+# Found on a real database that reported 69 migrations applied when it had 136,
+# with every object of all thirty-nine bundles present and correct. 0069 seeds
+# the 0001-0067 baseline only when the ledger is EMPTY, and refuses to seed at
+# all when its probes say the chain is incomplete. If the refusal happens on the
+# paste that carries 0069, that same bundle's closing block then records its own
+# files, the ledger is non-empty for ever, and the baseline can never arrive.
+#
+# A no-op on every database not in that state, because fn_record_migration does
+# nothing on conflict and the rows are already there.
+emit supabase/bundles/40_the_ledger_never_got_its_baseline.sql \
+     supabase/migrations/0137*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

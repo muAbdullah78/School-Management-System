@@ -1167,7 +1167,16 @@ with sig(migration, object, present) as (values
      and not exists (select 1 from pg_policies
                       where schemaname = 'public'
                         and tablename in ('till_sessions','message_outbox',
-                                          'message_templates')))
+                                          'message_templates'))),
+  -- 0137 back-fills the ledger rows for 0001 to 0067 on a database where 0069
+  -- refused to seed and then could never seed again. Its signature is the row
+  -- for the very first migration: present on any database whose ledger is
+  -- honest, absent on exactly the one this fixes.
+  ('0137_the_ledger_never_got_its_baseline',
+     'the ledger records the migrations that came before it',
+     to_regclass('public.schema_migrations') is null
+     or coalesce(obj_description(to_regclass('public.schema_migrations')), '')
+          like '%0137%')
 )
 select migration,
        object                                   as looked_for,

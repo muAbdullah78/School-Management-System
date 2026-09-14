@@ -2950,6 +2950,51 @@ select 'the cash drawer and the message outbox are sealed (0136)',
        end
 
 union all
+-- 0137. The ledger never got its baseline.
+--
+-- FOUND BY THE ROW ABOVE, on a real database that reported 69 applied when it
+-- had 136 and every object of all thirty-nine bundles present. "migrations
+-- recorded" printed a count and a latest file, both true, and said nothing
+-- about the sixty-seven rows that were not there. A count is not a completeness
+-- check, which is why this row exists as well as that one.
+--
+-- 0069 seeds 0001 to 0067 only when the ledger is EMPTY, and refuses to seed at
+-- all when its probes say the chain is incomplete. If the refusal lands on the
+-- paste that carries 0069, that same bundle's closing block then records its
+-- own files, the ledger is non-empty for ever, and the baseline can never
+-- arrive.
+--
+-- ASKED THROUGH pg_temp.ask, NOT BY NAMING THE TABLE. This file is ONE
+-- statement, so Postgres resolves every relation in it at parse time, and a row
+-- naming schema_migrations would make the whole report print nothing at all on
+-- a database that has not reached bundle 7. ask() returns null on
+-- undefined_table instead. The row above this one is written the same way and
+-- for the same reason.
+--
+-- Asked only of a database that HAS bundle 1, because on one that does not the
+-- rows are missing for the honest reason and the bundle rows above already say
+-- so. That keeps this from crying wolf on a half-installed database.
+select 'the ledger records the migrations that came before it (0137)',
+       case
+         when to_regclass('public.schema_migrations') is null
+           then 'FAIL: re-run bundle 7 (the migration ledger)'
+         when to_regclass('public.till_sessions') is null
+           then 'n/a: bundle 1 is not in yet, so there is nothing to have recorded'
+         when coalesce(pg_temp.ask(
+                'select count(*) from public.schema_migrations '
+                || 'where filename < ''0068'''), '0')::int >= 67
+           then 'PASS'
+         else 'FAIL: the ledger records only '
+              || coalesce(pg_temp.ask(
+                   'select count(*) from public.schema_migrations '
+                   || 'where filename < ''0068'''), '0')
+              || ' of the 67 migrations that came before it, so the operator '
+              || 'console reports this database as missing migrations it has; '
+              || 'apply supabase/bundles/'
+              || '40_the_ledger_never_got_its_baseline.sql'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS: no schools yet, as expected'
