@@ -1,7 +1,9 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
+  useMemo,
   useReducer,
   useRef,
   useState,
@@ -114,10 +116,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const session = gate.session
 
-  // Load the user's profile (role) whenever the session changes.
+  /*
+   * THE USER'S ID, AND WHY THE PROFILE EFFECT BELOW KEYS ON IT RATHER THAN ON
+   * `session`. THIS IS THE FIX FOR "MY FORM EMPTIES WHEN I COME BACK TO THE TAB".
+   *
+   * THE BUG, precisely, because it is not obvious from any one file:
+   *
+   *   1. supabase-js refreshes the access token on a timer AND when a hidden
+   *      tab becomes visible again. Both paths fire onAuthStateChange.
+   *   2. That dispatches `auth-change`, which stores a BRAND NEW Session
+   *      object. Same person, same school, same everything, different object.
+   *   3. This effect used to list `session` in its dependency array. React
+   *      compares dependencies by identity, so a new object meant re-run.
+   *   4. Re-running dispatches `profile-loading`, so gateIsLoading() goes true.
+   *   5. ProtectedRoute reads that and renders "Loading..." INSTEAD OF its
+   *      children, which unmounts the entire route tree.
+   *   6. The profile arrives, the tree mounts again, FRESH. Every useState in
+   *      every component below is back at its initial value.
+   *
+   * So a clerk half way through an admission form switched to WhatsApp to check
+   * a parent's CNIC, came back, and the form was empty. No error, no warning,
+   * and nothing in the network tab that looks wrong: the app had simply decided
+   * it did not yet know who they were, for about 300ms, on a page it had been
+   * showing them for ten minutes.
+   *
+   * Keying on the id means a token refresh for the SAME person does not re-run
+   * anything. The profile is already loaded and is still correct: a refreshed
+   * token cannot change your role. When the id genuinely changes (sign-in,
+   * sign-out, a different account) the effect runs and the remount is right.
+   *
+   * ProtectedRoute, LicenceGate and SetupGate each latch as well, so that even
+   * a future bug of this exact shape cannot rip a mounted screen away. Defence
+   * in depth, because this class of bug is invisible to a typecheck and the
+   * cost of it lands on somebody retyping a page of a child's details.
+   */
+  const userId = session?.user?.id ?? null
+
+  // Load the user's profile (role) whenever the SIGNED-IN PERSON changes.
   useEffect(() => {
     if (!supabase) return
-    const userId = session?.user?.id
     if (!userId) {
       setProfile(null)
       dispatch({ type: 'profile-settled' })
@@ -155,21 +192,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false
     }
-  }, [session])
+  }, [userId])
 
   const loading = gateIsLoading(gate)
 
-  async function signIn(email: string, password: string) {
+  const signIn = useCallback(async (email: string, password: string) => {
     if (!supabase) return { error: 'App is not configured.' }
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     return { error: error?.message ?? null }
-  }
+  }, [])
 
-  async function signOut() {
+  /**
+   * Sign out THIS DEVICE and no other.
+   *
+   * supabase-js defaults `signOut()` to `scope: 'global'`, which revokes every
+   * refresh token the account holds. A principal who signs out on their phone
+   * at home was therefore signed out on the school laptop as well, and would
+   * find it asking for a password the next morning with no explanation.
+   *
+   * A school buying this software has ONE principal login and expects to use it
+   * on the office desktop, the laptop and a phone at the same time. Signing in
+   * on a second device never disturbed the first (Supabase permits concurrent
+   * sessions); it was signing OUT that reached across and closed the others.
+   * 'local' clears the token held in this browser only.
+   *
+   * The trade is deliberate and worth stating: a lost or stolen phone is no
+   * longer cleared by signing out somewhere else. The remedy for that is to
+   * change the password, which still revokes every session everywhere, and it
+   * is the remedy a school would reach for anyway.
+   */
+  const signOut = useCallback(async () => {
     if (!supabase) return
-    await supabase.auth.signOut()
+    await supabase.auth.signOut({ scope: 'local' })
     setProfile(null)
-  }
+  }, [])
 
   /**
    * Send a password reset link.
@@ -190,7 +246,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * Supabase, or the link in the email lands on the site root with the token
    * stripped and the parent sees a login screen and no explanation.
    */
-  async function sendReset(email: string) {
+  const sendReset = useCallback(async (email: string) => {
     if (!supabase) return { error: 'App is not configured.' }
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/reset`,
@@ -198,7 +254,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Reported only when the request itself failed: no network, or the address
     // is rate-limited. Not "no such user", which this must not disclose.
     return { error: error?.message ?? null }
-  }
+  }, [])
 
   /**
    * Set a new password for whoever is signed in.
@@ -208,19 +264,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * checks the two boxes match, because "your passwords do not match" told after
    * a round trip is a worse experience than told immediately.
    */
-  async function setPassword(password: string) {
+  const setPassword = useCallback(async (password: string) => {
     if (!supabase) return { error: 'App is not configured.' }
     const { error } = await supabase.auth.updateUser({ password })
     return { error: error?.message ?? null }
-  }
+  }, [])
 
-  return (
-    <AuthContext.Provider
-      value={{ session, profile, loading, signIn, signOut, sendReset, setPassword }}
-    >
-      {children}
-    </AuthContext.Provider>
+  /*
+   * Memoised so a token refresh does not hand every consumer in the app a new
+   * context object for no reason. The four functions above are useCallback'd
+   * with empty dependency lists precisely so they can be left out of this list
+   * without lying about it: they close over nothing that changes.
+   *
+   * `session` DOES change identity on a refresh, and must, because the access
+   * token really is new. That re-renders consumers, which is cheap and correct.
+   * What must never happen again is an UNMOUNT, and that is handled above.
+   */
+  const value = useMemo(
+    () => ({ session, profile, loading, signIn, signOut, sendReset, setPassword }),
+    [session, profile, loading, signIn, signOut, sendReset, setPassword],
   )
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
 export function useAuth(): AuthState {
