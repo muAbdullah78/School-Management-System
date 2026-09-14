@@ -133,7 +133,7 @@ begin
   insert into public.profiles (id, full_name, role, school_id) values
     (v_oa, 'Ph Owner',     'owner',         v_a),
     (v_pa, 'Ph Principal', 'principal',     v_a),
-    (v_ca, 'Ph Clerk',     'admin_clerk',   v_a),
+    (v_ca, 'Ph Office',     'principal',   v_a),
     (v_ta, 'Ph Teacher',   'class_teacher', v_a),
     (v_pr, 'Ph Parent',    'parent',        v_a),
     (v_ob, 'Ph Owner B',   'owner',         v_b)
@@ -180,7 +180,7 @@ do $$
 declare v_c uuid := pg_temp.stu('Photo Child'); v_a uuid := pg_temp.sch('Photo A');
         v_b uuid := pg_temp.sch('Photo B'); p text;
 begin
-  perform pg_temp.be('Ph Clerk');
+  perform pg_temp.be('Ph Office');
 
   -- Hand it another school's folder and a traversal, and see what it stores.
   p := public.fn_set_student_photo(v_c, 'students/' || v_b::text || '/../evil.jpg');
@@ -227,12 +227,20 @@ begin
     format('select public.fn_set_student_photo(%L::uuid, ''x.jpg'')', v_c),
     '8. nor a parent', '%Only the office%');
 
-  perform pg_temp.be('Ph Clerk');
+  perform pg_temp.be('Ph Office');
   perform pg_temp.ok(public.fn_set_staff_photo(v_st, 'a.jpg') like 'staff/%',
-    '9. a clerk may set a staff photograph, for the ID card');
+    '9. the office may set a staff photograph, for the ID card');
+  -- 0133 NOTE. This used to be the same office account as assertion 9: an
+  -- admin_clerk could set a pupil's photograph and not the school's logo. With
+  -- that role withdrawn the office IS the principal, so the line moved rather
+  -- than disappeared, and what it now separates is the staff room from the
+  -- office. A class teacher setting the logo would be the real accident: they
+  -- have a phone full of photographs and a file picker.
+  perform pg_temp.be('Ph Teacher');
   perform pg_temp.refuses('select public.fn_set_school_logo(''logo.png'')',
-    '10. but NOT the school logo — it is the school''s identity on every printed '
-    'challan and result card', '%owner or principal%');
+    '10. but a class teacher may NOT set the school logo, which is the '
+    'school''s identity on every printed challan and result card',
+    '%owner or principal%');
 
   perform pg_temp.be('Ph Principal');
   perform pg_temp.ok(public.fn_set_school_logo('LOGO.PNG') like 'logos/%/logo.png',
@@ -324,11 +332,11 @@ begin
   reset role;
 
   -- Writes.
-  perform pg_temp.be('Ph Clerk');
+  perform pg_temp.be('Ph Office');
   set local role authenticated;
   insert into storage.objects (bucket_id, name)
     values ('school-files', 'students/' || v_a::text || '/new.jpg');
-  perform pg_temp.ok(true, '21. a clerk may upload into their own school''s folder');
+  perform pg_temp.ok(true, '21. the office may upload into their own school''s folder');
   reset role;
 
   perform pg_temp.be('Ph Teacher');
@@ -343,19 +351,19 @@ begin
     raise notice 'PASS  22. a teacher may read but not upload';
   end;
 
-  perform pg_temp.be('Ph Clerk');
+  perform pg_temp.be('Ph Office');
   set local role authenticated;
   begin
     insert into storage.objects (bucket_id, name)
       values ('school-files', 'students/' || v_b::text || '/stolen.jpg');
     reset role;
-    raise exception 'FAIL  23. a clerk wrote into ANOTHER school''s folder';
+    raise exception 'FAIL  23. the office wrote into ANOTHER school''s folder';
   exception when insufficient_privilege or check_violation then
     reset role;
-    raise notice 'PASS  23. a clerk cannot write into another school''s folder';
+    raise notice 'PASS  23. the office cannot write into another school''s folder';
   end;
 
-  perform pg_temp.be('Ph Clerk');
+  perform pg_temp.be('Ph Office');
   set local role authenticated;
   begin
     insert into storage.objects (bucket_id, name)
@@ -370,7 +378,7 @@ begin
   -- Deleting another school's object must affect NOTHING. A policy-less DELETE
   -- silently touches zero rows rather than raising, so the row count is the
   -- assertion — checking for an exception here would pass while deleting.
-  perform pg_temp.be('Ph Clerk');
+  perform pg_temp.be('Ph Office');
   set local role authenticated;
   with gone as (delete from storage.objects
                  where name like 'students/' || v_b::text || '%' returning 1)
@@ -391,7 +399,7 @@ $$;
 do $$
 declare v_cl uuid; v_c uuid := pg_temp.stu('Photo Child'); n integer; r record;
 begin
-  perform pg_temp.be('Ph Clerk');
+  perform pg_temp.be('Ph Office');
   select id into v_cl from public.classes where name = 'Ph One';
   perform public.fn_set_student_photo(v_c, 'x.jpg');
 

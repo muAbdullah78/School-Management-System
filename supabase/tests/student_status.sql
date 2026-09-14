@@ -108,13 +108,17 @@ begin
   alter table public.profiles disable trigger user;
   insert into auth.users (id, email) values
     (v_own,'so@ls.test'), (v_prin,'sp@ls.test'), (v_clerk,'sc@ls.test'),
-    (v_tch,'st@ls.test'), (v_par,'spa@ls.test'), (v_ownb,'sb@ls.test')
+    (v_tch,'st@ls.test'), (v_par,'spa@ls.test'), (v_ownb,'sb@ls.test'),
+    ('00000000-0000-0000-0000-00000000ab09'::uuid,'ssub@ls.test')
   on conflict (id) do nothing;
   insert into public.profiles (id, full_name, role, school_id) values
     (v_own,   'Ls Owner',     'owner',         v_a),
     (v_prin,  'Ls Principal', 'principal',     v_a),
-    (v_clerk, 'Ls Clerk',     'admin_clerk',   v_a),
+    (v_clerk, 'Ls Office',     'principal',   v_a),
     (v_tch,   'Ls Teacher',   'class_teacher', v_a),
+    -- 0133: a second staff-room role, so assertion 2 tests a different person
+    -- rather than the same one twice.
+    ('00000000-0000-0000-0000-00000000ab09'::uuid, 'Ls Subject', 'subject_teacher', v_a),
     (v_par,   'Ls Parent',    'parent',        v_a),
     (v_ownb,  'Ls Owner B',   'owner',         v_b)
   on conflict (id) do update set school_id = excluded.school_id,
@@ -217,14 +221,18 @@ $seed$;
 do $$
 declare v_id uuid := pg_temp.stu('Moved Away');
 begin
-  perform pg_temp.be('Ls Clerk');
-  perform pg_temp.refuses(
-    format('select public.fn_set_student_status(%L::uuid, ''withdrawn'', null, current_date)', v_id),
-    '1. a clerk may not remove a child from the roll', '%owner or principal%');
+  -- 0133 NOTE. Assertion 1 used to refuse an admin_clerk, a line inside the
+  -- office. That role is withdrawn, so the office IS the principal and may
+  -- take a child off the roll. What still holds, and is the realistic
+  -- accident, is that nobody in the staff room can.
   perform pg_temp.be('Ls Teacher');
   perform pg_temp.refuses(
     format('select public.fn_set_student_status(%L::uuid, ''withdrawn'', null, current_date)', v_id),
-    '2. nor a class teacher', '%owner or principal%');
+    '1. a class teacher may not remove a child from the roll', '%owner or principal%');
+  perform pg_temp.be('Ls Subject');
+  perform pg_temp.refuses(
+    format('select public.fn_set_student_status(%L::uuid, ''withdrawn'', null, current_date)', v_id),
+    '2. nor a subject teacher', '%owner or principal%');
   perform pg_temp.be('Ls Parent');
   perform pg_temp.refuses(
     format('select public.fn_set_student_status(%L::uuid, ''withdrawn'', null, current_date)', v_id),
@@ -468,9 +476,9 @@ $$;
 -- =============================================================================
 do $$
 begin
-  perform pg_temp.be('Ls Clerk');
+  perform pg_temp.be('Ls Office');
   perform pg_temp.ok((select count(*) from public.fn_students_left(null, null)) = 2,
-    '39. a clerk may read the report — they chase the arrears on it');
+    '39. the office may read the report, because it chases the arrears on it');
   perform pg_temp.be('Ls Teacher');
   perform pg_temp.refuses('select count(*) from public.fn_students_left(null, null)',
     '40. a class teacher may not — the report carries what each child owes',

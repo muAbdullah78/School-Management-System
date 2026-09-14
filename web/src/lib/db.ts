@@ -805,6 +805,113 @@ export async function unlockAttendance(
   return Number(data)
 }
 
+/* ------------------------------------------------------------------ 0134 --
+ * The head's view of the register, and the subject register underneath it.
+ *
+ * These five are the read and write surface migrations 0134 gave the school
+ * when it took marking away from the principal. The functions do the gating;
+ * these are transport.
+ */
+
+export type AttendanceState = 'none' | 'partial' | 'unlocked' | 'locked'
+
+export interface AttendanceDayRow {
+  class_id: string
+  class_name: string
+  level_order: number
+  section_id: string | null
+  section_name: string | null
+  pupils: number
+  marked: number
+  locked: number
+  state: AttendanceState
+}
+
+/**
+ * One row per class-section for one day, sorted into the three piles a head
+ * thinks in. Counted against the ROLL, not against attendance rows: an
+ * unmarked child is not a row, so counting rows makes an empty register look
+ * complete.
+ */
+export async function attendanceDay(sessionId: string, date: string): Promise<AttendanceDayRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_attendance_day', {
+    p_session_id: sessionId, p_date: date,
+  })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as AttendanceDayRow[]
+}
+
+export interface SubjectRosterRow {
+  enrollment_id: string
+  student_id: string
+  full_name: string
+  roll_no: string | null
+  status: AttendanceStatus | null
+  /** What the CLASS TEACHER recorded for the same day, for context. A subject
+   *  teacher about to mark a child absent from chemistry wants to know first
+   *  whether the child is in school at all. */
+  day_status: AttendanceStatus | null
+}
+
+export async function subjectRoster(
+  sessionId: string, classId: string, sectionId: string | null,
+  subjectId: string, date: string,
+): Promise<SubjectRosterRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_subject_roster', {
+    p_session_id: sessionId, p_class_id: classId, p_section_id: sectionId,
+    p_subject_id: subjectId, p_date: date,
+  })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as SubjectRosterRow[]
+}
+
+/** Optional and informal: no lock, no correction trail, no message to parents. */
+export async function markSubjectAttendance(
+  sessionId: string, classId: string, sectionId: string | null,
+  subjectId: string, date: string,
+  marks: { enrollment_id: string; status: AttendanceStatus }[],
+): Promise<{ marked: number }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_mark_subject_attendance', {
+    p_session_id: sessionId, p_class_id: classId, p_section_id: sectionId,
+    p_subject_id: subjectId, p_date: date, p_marks: marks,
+  })
+  if (error) throw new Error(error.message)
+  return data as { marked: number }
+}
+
+export interface SubjectAttendanceDayRow {
+  class_id: string
+  class_name: string
+  level_order: number
+  section_id: string | null
+  section_name: string | null
+  subject_id: string
+  subject_name: string
+  marked_by_name: string
+  pupils: number
+  present: number
+  absent: number
+  other: number
+}
+
+/**
+ * Only what was actually marked. There is no row for a subject nobody touched,
+ * because this register is optional and an unmarked subject is not outstanding.
+ */
+export async function subjectAttendanceDay(
+  sessionId: string, date: string,
+): Promise<SubjectAttendanceDayRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_subject_attendance_day', {
+    p_session_id: sessionId, p_date: date,
+  })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as SubjectAttendanceDayRow[]
+}
+
 export async function attendanceSummary(
   enrollmentId: string, from: string, to: string,
 ): Promise<AttendanceSummary> {
@@ -1606,6 +1713,74 @@ export async function createAssessment(input: {
   return (data as { id: string }).id
 }
 
+/* ------------------------------------------------------------------ 0135 --
+ * The teacher's worklist and the head's overview.
+ */
+
+export interface UnmarkedTestRow {
+  assessment_id: string
+  title: string
+  assessment_date: string
+  class_id: string
+  class_name: string
+  section_name: string | null
+  subject_name: string | null
+  pupils: number
+  marked: number
+  days_late: number
+}
+
+/**
+ * Papers this teacher set, whose day has passed, that are not finished.
+ *
+ * "Unfinished" means at least one pupil with neither a mark nor an absence, not
+ * "no marks at all": the common failure is twenty of thirty-four and then the
+ * bell went, and a reminder that only fires on a blank test misses it.
+ */
+export async function myUnmarkedTests(sessionId: string): Promise<UnmarkedTestRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_my_unmarked_tests', { p_session_id: sessionId })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as UnmarkedTestRow[]
+}
+
+export type TestState = 'scheduled' | 'unmarked' | 'partial' | 'marked' | 'locked' | 'undated'
+
+export interface TestOverviewRow {
+  assessment_id: string
+  title: string
+  assessment_date: string
+  class_id: string
+  class_name: string
+  level_order: number
+  section_name: string | null
+  subject_name: string | null
+  set_by_name: string
+  max_marks: number
+  is_locked: boolean
+  pupils: number
+  marked: number
+  state: TestState
+}
+
+/**
+ * Every test in a date range, with who set it and whether it is marked.
+ *
+ * A RANGE and not a day, which is what makes the head's calendar work: looking
+ * back to audit last week and forward to see what is coming are the same
+ * question asked of a different pair of dates.
+ */
+export async function testsOverview(
+  sessionId: string, from: string, to: string,
+): Promise<TestOverviewRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_tests_overview', {
+    p_session_id: sessionId, p_from: from, p_to: to,
+  })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as TestOverviewRow[]
+}
+
 export async function getAssessmentMarksheet(assessmentId: string): Promise<MarksheetRow[]> {
   const sb = requireSupabase()
   return unwrap(await sb.rpc('fn_assessment_marksheet', { p_assessment_id: assessmentId }))
@@ -1894,6 +2069,23 @@ export async function createSection(classId: string, name: string, sortOrder = 0
 export async function listProfiles(): Promise<ProfileRow[]> {
   const sb = requireSupabase()
   return unwrap(await sb.from('profiles').select('id, full_name, role, active, staff_id').order('full_name'))
+}
+
+/**
+ * The roles a school may hand out, read from the database rather than from a
+ * second list in TypeScript.
+ *
+ * Same reasoning as fn_signup_regions: auth/roles.ts has ASSIGNABLE_ROLES and
+ * the two must agree, so the screen asks. It falls back to the local list on
+ * any error, because a Users screen that cannot offer a role is worse than one
+ * offering a role the database might refuse, and a school that has not yet
+ * pasted bundle 38 has no such function to call.
+ */
+export async function assignableRoles(): Promise<string[] | null> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_assignable_roles')
+  if (error) return null
+  return Array.isArray(data) ? (data as string[]) : null
 }
 
 export async function updateProfileRole(id: string, role: string): Promise<void> {
@@ -2502,7 +2694,11 @@ export async function checkLoginFunction(): Promise<LoginFunctionState> {
  *  caller so a role added here and not in the deployed function produces the
  *  clear message below instead of the bare words "Invalid role". */
 const CLIENT_KNOWN_ROLES = [
-  'principal', 'admin_clerk', 'accountant',
+  // Admin / Clerk and Accountant were withdrawn by 0133 and are deliberately
+  // absent: this list is what the app may ASK FOR, and nothing may ask for
+  // one of those again. Recognising an existing account that still holds one
+  // is a separate question, answered in auth/roles.ts.
+  'principal',
   'class_teacher', 'subject_teacher', 'readonly', 'parent',
 ]
 

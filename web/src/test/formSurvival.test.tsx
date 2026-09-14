@@ -136,7 +136,7 @@ describe('a form survives the tab losing and regaining focus', () => {
       auth.emit?.('TOKEN_REFRESHED', sessionFor('user-1', 'token-2'))
     })
 
-    // Before the fix this was '' — the input was a new element belonging to a
+    // Before the fix this was '', because the input was a new element on a
     // newly mounted component.
     expect((screen.getByLabelText('Student name') as HTMLInputElement).value).toBe('Ayesha Khan')
     expect(mounts.n).toBe(1)

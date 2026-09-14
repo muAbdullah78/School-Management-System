@@ -8,7 +8,7 @@ import {
   getStaffAttendanceSummary, getStaffMonthAttendance, createTeacherLogin,
   type StaffRow, type StaffInput, type StaffRosterRow, type StaffLeaveResult,
 } from '@/lib/db'
-import { ROLE_LABELS, ROLES, canWrite, type Role } from '@/auth/roles'
+import { ASSIGNABLE_ROLES, ROLE_LABELS, canWrite, type Role } from '@/auth/roles'
 import { ObserverNotice } from '@/components/ObserverNotice'
 import { ATTENDANCE_SHORT } from '@/lib/constants'
 import { fmtDate, todayISO } from '@/lib/format'
@@ -858,7 +858,9 @@ function AddPerson({ onDone, onFlash }: { onDone: () => void; onFlash: (m: strin
   const addressFree = !wantsLogin
     || (!emailCheck.checking && emailCheck.verdict?.available !== false)
   const valid = nameOk && loginOk && addressFree
-  const roleChoices = ROLES.filter((r) => r !== 'owner')
+  // ASSIGNABLE_ROLES is the one list: no owner (signup creates the only one)
+  // and, since 0133, no Admin / Clerk or Accountant.
+  const roleChoices = ASSIGNABLE_ROLES
 
   const save = useMutation({
     mutationFn: async () => {

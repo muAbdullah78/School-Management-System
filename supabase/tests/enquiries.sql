@@ -82,7 +82,7 @@ begin
     (v_ro,'eqr@eq.test'), (v_ob,'eqb@eq.test') on conflict (id) do nothing;
   insert into public.profiles (id, full_name, role, school_id) values
     (v_oa, 'Enq Owner',    'owner',           v_a),
-    (v_cl, 'Enq Clerk',    'admin_clerk',     v_a),
+    (v_cl, 'Enq Clerk',    'principal',     v_a),
     (v_tc, 'Enq Teacher',  'class_teacher',   v_a),
     (v_ro, 'Enq Readonly', 'readonly',        v_a),
     (v_ob, 'Enq Other',    'owner',           v_b)

@@ -134,12 +134,15 @@ begin
   alter table public.profiles disable trigger user;
   insert into auth.users (id, email) values
     (v_oa, 'oa@limit.test'), (v_pa, 'pa@limit.test'), (v_ca, 'ca@limit.test'),
-    (v_ob, 'ob@limit.test'), (v_oc, 'oc@limit.test')
+    (v_ob, 'ob@limit.test'), (v_oc, 'oc@limit.test'),
+    ('00000000-0000-0000-0000-00000000500a'::uuid, 'ta@limit.test')
     on conflict (id) do nothing;
   insert into public.profiles (id, full_name, role, school_id) values
     (v_oa, 'Limit Owner',     'owner',       v_a),
     (v_pa, 'Limit Principal', 'principal',   v_a),
-    (v_ca, 'Limit Clerk',     'admin_clerk', v_a),
+    (v_ca, 'Limit Office',    'principal',   v_a),
+    -- 0133: the boundary that survives the role merge is office vs staff room.
+    ('00000000-0000-0000-0000-00000000500a'::uuid, 'Limit Teacher', 'class_teacher', v_a),
     (v_ob, 'Limit B Owner',   'owner',       v_b),
     (v_oc, 'Limit C Owner',   'owner',       v_c)
     on conflict (id) do update set school_id = excluded.school_id,
@@ -219,15 +222,19 @@ begin
 
   -- THE OWNER IS REFUSED TOO. The vendor was offered "block the clerk, let the
   -- owner through with a confirmation" and chose "block everyone". Asserted
-  -- rather than assumed, and for all three roles that can admit.
+  -- rather than assumed, and for every role that can admit.
+  --
+  -- 0133 NOTE: that used to be three roles and is now two, because Admin /
+  -- Clerk was withdrawn. The assertion that matters is unchanged: there is no
+  -- role that overrides the block.
   perform pg_temp.be('Limit Principal');
   perform pg_temp.ok(pg_temp.raises(
     $q$select pg_temp.admit('Daud Four')$q$, 'your plan covers 3 pupils'),
     '8  the principal is refused as well');
-  perform pg_temp.be('Limit Clerk');
+  perform pg_temp.be('Limit Office');
   perform pg_temp.ok(pg_temp.raises(
     $q$select pg_temp.admit('Daud Four')$q$, 'your plan covers 3 pupils'),
-    '9  and so is the clerk: the block has no override');
+    '9  and so is a second office login: the block has no override');
   perform pg_temp.be('Limit Owner');
 end $$;
 
@@ -396,12 +403,16 @@ declare v_school uuid; r jsonb; v_n integer;
 begin
   select id into v_school from public.schools where name = 'Limit A';
 
-  -- Only the owner or the principal.
-  perform pg_temp.be('Limit Clerk');
+  -- Only the owner or the principal. 0133 NOTE: this used to refuse an
+  -- admin_clerk, and the office is now the principal, so the refusal moved to
+  -- the staff room. The property being asserted is the same one: asking for
+  -- more room commits the school to spending money, so not everybody who can
+  -- sign in may do it.
+  perform pg_temp.be('Limit Teacher');
   perform pg_temp.ok(pg_temp.raises(
     $q$select public.fn_request_student_limit(10, 'we are opening a second campus')$q$,
     'only the owner or the principal'),
-    '28 a clerk cannot ask for more room: it is a commitment to spend money');
+    '28 a class teacher cannot ask for more room: it is a commitment to spend money');
 
   perform pg_temp.be('Limit Owner');
   perform pg_temp.ok(pg_temp.raises(

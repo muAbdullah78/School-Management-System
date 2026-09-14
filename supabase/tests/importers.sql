@@ -118,7 +118,7 @@ begin
   on conflict (id) do nothing;
   insert into public.profiles (id, full_name, role, school_id) values
     (v_oa, 'Imp Owner',   'owner',       v_a),
-    (v_ca, 'Imp Clerk',   'admin_clerk', v_a),
+    (v_ca, 'Imp Clerk',   'principal', v_a),
     (v_ob, 'Imp Owner B', 'owner',       v_b)
   on conflict (id) do update set school_id = excluded.school_id,
                                  role = excluded.role, full_name = excluded.full_name,

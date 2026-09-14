@@ -20,7 +20,7 @@ interface LinkedRel { id: string; label: string; relation: string }
  *
  * They live in one object rather than in six useState calls because the whole
  * thing is now written to the tab's storage as a draft while it is being
- * filled in — see useFormDraft. An admission is typed off a birth certificate,
+ * filled in. See useFormDraft. An admission is typed off a birth certificate,
  * a B-Form and the previous school's leaving certificate spread across a desk,
  * and losing it to a reload or a flat battery costs five minutes and a fresh
  * chance to mistype a date of birth that gets printed on a certificate nine

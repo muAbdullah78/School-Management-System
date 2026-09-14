@@ -23,8 +23,8 @@ import { useRef } from 'react'
  *
  * The trigger in production was a token refresh firing on tab focus. That
  * specific cause is fixed at its source in AuthProvider. This hook exists so
- * that the NEXT thing which briefly sets a loading flag — a licence refetch, a
- * settings query falling out of the cache, a gate somebody adds next year —
+ * that the NEXT thing which briefly sets a loading flag (a licence refetch, a
+ * settings query falling out of the cache, a gate somebody adds next year)
  * cannot do it again. A gate should decide whether you may see a screen. It
  * should not get a second vote once you are looking at it.
  *
@@ -43,7 +43,7 @@ export function useLatch(value: boolean, resetKey?: unknown): boolean {
   const latched = useRef(false)
   const key = useRef(resetKey)
   // A latch that could never be released would be its own bug. `resetKey` is
-  // the identity the latch belongs to — in practice the signed-in user's id.
+  // the identity the latch belongs to, in practice the signed-in user's id.
   // When a DIFFERENT person appears, the previous answer is not evidence about
   // them, so the gate goes back to not knowing and shows its loading state
   // again. That is what stops one user's half-typed screen being handed to the

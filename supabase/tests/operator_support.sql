@@ -268,7 +268,7 @@ begin
 
   -- 7. The assertion the whole write refusal rests on.
   if public.has_role('owner') or public.has_role('principal')
-     or public.has_role('admin_clerk') or public.has_role('accountant') then
+     or public.has_role('principal') or public.has_role('principal') then
     failures := failures
       || '  7. has_role() is TRUE inside a support session. Every one of the 43 '
       || 'write policies gates on it, so the operator can now write to every '

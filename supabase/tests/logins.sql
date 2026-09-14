@@ -44,7 +44,7 @@ begin
   alter table public.profiles disable trigger user;
   insert into public.profiles (id, school_id, full_name, role, family_id) values
     (own,  s1, 'The Owner',  'owner', null),
-    (clk,  s1, 'The Clerk',  'admin_clerk', null),
+    (clk,  s1, 'The Class Teacher',  'class_teacher', null),
     -- The one the roster could never show: a login with no staff row.
     (orphan, s1, 'New Teacher', 'class_teacher', null),
     (par,  s1, 'A Parent',   'parent', fam),
@@ -52,7 +52,7 @@ begin
   alter table public.profiles enable trigger user;
 
   insert into public.staff (school_id, full_name, designation, profile_id)
-    values (s1, 'The Clerk', 'Office', clk) returning id into st;
+    values (s1, 'The Class Teacher', 'Office', clk) returning id into st;
 
   insert into ids values ('s1', s1), ('own', own), ('clk', clk),
                          ('orphan', orphan), ('par', par), ('own2', own2);
@@ -83,7 +83,7 @@ begin
   -- The attached one carries its person.
   select staff_name into e from public.fn_school_logins()
    where profile_id = (select v from ids where k='clk');
-  if e <> 'The Clerk' then raise exception 'FAIL: attached login lost its person: %', e; end if;
+  if e <> 'The Class Teacher' then raise exception 'FAIL: attached login lost its person: %', e; end if;
 
   -- Unattached first, because that is the work list.
   if (select profile_id from public.fn_school_logins() limit 1)

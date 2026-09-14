@@ -418,6 +418,25 @@ select 'the observer role (0059)',
                                            -- the ability to change a child's exam
                                            -- result.
                                            'fn_may_mark_subject',
+                                           -- 0134 and 0135: the same category
+                                           -- again. fn_may_write_register says
+                                           -- who may mark a daily register and
+                                           -- fn_may_set_a_test who may set and
+                                           -- mark a class test, and both are
+                                           -- evaluated inside row-level
+                                           -- policies. On may_view an observer
+                                           -- and a support visit could mark a
+                                           -- child absent.
+                                           'fn_may_write_register',
+                                           'fn_may_set_a_test',
+                                           -- fn_my_unmarked_tests (0135) is a
+                                           -- teacher's OWN list of papers still
+                                           -- to mark. An observer has none and
+                                           -- neither has a principal, and on
+                                           -- may_view both would read an empty
+                                           -- list as "nothing to mark" rather
+                                           -- than "not your list".
+                                           'fn_my_unmarked_tests',
                                            'fn_checkin_display',
                                            'fn_pending_invites',
                                            -- fn_preview_discount (0131) works
@@ -1214,9 +1233,16 @@ select 'only the right teacher can mark a paper (0085)',
            -- Silent: marks still save. They save for the wrong people.
            then 'FAIL: ANY teacher can still enter ANY class''s exam marks; '
                 || 're-run bundle 7'
+         -- EITHER NAME PASSES, and the reason is 0135 rather than laziness.
+         -- fn_enter_assessment_marks now calls fn_may_set_a_test, which is
+         -- fn_may_mark_subject with the principal removed. The subject scope
+         -- this row exists to protect is still there, one call further down.
+         -- Matching only the old name would report a school as broken for
+         -- having the newer, stricter rule.
          when not exists (select 1 from pg_proc where proname='fn_enter_assessment_marks'
                            and pronamespace='public'::regnamespace
-                           and prosrc like '%fn_may_mark_subject%')
+                           and (prosrc like '%fn_may_mark_subject%'
+                                or prosrc like '%fn_may_set_a_test%'))
            then 'FAIL: class-test marks are still not subject-scoped; re-run bundle 7'
          else 'PASS' end
 
@@ -2798,6 +2824,101 @@ select 'a school can choose its own plan (0132)',
                 || 'Edge Function''s call is ambiguous and public signup is '
                 || 'down; re-apply '
                 || 'supabase/bundles/37_a_discount_and_a_plan_you_can_choose.sql'
+         else 'PASS'
+       end
+
+union all
+-- 0133. Two roles the school never needed.
+--
+-- CHECKED AS AN ABSENCE OF ROWS, not as the absence of the enum values. There
+-- is no DROP VALUE in Postgres and 266 lines across 60 frozen migrations name
+-- these two inside has_role() lists, so the values survive on purpose and a row
+-- that cannot hold one is already unreachable. What would be a real fault is a
+-- school that pasted the bundle and still has somebody on a withdrawn role,
+-- which would mean the migration's UPDATE was rolled back: that is exactly what
+-- happened on the first draft, where 0001's own privilege-escalation trigger
+-- refused the migration's own write because auth.uid() is null in the SQL
+-- editor.
+select 'the office is one role (0133)',
+       case
+         when to_regprocedure('public.fn_assignable_roles()') is null
+           then 'FAIL: the Admin / Clerk and Accountant roles are still on '
+                || 'offer in the staff dropdowns; apply '
+                || 'supabase/bundles/38_the_register_belongs_to_the_teacher.sql'
+         when not exists (select 1 from pg_constraint
+                           where conname = 'profiles_role_live_chk')
+           then 'FAIL: nothing stops a withdrawn role being set again; re-apply '
+                || 'supabase/bundles/38_the_register_belongs_to_the_teacher.sql'
+         when exists (select 1 from public.profiles
+                       where role in ('admin_clerk', 'accountant'))
+           then 'FAIL: somebody still holds a withdrawn role, which means the '
+                || 'migration''s own UPDATE was rolled back; re-apply '
+                || 'supabase/bundles/38_the_register_belongs_to_the_teacher.sql'
+         else 'PASS'
+       end
+
+union all
+-- 0134 and 0135. The register belongs to the teacher.
+--
+-- The functions are SECURITY DEFINER and bypass row security, so the POLICIES
+-- are checked as well: a school with the new functions and the old policies
+-- would refuse a principal at the function and let the same person do the same
+-- thing over PostgREST. 0024 recorded exactly that fault for these tables.
+select 'the register belongs to the teacher (0134)',
+       case
+         when to_regprocedure('public.fn_may_write_register()') is null
+           then 'FAIL: a principal can still mark the daily register; apply '
+                || 'supabase/bundles/38_the_register_belongs_to_the_teacher.sql'
+         when not exists (select 1 from pg_proc
+                           where proname = 'fn_mark_attendance'
+                             and pronamespace = 'public'::regnamespace
+                             and prosrc like '%fn_may_write_register%')
+           then 'FAIL: fn_mark_attendance still lets the office mark a '
+                || 'register; re-apply '
+                || 'supabase/bundles/38_the_register_belongs_to_the_teacher.sql'
+         when not exists (select 1 from pg_policy
+                           where polrelid = 'public.attendance_daily'::regclass
+                             and polname = 'attendance_insert'
+                             and pg_get_expr(polwithcheck, polrelid)
+                                 like '%fn_may_write_register%')
+           then 'FAIL: the attendance policy still names the principal, so the '
+                || 'table can be written round the function; re-apply '
+                || 'supabase/bundles/38_the_register_belongs_to_the_teacher.sql'
+         when to_regclass('public.attendance_subject') is null
+           then 'FAIL: there is no subject register for a subject teacher to '
+                || 'keep; re-apply '
+                || 'supabase/bundles/38_the_register_belongs_to_the_teacher.sql'
+         when to_regprocedure('public.fn_attendance_day(uuid,date)') is null
+           then 'FAIL: the head has no way to see which classes have marked; '
+                || 're-apply supabase/bundles/38_the_register_belongs_to_the_teacher.sql'
+         else 'PASS'
+       end
+
+union all
+select 'a test is set and marked by the teacher (0135)',
+       case
+         when to_regprocedure('public.fn_may_set_a_test(uuid,uuid,uuid,uuid)') is null
+           then 'FAIL: a principal can still create and mark class tests; '
+                || 'apply supabase/bundles/38_the_register_belongs_to_the_teacher.sql'
+         when not exists (select 1 from pg_policy
+                           where polrelid = 'public.assessments'::regclass
+                             and polname = 'assessments_insert'
+                             and pg_get_expr(polwithcheck, polrelid)
+                                 like '%fn_may_set_a_test%')
+           then 'FAIL: the assessments policy still lets the office create a '
+                || 'test; re-apply '
+                || 'supabase/bundles/38_the_register_belongs_to_the_teacher.sql'
+         -- The date guard is what makes scheduling safe rather than merely
+         -- possible: the column always accepted a future date, and without
+         -- this a teacher could enter marks for a paper nobody had sat.
+         when not exists (select 1 from pg_trigger
+                           where tgrelid = 'public.assessments'::regclass
+                             and tgname = 'trg_assessment_date')
+           then 'FAIL: a test can be dated 2031 and will never be chased again; '
+                || 're-apply supabase/bundles/38_the_register_belongs_to_the_teacher.sql'
+         when to_regprocedure('public.fn_tests_overview(uuid,date,date)') is null
+           then 'FAIL: the head cannot see which tests are marked; re-apply '
+                || 'supabase/bundles/38_the_register_belongs_to_the_teacher.sql'
          else 'PASS'
        end
 

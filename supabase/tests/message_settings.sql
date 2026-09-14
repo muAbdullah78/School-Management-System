@@ -73,7 +73,7 @@ begin
     (v_pa, 'msp@msg.test'), (v_ob, 'mso@msg.test') on conflict (id) do nothing;
   insert into public.profiles (id, full_name, role, school_id) values
     (v_oa, 'Msg Owner',  'owner',       v_a),
-    (v_cl, 'Msg Clerk',  'admin_clerk', v_a),
+    (v_cl, 'Msg Class Teacher',  'class_teacher', v_a),
     (v_pa, 'Msg Parent', 'parent',      v_a),
     (v_ob, 'Other Owner','owner',       v_b)
     on conflict (id) do update set school_id = excluded.school_id,

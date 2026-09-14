@@ -73,7 +73,7 @@ begin
     (v_pa, 'bfp@bulk.test'), (v_ob, 'bfo@bulk.test') on conflict (id) do nothing;
   insert into public.profiles (id, full_name, role, school_id) values
     (v_oa, 'Bulk Owner', 'owner',       v_a),
-    (v_cl, 'Bulk Clerk', 'admin_clerk', v_a),
+    (v_cl, 'Bulk Clerk', 'principal', v_a),
     (v_pa, 'Bulk Parent','parent',      v_a),
     (v_ob, 'Other Owner','owner',       v_b)
     on conflict (id) do update set school_id = excluded.school_id,

@@ -130,7 +130,7 @@ begin
   insert into public.profiles (id, full_name, role, school_id) values
     (v_oa, 'Ro Owner',     'owner',       v_a),
     (v_pa, 'Ro Principal', 'principal',   v_a),
-    (v_ca, 'Ro Clerk',     'admin_clerk', v_a),
+    (v_ca, 'Ro Class Teacher',     'class_teacher', v_a),
     (v_ob, 'Ro Owner B',   'owner',       v_b)
   on conflict (id) do update set school_id = excluded.school_id,
                                  role = excluded.role, full_name = excluded.full_name,
@@ -236,7 +236,7 @@ do $$
 declare v_s1 uuid := pg_temp.sess('Roll A','2025-2026');
         v_s2 uuid := pg_temp.sess('Roll A','2026-2027');
 begin
-  perform pg_temp.be('Ro Clerk');
+  perform pg_temp.be('Ro Class Teacher');
   perform pg_temp.refuses(
     format('select public.fn_rollover(%L::uuid, %L::uuid, ''[]''::jsonb, false)', v_s1, v_s2),
     '1. a clerk may not run a rollover, even a dry one', '%owner or principal%');

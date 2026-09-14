@@ -3,17 +3,90 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getCurrentSession, listClasses, listSections, listSubjects,
   listAssessments, createAssessment, getAssessmentMarksheet, enterAssessmentMarks, lockAssessment,
-  getMyAssignments,
+  getMyAssignments, myUnmarkedTests,
   type AssessmentRow,
 } from '@/lib/db'
 import { fmtDate, todayISO } from '@/lib/format'
 import { useAuth } from '@/auth/AuthProvider'
 import { isTeacher } from '@/auth/roles'
+import { TestsOverview } from './TestsOverview'
+import { LoadError } from '@/components/ui'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 type Entry = { marks: string; is_absent: boolean }
 
+/**
+ * WHO SEES WHAT.
+ *
+ * Migration 0135 took test creation, marking and locking away from the
+ * principal. As with the register in 0134, the answer is not a disabled button
+ * on the same screen: the head's question is a different question, and it now
+ * has a screen of its own.
+ *
+ *   class_teacher, subject_teacher  set, schedule and mark their own tests
+ *   principal, readonly             the oversight screen with the calendar
+ *   owner                           the oversight screen, and may still set a
+ *                                   test from it. See 0134 for why the owner
+ *                                   keeps the hatch and where to close it.
+ */
 export function TestsPage() {
+  const { profile } = useAuth()
+  const role = profile?.role
+  const overseer = role === 'principal' || role === 'readonly' || role === 'owner'
+  const session = useQuery({ queryKey: ['currentSession'], queryFn: getCurrentSession })
+  const [setting, setSetting] = useState(false)
+
+  if (overseer && !(role === 'owner' && setting)) {
+    if (!session.data) {
+      return (
+        <div>
+          {/* The failed read is shown rather than translated into "no session
+              set": a head told to create an academic year they already have
+              will go and create a second one. */}
+          <LoadError of={[session]} what="The tests overview" />
+          <h1 className="text-xl font-semibold text-slate-800">Tests</h1>
+          {!session.isError && (
+            <p className="mt-4 rounded bg-amber-50 p-3 text-sm text-amber-700">
+              {session.isLoading
+                ? 'Loading…'
+                : 'No current academic session is set. Create one in Settings first.'}
+            </p>
+          )}
+        </div>
+      )
+    }
+    return (
+      <div>
+        <TestsOverview sessionId={session.data.id} />
+        {role === 'owner' && (
+          <div className="mt-8 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-sm text-slate-600">
+              Tests are set and marked by the teachers. As the owner you can still
+              set one yourself if you have to.
+            </p>
+            <button onClick={() => setSetting(true)}
+              className="mt-2 rounded border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100">
+              Set a test
+            </button>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      {role === 'owner' && (
+        <button onClick={() => setSetting(false)} className="text-sm text-brand-700 hover:underline">
+          &larr; Back to the overview
+        </button>
+      )}
+      <TeacherTests />
+    </div>
+  )
+}
+
+function TeacherTests() {
   const { profile } = useAuth()
   const isTeach = isTeacher(profile?.role)
   const session = useQuery({ queryKey: ['currentSession'], queryFn: getCurrentSession })
@@ -42,10 +115,26 @@ export function TestsPage() {
     queryFn: () => listAssessments(sessionId!, classId), enabled: !!sessionId && !!classId,
   })
 
+  // Split on the DATE, not on whether marks exist. A test dated today counts as
+  // sat: the paper may be collected at lunchtime and marked in the afternoon,
+  // and the database allows marks from the day itself.
+  const today = todayISO()
+  const all = tests.data ?? []
+  const scheduled = all.filter((t) => t.assessment_date != null && t.assessment_date > today)
+  const sat = all.filter((t) => t.assessment_date == null || t.assessment_date <= today)
+
   return (
     <div>
+      <LoadError of={[session, classes, tests]} what="Your tests" />
       <h1 className="text-xl font-semibold text-slate-800">Tests</h1>
       <p className="mt-1 text-sm text-slate-500">Daily, weekly and monthly class tests. Separate from formal exams.</p>
+
+      {sessionId && (
+        <UnmarkedReminder
+          sessionId={sessionId}
+          onPick={(id) => { setClassId(id); setSelected(null) }}
+        />
+      )}
 
       <label className="mt-4 block max-w-xs">
         <span className="text-sm text-slate-600">Class</span>
@@ -58,24 +147,64 @@ export function TestsPage() {
       {classId && !selected && (
         <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_20rem]">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Tests in this class</div>
-            <div className="mt-2 space-y-2">
-              {tests.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
-              {tests.data?.length === 0 && <p className="text-sm text-slate-500">No tests yet. Create one on the right.</p>}
-              {tests.data?.map((t) => (
-                <button key={t.id} onClick={() => setSelected(t)}
-                  className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-left hover:ring-1 hover:ring-brand-300">
-                  <span>
-                    <span className="font-medium text-slate-800">{t.title}</span>
-                    <span className="text-sm text-slate-500">
-                      {t.subject_name ? ` · ${t.subject_name}` : ''}{t.section_name ? ` · Sec ${t.section_name}` : ''} · /{t.max_marks}
-                    </span>
-                    <span className="block text-xs text-slate-400">{fmtDate(t.assessment_date)}</span>
-                  </span>
-                  {t.is_locked && <span className="text-xs text-slate-500">🔒 locked</span>}
-                </button>
-              ))}
-            </div>
+            {tests.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+            {tests.data?.length === 0 && (
+              <p className="text-sm text-slate-500">No tests yet. Create one on the right.</p>
+            )}
+
+            {/*
+              * SCHEDULED TESTS ARE LISTED SEPARATELY, and it is not decoration.
+              * A paper set for Saturday and a paper sat last Tuesday were in
+              * one list with nothing but a date to tell them apart, and both
+              * opened the same marks grid. Since 0135 the database refuses
+              * marks before the day, so an undivided list would mean a teacher
+              * tapping a test and being refused with no way to have known.
+              */}
+            {scheduled.length > 0 && (
+              <>
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Scheduled
+                </div>
+                <div className="mt-2 space-y-2">
+                  {scheduled.map((t) => (
+                    <div key={t.id}
+                      className="rounded-lg border border-sky-200 bg-sky-50/60 px-3 py-2">
+                      <span className="font-medium text-slate-800">{t.title}</span>
+                      <span className="text-sm text-slate-500">
+                        {t.subject_name ? ` · ${t.subject_name}` : ''}
+                        {t.section_name ? ` · Sec ${t.section_name}` : ''} · /{t.max_marks}
+                      </span>
+                      <span className="block text-xs text-sky-800">
+                        {fmtDate(t.assessment_date)} · marks can be entered from that day
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {sat.length > 0 && (
+              <>
+                <div className={`text-xs font-semibold uppercase tracking-wide text-slate-500 ${scheduled.length ? 'mt-5' : ''}`}>
+                  Sat
+                </div>
+                <div className="mt-2 space-y-2">
+                  {sat.map((t) => (
+                    <button key={t.id} onClick={() => setSelected(t)}
+                      className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-left hover:ring-1 hover:ring-brand-300">
+                      <span>
+                        <span className="font-medium text-slate-800">{t.title}</span>
+                        <span className="text-sm text-slate-500">
+                          {t.subject_name ? ` · ${t.subject_name}` : ''}{t.section_name ? ` · Sec ${t.section_name}` : ''} · /{t.max_marks}
+                        </span>
+                        <span className="block text-xs text-slate-400">{fmtDate(t.assessment_date)}</span>
+                      </span>
+                      {t.is_locked && <span className="text-xs text-slate-500">🔒 locked</span>}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
           <NewTest key={classId} sessionId={sessionId!} classId={classId} forcedSectionIds={forcedSectionIds} />
         </div>
@@ -84,6 +213,64 @@ export function TestsPage() {
       {selected && (
         <MarksGrid test={selected} onBack={() => setSelected(null)} />
       )}
+    </div>
+  )
+}
+
+/**
+ * Papers you set, that have been sat, that you have not finished marking.
+ *
+ * WHY IT IS ON THIS SCREEN AND NOT ONLY IN A NOTIFICATION. A test is marked at
+ * the teacher's own pace on their own phone, days after the paper is collected,
+ * and the thing that actually loses marks is not forgetting that the test
+ * happened: it is marking twenty of thirty-four, being interrupted, and never
+ * coming back. So "unmarked" here means AT LEAST ONE pupil with neither a mark
+ * nor an absence, which is the case a reminder that only fires on a blank test
+ * would miss entirely.
+ *
+ * A test dated TODAY is not chased. The paper may be sat this afternoon.
+ *
+ * Silent when there is nothing outstanding. A panel that says "nothing to do"
+ * every day is a panel people stop reading on the day it says something else.
+ */
+function UnmarkedReminder({
+  sessionId, onPick,
+}: { sessionId: string; onPick: (classId: string) => void }) {
+  const late = useQuery({
+    queryKey: ['myUnmarkedTests', sessionId],
+    queryFn: () => myUnmarkedTests(sessionId),
+  })
+  const rows = late.data ?? []
+  if (rows.length === 0) return null
+
+  return (
+    <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+      <div className="text-sm font-medium text-amber-900">
+        {rows.length === 1
+          ? 'One test is still waiting to be marked'
+          : `${rows.length} tests are still waiting to be marked`}
+      </div>
+      <ul className="mt-2 space-y-1">
+        {rows.map((r) => (
+          <li key={r.assessment_id}>
+            <button type="button" onClick={() => onPick(r.class_id)}
+              className="text-left text-sm text-amber-900 hover:underline">
+              <span className="font-medium">{r.title}</span>
+              <span className="text-amber-800">
+                {' · '}{r.class_name}{r.section_name ? ` ${r.section_name}` : ''}
+                {r.subject_name ? ` · ${r.subject_name}` : ''}
+                {' · '}{fmtDate(r.assessment_date)}
+                {' · '}{r.marked} of {r.pupils} marked
+                {' · '}{r.days_late} day{r.days_late === 1 ? '' : 's'} ago
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 text-xs text-amber-800">
+        Tap one to open its class. It stops appearing here once every pupil has
+        a mark or is recorded absent.
+      </p>
     </div>
   )
 }
@@ -142,7 +329,19 @@ function NewTest({ sessionId, classId, forcedSectionIds }: { sessionId: string; 
         </label>
         <label className="block">
           <span className="text-sm text-slate-600">Date</span>
+          {/*
+            * NO `max`. A future date is the scheduling feature: "next Saturday"
+            * is exactly what a teacher wants to enter on a Wednesday. The
+            * database bounds it to the academic year and to a year ahead, which
+            * catches the realistic error (a mistyped year) without refusing the
+            * realistic use.
+            */}
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={FIELD} />
+          {date > todayISO() && (
+            <span className="mt-1 block text-xs text-sky-700">
+              Scheduled. Marks can be entered from {fmtDate(date)}.
+            </span>
+          )}
         </label>
         <label className="block">
           <span className="text-sm text-slate-600">Total marks</span>

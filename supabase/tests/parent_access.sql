@@ -62,12 +62,15 @@ begin
   alter table public.profiles disable trigger user;
   insert into auth.users (id, email) values
     (v_owner, 'e1@pa.test'), (v_clerk, 'e2@pa.test'), (v_par, 'father@pa.test'),
-    (v_par2, 'mother@pa.test'), (v_oown, 'e5@pa.test'), (v_opar, 'foreign@pa.test')
+    (v_par2, 'mother@pa.test'), (v_oown, 'e5@pa.test'), (v_opar, 'foreign@pa.test'),
+    ('00000000-0000-0000-0000-00000000e00a'::uuid, 'teacher@pa.test')
     on conflict (id) do nothing;
   -- family_id left NULL on both parents on purpose.
   insert into public.profiles (id, full_name, role, school_id) values
     (v_owner, 'PA Owner',   'owner',       v_school),
-    (v_clerk, 'PA Clerk',   'admin_clerk', v_school),
+    (v_clerk, 'PA Office',   'principal'   , v_school),
+    -- 0133: the boundary that survives the role merge is office vs staff room.
+    ('00000000-0000-0000-0000-00000000e00a'::uuid, 'PA Teacher', 'class_teacher', v_school),
     (v_par,   'PA Father',  'parent',      v_school),
     (v_par2,  'PA Mother',  'parent',      v_school),
     (v_oown,  'Other Owner','owner',       v_other),
@@ -258,21 +261,26 @@ declare v_fam uuid;
 begin
   select family_id into v_fam from public.students where full_name = 'PA Elder';
 
-  -- A clerk runs the fee counter and must not be able to hand out data access.
-  perform set_config('test.uid', '00000000-0000-0000-0000-00000000e002', false);
+  -- 0133 NOTE. This used to refuse an admin_clerk: run the fee counter, but do
+  -- not hand out data access. That line was inside the office and the office is
+  -- now one role, so the refusal moved to the staff room. A class teacher with
+  -- a parent standing in front of them is the realistic case anyway.
+  perform set_config('test.uid',
+    (select id::text from public.profiles where full_name = 'PA Teacher'), false);
   begin
     perform public.fn_link_parent('00000000-0000-0000-0000-00000000e004', v_fam);
-    raise exception 'FAIL  16. a clerk granted portal access';
+    raise exception 'FAIL  16. a class teacher granted portal access';
   exception
     when others then
       if sqlerrm like 'FAIL%' then raise; end if;
-      raise notice 'PASS  16. a clerk cannot grant portal access (%)', sqlerrm;
+      raise notice 'PASS  16. a class teacher cannot grant portal access (%)', sqlerrm;
   end;
 
-  -- But a clerk SHOULD be able to see who already has it, or the fee counter
+  -- But the office SHOULD be able to see who already has it, or the fee counter
   -- cannot answer "does this father have the app?".
+  perform set_config('test.uid', '00000000-0000-0000-0000-00000000e002', false);
   perform pg_temp.ok((select count(*) from public.fn_family_parents(v_fam)) >= 0,
-    '17. a clerk can still see who has access');
+    '17. the office can still see who has access');
 end $t$;
 
 -- =============================================================================
@@ -351,7 +359,7 @@ begin
 
   perform pg_temp.ok(public.current_school_id() is null,
     '22. a deactivated login resolves to no school');
-  perform pg_temp.ok(public.has_role('admin_clerk') = false,
+  perform pg_temp.ok(public.has_role('principal') = false,
     '23. and fails its role check');
   perform pg_temp.ok(public.is_staff() = false,
     '24. and is no longer staff');
@@ -374,7 +382,7 @@ begin
   update public.profiles set active = true
    where id = '00000000-0000-0000-0000-00000000e002';
   perform set_config('test.uid', '00000000-0000-0000-0000-00000000e002', false);
-  perform pg_temp.ok(public.has_role('admin_clerk'),
+  perform pg_temp.ok(public.has_role('principal'),
     '26. reactivating restores access');
 end $t$;
 

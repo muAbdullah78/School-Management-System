@@ -59,7 +59,7 @@ begin
     on conflict (id) do nothing;
   insert into public.profiles (id, full_name, role, school_id) values
     (v_owner, 'Fin Owner', 'owner', v_school),
-    (v_clerk, 'Fin Clerk', 'accountant', v_school),
+    (v_clerk, 'Fin Office', 'principal', v_school),
     (v_teach, 'Fin Teacher', 'class_teacher', v_school)
   on conflict (id) do update set school_id = excluded.school_id, role = excluded.role;
   alter table public.profiles enable trigger user;
@@ -427,19 +427,47 @@ begin
   select id into v_till from public.till_sessions where status = 'closed'
    order by closed_at desc limit 1;
 
-  perform set_config('test.uid', '00000000-0000-0000-0000-0000000000e2', false);
+  -- The boundary that SURVIVES the role merge: somebody who is not the office
+  -- cannot sign off anything. Asserted first, while the till is still closed;
+  -- after the sign-off below it is 'approved' and every refusal would be for
+  -- the wrong reason.
+  perform set_config('test.uid',
+    (select id::text from public.profiles where full_name = 'Fin Teacher'), false);
+  v_ok := false;
   begin
     perform public.fn_approve_till(v_till);
     v_ok := true;
   exception when others then null;
   end;
-  if v_ok then raise exception 'FAIL: a clerk signed off their own drawer'; end if;
+  if v_ok then raise exception 'FAIL: a class teacher signed off a till'; end if;
 
-  perform set_config('test.uid', '00000000-0000-0000-0000-0000000000e1', false);
+  /*
+   * 0133 TOOK A CONTROL AWAY HERE, AND THIS RECORDS IT RATHER THAN HIDING IT.
+   *
+   * This used to assert "a clerk cannot sign off their own drawer", and it held
+   * because the person at the counter was an admin_clerk while fn_approve_till
+   * has always gated on has_role('owner','principal').
+   *
+   * With Admin / Clerk and Accountant withdrawn, the person at the counter IS a
+   * principal, and fn_approve_till has no same-person check. The office account
+   * that took the cash can now sign off its own drawer. That is the oldest
+   * control in a cash office and it is gone, as a direct consequence of having
+   * one office role instead of two.
+   *
+   * It is NOT quietly fixed here. A same-person rule would mean a school with
+   * one principal and an absent proprietor could never sign a drawer off, and
+   * that is a decision about how a school runs rather than one a test file gets
+   * to make. This states it so whoever decides can see what they are deciding.
+   */
+  perform set_config('test.uid', '00000000-0000-0000-0000-0000000000e2', false);
   perform public.fn_approve_till(v_till);
   if (select status from public.till_sessions where id = v_till) <> 'approved' then
-    raise exception 'FAIL: owner sign-off did not take';
+    raise exception 'FAIL: the office could not sign off a closed drawer';
   end if;
+  raise notice 'NOTE: since 0133 the office signs off its own drawer. See the '
+               'comment above this line.';
+
+  perform set_config('test.uid', '00000000-0000-0000-0000-0000000000e1', false);
 
   -- an open drawer cannot be signed off
   v_ok := false;

@@ -1453,6 +1453,32 @@ jobs:
         # than the roll it already has.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/plan_choice.sql
 
+      - name: Two roles withdrawn, and nobody stranded by it
+        # Re-runs migration 0133 against a database put back into the state a
+        # live school is in the morning before it pastes the bundle: constraint
+        # dropped, guard disabled, a fee clerk and an accountant on the roll,
+        # an invitation in the post. That found two faults a restatement of the
+        # logic would not have. First, 0001's privilege-escalation trigger
+        # refuses the migration's own UPDATE, because auth.uid() is null in the
+        # SQL Editor, so the bundle would have rolled back on exactly the
+        # databases this migration exists for. Second, a flat check constraint
+        # on user_invites could not be added at all on any school that had ever
+        # invited a clerk, because the accepted rows are history and are left
+        # alone.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/roles_pruned.sql
+
+      - name: Who marks the register, who sets a test, and what the head sees
+        # 0134 and 0135 take marking and test-setting away from the principal.
+        # Every refusal is tested AS `authenticated`, through the real policy
+        # and the real function, and has to be refused for the RIGHT reason: a
+        # hidden button is not a revoked right, and a suite that accepts any
+        # exception passes on a typo. Two things are asserted as still ALLOWED
+        # and matter as much: the principal can still reopen a finalised day
+        # (0121, the remedy for a child marked absent by mistake), and the
+        # owner can still mark, which 0134 argues for at length and which this
+        # records so the decision is visible if it is ever reversed.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/who_marks_the_register.sql
+
       - name: Remarks and position holders — do ties and remarks survive?
         # Assertion 12 is why exam_remarks is its own table rather than a column
         # on result_cards: fn_generate_result_cards INSERTS a new version rather

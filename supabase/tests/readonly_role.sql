@@ -425,14 +425,14 @@ begin
   insert into auth.users (id, email, raw_user_meta_data)
   values (v_forged, 'forged@obs.test',
           jsonb_build_object('school_id', v_a::text, 'full_name', 'Forged Clerk',
-                             'role', 'admin_clerk'));
+                             'role', 'principal'));
 
   -- The trusted path: only the service role can write app_metadata, so this is
   -- what an Edge Function's createUser call looks like.
   insert into auth.users (id, email, raw_user_meta_data, raw_app_meta_data)
   values (v_trusted, 'trusted@obs.test',
           jsonb_build_object('full_name', 'Clerk Invite'),
-          jsonb_build_object('school_id', v_a::text, 'role', 'admin_clerk'));
+          jsonb_build_object('school_id', v_a::text, 'role', 'principal'));
 end;
 $invites$;
 
@@ -444,7 +444,7 @@ select pg_temp.ok(
   || 'any parent make themselves principal');
 
 select pg_temp.ok(
-  (select active and role::text = 'admin_clerk' from public.profiles
+  (select active and role::text = 'principal' from public.profiles
     where id = '00000000-0000-0000-0000-00000000c006'),
   '31. while the same request through APP metadata — which only the service role '
   || 'can write — is created active with exactly that role');

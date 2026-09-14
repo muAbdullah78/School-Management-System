@@ -116,7 +116,7 @@ begin
     on conflict (id) do nothing;
   insert into public.profiles (id, full_name, role, school_id) values
     (v_oa, 'Disc Owner',   'owner',       v_a),
-    (v_ca, 'Disc Clerk',   'admin_clerk', v_a),
+    (v_ca, 'Disc Class Teacher',   'class_teacher', v_a),
     (v_ob, 'Disc B Owner', 'owner',       v_b)
     on conflict (id) do update set school_id = excluded.school_id,
                                    role = excluded.role,
@@ -293,7 +293,7 @@ select pg_temp.ok(
 -- ============================================================================
 -- 15. Who may do what.
 -- ============================================================================
-select pg_temp.be('Disc Clerk');
+select pg_temp.be('Disc Class Teacher');
 select pg_temp.ok(pg_temp.raises(
   $$ select public.fn_my_apply_discount('ALLFREE') $$, 'owner or the principal'),
   '15a. a clerk cannot apply a discount');
