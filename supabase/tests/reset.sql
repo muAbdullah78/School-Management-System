@@ -40,7 +40,7 @@ begin
     on conflict (id) do nothing;
   alter table public.profiles disable trigger user;
   insert into public.profiles (id, school_id, full_name, role) values
-    (own, s1, 'The Owner', 'owner'), (clk, s1, 'The Clerk', 'admin_clerk'),
+    (own, s1, 'The Owner', 'owner'), (clk, s1, 'The Clerk', 'principal'),
     (own2, s2, 'Other Owner', 'owner');
   alter table public.profiles enable trigger user;
 

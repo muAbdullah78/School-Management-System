@@ -43,87 +43,76 @@
    reading about them, which is one less thing to explain.
    =========================================================================== */
 :root {
-  /* Aligned with the new Marketing Site Palette */
-  --ground:   #F1F5F9;
+  --ground:   #f6f7fb;
   --paper:    #ffffff;
-  --ink:      #020617;
-  --ink-soft: #334155;
-  --ink-faint:#64748B;
-  --rule:     #E2E8F0;
-  --rule-firm:#CBD5E1;
-  
-  /* Premium Royal Blue Brand */
-  --brand:    #2563EB;
-  --brand-ink:#1D4ED8;
-  --brand-wash:#EFF6FF;
-  
-  /* Modern Semantic Colors */
-  --money:    #10B981;
-  --money-wash:#ECFDF5;
-  --due:      #F59E0B;
-  --due-wash: #FEF3C7;
-  --danger:   #EF4444;
-  --danger-wash:#FEF2F2;
-  
-  /* Modern SaaS Shadow */
-  --shadow:   0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.025);
+  --ink:      #131725;
+  --ink-soft: #4c5468;
+  --ink-faint:#7a8296;
+  --rule:     #e2e5ee;
+  --rule-firm:#c9cddd;
+  --brand:    #4338ca;
+  --brand-ink:#312e81;
+  --brand-wash:#eef2ff;
+  --money:    #047857;
+  --money-wash:#ecfdf5;
+  --due:      #b45309;
+  --due-wash: #fffbeb;
+  --danger:   #b91c1c;
+  --danger-wash:#fef2f2;
+  --shadow:   0 1px 2px rgb(16 24 40 / .05), 0 8px 24px -12px rgb(16 24 40 / .18);
   --step-max: 68ch;
 }
-
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --ground:   #020617;
-    --paper:    #0F172A;
-    --ink:      #F8FAFC;
-    --ink-soft: #CBD5E1;
-    --ink-faint:#94A3B8;
-    --rule:     #1E293B;
-    --rule-firm:#334155;
-    
-    --brand:    #3B82F6;
-    --brand-ink:#93C5FD;
-    --brand-wash:#172554;
-    
-    --money:    #34D399;
-    --money-wash:#064E3B;
-    --due:      #FBBF24;
-    --due-wash: #78350F;
-    --danger:   #F87171;
-    --danger-wash:#7F1D1D;
-    
-    --shadow:   0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
+    --ground:   #101219;
+    --paper:    #181b25;
+    --ink:      #e9ebf3;
+    --ink-soft: #a8aec2;
+    --ink-faint:#7e8598;
+    --rule:     #2a2e3c;
+    --rule-firm:#3b4152;
+    --brand:    #a5b4fc;
+    --brand-ink:#c7d2fe;
+    --brand-wash:#1e2136;
+    --money:    #6ee7b7;
+    --money-wash:#10241d;
+    --due:      #fcd34d;
+    --due-wash: #251d0e;
+    --danger:   #fca5a5;
+    --danger-wash:#2a1416;
+    --shadow:   0 1px 2px rgb(0 0 0 / .4), 0 8px 24px -12px rgb(0 0 0 / .6);
   }
 }
-:root {
-  /* Synced with marketing site styles.css */
-  --ground:     #F8FAFC;
-  --paper:      #ffffff;
-  --ink:        #020617;
-  --ink-soft:   #334155;
-  --ink-faint:  #64748B;
-  --rule:       #E2E8F0;
-  --rule-firm:  #CBD5E1;
-  --brand:      #2563EB;
-  --brand-ink:  #1D4ED8;
-  --brand-wash: #EFF6FF;
-  --money:      #10B981;
-  --money-wash: #ECFDF5;
-  --due:        #F59E0B;
-  --due-wash:   #FEF3C7;
-  --danger:     #EF4444;
-  --danger-wash:#FEF2F2;
-  --shadow:     0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-  --step-max:   68ch;
+:root[data-theme="dark"] {
+  --ground:   #101219;
+  --paper:    #181b25;
+  --ink:      #e9ebf3;
+  --ink-soft: #a8aec2;
+  --ink-faint:#7e8598;
+  --rule:     #2a2e3c;
+  --rule-firm:#3b4152;
+  --brand:    #a5b4fc;
+  --brand-ink:#c7d2fe;
+  --brand-wash:#1e2136;
+  --money:    #6ee7b7;
+  --money-wash:#10241d;
+  --due:      #fcd34d;
+  --due-wash: #251d0e;
+  --danger:   #fca5a5;
+  --danger-wash:#2a1416;
+  --shadow:   0 1px 2px rgb(0 0 0 / .4), 0 8px 24px -12px rgb(0 0 0 / .6);
 }
 
+* { box-sizing: border-box; }
 body {
   margin: 0;
   background: var(--ground);
   color: var(--ink);
-  /* Removed external Google Fonts to ensure instant loading. Synced with Segoe UI Variable Display */
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI", Roboto, sans-serif;
-  font-size: 17px;
-  line-height: 1.65;
+  font-family: Figtree, system-ui, -apple-system, 'Segoe UI', Roboto, 'Liberation Sans', Arial, sans-serif;
+  /* Deliberately large. Half the people who open this read slowly, and a manual
+     set at 15px is a manual they give up on. */
+  font-size: 18px;
+  line-height: 1.62;
   -webkit-text-size-adjust: 100%;
 }
 
@@ -141,8 +130,8 @@ body {
   color: var(--brand); margin-bottom: 1rem;
 }
 .mast h1 {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI", Roboto, sans-serif;
-  font-weight: 700; font-size: clamp(2.6rem, 7vw, 4.4rem); line-height: 1.02;
+  font-family: Newsreader, Georgia, 'Times New Roman', serif;
+  font-weight: 500; font-size: clamp(2.6rem, 7vw, 4.4rem); line-height: 1.02;
   margin: 0 0 1rem; letter-spacing: -.02em; text-wrap: balance;
 }
 .mast .sub { max-width: 46ch; font-size: 1.15rem; color: var(--ink-soft); margin: 0; }
@@ -174,7 +163,7 @@ section.ch .num {
   letter-spacing: .1em; color: var(--brand); display: block; margin-bottom: .35rem;
 }
 section.ch h2 {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI", Roboto, sans-serif; font-weight: 700;
+  font-family: Newsreader, Georgia, 'Times New Roman', serif; font-weight: 500;
   font-size: clamp(1.8rem, 4vw, 2.5rem); line-height: 1.12; margin: 0 0 .6rem;
   letter-spacing: -.015em; text-wrap: balance;
 }
@@ -613,26 +602,18 @@ a { color: var(--brand); }
     you: it proves what you entered and when.</p>
   </div>
 
-  <h3>Finalising, and telling the parents</h3>
-  <p>When you are sure, press <span class="where">Finalise</span>. Two things
-  happen. The day is locked, so nobody can change it quietly: if something on it
-  turns out to be wrong, the owner or the principal reopens it and the reason goes
-  on the record. And a WhatsApp message is prepared <strong>for each absent
-  child</strong>, waiting under <span class="where">Messages</span>, naming that
-  one child and that one date.</p>
-  <div class="note good">
-    <span class="lbl">Nothing is sent without you</span>
-    <p>The messages sit in a list. You press the WhatsApp button on each one and
-    send it yourself. Children marked <strong>leave</strong> or
-    <strong>half day</strong> get nothing: a parent who told you their child would
-    be away does not need telling back.</p>
-    <p>Finalise the same day twice and you do not get two messages. If you
-    corrected the register and finalised again, only the children you had not
-    already messaged are added.</p>
+  <h3>Finalising</h3>
+  <p>When you are sure, press <span class="where">Finalise</span>. The day is
+  locked, so nobody can change it quietly: if something on it turns out to be
+  wrong, the owner or the principal reopens it and the reason goes on the
+  record.</p>
+  <div class="note">
+    <span class="lbl">Telling a parent</span>
+    <p>The software does not message parents about absences. If you want to tell
+    one, open the child from <span class="where">Students</span> and press the
+    WhatsApp button on their profile: WhatsApp opens with their number ready and
+    you write and send it yourself.</p>
   </div>
-  <p>If you do not want absence messages at all, switch them off:
-  <span class="where">Settings</span> → <span class="where">Messages</span> →
-  <em>Absent today</em>. The register still finalises.</p>
 </section>
 
 <!-- ==================================================================== -->
@@ -721,17 +702,14 @@ a { color: var(--brand); }
   all of your Rs 386,000 is the transport fee, that is a different problem from
   eighty families behind on tuition.</p>
 
-  <h3>Reminding parents on WhatsApp</h3>
-  <ol class="steps">
-    <li><p><span class="where">Messages</span>. The list is already written for you,
-      one row per family.</p></li>
-    <li><p>Press the WhatsApp button on a row. WhatsApp opens with the message
-      typed out.</p></li>
-    <li><p>Read it, then send it yourself.</p></li>
-  </ol>
-  <p>Nothing is ever sent without you pressing send. You can edit the wording of
-  every message under <span class="where">Settings</span> →
-  <span class="where">Messages</span>, and switch any of them off.</p>
+  <h3>Reminding a parent on WhatsApp</h3>
+  <p>Every row on the defaulters list has a WhatsApp button. Press it and
+  WhatsApp opens with that family's number and the amount they owe already
+  typed. Read it, change anything you like, and send it yourself.</p>
+  <p>Nothing is ever sent without you pressing send, and the software keeps no
+  list of who you have messaged. That is on purpose: a list like that is only as
+  true as somebody remembering to tick it off, and a wrong one is worse than
+  none.</p>
 
   <h3>A challan you should not have raised</h3>
   <p>It happens: the wrong month, the wrong class, or a child who had already
@@ -844,11 +822,11 @@ a { color: var(--brand); }
     into an accusation.</p>
   </div>
 
-  <p>Releasing also prepares a WhatsApp message for each family, waiting under
-  <span class="where">Messages</span>, telling them the result can be viewed. One
-  message per child per term. Release again after a correction and nobody is
-  messaged twice. A result you are <strong>withholding</strong> over unpaid fees is
-  never announced, because that family cannot see it yet.</p>
+  <p>Releasing does not message anybody. Parents with a portal login see the
+  result the moment you release it; if you want to tell a family it is ready,
+  open the child and press the WhatsApp button on their profile. A result you are
+  <strong>withholding</strong> over unpaid fees stays invisible to that family
+  until you release it.</p>
 
   <h3>Letters or a GPA</h3>
   <p><span class="where">Settings</span> → <span class="where">School profile</span>
@@ -1103,40 +1081,84 @@ a { color: var(--brand); }
       <thead>
         <tr>
           <th>Can they…</th>
-          <th>Owner</th><th>Principal</th><th>Clerk</th>
-          <th>Accountant</th><th>Teacher</th><th>Observer</th><th>Parent</th>
+          <th>Owner</th><th>Principal</th>
+          <th>Class teacher</th><th>Subject teacher</th>
+          <th>Observer</th><th>Parent</th>
         </tr>
       </thead>
       <tbody>
         <tr><td>Admit a child</td>
-          <td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td>
+          <td class="yes">Yes</td><td class="yes">Yes</td>
           <td class="no">No</td><td class="no">No</td><td class="no">No</td><td class="no">No</td></tr>
         <tr><td>Take a fee</td>
-          <td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td>
-          <td class="yes">Yes</td><td class="no">No</td><td class="no">No</td><td class="no">No</td></tr>
-        <tr><td>Mark attendance</td>
-          <td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td>
-          <td class="no">No</td><td class="yes">Own class</td><td class="no">No</td><td class="no">No</td></tr>
-        <tr><td>Enter marks</td>
-          <td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td>
-          <td class="no">No</td><td class="yes">Own subjects</td><td class="no">No</td><td class="no">No</td></tr>
+          <td class="yes">Yes</td><td class="yes">Yes</td>
+          <td class="no">No</td><td class="no">No</td><td class="no">No</td><td class="no">No</td></tr>
+        <tr><td>Mark the daily register</td>
+          <td class="yes">Yes</td><td class="no">No</td>
+          <td class="yes">Own class</td><td class="yes">Own classes</td>
+          <td class="no">No</td><td class="no">No</td></tr>
+        <tr><td>See which classes have marked</td>
+          <td class="yes">Yes</td><td class="yes">Yes</td>
+          <td class="no">No</td><td class="no">No</td><td class="yes">Yes</td><td class="no">No</td></tr>
+        <tr><td>Reopen a finalised day</td>
+          <td class="yes">Yes</td><td class="yes">Yes</td>
+          <td class="no">No</td><td class="no">No</td><td class="no">No</td><td class="no">No</td></tr>
+        <tr><td>Set and mark a class test</td>
+          <td class="yes">Yes</td><td class="no">No</td>
+          <td class="yes">Own class</td><td class="yes">Own subjects</td>
+          <td class="no">No</td><td class="no">No</td></tr>
+        <tr><td>Enter exam marks</td>
+          <td class="yes">Yes</td><td class="yes">Yes</td>
+          <td class="yes">Own class</td><td class="yes">Own subjects</td>
+          <td class="no">No</td><td class="no">No</td></tr>
         <tr><td>Release results</td>
-          <td class="yes">Yes</td><td class="yes">Yes</td><td class="no">No</td>
+          <td class="yes">Yes</td><td class="yes">Yes</td>
           <td class="no">No</td><td class="no">No</td><td class="no">No</td><td class="no">No</td></tr>
         <tr><td>Change fee amounts</td>
-          <td class="yes">Yes</td><td class="yes">Yes</td><td class="no">No</td>
+          <td class="yes">Yes</td><td class="yes">Yes</td>
           <td class="no">No</td><td class="no">No</td><td class="no">No</td><td class="no">No</td></tr>
         <tr><td>See the money reports</td>
-          <td class="yes">Yes</td><td class="yes">Yes</td><td class="no">No</td>
-          <td class="yes">Yes</td><td class="no">No</td><td class="yes">Yes</td><td class="no">No</td></tr>
+          <td class="yes">Yes</td><td class="yes">Yes</td>
+          <td class="no">No</td><td class="no">No</td><td class="yes">Yes</td><td class="no">No</td></tr>
         <tr><td>Add or remove a login</td>
-          <td class="yes">Yes</td><td class="yes">Yes</td><td class="no">No</td>
+          <td class="yes">Yes</td><td class="yes">Yes</td>
           <td class="no">No</td><td class="no">No</td><td class="no">No</td><td class="no">No</td></tr>
         <tr><td>See their own children only</td>
-          <td class="no">No</td><td class="no">No</td><td class="no">No</td>
+          <td class="no">No</td><td class="no">No</td>
           <td class="no">No</td><td class="no">No</td><td class="no">No</td><td class="yes">Yes</td></tr>
       </tbody>
     </table>
+  </div>
+
+  <div class="note">
+    <span class="lbl">Why the head does not mark the register</span>
+    <p>The daily register is a statement by the person who stood in front of the
+    class and looked. If the office can make that statement too, nothing on the
+    record tells you which of the two it was, and the attendance figure that
+    ends up on a result card stops being evidence of anything. The same goes for
+    a class test: it is set and marked by the teacher who taught the lesson.</p>
+    <p>What the head gets instead is the view nobody had before. Open
+    <strong>Attendance</strong> and you see every class sorted into three piles:
+    not done, done but not locked, and done and locked. Open <strong>Tests</strong>
+    and you see what your teachers have set, whether it has been marked, and a
+    calendar to look back at last week or forward at what is coming.</p>
+    <p>If a class teacher is away, give their login to whoever is covering the
+    class for the day. That is the school's own arrangement and the software does
+    not try to second-guess it.</p>
+  </div>
+
+  <div class="note">
+    <span class="lbl">Only one kind of office account</span>
+    <p>Earlier versions offered <strong>Admin / Clerk</strong> and
+    <strong>Accountant</strong> as separate roles. They have been withdrawn. A
+    school of this size has one office, and if the head needs another pair of
+    hands the answer is another <strong>Principal / Headmaster</strong> login,
+    not a different kind of account with a different set of buttons missing.</p>
+    <p>If your school had a clerk or an accountant, that person is now a
+    Principal. They keep their login, their password and everything they could
+    do before. They also gain approval rights they did not have, such as waiving
+    a fine or reopening a register, so check <strong>Settings &rarr; Users</strong>
+    once and move anyone who should not have those to <strong>Read only</strong>.</p>
   </div>
 
   <div class="note">

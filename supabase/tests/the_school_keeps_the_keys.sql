@@ -112,7 +112,10 @@ begin
   insert into public.profiles (id, full_name, role, school_id, active) values
     ('00000000-0000-0000-0000-00000000a001', 'Owner A',    'owner',        a, true),
     ('00000000-0000-0000-0000-00000000a002', 'Principal A','principal',    a, true),
-    ('00000000-0000-0000-0000-00000000a003', 'Clerk A',    'admin_clerk',  a, true),
+    -- 0133: Admin / Clerk is withdrawn. The account that may create a login
+    -- and may NOT enumerate the platform's addresses is the class teacher;
+    -- the office is the principal, asserted one line above.
+    ('00000000-0000-0000-0000-00000000a003', 'Second Teacher A', 'subject_teacher', a, true),
     ('00000000-0000-0000-0000-00000000a004', 'Teacher A',  'class_teacher',a, true),
     ('00000000-0000-0000-0000-00000000a005', 'Parent A',   'parent',       a, true),
     ('00000000-0000-0000-0000-00000000a006', 'Observer A', 'readonly',     a, true),
@@ -236,8 +239,8 @@ select set_config('test.uid', '00000000-0000-0000-0000-00000000a003', true);
 select pg_temp.ok(
   pg_temp.raises('select public.fn_login_email_available(''x@y.test'')',
                  'only the owner or principal'),
-  '10. a clerk may not. They can create a login and they cannot enumerate the '
-  || 'platform''s addresses, and those are different privileges');
+  '10. a subject teacher may not. Creating a login and enumerating the '
+  || 'platform''s addresses are different privileges');
 
 select set_config('test.uid', '00000000-0000-0000-0000-00000000a005', true);
 select pg_temp.ok(

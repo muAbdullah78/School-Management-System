@@ -294,6 +294,10 @@ select pg_temp.ok(
 do $r5$
 declare v_a uuid := (select v from _s where k = 'a'); i integer := 0; r text;
 begin
+  -- The two withdrawn roles are STILL NAMED HERE, on purpose. This asserts
+  -- that user metadata decides nothing, and a browser can claim any string it
+  -- likes, including a role 0133 retired. A list of only live roles would stop
+  -- testing the case most worth testing.
   foreach r in array array['principal','admin_clerk','accountant','class_teacher',
                            'subject_teacher','readonly','parent','owner'] loop
     i := i + 1;
@@ -318,14 +322,18 @@ do $r5b$
 declare v_b uuid := (select v from _s where k = 'b');
 begin
   insert into public.user_invites (school_id, email, role, full_name)
-  values (v_b, 'invited@strand.test', 'accountant', 'Invited Person');
+  -- 'subject_teacher' since 0133 retired the accountant role this used to
+  -- name. The point of the assertion is that the SCHOOL's chosen role wins
+  -- over whatever the person types, so it needs a role that is neither the
+  -- default ('readonly') nor what the signup metadata claims.
+  values (v_b, 'invited@strand.test', 'subject_teacher', 'Invited Person');
   perform pg_temp.browser_signup('00000000-0000-0000-0000-0000000c0001',
     'invited@strand.test', '{"full_name":"Typed Their Own Name"}'::jsonb);
 end
 $r5b$;
 
 select pg_temp.ok(
-  (select role = 'accountant' and active and school = 'Strand B'
+  (select role = 'subject_teacher' and active and school = 'Strand B'
      from pg_temp.prof('00000000-0000-0000-0000-0000000c0001')),
   '13. an invitation is still redeemed by email, with the role the SCHOOL chose');
 

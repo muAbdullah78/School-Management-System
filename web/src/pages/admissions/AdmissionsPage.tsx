@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { useFormDraft } from '@/hooks/useFormDraft'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getCurrentSession, listClasses, listSections, admitStudent, searchStudentsForLink,
@@ -12,35 +13,62 @@ import { Receipt, type ReceiptData } from '@/components/Receipt'
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 const LABEL = 'text-sm text-slate-600'
 
+interface LinkedRel { id: string; label: string; relation: string }
+
+/**
+ * The empty admission form, INCLUDING the family links and the admission fee.
+ *
+ * They live in one object rather than in six useState calls because the whole
+ * thing is now written to the tab's storage as a draft while it is being
+ * filled in. See useFormDraft. An admission is typed off a birth certificate,
+ * a B-Form and the previous school's leaving certificate spread across a desk,
+ * and losing it to a reload or a flat battery costs five minutes and a fresh
+ * chance to mistype a date of birth that gets printed on a certificate nine
+ * years later.
+ *
+ * `admission_date` is deliberately NOT todayISO() here. This object is the
+ * "empty form" the draft is compared against to decide whether there is
+ * anything worth keeping, and a value that changes at midnight would make that
+ * comparison lie. The date is applied as a default below instead.
+ */
 const BLANK = {
   full_name: '', father_name: '', mother_name: '', gender: '', dob: '', b_form: '',
   father_cnic: '', phone: '', whatsapp: '', address: '',
-  class_id: '', section_id: '', roll_no: '', gr_no: '', admission_date: todayISO(), notes: '',
+  class_id: '', section_id: '', roll_no: '', gr_no: '', admission_date: '', notes: '',
+  hasRelative: false,
+  links: [] as LinkedRel[],
+  admissionFeeOn: false,
+  admissionFeeAmount: '',
 }
-
-interface LinkedRel { id: string; label: string; relation: string }
 
 export function AdmissionsPage() {
   const qc = useQueryClient()
   const session = useQuery({ queryKey: ['currentSession'], queryFn: getCurrentSession })
   const classes = useQuery({ queryKey: ['classes'], queryFn: listClasses })
-  const [form, setForm] = useState({ ...BLANK })
+  const draft = useFormDraft('admission', BLANK)
+  const form = draft.value
+  const { hasRelative, links, admissionFeeOn, admissionFeeAmount } = form
   const [slip, setSlip] = useState<AdmissionSlipData | null>(null)
   const [receipt, setReceipt] = useState<ReceiptData | null>(null)
 
-  // Family links
-  const [hasRelative, setHasRelative] = useState(false)
+  // The search box, NOT part of the draft. It is a way of finding a sibling,
+  // not something the operator typed that they would mind retyping, and a
+  // restored search term with stale results behind it is confusing.
   const [linkTerm, setLinkTerm] = useState('')
-  const [links, setLinks] = useState<LinkedRel[]>([])
   const linkResults = useQuery({
     queryKey: ['linkSearch', linkTerm],
     queryFn: () => searchStudentsForLink(linkTerm),
     enabled: hasRelative && linkTerm.trim().length >= 1,
   })
 
-  // Admission fee
-  const [admissionFeeOn, setAdmissionFeeOn] = useState(false)
-  const [admissionFeeAmount, setAdmissionFeeAmount] = useState('')
+  // Today, unless the operator has chosen otherwise or a restored draft says
+  // otherwise. See the note on BLANK for why it is not baked into the empty form.
+  const admissionDate = form.admission_date || todayISO()
+
+  // Where the last child was placed, so "Admit another" can start the next one
+  // in the same class after the draft has been thrown away. A ref, not state:
+  // nothing renders from it.
+  const placement = useRef({ class_id: '', section_id: '', admission_date: '' })
 
   const sections = useQuery({
     queryKey: ['sections', form.class_id],
@@ -49,9 +77,11 @@ export function AdmissionsPage() {
   })
   const hasSections = (sections.data?.length ?? 0) > 0
 
-  function set<K extends keyof typeof form>(k: K, v: string) {
-    setForm((f) => ({ ...f, [k]: v }))
+  function set<K extends keyof typeof form>(k: K, v: (typeof form)[K]) {
+    draft.set({ [k]: v } as Partial<typeof form>)
   }
+  const setLinks = (fn: (prev: LinkedRel[]) => LinkedRel[]) =>
+    draft.replace((f) => ({ ...f, links: fn(f.links) }))
 
   function addLink(s: LinkSearchRow) {
     if (links.some((l) => l.id === s.id)) return
@@ -81,7 +111,7 @@ export function AdmissionsPage() {
         whatsapp: form.whatsapp || undefined,
         address: form.address || undefined,
         notes: form.notes || undefined,
-        admission_date: form.admission_date || undefined,
+        admission_date: admissionDate,
         gr_no: form.gr_no || undefined,
         roll_no: form.roll_no || undefined,
         session_id: session.data!.id,
@@ -106,9 +136,29 @@ export function AdmissionsPage() {
         fatherName: form.father_name || null,
         className: cls?.name ?? '-',
         sectionName: sec?.name ?? null,
-        admissionDate: form.admission_date || todayISO(),
+        admissionDate: admissionDate,
       })
       qc.invalidateQueries({ queryKey: ['students'] })
+
+      /*
+       * THE DRAFT IS DESTROYED THE MOMENT THE CHILD IS ADMITTED, and this is
+       * not tidying up.
+       *
+       * The draft exists so a half-typed admission survives a reload. A
+       * COMPLETED one surviving is a different thing entirely: the operator
+       * admits Ayesha, walks away, and the next person to open this screen is
+       * handed Ayesha's details already filled in. Press Admit and the school
+       * has her twice, with two GR numbers, in two classes, on two fee
+       * ledgers. A saved record must never be offered back as unsaved work.
+       *
+       * Where the child was placed is kept, because "Admit another" starts the
+       * next one in the same class, and on admission day that is nearly always
+       * right.
+       */
+      placement.current = {
+        class_id: form.class_id, section_id: form.section_id, admission_date: admissionDate,
+      }
+      draft.clear()
     },
   })
 
@@ -116,7 +166,10 @@ export function AdmissionsPage() {
     if (!admit.data?.admission_receipt_no || admit.data.admission_fee_amount == null) return
     setReceipt({
       receiptNo: admit.data.admission_receipt_no,
-      studentName: form.full_name.trim(),
+      // From the slip, not from the form. The form was emptied when the
+      // admission succeeded, and a receipt printed afterwards must still carry
+      // the name of the child it was collected for.
+      studentName: slip?.fullName ?? '',
       grNo: admit.data.gr_no,
       amount: admit.data.admission_fee_amount,
       method: 'Cash',
@@ -126,9 +179,15 @@ export function AdmissionsPage() {
   }
 
   function admitAnother() {
-    setForm((f) => ({ ...BLANK, class_id: f.class_id, section_id: f.section_id, admission_date: f.admission_date }))
-    setHasRelative(false); setLinks([]); setLinkTerm('')
-    setAdmissionFeeOn(false); setAdmissionFeeAmount('')
+    // Keeps the class, the section and the date, because the next child through
+    // the door on admission day is almost always going into the same class.
+    // Everything else, including the family links and the fee, goes back to
+    // empty: carrying a previous child's sibling link into the next admission
+    // would attach the wrong family.
+    draft.replace(() => ({ ...BLANK, ...placement.current }))
+    setLinkTerm('')
+    setSlip(null)
+    setReceipt(null)
     admit.reset()
   }
 
@@ -179,6 +238,21 @@ export function AdmissionsPage() {
         </div>
       ) : (
         <form className="mt-5 space-y-6" onSubmit={(e) => { e.preventDefault(); if (ready) admit.mutate() }}>
+          {/*
+            * Said out loud, because a form that refills itself without
+            * explanation is unsettling: the operator cannot tell which fields
+            * they typed and which the machine remembered, so they end up
+            * checking all of them. One sentence and a way out removes the doubt.
+            */}
+          {draft.restored && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              <span>We kept what you had typed here before.</span>
+              <button type="button" onClick={() => { draft.clear(); setLinkTerm('') }}
+                className="rounded border border-amber-300 bg-white px-2.5 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100">
+                Start a blank form
+              </button>
+            </div>
+          )}
           {/* Student */}
           <Section title="Student">
             <label className="block sm:col-span-2">
@@ -269,7 +343,7 @@ export function AdmissionsPage() {
             </label>
             <label className="block">
               <span className={LABEL}>Admission date</span>
-              <input type="date" max={todayISO()} value={form.admission_date} onChange={(e) => set('admission_date', e.target.value)} className={FIELD} />
+              <input type="date" max={todayISO()} value={admissionDate} onChange={(e) => set('admission_date', e.target.value)} className={FIELD} />
             </label>
           </Section>
 
@@ -277,7 +351,7 @@ export function AdmissionsPage() {
           <fieldset className="rounded-lg border border-slate-200 bg-white p-4">
             <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Family</legend>
             <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input type="checkbox" className="h-4 w-4" checked={hasRelative} onChange={(e) => setHasRelative(e.target.checked)} />
+              <input type="checkbox" className="h-4 w-4" checked={hasRelative} onChange={(e) => set('hasRelative', e.target.checked)} />
               Has a sibling or relative already in the school
             </label>
 
@@ -329,7 +403,7 @@ export function AdmissionsPage() {
           <fieldset className="rounded-lg border border-slate-200 bg-white p-4">
             <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Admission fee</legend>
             <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input type="checkbox" className="h-4 w-4" checked={admissionFeeOn} onChange={(e) => setAdmissionFeeOn(e.target.checked)} />
+              <input type="checkbox" className="h-4 w-4" checked={admissionFeeOn} onChange={(e) => set('admissionFeeOn', e.target.checked)} />
               Charge an admission fee
             </label>
             {admissionFeeOn && (
@@ -337,7 +411,7 @@ export function AdmissionsPage() {
                 <label className="block">
                   <span className={LABEL}>Amount received <span className="text-slate-400">(optional)</span></span>
                   <input type="number" min="0" step="1" value={admissionFeeAmount}
-                    onChange={(e) => setAdmissionFeeAmount(e.target.value)} className={FIELD} placeholder="e.g. 5000" />
+                    onChange={(e) => set('admissionFeeAmount', e.target.value)} className={FIELD} placeholder="e.g. 5000" />
                 </label>
                 <p className="mt-2 text-xs text-slate-400">
                   With an amount, a real receipt is issued and the cash shows in the day-book. Leave blank to just

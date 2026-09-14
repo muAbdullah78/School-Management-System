@@ -84,7 +84,7 @@ begin
   on conflict (id) do nothing;
   insert into public.profiles (id, full_name, role, school_id) values
     (v_owner,  'Publish Owner',  'owner',       v_school),
-    (v_clerk,  'Publish Clerk',  'admin_clerk', v_school),
+    (v_clerk,  'Publish Class Teacher',  'class_teacher', v_school),
     (v_parent, 'Publish Parent', 'parent',      v_school)
   on conflict (id) do update set school_id = excluded.school_id, role = excluded.role;
   alter table public.profiles enable trigger user;

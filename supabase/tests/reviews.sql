@@ -59,7 +59,7 @@ begin
   alter table public.profiles disable trigger user;
   insert into public.profiles (id, school_id, full_name, role) values
     (o_ok,  s_ok,  'Basha Salamat', 'owner'),
-    (c_ok,  s_ok,  'Office Clerk',  'admin_clerk'),
+    (c_ok,  s_ok,  'Office Class Teacher',  'class_teacher'),
     (o_new, s_new, 'New Owner',     'owner');
   alter table public.profiles enable trigger user;
 

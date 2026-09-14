@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/auth/AuthProvider'
 import { getSchoolSettings } from '@/lib/db'
+import { useLatch } from '@/hooks/useLatch'
 import { SetupWizard } from '@/pages/SetupWizard'
 
 /**
@@ -16,11 +17,14 @@ import { SetupWizard } from '@/pages/SetupWizard'
  * arriving early is told who to ask rather than shown a form that would fail.
  */
 export function SetupGate({ children }: { children: ReactNode }) {
-  const { profile } = useAuth()
+  const { profile, session } = useAuth()
   const [justFinished, setJustFinished] = useState(false)
   const settings = useQuery({ queryKey: ['schoolSettings'], queryFn: getSchoolSettings })
 
-  if (settings.isLoading) return <div className="p-8 text-slate-500">Loading…</div>
+  // Latched: see useLatch. Once the wizard question has been answered once,
+  // a later refetch of the settings must not blank the screen behind a form.
+  const settled = useLatch(!settings.isLoading, session?.user?.id ?? null)
+  if (settings.isLoading && !settled) return <div className="p-8 text-slate-500">Loading…</div>
 
   // Fail open on error. A settings hiccup should not trap an established
   // school in a setup wizard that would create a duplicate session.

@@ -7,6 +7,7 @@ import { useAmOperator } from '@/hooks/useAmOperator'
 import { SubscriptionLocked } from '@/pages/SubscriptionLocked'
 import { SchoolClosed } from '@/pages/SchoolClosed'
 import { LoginNotAttached } from '@/pages/LoginNotAttached'
+import { useLatch } from '@/hooks/useLatch'
 
 /**
  * Decides whether a signed-in user sees the school app at all.
@@ -22,12 +23,18 @@ import { LoginNotAttached } from '@/pages/LoginNotAttached'
  * unpaid one in, and the database would still refuse their writes anyway.
  */
 export function LicenceGate({ children }: { children: ReactNode }) {
-  const { profile, loading: authLoading } = useAuth()
+  const { profile, session, loading: authLoading } = useAuth()
   const { data, isLoading, isError } = useLicence()
   const { visit, loading: visitLoading } = useSupportVisit()
   const { amOperator, loading: operatorLoading } = useAmOperator()
 
-  if (authLoading || isLoading || visitLoading || operatorLoading) {
+  const busy = authLoading || isLoading || visitLoading || operatorLoading
+  // Latched, so a licence refetch (this gate polls, and refetches on tab focus)
+  // cannot unmount a screen somebody is typing into. useLatch explains why that
+  // matters more than it sounds. The DECISIONS below are not latched: a licence
+  // that expires while the tab is open still replaces the screen.
+  const settled = useLatch(!busy, session?.user?.id ?? null)
+  if (busy && !settled) {
     return <div className="p-8 text-slate-500">Loading…</div>
   }
 

@@ -1,5 +1,5 @@
 -- =============================================================================
--- Expenses, profit, and till control.
+-- Expenses, profit, and what a reversal is worth.
 --
 -- The rules this file exists to defend:
 --
@@ -11,12 +11,9 @@
 --  3. Non-fee income is reported separately and never merged into fee income.
 --  4. Money records are append-only. A reversal nets to zero; nothing is
 --     edited or deleted.
---  5. Taking money is NEVER blocked by till bookkeeping — a cash payment with
---     no open drawer opens one rather than failing.
---  6. A till that does not balance cannot be closed without a reason, in
---     EITHER direction. Extra cash is as suspicious as missing cash.
---  7. A closed till's variance is FROZEN. Later activity must not rewrite an
---     explained shortfall.
+--
+-- Rules 5 to 7 were about the TILL and went with it in 0136. See the note where
+-- sections 8 to 12 used to be.
 --
 -- Run: psql -v ON_ERROR_STOP=1 -f supabase/tests/finance.sql
 -- =============================================================================
@@ -59,7 +56,7 @@ begin
     on conflict (id) do nothing;
   insert into public.profiles (id, full_name, role, school_id) values
     (v_owner, 'Fin Owner', 'owner', v_school),
-    (v_clerk, 'Fin Clerk', 'accountant', v_school),
+    (v_clerk, 'Fin Office', 'principal', v_school),
     (v_teach, 'Fin Teacher', 'class_teacher', v_school)
   on conflict (id) do update set school_id = excluded.school_id, role = excluded.role;
   alter table public.profiles enable trigger user;
@@ -328,145 +325,24 @@ begin
 end $t$;
 
 -- =============================================================================
--- 8. TILL: taking money is never blocked
--- =============================================================================
-do $t$
-declare v_fam uuid; j jsonb; t jsonb;
-begin
-  -- Act as the clerk, who has never opened a till.
-  perform set_config('test.uid', '00000000-0000-0000-0000-0000000000e2', false);
-  if public.fn_current_till() is not null then
-    raise exception 'FAIL: fixture expected the clerk to have no open till';
-  end if;
-
-  select id into v_fam from public.families where head_name = 'Test Payer';
-  j := public.fn_record_family_payment(v_fam, 100, 'cash', 'no till open');
-  if j is null then raise exception 'FAIL: payment refused because no till was open'; end if;
-
-  t := public.fn_current_till();
-  if t is null then raise exception 'FAIL: cash payment did not open a till'; end if;
-  if (t->>'cash_taken')::numeric <> 100 then
-    raise exception 'FAIL: till shows % cash, expected 100', t->>'cash_taken';
-  end if;
-  raise notice '8. cash payment auto-opens a drawer, never blocks — ok';
-end $t$;
-
--- =============================================================================
--- 9. A drawer that does not balance needs a reason — in BOTH directions
--- =============================================================================
-do $t$
-declare t jsonb; v_exp numeric;
-begin
-  perform set_config('test.uid', '00000000-0000-0000-0000-0000000000e2', false);
-  t := public.fn_current_till();
-  v_exp := (t->>'expected_cash')::numeric;
-
-  begin   -- short
-    perform public.fn_close_till(v_exp - 50, null);
-    raise exception 'FAIL: closed a short drawer with no reason';
-  exception when others then
-    if sqlerrm like 'FAIL:%' then raise; end if;
-  end;
-
-  begin   -- over
-    perform public.fn_close_till(v_exp + 50, '');
-    raise exception 'FAIL: closed an over drawer with no reason';
-  exception when others then
-    if sqlerrm like 'FAIL:%' then raise; end if;
-  end;
-
-  raise notice '9. unbalanced drawer needs a reason both ways — ok';
-end $t$;
-
--- =============================================================================
--- 10. Closing freezes the variance
--- =============================================================================
-do $t$
-declare
-  t jsonb; v_exp numeric; v_till uuid; r jsonb;
-  v_var_at_close numeric; v_var_later numeric; v_exp_later numeric;
-  v_fam uuid;
-begin
-  perform set_config('test.uid', '00000000-0000-0000-0000-0000000000e2', false);
-  t := public.fn_current_till();
-  v_till := (t->>'till_id')::uuid;
-  v_exp  := (t->>'expected_cash')::numeric;
-
-  r := public.fn_close_till(v_exp - 30, 'short by 30, investigating');
-  v_var_at_close := (r->>'variance')::numeric;
-  if v_var_at_close <> -30 then
-    raise exception 'FAIL: expected variance -30, got %', v_var_at_close;
-  end if;
-
-  -- More money comes in afterwards. It opens a NEW drawer and must not touch
-  -- the closed one's stored figures.
-  select id into v_fam from public.families where head_name = 'Test Payer';
-  perform public.fn_record_family_payment(v_fam, 900, 'cash', 'later');
-
-  select variance, expected_cash into v_var_later, v_exp_later
-  from public.till_sessions where id = v_till;
-
-  if v_var_later <> v_var_at_close then
-    raise exception 'FAIL: a closed till''s variance moved (% -> %)', v_var_at_close, v_var_later;
-  end if;
-  if v_exp_later <> v_exp then
-    raise exception 'FAIL: a closed till''s expected cash moved';
-  end if;
-  if (public.fn_current_till()->>'till_id')::uuid = v_till then
-    raise exception 'FAIL: a payment attached to an already-closed till';
-  end if;
-  raise notice '10. closed till variance is frozen — ok';
-end $t$;
-
--- =============================================================================
--- 11. Only owner/principal sign off a drawer, and only a closed one
--- =============================================================================
-do $t$
-declare v_till uuid; v_ok boolean := false;
-begin
-  select id into v_till from public.till_sessions where status = 'closed'
-   order by closed_at desc limit 1;
-
-  perform set_config('test.uid', '00000000-0000-0000-0000-0000000000e2', false);
-  begin
-    perform public.fn_approve_till(v_till);
-    v_ok := true;
-  exception when others then null;
-  end;
-  if v_ok then raise exception 'FAIL: a clerk signed off their own drawer'; end if;
-
-  perform set_config('test.uid', '00000000-0000-0000-0000-0000000000e1', false);
-  perform public.fn_approve_till(v_till);
-  if (select status from public.till_sessions where id = v_till) <> 'approved' then
-    raise exception 'FAIL: owner sign-off did not take';
-  end if;
-
-  -- an open drawer cannot be signed off
-  v_ok := false;
-  begin
-    perform public.fn_approve_till(
-      (select id from public.till_sessions where status = 'open' limit 1));
-    v_ok := true;
-  exception when others then null;
-  end;
-  if v_ok then raise exception 'FAIL: signed off a drawer that was still open'; end if;
-  raise notice '11. sign-off is owner-only and closed-only — ok';
-end $t$;
-
--- =============================================================================
--- 12. One open drawer per person
--- =============================================================================
-do $t$
-declare a uuid; b uuid;
-begin
-  perform set_config('test.uid', '00000000-0000-0000-0000-0000000000e2', false);
-  a := public.fn_open_till(500);
-  b := public.fn_open_till(999);
-  if a <> b then
-    raise exception 'FAIL: a second open drawer was created for the same person';
-  end if;
-  raise notice '12. one open drawer per person — ok';
-end $t$;
+-- 8-12 WERE THE TILL, AND 0136 REMOVED IT
+--
+-- They asserted that taking money was never blocked by till bookkeeping, that a
+-- drawer which did not balance could not be closed without a reason in either
+-- direction, that a closed drawer's variance was frozen, that only an owner or
+-- principal signed one off, and that one person had one open drawer.
+--
+-- All five were properties of a second bookkeeping layer sitting on top of
+-- `payments`, and the vendor judged it to have no use in a school whose whole
+-- office is one person: for them the count at the end of the day IS the list of
+-- receipts, so reconciling one against the other is checking their own
+-- arithmetic against itself.
+--
+-- WHAT SURVIVES THE REMOVAL, and is asserted above and below rather than here:
+-- rules 1 to 4 at the top of this file. Fee income still cannot be hand
+-- entered, profit is still fee income plus other income minus expenses, other
+-- income is still reported separately, and money records are still append only
+-- with a reversal netting to zero. None of those ever depended on the till.
 
 -- =============================================================================
 -- 13. Cross-tenant: no reading another school's money
@@ -503,9 +379,9 @@ begin
     raise exception 'FAIL: another school''s figures leaked into the summary: %', s;
   end if;
 
-  if exists (select 1 from public.fn_till_report(current_date - 7, current_date)) then
-    raise exception 'FAIL: read another school''s till report';
-  end if;
+  -- The till report was the third cross-tenant read checked here and 0136
+  -- removed it. The two above are the ones that matter: the expense rows and
+  -- the finance summary are what another school's money actually is.
 
   perform set_config('test.uid', '00000000-0000-0000-0000-0000000000e1', false);
   raise notice '13. cross-tenant money access refused — ok';

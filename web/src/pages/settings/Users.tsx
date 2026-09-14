@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   listProfiles, updateProfileRole, setProfileActive,
-  inviteUser, listPendingInvites, revokeInvite,
+  inviteUser, listPendingInvites, revokeInvite, assignableRoles,
 } from '@/lib/db'
-import { ROLES, ROLE_LABELS, type Role } from '@/auth/roles'
+import { ASSIGNABLE_ROLES, ROLE_LABELS, isRetired, type LiveRole, type Role } from '@/auth/roles'
 import { useAuth } from '@/auth/AuthProvider'
 import { fmtDate } from '@/lib/format'
 import { LoadError } from '@/components/ui'
@@ -16,11 +16,38 @@ const FIELD = 'rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-
 // An owner is never invited. The first account of a school becomes owner at
 // signup, and later owners are promoted on this screen by an existing owner,
 // so the school's top privilege never sits behind an email address.
-const INVITABLE = ROLES.filter((r) => r !== 'owner')
+/**
+ * ASSIGNABLE_ROLES already excludes the owner, and since 0133 it excludes the
+ * two withdrawn office roles as well. This used to be ROLES minus owner, which
+ * meant every value the enum happened to hold ended up in the dropdown.
+ *
+ * The screen ALSO asks the database (fn_assignable_roles, 0133) and prefers
+ * that answer, for the same reason fn_signup_regions exists: two lists that
+ * must agree will eventually not, and the one that decides is the database.
+ * The local list is the fallback, because a school that has not yet pasted
+ * bundle 38 has no such function and must still be able to invite a teacher.
+ */
+const INVITABLE = ASSIGNABLE_ROLES
+
+function useAssignableRoles(): LiveRole[] {
+  const q = useQuery({
+    queryKey: ['assignableRoles'],
+    queryFn: assignableRoles,
+    // The list changes when a migration changes it, which is never within a
+    // session. Asking once per load is already generous.
+    staleTime: Infinity,
+  })
+  const fromDb = q.data
+  if (!fromDb || fromDb.length === 0) return INVITABLE
+  // Only values this build knows how to label. A role added by a newer
+  // migration than this build would otherwise render as a blank option.
+  return INVITABLE.filter((r) => fromDb.includes(r))
+}
 
 export function Users() {
   const qc = useQueryClient()
   const { profile } = useAuth()
+  const assignable = useAssignableRoles()
   const canManage = !!profile && ['owner', 'principal'].includes(profile.role)
   const profiles = useQuery({ queryKey: ['profiles'], queryFn: listProfiles })
   const invites = useQuery({
@@ -90,7 +117,7 @@ export function Users() {
               <span className="text-xs text-slate-600">Role</span>
               <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}
                 className={`${FIELD} mt-1`}>
-                {INVITABLE.map((r) => <option key={r} value={r}>{ROLE_LABELS[r as Role]}</option>)}
+                {assignable.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
               </select>
             </label>
             {/* BLOCKED ONLY ON A KNOWN NO. A check that failed leaves the
@@ -168,7 +195,19 @@ export function Users() {
                   {canManage ? (
                     <select value={p.role} onChange={(e) => role.mutate({ id: p.id, role: e.target.value })}
                       className="w-full rounded border border-slate-300 px-2 py-1 text-sm focus:border-brand-500 focus:outline-none">
-                      {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r as Role]}</option>)}
+                      {assignable.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+                      {/*
+                        * An account that still holds a withdrawn role keeps it
+                        * as an option until somebody changes it, because a
+                        * <select> whose current value is not among its options
+                        * silently displays the FIRST one instead. The head
+                        * would open this screen, see "Principal / Headmaster"
+                        * beside the fee clerk, and have no idea the row had not
+                        * been saved that way.
+                        */}
+                      {isRetired(p.role as Role) && (
+                        <option value={p.role}>{ROLE_LABELS[p.role as Role]}</option>
+                      )}
                     </select>
                   ) : (
                     <span className="text-slate-600">{ROLE_LABELS[p.role as Role] ?? p.role}</span>

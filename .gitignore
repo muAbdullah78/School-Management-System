@@ -2,6 +2,9 @@
 node_modules/
 dist/
 dist-ssr/
+# vitest writes .vite/vitest/results.json wherever it is invoked from, so a
+# run started at the repo root rather than in web/ leaves one here.
+.vite/
 
 # Local env files (never commit secrets)
 .env

@@ -62,7 +62,9 @@ begin
   alter table public.profiles disable trigger user;
   insert into public.profiles (id, school_id, full_name, role, active) values
     (own_u, sch, 'Owner', 'owner', true),
-    (clerk_u, sch, 'Clerk', 'admin_clerk', true),
+    -- 0133: Admin / Clerk is withdrawn, so the account that must NOT see how
+    -- the school gets paid is a class teacher. The office is the principal now.
+    (clerk_u, sch, 'Class Teacher', 'class_teacher', true),
     (own_o, other, 'Other Owner', 'owner', true);
   alter table public.profiles enable trigger user;
 
@@ -196,7 +198,7 @@ begin
   raise notice '4. payment methods are scoped to the school - ok';
 end $t$;
 
--- 5. AND A CLERK CANNOT SEE OR CHANGE THEM. How the school pays is a
+-- 5. AND A CLASS TEACHER CANNOT SEE OR CHANGE THEM. How the school pays is a
 --    governance fact for whoever signs the cheques, on the same reasoning 0074
 --    gives for support visits.
 do $t$
@@ -207,7 +209,7 @@ begin
   select count(*) into v_n from public.payment_methods;
   reset role;
   if v_n <> 0 then
-    raise exception 'FAIL: a clerk can read the school''s payment methods';
+    raise exception 'FAIL: a class teacher can read the school''s payment methods';
   end if;
   begin
     perform public.fn_set_manual_payment_method('Clerk''s own account', null);

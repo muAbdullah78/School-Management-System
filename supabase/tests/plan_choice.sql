@@ -72,7 +72,7 @@ begin
     (v_oa, 'oa@plan.test'), (v_ca, 'ca@plan.test') on conflict (id) do nothing;
   insert into public.profiles (id, full_name, role, school_id) values
     (v_oa, 'Plan Owner', 'owner',       v_a),
-    (v_ca, 'Plan Clerk', 'admin_clerk', v_a)
+    (v_ca, 'Plan Class Teacher', 'class_teacher', v_a)
     on conflict (id) do update set school_id = excluded.school_id,
                                    role = excluded.role,
                                    full_name = excluded.full_name, active = true;
@@ -127,7 +127,7 @@ select pg_temp.ok(
   '1c. and nothing was invoiced');
 
 -- --- 6. Not a clerk -----------------------------------------------------------
-select pg_temp.be('Plan Clerk');
+select pg_temp.be('Plan Class Teacher');
 select pg_temp.ok(pg_temp.raises(
   $$ select public.fn_my_choose_plan('starter', 1) $$, 'owner or the principal'),
   '6. a clerk cannot change the plan');

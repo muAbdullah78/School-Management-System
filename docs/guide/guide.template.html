@@ -602,26 +602,18 @@ a { color: var(--brand); }
     you: it proves what you entered and when.</p>
   </div>
 
-  <h3>Finalising, and telling the parents</h3>
-  <p>When you are sure, press <span class="where">Finalise</span>. Two things
-  happen. The day is locked, so nobody can change it quietly: if something on it
-  turns out to be wrong, the owner or the principal reopens it and the reason goes
-  on the record. And a WhatsApp message is prepared <strong>for each absent
-  child</strong>, waiting under <span class="where">Messages</span>, naming that
-  one child and that one date.</p>
-  <div class="note good">
-    <span class="lbl">Nothing is sent without you</span>
-    <p>The messages sit in a list. You press the WhatsApp button on each one and
-    send it yourself. Children marked <strong>leave</strong> or
-    <strong>half day</strong> get nothing: a parent who told you their child would
-    be away does not need telling back.</p>
-    <p>Finalise the same day twice and you do not get two messages. If you
-    corrected the register and finalised again, only the children you had not
-    already messaged are added.</p>
+  <h3>Finalising</h3>
+  <p>When you are sure, press <span class="where">Finalise</span>. The day is
+  locked, so nobody can change it quietly: if something on it turns out to be
+  wrong, the owner or the principal reopens it and the reason goes on the
+  record.</p>
+  <div class="note">
+    <span class="lbl">Telling a parent</span>
+    <p>The software does not message parents about absences. If you want to tell
+    one, open the child from <span class="where">Students</span> and press the
+    WhatsApp button on their profile: WhatsApp opens with their number ready and
+    you write and send it yourself.</p>
   </div>
-  <p>If you do not want absence messages at all, switch them off:
-  <span class="where">Settings</span> → <span class="where">Messages</span> →
-  <em>Absent today</em>. The register still finalises.</p>
 </section>
 
 <!-- ==================================================================== -->
@@ -710,17 +702,14 @@ a { color: var(--brand); }
   all of your Rs 386,000 is the transport fee, that is a different problem from
   eighty families behind on tuition.</p>
 
-  <h3>Reminding parents on WhatsApp</h3>
-  <ol class="steps">
-    <li><p><span class="where">Messages</span>. The list is already written for you,
-      one row per family.</p></li>
-    <li><p>Press the WhatsApp button on a row. WhatsApp opens with the message
-      typed out.</p></li>
-    <li><p>Read it, then send it yourself.</p></li>
-  </ol>
-  <p>Nothing is ever sent without you pressing send. You can edit the wording of
-  every message under <span class="where">Settings</span> →
-  <span class="where">Messages</span>, and switch any of them off.</p>
+  <h3>Reminding a parent on WhatsApp</h3>
+  <p>Every row on the defaulters list has a WhatsApp button. Press it and
+  WhatsApp opens with that family's number and the amount they owe already
+  typed. Read it, change anything you like, and send it yourself.</p>
+  <p>Nothing is ever sent without you pressing send, and the software keeps no
+  list of who you have messaged. That is on purpose: a list like that is only as
+  true as somebody remembering to tick it off, and a wrong one is worse than
+  none.</p>
 
   <h3>A challan you should not have raised</h3>
   <p>It happens: the wrong month, the wrong class, or a child who had already
@@ -833,11 +822,11 @@ a { color: var(--brand); }
     into an accusation.</p>
   </div>
 
-  <p>Releasing also prepares a WhatsApp message for each family, waiting under
-  <span class="where">Messages</span>, telling them the result can be viewed. One
-  message per child per term. Release again after a correction and nobody is
-  messaged twice. A result you are <strong>withholding</strong> over unpaid fees is
-  never announced, because that family cannot see it yet.</p>
+  <p>Releasing does not message anybody. Parents with a portal login see the
+  result the moment you release it; if you want to tell a family it is ready,
+  open the child and press the WhatsApp button on their profile. A result you are
+  <strong>withholding</strong> over unpaid fees stays invisible to that family
+  until you release it.</p>
 
   <h3>Letters or a GPA</h3>
   <p><span class="where">Settings</span> → <span class="where">School profile</span>
@@ -1092,40 +1081,84 @@ a { color: var(--brand); }
       <thead>
         <tr>
           <th>Can they…</th>
-          <th>Owner</th><th>Principal</th><th>Clerk</th>
-          <th>Accountant</th><th>Teacher</th><th>Observer</th><th>Parent</th>
+          <th>Owner</th><th>Principal</th>
+          <th>Class teacher</th><th>Subject teacher</th>
+          <th>Observer</th><th>Parent</th>
         </tr>
       </thead>
       <tbody>
         <tr><td>Admit a child</td>
-          <td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td>
+          <td class="yes">Yes</td><td class="yes">Yes</td>
           <td class="no">No</td><td class="no">No</td><td class="no">No</td><td class="no">No</td></tr>
         <tr><td>Take a fee</td>
-          <td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td>
-          <td class="yes">Yes</td><td class="no">No</td><td class="no">No</td><td class="no">No</td></tr>
-        <tr><td>Mark attendance</td>
-          <td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td>
-          <td class="no">No</td><td class="yes">Own class</td><td class="no">No</td><td class="no">No</td></tr>
-        <tr><td>Enter marks</td>
-          <td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td>
-          <td class="no">No</td><td class="yes">Own subjects</td><td class="no">No</td><td class="no">No</td></tr>
+          <td class="yes">Yes</td><td class="yes">Yes</td>
+          <td class="no">No</td><td class="no">No</td><td class="no">No</td><td class="no">No</td></tr>
+        <tr><td>Mark the daily register</td>
+          <td class="yes">Yes</td><td class="no">No</td>
+          <td class="yes">Own class</td><td class="yes">Own classes</td>
+          <td class="no">No</td><td class="no">No</td></tr>
+        <tr><td>See which classes have marked</td>
+          <td class="yes">Yes</td><td class="yes">Yes</td>
+          <td class="no">No</td><td class="no">No</td><td class="yes">Yes</td><td class="no">No</td></tr>
+        <tr><td>Reopen a finalised day</td>
+          <td class="yes">Yes</td><td class="yes">Yes</td>
+          <td class="no">No</td><td class="no">No</td><td class="no">No</td><td class="no">No</td></tr>
+        <tr><td>Set and mark a class test</td>
+          <td class="yes">Yes</td><td class="no">No</td>
+          <td class="yes">Own class</td><td class="yes">Own subjects</td>
+          <td class="no">No</td><td class="no">No</td></tr>
+        <tr><td>Enter exam marks</td>
+          <td class="yes">Yes</td><td class="yes">Yes</td>
+          <td class="yes">Own class</td><td class="yes">Own subjects</td>
+          <td class="no">No</td><td class="no">No</td></tr>
         <tr><td>Release results</td>
-          <td class="yes">Yes</td><td class="yes">Yes</td><td class="no">No</td>
+          <td class="yes">Yes</td><td class="yes">Yes</td>
           <td class="no">No</td><td class="no">No</td><td class="no">No</td><td class="no">No</td></tr>
         <tr><td>Change fee amounts</td>
-          <td class="yes">Yes</td><td class="yes">Yes</td><td class="no">No</td>
+          <td class="yes">Yes</td><td class="yes">Yes</td>
           <td class="no">No</td><td class="no">No</td><td class="no">No</td><td class="no">No</td></tr>
         <tr><td>See the money reports</td>
-          <td class="yes">Yes</td><td class="yes">Yes</td><td class="no">No</td>
-          <td class="yes">Yes</td><td class="no">No</td><td class="yes">Yes</td><td class="no">No</td></tr>
+          <td class="yes">Yes</td><td class="yes">Yes</td>
+          <td class="no">No</td><td class="no">No</td><td class="yes">Yes</td><td class="no">No</td></tr>
         <tr><td>Add or remove a login</td>
-          <td class="yes">Yes</td><td class="yes">Yes</td><td class="no">No</td>
+          <td class="yes">Yes</td><td class="yes">Yes</td>
           <td class="no">No</td><td class="no">No</td><td class="no">No</td><td class="no">No</td></tr>
         <tr><td>See their own children only</td>
-          <td class="no">No</td><td class="no">No</td><td class="no">No</td>
+          <td class="no">No</td><td class="no">No</td>
           <td class="no">No</td><td class="no">No</td><td class="no">No</td><td class="yes">Yes</td></tr>
       </tbody>
     </table>
+  </div>
+
+  <div class="note">
+    <span class="lbl">Why the head does not mark the register</span>
+    <p>The daily register is a statement by the person who stood in front of the
+    class and looked. If the office can make that statement too, nothing on the
+    record tells you which of the two it was, and the attendance figure that
+    ends up on a result card stops being evidence of anything. The same goes for
+    a class test: it is set and marked by the teacher who taught the lesson.</p>
+    <p>What the head gets instead is the view nobody had before. Open
+    <strong>Attendance</strong> and you see every class sorted into three piles:
+    not done, done but not locked, and done and locked. Open <strong>Tests</strong>
+    and you see what your teachers have set, whether it has been marked, and a
+    calendar to look back at last week or forward at what is coming.</p>
+    <p>If a class teacher is away, give their login to whoever is covering the
+    class for the day. That is the school's own arrangement and the software does
+    not try to second-guess it.</p>
+  </div>
+
+  <div class="note">
+    <span class="lbl">Only one kind of office account</span>
+    <p>Earlier versions offered <strong>Admin / Clerk</strong> and
+    <strong>Accountant</strong> as separate roles. They have been withdrawn. A
+    school of this size has one office, and if the head needs another pair of
+    hands the answer is another <strong>Principal / Headmaster</strong> login,
+    not a different kind of account with a different set of buttons missing.</p>
+    <p>If your school had a clerk or an accountant, that person is now a
+    Principal. They keep their login, their password and everything they could
+    do before. They also gain approval rights they did not have, such as waiving
+    a fine or reopening a register, so check <strong>Settings &rarr; Users</strong>
+    once and move anyone who should not have those to <strong>Read only</strong>.</p>
   </div>
 
   <div class="note">

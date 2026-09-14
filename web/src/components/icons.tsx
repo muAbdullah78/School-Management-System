@@ -170,9 +170,6 @@ export const IconPrint = svg(
     <rect x="6" y="14" width="12" height="8" rx="1" />
   </>,
 )
-export const IconWhatsApp = svg(
-  <path d="M21 11.5a8.4 8.4 0 0 1-12.6 7.3L3 20.5l1.8-5.2A8.5 8.5 0 1 1 21 11.5Z" />,
-)
 export const IconChevron = svg(<path d="m9 18 6-6-6-6" />)
 /** An open book, for the handbook link in the shell and the parent portal. */
 export const IconBook = svg(
@@ -211,34 +208,16 @@ export const IconBirthday = svg(
 /**
  * A question inside a circle: somebody asked.
  *
- * NOT a speech bubble, which is what an enquiry first suggests, because
- * IconWhatsApp is already a bubble and sits four rows away in the same
- * sidebar. Two bubbles would leave the reader counting rows again, which is
- * the whole thing the icons are there to stop.
+ * NOT a speech bubble, which is what an enquiry first suggests. That was
+ * originally because IconWhatsApp was already a bubble four rows away in the
+ * same sidebar; 0136 removed that row, and the circle stays because it is the
+ * better glyph for the thing rather than because of what sat beside it.
  */
 export const IconEnquiries = svg(
   <>
     <circle cx="12" cy="12" r="9" />
     <path d="M9.4 9.2a2.7 2.7 0 0 1 5.2.9c0 1.8-2.6 2.2-2.6 3.9" />
     <path d="M12 17.2h.01" />
-  </>,
-)
-
-/**
- * The cash drawer, seen from above: three coin compartments and a note slot.
- *
- * Accounts and Cash drawer BOTH drew IconWallet, which is the same failure as
- * a missing icon wearing a disguise: the reader looks for the money row and
- * finds two identical ones. Accounts keeps the wallet, because it is about the
- * money as a total; the drawer gets the tray, because it is about the cash in
- * front of you.
- */
-export const IconDrawer = svg(
-  <>
-    <rect x="2.5" y="7" width="19" height="11" rx="2" />
-    <path d="M2.5 11.5h19" />
-    <path d="M8 7v4.5M16 7v4.5" />
-    <circle cx="12" cy="14.9" r="1.7" />
   </>,
 )
 
@@ -276,8 +255,6 @@ export const NAV_ICONS: Record<string, (p: IconProps) => JSX.Element> = {
   '/my-class': IconMyClass,
   '/platform': IconPlatform,
   '/accounts': IconWallet,
-  '/till': IconDrawer,
-  '/messages': IconWhatsApp,
   '/birthdays': IconBirthday,
   '/enquiries': IconEnquiries,
 }

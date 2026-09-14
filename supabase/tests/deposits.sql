@@ -120,10 +120,14 @@ begin
     values (v_b, 'growth', 'active', current_date + 30);
 
   insert into auth.users (id, email) values
-    (v_oa, 'oa@dep.test'), (v_ca, 'ca@dep.test'), (v_ob, 'ob@dep.test');
+    (v_oa, 'oa@dep.test'), (v_ca, 'ca@dep.test'), (v_ob, 'ob@dep.test'),
+    ('00000000-0000-0000-0000-0000000de90a', 'ta@dep.test');
   insert into public.profiles (id, school_id, full_name, role, active) values
     (v_oa, v_a, 'Dep Owner A', 'owner', true),
-    (v_ca, v_a, 'Dep Clerk A', 'admin_clerk', true),
+    (v_ca, v_a, 'Dep Office A', 'principal', true),
+    -- 0133: the account that must NOT send money back out of the school is a
+    -- class teacher now. Admin / Clerk is withdrawn.
+    ('00000000-0000-0000-0000-0000000de90a', v_a, 'Dep Teacher A', 'class_teacher', true),
     (v_ob, v_b, 'Dep Owner B', 'owner', true);
 
   -- ---- School A ----
@@ -402,17 +406,18 @@ select public.fn_charge_deposit(pg_temp.stu('Deposit Child'),
                                 pg_temp.head('Security Deposit'), 1000) as ch3 \gset
 select pg_temp.pay((:'ch3'::jsonb->>'invoice_id')::uuid, 1000);
 
-select pg_temp.be('Dep Clerk A');
+select pg_temp.be('Dep Teacher A');
 select pg_temp.ok(
   pg_temp.raises(
     format('select public.fn_refund_deposit(%L, 500)', pg_temp.stu('Deposit Child')),
     'only an owner or principal'),
-  '26. a clerk cannot refund — money leaving the school is an approval, not a '
-  || 'clerical act');
+  '26. a class teacher cannot refund, because money leaving the school is an '
+  || 'approval and not a clerical act');
 
+select pg_temp.be('Dep Office A');
 select pg_temp.ok(
   public.fn_deposit_held(pg_temp.stu('Deposit Child')) = 1000,
-  '27. but a clerk CAN see what is held, so they can answer a parent at the counter');
+  '27. but the office CAN see what is held, so it can answer a parent at the counter');
 
 select pg_temp.ok(
   (select count(*) from public.fn_deposits_held()) >= 1,

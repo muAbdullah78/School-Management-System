@@ -109,7 +109,7 @@ begin
   insert into public.profiles (id, full_name, role, school_id) values
     (v_own,   'Lv Owner',     'owner',         v_a),
     (v_prin,  'Lv Principal', 'principal',     v_a),
-    (v_clerk, 'Lv Clerk',     'admin_clerk',   v_a),
+    (v_clerk, 'Lv Office',     'principal',   v_a),
     (v_tch,   'Lv Ayesha',    'class_teacher', v_a),
     (v_ownb,  'Lv Owner B',   'owner',         v_b)
   on conflict (id) do update set school_id = excluded.school_id,
@@ -218,17 +218,23 @@ $$;
 do $$
 declare v_id uuid := pg_temp.staff_id('Ayesha Teacher');
 begin
-  perform pg_temp.be('Lv Clerk');
+  perform pg_temp.be('Lv Office');
   perform pg_temp.ok((select count(*) from public.fn_staff_roster()) = 3,
-    '9. a clerk may READ the roster — they maintain staff records');
+    '9. the office may READ the roster, because it maintains staff records');
+
+  -- 0133 NOTE. 10 and 11 used to refuse an admin_clerk, a line drawn INSIDE
+  -- the office: maintain the records, but do not revoke anybody's access. With
+  -- that role withdrawn the office IS the principal, so the refusal moved to
+  -- the staff room, which is where the realistic accident lives anyway.
+  perform pg_temp.be('Lv Ayesha');
   perform pg_temp.refuses(
     format('select public.fn_staff_leave(%L::uuid, current_date, %L)', v_id, 'resigned'),
-    '10. a clerk may not record a leaving — it revokes access', '%owner or principal%');
+    '10. a class teacher may not record a leaving, because it revokes access',
+    '%owner or principal%');
   perform pg_temp.refuses(
     format('select public.fn_staff_set_login_active(%L::uuid, false, null)', v_id),
-    '11. a clerk may not close a login', '%owner or principal%');
+    '11. a class teacher may not close a login', '%owner or principal%');
 
-  perform pg_temp.be('Lv Ayesha');
   perform pg_temp.refuses('select count(*) from public.fn_staff_roster()',
     '12. a class teacher cannot read the staff roster at all', '%Not permitted%');
 end;

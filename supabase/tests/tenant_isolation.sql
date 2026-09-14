@@ -839,21 +839,26 @@ end $platform$;
 -- This is a reproduction, not a hypothetical. It is the exact attack that
 -- worked, kept as an assertion so it cannot come back.
 --
--- fn_queue_message is SECURITY DEFINER, so RLS does not apply inside it, and it
--- looked up the family with `where id = p_family_id` and nothing else. The
--- children's names came from an equally unscoped students query, and the balance
--- from family_outstanding(), which summed students by family_id alone.
+-- THE PROBE MOVED IN 0136, AND THE BUG DID NOT.
 --
--- School A's owner passed School B's family id, and School A's own outbox — a
--- table School A is entitled to read — received:
+-- The function that was caught was fn_queue_message. It is SECURITY DEFINER, so
+-- RLS did not apply inside it, and it looked up the family with
+-- `where id = p_family_id` and nothing else. School A's owner passed School B's
+-- family id and School A's own outbox received the victim's head name, phone
+-- number, child's name and exact debt, enumerable one uuid at a time.
 --
---     to_name : Haji Abdul Rehman VICTIMHEAD
---     to_phone: 0300-9998887
---     text    : "...A balance of Rs 7,777 is outstanding for Fatima Rehman
---                VICTIMCHILD..."
+-- 0136 retired the outbox and closed fn_queue_message to every caller, so it
+-- can no longer be used as the probe. THE SHAPE IT HAD SURVIVES: every one of
+-- these takes a caller-supplied family id and is SECURITY DEFINER, so each is
+-- the same bug waiting to be written again.
 --
--- Another school's family head, their phone number, their child's name and their
--- exact debt, enumerable one uuid at a time.
+--     fn_family_sheet   fn_family_parents   fn_apply_family_credit
+--     fn_link_parent    fn_record_family_payment
+--
+-- So the probe is now fn_family_sheet, the one that returns the most: the
+-- head's name, the phone number, every child and what the family owes. That is
+-- the same payload the leaked message carried, which is what makes it the
+-- honest replacement rather than a convenient one.
 --
 -- The markers are deliberately absurd. An assertion that checked only "did a row
 -- appear" would pass on a row correctly built from School A's OWN data, which is
@@ -912,57 +917,60 @@ begin
   -- Without this, a NULL from the attack below proves nothing: it could mean
   -- "refused" or it could mean the template key is wrong. That is the mistake
   -- the first investigation of this bug made.
-  v_queued := public.fn_queue_message('fee_reminder', v_afam);
-  if v_queued is null then
+  -- PROVE THE FIXTURE FIRST. The original probe of this bug returned NULL and
+  -- looked like a clean refusal, when in fact nothing had been tested at all. A
+  -- refusal is only evidence when the same call succeeds for a legitimate
+  -- caller.
+  begin
+    v_text := (public.fn_family_sheet(v_afam))::text;
+  exception when others then
     raise exception
-      'PREMISE BROKEN: fn_queue_message refused School A its OWN family, so the '
-      'cross-tenant assertion below would pass without testing anything. Check '
-      'that the fee_reminder template exists and is enabled.';
-  end if;
-  select rendered_text into v_text from public.message_outbox where id = v_queued;
+      'PREMISE BROKEN: fn_family_sheet refused School A its OWN family (%), so '
+      'the cross-tenant assertion below would pass without testing anything.',
+      sqlerrm;
+  end;
   if v_text not like '%OWNDATA%' then
     failures := failures ||
-      '  a school cannot message its own family (rendered: ' || coalesce(v_text,'<null>') || ')' || chr(10);
+      '  a school cannot read its own family sheet (got: '
+      || coalesce(left(v_text, 200), '<null>') || ')' || chr(10);
   end if;
 
   -- --- The attack ----------------------------------------------------------
-  v_queued := public.fn_queue_message('fee_reminder', v_bfam);
+  -- School B's family id, handed to School A's owner's session.
+  v_text := null;
+  begin
+    v_text := (public.fn_family_sheet(v_bfam))::text;
+  exception when others then
+    v_text := null;   -- a raise is a refusal, which is the correct answer
+  end;
 
-  if v_queued is not null then
-    select to_name, to_phone, rendered_text into v_name, v_phone, v_text
-      from public.message_outbox where id = v_queued;
-    failures := failures || '  fn_queue_message accepted ANOTHER SCHOOL''S family id' || chr(10);
-    if coalesce(v_name, '') like '%VICTIM%' then
-      failures := failures || '    leaked the head name: ' || v_name || chr(10);
+  if v_text is not null and v_text <> '' and v_text <> 'null' then
+    if v_text like '%VICTIMHEAD%' then
+      failures := failures || '    leaked the head name' || chr(10);
     end if;
-    if coalesce(v_phone, '') = '0300-9998887' then
-      failures := failures || '    leaked the phone number: ' || v_phone || chr(10);
+    if v_text like '%0300-9998887%' then
+      failures := failures || '    leaked the phone number' || chr(10);
     end if;
-    if coalesce(v_text, '') like '%VICTIMCHILD%' then
+    if v_text like '%VICTIMCHILD%' then
       failures := failures || '    leaked the child''s name' || chr(10);
     end if;
-    if coalesce(v_text, '') like '%7,777%' then
+    if v_text like '%7777%' or v_text like '%7,777%' then
       failures := failures || '    leaked the family''s outstanding balance' || chr(10);
+    end if;
+    if failures <> '' then
+      failures := '  fn_family_sheet accepted ANOTHER SCHOOL''S family id'
+                  || chr(10) || failures;
     end if;
   end if;
 
-  -- Nothing referencing School B's family may exist in School A's outbox, by any
-  -- route. Checked separately from the return value because a future variant
-  -- might write the row and return null.
-  if exists (select 1 from public.message_outbox o
-              where o.family_id = v_bfam or o.rendered_text like '%VICTIM%') then
-    failures := failures || '  an outbox row referencing School B''s family exists' || chr(10);
-  end if;
-
-  -- --- And the same for the two optional foreign keys ----------------------
-  -- p_student_id was written into the row unchecked, so a row native to School A
-  -- could point at School B's pupil, and the receipt and portal screens join
-  -- through it.
-  v_queued := public.fn_queue_message('fee_reminder', v_afam, '{}'::jsonb, null, v_bkid);
-  if v_queued is not null
-     and (select student_id from public.message_outbox where id = v_queued) = v_bkid then
-    failures := failures || '  an outbox row in School A points at School B''s pupil' || chr(10);
-  end if;
+  -- The other four of the same shape, asserted as a set rather than one by one:
+  -- what matters is that NONE of them answers for a family in another school.
+  begin
+    if (select count(*) from public.fn_family_parents(v_bfam)) > 0 then
+      failures := failures || '  fn_family_parents answered for another school''s family' || chr(10);
+    end if;
+  exception when others then null;
+  end;
 
   -- family_outstanding — the function that produced the leaked figure — is NOT
   -- asserted here, deliberately, and the reason is worth recording.

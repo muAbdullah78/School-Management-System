@@ -69,8 +69,8 @@ begin
     (v_ac, 'rpx@rep.test'), (v_ob, 'rpb@rep.test') on conflict (id) do nothing;
   insert into public.profiles (id, full_name, role, school_id) values
     (v_oa, 'Rep Owner',      'owner',       v_a),
-    (v_cl, 'Rep Clerk',      'admin_clerk', v_a),
-    (v_ac, 'Rep Accountant', 'accountant',  v_a),
+    (v_cl, 'Rep Class Teacher', 'class_teacher', v_a),
+    (v_ac, 'Rep Office',        'principal',     v_a),
     (v_ob, 'Other Owner',    'owner',       v_b)
     on conflict (id) do update set school_id = excluded.school_id,
                                    role      = excluded.role,
@@ -265,35 +265,42 @@ end $t$;
 -- =============================================================================
 do $t$
 begin
-  -- An accountant is exactly who this is for.
+  -- The office is exactly who this is for.
   perform set_config('test.uid', '00000000-0000-0000-0000-00000000ca03', false);
   perform pg_temp.ok(
     (select count(*) from public.fn_report_ledger(current_date - 5, current_date, 'all')) > 0,
-    '17. an accountant can read the statement');
+    '17. the office can read the statement');
 
-  -- A clerk collects money; they do not audit it. Same boundary as
-  -- fn_finance_summary, deliberately not a looser one.
+  -- A class teacher signs in every morning and must not be able to audit the
+  -- school's money. Same boundary as fn_finance_summary, deliberately not a
+  -- looser one.
+  --
+  -- 0133 NOTE: 17 and 18 used to be an accountant and a clerk, a line drawn
+  -- INSIDE the office. That line is gone with those two roles, and the one
+  -- left is between the office and the staff room.
   perform set_config('test.uid', '00000000-0000-0000-0000-00000000ca02', false);
   begin
     perform count(*) from public.fn_report_ledger(current_date - 5, current_date, 'all');
-    raise exception 'FAIL  18. a clerk read the debit and credit statement';
+    raise exception 'FAIL  18. a class teacher read the debit and credit statement';
   exception when others then
     if sqlerrm like 'FAIL%' then raise; end if;
-    raise notice 'PASS  18. a clerk cannot read the statement (%)', sqlerrm;
+    raise notice 'PASS  18. a class teacher cannot read the statement (%)', sqlerrm;
   end;
 
   begin
     perform count(*) from public.fn_report_discounts(null, null);
-    raise exception 'FAIL  19. a clerk read the discount report';
+    raise exception 'FAIL  19. a class teacher read the discount report';
   exception when others then
     if sqlerrm like 'FAIL%' then raise; end if;
     raise notice 'PASS  19. nor the discount report (%)', sqlerrm;
   end;
 
-  -- But a clerk SHOULD see which challans are unpaid — that is their job.
+  -- But the office SHOULD see which challans are unpaid, because chasing them
+  -- is the job.
+  perform set_config('test.uid', '00000000-0000-0000-0000-00000000ca03', false);
   perform pg_temp.ok(
     (select count(*) from public.fn_report_unpaid_invoices(pg_temp.sess())) >= 0,
-    '20. a clerk can still see which challans are unpaid');
+    '20. the office can still see which challans are unpaid');
 end $t$;
 
 -- =============================================================================

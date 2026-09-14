@@ -103,7 +103,7 @@ begin
   insert into auth.users (id, email, raw_app_meta_data) values
     (v_o, 'owner@fee.test', jsonb_build_object('school_id', v_s::text)),
     (v_c, 'clerk@fee.test', jsonb_build_object('school_id', v_s::text,
-                                               'role', 'admin_clerk'));
+                                               'role', 'principal'));
   perform set_config('test.uid', v_o::text, false);
 
   insert into public.academic_sessions (school_id, name, is_current, starts_on, ends_on)

@@ -32,6 +32,28 @@ export interface FakeOptions {
   seen?: { tables: Set<string>; rpcs: Set<string> }
   /** What functions.invoke should do, per function name. */
   fn?: Record<string, { data?: unknown; error?: { name: string; message: string; body?: unknown } }>
+  /**
+   * A signed-in session for the auth block, plus a handle on the auth-change
+   * listener so a test can play a TOKEN REFRESH.
+   *
+   * That event is not a curiosity: supabase-js fires it on a timer and again
+   * when a hidden tab becomes visible, and it used to unmount the whole route
+   * tree and empty every open form. A test cannot reproduce that without being
+   * able to fire it, so the fake exposes it.
+   */
+  auth?: FakeAuth
+}
+
+export interface FakeAuth {
+  /** The session getSession() answers with. Null means signed out. */
+  session?: unknown
+  /**
+   * Filled in by the fake with the callback AuthProvider registered, so a test
+   * can call `auth.emit('TOKEN_REFRESHED', newSession)`.
+   */
+  emit?: (event: string, session: unknown) => void
+  /** Every signOut() call, with the options it was given. */
+  signOuts?: unknown[]
 }
 
 function builder(table: string, opts: FakeOptions): any {
@@ -116,10 +138,16 @@ export function fakeSupabase(opts: FakeOptions = {}) {
       },
     },
     auth: {
-      getSession: async () => ({ data: { session: null }, error: null }),
-      getUser: async () => ({ data: { user: null }, error: null }),
-      onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
-      signOut: async () => ({ error: null }),
+      getSession: async () => ({ data: { session: opts.auth?.session ?? null }, error: null }),
+      getUser: async () => ({ data: { user: (opts.auth?.session as any)?.user ?? null }, error: null }),
+      onAuthStateChange: (cb: (event: string, session: unknown) => void) => {
+        if (opts.auth) opts.auth.emit = cb
+        return { data: { subscription: { unsubscribe() {} } } }
+      },
+      signOut: async (options?: unknown) => {
+        opts.auth?.signOuts?.push(options)
+        return { error: null }
+      },
     },
     functions: {
       invoke: async (name: string) => {

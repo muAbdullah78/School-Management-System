@@ -168,7 +168,7 @@ begin
   alter table public.profiles disable trigger user;
   insert into auth.users (id, email) values (v_clerk, 'f2@feeops.test') on conflict (id) do nothing;
   insert into public.profiles (id, full_name, role, school_id)
-    values (v_clerk, 'FeeOps Clerk', 'admin_clerk',
+    values (v_clerk, 'FeeOps Class Teacher', 'class_teacher',
             (select id from public.schools where name = 'FeeOps Test School'))
     on conflict (id) do update set role = excluded.role, school_id = excluded.school_id;
   alter table public.profiles enable trigger user;

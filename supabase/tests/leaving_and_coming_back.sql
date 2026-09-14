@@ -60,7 +60,9 @@ begin
   alter table public.profiles disable trigger user;
   insert into public.profiles (id, school_id, full_name, role, active) values
     (own_u, sch, 'Owner', 'owner', true),
-    (clerk_u, sch, 'Clerk', 'admin_clerk', true),
+    -- 0133: the account that must NOT cancel a subscription is a class
+    -- teacher. Admin / Clerk is withdrawn and the office is the principal.
+    (clerk_u, sch, 'Class Teacher', 'class_teacher', true),
     (own_l, lapsed, 'Gone Owner', 'owner', true);
   alter table public.profiles enable trigger user;
 
@@ -205,21 +207,21 @@ begin
 end $t$;
 
 -- 7. AND ONLY LEADERSHIP CAN DO ANY OF IT. Cancelling the software the whole
---    school runs on is not a clerk's decision.
+--    school runs on is not a class teacher's decision.
 do $t$
 declare v_msg text;
 begin
   perform set_config('test.uid', (select v::text from ids where k='clerk'), false);
   begin
     perform public.fn_cancel_my_subscription('I resign');
-    raise exception 'FAIL: a clerk cancelled the school''s subscription';
+    raise exception 'FAIL: a class teacher cancelled the school''s subscription';
   exception when others then
     get stacked diagnostics v_msg = message_text;
     if v_msg like 'FAIL:%' then raise exception '%', v_msg; end if;
   end;
   begin
     perform public.fn_resume_my_subscription();
-    raise exception 'FAIL: a clerk restarted the school''s subscription';
+    raise exception 'FAIL: a class teacher restarted the school''s subscription';
   exception when others then
     get stacked diagnostics v_msg = message_text;
     if v_msg like 'FAIL:%' then raise exception '%', v_msg; end if;

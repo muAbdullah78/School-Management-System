@@ -805,6 +805,113 @@ export async function unlockAttendance(
   return Number(data)
 }
 
+/* ------------------------------------------------------------------ 0134 --
+ * The head's view of the register, and the subject register underneath it.
+ *
+ * These five are the read and write surface migrations 0134 gave the school
+ * when it took marking away from the principal. The functions do the gating;
+ * these are transport.
+ */
+
+export type AttendanceState = 'none' | 'partial' | 'unlocked' | 'locked'
+
+export interface AttendanceDayRow {
+  class_id: string
+  class_name: string
+  level_order: number
+  section_id: string | null
+  section_name: string | null
+  pupils: number
+  marked: number
+  locked: number
+  state: AttendanceState
+}
+
+/**
+ * One row per class-section for one day, sorted into the three piles a head
+ * thinks in. Counted against the ROLL, not against attendance rows: an
+ * unmarked child is not a row, so counting rows makes an empty register look
+ * complete.
+ */
+export async function attendanceDay(sessionId: string, date: string): Promise<AttendanceDayRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_attendance_day', {
+    p_session_id: sessionId, p_date: date,
+  })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as AttendanceDayRow[]
+}
+
+export interface SubjectRosterRow {
+  enrollment_id: string
+  student_id: string
+  full_name: string
+  roll_no: string | null
+  status: AttendanceStatus | null
+  /** What the CLASS TEACHER recorded for the same day, for context. A subject
+   *  teacher about to mark a child absent from chemistry wants to know first
+   *  whether the child is in school at all. */
+  day_status: AttendanceStatus | null
+}
+
+export async function subjectRoster(
+  sessionId: string, classId: string, sectionId: string | null,
+  subjectId: string, date: string,
+): Promise<SubjectRosterRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_subject_roster', {
+    p_session_id: sessionId, p_class_id: classId, p_section_id: sectionId,
+    p_subject_id: subjectId, p_date: date,
+  })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as SubjectRosterRow[]
+}
+
+/** Optional and informal: no lock, no correction trail, no message to parents. */
+export async function markSubjectAttendance(
+  sessionId: string, classId: string, sectionId: string | null,
+  subjectId: string, date: string,
+  marks: { enrollment_id: string; status: AttendanceStatus }[],
+): Promise<{ marked: number }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_mark_subject_attendance', {
+    p_session_id: sessionId, p_class_id: classId, p_section_id: sectionId,
+    p_subject_id: subjectId, p_date: date, p_marks: marks,
+  })
+  if (error) throw new Error(error.message)
+  return data as { marked: number }
+}
+
+export interface SubjectAttendanceDayRow {
+  class_id: string
+  class_name: string
+  level_order: number
+  section_id: string | null
+  section_name: string | null
+  subject_id: string
+  subject_name: string
+  marked_by_name: string
+  pupils: number
+  present: number
+  absent: number
+  other: number
+}
+
+/**
+ * Only what was actually marked. There is no row for a subject nobody touched,
+ * because this register is optional and an unmarked subject is not outstanding.
+ */
+export async function subjectAttendanceDay(
+  sessionId: string, date: string,
+): Promise<SubjectAttendanceDayRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_subject_attendance_day', {
+    p_session_id: sessionId, p_date: date,
+  })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as SubjectAttendanceDayRow[]
+}
+
 export async function attendanceSummary(
   enrollmentId: string, from: string, to: string,
 ): Promise<AttendanceSummary> {
@@ -1606,6 +1713,74 @@ export async function createAssessment(input: {
   return (data as { id: string }).id
 }
 
+/* ------------------------------------------------------------------ 0135 --
+ * The teacher's worklist and the head's overview.
+ */
+
+export interface UnmarkedTestRow {
+  assessment_id: string
+  title: string
+  assessment_date: string
+  class_id: string
+  class_name: string
+  section_name: string | null
+  subject_name: string | null
+  pupils: number
+  marked: number
+  days_late: number
+}
+
+/**
+ * Papers this teacher set, whose day has passed, that are not finished.
+ *
+ * "Unfinished" means at least one pupil with neither a mark nor an absence, not
+ * "no marks at all": the common failure is twenty of thirty-four and then the
+ * bell went, and a reminder that only fires on a blank test misses it.
+ */
+export async function myUnmarkedTests(sessionId: string): Promise<UnmarkedTestRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_my_unmarked_tests', { p_session_id: sessionId })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as UnmarkedTestRow[]
+}
+
+export type TestState = 'scheduled' | 'unmarked' | 'partial' | 'marked' | 'locked' | 'undated'
+
+export interface TestOverviewRow {
+  assessment_id: string
+  title: string
+  assessment_date: string
+  class_id: string
+  class_name: string
+  level_order: number
+  section_name: string | null
+  subject_name: string | null
+  set_by_name: string
+  max_marks: number
+  is_locked: boolean
+  pupils: number
+  marked: number
+  state: TestState
+}
+
+/**
+ * Every test in a date range, with who set it and whether it is marked.
+ *
+ * A RANGE and not a day, which is what makes the head's calendar work: looking
+ * back to audit last week and forward to see what is coming are the same
+ * question asked of a different pair of dates.
+ */
+export async function testsOverview(
+  sessionId: string, from: string, to: string,
+): Promise<TestOverviewRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_tests_overview', {
+    p_session_id: sessionId, p_from: from, p_to: to,
+  })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as TestOverviewRow[]
+}
+
 export async function getAssessmentMarksheet(assessmentId: string): Promise<MarksheetRow[]> {
   const sb = requireSupabase()
   return unwrap(await sb.rpc('fn_assessment_marksheet', { p_assessment_id: assessmentId }))
@@ -1894,6 +2069,23 @@ export async function createSection(classId: string, name: string, sortOrder = 0
 export async function listProfiles(): Promise<ProfileRow[]> {
   const sb = requireSupabase()
   return unwrap(await sb.from('profiles').select('id, full_name, role, active, staff_id').order('full_name'))
+}
+
+/**
+ * The roles a school may hand out, read from the database rather than from a
+ * second list in TypeScript.
+ *
+ * Same reasoning as fn_signup_regions: auth/roles.ts has ASSIGNABLE_ROLES and
+ * the two must agree, so the screen asks. It falls back to the local list on
+ * any error, because a Users screen that cannot offer a role is worse than one
+ * offering a role the database might refuse, and a school that has not yet
+ * pasted bundle 38 has no such function to call.
+ */
+export async function assignableRoles(): Promise<string[] | null> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_assignable_roles')
+  if (error) return null
+  return Array.isArray(data) ? (data as string[]) : null
 }
 
 export async function updateProfileRole(id: string, role: string): Promise<void> {
@@ -2502,7 +2694,11 @@ export async function checkLoginFunction(): Promise<LoginFunctionState> {
  *  caller so a role added here and not in the deployed function produces the
  *  clear message below instead of the bare words "Invalid role". */
 const CLIENT_KNOWN_ROLES = [
-  'principal', 'admin_clerk', 'accountant',
+  // Admin / Clerk and Accountant were withdrawn by 0133 and are deliberately
+  // absent: this list is what the app may ASK FOR, and nothing may ask for
+  // one of those again. Recognising an existing account that still holds one
+  // is a separate question, answered in auth/roles.ts.
+  'principal',
   'class_teacher', 'subject_teacher', 'readonly', 'parent',
 ]
 
@@ -4115,89 +4311,14 @@ export async function listOtherIncome(from: string, to: string): Promise<OtherIn
   )
 }
 
-// ---- Till: the cash drawer ------------------------------------------------
-
-export interface CurrentTill {
-  till_id: string; opened_at: string; opening_float: number
-  cash_taken: number; all_taken: number; receipts: number; expected_cash: number
-}
-export interface TillReportRow {
-  till_id: string; collector: string; opened_at: string; closed_at: string | null
-  opening_float: number; cash_taken: number; all_taken: number
-  expected_cash: number | null; counted_cash: number | null
-  variance: number | null; variance_reason: string | null; status: string
-}
-
-export async function getCurrentTill(): Promise<CurrentTill | null> {
-  const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_current_till')
-  if (error) throw new Error(error.message)
-  return (data ?? null) as CurrentTill | null
-}
-
-export async function openTill(openingFloat: number): Promise<string> {
-  const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_open_till', { p_opening_float: openingFloat })
-  if (error) throw new Error(error.message)
-  return data as string
-}
-
-export async function closeTill(countedCash: number, reason?: string) {
-  const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_close_till', {
-    p_counted_cash: countedCash, p_reason: reason ?? null,
-  })
-  if (error) throw new Error(error.message)
-  return data as { till_id: string; expected_cash: number; counted_cash: number; variance: number }
-}
-
-export async function approveTill(tillId: string): Promise<void> {
-  const sb = requireSupabase()
-  const { error } = await sb.rpc('fn_approve_till', { p_till_id: tillId })
-  if (error) throw new Error(error.message)
-}
-
-export async function getTillReport(from: string, to: string): Promise<TillReportRow[]> {
-  const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_till_report', { p_from: from, p_to: to })
-  if (error) throw new Error(error.message)
-  return (data ?? []) as TillReportRow[]
-}
-
-// ---- Outbox: WhatsApp click-to-chat ---------------------------------------
-
-export interface OutboxRow {
-  id: string; template_key: string; to_name: string | null; to_phone: string | null
-  rendered_text: string; status: string; created_at: string; sent_at: string | null
-}
-
-export async function listOutbox(status = 'queued', limit = 100): Promise<OutboxRow[]> {
-  const sb = requireSupabase()
-  return unwrap(
-    await sb.from('message_outbox')
-      .select('id, template_key, to_name, to_phone, rendered_text, status, created_at, sent_at')
-      .eq('status', status).order('created_at', { ascending: false }).limit(limit),
-  )
-}
-
-export async function markMessageSent(id: string): Promise<void> {
-  const sb = requireSupabase()
-  const { error } = await sb.rpc('fn_mark_message_sent', { p_id: id, p_channel: 'whatsapp' })
-  if (error) throw new Error(error.message)
-}
-
-export async function skipMessage(id: string, reason: string): Promise<void> {
-  const sb = requireSupabase()
-  const { error } = await sb.rpc('fn_skip_message', { p_id: id, p_reason: reason })
-  if (error) throw new Error(error.message)
-}
-
-export async function getUnsentReceipts(from: string, to: string) {
-  const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_unsent_receipts', { p_from: from, p_to: to })
-  if (error) throw new Error(error.message)
-  return data as { from: string; to: string; payments: number; receipts_sent: number; receipts_unsent: number }
-}
+// ---- WhatsApp click-to-chat ----------------------------------------------
+//
+// THE OUTBOX WENT IN 0136 AND THIS DID NOT, which is the whole distinction.
+// The outbox queued rows that a person then sent by hand, one at a time, and
+// came back to tick off, so its state was only ever as true as their
+// diligence. The link below queues nothing and stores nothing and needs no
+// API and no credits: it opens WhatsApp with the message already typed, which
+// is how a Pakistani school office actually contacts a parent.
 
 /**
  * A wa.me link with the message pre-filled. Free, no API, no credits. The
@@ -4828,75 +4949,11 @@ export async function getEnquirySources(
   }))
 }
 
-// ---- Message settings (their "Automation Settings") -----------------------
-
-export interface MessageSetting {
-  template_key: string
-  label: string
-  body: string
-  enabled: boolean
-  /** Merge tags this template may use. Comes from SQL because it is a fact
-   *  about the call site: {receipt} only resolves for payment_received. */
-  tags: string[]
-  is_default: boolean
-}
-
-/** What the school currently sends, and what each message may reference. */
-export async function listMessageSettings(): Promise<MessageSetting[]> {
-  const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_message_settings')
-  if (error) throw new Error(error.message)
-  return (data ?? []) as MessageSetting[]
-}
-
-/**
- * Change the wording, or switch a message type off entirely.
- *
- * A direct table write rather than an RPC: message_templates already carries an
- * owner/principal-only write policy, so the database is enforcing this whether
- * the call comes from here or anywhere else.
- */
-export async function saveMessageSetting(
-  templateKey: string, patch: { body?: string; enabled?: boolean },
-): Promise<void> {
-  const sb = requireSupabase()
-  await mustWrite(
-    await sb.from('message_templates').update(patch)
-      .eq('template_key', templateKey).select('template_key'),
-    'That message template')
-}
-
-/** Put one template's original wording back. Returns the restored text. */
-export async function resetMessageTemplate(templateKey: string): Promise<string> {
-  const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_reset_message_template', {
-    p_template_key: templateKey,
-  })
-  if (error) throw new Error(error.message)
-  return String(data ?? '')
-}
-
-/**
- * Fill merge tags with sample values so the editor can show what a parent will
- * actually receive. Mirrors fn__render_template's simple {tag} replacement:
- * deliberately not a second templating engine, just the same substitution.
- */
-export function previewMessage(body: string, schoolName: string): string {
-  const sample: Record<string, string> = {
-    parent: 'Muhammad Aslam',
-    children: 'Ahmed, Bilal',
-    school: schoolName,
-    date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
-    balance: '4,850',
-    amount: '3,650',
-    receipt: '1042',
-    received_by: 'Basha Salamat',
-  }
-  return Object.entries(sample).reduce(
-    (out, [k, v]) => out.split(`{${k}}`).join(v),
-    body,
-  )
-}
+// ---- Message templates: REMOVED in 0136 -----------------------------------
+//
+// listMessageSettings, setMessageTemplate and resetMessageTemplate edited the
+// bodies the outbox rendered. With no outbox there is nothing to render, and a
+// settings screen for a feature that does not exist is worse than none.
 
 // ---- Bulk collection ------------------------------------------------------
 
@@ -4972,19 +5029,6 @@ export async function recordBulkPayments(
       receipt_no: r.receipt_no == null ? null : Number(r.receipt_no),
     })),
   }
-}
-
-/** Queue one WhatsApp reminder per FAMILY that owes, escalating on repeats. */
-export async function queueClassReminders(
-  sessionId: string, classId: string, sectionId: string | null,
-): Promise<{ queued: number; skipped: number }> {
-  const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_queue_class_reminders', {
-    p_session_id: sessionId, p_class_id: classId, p_section_id: sectionId,
-  })
-  if (error) throw new Error(error.message)
-  const d = (data ?? {}) as Record<string, unknown>
-  return { queued: Number(d.queued ?? 0), skipped: Number(d.skipped ?? 0) }
 }
 
 // ---- Fee operations -------------------------------------------------------
@@ -5445,9 +5489,6 @@ export async function reportSubscriptionPayment(input: {
  * says which rows: live window, and audience matching the caller's role, and a
  * definer function would only restate it in a second place that could disagree.
  *
- * Not in message_outbox, deliberately. That table is the school's own outbox to
- * its parents, and putting vendor notices in it would mean a clerk seeing our
- * maintenance window in a list of fee reminders they are about to send.
  */
 export interface LiveAnnouncement {
   id: string

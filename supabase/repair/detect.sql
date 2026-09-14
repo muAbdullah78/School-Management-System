@@ -200,6 +200,15 @@ with sig(migration, object, present) as (values
               --   anyway, so there is no screen to open.
               and proname not in ('fn_may_manage_class', 'fn_may_write_school_file',
                                   'fn_may_mark_subject',
+                                  -- 0134, 0135: who may mark a register and who
+                                  -- may set a test. Both authorise a WRITE and
+                                  -- both run inside a row-level policy.
+                                  'fn_may_write_register',
+                                  'fn_may_set_a_test',
+                                  -- fn_my_unmarked_tests (0135): a teacher's own
+                                  -- papers still to mark, which an observer and
+                                  -- a principal do not have.
+                                  'fn_my_unmarked_tests',
                                   'fn_pending_invites',
                                   -- fn_preview_discount (0131): what a code takes
                                   -- off a plan. Reads the code list and the price
@@ -633,10 +642,14 @@ with sig(migration, object, present) as (values
          and exists (select 1 from pg_proc where proname = 'fn_enter_marks'
                       and pronamespace = 'public'::regnamespace
                       and prosrc like '%fn_may_mark_subject%')
+         -- Either name. 0135 made fn_enter_assessment_marks call
+         -- fn_may_set_a_test, which is fn_may_mark_subject with the principal
+         -- removed, so the subject scope is still there one call further down.
          and exists (select 1 from pg_proc where proname = 'fn_enter_assessment_marks'
                       and pronamespace = 'public'::regnamespace
-                      and prosrc like '%fn_may_mark_subject%'))),
-  -- 0086. A clerk could rewrite the books over REST, bypassing every audited
+                      and (prosrc like '%fn_may_mark_subject%'
+                           or prosrc like '%fn_may_set_a_test%')))),
+  -- 0086. An office login could rewrite the books over REST, bypassing every audited
   -- function. The signature is a PRIVILEGE, not an object: 0086 creates nothing,
   -- it takes something away, and the only evidence it ran is that the taking
   -- away is still in force. Two of the fourteen tables are enough to detect it —
@@ -670,15 +683,15 @@ with sig(migration, object, present) as (values
   -- 0088. Two WhatsApp templates a school could switch on that nothing sent.
   -- The signature is the two HOOKS, because the queue functions existing on
   -- their own would leave both messages exactly as decorative as they were.
-  ('0088_wire_the_dead_templates', 'absence and result messages actually get queued',
+  -- 0088 WIRED TWO MESSAGES TO THE THINGS THAT SHOULD SEND THEM, and 0136
+  -- unwired them again when it retired the outbox: fn_finalize_attendance and
+  -- fn_publish_results no longer queue anything. Probing for those calls would
+  -- report every correctly upgraded school as missing 0088. What 0088 also
+  -- created, and what survives, is the uniqueness index that stopped the same
+  -- message being queued twice, so that is the signature now.
+  ('0088_wire_the_dead_templates', 'the outbox cannot hold the same message twice',
      (select exists (select 1 from pg_indexes where schemaname = 'public'
-                      and indexname = 'uq_outbox_ref')
-         and exists (select 1 from pg_proc where proname = 'fn_finalize_attendance'
-                      and pronamespace = 'public'::regnamespace
-                      and prosrc like '%fn_queue_absent_today%')
-         and exists (select 1 from pg_proc where proname = 'fn_publish_results'
-                      and pronamespace = 'public'::regnamespace
-                      and prosrc like '%fn_queue_result_published%'))),
+                      and indexname = 'uq_outbox_ref'))),
   -- 0089. Settings offered a GPA scale that nothing implemented. The signature
   -- is the AVERAGING inside fn_generate_result_cards as well as fn_grade_for
   -- reading the setting: with only the first, every card's overall figure would
@@ -1092,7 +1105,69 @@ with sig(migration, object, present) as (values
                         and p.proname in ('fn_signup_school',
                                           'fn_signup_school_on_plan',
                                           'fn_signup_school_on_plan_in_region')
-                      group by p.proname having count(*) > 1))
+                      group by p.proname having count(*) > 1)),
+  -- 0133. Checked as an ABSENCE OF ROWS rather than as the absence of the enum
+  -- values: Postgres has no DROP VALUE and sixty frozen migrations name these
+  -- two inside has_role() lists, so the values survive on purpose. A row still
+  -- holding one is the real fault, and it is what the first draft produced:
+  -- 0001's privilege-escalation trigger refused the migration's own UPDATE,
+  -- because auth.uid() is null in the SQL editor.
+  ('0133_two_roles_the_school_never_needed',
+     'the office is one role, and nobody is left on a withdrawn one',
+     to_regprocedure('public.fn_assignable_roles()') is not null
+     and exists (select 1 from pg_constraint
+                  where conname = 'profiles_role_live_chk')
+     and not exists (select 1 from public.profiles
+                      where role in ('admin_clerk', 'accountant'))),
+  -- 0134. The POLICY as well as the function. fn_mark_attendance is SECURITY
+  -- DEFINER and bypasses row security, so a database with the new function and
+  -- the old policy refuses a principal at the function and lets the same person
+  -- do the same thing over PostgREST. 0024 recorded exactly that fault.
+  ('0134_the_register_belongs_to_the_teacher',
+     'the daily register is marked by the teacher, and the head can read it',
+     to_regprocedure('public.fn_may_write_register()') is not null
+     and to_regclass('public.attendance_subject') is not null
+     and to_regprocedure('public.fn_attendance_day(uuid,date)') is not null
+     and exists (select 1 from pg_proc p
+                   join pg_namespace n2 on n2.oid = p.pronamespace
+                  where n2.nspname = 'public' and p.proname = 'fn_mark_attendance'
+                    and p.prosrc like '%fn_may_write_register%')
+     and exists (select 1 from pg_policy
+                  where polrelid = 'public.attendance_daily'::regclass
+                    and polname = 'attendance_insert'
+                    and pg_get_expr(polwithcheck, polrelid)
+                        like '%fn_may_write_register%')),
+  ('0135_a_test_is_set_and_marked_by_the_teacher',
+     'a class test is set and marked by the teacher, and can be scheduled',
+     to_regprocedure('public.fn_may_set_a_test(uuid,uuid,uuid,uuid)') is not null
+     and to_regprocedure('public.fn_tests_overview(uuid,date,date)') is not null
+     and to_regprocedure('public.fn_my_unmarked_tests(uuid)') is not null
+     -- The date guard is what makes scheduling safe rather than merely
+     -- possible: the column always accepted a future date, and without this a
+     -- teacher could enter marks for a paper nobody had sat.
+     and exists (select 1 from pg_trigger
+                  where tgrelid = 'public.assessments'::regclass
+                    and tgname = 'trg_assessment_date')
+     and exists (select 1 from pg_policy
+                  where polrelid = 'public.assessments'::regclass
+                    and polname = 'assessments_insert'
+                    and pg_get_expr(polwithcheck, polrelid)
+                        like '%fn_may_set_a_test%')),
+  -- 0136 is a REMOVAL, so its signature is an absence. Not the absence of the
+  -- TABLES though: bundles 4, 7, 8, 24 and 28 are frozen and name them, so
+  -- dropping them would make this file's own repair instruction fail. 0136
+  -- seals them instead, and the seal is what is probed. RLS FORCED on
+  -- message_outbox is the cheapest proof there is, because nothing else in
+  -- this schema forces RLS on anything.
+  ('0136_the_cash_drawer_and_the_outbox_come_out',
+     'the cash drawer and the message outbox are sealed',
+     exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+              where n.nspname = 'public' and c.relname = 'message_outbox'
+                and c.relforcerowsecurity)
+     and not exists (select 1 from pg_policies
+                      where schemaname = 'public'
+                        and tablename in ('till_sessions','message_outbox',
+                                          'message_templates')))
 )
 select migration,
        object                                   as looked_for,

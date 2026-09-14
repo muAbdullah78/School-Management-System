@@ -35,6 +35,15 @@ import { studentDeleteBlockers, deleteStudent } from '@/lib/db'
 import { ParentLink } from '@/components/ParentLink'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
+/**
+ * Who may see and take money on a student's ledger.
+ *
+ * The two withdrawn roles stay in this list on purpose, and it is the same
+ * reasoning as ADMIN_ROLES: a school upgrades its database by hand, days after
+ * the app deploys, and until it does there is a real fee clerk holding
+ * admin_clerk. Dropping them here would take the fee buttons away from the
+ * person at the counter. Once 0133 has been pasted, nobody holds either.
+ */
 const FINANCE_ROLES: Role[] = ['owner', 'principal', 'admin_clerk', 'accountant']
 const TABS = ['Overview', 'Fees', 'Attendance & Tests'] as const
 type Tab = (typeof TABS)[number]

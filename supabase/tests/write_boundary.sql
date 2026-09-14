@@ -91,11 +91,14 @@ begin
 
   alter table public.profiles disable trigger user;
   insert into auth.users (id, email) values
-    (v_owner, 'o@boundary.test'), (v_clerk, 'c@boundary.test')
+    (v_owner, 'o@boundary.test'), (v_clerk, 'c@boundary.test'),
+    ('00000000-0000-0000-0000-0000000b0a0a'::uuid, 't@boundary.test')
     on conflict (id) do nothing;
   insert into public.profiles (id, full_name, role, school_id) values
     (v_owner, 'Boundary Owner', 'owner', v_school),
-    (v_clerk, 'Boundary Clerk', 'admin_clerk', v_school)
+    (v_clerk, 'Boundary Office', 'principal', v_school),
+    -- 0133: the boundary that survives the role merge is office vs staff room.
+    ('00000000-0000-0000-0000-0000000b0a0a'::uuid, 'Boundary Teacher', 'class_teacher', v_school)
     on conflict (id) do update set school_id = excluded.school_id, role = excluded.role;
   alter table public.profiles enable trigger user;
 
@@ -148,7 +151,7 @@ end $seed$;
 -- =============================================================================
 -- 1. THE SEVEN. As a signed-in admin_clerk, over the plain table.
 -- =============================================================================
-select pg_temp.be('Boundary Clerk');
+select pg_temp.be('Boundary Office');
 set local role authenticated;
 
 select pg_temp.raises(
@@ -276,12 +279,18 @@ select pg_temp.ok(
 -- =============================================================================
 -- 2. fn_void_invoice — the way out that 0086 makes the only way out
 -- =============================================================================
-select pg_temp.be('Boundary Clerk');
+-- 0133 NOTE. This refused an admin_clerk, a line drawn inside the office:
+-- take the money, but never make a charge disappear. Admin / Clerk is
+-- withdrawn and the office is now the principal, so the refusal moved to the
+-- staff room. The control that used to sit here is recorded as LOST in 0133's
+-- header rather than quietly reinterpreted.
+select pg_temp.be('Boundary Teacher');
 select pg_temp.raises(
   format('select public.fn_void_invoice(%L, ''wrong due date'')',
          (select v from public._wb where k = 'open_inv')),
-  '20. a clerk may not cancel a charge — the oldest fraud in a school office is '
-  || 'making a family''s dues disappear and taking the cash informally');
+  '20. a class teacher may not cancel a charge, because the oldest fraud in a '
+  || 'school office is making a family''s dues disappear and taking the cash '
+  || 'informally');
 
 select pg_temp.be('Boundary Owner');
 select pg_temp.raises(
@@ -406,7 +415,7 @@ select pg_temp.ok(
 -- =============================================================================
 -- 5. The register — the competitor's "Deleted Fees", and a clerk may read it
 -- =============================================================================
-select pg_temp.be('Boundary Clerk');
+select pg_temp.be('Boundary Office');
 do $reg$
 declare r record; n integer := 0;
 begin

@@ -13,11 +13,133 @@ import { isTeacher, canWrite, APPROVER_ROLES, type Role } from '@/auth/roles'
 import { enqueueAttendance, isNetworkError, attendanceKey, cachedSchoolId } from '@/lib/offlineQueue'
 import { offlineFirst } from '@/lib/offlineCache'
 import { AttendanceSheet, type AttendanceSheetData } from './AttendanceSheet'
+import { AttendanceOverview } from './AttendanceOverview'
+import { SubjectAttendance } from './SubjectAttendance'
 import { LoadError } from '@/components/ui'
 
 type Marks = Record<string, AttendanceStatus>
 
+/**
+ * WHO SEES WHAT, AND WHY THIS ROUTES BY ROLE RATHER THAN HIDING BUTTONS.
+ *
+ * Migration 0134 took marking away from the principal in the database. Leaving
+ * the marking screen in place with its Save button disabled would be the worse
+ * half of that change: a head would still be given a class picker, a roster and
+ * a keyboard shortcut for marking, and would find out what had changed by
+ * pressing Save. Worse, the screen a head actually needs has the opposite
+ * shape, and could not be reached from anywhere.
+ *
+ *   class_teacher, subject_teacher  the marking screen. Theirs.
+ *   principal, readonly             the oversight dashboard, and nothing else.
+ *   owner                           the dashboard, with marking one click away.
+ *
+ * THE OWNER'S EXTRA CLICK is the one loose thread and it is deliberate. 0134's
+ * header gives the full reasoning: 'owner' is the signup account rather than a
+ * job title, a school of this size often has one account with any authority,
+ * and the database still permits it. What no longer happens is a head being
+ * DROPPED into a marking screen by default.
+ */
 export function AttendancePage() {
+  const { profile } = useAuth()
+  const role = profile?.role
+  const overseer = role === 'principal' || role === 'readonly' || role === 'owner'
+  const session = useQuery({
+    queryKey: ['currentSession'],
+    queryFn: () => offlineFirst('currentSession', getCurrentSession),
+  })
+  const [marking, setMarking] = useState(false)
+
+  if (overseer) {
+    if (!session.data) {
+      return (
+        <div>
+          {/*
+            * THE FAILED READ IS SHOWN, not translated into "no session set".
+            * Those are different facts and only one of them is the school's to
+            * act on: an owner told to go and create an academic year they
+            * already have will go and create a second one.
+            */}
+          <LoadError of={[session]} what="The attendance register" />
+          <h1 className="text-xl font-semibold text-slate-800">Attendance</h1>
+          {!session.isError && (
+            <p className="mt-4 rounded bg-amber-50 p-3 text-sm text-amber-700">
+              {session.isLoading
+                ? 'Loading…'
+                : 'No current academic session is set. Create one in Settings first.'}
+            </p>
+          )}
+        </div>
+      )
+    }
+    if (role === 'owner' && marking) {
+      return (
+        <div>
+          <button onClick={() => setMarking(false)}
+            className="text-sm text-brand-700 hover:underline">
+            &larr; Back to the day&rsquo;s overview
+          </button>
+          <MarkRegister />
+        </div>
+      )
+    }
+    return (
+      <div>
+        <AttendanceOverview sessionId={session.data.id} />
+        {role === 'owner' && (
+          <div className="mt-8 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-sm text-slate-600">
+              The daily register is marked by the class teacher. As the owner you
+              can still mark one yourself if you have to.
+            </p>
+            <button onClick={() => setMarking(true)}
+              className="mt-2 rounded border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100">
+              Mark a register
+            </button>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return <TeacherAttendance sessionId={session.data?.id ?? null} />
+}
+
+/**
+ * The teacher's two registers, behind two tabs.
+ *
+ * The daily one is the school's record and is the default. Subject attendance
+ * is a second tab rather than a second screen in the sidebar, because it is
+ * the same act on the same class on the same morning and a teacher who has to
+ * go looking for it will not keep it.
+ */
+function TeacherAttendance({ sessionId }: { sessionId: string | null }) {
+  const [tab, setTab] = useState<'daily' | 'subject'>('daily')
+
+  return (
+    <div>
+      <div className="mb-4 flex gap-1 border-b border-slate-200">
+        {([['daily', 'Daily register'], ['subject', 'Subject attendance']] as const).map(([k, label]) => (
+          <button key={k} onClick={() => setTab(k)}
+            className={
+              '-mb-px border-b-2 px-3 py-2 text-sm font-medium '
+              + (tab === k
+                ? 'border-brand-600 text-brand-700'
+                : 'border-transparent text-slate-500 hover:text-slate-700')
+            }>
+            {label}
+          </button>
+        ))}
+      </div>
+      {tab === 'daily'
+        ? <MarkRegister />
+        : sessionId
+          ? <SubjectAttendance sessionId={sessionId} />
+          : <p className="text-sm text-slate-500">No current academic session is set.</p>}
+    </div>
+  )
+}
+
+function MarkRegister() {
   const qc = useQueryClient()
   // These reads are wrapped in offlineFirst so the pickers + roster still work on
   // a cold start with no connection (served from the last cached copy).

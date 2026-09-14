@@ -735,6 +735,54 @@ emit supabase/bundles/36_a_school_year_has_dates.sql \
 emit supabase/bundles/37_a_discount_and_a_plan_you_can_choose.sql \
      supabase/migrations/0131*.sql supabase/migrations/0132*.sql
 
+# --- 38 ----------------------------------------------------------------------
+# Two roles withdrawn, and the register handed back to the teacher.
+#
+# THREE MIGRATIONS IN ONE BUNDLE because they are one change to who does what,
+# and a school that pasted only part of it would be in a worse state than
+# before. 0133 leaves the office as one role; 0134 and 0135 then take marking
+# and test-setting away from the principal, which only makes sense once the
+# office is that one role. Split up, a school could end up with the marking
+# revoked and the clerk still on the counter unable to take a payment.
+#
+# THE ONE THING IN HERE THAT IS NOT ADDITIVE is 0133's UPDATE: every
+# admin_clerk and accountant profile becomes a principal. That is deliberate
+# and it is reported by email address as the migration runs, so the school can
+# see who gained approval rights and demote anybody it would rather not. The
+# reasoning, including why READ ONLY would have been the tidier answer and the
+# one that breaks a school, is at the top of 0133.
+#
+# 0134 creates attendance_subject, which is a new table and therefore additive.
+# 0135 adds a trigger to assessments; both its migration and this bundle drop
+# it first, because `create trigger` has no `if not exists` and a re-paste of a
+# bundle must not abort. A bundle is one transaction, so one failed statement
+# rolls back every migration in it.
+emit supabase/bundles/38_the_register_belongs_to_the_teacher.sql \
+     supabase/migrations/0133*.sql supabase/migrations/0134*.sql supabase/migrations/0135*.sql
+
+# --- 39 ----------------------------------------------------------------------
+# The cash drawer and the WhatsApp outbox come out.
+#
+# ONE MIGRATION, AND IT IS THE FIRST REMOVAL THIS PROJECT HAS SHIPPED. Twelve
+# functions are reproduced whole first, with their till and outbox lines taken
+# out, and only then is the feature sealed, so there is no window in which a
+# live call reaches something that is already closed.
+#
+# It SEALS rather than drops, and that is not caution. Bundles 4, 7, 8, 24 and
+# 28 are frozen by the MANIFEST below and name the three tables in plain DDL,
+# so a drop makes every one of them refuse to re-apply, and re-applying a
+# bundle is what verify.sql and supabase/repair/detect.sql tell a school to do.
+# The rows go, the policies go, RLS is FORCED so the seal binds the owner too,
+# and every till and outbox function is revoked from anon, authenticated and
+# service_role. Nothing on a screen, nothing in the API, nothing in the data.
+#
+# It must be pasted AFTER bundle 38 and not instead of it: 38 rewrote
+# fn_finalize_attendance, and 39 rewrites it again to take the absence-message
+# hook out. Pasted the other way round, 38 would put the hook back and the
+# function would call something that no longer exists.
+emit supabase/bundles/39_the_cash_drawer_and_the_outbox_come_out.sql \
+     supabase/migrations/0136*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

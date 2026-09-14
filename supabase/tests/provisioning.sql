@@ -21,7 +21,7 @@
 --   1. USER METADATA DECIDES NOTHING. A signup naming a school, a role, or both
 --      in raw_user_meta_data gets NO profile. Asserted for every role on the old
 --      whitelist, because a gate that holds for 'principal' and leaks for
---      'accountant' is not a gate.
+--      'principal' is not a gate.
 --   2. APP METADATA IS TRUSTED, because only the service role can write it.
 --      That is the Edge Functions' channel and it must keep working.
 --   3. AN INVITATION IS THE OTHER TRUSTED PATH — a row an owner or principal
@@ -125,13 +125,13 @@ select pg_temp.ok(
 -- 2. Rule 1 — user metadata decides NOTHING, for any role
 --
 -- Every role the old whitelist accepted is tried. A gate that holds for
--- 'principal' and leaks for 'accountant' is not a gate, and the original defect
--- was found on 'accountant' first.
+-- 'principal' and leaks for 'principal' is not a gate, and the original defect
+-- was found on 'principal' first.
 -- =============================================================================
 do $attack$
 declare
   v_a uuid := pg_temp.sch('Prov A');
-  v_roles text[] := array['principal','admin_clerk','accountant',
+  v_roles text[] := array['principal','principal','principal',
                           'class_teacher','subject_teacher','readonly','parent'];
   v_r text; i integer := 0;
 begin
@@ -165,8 +165,8 @@ select set_config('test.uid', '00000000-0000-0000-0000-00000000a101', false);
 set local role authenticated;
 select pg_temp.ok(
   public.current_school_id() is null
-  and not public.has_role('principal') and not public.has_role('accountant')
-  and not public.may_view('owner','principal','admin_clerk','accountant'),
+  and not public.has_role('principal') and not public.has_role('principal')
+  and not public.may_view('owner','principal','principal','principal'),
   '6. it has no school context and passes no gate — the profile-less login is '
   || 'genuinely inert, not merely unlisted');
 reset role;
@@ -232,13 +232,13 @@ select pg_temp.ok(
   '14. a malformed address is refused rather than stored as a dead invite');
 
 select pg_temp.ok(
-  pg_temp.raises($$select public.fn_invite_user('ayesha@school.pk', 'accountant')$$,
+  pg_temp.raises($$select public.fn_invite_user('ayesha@school.pk', 'principal')$$,
                  'already has a login'),
   '15. re-inviting somebody who already has a login here is refused — two '
   || 'profiles for one teacher and no idea which is live');
 
 -- An expired invitation.
-select public.fn_invite_user('late@school.pk', 'admin_clerk') as late \gset
+select public.fn_invite_user('late@school.pk', 'principal') as late \gset
 update public.user_invites set expires_at = now() - interval '1 day'
  where email = 'late@school.pk';
 
@@ -252,7 +252,7 @@ select pg_temp.ok(
   || 'later must not still open the door');
 
 -- Revoking one.
-select public.fn_invite_user('gone@school.pk', 'accountant') as g \gset
+select public.fn_invite_user('gone@school.pk', 'principal') as g \gset
 select public.fn_revoke_invite((select id from public.user_invites
                                  where email = 'gone@school.pk'));
 select pg_temp.browser_signup('00000000-0000-0000-0000-00000000b003',
@@ -266,17 +266,20 @@ select pg_temp.ok(
 -- =============================================================================
 -- 5. Rule 5 — who may invite, and across which boundary
 -- =============================================================================
--- A clerk at Prov A.
-select pg_temp.service_signup('00000000-0000-0000-0000-00000000b010', 'clerk@prov.test',
-  jsonb_build_object('school_id', pg_temp.sch('Prov A')::text, 'role', 'admin_clerk'),
-  'Clerk A');
+-- 0133 NOTE. This used to be an admin_clerk: an office account that could not
+-- invite, so that the weakest admin account was not the way in. With that role
+-- withdrawn the weakest account that can sign in is a TEACHER, and the property
+-- is the same one asked of the role that now sits at the bottom.
+select pg_temp.service_signup('00000000-0000-0000-0000-00000000b010', 'teacher@prov.test',
+  jsonb_build_object('school_id', pg_temp.sch('Prov A')::text, 'role', 'class_teacher'),
+  'Teacher A');
 
 select set_config('test.uid', '00000000-0000-0000-0000-00000000b010', false);
 select pg_temp.ok(
-  pg_temp.raises($$select public.fn_invite_user('x@school.pk', 'accountant')$$,
+  pg_temp.raises($$select public.fn_invite_user('x@school.pk', 'principal')$$,
                  'owner or principal'),
-  '18. a clerk cannot invite anybody — otherwise the weakest admin account is '
-  || 'the way in');
+  '18. a class teacher cannot invite anybody, or the weakest account that can '
+  || 'sign in is the way in');
 
 select pg_temp.ok(
   pg_temp.raises('select public.fn_pending_invites()', 'not permitted'),
@@ -307,7 +310,7 @@ select pg_temp.ok(
 -- arbitrary the moment both rows share a timestamp — and both do when they are
 -- written in one transaction, because now() is the transaction's start.
 select pg_temp.be('Owner A');
-select public.fn_invite_user('shared@school.pk', 'accountant') as sa \gset
+select public.fn_invite_user('shared@school.pk', 'principal') as sa \gset
 select pg_temp.browser_signup('00000000-0000-0000-0000-00000000b020',
   'shared@school.pk', '{}'::jsonb);
 
@@ -334,7 +337,7 @@ select pg_temp.browser_signup('00000000-0000-0000-0000-00000000b021',
   'shared@school.pk', '{}'::jsonb);
 
 select pg_temp.ok(
-  (select school_id = pg_temp.sch('Prov A') and role::text = 'accountant' and active
+  (select school_id = pg_temp.sch('Prov A') and role::text = 'principal' and active
      from public.profiles where id = '00000000-0000-0000-0000-00000000b021'),
   '24. after one school withdraws, the remaining invitation redeems exactly as it '
   || 'would have on its own');

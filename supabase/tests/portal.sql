@@ -164,7 +164,7 @@ begin
       'subjects', 'academic_sessions', 'fee_heads', 'fee_structures',
       'invoices', 'invoice_lines', 'payments', 'expenses', 'schools',
       'subscriptions', 'school_settings', 'teacher_assignments',
-      'student_links', 'exam_terms', 'assessments', 'till_sessions'
+      'student_links', 'exam_terms', 'assessments'
     ]) as t
   loop
     execute format('select count(*) from public.%I', r.t) into v_n;

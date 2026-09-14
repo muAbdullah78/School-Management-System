@@ -173,6 +173,26 @@ def main() -> int:
                                  -- would hand both of them the ability to change
                                  -- a child's exam result.
                                  'fn_may_mark_subject',
+                                 -- fn_may_write_register (0134) and
+                                 -- fn_may_set_a_test (0135) are the same kind
+                                 -- again: they answer "may this caller WRITE a
+                                 -- register / set a test", and both are
+                                 -- evaluated inside row-level policies.
+                                 -- may_view is true for an observer and for an
+                                 -- operator in a read-only support visit, so
+                                 -- gating either on it would hand both of them
+                                 -- the ability to mark a child absent.
+                                 'fn_may_write_register',
+                                 'fn_may_set_a_test',
+                                 -- fn_my_unmarked_tests (0135) is a TEACHER'S
+                                 -- OWN worklist: the papers they set and have
+                                 -- not finished marking. An observer has none,
+                                 -- and neither has a principal since 0135 took
+                                 -- test creation away from them. On may_view
+                                 -- both would get an empty list, which reads as
+                                 -- "nothing to mark" rather than "this is not
+                                 -- your list"; the raise says which.
+                                 'fn_my_unmarked_tests',
                                  'fn_checkin_display', 'fn_pending_invites',
                                  -- fn_preview_discount (0131): what a code
                                  -- takes off a plan. Reads the code list and

@@ -108,10 +108,14 @@ begin
     values (v_b, 'growth', 'active', current_date + 30);
 
   insert into auth.users (id, email) values
-    (v_oa, 'oa@cert.test'), (v_ca, 'ca@cert.test'), (v_ob, 'ob@cert.test');
+    (v_oa, 'oa@cert.test'), (v_ca, 'ca@cert.test'), (v_ob, 'ob@cert.test'),
+    ('00000000-0000-0000-0000-0000000ce70a', 'ta@cert.test');
   insert into public.profiles (id, school_id, full_name, role, active) values
     (v_oa, v_a, 'Cert Owner A', 'owner', true),
-    (v_ca, v_a, 'Cert Clerk A', 'admin_clerk', true),
+    (v_ca, v_a, 'Cert Office A', 'principal', true),
+    -- 0133: Admin / Clerk is withdrawn, so the account that must NOT override
+    -- an unpaid-fees block is a class teacher. The office is the principal.
+    ('00000000-0000-0000-0000-0000000ce70a', v_a, 'Cert Teacher A', 'class_teacher', true),
     (v_ob, v_b, 'Cert Owner B', 'owner', true);
 
   perform set_config('test.uid', v_oa::text, false);
@@ -204,14 +208,24 @@ select pg_temp.ok(
 -- =============================================================================
 -- 2. The override: allowed, restricted, and recorded ON the document
 -- =============================================================================
-select pg_temp.be('Cert Clerk A');
+-- 0133 NOTE. This used to be an admin_clerk, and it got as far as the OVERRIDE
+-- check inside fn_issue_certificate before being refused: a clerk could issue a
+-- certificate, and could not wave away unpaid fees while doing it. That was a
+-- line inside the office and it is gone with the role.
+--
+-- A class teacher does not reach that check at all. They are refused at the
+-- door, by the outer role gate, and the assertion says so rather than
+-- pretending the inner refusal still fires. The property that survives is the
+-- one worth keeping: a certificate is a document the school stands behind, and
+-- the staff room does not issue one.
+select pg_temp.be('Cert Teacher A');
 select pg_temp.ok(
   pg_temp.raises(
     format('select public.fn_issue_certificate(''leaving'', %L, ''{}''::jsonb, '
            || 'current_date, ''Moving city'', ''withdrawn'', true, ''Hardship'')',
            pg_temp.stu('Owing Child')),
-    'only an owner or principal'),
-  '7. a CLERK cannot release it over unpaid fees, even with a reason');
+    'Not permitted to issue certificates'),
+  '7. A CLASS TEACHER cannot issue a certificate at all, with or without a reason');
 
 select pg_temp.be('Cert Owner A');
 select pg_temp.ok(
@@ -322,13 +336,17 @@ select pg_temp.ok(
 -- =============================================================================
 -- 6. Cancelling one issued in error
 -- =============================================================================
-select pg_temp.be('Cert Clerk A');
+-- 0133: the office is the principal now, so the account refused here is the
+-- class teacher. Cancelling a document a family may already be holding is an
+-- approval, and the staff room does not make it.
+select pg_temp.be('Cert Teacher A');
 select pg_temp.ok(
   pg_temp.raises(
     format('select public.fn_cancel_certificate(%L, ''Wrong child'')',
            (select id from public.certificates where cert_type = 'bonafide')),
-    'only an owner or principal'),
-  '22. a clerk cannot cancel a certificate — a family may already be holding it');
+    'Only an owner or principal may cancel a certificate'),
+  '22. a class teacher cannot cancel a certificate, and a family may already '
+  || 'be holding it');
 
 select pg_temp.be('Cert Owner A');
 select pg_temp.ok(
@@ -470,7 +488,7 @@ select pg_temp.ok(
 -- those keys — but "the app doesn't send it" is not a boundary, and a
 -- certificate is exactly the document somebody has a motive to forge.
 -- =============================================================================
-select pg_temp.be('Cert Clerk A');
+select pg_temp.be('Cert Office A');
 
 -- An honest original first. Owing Child's earlier bonafide was CANCELLED in
 -- section 6, and a cancelled certificate correctly stops counting as an

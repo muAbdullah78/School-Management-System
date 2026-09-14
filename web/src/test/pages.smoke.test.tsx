@@ -149,8 +149,6 @@ const SCREENS: [string, () => Promise<Record<string, unknown>>, string][] = [
   ['Certificates', () => import('@/pages/certificates/CertificatesPage'), 'CertificatesPage'],
   ['Reports', () => import('@/pages/reports/ReportsPage'), 'ReportsPage'],
   ['Settings', () => import('@/pages/SettingsPage'), 'SettingsPage'],
-  ['Till', () => import('@/pages/till/TillPage'), 'TillPage'],
-  ['Messages', () => import('@/pages/messages/MessagesPage'), 'MessagesPage'],
   // Settings renders its FIRST tab, so the others were never opened by
   // anything. Subscription is the one a school looks at when it is deciding
   // whether to pay.
@@ -170,6 +168,10 @@ const SCREENS: [string, () => Promise<Record<string, unknown>>, string][] = [
   // question: an empty price list is what a new school sees when the network
   // hiccups on the one screen where it decides to buy.
   ['ChoosePlan', () => import('@/pages/ChoosePlan'), 'ChoosePlan'],
+  // 0135. The head's Tests screen. AttendancePage above already covers the
+  // head's Attendance screen, because an owner now lands on the oversight
+  // dashboard rather than on a marking form.
+  ['Tests', () => import('@/pages/assessments/TestsPage'), 'TestsPage'],
 ]
 
 /**
@@ -183,6 +185,16 @@ describe('screens that take props', () => {
   const CASES: [string, () => Promise<{ default?: unknown; [k: string]: unknown }>, string, Record<string, unknown>][] = [
     ['StudentProfile', () => import('@/pages/students/StudentProfile'), 'StudentProfile',
       { studentId: '33333333-3333-3333-3333-333333333333', onBack: () => {} }],
+    // 0134. The head's register overview and the subject teacher's own
+    // register, both new and both reached only through a role this file's
+    // default profile does not have, so neither would be rendered by anything
+    // above.
+    ['AttendanceOverview', () => import('@/pages/attendance/AttendanceOverview'), 'AttendanceOverview',
+      { sessionId: '44444444-4444-4444-4444-444444444444' }],
+    ['SubjectAttendance', () => import('@/pages/attendance/SubjectAttendance'), 'SubjectAttendance',
+      { sessionId: '44444444-4444-4444-4444-444444444444' }],
+    ['TestsOverview', () => import('@/pages/assessments/TestsOverview'), 'TestsOverview',
+      { sessionId: '44444444-4444-4444-4444-444444444444' }],
   ]
   for (const [label, importer, name, props] of CASES) {
     it(`${label}: opens for a school with no data`, async () => {
@@ -1082,6 +1094,20 @@ describe('a finalised register has a way back', () => {
   async function openLockedDay(profile: Profile) {
     const { AttendancePage } = await import('@/pages/attendance/AttendancePage')
     const utils = await mount(AttendancePage, '/', {}, profile)
+    // SINCE 0134 AN OWNER LANDS ON THE OVERSIGHT DASHBOARD, not on a marking
+    // screen. The hatch is one deliberate click, and going through it here is
+    // the point rather than an inconvenience: it is what an owner does, and a
+    // test that reached past it would stop noticing if the click disappeared.
+    const toMarking = utils.queryByRole('button', { name: /mark a register/i })
+    if (toMarking) {
+      fireEvent.click(toMarking)
+      // Wait for the OPTION, not merely for the select. The marking screen
+      // mounts with an empty class list and fills it a tick later, and firing
+      // a change at a value that is not yet an option sets the select to ''
+      // and quietly does nothing, which looks exactly like the screen being
+      // broken.
+      await waitFor(() => expect(utils.queryByText('Class 4')).not.toBeNull())
+    }
     const picker = utils.container.querySelector('select')
     expect(picker).not.toBeNull()
     fireEvent.change(picker as HTMLSelectElement, { target: { value: 'cls-1' } })

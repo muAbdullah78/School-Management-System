@@ -99,8 +99,8 @@ begin
     (v_ro, 'bsr@bs.test'), (v_ob, 'bsb@bs.test') on conflict (id) do nothing;
   insert into public.profiles (id, full_name, role, school_id) values
     (v_oa, 'BS Owner',      'owner',       v_a),
-    (v_cl, 'BS Clerk',      'admin_clerk', v_a),
-    (v_ac, 'BS Accountant', 'accountant',  v_a),
+    (v_cl, 'BS Office',      'principal', v_a),
+    (v_ac, 'BS Class Teacher', 'class_teacher',  v_a),
     (v_ro, 'BS Readonly',   'readonly',    v_a),
     (v_ob, 'BS Other',      'owner',       v_b)
     on conflict (id) do update set school_id = excluded.school_id,
@@ -411,24 +411,32 @@ end $$;
 -- =============================================================================
 -- 9. Role boundary — the same one fn_finance_summary enforces
 --
--- Deliberately not looser. An admin_clerk may take a payment but may not read
--- the school's financial position, and readonly may read the school but not
--- its accounts.
+-- REWRITTEN BY 0133, which withdrew Admin / Clerk and Accountant.
+--
+-- What this used to assert was a boundary INSIDE the office: an admin_clerk
+-- could take a payment but not read the school's financial position, while an
+-- accountant could read it. With one office role left there is no inside of
+-- the office to draw a line through, and that loss is recorded in 0133's
+-- header rather than hidden here.
+--
+-- The boundary that SURVIVES is the one between the office and the staff room,
+-- and it is worth as much: a class teacher signs in to this software every
+-- morning, and must not be able to read what the school is worth.
 -- =============================================================================
 do $$
 begin
   perform set_config('test.uid',
-    (select id::text from public.profiles where full_name = 'BS Accountant'), false);
+    (select id::text from public.profiles where full_name = 'BS Office'), false);
   perform pg_temp.bs(current_date);
-  raise notice 'PASS  25 an accountant may read the balance sheet';
+  raise notice 'PASS  25 the office may read the balance sheet';
 
   perform set_config('test.uid',
-    (select id::text from public.profiles where full_name = 'BS Clerk'), false);
+    (select id::text from public.profiles where full_name = 'BS Class Teacher'), false);
   begin
     perform pg_temp.bs(current_date);
-    raise exception 'FAIL  26 an admin_clerk read the balance sheet';
+    raise exception 'FAIL  26 a class teacher read the balance sheet';
   exception when insufficient_privilege then
-    raise notice 'PASS  26 an admin_clerk is refused, matching fn_finance_summary';
+    raise notice 'PASS  26 a class teacher is refused, matching fn_finance_summary';
   end;
 
   -- REVERSED by 0059, on purpose, and kept rather than deleted so the decision
@@ -439,9 +447,9 @@ begin
   -- second-in-command — and the balance sheet is precisely the document such a
   -- person is there to read. It writes nothing.
   --
-  -- Note what did NOT change: assertion 26 above. An admin_clerk is still
+  -- Note what did NOT change: assertion 26 above. A class teacher is still
   -- refused. Breadth of READING and a role in operations are different axes, so
-  -- an observer being more widely-read than a clerk is coherent rather than a
+  -- an observer being more widely-read than a teacher is coherent rather than a
   -- privilege escalation. See docs/READONLY-DESIGN.md.
   perform set_config('test.uid',
     (select id::text from public.profiles where full_name = 'BS Readonly'), false);
@@ -464,12 +472,12 @@ end $$;
 do $$
 declare v_owner uuid;
 begin
-  select id into v_owner from public.profiles where full_name = 'BS Accountant';
+  select id into v_owner from public.profiles where full_name = 'BS Office';
   update public.profiles set active = false where id = v_owner;
   perform set_config('test.uid', v_owner::text, false);
   begin
     perform pg_temp.bs(current_date);
-    raise exception 'FAIL  28 a deactivated accountant read the balance sheet';
+    raise exception 'FAIL  28 a deactivated office account read the balance sheet';
   exception when insufficient_privilege then
     raise notice 'PASS  28 a deactivated staff account cannot read the accounts';
   end;
