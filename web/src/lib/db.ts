@@ -416,13 +416,219 @@ export async function getVoidedInvoices(from: string, to: string): Promise<Voide
   return ((data ?? []) as VoidedInvoice[]).map((r) => ({ ...r, amount: Number(r.amount) }))
 }
 
-export interface MonthlyFee { gross: number; discount: number; net: number }
-export async function getStudentMonthlyFee(enrollmentId: string): Promise<MonthlyFee> {
+/* ===========================================================================
+ * The month.
+ *
+ * Every figure the Fees screen shows comes from here. The screen used to open
+ * on four numbers (unpaid challans, collected today, spent today, balance
+ * today) and none of them answered the question a school actually asks, which
+ * is: it is September, there are 240 children, how many have paid.
+ * ======================================================================== */
+
+export interface FeesMonth {
+  month: string; today: string; state: 'scheduled' | 'billed' | 'skipped'
+  due_date: string | null
+  roll: number; billed: number; not_billed: number
+  paid: number; unpaid: number; part_paid: number
+  charged_total: number; paid_total: number; due_total: number
+}
+
+/**
+ * Raises any month that is due and not yet billed.
+ *
+ * CALLED WHEN THE FEES SCREEN OPENS, and safe to call that often: it asks what
+ * the year still owes rather than remembering what it did last time, so a gap
+ * from any cause closes itself, and it costs about 50ms on a 600 pupil school
+ * when there is nothing to do. Somebody who may not bill gets a quiet zero
+ * rather than a permission error from an action they did not ask for.
+ */
+export async function ensureBillingCurrent(sessionId: string): Promise<{ billed: number }> {
   const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_student_monthly_fee', { p_enrollment_id: enrollmentId })
+  const { data, error } = await sb.rpc('fn_ensure_billing_current', { p_session_id: sessionId })
+  if (error) throw new Error(error.message)
+  return { billed: Number((data as any)?.billed ?? 0) }
+}
+
+export async function getFeesMonth(sessionId: string, month?: string | null): Promise<FeesMonth> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_fees_month', {
+    p_session_id: sessionId, p_month: month ?? null,
+  })
   if (error) throw new Error(error.message)
   const d = data as any
-  return { gross: Number(d.gross), discount: Number(d.discount), net: Number(d.net) }
+  return {
+    month: d.month, today: d.today, state: d.state, due_date: d.due_date ?? null,
+    roll: Number(d.roll), billed: Number(d.billed), not_billed: Number(d.not_billed),
+    paid: Number(d.paid), unpaid: Number(d.unpaid), part_paid: Number(d.part_paid),
+    charged_total: Number(d.charged_total), paid_total: Number(d.paid_total),
+    due_total: Number(d.due_total),
+  }
+}
+
+export interface MonthPupil {
+  student_id: string; gr_no: string; full_name: string
+  class_name: string; section_name: string | null; roll_no: string | null
+  family_id: string | null; family_head: string | null
+  charge: number; paid: number; due: number
+  state: 'paid' | 'unpaid' | 'not_billed'
+}
+/** The list behind one of the counts. The caller says which; sending the whole
+ *  roll down to show half of it is what a browser filter would do. */
+export async function listFeesMonthPupils(
+  sessionId: string, month: string | null, state: 'paid' | 'unpaid' | 'not_billed' | 'all',
+): Promise<MonthPupil[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_fees_month_pupils', {
+    p_session_id: sessionId, p_month: month ?? null, p_state: state,
+  })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as any[]).map((r) => ({
+    student_id: r.student_id, gr_no: r.gr_no, full_name: r.full_name,
+    class_name: r.class_name, section_name: r.section_name ?? null, roll_no: r.roll_no ?? null,
+    family_id: r.family_id ?? null, family_head: r.family_head ?? null,
+    charge: Number(r.charge), paid: Number(r.paid), due: Number(r.due), state: r.state,
+  }))
+}
+
+export interface ArrearsRow {
+  student_id: string; gr_no: string; full_name: string
+  class_name: string; section_name: string | null; roll_no: string | null
+  family_id: string | null; family_head: string | null; phone: string | null
+  months_owed: number; oldest_month: string; amount: number
+}
+/** Owes for a month BEFORE this one. September is running, so nobody is chased
+ *  for September; the old Defaulters screen meant "owes anything" and so fired
+ *  on the second of the month. */
+export async function listArrears(sessionId: string): Promise<ArrearsRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_arrears', { p_session_id: sessionId })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as any[]).map((r) => ({
+    student_id: r.student_id, gr_no: r.gr_no, full_name: r.full_name,
+    class_name: r.class_name, section_name: r.section_name ?? null, roll_no: r.roll_no ?? null,
+    family_id: r.family_id ?? null, family_head: r.family_head ?? null, phone: r.phone ?? null,
+    months_owed: Number(r.months_owed), oldest_month: r.oldest_month, amount: Number(r.amount),
+  }))
+}
+
+export interface StudentFeeState {
+  month: string; billed: boolean
+  state: 'paid' | 'unpaid' | 'part_paid' | 'not_billed'
+  charge: number; paid: number; due: number
+  arrears_months: number; arrears_amount: number; arrears_oldest: string | null
+  balance: number; family_credit: number
+}
+/**
+ * One child, one answer, read by the search result, the profile and the family
+ * sheet alike so they cannot disagree.
+ *
+ * family_credit is the money the school is HOLDING for this family that is not
+ * yet against any month. The child's Fees tab used to show "CURRENT BALANCE
+ * Rs 0" for a family whose Rs 3,150 the school had taken in advance: true, and
+ * useless, because nothing on that screen mentioned the Rs 3,150.
+ */
+export async function getStudentFeeState(studentId: string, month?: string | null): Promise<StudentFeeState> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_student_fee_state', {
+    p_student_id: studentId, p_month: month ?? null,
+  })
+  if (error) throw new Error(error.message)
+  const d = data as any
+  return {
+    month: d.month, billed: !!d.billed, state: d.state,
+    charge: Number(d.charge), paid: Number(d.paid), due: Number(d.due),
+    arrears_months: Number(d.arrears_months), arrears_amount: Number(d.arrears_amount),
+    arrears_oldest: d.arrears_oldest ?? null,
+    balance: Number(d.balance), family_credit: Number(d.family_credit),
+  }
+}
+
+export interface BillingMonthRow {
+  period_month: string; state: 'scheduled' | 'billed' | 'skipped'
+  due_date: string | null; billed_at: string | null
+  pupils_billed: number; note: string | null; invoices: number; unpaid: number
+}
+export async function getBillingCalendar(sessionId: string): Promise<BillingMonthRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_billing_calendar', { p_session_id: sessionId })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as any[]).map((r) => ({
+    period_month: r.period_month, state: r.state, due_date: r.due_date ?? null,
+    billed_at: r.billed_at ?? null, pupils_billed: Number(r.pupils_billed),
+    note: r.note ?? null, invoices: Number(r.invoices), unpaid: Number(r.unpaid),
+  }))
+}
+
+/** Marks a month skipped (the summer, say) or puts it back. A month already
+ *  charged is refused: skipping does not unsend forty challans. */
+export async function setMonthState(
+  sessionId: string, periodMonth: string, state: 'scheduled' | 'skipped',
+  dueDate?: string | null, note?: string | null,
+): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_set_month_state', {
+    p_session_id: sessionId, p_period_month: periodMonth, p_state: state,
+    p_due_date: dueDate ?? null, p_note: note ?? null,
+  })
+  if (error) throw new Error(error.message)
+}
+
+export async function billMonth(
+  sessionId: string, periodMonth: string, dueDate?: string | null,
+): Promise<{ billed: number; classes_with_no_fee: number; classes_with_no_fee_names: string | null }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_bill_month', {
+    p_session_id: sessionId, p_period_month: periodMonth, p_due_date: dueDate ?? null,
+  })
+  if (error) throw new Error(error.message)
+  const d = data as any
+  return {
+    billed: Number(d.billed),
+    classes_with_no_fee: Number(d.classes_with_no_fee ?? 0),
+    classes_with_no_fee_names: d.classes_with_no_fee_names ?? null,
+  }
+}
+
+export async function setBillingDays(
+  billingDay: number, dueDay: number, autoBill: boolean,
+): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_set_billing_days', {
+    p_billing_day: billingDay, p_due_day: dueDay, p_auto_bill: autoBill,
+  })
+  if (error) throw new Error(error.message)
+}
+
+export interface FeeLine {
+  discount_id: string; type: string; amount: number
+  is_percent: boolean; rate: number; reason: string | null
+}
+export interface MonthlyFee {
+  month: string; gross: number; discount: number; net: number; lines: FeeLine[]
+}
+/**
+ * What a month costs one child: gross, what comes off, and what is left.
+ *
+ * ASKED OF A CHILD AND A MONTH, not of an enrolment. 0138 moved discounts onto
+ * the child with a start and an end, so "the monthly fee" is no longer one
+ * number that is true for ever: a hardship waiver can begin in November and a
+ * scholarship can run out in March. The old fn_student_monthly_fee answered
+ * only for today and could not be asked about any other month.
+ */
+export async function getStudentMonthlyFee(studentId: string, month?: string): Promise<MonthlyFee> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_student_fee_for_month', {
+    p_student_id: studentId, p_month: month ?? null,
+  })
+  if (error) throw new Error(error.message)
+  const d = data as any
+  return {
+    month: d.month, gross: Number(d.gross), discount: Number(d.discount), net: Number(d.net),
+    lines: (d.lines ?? []).map((l: any) => ({
+      discount_id: l.discount_id, type: l.type, amount: Number(l.amount),
+      is_percent: l.is_percent, rate: Number(l.rate), reason: l.reason ?? null,
+    })),
+  }
 }
 
 export interface MonthTestRow {
@@ -503,29 +709,62 @@ export async function listDiscounts(): Promise<DiscountRow[]> {
 }
 
 export async function addDiscount(
-  enrollmentId: string, type: string, amount: number, isPercent: boolean, reason: string,
+  studentId: string, type: string, amount: number, isPercent: boolean, reason: string,
+  startsOn?: string | null, endsOn?: string | null,
 ): Promise<string> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_add_discount', {
-    p_enrollment_id: enrollmentId, p_type: type, p_amount: amount, p_is_percent: isPercent, p_reason: reason,
+    p_student_id: studentId, p_type: type, p_amount: amount, p_is_percent: isPercent,
+    p_reason: reason, p_starts_on: startsOn ?? null, p_ends_on: endsOn ?? null,
   })
   if (error) throw new Error(error.message)
   return data as string
 }
 
-/** Approved/pending discounts for one enrolment (drives the profile Fees strip). */
-export async function getEnrollmentDiscounts(enrollmentId: string): Promise<DiscountRow[]> {
+export async function editDiscount(
+  discountId: string, type: string, amount: number, isPercent: boolean, reason: string,
+  startsOn?: string | null, endsOn?: string | null,
+): Promise<{ repriced: number; left_alone_because_paid: number }> {
   const sb = requireSupabase()
-  const rows = unwrap<Record<string, any>[]>(
-    await sb.from('discounts')
-      .select('id, enrollment_id, type, amount, is_percent, reason, status, created_at')
-      .eq('enrollment_id', enrollmentId)
-      .order('created_at', { ascending: false }),
-  )
-  return rows.map((r) => ({
-    id: r.id, enrollment_id: r.enrollment_id, type: r.type, amount: Number(r.amount),
-    is_percent: r.is_percent, reason: r.reason, status: r.status, created_at: r.created_at,
-    student_name: null, gr_no: null, class_name: null,
+  const { data, error } = await sb.rpc('fn_edit_discount', {
+    p_discount_id: discountId, p_type: type, p_amount: amount, p_is_percent: isPercent,
+    p_reason: reason, p_starts_on: startsOn ?? null, p_ends_on: endsOn ?? null,
+  })
+  if (error) throw new Error(error.message)
+  const r = (data as any)?.reprice ?? {}
+  return { repriced: Number(r.repriced ?? 0), left_alone_because_paid: Number(r.left_alone_because_paid ?? 0) }
+}
+
+/** Ends a discount from the month after the one given. It is never deleted: the
+ *  months it did cover keep it, which is what makes an old statement add up. */
+export async function endDiscount(discountId: string, lastMonth?: string | null): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_end_discount', {
+    p_discount_id: discountId, p_last_month: lastMonth ?? null,
+  })
+  if (error) throw new Error(error.message)
+}
+
+export interface StudentDiscount {
+  id: string; type: string; amount: number; is_percent: boolean; reason: string | null
+  status: string; starts_on: string; ends_on: string | null; live: boolean
+  proposed_by: string; approved_by: string; approved_at: string | null
+}
+/**
+ * Every discount this CHILD has ever had, live or finished, with the months it
+ * covers. Read by child rather than by enrolment because 0138 stopped a
+ * concession dying at rollover; reading it by enrolment would show an empty
+ * list every April for a family whose waiver is still in force.
+ */
+export async function getStudentDiscounts(studentId: string): Promise<StudentDiscount[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_student_discounts', { p_student_id: studentId })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as any[]).map((r) => ({
+    id: r.id, type: r.type, amount: Number(r.amount), is_percent: r.is_percent,
+    reason: r.reason ?? null, status: r.status, starts_on: r.starts_on,
+    ends_on: r.ends_on ?? null, live: !!r.live,
+    proposed_by: r.proposed_by, approved_by: r.approved_by, approved_at: r.approved_at ?? null,
   }))
 }
 

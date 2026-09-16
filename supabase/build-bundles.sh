@@ -798,6 +798,23 @@ emit supabase/bundles/39_the_cash_drawer_and_the_outbox_come_out.sql \
 emit supabase/bundles/40_the_ledger_never_got_its_baseline.sql \
      supabase/migrations/0137*.sql
 
+# --- 41 ----------------------------------------------------------------------
+# The fee module, rebuilt around the month.
+#
+# THREE MIGRATIONS IN ONE BUNDLE because they are one change and a database
+# holding only some of them is a database with two billing models in it. 0139
+# bills on top of 0138's child-scoped discounts; 0140's month view reads what
+# 0139 writes.
+#
+# The fault they fix is the root of the fee module: a fee did not exist until
+# somebody pressed Generate Challans, one class at a time, and nothing recorded
+# which classes had been done. A class nobody billed had no UNPAID fees, it had
+# no fees, so every total agreed the month had gone well. "How many of my pupils
+# have paid this month" could not be answered, because the honest answer was a
+# statement about which buttons had been pressed.
+emit supabase/bundles/41_the_fee_module_rebuilt_around_the_month.sql \
+     supabase/migrations/0138*.sql supabase/migrations/0139*.sql supabase/migrations/0140*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

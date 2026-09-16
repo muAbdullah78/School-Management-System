@@ -739,9 +739,14 @@ select 'fee setup (0066)',
                               join pg_namespace n on n.oid = p.pronamespace
                               where n.nspname='public' and p.proname='fn_bill_student_month'
                                 and p.prosrc like '%effective_from <=%')
+                 -- 0138 REPLACED fn_student_monthly_fee WITH fn_student_fee_for_month,
+                 -- which answers the same question for a NAMED month rather than
+                 -- for today, because a discount can now start and end. The
+                 -- property 0066 cares about is unchanged and is asserted on the
+                 -- function that now carries it.
                  and exists (select 1 from pg_proc p
                               join pg_namespace n on n.oid = p.pronamespace
-                              where n.nspname='public' and p.proname='fn_student_monthly_fee'
+                              where n.nspname='public' and p.proname='fn_student_fee_for_month'
                                 and p.prosrc like '%effective_from <=%')
        then 'PASS' else 'FAIL: run migrations/0066_fee_setup.sql' end
 
@@ -902,9 +907,21 @@ select 'one school cannot reach another''s families or fees (0070)',
        case when exists (select 1 from pg_proc where proname = 'fn_queue_message'
                           and pronamespace = 'public'::regnamespace
                           and prosrc like '%id = p_family_id and school_id = v_school%')
+             -- ANCHOR MOVED IN 0138, and the property did not. This used to
+             -- look for `d.school_id = v_school` inside the discount loop.
+             -- 0138 rewrote the function to ask fn__discounts_live, which does
+             -- that scoping itself, so the old literal is gone while the fence
+             -- is still there. What is checked now is the fence 0070 actually
+             -- put in: the invoice being written to must belong to the caller's
+             -- school. A probe anchored on a literal a legitimate rewrite
+             -- removed is how this file starts lying, which is the same failure
+             -- 0085 and 0135 recorded in the migrations.
              and exists (select 1 from pg_proc where proname = 'fn__apply_discount_lines'
                           and pronamespace = 'public'::regnamespace
-                          and prosrc like '%d.school_id = v_school%')
+                          and prosrc like '%i.school_id = v_school%')
+             and exists (select 1 from pg_proc where proname = 'fn__discounts_live'
+                          and pronamespace = 'public'::regnamespace
+                          and prosrc like '%school_id = public.current_school_id()%')
              and not exists (select 1 from pg_proc p
                               join pg_namespace n on n.oid = p.pronamespace
                               where n.nspname = 'public' and p.proname like 'fn\_\_%'
@@ -2992,6 +3009,67 @@ select 'the ledger records the migrations that came before it (0137)',
               || 'console reports this database as missing migrations it has; '
               || 'apply supabase/bundles/'
               || '40_the_ledger_never_got_its_baseline.sql'
+       end
+
+union all
+-- 0138 to 0140. The fee module, rebuilt around the month.
+--
+-- ONE ROW FOR THREE MIGRATIONS, because they are one change and a database
+-- carrying some of them is in a state nobody designed. The conditions are
+-- ordered so the FIRST thing missing is what the school is told about.
+--
+-- The fault: a fee did not exist until somebody pressed a button, one class at
+-- a time, and nothing recorded which classes had been done. A class nobody
+-- billed had no unpaid fees, it had none at all, so every figure agreed the
+-- month had gone well.
+select 'fees are raised for the month on their own (0138, 0139, 0140)',
+       case
+         when to_regclass('public.billing_months') is null
+           then 'FAIL: nothing records which months have been charged, so a month '
+                || 'nobody billed is invisible; apply supabase/bundles/'
+                || '41_the_fee_module_rebuilt_around_the_month.sql'
+         when to_regprocedure('public.fn_ensure_billing_current(uuid)') is null
+           then 'FAIL: the month is still billed only when somebody presses a button; '
+                || 'apply supabase/bundles/41_the_fee_module_rebuilt_around_the_month.sql'
+         when not exists (select 1 from information_schema.columns
+                           where table_schema = 'public' and table_name = 'discounts'
+                             and column_name = 'student_id')
+           then 'FAIL: discounts still hang off one year''s enrolment, so every one of '
+                || 'them will vanish at rollover and those families will be charged in '
+                || 'full with nothing said; apply supabase/bundles/'
+                || '41_the_fee_module_rebuilt_around_the_month.sql'
+         when to_regprocedure('public.fn_fees_month(uuid,date)') is null
+           or to_regprocedure('public.fn_arrears(uuid)') is null
+           then 'FAIL: the Fees screen cannot say how many pupils have paid this month; '
+                || 'apply supabase/bundles/41_the_fee_module_rebuilt_around_the_month.sql'
+         -- The clock. A fee taken at 02:00 in Karachi was counted on the
+         -- previous day, on this screen and on the dashboard, every morning.
+         -- COMMENTS STRIPPED BEFORE LOOKING, and that is not fussiness: the
+         -- first version of this row failed on a database where the fix WAS
+         -- applied, because the rewritten function explains the old bound in a
+         -- comment and prosrc carries comments. A guard satisfied, or here
+         -- broken, by a comment is the fault 0085 and supabase/tests/
+         -- removed_features.sql both record.
+         when exists (select 1 from pg_proc p
+                        join pg_namespace n on n.oid = p.pronamespace
+                       where n.nspname = 'public'
+                         and p.proname in ('fn_counter_summary', 'fn_dashboard_summary')
+                         and regexp_replace(p.prosrc, '--[^' || chr(10) || ']*', '', 'g')
+                             like '%date_trunc(''day'', now())%')
+           then 'FAIL: today''s collection is measured in the server''s timezone, so a fee '
+                || 'taken before 5am shows on yesterday; apply supabase/bundles/'
+                || '41_the_fee_module_rebuilt_around_the_month.sql'
+         -- The defaulters list called a whole-ledger function three times per
+         -- row: 3.7 seconds on 1046 pupils, on a screen opened every day.
+         when exists (select 1 from pg_proc p
+                        join pg_namespace n on n.oid = p.pronamespace
+                       where n.nspname = 'public' and p.proname = 'fn_defaulters'
+                         and regexp_replace(p.prosrc, '--[^' || chr(10) || ']*', '', 'g')
+                             like '%order by public.student_balance%')
+           then 'FAIL: the defaulters list still reads the whole ledger once per pupil '
+                || 'three times over; apply supabase/bundles/'
+                || '41_the_fee_module_rebuilt_around_the_month.sql'
+         else 'PASS'
        end
 
 union all

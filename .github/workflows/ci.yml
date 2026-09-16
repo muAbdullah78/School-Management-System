@@ -1084,7 +1084,10 @@ jobs:
             if public.student_balance(sid) <> 900 then raise exception 'FEE adj %', public.student_balance(sid); end if;
             perform public.fn_waive_fine(inv, 'goodwill');
             if public.student_balance(sid) <> 700 then raise exception 'FEE waive %', public.student_balance(sid); end if;
-            did := public.fn_add_discount(enr, 'sibling', 10, true, 'sib');
+            -- 0138 moved a discount from the enrolment to the CHILD, and gave
+            -- it a start month, because keyed to the enrolment every concession
+            -- in the school vanished at rollover.
+            did := public.fn_add_discount(sid, 'sibling', 10, true, 'sib', date '2025-09-01', null);
             perform public.fn_set_discount_status(did, 'approved');
             perform public.fn_generate_class_invoices('22222222-2222-2222-2222-222222222222',
               '77777777-7777-7777-7777-777777777777', '2025-09-01', '2025-09-10');
@@ -1519,6 +1522,32 @@ jobs:
         # owner too, and every till and outbox function is revoked from anon,
         # authenticated and service_role.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/removed_features.sql
+
+      - name: A month is billed whether or not anybody remembers
+        # The root fault of the fee module: a fee did not exist until somebody
+        # pressed Generate Challans, one class at a time, and nothing recorded
+        # which classes had been done. A class nobody billed had no UNPAID fees,
+        # it had none, so every total agreed the month had gone well.
+        #
+        # Assertions 4 and 9 both failed when first written: a class with no fee
+        # structure was billed silently at zero, and a child admitted this month
+        # was charged for the whole summer as well.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/billing_month.sql
+
+      - name: A discount belongs to the child, not to one year's enrolment
+        # Assertion 1 is the file: discounts hung off enrollment_id and
+        # fn_rollover inserts into exactly one table, enrollments. Every
+        # concession in the school stopped existing on the first day of a new
+        # session, in silence. Assertion 6 is the limit on the fix: a month
+        # already paid against is never repriced, because that is a refund.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/discount_belongs_to_the_child.sql
+
+      - name: The month, the roll, who has paid, and the clock
+        # Assertion 5 cannot be argued with: a fee taken at 02:00 in Karachi was
+        # counted on the previous day, on the counter screen and the dashboard,
+        # every morning, for five hours, because today was measured in the
+        # server's timezone and Supabase runs UTC.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/the_month_and_the_arrears.sql
 
       - name: Remarks and position holders — do ties and remarks survive?
         # Assertion 12 is why exam_remarks is its own table rather than a column

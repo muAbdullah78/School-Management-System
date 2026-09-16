@@ -1028,8 +1028,11 @@ begin
       values (v_binv2, 'Tuition Fee', 5000, b_school);
     -- The victim school's own approved discount, which is what the unscoped read
     -- reached for.
-    insert into public.discounts (enrollment_id, type, amount, is_percent, status, school_id)
-      values (v_benr2, 'sibling', 1000, false, 'approved', b_school);
+    insert into public.discounts (student_id, enrollment_id, type, amount, is_percent,
+                                  status, school_id, starts_on)
+      values ((select student_id from public.enrollments where id = v_benr2),
+              v_benr2, 'sibling', 1000, false, 'approved', b_school,
+              date_trunc('month', current_date)::date);
 
     select sum(case when is_discount then -amount else amount end) into v_charge_before
       from public.invoice_lines where invoice_id = v_binv2;

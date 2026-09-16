@@ -344,7 +344,10 @@ with sig(migration, object, present) as (values
      (select exists (select 1 from pg_proc where proname = 'fn_bill_student_month'
                       and pronamespace = 'public'::regnamespace
                       and prosrc like '%effective_from <=%')
-         and exists (select 1 from pg_proc where proname = 'fn_student_monthly_fee'
+         -- 0138 replaced fn_student_monthly_fee with fn_student_fee_for_month,
+         -- which answers for a NAMED month because a discount can now start and
+         -- end. The property 0066 cares about moved with it.
+         and exists (select 1 from pg_proc where proname = 'fn_student_fee_for_month'
                       and pronamespace = 'public'::regnamespace
                       and prosrc like '%effective_from <=%')
          and exists (select 1 from pg_proc where proname = 'fn_set_fee_amount'
@@ -404,7 +407,8 @@ with sig(migration, object, present) as (values
                       and prosrc like '%id = p_family_id and school_id = v_school%')
          and exists (select 1 from pg_proc where proname = 'fn__apply_discount_lines'
                       and pronamespace = 'public'::regnamespace
-                      and prosrc like '%d.school_id = v_school%')
+                      -- Anchor moved by 0138's rewrite, the fence did not, see verify.sql
+                      and prosrc like '%i.school_id = v_school%')
          and not exists (select 1 from pg_proc p
                           join pg_namespace n on n.oid = p.pronamespace
                           where n.nspname = 'public' and p.proname like 'fn\_\_%'
@@ -1176,7 +1180,30 @@ with sig(migration, object, present) as (values
      'the ledger records the migrations that came before it',
      to_regclass('public.schema_migrations') is null
      or coalesce(obj_description(to_regclass('public.schema_migrations')), '')
-          like '%0137%')
+          like '%0137%'),
+  ('0138_a_discount_belongs_to_the_child',
+     'discounts.student_id',
+     exists (select 1 from information_schema.columns
+              where table_schema = 'public' and table_name = 'discounts'
+                and column_name = 'student_id')),
+  ('0139_a_month_is_billed_whether_or_not_anybody_remembers',
+     'billing_months + fn_ensure_billing_current',
+     (select exists (select 1 from information_schema.tables
+                      where table_schema = 'public' and table_name = 'billing_months')
+         and to_regprocedure('public.fn_ensure_billing_current(uuid)') is not null)),
+  -- 0140's signature is the month view AND the clock: a database that has the
+  -- functions but still measures today in the server's timezone has only half
+  -- of it, and half is what leaves a fee on yesterday's figure.
+  ('0140_the_month_the_roll_and_who_has_paid',
+     'fn_fees_month, fn_arrears, and today measured in Karachi',
+     (select to_regprocedure('public.fn_fees_month(uuid,date)') is not null
+         and to_regprocedure('public.fn_arrears(uuid)') is not null
+         and not exists (select 1 from pg_proc p
+                           join pg_namespace n on n.oid = p.pronamespace
+                          where n.nspname = 'public'
+                            and p.proname in ('fn_counter_summary', 'fn_dashboard_summary')
+                            and regexp_replace(p.prosrc, '--[^' || chr(10) || ']*', '', 'g')
+                                like '%date_trunc(''day'', now())%')))
 )
 select migration,
        object                                   as looked_for,
