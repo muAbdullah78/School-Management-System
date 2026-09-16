@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { fmtPKR, fmtAmount, fmtDate, monthToDate, todayISO, waLink } from './format'
+import { fmtPKR, fmtAmount, fmtDate, fmtMonth, monthToDate, todayISO, waLink } from './format'
 
 const digits = (s: string) => s.replace(/\D/g, '')
 
@@ -100,5 +100,27 @@ describe('waLink', () => {
   })
   it('leaves an already-international 92 number intact', () => {
     expect(waLink('+92 300 1234567')).toBe('https://wa.me/923001234567')
+  })
+})
+
+describe('fmtMonth', () => {
+  it('renders a billing month as a school reads it', () => {
+    expect(fmtMonth('2026-09-01')).toBe('Sept 2026')
+    expect(fmtMonth('2026-03-01')).toBe('Mar 2026')
+  })
+
+  it('does not slide back a day west of Greenwich', () => {
+    // new Date('2026-01-01') is midnight UTC, and a browser in, say, Karachi
+    // renders that correctly while one in New York renders 31 December 2025.
+    // A billing month is a label on a period, not a moment, so it is parsed by
+    // hand and rendered in UTC.
+    expect(fmtMonth('2026-01-01')).toBe('Jan 2026')
+    expect(fmtMonth('2026-12-01')).toBe('Dec 2026')
+  })
+
+  it('answers a dash for nothing rather than "Invalid Date"', () => {
+    expect(fmtMonth(null)).toBe('-')
+    expect(fmtMonth(undefined)).toBe('-')
+    expect(fmtMonth('')).toBe('-')
   })
 })

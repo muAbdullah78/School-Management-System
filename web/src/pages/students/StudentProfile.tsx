@@ -8,7 +8,7 @@ import {
   listFamilyParents, createParentLogin, unlinkParent, linkParent, listSchoolLogins,
   getChallan, type Challan,
   getStudentMonthlyFee, getStudentDiscounts, addDiscount, setDiscountStatus,
-  getStudentFeeState, endDiscount,
+  getStudentFeeState, endDiscount, editDiscount,
   type StudentDiscount,
   recordPayment, billStudentMonth, deferInvoice, undoDefer, addAdjustment, voidInvoice,
   getStudentLedger, getDepositHeld,
@@ -20,7 +20,7 @@ import {
   GENDERS, STUDENT_STATUS_LABELS, PAYMENT_METHODS, PAYMENT_STATUS_LABELS,
   ATTENDANCE_STATUSES, ATTENDANCE_SHORT, DISCOUNT_TYPES, RELATIONS,
 } from '@/lib/constants'
-import { fmtPKR, fmtDate, waLink, todayISO } from '@/lib/format'
+import { fmtPKR, fmtDate, fmtMonth, waLink, todayISO } from '@/lib/format'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/auth/AuthProvider'
 import { APPROVER_ROLES, ADMIN_ROLES, canWrite, type Role } from '@/auth/roles'
@@ -1003,14 +1003,6 @@ interface MonthRow {
   charge: number; due: number; invoice: InvoiceBalance | null
 }
 
-/** "2026-09-01" as "Sep 2026". UTC throughout: a month label is not a moment. */
-function monthName(iso: string): string {
-  const [y, m] = iso.split('-').map(Number)
-  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-GB', {
-    month: 'short', year: 'numeric', timeZone: 'UTC',
-  })
-}
-
 function FeesTab({
   studentId, student, enrollment, canApprove, canCollect,
 }: {
@@ -1064,18 +1056,46 @@ function FeesTab({
   const [cancelCharge, setCancelCharge] =
     useState<null | { invoiceId: string; label: string; amount: number }>(null)
 
+  /**
+   * Everything on this tab that a payment, a discount or a cancelled charge can
+   * move.
+   *
+   * TWO OF THESE KEYS WERE DEAD. 0138 moved the fee and the concessions off the
+   * enrolment and onto the child, and the queries above moved with it, but this
+   * function kept invalidating ['monthlyFee', enrollment_id] and
+   * ['enrollmentDiscounts', enrollment_id]. Neither key exists any more, so
+   * invalidating them did nothing at all: apply a discount and the strip below
+   * still showed "No discount. The full monthly fee applies." until the page was
+   * reloaded. A cache key that names nothing fails in silence, which is why it
+   * survived a whole rebuild of this tab.
+   *
+   * The month strip and the fee state are here for the same reason: "September,
+   * not paid, Rs 2,700 still due" has to stop saying that the moment the money
+   * is taken.
+   */
   function refresh() {
     qc.invalidateQueries({ queryKey: ['balance', studentId] })
     qc.invalidateQueries({ queryKey: ['invoices', studentId] })
     qc.invalidateQueries({ queryKey: ['payments', studentId] })
-    qc.invalidateQueries({ queryKey: ['monthlyFee', enrollment.enrollment_id] })
-    qc.invalidateQueries({ queryKey: ['enrollmentDiscounts', enrollment.enrollment_id] })
+    qc.invalidateQueries({ queryKey: ['monthlyFee', studentId] })
+    qc.invalidateQueries({ queryKey: ['studentDiscounts', studentId] })
+    qc.invalidateQueries({ queryKey: ['studentFeeState', studentId] })
     qc.invalidateQueries({ queryKey: ['ledger', studentId] })
     qc.invalidateQueries({ queryKey: ['depositHeld', studentId] })
+    // The counter reads the same child through fn_family_sheet. Leaving it
+    // stale is how a clerk takes a payment here and finds the family sheet
+    // still asking for it.
+    qc.invalidateQueries({ queryKey: ['familySheet'] })
+    qc.invalidateQueries({ queryKey: ['feesMonth'] })
+    qc.invalidateQueries({ queryKey: ['feesMonthPupils'] })
   }
 
   const net = monthlyFee.data?.net ?? 0
   const grossFee = monthlyFee.data?.gross ?? 0
+  /* The class the fee above is the fee OF, which is not always the class the
+     child is in today. 0141. Falls back to the current enrolment while the read
+     is in flight so the label does not flicker. */
+  const feeClass = monthlyFee.data?.class_name ?? enrollment.class_name
   // Live, not merely approved: a waiver that ended in March is approved and is
   // not coming off this month's fee.
   const approvedDiscounts = (discounts.data ?? []).filter((d: StudentDiscount) => d.live)
@@ -1118,6 +1138,16 @@ function FeesTab({
 
   // Ended, never deleted: the months it did cover keep it, which is what makes
   // an old statement still add up.
+  /* What each live concession takes off THIS month, in rupees, keyed by the
+     discount it came from. fn_student_fee_for_month has returned this detail
+     since 0138 and nothing on this page read it. */
+  const worthThisMonth = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const l of monthlyFee.data?.lines ?? []) m.set(l.discount_id, l.amount)
+    return m
+  }, [monthlyFee.data])
+
+  const [editing, setEditing] = useState<StudentDiscount | null>(null)
   const [ending, setEnding] = useState<StudentDiscount | null>(null)
   const end = useMutation({
     mutationFn: (id: string) => endDiscount(id, null),
@@ -1176,13 +1206,38 @@ function FeesTab({
       {/* Header: monthly fee + balance + actions */}
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Monthly fee ({enrollment.class_name})</div>
+          {/* THE CLASS THE FIGURE IS THE FEE OF, out of the same function that
+              works the figure out. This read enrollment.class_name, which is the
+              CURRENT enrolment, so asking what an earlier month cost printed
+              that month's money under this year's class name. 0141 makes
+              fn_student_fee_for_month say which enrolment it answered for. */}
+          <div className="text-xs uppercase tracking-wide text-slate-500">
+            Monthly fee{feeClass ? ` (${feeClass})` : ''}
+          </div>
           {monthlyFee.isLoading ? <div className="mt-1 text-slate-400">…</div> : (
             <div className="mt-1 flex items-baseline gap-2">
               <span className="text-2xl font-semibold text-slate-800">{fmtPKR(net)}</span>
               {grossFee > net && <span className="text-sm text-slate-400 line-through">{fmtPKR(grossFee)}</span>}
               {isFree && <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">Free student</span>}
             </div>
+          )}
+          {/* WHAT TOOK IT DOWN, in rupees, beside the figure it took down.
+              "Rs 2,700, was Rs 4,500" left the office to work out for
+              themselves that the 40 per cent further down the page is where the
+              other Rs 1,800 went, and a parent at the window asking why their
+              brother pays more got no answer at all from this card. */}
+          {(monthlyFee.data?.lines.length ?? 0) > 0 && (
+            <ul className="mt-1.5 space-y-0.5">
+              {monthlyFee.data?.lines.map((l) => (
+                <li key={l.discount_id} className="text-xs text-emerald-700">
+                  {DISCOUNT_TYPES.find((t) => t.value === l.type)?.label ?? l.type}
+                  {' '}{l.is_percent ? `${l.rate}% off` : `${fmtPKR(l.rate)} off`}
+                  <span className="text-slate-500">
+                    {' '}saves {fmtPKR(l.amount)}{l.reason ? ` · ${l.reason}` : ''}
+                  </span>
+                </li>
+              ))}
+            </ul>
           )}
           {grossFee === 0 && !monthlyFee.isLoading && (
             <p className="mt-1 text-xs text-amber-600">No monthly fee set for this class: set it in Settings → Fee structure.</p>
@@ -1216,9 +1271,12 @@ function FeesTab({
       <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
         <div className="flex items-center justify-between">
           <div className="text-xs uppercase tracking-wide text-slate-500">Discount on fee</div>
-          {canCollect && (
+          {/* canApprove, not canCollect. fn_add_discount admits owner and
+              principal and nobody else, so offering the button to anyone else
+              is a button that always fails. */}
+          {canApprove && (
             <div className="flex gap-3">
-              <button onClick={() => setShowDiscount(true)} className="text-sm text-brand-700 hover:underline">Propose discount</button>
+              <button onClick={() => setShowDiscount(true)} className="text-sm text-brand-700 hover:underline">Give a discount</button>
             </div>
           )}
         </div>
@@ -1230,6 +1288,17 @@ function FeesTab({
               <li key={d.id} className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-slate-700">
                   {DISCOUNT_TYPES.find((t) => t.value === d.type)?.label ?? d.type} · {d.is_percent ? `${d.amount}%` : fmtPKR(d.amount)}
+                  {/* WHAT IT IS ACTUALLY WORTH THIS MONTH. "40%" is not a number
+                      a parent can check against a receipt, and the statement
+                      below shows Rs 1,800 with nothing on this strip to tie it
+                      to. The figure comes from the same function that prices
+                      the month, so it is the rupees that really came off, after
+                      the cap where a waiver is bigger than the fee. */}
+                  {worthThisMonth.has(d.id) && (
+                    <span className="ml-1 text-emerald-700">
+                      = {fmtPKR(worthThisMonth.get(d.id) as number)} this month
+                    </span>
+                  )}
                   {d.reason ? <span className="text-slate-400"> · {d.reason}</span> : ''}
                   {/* THE MONTHS IT COVERS, which is the whole of 0138 made
                       visible. A concession used to have no dates at all and
@@ -1237,8 +1306,8 @@ function FeesTab({
                       asking "when did my discount stop" has an answer on the
                       screen rather than in somebody's memory. */}
                   <span className="ml-1 text-xs text-slate-400">
-                    · from {monthName(d.starts_on)}
-                    {d.ends_on ? ` to ${monthName(d.ends_on)}` : ', ongoing'}
+                    · from {fmtMonth(d.starts_on)}
+                    {d.ends_on ? ` to ${fmtMonth(d.ends_on)}` : ', ongoing'}
                   </span>
                 </span>
                 <span className="flex items-center gap-2">
@@ -1248,6 +1317,21 @@ function FeesTab({
                     </span>
                   )}
                   <DiscountStatusPill status={d.status} />
+                  {/* CHANGE IT IN PLACE. fn_edit_discount has existed since 0138
+                      and no screen called it, so raising a concession from 10 to
+                      20 per cent meant revoking one and inventing another, which
+                      reads in every report as two separate acts of generosity.
+                      It also reprices the challans already raised for the months
+                      it covers, and says how many it left alone because they had
+                      been paid. */}
+                  {canApprove && d.status !== 'revoked' && d.status !== 'rejected' && (
+                    <button
+                      onClick={() => setEditing(d)}
+                      className="text-xs text-slate-500 underline hover:text-brand-700"
+                    >
+                      Change
+                    </button>
+                  )}
                   {canCollect && d.live && (
                     /* NOT window.confirm. Once a browser has been told to stop
                        showing dialogs from a page, confirm() returns false for
@@ -1403,8 +1487,17 @@ function FeesTab({
           onClose={() => setSettle(false)} onDone={(r) => { setSettle(false); refresh(); if (r) setReceipt(r) }} />
       )}
       {showDiscount && (
-        <DiscountModal enrollmentId={enrollment.enrollment_id} gross={grossFee} canApprove={canApprove}
+        /* studentId, NOT enrollment.enrollment_id. See the header on
+           DiscountModal: this passed the enrolment and every press of the button
+           came back "students not found in this school". */
+        <DiscountModal studentId={studentId} studentName={student.full_name}
+          gross={grossFee} canApprove={canApprove}
           onClose={() => setShowDiscount(false)} onDone={() => { setShowDiscount(false); refresh() }} />
+      )}
+      {editing && (
+        <DiscountModal studentId={studentId} studentName={student.full_name}
+          gross={grossFee} canApprove={canApprove} existing={editing}
+          onClose={() => setEditing(null)} onDone={() => { setEditing(null); refresh() }} />
       )}
       {defer && (
         <DeferModal label={defer.label} enrollmentId={enrollment.enrollment_id}
@@ -1640,13 +1733,52 @@ function SettleModal({
   )
 }
 
+/**
+ * Grant a concession, or change one already granted.
+ *
+ * THIS SCREEN'S "PROPOSE DISCOUNT" BUTTON DID NOT WORK. It was handed
+ * enrollment.enrollment_id and passed it straight to fn_add_discount, which has
+ * taken a CHILD since 0138. Every press, in every school, came back
+ *
+ *     students not found in this school
+ *
+ * because assert_own('students', <an enrolment id>) finds no such pupil. The
+ * types could not catch it: both are strings. Reproduced on a test database
+ * before it was fixed, and supabase/tests/the_counter_sees_the_fee.sql is not
+ * where it is caught. web/src/test/feeScreens.test.tsx is, because the defect
+ * is which id the screen hands over.
+ *
+ * THE MONTHS ARE ASKED FOR NOW. 0138 gave a discount a start and an end and
+ * nothing in the product ever set either, so every concession began this month
+ * and ran for ever, and "this is for one year while his father is out of work"
+ * had to be remembered by a person. An end month typed at the time it is decided
+ * is the difference between a rule and somebody's memory.
+ *
+ * CHANGING ONE REPRICES the challans already raised for the months it covers,
+ * and leaves alone any month money has been taken against, because changing what
+ * a paid month charges is a refund. The dialog says which happened rather than
+ * closing silently.
+ */
 function DiscountModal({
-  enrollmentId, gross, canApprove, onClose, onDone,
-}: { enrollmentId: string; gross: number; canApprove: boolean; onClose: () => void; onDone: () => void }) {
-  const [type, setType] = useState('sibling')
-  const [amount, setAmount] = useState('')
-  const [isPercent, setIsPercent] = useState(true)
-  const [reason, setReason] = useState('')
+  studentId, studentName, gross, canApprove, existing, onClose, onDone,
+}: {
+  studentId: string
+  studentName: string
+  gross: number
+  canApprove: boolean
+  /** Present when changing one that already exists. */
+  existing?: StudentDiscount | null
+  onClose: () => void
+  onDone: () => void
+}) {
+  const editing = !!existing
+  const [type, setType] = useState(existing?.type ?? 'sibling')
+  const [amount, setAmount] = useState(existing ? String(existing.amount) : '')
+  const [isPercent, setIsPercent] = useState(existing ? existing.is_percent : true)
+  const [reason, setReason] = useState(existing?.reason ?? '')
+  const [startsOn, setStartsOn] = useState((existing?.starts_on ?? todayISO()).slice(0, 7))
+  const [endsOn, setEndsOn] = useState((existing?.ends_on ?? '').slice(0, 7))
+  const [repriced, setRepriced] = useState<{ repriced: number; left_alone_because_paid: number } | null>(null)
 
   const m = useMutation({
     mutationFn: async (free: boolean) => {
@@ -1654,20 +1786,59 @@ function DiscountModal({
       const amt = free ? 100 : Number(amount)
       const pct = free ? true : isPercent
       const rsn = free ? (reason.trim() || 'Full scholarship') : reason.trim()
-      const id = await addDiscount(enrollmentId, t, amt, pct, rsn)
+      const from = `${startsOn}-01`
+      const to = endsOn ? `${endsOn}-01` : null
+      if (existing) {
+        return await editDiscount(existing.id, t, amt, pct, rsn, from, to)
+      }
+      const id = await addDiscount(studentId, t, amt, pct, rsn, from, to)
       if (canApprove) await setDiscountStatus(id, 'approved')
+      return null
     },
-    onSuccess: onDone,
+    onSuccess: (r) => {
+      // A change that repriced challans says so rather than closing on silence.
+      // "Nothing happened" and "eleven challans were rewritten" look identical
+      // otherwise, and only one of them is something the office wants to know.
+      if (r && (r.repriced > 0 || r.left_alone_because_paid > 0)) setRepriced(r)
+      else onDone()
+    },
   })
 
   const flatTooBig = !isPercent && gross > 0 && Number(amount) > gross
   const pctTooBig = isPercent && Number(amount) > 100
+  const endsBeforeStart = !!endsOn && endsOn < startsOn
+  const preview = gross > 0 && Number(amount) > 0 && !flatTooBig && !pctTooBig
+    ? (isPercent ? Math.round((gross * Number(amount)) / 100) : Number(amount))
+    : null
+
+  if (repriced) {
+    return (
+      <Modal title="Discount changed" onClose={onDone}>
+        <p className="text-sm text-slate-700">
+          {repriced.repriced > 0
+            ? `${repriced.repriced} challan${repriced.repriced === 1 ? '' : 's'} already raised for ${studentName} ${repriced.repriced === 1 ? 'was' : 'were'} rewritten at the new rate.`
+            : 'No unpaid challan needed rewriting.'}
+        </p>
+        {repriced.left_alone_because_paid > 0 && (
+          <p className="mt-2 text-sm text-amber-700">
+            {repriced.left_alone_because_paid} month{repriced.left_alone_because_paid === 1 ? ' was' : 's were'} left
+            alone because money has already been taken against {repriced.left_alone_because_paid === 1 ? 'it' : 'them'}.
+            Changing what a paid month charges is a refund, which is a decision with
+            a person’s name on it: record it from that month’s row if you mean to.
+          </p>
+        )}
+        <div className="mt-4">
+          <button onClick={onDone} className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Done</button>
+        </div>
+      </Modal>
+    )
+  }
 
   return (
-    <Modal title="Discount on fee" onClose={onClose}>
+    <Modal title={editing ? 'Change this discount' : 'Discount on fee'} onClose={onClose}>
       <p className="text-sm text-slate-600">
         Monthly fee before discount: <span className="font-medium text-slate-800">{fmtPKR(gross)}</span>.
-        {canApprove ? ' As owner/principal this applies immediately.' : ' This is proposed and applies once approved.'}
+        {canApprove ? ' As owner or principal this applies immediately.' : ' This is proposed and applies once approved.'}
       </p>
       <div className="mt-3 grid grid-cols-2 gap-2">
         <label className="block"><span className="text-sm text-slate-600">Type</span>
@@ -1687,19 +1858,43 @@ function DiscountModal({
         <label className="block"><span className="text-sm text-slate-600">Reason</span>
           <input value={reason} onChange={(e) => setReason(e.target.value)} className={FIELD} placeholder="e.g. two siblings" />
         </label>
+        {/* THE MONTHS IT COVERS. A discount with no end runs until somebody
+            remembers to stop it, and nobody remembers. Typed here it is a
+            decision written down at the time it was made. */}
+        <label className="block"><span className="text-sm text-slate-600">Starts from</span>
+          <input type="month" value={startsOn} onChange={(e) => setStartsOn(e.target.value)} className={FIELD} />
+        </label>
+        <label className="block"><span className="text-sm text-slate-600">Ends after (optional)</span>
+          <input type="month" value={endsOn} onChange={(e) => setEndsOn(e.target.value)} className={FIELD} />
+        </label>
       </div>
+      {preview !== null && (
+        <p className="mt-2 text-sm text-emerald-700">
+          Takes {fmtPKR(preview)} off each month. {studentName} would pay {fmtPKR(Math.max(gross - preview, 0))}.
+        </p>
+      )}
+      {!endsOn && (
+        <p className="mt-1 text-xs text-slate-400">
+          No end month means it runs until somebody ends it, including into next
+          school year. That is deliberate: a concession used to die at rollover
+          and the family was charged the full fee with nothing said.
+        </p>
+      )}
       {flatTooBig && <p className="mt-2 text-sm text-amber-600">A flat discount can’t exceed the monthly fee ({fmtPKR(gross)}). Use “Make free” for a full waiver.</p>}
       {pctTooBig && <p className="mt-2 text-sm text-amber-600">A percentage discount can’t exceed 100%.</p>}
+      {endsBeforeStart && <p className="mt-2 text-sm text-amber-600">The end month can’t be before the month it starts in.</p>}
       {m.isError && <p className="mt-2 text-sm text-red-600">{(m.error as Error).message}</p>}
       <div className="mt-4 flex flex-wrap gap-2">
-        <button onClick={() => m.mutate(false)} disabled={!(Number(amount) > 0) || flatTooBig || pctTooBig || m.isPending}
+        <button onClick={() => m.mutate(false)} disabled={!(Number(amount) > 0) || flatTooBig || pctTooBig || endsBeforeStart || m.isPending}
           className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
-          {m.isPending ? 'Saving…' : canApprove ? 'Apply discount' : 'Propose discount'}
+          {m.isPending ? 'Saving…' : editing ? 'Save the change' : canApprove ? 'Apply discount' : 'Propose discount'}
         </button>
-        <button onClick={() => m.mutate(true)} disabled={m.isPending}
-          className="rounded border border-emerald-300 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60">
-          Make free (100% scholarship)
-        </button>
+        {!editing && (
+          <button onClick={() => m.mutate(true)} disabled={endsBeforeStart || m.isPending}
+            className="rounded border border-emerald-300 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60">
+            Make free (100% scholarship)
+          </button>
+        )}
       </div>
     </Modal>
   )

@@ -30,6 +30,17 @@ export interface FakeOptions {
   failEverything?: string
   /** Records every table and RPC a screen touched, for coverage reporting. */
   seen?: { tables: Set<string>; rpcs: Set<string> }
+  /**
+   * Every RPC call in order, WITH ITS ARGUMENTS.
+   *
+   * `seen` records that a function was called; this records what it was called
+   * with, and the difference is a shipped defect. The student profile handed
+   * fn_add_discount an ENROLMENT id where the function has taken a CHILD since
+   * 0138, so every press of "Propose discount" came back "students not found in
+   * this school". Both ids are strings, so the types were happy and `seen` was
+   * happy: the only thing that could have caught it is the value.
+   */
+  calls?: { name: string; args: Record<string, unknown> }[]
   /** What functions.invoke should do, per function name. */
   fn?: Record<string, { data?: unknown; error?: { name: string; message: string; body?: unknown } }>
   /**
@@ -105,8 +116,9 @@ export function fakeSupabase(opts: FakeOptions = {}) {
       opts.seen?.tables.add(table)
       return builder(table, opts)
     },
-    rpc(name: string, _args?: unknown) {
+    rpc(name: string, args?: unknown) {
       opts.seen?.rpcs.add(name)
+      opts.calls?.push({ name, args: (args ?? {}) as Record<string, unknown> })
       const has = opts.rpc && name in opts.rpc
       const value = has ? opts.rpc![name] : null
       const r = opts.failEverything

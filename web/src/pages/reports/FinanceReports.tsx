@@ -297,6 +297,10 @@ export function DiscountsReport() {
       <DataTable
         rows={rows}
         columns={columns}
+        /* The student, the date, the type and the amount. All four matched on
+           the duplicate rows this report used to produce, one per year the child
+           had been enrolled, so two rows shared one React key. 0141 pinned the
+           class join to the current session and the duplicates are gone. */
         rowKey={(r) => `${r.student_id}-${r.granted_on}-${r.reason_type}-${r.amount}`}
         loading={q.isLoading}
         error={q.isError ? (q.error as Error).message : null}
