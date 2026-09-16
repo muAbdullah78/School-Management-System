@@ -3129,6 +3129,58 @@ select 'the counter sees the fee it is collecting (0141)',
        end
 
 union all
+-- 0142. A school's paper register, typed straight in.
+--
+-- THE BOTTLENECK THIS ANSWERS: a school signs up with four hundred children
+-- already written down, and the two ways in were an admission form at minutes a
+-- child and a CSV importer that asks a head teacher for a column-mapped
+-- spreadsheet. The trial is fourteen days.
+--
+-- The second condition is the one that matters on an EXISTING database. Every
+-- school that numbered its own register by hand has GR numbers in the students
+-- table that the counter knows nothing about, so the automatic path hands back
+-- 0001 and the insert fails on students_gr_no_school_key. fn__next_gr walks past
+-- what is taken and fn__gr_high_water stops the counter ever going back under
+-- it. Anchored on the two functions rather than on a string inside them.
+select 'a class can be typed straight in (0142)',
+       case
+         when to_regprocedure('public.fn_rde_add_students(jsonb)') is null
+           then 'FAIL: a new school can only enter pupils one long form at a time, '
+                || 'or through the spreadsheet importer; apply supabase/bundles/'
+                || '43_the_register_goes_in_as_fast_as_it_is_read.sql'
+         when to_regprocedure('public.fn__next_gr()') is null
+           or to_regprocedure('public.fn__gr_high_water(text)') is null
+           then 'FAIL: GR numbers a human typed are invisible to the counter, so '
+                || 'the next automatic one collides and the admission is refused; '
+                || 'apply supabase/bundles/'
+                || '43_the_register_goes_in_as_fast_as_it_is_read.sql'
+         when not exists (select 1 from information_schema.columns
+                           where table_schema = 'public' and table_name = 'students'
+                             and column_name = 'is_draft')
+           then 'FAIL: an incomplete record cannot be told from a complete one, so '
+                || 'nothing reminds anybody to finish it; apply supabase/bundles/'
+                || '43_the_register_goes_in_as_fast_as_it_is_read.sql'
+         -- A LABEL, NEVER A GATE, and this is the condition that would cost a
+         -- school money if it ever went the other way. Nothing in the schema may
+         -- read is_draft to decide whether a child is billed, marked present or
+         -- examined. Comments stripped first: the functions that mention the
+         -- column explain exactly this, and a probe that read those comments
+         -- would report the design as the fault.
+         when exists (select 1 from pg_proc p
+                        join pg_namespace n on n.oid = p.pronamespace
+                       where n.nspname = 'public'
+                         and p.proname in ('fn_bill_month', 'fn_ensure_billing_current',
+                                           'fn_bill_student_month', 'fn_generate_class_invoices',
+                                           'fn_student_list', 'fn_get_roster', 'fn_fees_month')
+                         and regexp_replace(p.prosrc, '--[^' || chr(10) || ']*', '', 'g')
+                             like '%is_draft%')
+           then 'FAIL: a draft record is being held out of billing, attendance or '
+                || 'the roster. It must be a reminder and nothing else, or the '
+                || 'school is short at the end of the month and nothing says why'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS: no schools yet, as expected'

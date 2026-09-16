@@ -832,6 +832,18 @@ emit supabase/bundles/41_the_fee_module_rebuilt_around_the_month.sql \
 emit supabase/bundles/42_the_counter_could_not_see_the_discount.sql \
      supabase/migrations/0141*.sql
 
+# --- 43 ----------------------------------------------------------------------
+# The register goes in as fast as it is read.
+#
+# A school signs up with four hundred children already in a paper register, and
+# the product had two ways in: an admission form at minutes a child, and a CSV
+# importer that asks a head teacher to produce a column-mapped spreadsheet and
+# then read validation errors. Both lose the trial before the dashboard is ever
+# seen. This adds the third way, and with it the GR-number handling a school
+# that numbered its own register by hand has always needed.
+emit supabase/bundles/43_the_register_goes_in_as_fast_as_it_is_read.sql \
+     supabase/migrations/0142*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

@@ -17,9 +17,12 @@ import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
-  listStudentPage, listClasses, listSections,
+  listStudentPage, listClasses, listSections, listDraftStudentIds,
   listStudentsWithoutAClass, type StudentListRow,
 } from '@/lib/db'
+import { RapidEntry } from './RapidEntry'
+import { Badge, Button } from '@/components/ui'
+import { IconStudents } from '@/components/icons'
 import { useStudentFaces } from '@/hooks/useStudentFaces'
 import { fmtDate } from '@/lib/format'
 import { DataTable, type Column } from '@/components/DataTable'
@@ -51,6 +54,17 @@ export function StudentsPage() {
      Read straight out of the URL rather than copied into state, for the reason
      the no_class link above is: it then works from a bookmark, from a message to
      a colleague and from the browser's back button. */
+  /* ?add=quick and ?add=bulk open rapid entry. In the URL rather than in state
+     for the same reason the selected student is: the dashboard's "finish these
+     records" notice and the empty-roster button both link straight into it. */
+  const addMode = params.get('add')
+  function setAddMode(m: 'quick' | 'bulk' | null) {
+    const next = new URLSearchParams(params)
+    if (m) next.set('add', m); else next.delete('add')
+    next.delete('student')
+    setParams(next, { replace: !m })
+  }
+
   const selectedId = params.get('student')
   const setSelectedId = (id: string | null) => {
     const next = new URLSearchParams(params)
@@ -84,6 +98,20 @@ export function StudentsPage() {
   // no face at all, which is the screen where picking the wrong Muhammad Ali
   // moves money between two families.
   const faces = useStudentFaces((q.data?.rows ?? []).map((r) => r.student_id))
+  /* Which rows are short of something. Read as a set of ids rather than as a
+     column on fn_student_list, because widening that function's return type
+     would stop a frozen bundle from ever being re-applied. */
+  const drafts = useQuery({ queryKey: ['draftStudents'], queryFn: listDraftStudentIds })
+
+  if (addMode === 'quick' || addMode === 'bulk') {
+    return (
+      <RapidEntry
+        mode={addMode}
+        onMode={setAddMode}
+        onDone={() => setAddMode(null)}
+      />
+    )
+  }
 
   if (selectedId) {
     return (
@@ -127,7 +155,14 @@ export function StudentsPage() {
             size="sm" className="print:hidden"
           />
           <div className="min-w-0">
-            <div className="font-medium text-slate-800">{r.full_name}</div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="font-medium text-slate-800">{r.full_name}</span>
+              {/* A REMINDER, NOT A STATE. This child is on the register, on the
+                  challan run and in the exam hall exactly like the others. The
+                  chip says the office still owes them a father's name or a date
+                  of birth, nothing more. */}
+              {drafts.data?.has(r.student_id) && <Badge tone="due">draft</Badge>}
+            </div>
             <div className="text-xs text-slate-400">
               {r.gr_no ?? '-'}
               {r.status !== 'active' ? ` · ${r.status.replace('_', ' ')}` : ''}
@@ -220,6 +255,13 @@ export function StudentsPage() {
           printId="report"
           toolbarExtra={
             <>
+              {/* THE FIRST THING A NEW SCHOOL NEEDS, so it is the first thing on
+                  the toolbar. The roster of a school that signed up this morning
+                  is empty, and the only two ways in were an admission form that
+                  takes minutes a child and a CSV importer buried in Settings. */}
+              <Button onClick={() => setAddMode('bulk')} icon={<IconStudents />}>
+                Add students
+              </Button>
               <select
                 value={classId}
                 onChange={(e) => {

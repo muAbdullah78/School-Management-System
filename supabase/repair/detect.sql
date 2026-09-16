@@ -1225,7 +1225,21 @@ with sig(migration, object, present) as (values
                               where n.nspname = 'public'
                                 and p.proname = 'fn_student_fee_for_month'
                                 and regexp_replace(p.prosrc, '--[^' || chr(10) || ']*', '', 'g')
-                                    like '%extract(epoch from (s.starts_on%'))))
+                                    like '%extract(epoch from (s.starts_on%')))),
+  -- 0142's signature is the three pieces that have to arrive together: the
+  -- entry function, the GR-number pair that makes it safe on a database whose
+  -- register was numbered by hand, and the column the reminder counts. A
+  -- database with the function and not the GR helpers would refuse an admission
+  -- the moment the counter walked into a hand-typed number, which is the state
+  -- every existing school is in.
+  ('0142_the_register_goes_in_as_fast_as_it_is_read',
+     'fn_rde_add_students, the GR helpers, and students.is_draft',
+     (select to_regprocedure('public.fn_rde_add_students(jsonb)') is not null
+         and to_regprocedure('public.fn__next_gr()') is not null
+         and to_regprocedure('public.fn__gr_high_water(text)') is not null
+         and exists (select 1 from information_schema.columns
+                      where table_schema = 'public' and table_name = 'students'
+                        and column_name = 'is_draft')))
 )
 select migration,
        object                                   as looked_for,
