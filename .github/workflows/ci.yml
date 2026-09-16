@@ -1558,6 +1558,15 @@ jobs:
         # not parse a statement until it executes one. It shipped in bundle 41.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/the_counter_sees_the_fee.sql
 
+      - name: A school's paper register, typed straight in
+        # Assertion 3: entering a class is one call with a hundred rows in it,
+        # and a duplicate GR on row 57 must not roll back twenty minutes of
+        # typing. Assertion 6: is_draft is a LABEL. A child entered as a name and
+        # a roll number is billed the full fee like everybody else; a flag that
+        # held them out of the challan run would leave the school short at the
+        # end of the month with nothing saying why.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/rapid_data_entry.sql
+
       - name: Remarks and position holders — do ties and remarks survive?
         # Assertion 12 is why exam_remarks is its own table rather than a column
         # on result_cards: fn_generate_result_cards INSERTS a new version rather
