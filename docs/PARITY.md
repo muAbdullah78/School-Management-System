@@ -1240,7 +1240,7 @@ Print Fee Vouchers | file:web/src/pages/fees/ChallanPrint.tsx | sql:fn_challan |
 Add / Manage Expense | file:web/src/pages/accounts/AccountsPage.tsx | sql:fn_record_expense | app:recordExpense
 Expense Categories | sql:expense_categories | app:expense_categories
 Class Wise Basic Reports | sql:fn_count_students | app:StrengthReport
-Fee Defaulters Report | file:web/src/pages/fees/Defaulters.tsx | sql:fn_defaulters | app:getDefaulters
+Fee Defaulters Report | file:web/src/pages/fees/Arrears.tsx | sql:fn_arrears | app:listArrears | why:0140 split the one list in two. Arrears means owing for a month that has already finished, which is what an office chases; the Reports tab keeps fn_defaulters for the wider 'owes anything' question
 Head Wise Dues Summary | sql:fn_head_wise_dues | app:HeadWiseDuesReport
 Income & Expense Report | sql:fn_finance_summary | app:getFinanceSummary
 Debit & Credit Statement | sql:fn_report_ledger | app:LedgerReport

@@ -44,20 +44,22 @@
  *     bank challan that later fails is a document the school cannot take back,
  *     and the single-student counter had always refused to issue one.
  */
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   findFamily,
   getFamilySheet,
   recordFamilyPayment,
-  getCounterSummary,
   listRecentPayments,
+  getCurrentSession,
+  listFeesMonthPupils,
   findByVoucher,
   listStudents,
   getStudentFamilyId,
   type FamilyHit,
   type FamilyPaymentResult,
 } from '@/lib/db'
+import { MonthHeader } from './MonthHeader'
 import { Receipt, type ReceiptData } from '@/components/Receipt'
 import { Avatar } from '@/components/Avatar'
 import { useStudentFaces } from '@/hooks/useStudentFaces'
@@ -71,7 +73,6 @@ import {
   Field,
   inputClass,
   MiniStat,
-  StatTile,
   money,
 } from '@/components/ui'
 import {
@@ -79,7 +80,6 @@ import {
   IconFamily,
   IconWallet,
   IconStudents,
-  IconFees,
   IconAlert,
   IconCheck,
   IconPrint,
@@ -98,6 +98,36 @@ function monthLabel(m: string | null): string {
   if (!m) return 'Other charges'
   const d = new Date(m + (m.length === 10 ? 'T00:00:00' : ''))
   return d.toLocaleDateString('en-PK', { month: 'short', year: 'numeric' })
+}
+
+/**
+ * Paid or not paid, for the month in progress.
+ *
+ * "Not charged" is its own answer and is not folded into either. A child nobody
+ * billed has not paid and is not unpaid, and calling them either would put a
+ * family on a chasing list for a fee the school never asked them for.
+ */
+function FeeTag({ hit }: { hit?: { state: string; due: number } }) {
+  if (!hit) return null
+  if (hit.state === 'paid') {
+    return (
+      <span className="shrink-0 rounded-full bg-money-100 px-2 py-0.5 text-xs font-medium text-money-800">
+        Paid
+      </span>
+    )
+  }
+  if (hit.state === 'not_billed') {
+    return (
+      <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+        Not charged
+      </span>
+    )
+  }
+  return (
+    <span className="shrink-0 rounded-full bg-due-100 px-2 py-0.5 text-xs font-medium text-due-800">
+      Due {money(hit.due)}
+    </span>
+  )
 }
 
 export function FamilyCollect() {
@@ -121,7 +151,7 @@ export function FamilyCollect() {
   const [sQuery, setSQuery] = useState('')
   const [scanErr, setScanErr] = useState<string | null>(null)
 
-  const summary = useQuery({ queryKey: ['counterSummary'], queryFn: getCounterSummary })
+  const session = useQuery({ queryKey: ['currentSession'], queryFn: getCurrentSession })
   const recent = useQuery({ queryKey: ['recentPayments'], queryFn: () => listRecentPayments(25) })
 
   // Ungated on purpose: an empty term returns the first students by name, so
@@ -136,6 +166,25 @@ export function FamilyCollect() {
   // called Muhammad Ali in one school is ordinary here, and this list is the one
   // where choosing the wrong one opens another family's account.
   const faces = useStudentFaces((students.data ?? []).map((st) => st.id))
+
+  // THE TAG ON EVERY SEARCH RESULT. When the office types a name, the first
+  // thing they need is whether this child has paid this month, and nothing in
+  // this product could say it: the clerk had to open the family sheet to find
+  // out, for every enquiry.
+  //
+  // One query for the whole roll rather than one per row. Asking per row would
+  // be fifty round trips to decorate a list, and the same map serves every
+  // search the clerk does without refetching.
+  const monthAll = useQuery({
+    queryKey: ['feesMonthPupils', session.data?.id, null, 'all'],
+    queryFn: () => listFeesMonthPupils(session.data!.id, null, 'all'),
+    enabled: !!session.data?.id,
+  })
+  const feeState = useMemo(() => {
+    const m = new Map<string, { state: string; due: number }>()
+    for (const p of monthAll.data ?? []) m.set(p.student_id, { state: p.state, due: p.due })
+    return m
+  }, [monthAll.data])
 
   // Collection is family-based, so picking a child opens their family sheet.
   // Every sibling's balance is on it, which is the whole point of 0036.
@@ -220,42 +269,19 @@ export function FamilyCollect() {
         }
       />
 
-      {/* ------------------------------------------------- today's figures -- */}
-      {!familyId && (
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <StatTile
-            label="Unpaid challans"
-            value={summary.data?.unpaid_invoices ?? '-'}
-            sub="still owing"
-            tone="due"
-            icon={<IconFees />}
-          />
-          <StatTile
-            label="Collected today"
-            value={summary.data ? money(summary.data.income_today) : '-'}
-            sub={
-              summary.data && summary.data.pending_count > 0
-                ? `+ ${money(summary.data.pending_amount)} awaiting clearance`
-                : 'verified receipts only'
-            }
-            tone="money"
-            icon={<IconWallet />}
-          />
-          <StatTile
-            label="Spent today"
-            value={summary.data ? money(summary.data.expense_today) : '-'}
-            sub="from Accounts"
-            tone="info"
-            icon={<IconAlert />}
-          />
-          <StatTile
-            label="Balance today"
-            value={summary.data ? money(summary.data.balance_today) : '-'}
-            sub="collected − spent"
-            tone="brand"
-            icon={<IconCheck />}
-          />
-        </div>
+      {/* ------------------------------------------------------- the month -- */}
+      {/* The four figures that used to sit here (unpaid challans, collected
+          today, spent today, balance today) answered no question the office
+          asks at a counter. Two of them were also measured in the server's
+          timezone, so a fee taken before 5am Karachi showed on yesterday. The
+          day's cash total belongs on Accounts; this screen is about the month.
+          Clicking a count opens the names. */}
+      {!familyId && session.data?.id && (
+        <MonthHeader
+          sessionId={session.data.id}
+          canWrite
+          onPick={(p) => { if (p.family_id) setFamilyId(p.family_id) }}
+        />
       )}
 
       {/* ---------------------------------------------------------- search -- */}
@@ -327,6 +353,7 @@ export function FamilyCollect() {
                           {st.gr_no ? ` · ${st.gr_no}` : ''}
                         </span>
                       </span>
+                      <FeeTag hit={feeState.get(st.id)} />
                       <span className="shrink-0 text-xs text-slate-400">Open family →</span>
                     </button>
                   </li>

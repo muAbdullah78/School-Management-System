@@ -8,6 +8,7 @@ import {
   listFamilyParents, createParentLogin, unlinkParent, linkParent, listSchoolLogins,
   getChallan, type Challan,
   getStudentMonthlyFee, getStudentDiscounts, addDiscount, setDiscountStatus,
+  getStudentFeeState, endDiscount,
   type StudentDiscount,
   recordPayment, billStudentMonth, deferInvoice, undoDefer, addAdjustment, voidInvoice,
   getStudentLedger, getDepositHeld,
@@ -27,6 +28,7 @@ import { ObserverNotice } from '@/components/ObserverNotice'
 import { Receipt, type ReceiptData } from '@/components/Receipt'
 import { useSchoolName } from '@/hooks/useSchoolName'
 import { ChallanPrint } from '@/pages/fees/ChallanPrint'
+import { AskDialog } from '@/components/AskDialog'
 import { PhotoUpload } from '@/components/PhotoUpload'
 import { removeStudentPhoto, uploadStudentPhoto } from '@/lib/photos'
 import { LoginFunctionWarning } from '@/components/LoginFunctionWarning'
@@ -1001,6 +1003,14 @@ interface MonthRow {
   charge: number; due: number; invoice: InvoiceBalance | null
 }
 
+/** "2026-09-01" as "Sep 2026". UTC throughout: a month label is not a moment. */
+function monthName(iso: string): string {
+  const [y, m] = iso.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-GB', {
+    month: 'short', year: 'numeric', timeZone: 'UTC',
+  })
+}
+
 function FeesTab({
   studentId, student, enrollment, canApprove, canCollect,
 }: {
@@ -1017,6 +1027,11 @@ function FeesTab({
   // dying at rollover, so reading it by enrolment would show an empty list every
   // April for a family whose waiver is still in force.
   const monthlyFee = useQuery({ queryKey: ['monthlyFee', studentId], queryFn: () => getStudentMonthlyFee(studentId) })
+  // THE SAME ANSWER THE FEES SCREEN GIVES, from the same function, so the two
+  // cannot disagree. It also carries the advance the school is holding, which
+  // was the hole on this tab: a family whose Rs 3,150 the school had taken up
+  // front saw "CURRENT BALANCE Rs 0" and no mention of the money anywhere.
+  const feeState = useQuery({ queryKey: ['studentFeeState', studentId], queryFn: () => getStudentFeeState(studentId) })
   const discounts = useQuery({ queryKey: ['studentDiscounts', studentId], queryFn: () => getStudentDiscounts(studentId) })
   // The statement behind the balance. Fetched with the tab rather than on
   // demand: it is the answer to the question the tab is opened to ask, and a
@@ -1101,8 +1116,63 @@ function FeesTab({
   const hasOlderUnpaid = (fromKey: string) =>
     rows.some((r) => r.key < fromKey && (r.state === 'unpaid' || r.state === 'partial' || r.state === 'unbilled' || r.state === 'deferred'))
 
+  // Ended, never deleted: the months it did cover keep it, which is what makes
+  // an old statement still add up.
+  const [ending, setEnding] = useState<StudentDiscount | null>(null)
+  const end = useMutation({
+    mutationFn: (id: string) => endDiscount(id, null),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['studentDiscounts', studentId] })
+      qc.invalidateQueries({ queryKey: ['monthlyFee', studentId] })
+      qc.invalidateQueries({ queryKey: ['studentFeeState', studentId] })
+      qc.invalidateQueries({ queryKey: ['invoices', studentId] })
+      qc.invalidateQueries({ queryKey: ['balance', studentId] })
+      setEnding(null)
+    },
+  })
+
+  const fs = feeState.data
+  const MONTH_TAG: Record<string, { label: string; cls: string }> = {
+    paid: { label: 'Paid', cls: 'bg-money-100 text-money-800' },
+    part_paid: { label: 'Part paid', cls: 'bg-due-100 text-due-800' },
+    unpaid: { label: 'Not paid', cls: 'bg-due-100 text-due-800' },
+    not_billed: { label: 'Not charged', cls: 'bg-slate-100 text-slate-600' },
+  }
+
   return (
     <div className="space-y-4">
+      {/* ------------------------------------------- this month, in one line -- */}
+      {/* The first question anybody opening this tab has, and the tab could not
+          answer it. It showed a balance, a list of months and a statement, and
+          left the clerk to work out from them whether September was settled. */}
+      {fs && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
+          <span className="text-xs uppercase tracking-wide text-slate-500">
+            {new Date(fs.month + 'T00:00:00Z').toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })}
+          </span>
+          <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${MONTH_TAG[fs.state].cls}`}>
+            {MONTH_TAG[fs.state].label}
+          </span>
+          {fs.state !== 'not_billed' && (
+            <span className="text-sm text-slate-600">
+              {fmtPKR(fs.charge)} charged{fs.paid > 0 ? `, ${fmtPKR(fs.paid)} received` : ''}
+              {fs.due > 0 ? `, ${fmtPKR(fs.due)} still due` : ''}
+            </span>
+          )}
+          {fs.arrears_months > 0 && (
+            <span className="rounded-full bg-danger-100 px-2.5 py-0.5 text-xs font-medium text-danger-800">
+              {fs.arrears_months} earlier month{fs.arrears_months === 1 ? '' : 's'} unpaid
+              {' · '}{fmtPKR(fs.arrears_amount)}
+            </span>
+          )}
+          {fs.family_credit > 0 && (
+            <span className="rounded-full bg-info-100 px-2.5 py-0.5 text-xs font-medium text-info-800">
+              {fmtPKR(fs.family_credit)} held in advance for this family
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Header: monthly fee + balance + actions */}
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
@@ -1155,19 +1225,70 @@ function FeesTab({
         {discounts.isLoading ? <p className="mt-2 text-sm text-slate-400">…</p> : (discounts.data?.length ?? 0) === 0 ? (
           <p className="mt-2 text-sm text-slate-400">No discount. The full monthly fee applies.</p>
         ) : (
-          <ul className="mt-2 space-y-1 text-sm">
+          <ul className="mt-2 space-y-1.5 text-sm">
             {discounts.data?.map((d: StudentDiscount) => (
-              <li key={d.id} className="flex items-center justify-between gap-2">
+              <li key={d.id} className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-slate-700">
                   {DISCOUNT_TYPES.find((t) => t.value === d.type)?.label ?? d.type} · {d.is_percent ? `${d.amount}%` : fmtPKR(d.amount)}
                   {d.reason ? <span className="text-slate-400"> · {d.reason}</span> : ''}
+                  {/* THE MONTHS IT COVERS, which is the whole of 0138 made
+                      visible. A concession used to have no dates at all and
+                      died at rollover without anybody being told; now a parent
+                      asking "when did my discount stop" has an answer on the
+                      screen rather than in somebody's memory. */}
+                  <span className="ml-1 text-xs text-slate-400">
+                    · from {monthName(d.starts_on)}
+                    {d.ends_on ? ` to ${monthName(d.ends_on)}` : ', ongoing'}
+                  </span>
                 </span>
-                <DiscountStatusPill status={d.status} />
+                <span className="flex items-center gap-2">
+                  {d.live && (
+                    <span className="rounded-full bg-money-100 px-2 py-0.5 text-xs font-medium text-money-800">
+                      In force
+                    </span>
+                  )}
+                  <DiscountStatusPill status={d.status} />
+                  {canCollect && d.live && (
+                    /* NOT window.confirm. Once a browser has been told to stop
+                       showing dialogs from a page, confirm() returns false for
+                       ever and the button silently stops doing anything.
+                       AskDialog exists for this and the guard in preflight
+                       caught the first draft using the browser one. */
+                    <button
+                      onClick={() => setEnding(d)}
+                      disabled={end.isPending}
+                      className="text-xs text-slate-500 underline hover:text-danger-700"
+                    >
+                      End it
+                    </button>
+                  )}
+                </span>
               </li>
             ))}
           </ul>
         )}
       </div>
+
+      {ending && (
+        <AskDialog
+          title="End this discount?"
+          intro={
+            <>
+              {DISCOUNT_TYPES.find((t) => t.value === ending.type)?.label ?? ending.type}
+              {' · '}
+              {ending.is_percent ? `${ending.amount}%` : fmtPKR(ending.amount)}
+              {' for '}{student.full_name}. It stops applying from next month. The months it has
+              already covered keep it, so statements you have already printed still add up.
+            </>
+          }
+          confirmLabel="End it"
+          tone="danger"
+          busy={end.isPending}
+          error={end.error ? (end.error as Error).message : null}
+          onCancel={() => setEnding(null)}
+          onSubmit={() => end.mutate(ending.id)}
+        />
+      )}
 
       {/* Month-by-month list */}
       <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
