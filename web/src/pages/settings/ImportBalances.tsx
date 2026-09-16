@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { AskDialog } from '@/components/AskDialog'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { getCurrentSession, importOpeningBalances, type ImportResult } from '@/lib/db'
 import { parseCSVToObjects, toCSV, downloadCSV } from '@/lib/csv'
@@ -20,6 +21,7 @@ export function ImportBalances() {
   const [loaded, setLoaded] = useState<Loaded | null>(null)
   const [parseError, setParseError] = useState<string | null>(null)
   const [result, setResult] = useState<{ dry: boolean; data: ImportResult } | null>(null)
+  const [asking, setAsking] = useState(false)
 
   function downloadTemplate() {
     const headers = [...BALANCE_IMPORT_COLUMNS]
@@ -130,8 +132,13 @@ export function ImportBalances() {
                 className="rounded border border-brand-300 bg-brand-50 px-4 py-2 text-sm font-medium text-brand-700 hover:bg-brand-100 disabled:opacity-60">
                 {run.isPending && run.variables === true ? 'Validating…' : 'Validate (dry run)'}
               </button>
+              {/* NOT confirm(). This writes a hundred rows into a school's
+                  books in one press, and a browser that has been told to stop
+                  showing dialogs from this page returns false from confirm()
+                  for ever, so the button would silently do nothing on the one
+                  screen where "did it work?" is hardest to answer. */}
               <button
-                onClick={() => { if (confirm(`Import opening balances for ${loaded.rows.length} row(s) into ${session.data?.name}?`)) run.mutate(false) }}
+                onClick={() => setAsking(true)}
                 disabled={!canImport || run.isPending}
                 className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
                 {run.isPending && run.variables === false ? 'Importing…' : `Import ${loaded.rows.length} balance${loaded.rows.length === 1 ? '' : 's'}`}
@@ -142,6 +149,23 @@ export function ImportBalances() {
         )}
       </div>
 
+      {asking && loaded && (
+        <AskDialog
+          title={`Import ${loaded.rows.length} opening balance${loaded.rows.length === 1 ? '' : 's'}?`}
+          intro={
+            <>
+              These become what each family owed {session.data?.name ?? 'this session'} on the day
+              it started, and every fee figure in the product is built on top of them. If you have
+              not run the dry run, do that first: it reports the same errors and writes nothing.
+            </>
+          }
+          confirmLabel="Import them"
+          busy={run.isPending}
+          error={run.error ? (run.error as Error).message : null}
+          onCancel={() => setAsking(false)}
+          onSubmit={() => { setAsking(false); run.mutate(false) }}
+        />
+      )}
       {result && (
         <ImportResultPanel
           result={result}

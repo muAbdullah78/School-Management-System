@@ -34,7 +34,10 @@ Four things are wrong with that, in rough order of how badly they bite:
   4. THEY BLOCK THE MAIN THREAD and look nothing like the rest of the product,
      on a page a school is being asked to trust with its money.
 
-web/src/components/AskDialog.tsx replaced all thirteen. This stops the next one.
+web/src/components/AskDialog.tsx replaced all thirteen, and then seven more that
+this guard could not see because they were written without the `window.` prefix:
+revoking a concession, locking a test, committing and undoing the year-end
+rollover, and the three importers. See the note on CALL below. Twenty in all.
 
 The guard reads the SOURCE, not a rendered page, because the failure is not
 visible at runtime until the day a browser decides to suppress the dialog.
@@ -49,7 +52,34 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, 'web', 'src')
 
-CALL = re.compile(r'\bwindow\.(prompt|alert|confirm)\s*\(')
+# WITH OR WITHOUT THE `window.` PREFIX, and the prefix is exactly what this
+# guard used to require.
+#
+# THE HOLE THIS CLOSES, MEASURED. The pattern was
+#
+#     \bwindow\.(prompt|alert|confirm)\s*\(
+#
+# and `confirm(...)` on its own is the same global. Seven live call sites were
+# sitting behind it, in six files, every one of them the kind of action the
+# docstring above says this exists to protect:
+#
+#     fees/Discounts.tsx        revoke an approved concession
+#     assessments/TestsPage.tsx lock a test, freezing a class's marks for good
+#     settings/Rollover.tsx     commit the year-end rollover, and undo it
+#     settings/ImportStaff.tsx  write the staff register from a file
+#     settings/ImportBalances   write every family's opening balance
+#     settings/ImportStudents   admit a hundred children in one press
+#
+# "This stops the next one" is what the docstring claimed, and it did not,
+# because the check was written from the twelve call sites that happened to
+# spell it `window.`. A guard is only as good as the shape it matches, and the
+# shape it matched was a habit rather than the language.
+#
+# (?<![.\w$]) keeps it off a property or a longer identifier: `this.confirm(`,
+# `onConfirm(`, `setConfirm(` and `obj.alert(` are all left alone. The
+# `window.` form is still matched by the first branch.
+CALL = re.compile(r'\bwindow\.(prompt|alert|confirm)\s*\('
+                  r'|(?<![.\w$])(prompt|alert|confirm)\s*\(')
 
 # COMMENTS ARE STRIPPED FIRST, and the first version of this guard did not do
 # that. It failed on its own replacement: AskDialog.tsx's header explains that it
@@ -104,10 +134,12 @@ def main() -> int:
             for n, line in enumerate(lines, 1):
                 m = CALL.search(line)
                 if m:
-                    bad.append((rel, n, m.group(1), line.strip()[:90]))
+                    # One branch or the other matched, never both.
+                    kind = m.group(1) or m.group(2)
+                    bad.append((rel, n, kind, line.strip()[:90]))
 
     if not bad:
-        print('no window.prompt / alert / confirm in web/src '
+        print('no prompt / alert / confirm in web/src, with or without window. '
               '(use web/src/components/AskDialog.tsx)')
         return 0
 
@@ -116,7 +148,7 @@ def main() -> int:
     print('confirm() returns false for ever, and the button silently stops working.')
     print()
     for rel, n, kind, text in bad:
-        print(f'  {rel}:{n}  window.{kind}(')
+        print(f'  {rel}:{n}  {kind}(')
         print(f'      {text}')
     print()
     print('Use <AskDialog> from web/src/components/AskDialog.tsx. It asks for an')
