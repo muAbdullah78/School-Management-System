@@ -1084,7 +1084,10 @@ jobs:
             if public.student_balance(sid) <> 900 then raise exception 'FEE adj %', public.student_balance(sid); end if;
             perform public.fn_waive_fine(inv, 'goodwill');
             if public.student_balance(sid) <> 700 then raise exception 'FEE waive %', public.student_balance(sid); end if;
-            did := public.fn_add_discount(enr, 'sibling', 10, true, 'sib');
+            -- 0138 moved a discount from the enrolment to the CHILD, and gave
+            -- it a start month, because keyed to the enrolment every concession
+            -- in the school vanished at rollover.
+            did := public.fn_add_discount(sid, 'sibling', 10, true, 'sib', date '2025-09-01', null);
             perform public.fn_set_discount_status(did, 'approved');
             perform public.fn_generate_class_invoices('22222222-2222-2222-2222-222222222222',
               '77777777-7777-7777-7777-777777777777', '2025-09-01', '2025-09-10');

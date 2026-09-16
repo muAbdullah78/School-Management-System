@@ -465,6 +465,16 @@ SQL
     verify_clean preflight_upgrade "upgrade: verify.sql renders, no FAIL row"
   fi
 
+  # CI's own Sanity checks block, extracted from ci.yml and run here. It is a
+  # caller of a dozen fee functions and nothing was checking it: 0138 changed
+  # fn_add_discount to take a child rather than an enrolment, every suite and
+  # every guard passed, preflight said CLEAN, and CI went red on one line
+  # inside that block. See the header of scripts/ci-sanity.sh.
+  if [ "$ok" = 1 ]; then
+    step "CI's own Sanity checks block" \
+      env PGDATABASE=preflight_upgrade bash scripts/ci-sanity.sh
+  fi
+
   # ------------------------------------------------------------------------
   # detect.sql MUST RUN ON THE DATABASE IT EXISTS TO DIAGNOSE.
   #

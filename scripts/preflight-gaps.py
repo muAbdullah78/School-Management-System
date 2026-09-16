@@ -57,6 +57,12 @@ OTHER_WORKFLOWS = {
 # Steps preflight performs by a DIFFERENT route than the command in ci.yml, so a
 # textual match will never find them. Each entry says how.
 COVERED = {
+    'Sanity checks':
+        "preflight EXTRACTS this step from ci.yml and runs it, via "
+        "scripts/ci-sanity.sh, against preflight_upgrade. It sat in this list "
+        "as an honest gap until 0138 changed fn_add_discount to take a child "
+        "rather than an enrolment: every suite and every guard passed, "
+        "preflight said CLEAN, and CI went red on one line inside that block",
     'Stub the Supabase auth schema':
         'preflight creates its own scratch databases with the same stub inline',
     'Apply all migrations in order':
