@@ -145,6 +145,7 @@ export function RapidEntry({ mode, onMode, onDone }: {
           ) : (
             <BulkClassAdd
               sessionId={session.data.id}
+              sessionStart={session.data.starts_on ?? null}
               classId={classId}
               sectionId={sectionId}
               className={cls?.name ?? 'Class'}

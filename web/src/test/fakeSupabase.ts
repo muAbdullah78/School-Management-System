@@ -44,6 +44,15 @@ export interface FakeOptions {
   /** What functions.invoke should do, per function name. */
   fn?: Record<string, { data?: unknown; error?: { name: string; message: string; body?: unknown } }>
   /**
+   * Every Edge Function call, WITH ITS BODY.
+   *
+   * The parent portal is created through create-teacher precisely so that
+   * supabase.auth.signUp is never called: signUp replaces the current session,
+   * which would silently sign the clerk in as the parent they just entered. Only
+   * the body proves which path was taken, so a test has to be able to read it.
+   */
+  onInvoke?: (name: string, body: unknown) => void
+  /**
    * A signed-in session for the auth block, plus a handle on the auth-change
    * listener so a test can play a TOKEN REFRESH.
    *
@@ -162,7 +171,8 @@ export function fakeSupabase(opts: FakeOptions = {}) {
       },
     },
     functions: {
-      invoke: async (name: string) => {
+      invoke: async (name: string, init?: { body?: unknown }) => {
+        opts.onInvoke?.(name, init?.body)
         const spec = opts.fn?.[name]
         if (!spec) {
           return { data: null, error: { name: 'FunctionsFetchError', message: 'not deployed in tests' } }

@@ -38,7 +38,7 @@ function mountGrid(opts: FakeOptions = {}) {
   return render(
     createElement(QueryClientProvider, { client: qc },
       createElement(BulkClassAdd, {
-        sessionId: 'sess-1', classId: 'cls-1', sectionId: 'sec-1',
+        sessionId: 'sess-1', sessionStart: '2026-06-01', classId: 'cls-1', sectionId: 'sec-1',
         className: 'Class 1', sectionName: 'A',
       })),
   )
