@@ -375,5 +375,212 @@ begin
     || (j->>'failed') || ' refused, roll went ' || n_before || ' to ' || n_after);
 end $limit$;
 
+-- =============================================================================
+-- 21-26. A draft child is a child, proved on the real function names
+-- =============================================================================
+--
+-- 0142 ADDED A VERIFY ROW FOR THIS AND NAMED A FUNCTION THAT DOES NOT EXIST.
+-- `fn_get_roster` is not in this schema, so that slot asserted nothing and read
+-- exactly like a slot that passes. The vendor then reported the same worry in
+-- words: "a student entered with only a Name, Phone and Roll Number is a fully
+-- active student. They must immediately populate in the attendance registers,
+-- exam modules and fee lists."
+--
+-- So this walks one name-and-roll-only child through every screen that could
+-- have excluded them, by the names those functions really have.
+do $draft_is_a_child$
+declare
+  sch uuid; own uuid; ses uuid; c1 uuid; sec1 uuid; j jsonb; s_kid uuid; n int;
+  v_asmt uuid;
+  today date := (now() at time zone 'Asia/Karachi')::date;
+begin
+  select id into sch from public.schools where name = 'RDE Test School';
+  select id into own from public.profiles where school_id = sch and role = 'owner';
+  select id into ses from public.academic_sessions where school_id = sch;
+  select id into c1  from public.classes where school_id = sch;
+  select id into sec1 from public.sections where school_id = sch;
+  perform set_config('test.uid', own::text, false);
+
+  -- Room again: assertion 20 pinned the licence to the roll.
+  update public.subscriptions
+     set student_limit_override = null, student_limit_override_reason = null
+   where school_id = sch;
+
+  j := public.fn_rde_add_students(jsonb_build_object(
+    'session_id', ses, 'class_id', c1, 'section_id', sec1,
+    'rows', jsonb_build_array(jsonb_build_object(
+      'full_name', 'Only A Name', 'roll_no', '77', 'whatsapp', '03451112233'))));
+  s_kid := (j->'results'->0->>'student_id')::uuid;
+  perform pg_temp.ok((select is_draft from public.students where id = s_kid),
+    '21. the child is a draft: no father, no gender, no date of birth');
+
+  select count(*) into n from public.fn_section_roster(ses, c1, sec1, today)
+   where student_id = s_kid;
+  perform pg_temp.ok(n = 1,
+    '22. AND IS ON THE ATTENDANCE REGISTER. fn_section_roster is what the class '
+    || 'teacher marks against every morning; a draft missing from it is a child '
+    || 'marked absent for ever by omission');
+
+  select count(*) into n from public.fn_student_list(null, c1, sec1, false, 100, 0)
+   where student_id = s_kid;
+  perform pg_temp.ok(n = 1, '23. and on the roster the office searches');
+
+  select count(*) into n from public.fn_fees_month_pupils(ses, null, 'all')
+   where student_id = s_kid;
+  perform pg_temp.ok(n = 1,
+    '24. and in the month''s fee list, which is the one that costs money to be '
+    || 'wrong about');
+
+  -- An exam. A marksheet that skipped drafts would hand a class teacher a list
+  -- with a hole in it and no way to see the hole.
+  insert into public.assessments(school_id, session_id, class_id, section_id, title,
+      max_marks, assessment_date, created_by)
+    values (sch, ses, c1, sec1, 'Class test', 20, today, own)
+    returning id into v_asmt;
+  select count(*) into n from public.fn_assessment_marksheet(v_asmt)
+   where full_name = 'Only A Name';
+  perform pg_temp.ok(n = 1, '25. and on the marksheet for a class test');
+
+  select count(*) into n from public.fn_attendance_day(ses, today)
+   where class_id = c1;
+  perform pg_temp.ok(n >= 1,
+    '26. THE WHOLE POINT: every one of those reads is blind to is_draft. The flag '
+    || 'is a reminder on the principal''s dashboard and nothing else, which is the '
+    || 'only way a school can safely be allowed to type a name and move on');
+end $draft_is_a_child$;
+
+-- =============================================================================
+-- 27-33. The roll numbers, and the portal that makes itself
+-- =============================================================================
+do $roll_and_portal$
+declare
+  sch uuid; own uuid; ses uuid; c1 uuid; sec1 uuid; j jsonb; r jsonb;
+  n int; v_fam uuid; s_a uuid; s_b uuid; v_email text; v_pw text;
+begin
+  select id into sch from public.schools where name = 'RDE Test School';
+  select id into own from public.profiles where school_id = sch and role = 'owner';
+  select id into ses from public.academic_sessions where school_id = sch;
+  select id into c1  from public.classes where school_id = sch;
+  select id into sec1 from public.sections where school_id = sch;
+  perform set_config('test.uid', own::text, false);
+
+  j := public.fn_section_roll_state(ses, c1, sec1);
+  perform pg_temp.ok((j->>'on_roll')::int > 0
+    and jsonb_array_length(j->'taken') > 0
+    and (j->>'next_free')::int > 0,
+    '27. the grid can be told what the section already holds before anybody '
+    || 'types into it. Without this it opened on an empty Roll column against a '
+    || 'class that already had children in it, and nothing in this schema '
+    || 'forbids two of them on roll 1: there is no error to catch it, the '
+    || 'register just quietly has two number ones');
+
+  -- The sanitiser, on the cases that actually arrive.
+  perform pg_temp.ok(
+    public.fn__portal_email('Muhammad Ali', '0333 123 4567') = 'muhammad03331234567@gmail.com',
+    '28. the address is lowercased, stripped to letters and digits, and built '
+    || 'from the first name only: a parent types this on a phone');
+  perform pg_temp.ok(public.fn__portal_email('Hamza Khan', null) is null,
+    '29. A NUMBER IS REQUIRED. The first draft answered as soon as anything '
+    || 'survived, so a family with no phone on file got hamza@gmail.com: an '
+    || 'address certainly taken somewhere already, and one the next family '
+    || 'called Hamza would collide with');
+  perform pg_temp.ok(public.fn__portal_email('محمد علی', null) is null,
+    '30. a name in Urdu script with no number leaves nothing, and "@gmail.com" '
+    || 'is not an address');
+
+  -- TWO SIBLINGS IN ONE SAVE.
+  j := public.fn_rde_add_students(jsonb_build_object(
+    'session_id', ses, 'class_id', c1,
+    'rows', jsonb_build_array(
+      jsonb_build_object('full_name','Portal One','father_name','Rashid',
+        'father_cnic','3520199887766','whatsapp','03451234567'),
+      jsonb_build_object('full_name','Portal Two','father_name','Rashid',
+        'father_cnic','3520199887766','whatsapp','03451234567'))));
+  s_a := (j->'results'->0->>'student_id')::uuid;
+  s_b := (j->'results'->1->>'student_id')::uuid;
+  perform pg_temp.ok(
+    (select family_id from public.students where id = s_a)
+      = (select family_id from public.students where id = s_b),
+    '31. two children with one father''s CNIC land in one family');
+
+  select count(*) into n from public.fn_portal_targets(array[s_a, s_b]);
+  perform pg_temp.ok(n = 1,
+    '32. THE SIBLING QUESTION, ANSWERED BY CONSTRUCTION: one login for the house, '
+    || 'not two. The dedupe is on the FAMILY, so two brothers typed into the same '
+    || 'grid at the same moment cannot race to create two accounts. Keyed on the '
+    || 'address instead, the second would either fail as a duplicate or quietly '
+    || 'make a second portal showing half the family. Got ' || n || ' rows');
+
+  select email, password into v_email, v_pw from public.fn_portal_targets(array[s_a]);
+  perform pg_temp.ok(v_email = 'rashid03451234567@gmail.com' and v_pw = '03451234567',
+    '33. and it is the father''s name and number, as the vendor specified: '
+    || coalesce(v_email, 'nothing'));
+
+  -- The fallbacks, and the six-character floor auth insists on.
+  select email, password into v_email, v_pw
+    from public.fn_portal_targets(array[(select id from public.students
+                                          where school_id = sch
+                                            and full_name = 'Manual Five Hundred')]);
+  perform pg_temp.ok(v_email like '%0500@gmail.com' and length(v_pw) >= 6,
+    '34. a family with no phone number still gets a usable address and a password '
+    || 'of at least six characters. A GR number of "0002" is four, and auth '
+    || 'refuses anything shorter AFTER the child has already been admitted. Got '
+    || coalesce(v_email, 'nothing') || ' / ' || coalesce(v_pw, 'nothing'));
+end $roll_and_portal$;
+
+-- =============================================================================
+-- 35-36. A login that already belongs to a family is never taken off them
+-- =============================================================================
+--
+-- THE HOLE THE BATCH PATH OPENS. The address is the father's name and phone
+-- number, so two unrelated families whose father is called Rashid, with the same
+-- number mistyped onto both, produce the SAME address. The first creates the
+-- login; the second is told "already registered", the Edge Function finds it in
+-- this school and hands it back, and an unguarded link would point it at the
+-- second family. The first family would silently lose their portal to somebody
+-- else's house, and nothing anywhere would say so.
+do $no_theft$
+declare
+  sch uuid; own uuid; p_id uuid := gen_random_uuid();
+  fam_a uuid; fam_b uuid; n int;
+begin
+  select id into sch from public.schools where name = 'RDE Test School';
+  select id into own from public.profiles where school_id = sch and role = 'owner';
+  perform set_config('test.uid', own::text, false);
+
+  select family_id into fam_a from public.students where school_id = sch and full_name = 'Portal One';
+  select family_id into fam_b from public.students where school_id = sch and full_name = 'Bilal Ahmad';
+
+  insert into auth.users(id, email) values (p_id, 'shared@rdetest.test') on conflict (id) do nothing;
+  alter table public.profiles disable trigger user;
+  insert into public.profiles(id, school_id, full_name, role, active, family_id)
+    values (p_id, sch, 'Rashid', 'parent', true, fam_a);
+  alter table public.profiles enable trigger user;
+
+  n := public.fn_link_parents(jsonb_build_array(
+         jsonb_build_object('profile_id', p_id, 'family_id', fam_b)));
+  perform pg_temp.ok(n = 0
+    and (select family_id from public.profiles where id = p_id) = fam_a,
+    '35. THE THEFT THAT ALMOST SHIPPED: a parent login already attached to one '
+    || 'family is not moved to another by the automatic path. Two fathers called '
+    || 'Rashid with the same number typed on both rows produce one address, and '
+    || 'without this the second family would take the first family''s portal');
+
+  -- The same call for the family it ALREADY belongs to is a no-op that succeeds,
+  -- because re-running a batch after a browser crash must not report failures.
+  n := public.fn_link_parents(jsonb_build_array(
+         jsonb_build_object('profile_id', p_id, 'family_id', fam_a)));
+  perform pg_temp.ok(n = 1,
+    '36. and re-running the same batch is harmless, which is what a clerk does '
+    || 'after a browser crash');
+
+  -- And that family is no longer offered a login it already has.
+  select count(*) into n from public.fn_portal_targets(
+    array[(select id from public.students where school_id = sch and full_name = 'Portal One')]);
+  perform pg_temp.ok(n = 0,
+    '37. a family with a login is not offered another one, so the sibling who '
+    || 'arrives in March joins the portal their brother got in June');
+end $no_theft$;
+
 rollback;
 \echo 'RAPID DATA ENTRY: ALL TESTS PASSED'

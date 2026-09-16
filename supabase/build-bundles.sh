@@ -844,6 +844,19 @@ emit supabase/bundles/42_the_counter_could_not_see_the_discount.sql \
 emit supabase/bundles/43_the_register_goes_in_as_fast_as_it_is_read.sql \
      supabase/migrations/0142*.sql
 
+# --- 44 ----------------------------------------------------------------------
+# A roll number you can see, and a portal that makes itself.
+#
+# Three things 0142 left to the clerk. The grid opened on an empty Roll column
+# against a class that might already hold thirty children, and nothing in this
+# schema forbids two of them on roll 1. Every parent login had to be made by
+# hand, one press per family, which does not survive four hundred children in an
+# afternoon. And the verify row asserting that a draft record is billed and
+# registered like any other named a function that does not exist, so it checked
+# nothing.
+emit supabase/bundles/44_a_roll_number_you_can_see.sql \
+     supabase/migrations/0143*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

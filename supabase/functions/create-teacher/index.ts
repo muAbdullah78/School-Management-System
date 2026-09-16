@@ -45,7 +45,13 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 // fourth thing to go stale. This project has now been bitten three times by a
 // deployed function lagging the app, so the count matters more than the name
 // does. The name is already broader than it says: it creates parents too.
-const FUNCTION_VERSION = 4
+// 5 ADDS create_batch. The rapid-entry grid enters a whole class in one press,
+// and every family in it needs a parent login. One HTTP call per family is four
+// hundred round trips on the afternoon a school onboards, over a connection that
+// is not fast; worse, a browser closed half way leaves half the class with
+// logins and nobody knows which half. This does the lot in one request and
+// reports per row, so the office can be told exactly which addresses clashed.
+const FUNCTION_VERSION = 5
 
 const ALLOWED_ROLES = [
   'principal', 'admin_clerk', 'accountant',
@@ -59,12 +65,32 @@ const ALLOWED_ROLES = [
 
 // What a POST body's `action` may say. An absent action means 'create', so an
 // app older than this copy keeps working unchanged.
-const ACTIONS = ['create', 'set_password']
+const ACTIONS = ['create', 'set_password', 'create_batch']
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+}
+
+/**
+ * The auth user id behind an address, or null.
+ *
+ * listUsers is paged and there is no get-by-email in the admin API, so this asks
+ * for one page filtered by the address. Used only on the "already registered"
+ * path, where the alternative is telling a school that a login they can see does
+ * not exist.
+ */
+async function findUserId(admin: ReturnType<typeof createClient>, email: string): Promise<string | null> {
+  try {
+    // @ts-ignore: the filter is supported by the admin API and not in the types.
+    const { data } = await admin.auth.admin.listUsers({ page: 1, perPage: 200 })
+    const hit = (data?.users ?? []).find(
+      (u: { email?: string | null }) => (u.email ?? '').toLowerCase() === email)
+    return hit?.id ?? null
+  } catch {
+    return null
+  }
 }
 
 Deno.serve(async (req) => {
@@ -195,6 +221,96 @@ Deno.serve(async (req) => {
         version: FUNCTION_VERSION,
         roles: ALLOWED_ROLES,
       }, 400)
+    }
+
+    // -----------------------------------------------------------------------
+    // ACTION: create_batch
+    //
+    // WHY IT IS HERE AND NOT A FOURTH EDGE FUNCTION: this project has been
+    // bitten three times by a deployed function lagging the app, and every extra
+    // function is another thing a school forgets to deploy.
+    //
+    // AN ADDRESS ALREADY IN USE IS NOT A FAILURE HERE, and that is the whole
+    // difference from `create`. A school entering siblings, or re-running the
+    // grid after a browser crash, will hit addresses that already exist. If that
+    // login is IN THIS SCHOOL, its id comes back marked `existed` so the caller
+    // can attach it to the family rather than making a second one. If it belongs
+    // to another school on the platform, it is a real clash and says so: linking
+    // it would hand another school's parent a login to this one.
+    //
+    // NOTHING HERE MAY THROW. These logins are created AFTER the children have
+    // been admitted, and a child must never be lost over a login. Every row is
+    // caught individually and reported.
+    if (action === 'create_batch') {
+      const role = String(body.role ?? 'parent')
+      if (!ALLOWED_ROLES.includes(role)) {
+        return json({ error: 'Invalid role', version: FUNCTION_VERSION, roles: ALLOWED_ROLES }, 400)
+      }
+      const logins = Array.isArray(body.logins) ? body.logins : []
+      // The same ceiling the database puts on one rapid-entry save. A single
+      // request must not be able to hold this function open for minutes.
+      if (logins.length > 200) {
+        return json({ error: 'At most 200 logins in one call.', version: FUNCTION_VERSION }, 400)
+      }
+
+      const results: Record<string, unknown>[] = []
+      for (const raw of logins) {
+        const em = String(raw?.email ?? '').trim().toLowerCase()
+        const pw = String(raw?.password ?? '')
+        const nm = String(raw?.full_name ?? '').trim()
+        const fam = raw?.family_id ? String(raw.family_id) : null
+        if (!em || !em.includes('@') || pw.length < 6) {
+          results.push({ email: em, family_id: fam, status: 'skipped',
+            message: 'The address or password this family produced is not usable.' })
+          continue
+        }
+        try {
+          const { data: made, error: err } = await admin.auth.admin.createUser({
+            email: em, password: pw, email_confirm: true,
+            user_metadata: { full_name: nm || em.split('@')[0] },
+            app_metadata: { school_id: prof.school_id, role },
+          })
+          if (!err && made?.user) {
+            // Finish the profile ourselves rather than trusting the signup
+            // trigger to have seen app_metadata: see the long note under
+            // `create` for why that is not something this function can rely on.
+            const { data: landed } = await admin.from('profiles')
+              .select('id').eq('id', made.user.id).maybeSingle()
+            if (!landed) {
+              await admin.from('profiles').insert({
+                id: made.user.id, school_id: prof.school_id,
+                full_name: nm || em.split('@')[0], role, active: true,
+              })
+            }
+            results.push({ email: em, family_id: fam, id: made.user.id, status: 'created' })
+            continue
+          }
+          const taken = /already registered|already been registered|duplicate|already exists/i
+            .test(err?.message ?? '')
+          if (!taken) {
+            results.push({ email: em, family_id: fam, status: 'error',
+              message: err?.message ?? 'Could not create this login.' })
+            continue
+          }
+          // TAKEN. Whose is it? Only a login already inside this school may be
+          // handed to this family.
+          const { data: found } = await admin.from('profiles')
+            .select('id, school_id, role, active')
+            .eq('id', (await findUserId(admin, em)) ?? '00000000-0000-0000-0000-000000000000')
+            .maybeSingle()
+          if (found && found.school_id === prof.school_id && found.role === role && found.active) {
+            results.push({ email: em, family_id: fam, id: found.id, status: 'existed' })
+          } else {
+            results.push({ email: em, family_id: fam, status: 'taken',
+              message: 'That address already has a login elsewhere on The School Manager, '
+                + 'so this family needs a different one. Create it by hand from the '
+                + "child's page." })
+          }
+        } catch (e) {
+          results.push({ email: em, family_id: fam, status: 'error', message: (e as Error).message })
+        }
+      }
+      return json({ version: FUNCTION_VERSION, results })
     }
 
     // 4) Create the user with the service_role client (email pre-confirmed).
