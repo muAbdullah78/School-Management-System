@@ -45,6 +45,7 @@
  *     and the single-student counter had always refused to issue one.
  */
 import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   findFamily,
@@ -56,9 +57,11 @@ import {
   findByVoucher,
   listStudents,
   getStudentFamilyId,
+  type FamilyChild,
   type FamilyHit,
   type FamilyPaymentResult,
 } from '@/lib/db'
+import { DISCOUNT_TYPES } from '@/lib/constants'
 import { MonthHeader } from './MonthHeader'
 import { Receipt, type ReceiptData } from '@/components/Receipt'
 import { Avatar } from '@/components/Avatar'
@@ -123,6 +126,19 @@ function FeeTag({ hit }: { hit?: { state: string; due: number } }) {
       </span>
     )
   }
+  // PART PAID IS ITS OWN ANSWER on the family sheet and is not on the search
+  // list, and that is not an inconsistency. fn_fees_month_pupils folds a
+  // part-paid month into "not paid" on purpose, because the month view is a
+  // count of who has settled and who has not. At the counter the clerk is
+  // looking at one child and needs to know that Rs 1,200 of this month has
+  // already come in, or they will ask the parent for the whole fee again.
+  if (hit.state === 'part_paid') {
+    return (
+      <span className="shrink-0 rounded-full bg-due-100 px-2 py-0.5 text-xs font-medium text-due-800">
+        Part paid, {money(hit.due)} left
+      </span>
+    )
+  }
   return (
     <span className="shrink-0 rounded-full bg-due-100 px-2 py-0.5 text-xs font-medium text-due-800">
       Due {money(hit.due)}
@@ -130,8 +146,139 @@ function FeeTag({ hit }: { hit?: { state: string; due: number } }) {
   )
 }
 
+/**
+ * One child, on the sheet where the money is taken.
+ *
+ * WHAT THIS CARD USED TO SAY, in full:
+ *
+ *     Abdullah Dar  GR 0001                              Rs 16,200
+ *     Sept 2026                                           Rs 2,700
+ *
+ * Not the class, so a clerk could not tell a Class 1 fee from a Class 9 one and
+ * could not notice they had opened the wrong Abdullah. Not the fee before the
+ * concession, so Rs 2,700 looked like the price of Class 1 and the next parent
+ * was quoted it. Not the concession, so nobody at the window could answer "why
+ * is my brother charged more", and nobody could see that a 40 per cent waiver
+ * was still running six months after the reason for it ended. One balance for
+ * this month and the four behind it together, which is how a parent who came to
+ * pay September gets told they owe Rs 16,200.
+ *
+ * Every figure here comes from fn_family_sheet, which since 0141 calls the same
+ * two functions the child's own page calls. The two screens cannot disagree,
+ * because there is only one set of arithmetic.
+ */
+function ChildFeeCard({
+  child: c, month, face, onOpenProfile,
+}: {
+  child: FamilyChild
+  month: string
+  face: string | null
+  onOpenProfile: () => void
+}) {
+  const klass = [c.class_name, c.section_name ? `(${c.section_name})` : null]
+    .filter(Boolean).join(' ')
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-3">
+      {/* ---------------------------------------------------- who, and where -- */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <button
+          onClick={onOpenProfile}
+          className="group flex min-w-0 items-center gap-2.5 text-left"
+        >
+          <Avatar name={c.full_name} url={face} size="sm" />
+          <span className="min-w-0">
+            <span className="flex flex-wrap items-center gap-x-2">
+              <span className="text-sm font-medium text-slate-800 group-hover:underline">
+                {c.full_name}
+              </span>
+              {c.gr_no ? <span className="text-xs text-slate-400">GR {c.gr_no}</span> : null}
+              {c.status !== 'active' && <Badge tone="neutral">{c.status}</Badge>}
+            </span>
+            <span className="block truncate text-xs text-slate-500">
+              {klass || 'Not enrolled this year'}
+              {c.roll_no ? ` · Roll ${c.roll_no}` : ''}
+            </span>
+          </span>
+        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <FeeTag hit={{ state: c.month_state, due: c.month_due }} />
+          <Badge tone={c.balance > 0 ? 'due' : 'money'}>{money(c.balance)}</Badge>
+        </div>
+      </div>
+
+      {/* ------------------------------------------- what this month costs, and why -- */}
+      <div className="mt-2.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-slate-200 pt-2.5 text-xs">
+        <span className="uppercase tracking-wide text-slate-400">{monthLabel(month)} fee</span>
+        <span className="text-sm font-semibold tabular-nums text-slate-800">{money(c.net)}</span>
+        {c.discount > 0 && (
+          <span className="tabular-nums text-slate-400 line-through">{money(c.gross)}</span>
+        )}
+      </div>
+
+      {/* THE CONCESSION, NAMED. This is the answer to the question asked at the
+          window, and until 0141 it lived on a page in another module that the
+          person taking the money never had open. */}
+      {c.discount_lines.length > 0 && (
+        <ul className="mt-1.5 space-y-0.5">
+          {c.discount_lines.map((d) => (
+            <li key={d.discount_id} className="text-xs text-money-800">
+              <span className="rounded bg-money-100 px-1.5 py-0.5 font-medium">
+                {DISCOUNT_TYPES.find((t) => t.value === d.type)?.label ?? d.type}
+                {' '}
+                {d.is_percent ? `${d.rate}% off` : `${money(d.rate)} off`}
+              </span>
+              <span className="ml-1.5 text-slate-500">
+                saves {money(d.amount)}
+                {d.reason ? ` · ${d.reason}` : ''}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {c.gross === 0 && c.month_state === 'not_billed' && (
+        <p className="mt-1.5 text-xs text-due-700">
+          No monthly fee is set for {klass || 'this class'}. Settings → Fee structure.
+        </p>
+      )}
+
+      {/* ------------------------------------------------- the months behind -- */}
+      {/* Separated from this month on purpose. The single balance above answers
+          "what does this family owe in total"; this answers "how far behind are
+          they", which is the question that decides whether anybody is chased. */}
+      {c.arrears_months > 0 && (
+        <p className="mt-2 text-xs text-danger-700">
+          {c.arrears_months} earlier month{c.arrears_months === 1 ? '' : 's'} unpaid
+          {' · '}{money(c.arrears_amount)}
+          {c.arrears_oldest ? `, oldest ${monthLabel(c.arrears_oldest)}` : ''}
+        </p>
+      )}
+
+      {c.invoices.length > 0 && (
+        <ul className="mt-2 space-y-1 border-t border-slate-200 pt-2">
+          {c.invoices.map((inv) => (
+            <li key={inv.invoice_id} className="flex items-center justify-between text-xs">
+              <span className="text-slate-500">
+                {monthLabel(inv.period_month)}
+                {inv.status === 'partial' ? (
+                  <span className="ml-1.5 text-due-600">
+                    part-paid, {money(inv.allocated)} received
+                  </span>
+                ) : null}
+              </span>
+              <span className="font-medium tabular-nums text-slate-700">
+                {money(inv.outstanding)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 export function FamilyCollect() {
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [submitted, setSubmitted] = useState('')
   const [familyId, setFamilyId] = useState<string | null>(null)
@@ -218,6 +365,10 @@ export function FamilyCollect() {
     queryFn: () => getFamilySheet(familyId as string),
     enabled: !!familyId,
   })
+  // A face on the family sheet as well as on the search list above it. They are
+  // different sets of ids, so this cannot share the list's map. This is the one
+  // screen where opening the wrong child costs somebody a receipt.
+  const sheetFaces = useStudentFaces((sheet.data?.children ?? []).map((c) => c.student_id))
 
   const pay = useMutation({
     mutationFn: () =>
@@ -552,48 +703,13 @@ export function FamilyCollect() {
 
                   <div className="mt-5 space-y-3">
                     {s.children.map((c) => (
-                      <div
+                      <ChildFeeCard
                         key={c.student_id}
-                        className="rounded-xl border border-slate-200 bg-slate-50/50 p-3"
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-2">
-                            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white text-slate-500 ring-1 ring-slate-200">
-                              <IconStudents />
-                            </span>
-                            <div>
-                              <span className="text-sm font-medium text-slate-800">
-                                {c.full_name}
-                              </span>
-                              {c.gr_no ? (
-                                <span className="ml-2 text-xs text-slate-400">GR {c.gr_no}</span>
-                              ) : null}
-                            </div>
-                          </div>
-                          <Badge tone={c.balance > 0 ? 'due' : 'money'}>{money(c.balance)}</Badge>
-                        </div>
-
-                        {c.invoices.length > 0 && (
-                          <ul className="mt-2 space-y-1 border-t border-slate-200 pt-2">
-                            {c.invoices.map((inv) => (
-                              <li
-                                key={inv.invoice_id}
-                                className="flex items-center justify-between text-xs"
-                              >
-                                <span className="text-slate-500">
-                                  {monthLabel(inv.period_month)}
-                                  {inv.status === 'partial' ? (
-                                    <span className="ml-1.5 text-due-600">part-paid</span>
-                                  ) : null}
-                                </span>
-                                <span className="font-medium tabular-nums text-slate-700">
-                                  {money(inv.outstanding)}
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
+                        child={c}
+                        month={s.month}
+                        face={sheetFaces.data?.get(c.student_id) ?? null}
+                        onOpenProfile={() => navigate(`/students?student=${c.student_id}`)}
+                      />
                     ))}
                   </div>
                 </>

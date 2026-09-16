@@ -3073,6 +3073,62 @@ select 'fees are raised for the month on their own (0138, 0139, 0140)',
        end
 
 union all
+-- 0141. The counter could not see the discount.
+--
+-- TWO SCREENS SHOWED THE SAME CHILD'S FEE AND DID NOT SHOW THE SAME THING. At
+-- the counter a child was a name, a GR number and one balance, while on their page
+-- in Students they had a class, a fee before the concession, the concession, its
+-- rate and its reason.
+--
+-- The first condition is the one that matters most and it is not about a screen.
+-- 0138's fn_student_fee_for_month falls back, for a child whose active enrolment
+-- is in no session covering the month, to ordering by
+--
+--     abs(extract(epoch from (s.starts_on - v_month)))
+--
+-- and date minus date in Postgres is an INTEGER, so extract(epoch from it) does
+-- not exist and the whole branch raises the instant it runs. Nothing ran it:
+-- PL/pgSQL does not parse a statement until it executes one, and every test had
+-- a child whose session covered the month. It shipped in bundle 41.
+--
+-- ANCHORED ON THE FIX, NOT ON THE BUG, and with comments stripped, because the
+-- repaired function explains the old expression in a comment and prosrc carries
+-- comments. That is the fault 0085 and 0135 both recorded, and the 0138-0140 row
+-- above hit it once already.
+select 'the counter sees the fee it is collecting (0141)',
+       case
+         when to_regprocedure('public.fn_student_fee_for_month(uuid,date)') is null
+           then 'note: bundle 41 has not been applied yet, so 0141 is not due'
+         when exists (select 1 from pg_proc p
+                        join pg_namespace n on n.oid = p.pronamespace
+                       where n.nspname = 'public' and p.proname = 'fn_student_fee_for_month'
+                         and regexp_replace(p.prosrc, '--[^' || chr(10) || ']*', '', 'g')
+                             like '%extract(epoch from (s.starts_on%')
+           then 'FAIL: a child between two school years, or enrolled only for next '
+                || 'year, CRASHES their own fee page and the family sheet they are on; '
+                || 'apply supabase/bundles/'
+                || '42_the_counter_could_not_see_the_discount.sql'
+         when to_regprocedure('public.fn_discounts_register(boolean)') is null
+           then 'FAIL: the discount register still reads discounts through the enrolment, '
+                || 'so a concession granted to a child with no enrolment is invisible '
+                || 'while still coming off every challan; apply supabase/bundles/'
+                || '42_the_counter_could_not_see_the_discount.sql'
+         -- The sheet must CALL the child page's function rather than work the
+         -- same numbers out again. Anchored on the call, because that is the
+         -- property: one set of arithmetic, not two that agree today.
+         when not exists (select 1 from pg_proc p
+                           join pg_namespace n on n.oid = p.pronamespace
+                          where n.nspname = 'public' and p.proname = 'fn_family_sheet'
+                            and regexp_replace(p.prosrc, '--[^' || chr(10) || ']*', '', 'g')
+                                like '%fn_student_fee_for_month%')
+           then 'FAIL: the counter cannot show the class, the fee before the discount, '
+                || 'or the discount itself, on the one screen where the money is taken; '
+                || 'apply supabase/bundles/'
+                || '42_the_counter_could_not_see_the_discount.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS: no schools yet, as expected'

@@ -41,7 +41,23 @@ export function StudentsPage() {
   const [includeInactive, setIncludeInactive] = useState(false)
   const [page, setPage] = useState(0)
   const [pageSize, setPageSize] = useState(50)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  /* ?student=<id> OPENS THAT CHILD DIRECTLY, which is what makes the counter and
+     this page one feature rather than two.
+     A clerk at Fees → Collect now sees the concession on the family sheet, and
+     the next thing they want is the statement behind it: the month-by-month
+     list, the discount's history, the End it button. All of that lives here.
+     Without a deep link the route from one to the other is Students, type the
+     name again, hope you pick the same child.
+     Read straight out of the URL rather than copied into state, for the reason
+     the no_class link above is: it then works from a bookmark, from a message to
+     a colleague and from the browser's back button. */
+  const selectedId = params.get('student')
+  const setSelectedId = (id: string | null) => {
+    const next = new URLSearchParams(params)
+    if (id) next.set('student', id)
+    else next.delete('student')
+    setParams(next, { replace: !id })
+  }
 
   const classes = useQuery({ queryKey: ['classes'], queryFn: listClasses })
   const sections = useQuery({

@@ -815,6 +815,23 @@ emit supabase/bundles/40_the_ledger_never_got_its_baseline.sql \
 emit supabase/bundles/41_the_fee_module_rebuilt_around_the_month.sql \
      supabase/migrations/0138*.sql supabase/migrations/0139*.sql supabase/migrations/0140*.sql
 
+# --- 42 ----------------------------------------------------------------------
+# The counter could not see the discount.
+#
+# Two screens showed the same child's fee and did not show the same thing. The
+# child's page in Students named the class, the fee before the concession, the
+# concession, its rate and its reason. The counter, which is where the money is
+# actually taken, showed a name, a GR number and one balance that mixed this
+# month with every month behind it.
+#
+# It also carries a fix to something that shipped in bundle 41 and had never
+# once been executed: fn_student_fee_for_month's fallback for a child whose
+# enrolment is in no session covering the month ordered by
+# extract(epoch from (date - date)), and date minus date is an integer, so that
+# branch raised the moment it was reached.
+emit supabase/bundles/42_the_counter_could_not_see_the_discount.sql \
+     supabase/migrations/0141*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

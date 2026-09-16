@@ -11,6 +11,7 @@ import { useAuth } from '@/auth/AuthProvider'
 import { isTeacher } from '@/auth/roles'
 import { TestsOverview } from './TestsOverview'
 import { LoadError } from '@/components/ui'
+import { AskDialog } from '@/components/AskDialog'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 type Entry = { marks: string; is_absent: boolean }
@@ -362,6 +363,7 @@ function MarksGrid({ test, onBack }: { test: AssessmentRow; onBack: () => void }
   const marksheet = useQuery({ queryKey: ['assessmentMarks', test.id], queryFn: () => getAssessmentMarksheet(test.id) })
   const [entries, setEntries] = useState<Record<string, Entry>>({})
   const [msg, setMsg] = useState<string | null>(null)
+  const [locking, setLocking] = useState(false)
   const rows = marksheet.data ?? []
   const locked = test.is_locked
 
@@ -381,7 +383,7 @@ function MarksGrid({ test, onBack }: { test: AssessmentRow; onBack: () => void }
   })
   const lock = useMutation({
     mutationFn: () => lockAssessment(test.id),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['assessments'] }); onBack() },
+    onSuccess: () => { setLocking(false); qc.invalidateQueries({ queryKey: ['assessments'] }); onBack() },
   })
 
   function upd(id: string, patch: Partial<Entry>) { setEntries((m) => ({ ...m, [id]: { ...m[id], ...patch } })) }
@@ -439,11 +441,33 @@ function MarksGrid({ test, onBack }: { test: AssessmentRow; onBack: () => void }
                 className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
                 {save.isPending ? 'Saving…' : 'Save marks'}
               </button>
-              <button onClick={() => { if (confirm('Lock this test? Marks can no longer be edited.')) lock.mutate() }}
+              {/* NOT confirm(). Locking a test freezes a class's marks for
+                  good, and a browser that has been told to stop showing dialogs
+                  from this page returns false from confirm() for ever, so the
+                  button would quietly do nothing with no error anywhere. */}
+              <button onClick={() => setLocking(true)}
                 disabled={lock.isPending}
                 className="rounded border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60">
                 Lock test
               </button>
+              {locking && (
+                <AskDialog
+                  title="Lock this test?"
+                  intro={
+                    <>
+                      Marks for <span className="font-medium">{test.title}</span> can no longer be
+                      edited by anybody, including you. Unsaved changes in the grid behind this are
+                      not included: save first if you have any.
+                    </>
+                  }
+                  confirmLabel="Lock it"
+                  tone="danger"
+                  busy={lock.isPending}
+                  error={lock.error ? (lock.error as Error).message : null}
+                  onCancel={() => setLocking(false)}
+                  onSubmit={() => lock.mutate()}
+                />
+              )}
               {overMax && <span className="text-sm text-red-600">Some marks exceed the maximum.</span>}
               {msg && <span className="text-sm text-emerald-700">{msg}</span>}
               {save.isError && <span className="text-sm text-red-600">{(save.error as Error).message}</span>}

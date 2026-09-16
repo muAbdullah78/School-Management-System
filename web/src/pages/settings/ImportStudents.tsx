@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { AskDialog } from '@/components/AskDialog'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { getCurrentSession, importStudents, repairFamilies, type ImportResult } from '@/lib/db'
 import { parseCSVToObjects, toCSV, downloadCSV } from '@/lib/csv'
@@ -21,6 +22,7 @@ export function ImportStudents() {
   const [loaded, setLoaded] = useState<Loaded | null>(null)
   const [parseError, setParseError] = useState<string | null>(null)
   const [result, setResult] = useState<{ dry: boolean; data: ImportResult } | null>(null)
+  const [asking, setAsking] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
 
   function downloadTemplate() {
@@ -145,8 +147,13 @@ export function ImportStudents() {
                 className="rounded border border-brand-300 bg-brand-50 px-4 py-2 text-sm font-medium text-brand-700 hover:bg-brand-100 disabled:opacity-60">
                 {run.isPending && run.variables === true ? 'Validating…' : 'Validate (dry run)'}
               </button>
+              {/* NOT confirm(). This writes a hundred rows into a school's
+                  books in one press, and a browser that has been told to stop
+                  showing dialogs from this page returns false from confirm()
+                  for ever, so the button would silently do nothing on the one
+                  screen where "did it work?" is hardest to answer. */}
               <button
-                onClick={() => { if (confirm(`Import ${loaded.rows.length} student(s) into ${session.data?.name}?`)) run.mutate(false) }}
+                onClick={() => setAsking(true)}
                 disabled={!canImport || run.isPending}
                 className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
                 {run.isPending && run.variables === false ? 'Importing…' : `Import ${loaded.rows.length} student${loaded.rows.length === 1 ? '' : 's'}`}
@@ -157,6 +164,23 @@ export function ImportStudents() {
         )}
       </div>
 
+      {asking && loaded && (
+        <AskDialog
+          title={`Import ${loaded.rows.length} student${loaded.rows.length === 1 ? '' : 's'}?`}
+          intro={
+            <>
+              Every row in the file is admitted into {session.data?.name ?? 'this session'} and
+              given a GR number. If you have not run the dry run, do that first: it reports the
+              same errors and writes nothing.
+            </>
+          }
+          confirmLabel="Import them"
+          busy={run.isPending}
+          error={run.error ? (run.error as Error).message : null}
+          onCancel={() => setAsking(false)}
+          onSubmit={() => { setAsking(false); run.mutate(false) }}
+        />
+      )}
       {result && (
         <ImportResultPanel
           result={result}

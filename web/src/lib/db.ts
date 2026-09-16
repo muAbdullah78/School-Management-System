@@ -605,6 +605,15 @@ export interface FeeLine {
 }
 export interface MonthlyFee {
   month: string; gross: number; discount: number; net: number; lines: FeeLine[]
+  /* WHICH CLASS THIS FIGURE IS THE FEE OF. 0141. The function has always picked
+     the enrolment that covers the month asked about, because a fee is a class's
+     fee and a child changes class, and it kept that to itself. Both screens then
+     printed the CURRENT enrolment's class beside it, so asking what last April
+     cost showed last April's money under this year's class name. */
+  class_name: string | null
+  section_name: string | null
+  roll_no: string | null
+  enrollment_id: string | null
 }
 /**
  * What a month costs one child: gross, what comes off, and what is left.
@@ -628,6 +637,8 @@ export async function getStudentMonthlyFee(studentId: string, month?: string): P
       discount_id: l.discount_id, type: l.type, amount: Number(l.amount),
       is_percent: l.is_percent, rate: Number(l.rate), reason: l.reason ?? null,
     })),
+    class_name: d.class_name ?? null, section_name: d.section_name ?? null,
+    roll_no: d.roll_no ?? null, enrollment_id: d.enrollment_id ?? null,
   }
 }
 
@@ -675,9 +686,15 @@ export async function reversePayment(paymentId: string, reason: string): Promise
 
 // ---- Discounts / fines / adjustments (fee engine depth) ----
 export interface DiscountRow {
-  id: string; enrollment_id: string; type: string; amount: number; is_percent: boolean
+  id: string; student_id: string; type: string; amount: number; is_percent: boolean
   reason: string | null; status: string; created_at: string
-  student_name: string | null; gr_no: string | null; class_name: string | null
+  student_name: string | null; gr_no: string | null
+  class_name: string | null; section_name: string | null
+  /** The months it covers. 0138. */
+  starts_on: string; ends_on: string | null
+  /** Approved, started, and not yet ended: the same rule that prices a month. */
+  live: boolean
+  proposed_by: string; approved_by: string
 }
 export interface CurrentEnrollment { enrollment_id: string; class_name: string; section_name: string | null }
 
@@ -692,19 +709,34 @@ export async function getCurrentEnrollment(studentId: string): Promise<CurrentEn
   return { enrollment_id: rows[0].id, class_name: rows[0].classes?.name ?? '-', section_name: rows[0].sections?.name ?? null }
 }
 
-export async function listDiscounts(): Promise<DiscountRow[]> {
+/**
+ * Every concession in the school, with the months it covers and whether it is
+ * actually running.
+ *
+ * THIS READ THE MODEL 0138 REPLACED. It fetched the table directly with
+ * `enrollments!inner(...)`, and an inner join on a column that is nullable and
+ * no longer carries meaning does two wrong things at once: a discount granted
+ * to a child with no active enrolment VANISHES from the register while still
+ * coming off every challan, and the class printed is the class of the enrolment
+ * the row was recorded against, which after one rollover is last year's.
+ *
+ * It also had no dates and no in-force state, so a waiver that ended in March
+ * still read "approved" with a Revoke button beside it, and nobody could ask the
+ * one question a head asks of this list: which concessions are running THIS
+ * month, and what are they costing me.
+ */
+export async function listDiscountRegister(liveOnly = false): Promise<DiscountRow[]> {
   const sb = requireSupabase()
-  const rows = unwrap<Record<string, any>[]>(
-    await sb.from('discounts')
-      .select('id, enrollment_id, type, amount, is_percent, reason, status, created_at, enrollments!inner(students(full_name, gr_no), classes(name))')
-      .order('created_at', { ascending: false }),
-  )
-  return rows.map((r) => ({
-    id: r.id, enrollment_id: r.enrollment_id, type: r.type, amount: Number(r.amount),
-    is_percent: r.is_percent, reason: r.reason, status: r.status, created_at: r.created_at,
-    student_name: r.enrollments?.students?.full_name ?? null,
-    gr_no: r.enrollments?.students?.gr_no ?? null,
-    class_name: r.enrollments?.classes?.name ?? null,
+  const { data, error } = await sb.rpc('fn_discounts_register', { p_live_only: liveOnly })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as any[]).map((r) => ({
+    id: r.id, student_id: r.student_id, type: r.type, amount: Number(r.amount),
+    is_percent: r.is_percent, reason: r.reason ?? null, status: r.status,
+    created_at: r.created_at,
+    student_name: r.student_name ?? null, gr_no: r.gr_no ?? null,
+    class_name: r.class_name ?? null, section_name: r.section_name ?? null,
+    starts_on: r.starts_on, ends_on: r.ends_on ?? null, live: !!r.live,
+    proposed_by: r.proposed_by ?? '-', approved_by: r.approved_by ?? '-',
   }))
 }
 
@@ -3975,6 +4007,18 @@ export interface FamilyInvoice {
   status: string
 }
 
+/** One line of a concession: what kind, at what rate, worth how much, and why. */
+export interface FeeDiscountLine {
+  discount_id: string
+  type: string
+  /** What it takes off THIS month, in rupees, after the cap. */
+  amount: number
+  is_percent: boolean
+  /** The rate as it was granted: 40 for "40%", 500 for "Rs 500 off". */
+  rate: number
+  reason: string | null
+}
+
 export interface FamilyChild {
   student_id: string
   full_name: string
@@ -3982,6 +4026,31 @@ export interface FamilyChild {
   status: string
   balance: number
   invoices: FamilyInvoice[]
+  /** A face at the till: four boys called Muhammad Ali in one school is ordinary. */
+  photo_path: string | null
+  /* The class the month's fee is the fee OF, taken from the same function that
+     works the fee out, so the label and the figure cannot come from different
+     enrolments. 0141. */
+  class_name: string | null
+  section_name: string | null
+  roll_no: string | null
+  /** Before any concession. */
+  gross: number
+  /** What the concessions take off this month. */
+  discount: number
+  /** What this month actually costs. */
+  net: number
+  discount_lines: FeeDiscountLine[]
+  /* This month on its own, kept apart from the months behind it. One combined
+     balance is what makes a clerk quote Rs 16,200 to a parent who came to pay
+     September. */
+  month_state: 'paid' | 'part_paid' | 'unpaid' | 'not_billed'
+  month_charge: number
+  month_paid: number
+  month_due: number
+  arrears_months: number
+  arrears_amount: number
+  arrears_oldest: string | null
 }
 
 export interface FamilySheet {
@@ -3995,6 +4064,8 @@ export interface FamilySheet {
   }
   credit: number
   outstanding: number
+  /** The Karachi month every per-child figure below is for. */
+  month: string
   children: FamilyChild[]
 }
 

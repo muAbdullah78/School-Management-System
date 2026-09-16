@@ -89,3 +89,30 @@ export function waLink(raw: string | null | undefined): string | null {
   if (digits.length < 11) return null
   return `https://wa.me/${digits}`
 }
+
+/**
+ * A billing month as a school reads it: "2026-09-01" becomes "Sept 2026".
+ *
+ * ONE COPY, because there were three, in Fees → Discounts, on the child's page
+ * and in the finance report, and three copies of a date formatter is three
+ * chances for two screens to spell the same month differently. Every one of
+ * them was written in the last fortnight, which is how fast that happens.
+ *
+ * PARSED BY HAND AND RENDERED IN UTC, deliberately. `new Date('2026-09-01')` is
+ * parsed as midnight UTC, and a browser west of Greenwich then renders it as 31
+ * August. A billing month is not a moment: it is a label on a period, and the
+ * only correct way to show it is to take the year and the month as written.
+ *
+ * "Sept", not "Sep": en-GB spells September with four letters and every other
+ * month with three. That is what a Pakistani school's browser prints and what
+ * the product has printed since the first challan, so it is kept rather than
+ * flattened.
+ */
+export function fmtMonth(iso: string | null | undefined): string {
+  if (!iso) return '-'
+  const [y, m] = iso.split('-').map(Number)
+  if (!y || !m) return '-'
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-GB', {
+    month: 'short', year: 'numeric', timeZone: 'UTC',
+  })
+}

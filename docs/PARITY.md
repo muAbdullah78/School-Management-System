@@ -170,7 +170,7 @@ Their busiest screen, and the one ours gets most wrong. Theirs opens with:
 | Generate Fee Increment | `have` | `settings/FeeIncrement.tsx`. Preview is mandatory: Apply is disabled until one has been run, and any edit throws it away. |
 | Generate Fee **Decrement** | `missing` | We only ever built increment. |
 | **Bulk Fee Payment** | `have` | `fees/BulkCollect.tsx`. A bad batch is all-or-nothing — asserted in `supabase/tests/bulk_fees.sql`. |
-| Discounted Students | `partial` | We have a discount register. |
+| Discounted Students | `have` | `fees/Discounts.tsx`. It was a register with no dates and no in-force state, reading the pre-0138 model through `enrollments!inner`, so a concession granted to a child with no active enrolment was invisible while still coming off every challan. 0141 rebuilt it on `fn_discounts_register`: the months a concession covers, whether it is running this month, a filter down to just those, and the class as it is today rather than as it was when the row was written. |
 | Accounts Settlement | `missing` | We had a cash drawer and 0136 removed it: for a school whose whole office is one person, the count at the end of the day IS the list of receipts. What is left is gapless receipt numbers and one figure for "collected today" on every screen. |
 | **Print Fee Vouchers** | `have` | `fees/ChallanPrint.tsx` — the 3-part bank-payable format, one per child or a batch per class, with a voucher code the counter can scan back. |
 
@@ -1234,7 +1234,7 @@ Deleted Fees | sql:fn_void_invoice | sql:fn_voided_invoices | app:VoidedChargesR
 Generate Fee Increment | file:web/src/pages/settings/FeeIncrement.tsx | sql:fn_fee_increment | app:feeIncrement
 Generate Fee Decrement | nosql:fn_fee_decrement | noapp:FeeDecrement
 Bulk Fee Payment | file:web/src/pages/fees/BulkCollect.tsx | sql:fn_record_bulk_payments | app:recordBulkPayments
-Discounted Students | file:web/src/pages/fees/Discounts.tsx | sql:fn_add_discount | noapp:DiscountedStudentsRoster | why:a discount register, not a roster filtered to discounted pupils
+Discounted Students | file:web/src/pages/fees/Discounts.tsx | sql:fn_discounts_register | app:listDiscountRegister | why:0141 gave the register a live-only filter, which is the roster: every pupil whose fee is reduced this month, with the amount and the reason
 Accounts Settlement | nofile:web/src/pages/till/TillPage.tsx | noapp:fn_close_till | why:0136 retired the cash drawer. NOT nosql:, because migration 0031 created fn_close_till, 0031 is frozen inside bundle 1, and 0136 does not drop the function: it revokes it from anon, authenticated and service_role, so the name is in the schema for ever and nothing can call it
 Print Fee Vouchers | file:web/src/pages/fees/ChallanPrint.tsx | sql:fn_challan | app:getChallan
 Add / Manage Expense | file:web/src/pages/accounts/AccountsPage.tsx | sql:fn_record_expense | app:recordExpense

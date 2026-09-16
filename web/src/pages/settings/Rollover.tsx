@@ -6,6 +6,7 @@ import {
 } from '@/lib/db'
 import { defaultRolloverRules, rulesToPayload, type RolloverAction, type RolloverRule } from '@/lib/rollover'
 import { fmtPKR } from '@/lib/format'
+import { AskDialog } from '@/components/AskDialog'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 const ACTIONS: { value: RolloverAction; label: string }[] = [
@@ -26,6 +27,7 @@ export function Rollover() {
   const [preview, setPreview] = useState<RolloverResult | null>(null)
   const [committed, setCommitted] = useState<RolloverResult | null>(null)
   const [undo, setUndo] = useState<RolloverUndoResult | null>(null)
+  const [asking, setAsking] = useState<null | 'commit' | 'undo'>(null)
 
   // Default the source to the current session once it loads.
   useEffect(() => { if (current.data && !fromId) setFromId(current.data.id) }, [current.data, fromId])
@@ -54,6 +56,7 @@ export function Rollover() {
   const commit = useMutation({
     mutationFn: () => runRollover(fromId, toId, rulesToPayload(rules), true),
     onSuccess: (r) => {
+      setAsking(null)
       setCommitted(r); setPreview(null)
       qc.invalidateQueries({ queryKey: ['students'] })
       qc.invalidateQueries({ queryKey: ['sessions'] })
@@ -61,7 +64,7 @@ export function Rollover() {
   })
   const undoMut = useMutation({
     mutationFn: () => undoRollover(toId),
-    onSuccess: (r) => { setUndo(r); setCommitted(null); setPreview(null); qc.invalidateQueries({ queryKey: ['students'] }) },
+    onSuccess: (r) => { setAsking(null); setUndo(r); setCommitted(null); setPreview(null); qc.invalidateQueries({ queryKey: ['students'] }) },
   })
 
   const ready = !!fromId && !!toId && fromId !== toId && (classes.data?.length ?? 0) > 0
@@ -139,15 +142,21 @@ export function Rollover() {
           className="rounded border border-brand-300 bg-brand-50 px-4 py-2 text-sm font-medium text-brand-700 hover:bg-brand-100 disabled:opacity-60">
           {preflight.isPending ? 'Previewing…' : 'Preview'}
         </button>
+        {/* NEITHER OF THESE GOES THROUGH confirm(). Rolling a year over moves
+            every child in the school into a new session, and undoing it deletes
+            the enrolments that move created. A browser told to stop showing
+            dialogs from this page returns false from confirm() for ever, so
+            both buttons would silently do nothing on the one screen where a
+            clerk would assume it had worked. */}
         <button
-          onClick={() => { if (confirm(`Commit rollover into ${toName}? You can undo this until activity is recorded there.`)) commit.mutate() }}
+          onClick={() => setAsking('commit')}
           disabled={!ready || busy || !preview}
           title={!preview ? 'Run a preview first' : ''}
           className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
           {commit.isPending ? 'Rolling over…' : 'Commit rollover'}
         </button>
         <button
-          onClick={() => { if (confirm(`Undo the rollover into ${toName}? This removes the promoted/retained enrolments there.`)) undoMut.mutate() }}
+          onClick={() => setAsking('undo')}
           disabled={!toId || busy}
           className="ml-auto rounded border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60">
           {undoMut.isPending ? 'Undoing…' : 'Undo rollover'}
@@ -167,6 +176,42 @@ export function Rollover() {
       )}
 
       {(preview || committed) && <ResultView result={(committed ?? preview)!} committed={!!committed} toName={toName} />}
+
+      {asking === 'commit' && (
+        <AskDialog
+          title={`Roll the year over into ${toName}?`}
+          intro={
+            <>
+              Every child in the preview above is enrolled into {toName}: promoted, held back
+              or left out, exactly as the preview shows. Concessions follow the child and are
+              not affected. You can undo this until activity is recorded in the new session.
+            </>
+          }
+          confirmLabel="Roll it over"
+          busy={commit.isPending}
+          error={commit.error ? (commit.error as Error).message : null}
+          onCancel={() => setAsking(null)}
+          onSubmit={() => commit.mutate()}
+        />
+      )}
+      {asking === 'undo' && (
+        <AskDialog
+          title={`Undo the rollover into ${toName}?`}
+          intro={
+            <>
+              This removes the enrolments the rollover created in {toName}. Nothing recorded
+              against them since is touched, and the database refuses the undo outright if
+              anything has been. The children stay exactly where they were before.
+            </>
+          }
+          confirmLabel="Undo it"
+          tone="danger"
+          busy={undoMut.isPending}
+          error={undoMut.error ? (undoMut.error as Error).message : null}
+          onCancel={() => setAsking(null)}
+          onSubmit={() => undoMut.mutate()}
+        />
+      )}
     </div>
   )
 }
