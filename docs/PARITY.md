@@ -102,7 +102,7 @@ is listed.
 | Their screen | Status | Notes |
 |---|---|---|
 | Admit Student | `done` | The form, plus the photograph — added on the pupil's profile once admitted rather than mid-form, because a clerk admitting a queue of children should not be blocked on finding a photo. The class photo sheet then fills them all in one pass. |
-| Admit Bulk Student | `partial` | We have CSV import. Theirs is an on-screen grid for typing several siblings at once, with a class/section header applied to the whole batch. |
+| Admit Bulk Student | `have` | `students/BulkClassAdd.tsx`, reached from **Students → Add students**. An on-screen grid with the class and section as a header applied to the whole batch: Tab moves across, Enter moves down, Tab on the last box makes a new row, and the typing is mirrored to local storage so a refresh cannot destroy it. Cells are uncontrolled and the values live in a ref, so a keystroke re-renders nothing at a hundred rows. Saved in one call with a savepoint per row, so one duplicate GR number does not roll back the rest. CSV import stays in Settings for schools that already keep a spreadsheet. |
 | Admission Requests | `missing` | Online applications awaiting approve/reject. |
 | Admission Inquiries | `have` (0046) | Worklist-first: opens on who is overdue a call. Append-only follow-up log, one-action conversion through `fn_admit_student`, and a source breakdown. |
 | Admission Reports | `partial` | Theirs: Admissions Today / This Month / This Year / Admission Forms / **Blank Admission Form**, all printable. Ours: Reports → Admissions answers the first three from one date range and prints, and `AdmissionSlip.tsx` prints the form for a child just admitted. The **blank** form — the sheet a school hands a walk-in parent to fill in by hand — does not exist, and it is the one they will ask for. |
@@ -1199,7 +1199,7 @@ the guard is having to look again.
 
 ```parity-evidence
 Admit Student | file:web/src/pages/admissions/AdmissionsPage.tsx | sql:fn_admit_student | app:admitStudent
-Admit Bulk Student | file:web/src/pages/settings/ImportStudents.tsx | sql:fn_import_students | noapp:BulkAdmitGrid | why:CSV import exists; their on-screen grid for typing several siblings at once does not
+Admit Bulk Student | file:web/src/pages/students/BulkClassAdd.tsx | sql:fn_rde_add_students | app:rdeAddStudents | why:0142 added the on-screen grid. The CSV importer is untouched and still in Settings: it is the right tool for a school that already keeps its roster in a spreadsheet
 Admission Requests | nosql:admission_requests | noapp:AdmissionRequests
 Admission Inquiries | file:web/src/pages/admissions/EnquiriesPage.tsx | sql:fn_enquiry_list | app:listEnquiries
 Admission Reports | file:web/src/pages/admissions/AdmissionSlip.tsx | sql:fn_report_admissions | noapp:BlankAdmissionForm | why:the blank form a school hands a walk-in parent is not built

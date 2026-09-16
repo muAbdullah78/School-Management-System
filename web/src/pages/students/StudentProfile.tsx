@@ -34,6 +34,7 @@ import { removeStudentPhoto, uploadStudentPhoto } from '@/lib/photos'
 import { LoginFunctionWarning } from '@/components/LoginFunctionWarning'
 import { DeleteRecord } from '@/components/DeleteRecord'
 import { FeeStatement, FeeStatementDoc } from '@/components/FeeStatement'
+import { missingFields } from './rdeShared'
 import { studentDeleteBlockers, deleteStudent } from '@/lib/db'
 import { ParentLink } from '@/components/ParentLink'
 
@@ -152,9 +153,19 @@ export function StudentProfile({ studentId, onBack, onOpen }: { studentId: strin
             }}
           />
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-xl font-semibold text-slate-800">{s.full_name}</h1>
               <StatusBadge status={s.status} />
+              {/* WHAT IS MISSING, NAMED, on the one screen where it can be
+                  fixed. A chip that only said "draft" would send the office
+                  hunting through the form for whatever it is. Nothing here is
+                  gated on it: this child is billed, registered and examined
+                  exactly like a complete record. */}
+              {missingFields(s).length > 0 && (
+                <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">
+                  Draft · no {missingFields(s).join(', no ')}
+                </span>
+              )}
             </div>
             <div className="mt-0.5 text-sm text-slate-500">
               GR {s.gr_no ?? '-'}{s.father_name ? ` · ${s.father_name}` : ''}

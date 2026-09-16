@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/auth/AuthProvider'
 import { ROLE_LABELS, isTeacher } from '@/auth/roles'
 import { MyClass } from './MyClass'
-import { getDashboardSummary } from '@/lib/db'
+import { getDashboardSummary, getDraftStudents } from '@/lib/db'
 import { requireSupabase } from '@/lib/supabase'
 import { isConfigured } from '@/lib/config'
 import { fmtPKR } from '@/lib/format'
@@ -81,6 +81,15 @@ export function Dashboard() {
   const summary = useQuery({
     queryKey: ['dashboardSummary'],
     queryFn: getDashboardSummary,
+    enabled: configured && !isTeach,
+  })
+  /* Its own read rather than a field on fn_dashboard_summary. That function is
+     140 lines and is reproduced whole by anything that touches it, which is how
+     a careful fix gets silently reverted; 0140's own header records that
+     happening once already. This is one index scan on a partial index. */
+  const drafts = useQuery({
+    queryKey: ['draftStudentsSummary'],
+    queryFn: () => getDraftStudents(0),
     enabled: configured && !isTeach,
   })
 
@@ -172,6 +181,43 @@ export function Dashboard() {
               finds out in March when a parent asks why no fee slip ever came.
               It is also what accounts for the Students screen listing more rows
               than the tile below counts. */}
+          {/* THE RECORDS SOMEBODY STILL OWES. Rapid entry lets a school get four
+              hundred children in during one afternoon by typing names and roll
+              numbers, which is the right trade: a register half entered beats a
+              register not entered. This is the other half of that trade, and it
+              has to be persistent or it is not a reminder at all. It names what
+              is missing rather than counting "incomplete records", because
+              "48 with no date of birth" is a task somebody finishes in one
+              sitting with the register open and a bare count is a nag.
+              NOTHING IS GATED ON IT. These children are billed, marked present
+              and examined exactly like the rest. */}
+          {drafts.data && drafts.data.count > 0 && (
+            <div className="mb-5 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              <span className="mt-0.5 text-amber-600"><IconAlert /></span>
+              <div>
+                <p className="font-medium">
+                  {drafts.data.count} student record{drafts.data.count === 1 ? '' : 's'} still
+                  {drafts.data.count === 1 ? ' needs' : ' need'} finishing
+                </p>
+                <p className="mt-0.5 text-amber-800">
+                  {[
+                    drafts.data.missing_father  ? `${drafts.data.missing_father} with no father's name` : null,
+                    drafts.data.missing_dob     ? `${drafts.data.missing_dob} with no date of birth` : null,
+                    drafts.data.missing_gender  ? `${drafts.data.missing_gender} with no gender` : null,
+                    drafts.data.missing_contact ? `${drafts.data.missing_contact} with no phone number` : null,
+                  ].filter(Boolean).join(', ')}.
+                  {' '}They are billed, marked present and examined like everybody else: the
+                  detail is only missing from certificates, board forms and the messages you
+                  send home.{' '}
+                  <Link to="/students" className="font-medium underline">
+                    Open the roster
+                  </Link>{' '}
+                  and finish them when there is a quiet half hour.
+                </p>
+              </div>
+            </div>
+          )}
+
           {d && d.students_without_a_class > 0 && (
             <div className="mb-5 flex items-start gap-3 rounded-xl border border-due-200 bg-due-50 p-4 text-sm text-due-800">
               <span className="mt-0.5 text-due-600"><IconAlert /></span>

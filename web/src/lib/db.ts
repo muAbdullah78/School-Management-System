@@ -3775,6 +3775,134 @@ export async function exportAllData(
 }
 
 // ---- Dashboard ----
+// ---- Rapid data entry: a paper register, typed straight in -----------------
+
+/** One row of the grid, or one Quick Add form. Everything but the name is optional. */
+export interface RdeRow {
+  full_name: string
+  roll_no?: string | null
+  gr_no?: string | null
+  father_name?: string | null
+  mother_name?: string | null
+  gender?: string | null
+  b_form?: string | null
+  father_cnic?: string | null
+  dob?: string | null
+  phone?: string | null
+  whatsapp?: string | null
+  admission_date?: string | null
+  /** Puts this child into that child's family, so ONE challan reaches the house. */
+  sibling_student_id?: string | null
+  /** Default true. The child is on this month's challan run like everybody else. */
+  bill_this_month?: boolean
+  /** The money for this month is already in the drawer. */
+  paid_this_month?: boolean
+  discount?: { type: string; amount: number; is_percent: boolean; reason?: string | null } | null
+  /** Months that have already finished and are still owed, by name. */
+  arrears?: { month: string; amount: number }[] | null
+}
+
+export interface RdeResultRow {
+  row: number
+  status: 'created' | 'partial' | 'error'
+  student_id?: string
+  gr_no?: string
+  roll_no?: string
+  full_name: string
+  is_draft?: boolean
+  arrears_months?: number
+  message?: string | null
+}
+
+export interface RdeResult {
+  created: number
+  failed: number
+  drafts: number
+  results: RdeResultRow[]
+}
+
+/**
+ * A class list, entered in one call.
+ *
+ * ONE CALL RATHER THAN N, and every row inside its own savepoint. A hundred
+ * separate inserts over a Pakistani broadband line is a minute of spinner, and
+ * a browser closed half way leaves half a class entered with nobody knowing
+ * which half. One transaction fixes that; a PL/pgSQL exception block per row
+ * stops a duplicate GR number on row 57 rolling back the twenty minutes of
+ * typing that came before it.
+ */
+export async function rdeAddStudents(input: {
+  sessionId: string; classId: string; sectionId?: string | null; rows: RdeRow[]
+}): Promise<RdeResult> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_rde_add_students', {
+    p: {
+      session_id: input.sessionId,
+      class_id: input.classId,
+      section_id: input.sectionId || null,
+      rows: input.rows,
+    },
+  })
+  if (error) throw new Error(error.message)
+  const d = (data ?? {}) as any
+  return {
+    created: Number(d.created ?? 0),
+    failed: Number(d.failed ?? 0),
+    drafts: Number(d.drafts ?? 0),
+    results: (d.results ?? []) as RdeResultRow[],
+  }
+}
+
+export interface DraftStudents {
+  count: number
+  missing_father: number
+  missing_gender: number
+  missing_dob: number
+  missing_contact: number
+  students: {
+    student_id: string; full_name: string; gr_no: string | null
+    class_name: string | null; section_name: string | null
+    missing: string[]
+  }[]
+}
+
+/**
+ * Records entered with only part of the detail, and what each one is short of.
+ *
+ * "48 incomplete records" is a nag. "48 with no date of birth" is a task
+ * somebody finishes in one sitting with the register open, which is the only
+ * kind of reminder a principal acts on.
+ */
+export async function getDraftStudents(limit = 25): Promise<DraftStudents> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_draft_students', { p_limit: limit })
+  if (error) throw new Error(error.message)
+  const d = (data ?? {}) as any
+  return {
+    count: Number(d.count ?? 0),
+    missing_father: Number(d.missing_father ?? 0),
+    missing_gender: Number(d.missing_gender ?? 0),
+    missing_dob: Number(d.missing_dob ?? 0),
+    missing_contact: Number(d.missing_contact ?? 0),
+    students: (d.students ?? []) as DraftStudents['students'],
+  }
+}
+
+/**
+ * The ids of every incomplete record, for tagging the roster.
+ *
+ * NOT A COLUMN ON fn_student_list, deliberately. That function returns a table,
+ * adding a column needs a drop, and it is defined inside a frozen bundle that
+ * verify.sql tells schools to re-run. See the note on fn_draft_student_ids.
+ */
+export async function listDraftStudentIds(): Promise<Set<string>> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_draft_student_ids')
+  if (error) throw new Error(error.message)
+  // A setof uuid comes back as a list of bare strings.
+  return new Set(((data ?? []) as unknown[]).map((v) => String(v)))
+}
+
 export interface DashboardSummary {
   active_students: number
   new_admissions_month: number
