@@ -7,7 +7,8 @@ import {
   linkStudents, searchStudentsForLink,
   listFamilyParents, createParentLogin, unlinkParent, linkParent, listSchoolLogins,
   getChallan, type Challan,
-  getStudentMonthlyFee, getEnrollmentDiscounts, addDiscount, setDiscountStatus,
+  getStudentMonthlyFee, getStudentDiscounts, addDiscount, setDiscountStatus,
+  type StudentDiscount,
   recordPayment, billStudentMonth, deferInvoice, undoDefer, addAdjustment, voidInvoice,
   getStudentLedger, getDepositHeld,
   getStudentMonthTests, getStudentMonthAttendance,
@@ -1012,8 +1013,11 @@ function FeesTab({
   const balance = useQuery({ queryKey: ['balance', studentId], queryFn: () => getStudentBalance(studentId) })
   const invoices = useQuery({ queryKey: ['invoices', studentId], queryFn: () => getStudentInvoices(studentId) })
   const payments = useQuery({ queryKey: ['payments', studentId], queryFn: () => getStudentPayments(studentId) })
-  const monthlyFee = useQuery({ queryKey: ['monthlyFee', enrollment.enrollment_id], queryFn: () => getStudentMonthlyFee(enrollment.enrollment_id) })
-  const discounts = useQuery({ queryKey: ['enrollmentDiscounts', enrollment.enrollment_id], queryFn: () => getEnrollmentDiscounts(enrollment.enrollment_id) })
+  // Keyed on the CHILD, not on this year's enrolment. 0138 stopped a concession
+  // dying at rollover, so reading it by enrolment would show an empty list every
+  // April for a family whose waiver is still in force.
+  const monthlyFee = useQuery({ queryKey: ['monthlyFee', studentId], queryFn: () => getStudentMonthlyFee(studentId) })
+  const discounts = useQuery({ queryKey: ['studentDiscounts', studentId], queryFn: () => getStudentDiscounts(studentId) })
   // The statement behind the balance. Fetched with the tab rather than on
   // demand: it is the answer to the question the tab is opened to ask, and a
   // clerk with a parent at the counter should not have to press anything to
@@ -1057,7 +1061,9 @@ function FeesTab({
 
   const net = monthlyFee.data?.net ?? 0
   const grossFee = monthlyFee.data?.gross ?? 0
-  const approvedDiscounts = (discounts.data ?? []).filter((d) => d.status === 'approved')
+  // Live, not merely approved: a waiver that ended in March is approved and is
+  // not coming off this month's fee.
+  const approvedDiscounts = (discounts.data ?? []).filter((d: StudentDiscount) => d.live)
   const isFree = net === 0 && grossFee > 0 && approvedDiscounts.length > 0
 
   // Build the month rows from session start → current month.
@@ -1150,7 +1156,7 @@ function FeesTab({
           <p className="mt-2 text-sm text-slate-400">No discount. The full monthly fee applies.</p>
         ) : (
           <ul className="mt-2 space-y-1 text-sm">
-            {discounts.data?.map((d) => (
+            {discounts.data?.map((d: StudentDiscount) => (
               <li key={d.id} className="flex items-center justify-between gap-2">
                 <span className="text-slate-700">
                   {DISCOUNT_TYPES.find((t) => t.value === d.type)?.label ?? d.type} · {d.is_percent ? `${d.amount}%` : fmtPKR(d.amount)}

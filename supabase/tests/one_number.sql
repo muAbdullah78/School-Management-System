@@ -104,7 +104,10 @@ begin
   select e.id into v_enr from public.enrollments e
     join public.students s on s.id = e.student_id
    where s.full_name = 'Awkward Ali' and s.school_id = v_school;
-  v_disc := public.fn_add_discount(v_enr, 'sibling', 500, false, 'brother in Class 3');
+  -- 0138: a discount is granted to the CHILD, with the month it starts in.
+  v_disc := public.fn_add_discount(
+    (select student_id from public.enrollments where id = v_enr),
+    'sibling', 500, false, 'brother in Class 3', date '2025-09-01', null);
   perform public.fn_set_discount_status(v_disc, 'approved');
 
   perform public.fn_generate_class_invoices(v_sess, v_class, date '2025-09-01', date '2025-09-10');

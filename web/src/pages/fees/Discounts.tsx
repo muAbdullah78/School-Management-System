@@ -32,7 +32,7 @@ export function Discounts() {
   const register = useQuery({ queryKey: ['discounts'], queryFn: listDiscounts })
 
   const add = useMutation({
-    mutationFn: () => addDiscount(enrollment.data!.enrollment_id, type, Number(amount), isPercent, reason.trim()),
+    mutationFn: () => addDiscount(student!.id, type, Number(amount), isPercent, reason.trim()),
     onSuccess: () => { setAmount(''); setReason(''); qc.invalidateQueries({ queryKey: ['discounts'] }) },
   })
   const setStatus = useMutation({

@@ -89,6 +89,10 @@ create or replace function pg_temp.enr() returns uuid language sql as $$
     join public.schools s on s.id = e.school_id
    where s.name = 'Fee School';
 $$;
+-- 0138 moved the fee question from the enrolment to the CHILD, because a
+-- discount now outlives the year. The suite follows.
+create or replace function pg_temp.stu() returns uuid language sql stable as
+  $$ select student_id from public.enrollments where id = pg_temp.enr() $$;
 
 -- --- Fixture -----------------------------------------------------------------
 do $seed$
@@ -221,7 +225,7 @@ select pg_temp.ok(
 
 -- The three billing paths, on a month BEFORE the rise.
 select pg_temp.ok(
-  (public.fn_student_monthly_fee(pg_temp.enr())->>'gross')::numeric = 1600,
+  (public.fn_student_fee_for_month(pg_temp.stu(), public.fn__karachi_month())->>'gross')::numeric = 1600,
   '14. the monthly fee is 1600, not 3600. Summing every price on record is what '
   || 'it did before, and that figure is what a clerk quotes a parent');
 

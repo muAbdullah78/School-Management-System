@@ -1520,6 +1520,32 @@ jobs:
         # authenticated and service_role.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/removed_features.sql
 
+      - name: A month is billed whether or not anybody remembers
+        # The root fault of the fee module: a fee did not exist until somebody
+        # pressed Generate Challans, one class at a time, and nothing recorded
+        # which classes had been done. A class nobody billed had no UNPAID fees,
+        # it had none, so every total agreed the month had gone well.
+        #
+        # Assertions 4 and 9 both failed when first written: a class with no fee
+        # structure was billed silently at zero, and a child admitted this month
+        # was charged for the whole summer as well.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/billing_month.sql
+
+      - name: A discount belongs to the child, not to one year's enrolment
+        # Assertion 1 is the file: discounts hung off enrollment_id and
+        # fn_rollover inserts into exactly one table, enrollments. Every
+        # concession in the school stopped existing on the first day of a new
+        # session, in silence. Assertion 6 is the limit on the fix: a month
+        # already paid against is never repriced, because that is a refund.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/discount_belongs_to_the_child.sql
+
+      - name: The month, the roll, who has paid, and the clock
+        # Assertion 5 cannot be argued with: a fee taken at 02:00 in Karachi was
+        # counted on the previous day, on the counter screen and the dashboard,
+        # every morning, for five hours, because today was measured in the
+        # server's timezone and Supabase runs UTC.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/the_month_and_the_arrears.sql
+
       - name: Remarks and position holders — do ties and remarks survive?
         # Assertion 12 is why exam_remarks is its own table rather than a column
         # on result_cards: fn_generate_result_cards INSERTS a new version rather

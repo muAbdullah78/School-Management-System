@@ -116,9 +116,15 @@ begin
 
   -- An approved discount, so the discount report has an approver to show.
   select id into v_enr from public.enrollments where student_id = v_stu2 limit 1;
-  insert into public.discounts (enrollment_id, type, amount, is_percent, reason,
-                                status, created_by, approved_by, approved_at, school_id)
-  values (v_enr, 'sibling', 10, true, 'Second child', 'approved', v_oa, v_oa, now(), v_a);
+  -- 0138: student_id is what a discount hangs off now, and starts_on is the
+  -- first month it applies to. enrollment_id is kept as a record of where it
+  -- was first granted.
+  insert into public.discounts (student_id, enrollment_id, type, amount, is_percent, reason,
+                                status, created_by, approved_by, approved_at, school_id,
+                                starts_on)
+  values ((select student_id from public.enrollments where id = v_enr),
+          v_enr, 'sibling', 10, true, 'Second child', 'approved', v_oa, v_oa, now(), v_a,
+          date_trunc('month', current_date)::date);
 
   -- School B, deliberately larger.
   perform set_config('test.uid', v_ob::text, false);
