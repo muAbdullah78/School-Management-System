@@ -204,8 +204,15 @@ need the powerful key you were told never to expose:
 | Function | What it does |
 |---|---|
 | `signup-school` | creates a school and its owner when somebody signs up on your website |
-| `create-teacher` | creates a staff login from inside a school |
+| `create-teacher` | creates a staff login, a parent login, or a whole batch of parent logins, from inside a school |
 | `create-school-owner` | creates the owner login for a school **you** added yourself from the operator console |
+
+> **Redeploy `create-teacher` if yours is older than version 5.** The rapid-entry
+> screens (Students, Add students) give every family a parent portal login
+> automatically, and that needs the `create_batch` action added in version 5.
+> Without it the children are still entered and nothing is lost: the screen says
+> the logins could not be made and you create them by hand from a child's page.
+> Everything else in this function works the same as it always did.
 
 ### The easy way — paste them into the dashboard
 

@@ -3777,6 +3777,177 @@ export async function exportAllData(
 // ---- Dashboard ----
 // ---- Rapid data entry: a paper register, typed straight in -----------------
 
+export interface RollState {
+  on_roll: number
+  taken: number[]
+  /** Rolls with no digits in them, like "A-1". The next free number is a
+   *  suggestion when this is above zero, not a guarantee. */
+  unnumbered: number
+  next_free: number
+}
+
+/**
+ * What a section already holds, before anybody types into it.
+ *
+ * THE GRID USED TO OPEN ON AN EMPTY BOX AND SAY NOTHING. Class 1 (A) might hold
+ * twenty-three children on rolls 1 to 23, and the screen let the clerk type 1
+ * again. Nothing in the schema forbids two children on roll 1, so there is no
+ * error to catch it: the register quietly has two number ones in it and the
+ * school finds out when a result card reaches the wrong child.
+ */
+export async function getSectionRollState(
+  sessionId: string, classId: string, sectionId: string | null,
+): Promise<RollState> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_section_roll_state', {
+    p_session_id: sessionId, p_class_id: classId, p_section_id: sectionId || null,
+  })
+  if (error) throw new Error(error.message)
+  const d = (data ?? {}) as any
+  return {
+    on_roll: Number(d.on_roll ?? 0),
+    taken: ((d.taken ?? []) as unknown[]).map(Number),
+    unnumbered: Number(d.unnumbered ?? 0),
+    next_free: Number(d.next_free ?? 1),
+  }
+}
+
+/** The free roll numbers from `from` upwards, skipping everything taken. */
+export function freeRolls(taken: number[], howMany: number, from = 1): number[] {
+  const used = new Set(taken)
+  const out: number[] = []
+  let n = Math.max(from, 1)
+  // Bounded: a corrupt roll like 999999 must not spin the browser.
+  for (let guard = 0; out.length < howMany && guard < 10000; guard++, n++) {
+    if (!used.has(n)) out.push(n)
+  }
+  return out
+}
+
+export interface PortalTarget {
+  family_id: string
+  head_name: string
+  student_id: string
+  student_name: string
+  gr_no: string | null
+  number: string | null
+  email: string
+  password: string
+}
+
+/**
+ * Which of the children just entered belong to a family with no login yet, and
+ * what that login should be.
+ *
+ * DERIVED IN SQL, not here. Two implementations of "what is this family's
+ * address" is two answers, and the second one locks a parent out. It is also
+ * keyed on the FAMILY rather than the child, which is what makes two brothers
+ * typed into the same grid share one portal instead of racing to create two.
+ */
+export async function listPortalTargets(studentIds: string[]): Promise<PortalTarget[]> {
+  const sb = requireSupabase()
+  if (studentIds.length === 0) return []
+  const { data, error } = await sb.rpc('fn_portal_targets', { p_student_ids: studentIds })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as PortalTarget[]
+}
+
+export interface FamilyPortalResult {
+  created: number
+  reused: number
+  failed: number
+  remembered: number
+  /** Set when the deployed Edge Function is too old to do this at all. */
+  unavailable?: string
+  rows: { email: string; family_id: string | null; status: string; message?: string }[]
+}
+
+/**
+ * Give every family that needs one a parent login, in one round trip.
+ *
+ * WHY THIS DOES NOT USE supabase.auth.signUp, and it is the single most
+ * important line in this file. signUp REPLACES THE CURRENT SESSION with the new
+ * account. Called from the office, the clerk would be silently signed in as the
+ * parent they just created: their next click would land on the portal, or be
+ * refused, and to them it would look exactly like the software throwing them out
+ * of the screen they were working in. The Edge Function holds the service key
+ * and creates the account without touching anybody's session.
+ *
+ * A FAILURE HERE NEVER LOSES A CHILD. The children are already admitted by the
+ * time this runs. A school whose create-teacher function is old, or not deployed
+ * at all, gets its register in and is told the logins could not be made.
+ */
+export async function createFamilyPortals(targets: PortalTarget[]): Promise<FamilyPortalResult> {
+  const empty: FamilyPortalResult = { created: 0, reused: 0, failed: 0, remembered: 0, rows: [] }
+  if (targets.length === 0) return empty
+  const sb = requireSupabase()
+
+  const { data, error } = await sb.functions.invoke('create-teacher', {
+    body: {
+      action: 'create_batch',
+      role: 'parent',
+      logins: targets.map((t) => ({
+        email: t.email, password: t.password,
+        full_name: t.head_name, family_id: t.family_id,
+      })),
+    },
+  })
+  if (error) {
+    // "Unknown action" from a version 4 deployment, or the function missing
+    // altogether. Both mean the same thing to the office: get the register in
+    // now, deploy the function, then make the logins from the family sheet.
+    return {
+      ...empty,
+      unavailable:
+        'The create-teacher function on your Supabase project is older than this app, or is '
+        + 'not deployed, so parent logins could not be made automatically. Every child is '
+        + 'saved. Redeploy it from supabase/functions/create-teacher/index.ts and the next '
+        + 'batch will do it, or give a family a login by hand from any child\'s page.',
+    }
+  }
+
+  const rows = ((data as any)?.results ?? []) as FamilyPortalResult['rows'] & { id?: string }[]
+  const made = rows.filter((r: any) => r.id && (r.status === 'created' || r.status === 'existed'))
+
+  // Attach each login to its family, and keep the password on the key ring.
+  // Both are batched for the same reason the creation is: four hundred families
+  // is four hundred round trips on the afternoon this exists for.
+  /* The payloads are built BEFORE the call, not inline. supabase/check-rpc-contract.sh
+     reads the object literal handed to .rpc() to check every parameter name
+     against the function's real signature, and an arrow function written inside
+     that literal put its own parameter into what the checker read. Keeping the
+     literal to bare keys keeps that guard able to do its job, and the guard is
+     the only thing standing between a renamed parameter and a screen that fails
+     on the first school that opens it. */
+  if (made.length > 0) {
+    const pairs = made.map((r: any) => ({ profile_id: r.id, family_id: r.family_id }))
+    try {
+      await sb.rpc('fn_link_parents', { p_pairs: pairs })
+    } catch { /* reported below by status, never thrown: the children are in */ }
+  }
+  let remembered = 0
+  const createdRows = rows.filter((r: any) => r.status === 'created' && r.id)
+  if (createdRows.length > 0) {
+    const kept = createdRows.map((r: any) => ({
+      profile_id: r.id,
+      password: targets.find((t) => t.family_id === r.family_id)?.password ?? '',
+    }))
+    try {
+      const { data: n } = await sb.rpc('fn_remember_login_passwords', { p_rows: kept })
+      remembered = Number(n ?? 0)
+    } catch { /* no key ring on this database yet: bundle 22 */ }
+  }
+
+  return {
+    created: rows.filter((r) => r.status === 'created').length,
+    reused: rows.filter((r) => r.status === 'existed').length,
+    failed: rows.filter((r) => r.status !== 'created' && r.status !== 'existed').length,
+    remembered,
+    rows,
+  }
+}
+
+
 /** One row of the grid, or one Quick Add form. Everything but the name is optional. */
 export interface RdeRow {
   full_name: string

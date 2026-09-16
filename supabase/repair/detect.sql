@@ -235,6 +235,14 @@ with sig(migration, object, present) as (values
               -- read a customer's stored credentials.
                                   'fn_login_email_available',
                                   'fn_school_key_ring',
+                                  -- fn_portal_targets (0143): the address AND
+                                  -- PASSWORD the rapid-entry screens are about to
+                                  -- give each family. Exactly fn_school_key_ring's
+                                  -- case: may_view is true for an observer and
+                                  -- during a vendor support visit, so gating this
+                                  -- on it would hand both of them a customer's
+                                  -- parent credentials before they are even made.
+                                  'fn_portal_targets',
                                   'fn_school_logins',
                                   'fn_student_delete_blockers',
                                   'fn_staff_delete_blockers',
@@ -1239,7 +1247,16 @@ with sig(migration, object, present) as (values
          and to_regprocedure('public.fn__gr_high_water(text)') is not null
          and exists (select 1 from information_schema.columns
                       where table_schema = 'public' and table_name = 'students'
-                        and column_name = 'is_draft')))
+                        and column_name = 'is_draft'))),
+  -- 0143's signature is the three functions the entry screens now depend on. A
+  -- database with fn_rde_add_students and not these has a grid that opens blind
+  -- on the roll numbers and no automatic parent logins, which is 0142 as it
+  -- shipped rather than a broken state, so this is MISSING rather than an error.
+  ('0143_a_roll_number_you_can_see_and_a_portal_that_makes_itself',
+     'fn_section_roll_state, fn_portal_targets, fn_link_parents',
+     (select to_regprocedure('public.fn_section_roll_state(uuid,uuid,uuid)') is not null
+         and to_regprocedure('public.fn_portal_targets(uuid[])') is not null
+         and to_regprocedure('public.fn_link_parents(jsonb)') is not null))
 )
 select migration,
        object                                   as looked_for,

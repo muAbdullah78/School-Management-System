@@ -1566,6 +1566,11 @@ jobs:
         # held them out of the challan run would leave the school short at the
         # end of the month with nothing saying why.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/rapid_data_entry.sql
+        # Assertions 21-26 walk a name-and-roll-only child through the section
+        # roster, the student list, the month's fee list, a marksheet and the
+        # attendance day: is_draft is a reminder and must gate none of them.
+        # Assertion 32 is the sibling question: one parent login per FAMILY, so
+        # two brothers in the same grid cannot race to create two.
 
       - name: Remarks and position holders — do ties and remarks survive?
         # Assertion 12 is why exam_remarks is its own table rather than a column

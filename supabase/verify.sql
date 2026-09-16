@@ -54,7 +54,13 @@ begin
   execute p_sql into v_out;
   return v_out;
 exception
-  when undefined_table then return null;
+  -- undefined_FUNCTION as well as undefined_table, and 0143 is why. A row that
+  -- asked fn__portal_email what it makes of a name and a number aborted the
+  -- WHOLE REPORT on every database that had not reached bundle 44 yet: this file
+  -- is one statement, so one raise prints no rows at all, which reads exactly
+  -- like a clean report. Caught here so a row may ask a function what it DOES
+  -- rather than only whether its text mentions something.
+  when undefined_table or undefined_function then return null;
 end
 $ask$;
 
@@ -491,6 +497,14 @@ select 'the observer role (0059)',
                                            -- literal kind.
                                            'fn_login_email_available',
                                            'fn_school_key_ring',
+                                           -- fn_portal_targets (0143): the address AND
+                                           -- PASSWORD the rapid-entry screens are about to
+                                           -- give each family. Exactly fn_school_key_ring's
+                                           -- case: may_view is true for an observer and
+                                           -- during a vendor support visit, so gating this
+                                           -- on it would hand both of them a customer's
+                                           -- parent credentials before they are even made.
+                                           'fn_portal_targets',
                                            'fn_school_logins',
                                            'fn_student_delete_blockers',
                                            'fn_staff_delete_blockers',
@@ -3166,17 +3180,64 @@ select 'a class can be typed straight in (0142)',
          -- examined. Comments stripped first: the functions that mention the
          -- column explain exactly this, and a probe that read those comments
          -- would report the design as the fault.
+         -- THE NAMES WERE WRONG WHEN THIS WAS FIRST WRITTEN. It listed
+         -- `fn_get_roster`, which does not exist in this schema, so that slot
+         -- checked nothing and read exactly like a slot that passes. 0143
+         -- corrected it to the functions that are really there: the two
+         -- rosters, the attendance day and its write, both marksheets, the
+         -- result cards and the student list.
          when exists (select 1 from pg_proc p
                         join pg_namespace n on n.oid = p.pronamespace
                        where n.nspname = 'public'
                          and p.proname in ('fn_bill_month', 'fn_ensure_billing_current',
                                            'fn_bill_student_month', 'fn_generate_class_invoices',
-                                           'fn_student_list', 'fn_get_roster', 'fn_fees_month')
+                                           'fn_fees_month', 'fn_fees_month_pupils',
+                                           'fn_student_list', 'fn_section_roster',
+                                           'fn_subject_roster', 'fn_attendance_day',
+                                           'fn_mark_attendance', 'fn_assessment_marksheet',
+                                           'fn_exam_marksheet', 'fn_generate_result_cards')
                          and regexp_replace(p.prosrc, '--[^' || chr(10) || ']*', '', 'g')
                              like '%is_draft%')
-           then 'FAIL: a draft record is being held out of billing, attendance or '
-                || 'the roster. It must be a reminder and nothing else, or the '
-                || 'school is short at the end of the month and nothing says why'
+           then 'FAIL: a draft record is being held out of billing, attendance, the '
+                || 'roster or the exam hall. It must be a reminder and nothing else, '
+                || 'or the school is short at the end of the month and nothing says why'
+         else 'PASS'
+       end
+
+union all
+-- 0143. A roll number you can see, and a portal that makes itself.
+select 'a class list knows what it already holds (0143)',
+       case
+         when to_regprocedure('public.fn_rde_add_students(jsonb)') is null
+           then 'note: bundle 43 has not been applied yet, so 0143 is not due'
+         when to_regprocedure('public.fn_section_roll_state(uuid,uuid,uuid)') is null
+           then 'FAIL: the entry grid opens on an empty Roll column against a class '
+                || 'that may already hold thirty children, and nothing in this schema '
+                || 'forbids two of them on roll 1; apply supabase/bundles/'
+                || '44_a_roll_number_you_can_see.sql'
+         when to_regprocedure('public.fn_portal_targets(uuid[])') is null
+           or to_regprocedure('public.fn_link_parents(jsonb)') is null
+           then 'FAIL: every parent login still has to be made by hand, one press per '
+                || 'family, which does not survive a school with four hundred children; '
+                || 'apply supabase/bundles/44_a_roll_number_you_can_see.sql'
+         -- The address must carry BOTH a name and a number. Without the number
+         -- two families called Hamza collide, and hamza@gmail.com is certainly
+         -- taken somewhere on the platform already.
+         -- THROUGH pg_temp.ask, NEVER CALLED DIRECTLY. This file is ONE
+         -- statement, so Postgres resolves every function in it at parse time
+         -- and a direct call to something a database has not got yet aborts the
+         -- whole report: no rows at all, which reads exactly like a clean one.
+         -- Preflight caught this on bundles 13 and 16.
+         when pg_temp.ask($q$select case when public.fn__portal_email('Hamza Khan', null)
+                                              is null then 'ok' else 'bad' end$q$) = 'bad'
+           then 'FAIL: a family with no phone number is being handed an address built '
+                || 'from their name alone, which collides with every other family of '
+                || 'that name; apply supabase/bundles/44_a_roll_number_you_can_see.sql'
+         when pg_temp.ask($q$select public.fn__portal_email('Muhammad Ali', '0333 123 4567')$q$)
+              is distinct from 'muhammad03331234567@gmail.com'
+           then 'FAIL: the parent portal address is not being sanitised, so the auth '
+                || 'service will refuse it AFTER the child has been admitted; apply '
+                || 'supabase/bundles/44_a_roll_number_you_can_see.sql'
          else 'PASS'
        end
 

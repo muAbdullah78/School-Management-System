@@ -232,6 +232,14 @@ def main() -> int:
                                  -- credentials.
                                  'fn_login_email_available',
                                  'fn_school_key_ring',
+                                 -- fn_portal_targets (0143): the address AND
+                                 -- PASSWORD the rapid-entry screens are about to
+                                 -- give each family. Exactly fn_school_key_ring's
+                                 -- case: may_view is true for an observer and
+                                 -- during a vendor support visit, so gating this
+                                 -- on it would hand both of them a customer's
+                                 -- parent credentials before they are even made.
+                                 'fn_portal_targets',
                                  'fn_school_logins',
                                  'fn_student_delete_blockers',
                                  'fn_staff_delete_blockers',

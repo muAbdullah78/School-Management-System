@@ -25,7 +25,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  searchStudents, rdeAddStudents,
+  searchStudents, rdeAddStudents, getSectionRollState, freeRolls,
+  listPortalTargets, createFamilyPortals,
   type RdeRow, type RdeResultRow, type StudentRow,
 } from '@/lib/db'
 import { DISCOUNT_TYPES } from '@/lib/constants'
@@ -77,12 +78,36 @@ export function QuickAdd({
   // What was added in this sitting, so the clerk can see progress without
   // leaving for the roster.
   const [added, setAdded] = useState<RdeResultRow[]>([])
+  const [portal, setPortal] = useState<{ created: number; reused: number; failed: number; note?: string } | null>(null)
+
+  /* WHAT THIS SECTION ALREADY HOLDS. The screen used to open on an empty Roll
+     box with the words "next in the class" greyed inside it, which is a promise
+     rather than a number: nothing in the schema forbids two children on roll 1,
+     so typing 1 into a class that already has one produces no error and two
+     number ones in the register. */
+  const roll = useQuery({
+    queryKey: ['rollState', sessionId, classId, sectionId],
+    queryFn: () => getSectionRollState(sessionId, classId, sectionId || null),
+    enabled: !!sessionId && !!classId,
+  })
+  const suggestedRoll = useMemo(
+    () => String(freeRolls(roll.data?.taken ?? [], 1)[0] ?? 1),
+    [roll.data],
+  )
 
   useEffect(() => { nameRef.current?.focus() }, [])
 
   const missing = missingFields({
     father_name: f.father_name, gender: f.gender, dob: f.dob, whatsapp: f.whatsapp,
   })
+
+  /* Keep the Roll box on the next free number while the clerk has not typed
+     their own. Runs when the section's roll state arrives and after every save,
+     never while they are mid-edit. */
+  const [rollTouched, setRollTouched] = useState(false)
+  useEffect(() => {
+    if (!rollTouched) setF((cur) => (cur.roll_no === suggestedRoll ? cur : { ...cur, roll_no: suggestedRoll }))
+  }, [suggestedRoll, rollTouched])
 
   const save = useMutation({
     mutationFn: () => {
@@ -110,23 +135,60 @@ export function QuickAdd({
       }
       return rdeAddStudents({ sessionId, classId, sectionId: sectionId || null, rows: [row] })
     },
-    onSuccess: (r) => {
+    onSuccess: async (r) => {
       const hit = r.results[0]
       if (hit) setAdded((a) => [hit, ...a].slice(0, 30))
+
       if (hit?.status !== 'error') {
-        // Kept on purpose: the class, the section, the sibling and the money
-        // toggles. A clerk entering three brothers should not re-tick anything,
-        // and the next child in the register is in the same class as this one.
-        setF(BLANK)
+        /* NOTHING HERE NAVIGATES, and that is the fix the office asked for.
+           This screen is reached by ?add=quick on the roster, so anything that
+           dropped the query string, including a native form submit, would land
+           them back on the list and read as being thrown out of the screen. The
+           form clears in place, the roll advances past the child just saved, and
+           the cursor goes back to the name box ready for the next one.
+
+           KEPT ON PURPOSE: the class, the section, the sibling and the fee
+           settings. A clerk entering three brothers should not re-tick anything,
+           and the next child in the register is in the same class as this one. */
+        setF({ ...BLANK, roll_no: hit?.roll_no
+          ? String((Number(hit.roll_no) || 0) + 1)
+          : suggestedRoll })
+        setRollTouched(false)
         setPaidThisMonth(false)
         setArrears({})
         nameRef.current?.focus()
+        nameRef.current?.select()
       }
+
+      // THE PARENT PORTAL, WITHOUT ANYBODY PRESSING ANYTHING. Never allowed to
+      // throw: the child is already admitted and a login that could not be made
+      // is a sentence on the screen, not a lost record.
+      const ids = r.results.filter((x) => x.student_id).map((x) => x.student_id as string)
+      if (ids.length > 0) {
+        try {
+          const targets = await listPortalTargets(ids)
+          if (targets.length > 0) {
+            const made = await createFamilyPortals(targets)
+            setPortal({
+              created: made.created, reused: made.reused, failed: made.failed,
+              note: made.unavailable,
+            })
+          }
+        } catch (e) {
+          setPortal({ created: 0, reused: 0, failed: 1, note: (e as Error).message })
+        }
+      }
+
       qc.invalidateQueries({ queryKey: ['studentPage'] })
       qc.invalidateQueries({ queryKey: ['draftStudents'] })
       qc.invalidateQueries({ queryKey: ['dashboardSummary'] })
+      qc.invalidateQueries({ queryKey: ['rollState'] })
+      qc.invalidateQueries({ queryKey: ['keyRing'] })
     },
   })
+
+  /** The one way in. See the note on the form below. */
+  function submit() { if (ready) save.mutate() }
 
   const ready = f.full_name.trim().length > 0 && !save.isPending
   const lastError = save.data?.results?.[0]?.status === 'error'
@@ -136,10 +198,37 @@ export function QuickAdd({
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <div className="space-y-4 lg:col-span-2">
+        {/* WHAT IS ALREADY IN THERE, before anybody types. A clerk who cannot
+            see that Class 1 (A) holds twenty-three children on rolls 1 to 23
+            has no way of knowing that the 1 they are about to type is taken. */}
+        {roll.data && (
+          <p className="rounded-lg bg-slate-100 px-3 py-2 text-xs text-slate-600">
+            This section already has{' '}
+            <span className="font-semibold text-slate-800">{roll.data.on_roll}</span>{' '}
+            {roll.data.on_roll === 1 ? 'child' : 'children'}
+            {roll.data.taken.length > 0
+              ? `, on rolls ${roll.data.taken[0]} to ${roll.data.taken[roll.data.taken.length - 1]}`
+              : ''}
+            . The next free roll is <span className="font-semibold text-slate-800">{suggestedRoll}</span>.
+            {roll.data.unnumbered > 0 && (
+              <span className="text-amber-700">
+                {' '}({roll.data.unnumbered} of them {roll.data.unnumbered === 1 ? 'has a roll' : 'have rolls'}{' '}
+                with no number in it, so check that one by hand.)
+              </span>
+            )}
+          </p>
+        )}
         <Card>
           <CardTitle icon={<IconStudents />}>The child</CardTitle>
+          {/* NO NATIVE SUBMIT CAN ESCAPE THIS FORM, and that is not belt and
+              braces. A GET form with no action navigates to the current path
+              with the field values as the query string, which would drop
+              ?add=quick and land the clerk back on the roster looking like the
+              software threw them out of the screen. preventDefault stops it,
+              stopPropagation stops a parent form ever seeing it, and the button
+              below is type="button" so the only way in is the handler. */}
           <form
-            onSubmit={(e) => { e.preventDefault(); if (ready) save.mutate() }}
+            onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); if (ready) submit() }}
             className="grid grid-cols-1 gap-3 sm:grid-cols-2"
           >
             <label className="block sm:col-span-2">
@@ -154,11 +243,13 @@ export function QuickAdd({
 
             <label className="block">
               <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Roll no</span>
+              {/* A REAL NUMBER, NOT A PROMISE. Filled with the next free roll in
+                  this section and editable: the clerk reading off a register
+                  where the rolls are already written types over it. */}
               <input
                 value={f.roll_no} inputMode="numeric"
-                onChange={(e) => setF({ ...f, roll_no: e.target.value })}
-                placeholder="next in the class"
-                className={`${FIELD} mt-1`}
+                onChange={(e) => { setRollTouched(true); setF({ ...f, roll_no: e.target.value }) }}
+                className={`${FIELD} mt-1 tabular-nums`}
               />
             </label>
             <label className="block">
@@ -166,7 +257,7 @@ export function QuickAdd({
               <input
                 value={f.gr_no}
                 onChange={(e) => setF({ ...f, gr_no: e.target.value })}
-                placeholder="allotted if left blank"
+                placeholder="allotted for you"
                 className={`${FIELD} mt-1`}
               />
             </label>
@@ -245,7 +336,7 @@ export function QuickAdd({
             )}
 
             <div className="sm:col-span-2 flex flex-wrap items-center gap-3">
-              <Button type="submit" disabled={!ready} icon={<IconCheck />}>
+              <Button type="button" onClick={submit} disabled={!ready} icon={<IconCheck />}>
                 {save.isPending ? 'Saving…' : 'Save and add the next'}
               </Button>
               <span className="text-xs text-slate-400">
@@ -253,52 +344,6 @@ export function QuickAdd({
               </span>
             </div>
           </form>
-        </Card>
-
-        {/* ------------------------------------------------------ the family -- */}
-        <Card>
-          <CardTitle icon={<IconFamily />}>Brother or sister already here?</CardTitle>
-          {sibling ? (
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-money-50 px-3 py-2">
-              <span className="text-sm text-money-900">
-                Joins <span className="font-medium">{sibling.full_name}</span>
-                {sibling.gr_no ? ` (GR ${sibling.gr_no})` : ''}&rsquo;s family. From the next
-                challan the house gets <span className="font-medium">one bill</span> for both.
-              </span>
-              <button onClick={() => { setSibling(null); setSibTerm('') }}
-                className="text-xs text-slate-500 underline">Remove</button>
-            </div>
-          ) : (
-            <>
-              <input
-                value={sibTerm} onChange={(e) => setSibTerm(e.target.value)}
-                placeholder="Search the brother or sister by name or GR number"
-                className={FIELD}
-              />
-              {sibTerm.trim().length >= 2 && (
-                <ul className="mt-2 max-h-40 divide-y divide-slate-100 overflow-y-auto rounded border border-slate-200">
-                  {sibHits.data?.length === 0 && (
-                    <li className="px-3 py-2 text-sm text-slate-500">No student matches.</li>
-                  )}
-                  {sibHits.data?.map((s) => (
-                    <li key={s.id}>
-                      <button onClick={() => setSibling(s)}
-                        className="block w-full px-3 py-2 text-left text-sm hover:bg-brand-50/60">
-                        <span className="font-medium text-slate-800">{s.full_name}</span>
-                        <span className="text-slate-400">
-                          {s.gr_no ? ` · ${s.gr_no}` : ''}{s.father_name ? ` · ${s.father_name}` : ''}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <p className="mt-2 text-xs text-slate-400">
-                Or just type the father&rsquo;s CNIC above: children with the same CNIC are put in
-                one family by themselves.
-              </p>
-            </>
-          )}
         </Card>
 
         {/* ------------------------------------------------------- the money -- */}
@@ -375,11 +420,79 @@ export function QuickAdd({
             )}
           </div>
         </Card>
+        {/* ------------------------------------------------------ the family -- */}
+        <Card>
+          <CardTitle icon={<IconFamily />}>Brother or sister already here?</CardTitle>
+          {sibling ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-money-50 px-3 py-2">
+              <span className="text-sm text-money-900">
+                Joins <span className="font-medium">{sibling.full_name}</span>
+                {sibling.gr_no ? ` (GR ${sibling.gr_no})` : ''}&rsquo;s family. From the next
+                challan the house gets <span className="font-medium">one bill</span> for both.
+              </span>
+              <button onClick={() => { setSibling(null); setSibTerm('') }}
+                className="text-xs text-slate-500 underline">Remove</button>
+            </div>
+          ) : (
+            <>
+              <input
+                value={sibTerm} onChange={(e) => setSibTerm(e.target.value)}
+                placeholder="Search the brother or sister by name or GR number"
+                className={FIELD}
+              />
+              {sibTerm.trim().length >= 2 && (
+                <ul className="mt-2 max-h-40 divide-y divide-slate-100 overflow-y-auto rounded border border-slate-200">
+                  {sibHits.data?.length === 0 && (
+                    <li className="px-3 py-2 text-sm text-slate-500">No student matches.</li>
+                  )}
+                  {sibHits.data?.map((s) => (
+                    <li key={s.id}>
+                      <button onClick={() => setSibling(s)}
+                        className="block w-full px-3 py-2 text-left text-sm hover:bg-brand-50/60">
+                        <span className="font-medium text-slate-800">{s.full_name}</span>
+                        <span className="text-slate-400">
+                          {s.gr_no ? ` · ${s.gr_no}` : ''}{s.father_name ? ` · ${s.father_name}` : ''}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="mt-2 text-xs text-slate-400">
+                Or just type the father&rsquo;s CNIC above: children with the same CNIC are put in
+                one family by themselves.
+              </p>
+            </>
+          )}
+        </Card>
+
       </div>
 
       {/* ---------------------------------------------- what is going in ------ */}
       <Card className="h-fit">
         <CardTitle icon={<IconCheck />}>Added in this sitting</CardTitle>
+        {/* THE LOGIN, MADE WITHOUT ANYBODY ASKING. Shown here rather than in a
+            dialog because it is a fact about what just happened, not a decision
+            to make: the office reads it while typing the next child. */}
+        {portal && (
+          <div className={`mb-3 rounded-lg px-3 py-2 text-xs ${
+            portal.note ? 'bg-amber-50 text-amber-800' : 'bg-money-50 text-money-800'}`}>
+            {portal.note ? portal.note : (
+              <>
+                {portal.created > 0 && <>Parent portal login created. </>}
+                {portal.reused > 0 && <>Added to the family&rsquo;s existing login. </>}
+                {portal.failed > 0 && <span className="text-danger-700">
+                  {portal.failed} login could not be made: open the child&rsquo;s page to do it by hand.
+                </span>}
+                {portal.created + portal.reused > 0 && (
+                  <span className="text-money-700">
+                    The address and password are on the key ring under Settings, Users.
+                  </span>
+                )}
+              </>
+            )}
+          </div>
+        )}
         {added.length === 0 ? (
           <EmptyState icon={<IconStudents />} title="Nothing yet"
             message="Type a name and press Enter. The list builds here." />
