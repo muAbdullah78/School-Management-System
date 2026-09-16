@@ -1203,7 +1203,29 @@ with sig(migration, object, present) as (values
                           where n.nspname = 'public'
                             and p.proname in ('fn_counter_summary', 'fn_dashboard_summary')
                             and regexp_replace(p.prosrc, '--[^' || chr(10) || ']*', '', 'g')
-                                like '%date_trunc(''day'', now())%')))
+                                like '%date_trunc(''day'', now())%'))),
+  -- 0141's signature is the ABSENCE of a broken expression plus the presence of
+  -- a call, and both have to be read out of prosrc with comments stripped. The
+  -- broken one is 0138's fallback for a child whose enrolment is in no session
+  -- covering the month: it ordered by extract(epoch from (date - date)), which
+  -- is not a function, and PL/pgSQL never parsed it because nothing had reached
+  -- that branch. The repaired function explains the old expression in a comment,
+  -- so a probe that did not strip comments would report the fix as the fault.
+  ('0141_the_counter_could_not_see_the_discount',
+     'the family sheet asks fn_student_fee_for_month, and the dead fallback is gone',
+     (select to_regprocedure('public.fn_family_sheet(uuid)') is null
+         or (exists (select 1 from pg_proc p
+                       join pg_namespace n on n.oid = p.pronamespace
+                      where n.nspname = 'public' and p.proname = 'fn_family_sheet'
+                        and regexp_replace(p.prosrc, '--[^' || chr(10) || ']*', '', 'g')
+                            like '%fn_student_fee_for_month%')
+             and to_regprocedure('public.fn_discounts_register(boolean)') is not null
+             and not exists (select 1 from pg_proc p
+                               join pg_namespace n on n.oid = p.pronamespace
+                              where n.nspname = 'public'
+                                and p.proname = 'fn_student_fee_for_month'
+                                and regexp_replace(p.prosrc, '--[^' || chr(10) || ']*', '', 'g')
+                                    like '%extract(epoch from (s.starts_on%'))))
 )
 select migration,
        object                                   as looked_for,

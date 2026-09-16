@@ -1549,6 +1549,15 @@ jobs:
         # server's timezone and Supabase runs UTC.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/the_month_and_the_arrears.sql
 
+      - name: The counter sees the fee, the class and the concession
+        # Assertion 5 is the prize and it is not about a screen. 0138's
+        # fn_student_fee_for_month fell back to ordering by
+        # extract(epoch from (date - date)) for a child whose enrolment is in no
+        # session covering the month, and date minus date is an INTEGER, so that
+        # branch raised the instant it ran. Nothing ran it, because PL/pgSQL does
+        # not parse a statement until it executes one. It shipped in bundle 41.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/the_counter_sees_the_fee.sql
+
       - name: Remarks and position holders — do ties and remarks survive?
         # Assertion 12 is why exam_remarks is its own table rather than a column
         # on result_cards: fn_generate_result_cards INSERTS a new version rather
