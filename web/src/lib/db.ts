@@ -2975,7 +2975,7 @@ const CLIENT_KNOWN_ROLES = [
 
 /** The version of create-teacher this app needs. Raised whenever the function's
  *  contract changes; checkLoginFunction() below compares against what is live. */
-export const REQUIRED_CREATE_TEACHER_VERSION = 4
+export const REQUIRED_CREATE_TEACHER_VERSION = 5
 
 export interface CreateTeacherInput { email: string; password: string; full_name: string; role?: string }
 export interface CreatedLogin {
@@ -3882,6 +3882,36 @@ export async function createFamilyPortals(targets: PortalTarget[]): Promise<Fami
   if (targets.length === 0) return empty
   const sb = requireSupabase()
 
+  // PROBE FIRST. A stale deployment answers "Unknown action" for the batch,
+  // which used to become a generic banner reading "older than this app". The
+  // school reads that, redeploys, refreshes, and sees the same banner because
+  // the invoke error is a network-shaped thing that carries no version. So the
+  // probe runs FIRST, names the version it found, and refuses batch if it is
+  // older than REQUIRED_CREATE_TEACHER_VERSION with words the office can act on.
+  const live = await checkLoginFunction()
+  if (!live.deployed) {
+    return {
+      ...empty,
+      unavailable:
+        'The create-teacher function is not deployed on your Supabase project, so parent '
+        + 'logins could not be made. Every child is saved. Deploy it from '
+        + 'supabase/functions/create-teacher/index.ts and the next batch will do it, '
+        + 'or give a family a login by hand from any child\'s page.'
+        + (live.reason ? ' (' + live.reason + ')' : ''),
+    }
+  }
+  if (live.version < 5) {
+    return {
+      ...empty,
+      unavailable:
+        'The deployed create-teacher function is version ' + live.version + '; this app needs '
+        + 'version 5 or newer for batch parent logins. Every child is saved. Redeploy it from '
+        + 'supabase/functions/create-teacher/index.ts (Supabase dashboard \u2192 Edge Functions '
+        + '\u2192 create-teacher \u2192 Deploy new version), then hit "Give a login" on the '
+        + 'family sheet to catch up this batch.',
+    }
+  }
+
   const { data, error } = await sb.functions.invoke('create-teacher', {
     body: {
       action: 'create_batch',
@@ -3893,16 +3923,20 @@ export async function createFamilyPortals(targets: PortalTarget[]): Promise<Fami
     },
   })
   if (error) {
-    // "Unknown action" from a version 4 deployment, or the function missing
-    // altogether. Both mean the same thing to the office: get the register in
-    // now, deploy the function, then make the logins from the family sheet.
+    // The function IS new enough (probe above passed), so this is a runtime
+    // failure, not a version drift. Pull the body out so the office sees the
+    // real reason: an env var missing, an auth check refused, something 500ing.
+    let msg = (error as Error).message || 'The create-teacher function returned an error.'
+    try {
+      const body: any = await (error as any).context?.json?.()
+      if (body?.error) msg = String(body.error)
+    } catch { /* nothing to pull */ }
     return {
       ...empty,
       unavailable:
-        'The create-teacher function on your Supabase project is older than this app, or is '
-        + 'not deployed, so parent logins could not be made automatically. Every child is '
-        + 'saved. Redeploy it from supabase/functions/create-teacher/index.ts and the next '
-        + 'batch will do it, or give a family a login by hand from any child\'s page.',
+        'Parent logins could not be made in this batch. Every child is saved. '
+        + 'The create-teacher function said: ' + msg + '. Give a family a login by hand '
+        + 'from any child\'s page while this is looked at.',
     }
   }
 

@@ -1,10 +1,13 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  creditNote, platformInvoice, platformLedger, setInvoiceTax, voidInvoice,
+  creditNote, platformInvoice, platformLedger, schoolDetail,
+  setInvoiceTax, voidInvoice,
   type InvoiceDocument, type LedgerEntry, type PlatformSettings,
+  type SchoolDetail,
   platformSettings,
 } from '@/lib/platform'
+import { fmtDate } from '@/lib/format'
 import { InvoiceDoc } from '@/components/InvoiceDoc'
 import { formatPkr } from '@/lib/licence'
 
@@ -55,6 +58,13 @@ export function LedgerBody({ schoolId }: { schoolId: string }) {
     queryFn: () => platformLedger(schoolId),
   })
   const settings = useQuery({ queryKey: ['platformSettings'], queryFn: platformSettings })
+  // A school's live promo, so the Billing tab does not lie by omission. The
+  // Discounts tab of the console knew a code was on this school; this tab did
+  // not and quietly reported the raw invoice.
+  const detail = useQuery({
+    queryKey: ['schoolDetail', schoolId],
+    queryFn: () => schoolDetail(schoolId),
+  })
   const [printing, setPrinting] = useState<string | null>(null)
   const [acting, setActing] = useState<{ e: LedgerEntry; mode: Mode } | null>(null)
 
@@ -76,6 +86,8 @@ export function LedgerBody({ schoolId }: { schoolId: string }) {
           Fill it in under the Our billing tab before sending anything.
         </p>
       )}
+
+      {detail.data?.discount && <LedgerDiscountBanner d={detail.data.discount} />}
 
       {q.isLoading && <p className="mt-3 text-sm text-slate-500">Loading…</p>}
       {q.error && <p className="mt-3 text-sm text-danger-600">{(q.error as Error).message}</p>}
@@ -409,6 +421,42 @@ function Shell({ title, onClose, children }: {
           <button onClick={onClose} className="text-sm text-slate-500 hover:underline">Close</button>
         </div>
         <div className="mt-2">{children}</div>
+      </div>
+    </div>
+  )
+}
+
+
+/**
+ * The discount tag on the statement.
+ *
+ * The Overview tab has its own copy (fn_platform_school_detail is one call);
+ * this one exists because an operator opening a statement to work out why a
+ * bill looks small has to see the code on that page, not on another tab. The
+ * two are the same shape and same source, so they cannot disagree.
+ */
+function LedgerDiscountBanner({ d }: { d: NonNullable<SchoolDetail['discount']> }) {
+  const pct = d.kind === 'percent'
+  const flat = d.kind === 'flat'
+  const trial = d.kind === 'trial_days'
+  return (
+    <div className="mt-2 rounded-lg bg-money-50 px-3 py-2 text-sm text-money-900 ring-1 ring-money-100">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <span className="font-semibold">
+          Discount attached: {d.code}
+        </span>
+        <span className="text-xs tabular-nums text-money-800">
+          {pct && `${d.value}% off`}
+          {flat && `Rs ${d.value.toLocaleString()} off`}
+          {trial && `${d.value} trial day(s)`}
+          {d.ends_on && ` · until ${fmtDate(d.ends_on)}`}
+        </span>
+      </div>
+      <div className="mt-0.5 text-money-800">{d.summary}</div>
+      <div className="mt-0.5 text-xs text-money-700">
+        Applied {d.times_applied} time(s), saved {' '}
+        <span className="font-medium">Rs {d.total_saved.toLocaleString()}</span>
+        {d.uses_left !== null && ` · ${d.uses_left} use(s) left`}.
       </div>
     </div>
   )

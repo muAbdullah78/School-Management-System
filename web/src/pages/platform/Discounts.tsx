@@ -374,6 +374,89 @@ function DiscountForm({
   const set = <K extends keyof SaveDiscountInput>(k: K, v: SaveDiscountInput[K]) =>
     setF((p) => ({ ...p, [k]: v }))
 
+  // KIND SWITCH SCRUBS THE ROW. Percent ↔ flat ↔ trial_days each need a
+  // fresh value (20 percent is nothing like Rs 20 off), and trial_days demands
+  // duration=once with no plan-list restriction. Kept in one function so the
+  // form cannot leave a row in a shape 0144 will refuse.
+  const setKind = (kind: DiscountKind) => setF((p) => {
+    if (kind === p.kind) return p
+    const value = kind === 'percent' ? 10 : kind === 'flat' ? 500 : 14
+    const duration: DiscountDuration = kind === 'trial_days' ? 'once' : (p.duration ?? 'once')
+    return {
+      ...p, kind, value, duration,
+      durationMonths: null, durationUntil: null,
+      minTermMonths: kind === 'trial_days' ? null : p.minTermMonths,
+    }
+  })
+
+  const setDuration = (duration: DiscountDuration) => setF((p) => ({
+    ...p, duration,
+    durationMonths: duration === 'months' ? (p.durationMonths ?? 12) : null,
+    durationUntil:  duration === 'until'  ? (p.durationUntil ?? null) : null,
+  }))
+
+  // Client-side pre-check. Every message here matches a raise in
+  // fn_platform_save_discount so the operator sees the same words whether or
+  // not the round trip runs. Returns the first failure, or null.
+  function localCheck(): string | null {
+    const code = f.code.trim().toUpperCase()
+    if (!/^[A-Z0-9][A-Z0-9_-]{2,31}$/.test(code)) {
+      return 'A code has to be 3 to 32 characters of letters, digits, hyphen or underscore.'
+    }
+    if (!f.description.trim()) {
+      return 'A code needs a description so we can tell them apart later.'
+    }
+    if (!f.value || f.value <= 0) {
+      return 'Amount has to be more than zero.'
+    }
+    if (f.kind === 'percent' && f.value > 100) {
+      return 'A percentage over 100 is not a discount, it is a payment to the customer.'
+    }
+    if (f.kind === 'percent' && f.value < 1) {
+      return 'A percentage under 1% is unusual. If you meant flat rupees, choose Flat.'
+    }
+    if (f.kind === 'trial_days') {
+      if (!Number.isInteger(f.value) || f.value < 1 || f.value > 365) {
+        return 'Trial days have to be a whole number between 1 and 365.'
+      }
+    }
+    if (f.kind !== 'trial_days') {
+      if (f.duration === 'months' && (!f.durationMonths || f.durationMonths < 1 || f.durationMonths > 120)) {
+        return 'For a months-long discount, choose 1 to 120 months.'
+      }
+      if (f.duration === 'until') {
+        if (!f.durationUntil) return 'A "runs until" discount needs an end date.'
+        if (new Date(f.durationUntil) < new Date(new Date().toDateString())) {
+          return 'The end date is in the past. Pick today or later.'
+        }
+      }
+    }
+    if (f.redeemFrom && f.redeemUntil && f.redeemUntil < f.redeemFrom) {
+      return 'The redemption window ends before it starts. Swap the dates.'
+    }
+    if (f.redeemUntil && new Date(f.redeemUntil) < new Date(new Date().toDateString())) {
+      return 'The redemption window closed already. Nobody could type this code today.'
+    }
+    if (f.maxRedemptions !== null && f.maxRedemptions !== undefined && f.maxRedemptions < 1) {
+      return 'A maximum of zero redemptions is a switched-off code. Leave the box blank for unlimited.'
+    }
+    return null
+  }
+
+  // A worked example. Shows what this code would take off a Rs 4,500 monthly
+  // invoice (the Starter month), so the operator can eyeball the arithmetic
+  // before they hand the code out. FLOORED AT ZERO in the same way fn__discount_off
+  // does it -- a flat Rs 10,000 on a Rs 4,500 invoice is Rs 4,500 off, not Rs 10,000.
+  const sample = 4500
+  const off = f.kind === 'percent'
+    ? Math.min(Math.round(sample * (Number(f.value) || 0) / 100), sample)
+    : f.kind === 'flat'
+      ? Math.min(Number(f.value) || 0, sample)
+      : 0
+  const example = f.kind === 'trial_days'
+    ? `Extends the trial by ${f.value} day(s) once. Nothing comes off an invoice.`
+    : `On a Rs ${sample.toLocaleString()} monthly invoice, that is Rs ${off.toLocaleString()} off (final Rs ${(sample - off).toLocaleString()}).`
+
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center">
       <div className="w-full max-w-lg rounded-lg bg-white p-5 shadow-pop">
@@ -421,7 +504,7 @@ function DiscountForm({
               <span className={LABEL}>Takes off</span>
               <select
                 value={f.kind}
-                onChange={(e) => set('kind', e.target.value as DiscountKind)}
+                onChange={(e) => setKind(e.target.value as DiscountKind)}
                 className={FIELD}
               >
                 <option value="percent">A percentage</option>
@@ -449,7 +532,7 @@ function DiscountForm({
                 <span className={LABEL}>For how long</span>
                 <select
                   value={f.duration}
-                  onChange={(e) => set('duration', e.target.value as DiscountDuration)}
+                  onChange={(e) => setDuration(e.target.value as DiscountDuration)}
                   className={FIELD}
                 >
                   <option value="once">The next invoice only</option>
@@ -541,6 +624,10 @@ function DiscountForm({
             </div>
           </fieldset>
 
+          <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+            <span className="font-medium">Worked example: </span>{example}
+          </p>
+
           {note && (
             <p className="rounded border border-info-200 bg-info-50 px-3 py-2 text-sm text-info-800">
               {note}
@@ -559,7 +646,11 @@ function DiscountForm({
             Cancel
           </button>
           <button
-            onClick={() => { setErr(null); save.mutate() }}
+            onClick={() => {
+              const bad = localCheck()
+              if (bad) { setErr(bad); return }
+              setErr(null); save.mutate()
+            }}
             disabled={save.isPending || !f.code.trim() || !f.description.trim()}
             className="rounded bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60"
           >

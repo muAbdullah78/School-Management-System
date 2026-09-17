@@ -51,6 +51,8 @@ function Body({ n }: { n: NextPayment }) {
     void qc.invalidateQueries({ queryKey: ['myNextPayment'] })
     void qc.invalidateQueries({ queryKey: ['myBilling'] })
     void qc.invalidateQueries({ queryKey: ['licence'] })
+    void qc.invalidateQueries({ queryKey: ['invoicePreview'] })
+    void qc.invalidateQueries({ queryKey: ['myDiscount'] })
   }
 
   const due = n.next_charge_on ?? null

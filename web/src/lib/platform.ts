@@ -732,6 +732,22 @@ export interface SchoolDetail {
     last_certificate: string | null; last_till_close: string | null
     last_message: string | null
   }
+  /** The school's live discount, or null. Populated by 0144. Optional so the
+   *  console still renders against a database without the migration. */
+  discount?: {
+    code: string
+    description: string
+    kind: DiscountKind
+    value: number
+    duration: DiscountDuration
+    ends_on: string | null
+    uses_left: number | null
+    times_applied: number
+    total_saved: number
+    trial_days_added: number | null
+    redeemed_at: string
+    summary: string
+  } | null
   not_recorded: string[]
 }
 

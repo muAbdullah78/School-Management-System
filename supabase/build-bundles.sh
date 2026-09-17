@@ -857,6 +857,21 @@ emit supabase/bundles/43_the_register_goes_in_as_fast_as_it_is_read.sql \
 emit supabase/bundles/44_a_roll_number_you_can_see.sql \
      supabase/migrations/0143*.sql
 
+# --- 45 ----------------------------------------------------------------------
+# The admin console could not see the discount, and the code creator leaned
+# on the table constraints for its refusals.
+#
+# fn_platform_school_detail returned money and licence but no discount block,
+# so an operator opening one school in particular could not tell whether the
+# invoice reflected a promo the Discounts tab already knew about. And
+# fn_platform_save_discount let discount_codes' check constraints do the
+# talking, which for the operator meant "violates check constraint
+# discount_codes_percent_chk" instead of "a percentage over 100 is a payment
+# to the customer". Same shape as 0141: no return-type change, so it re-applies
+# as a no-op.
+emit supabase/bundles/45_the_admin_console_could_not_see_the_discount.sql \
+     supabase/migrations/0144*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.
