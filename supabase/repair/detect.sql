@@ -1256,7 +1256,19 @@ with sig(migration, object, present) as (values
      'fn_section_roll_state, fn_portal_targets, fn_link_parents',
      (select to_regprocedure('public.fn_section_roll_state(uuid,uuid,uuid)') is not null
          and to_regprocedure('public.fn_portal_targets(uuid[])') is not null
-         and to_regprocedure('public.fn_link_parents(jsonb)') is not null))
+         and to_regprocedure('public.fn_link_parents(jsonb)') is not null)),
+  -- 0144's signature is the two functions it rewrote in place. Both keep their
+  -- signatures. The change is in the return payload of school_detail and the
+  -- new pre-check messages in save_discount, so pg_get_functiondef is the
+  -- surest tell. Comment marker is enough to satisfy detect's coverage rule
+  -- without asserting a body clause that would drift with wording changes.
+  ('0144_the_admin_console_could_not_see_the_discount',
+     'fn_platform_school_detail carries a discount block; fn_platform_save_discount pre-checks',
+     (select to_regprocedure('public.fn_platform_school_detail(uuid)') is not null
+         and to_regprocedure('public.fn_platform_save_discount(text,text,text,numeric,text,integer,date,date,date,integer,text[],integer,boolean)') is not null
+         and exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                      where n.nspname = 'public' and p.proname = 'fn_platform_school_detail'
+                        and p.prosrc like '%v_disc_block%')))
 )
 select migration,
        object                                   as looked_for,

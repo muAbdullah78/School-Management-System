@@ -1,12 +1,16 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { today } from '@/lib/dates'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { myBilling, myPlatformInvoice, reportSubscriptionPayment } from '@/lib/db'
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
+import { myBilling, myNextPayment, myPlatformInvoice, reportSubscriptionPayment } from '@/lib/db'
 import type { MyBillingDocument } from '@/lib/db'
 import { InvoiceDoc } from '@/components/InvoiceDoc'
 import { formatPkr } from '@/lib/licence'
-import { myDiscount, termSentence } from '@/lib/plans'
+import {
+  applyDiscount, myDiscount, previewDiscount, removeMyDiscount,
+  termSentence, TERM_LABEL,
+  type DiscountPreview, type MyDiscount,
+} from '@/lib/plans'
 import { fmtDate, fmtDateTime } from '@/lib/format'
 import { NextPaymentPanel } from './NextPayment'
 import { RoomForPupils } from './RoomForPupils'
@@ -89,6 +93,19 @@ export function Subscription() {
           panel is the difference between that message being true and being a
           lie. Quiet below 90% of the limit; it opens on a click. */}
       <RoomForPupils />
+
+      {/* THE ITEMISED PREVIEW. This is the answer to "what will I actually
+          pay for the year", which the "Next payment" sentence gives as a total
+          and never as a breakdown. Without this, a school with a 20% code sees
+          the promo tag and the new sentence, and has to trust that the two
+          agree on the arithmetic. Recalculates the moment the term switcher
+          moves, from the same fn_preview_discount the invoice uses. */}
+      <InvoicePreviewPanel discount={discount.data ?? null} />
+
+      {/* THE POST-SIGNUP CODE INPUT. Missing until now: a code handed to a
+          school after they signed up had nowhere to go. Refreshes the preview
+          above the moment a code lands. */}
+      <ApplyCodePanel current={discount.data ?? null} />
 
       {/* --- where the licence stands ---------------------------------------- */}
       <section className="rounded-lg border border-slate-200 bg-white p-4">
@@ -294,6 +311,7 @@ export function Subscription() {
       {reporting && (
         <ReportDialog
           suggested={owed > 0 ? owed : null}
+          discount={discount.data ?? null}
           onClose={() => setReporting(false)} />
       )}
     </div>
@@ -360,11 +378,37 @@ function PrintDialog({ invoiceId, onClose }: { invoiceId: string; onClose: () =>
   )
 }
 
-function ReportDialog({ suggested, onClose }: {
-  suggested: number | null; onClose: () => void
+function ReportDialog({ suggested, discount, onClose }: {
+  suggested: number | null; discount: MyDiscount | null; onClose: () => void
 }) {
   const qc = useQueryClient()
   const [amount, setAmount] = useState(suggested ? String(suggested) : '')
+  const [touched, setTouched] = useState(false)
+  // If the school opens this in trial (nothing invoiced yet), the amount box
+  // is empty and the dialog looked blank. Once the next-payment sentence and
+  // the itemised strip render, drop that total into the box so the school does
+  // not have to copy it by hand. Overridden the moment they type.
+  const nextq = useQuery({ queryKey: ['myNextPayment'], queryFn: myNextPayment })
+  const previewCode = discount?.code ?? null
+  const previewPlan = nextq.data?.plan_code
+  const previewTerm = nextq.data?.term_months
+  const pv = useQuery({
+    queryKey: ['invoicePreview', previewPlan, previewTerm, previewCode],
+    queryFn: async () => previewCode && previewPlan && previewTerm
+      ? await previewDiscount(previewCode, previewPlan, previewTerm) : null,
+    enabled: !!previewCode && !!previewPlan && !!previewTerm,
+    staleTime: 60_000,
+  })
+  const chosen = (nextq.data?.terms ?? []).find((t) => t.months === previewTerm)
+  const base = pv.data?.ok
+    ? Number(pv.data.list_amount ?? 0)
+    : Number(chosen?.amount ?? nextq.data?.next_charge_amount ?? 0)
+  const off = pv.data?.ok ? Number(pv.data.discount_amount ?? 0) : 0
+  const computed = Math.max(base - off, 0)
+  useEffect(() => {
+    if (touched || amount || suggested) return
+    if (computed > 0) setAmount(String(computed))
+  }, [computed, touched, amount, suggested])
   const [paidOn, setPaidOn] = useState(today())
   const [method, setMethod] = useState('bank')
   const [reference, setReference] = useState('')
@@ -413,13 +457,15 @@ function ReportDialog({ suggested, onClose }: {
           to look for on our bank statement, so we can confirm it without phoning you.
         </p>
 
+        <PaymentContextStrip suggested={suggested} discount={discount} />
+
         {err && <p className="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
 
         <div className="mt-3 space-y-3">
           <label className="block">
             <span className="text-xs font-medium text-slate-600">How much you transferred</span>
             <input type="number" step="0.01" min="1" className={FIELD} value={amount}
-              onChange={(e) => setAmount(e.target.value)} />
+              onChange={(e) => { setTouched(true); setAmount(e.target.value) }} />
           </label>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block">
@@ -475,6 +521,357 @@ function ReportDialog({ suggested, onClose }: {
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// -----------------------------------------------------------------------------
+// The itemised preview: what the next invoice actually says.
+//
+// WHY THIS EXISTS. NextPaymentPanel above says "Rs 9,600 for a year" as one
+// number. A school with a promo code sees the tag "SPRING24: 20% off" beside
+// it and has no way to check the arithmetic; if the office switches the term
+// from Monthly to Yearly, the number changes and the tag does not, and there
+// is no line on the page that says how the two combined. Every complaint that
+// begins "your invoice says X but the promo said Y" ends here, because this
+// is the panel that would have prevented it.
+//
+// EVERY FIGURE COMES FROM fn_preview_discount, not from JavaScript. A browser
+// reimplementation of the arithmetic is right until somebody adds a duration
+// or changes fn__discount_off; then the panel that decides whether a school
+// buys is quoting a figure the first invoice contradicts. The rows for the
+// three cycles are three separate previews, cached per (code, plan, months)
+// by react-query so switching the term is a paint, not a round trip.
+//
+// USABLE WITH NO CODE APPLIED. The rows still show the list price for each
+// cycle, because the question "what does yearly cost" is worth answering
+// whether or not there is a discount.
+// -----------------------------------------------------------------------------
+function InvoicePreviewPanel({ discount }: { discount: MyDiscount | null }) {
+  const nextq = useQuery({ queryKey: ['myNextPayment'], queryFn: myNextPayment })
+  const n = nextq.data
+
+  const planCode = n?.plan_code ?? null
+  const activeTerm = n?.term_months ?? null
+  const terms = n?.terms ?? []
+  const code = discount?.code ?? null
+
+  // A preview per cycle. useQueries lets react-query cache each (code,plan,m)
+  // independently, so switching the highlighted term is instant on the second
+  // visit and the discount tag never sits over a stale number.
+  const previews = useQueries({
+    queries: terms.map((t) => ({
+      queryKey: ['invoicePreview', planCode, t.months, code],
+      queryFn: async () =>
+        code && planCode
+          ? await previewDiscount(code, planCode, t.months)
+          : null,
+      enabled: !!planCode,
+      staleTime: 60_000,
+    })),
+  })
+
+  if (!nextq.data?.has_subscription) return null
+  if (nextq.isLoading) return null
+
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Your next invoice, itemised
+          </div>
+          <p className="mt-1 text-sm text-slate-600">
+            The three cycles side by side. The highlighted row is what you are on now.
+          </p>
+        </div>
+        {n?.next_charge_on && (
+          <div className="text-right text-xs text-slate-500">
+            Raised on {fmtDate(n.next_charge_on)}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-3 overflow-x-auto">
+        <table className="w-full min-w-[520px] text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+              <th className="py-1.5">Cycle</th>
+              <th className="py-1.5 text-right">Base</th>
+              <th className="py-1.5 text-right">
+                Discount{discount ? ` (${discount.code})` : ''}
+              </th>
+              <th className="py-1.5 text-right">Total</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {terms.map((t, i) => {
+              const pv = previews[i]?.data ?? null
+              const err = previews[i]?.error as Error | null
+              // Backend authoritative when a code is applied AND the preview
+              // resolved OK. Otherwise the base price stands and the discount
+              // column is blank. A refusal (pv.ok===false, e.g. code expired
+              // this cycle) is reported in place; the invoice still costs the
+              // list price so the row does not disappear.
+              const showDiscount = !!discount && pv?.ok === true
+              const base = pv?.ok ? Number(pv.list_amount ?? t.amount) : t.amount
+              const off = showDiscount ? Number(pv?.discount_amount ?? 0) : 0
+              // FLOORED AT ZERO. A flat Rs 5,000 code on a Rs 1,600 monthly
+              // invoice cannot pay the school back Rs 3,400. The backend also
+              // clamps but this panel is drawn without waiting for it.
+              const total = Math.max(base - off, 0)
+              const on = t.months === activeTerm
+              return (
+                <tr key={t.months} className={on ? 'bg-brand-50/60' : ''}>
+                  <td className="py-2 font-medium text-slate-800">
+                    {TERM_LABEL[t.months] ?? `${t.months} months`}
+                    {on && <span className="ml-1.5 text-xs font-normal text-brand-700">· on now</span>}
+                  </td>
+                  <td className="py-2 text-right tabular-nums text-slate-900">
+                    {formatPkr(base)}
+                  </td>
+                  <td className="py-2 text-right tabular-nums text-money-700">
+                    {showDiscount && off > 0 ? '- ' + formatPkr(off) : '-'}
+                    {discount && pv?.ok === false && (
+                      <span className="ml-2 text-xs text-slate-500">{pv.reason}</span>
+                    )}
+                    {err && <span className="ml-2 text-xs text-slate-400">(checking)</span>}
+                  </td>
+                  <td className="py-2 text-right font-semibold tabular-nums text-slate-900">
+                    {formatPkr(total)}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {discount?.kind === 'trial_days' && (
+        <p className="mt-2 rounded bg-money-50 px-3 py-1.5 text-xs text-money-800">
+          {discount.summary}. This extends your trial rather than reducing an invoice.
+        </p>
+      )}
+      <p className="mt-2 text-xs text-slate-500">
+        {discount?.duration === 'once'
+          ? 'This discount applies once, to the next invoice.'
+          : discount?.duration === 'forever'
+            ? 'This discount applies on every invoice from now on.'
+            : discount?.duration === 'months'
+              ? 'This discount applies for the number of months your code covers.'
+              : discount?.duration === 'until'
+                ? 'This discount applies on every invoice until it expires.'
+                : 'Prices come from the same list your invoice will use.'}
+      </p>
+    </section>
+  )
+}
+
+// -----------------------------------------------------------------------------
+// The post-signup code input.
+//
+// A code handed to a school AFTER they signed up had nowhere to go: ChoosePlan
+// takes one but it is the second step of signup, not a setting. Without this
+// the office has to phone us to type the code into the database by hand, which
+// defeats the point of having codes at all.
+//
+// PREVIEW BEFORE APPLY. A code that will be refused should say so on this
+// screen rather than by throwing a red banner after applying. fn_preview_discount
+// checks: existence, live window, plan match, term match, remaining uses,
+// stacking rules; and returns the same sentence the operator sees.
+// -----------------------------------------------------------------------------
+function ApplyCodePanel({ current }: { current: MyDiscount | null }) {
+  const qc = useQueryClient()
+  const nextq = useQuery({ queryKey: ['myNextPayment'], queryFn: myNextPayment })
+  const [code, setCode] = useState('')
+  const [preview, setPreview] = useState<DiscountPreview | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const [msg, setMsg] = useState<string | null>(null)
+  const [showRemove, setShowRemove] = useState(false)
+
+  const plan = nextq.data?.plan_code
+  const term = nextq.data?.term_months
+
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ['myDiscount'] })
+    void qc.invalidateQueries({ queryKey: ['myNextPayment'] })
+    void qc.invalidateQueries({ queryKey: ['myBilling'] })
+    void qc.invalidateQueries({ queryKey: ['licence'] })
+    void qc.invalidateQueries({ queryKey: ['invoicePreview'] })
+  }
+
+  async function check() {
+    const c = code.trim().toUpperCase()
+    if (!c || !plan || !term) return
+    setBusy(true); setErr(null); setMsg(null)
+    try { setPreview(await previewDiscount(c, plan, term)) }
+    catch (e) { setErr((e as Error).message) }
+    setBusy(false)
+  }
+
+  async function apply() {
+    const c = code.trim().toUpperCase()
+    if (!c) return
+    setBusy(true); setErr(null); setMsg(null)
+    try {
+      const r = await applyDiscount(c)
+      setMsg(r.summary + '. ' + r.what_next)
+      setPreview(null); setCode('')
+      refresh()
+    } catch (e) { setErr((e as Error).message) }
+    setBusy(false)
+  }
+
+  async function remove() {
+    setBusy(true); setErr(null); setMsg(null)
+    try { await removeMyDiscount(); setMsg('Removed.'); refresh() }
+    catch (e) { setErr((e as Error).message) }
+    setBusy(false); setShowRemove(false)
+  }
+
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Discount code
+          </div>
+          <p className="mt-1 text-sm text-slate-600">
+            If we have sent you a code, enter it here. The preview above updates the moment it lands.
+          </p>
+        </div>
+        {current && (
+          <div className="text-right text-xs">
+            <div className="rounded bg-money-50 px-2 py-1 font-medium text-money-800 ring-1 ring-money-100">
+              On now: {current.code}
+            </div>
+            {!showRemove ? (
+              <button className="mt-1 text-xs text-slate-500 hover:underline"
+                onClick={() => setShowRemove(true)}>Remove</button>
+            ) : (
+              <div className="mt-1 flex justify-end gap-2">
+                <button className="rounded border border-slate-300 px-2 py-0.5 text-xs hover:bg-slate-50"
+                  onClick={() => setShowRemove(false)} disabled={busy}>Keep</button>
+                <button className="rounded bg-red-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-red-700"
+                  onClick={() => void remove()} disabled={busy}>Remove for good</button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <input
+          value={code}
+          onChange={(e) => { setCode(e.target.value.toUpperCase()); setPreview(null); setErr(null); setMsg(null) }}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void check() } }}
+          placeholder="Type the code you were given"
+          autoCapitalize="characters"
+          spellCheck={false}
+          className="min-w-0 flex-1 rounded border border-slate-300 px-3 py-2 text-sm uppercase tracking-wide"
+        />
+        <button
+          type="button"
+          onClick={() => void check()}
+          disabled={!code.trim() || busy || !plan || !term}
+          className="rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+          {busy ? 'Checking…' : 'Check'}
+        </button>
+        {preview?.ok && (
+          <button
+            type="button"
+            onClick={() => void apply()}
+            disabled={busy}
+            className="rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
+            Apply
+          </button>
+        )}
+      </div>
+
+      {preview && !preview.ok && (
+        <p className="mt-2 rounded bg-amber-50 px-3 py-1.5 text-xs text-amber-900">
+          {preview.reason}
+        </p>
+      )}
+      {preview?.ok && (
+        <p className="mt-2 rounded bg-money-50 px-3 py-1.5 text-xs text-money-800">
+          {preview.summary}. New total for this cycle:{' '}
+          <span className="font-semibold">{formatPkr(preview.amount ?? 0)}</span>{' '}
+          (was {formatPkr(preview.list_amount ?? 0)}).
+        </p>
+      )}
+      {msg && <p className="mt-2 rounded bg-emerald-50 px-3 py-1.5 text-xs text-emerald-800">{msg}</p>}
+      {err && <p className="mt-2 rounded bg-red-50 px-3 py-1.5 text-xs text-red-700">{err}</p>}
+    </section>
+  )
+}
+
+
+// -----------------------------------------------------------------------------
+// The bit that stopped the dialog looking blank.
+//
+// A school opens "I have paid" during their trial (nothing invoiced yet), sees
+// "Outstanding Rs 0" and an empty form, and has no idea what to put in the
+// amount box. This strip shows what the upcoming invoice will be for and how
+// much: it is the only screen where an amount is genuinely required, so the
+// number has to be visible on it.
+// -----------------------------------------------------------------------------
+function PaymentContextStrip({ suggested, discount }: {
+  suggested: number | null; discount: MyDiscount | null
+}) {
+  const nextq = useQuery({ queryKey: ['myNextPayment'], queryFn: myNextPayment })
+  const n = nextq.data
+  const plan = n?.plan_code
+  const term = n?.term_months
+  const code = discount?.code ?? null
+  const pv = useQuery({
+    queryKey: ['invoicePreview', plan, term, code],
+    queryFn: async () => code && plan && term
+      ? await previewDiscount(code, plan, term) : null,
+    enabled: !!code && !!plan && !!term,
+    staleTime: 60_000,
+  })
+
+  const chosenTerm = (n?.terms ?? []).find((t) => t.months === term)
+  const base = pv.data?.ok
+    ? Number(pv.data.list_amount ?? 0)
+    : Number(chosenTerm?.amount ?? n?.next_charge_amount ?? 0)
+  const off = pv.data?.ok ? Number(pv.data.discount_amount ?? 0) : 0
+  const total = suggested && suggested > 0
+    ? suggested
+    : Math.max(base - off, 0)
+
+  if (!n?.has_subscription && !suggested) return null
+
+  return (
+    <div className="mt-3 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+      <div className="font-semibold text-slate-700">
+        {suggested && suggested > 0
+          ? 'What you owe right now'
+          : 'What you are about to pay for'}
+      </div>
+      <dl className="mt-1 space-y-0.5 text-slate-700">
+        {n?.plan_name && (
+          <div className="flex justify-between gap-3">
+            <dt>{n.plan_name}</dt>
+            <dd className="tabular-nums">{formatPkr(base)}</dd>
+          </div>
+        )}
+        {off > 0 && (
+          <div className="flex justify-between gap-3 text-money-800">
+            <dt>Discount ({discount?.code})</dt>
+            <dd className="tabular-nums">- {formatPkr(off)}</dd>
+          </div>
+        )}
+        <div className="flex justify-between gap-3 border-t border-slate-200 pt-1 font-semibold">
+          <dt>Total to send</dt>
+          <dd className="tabular-nums">{formatPkr(total)}</dd>
+        </div>
+      </dl>
+      {n?.sentence && (
+        <p className="mt-1 text-[11px] text-slate-500">{n.sentence}</p>
+      )}
     </div>
   )
 }

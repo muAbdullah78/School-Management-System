@@ -180,6 +180,11 @@ function Body({ d }: { d: Detail }) {
             <div className="text-xs text-slate-400">
               Last payment {d.money.last_paid_on ? fmtDate(d.money.last_paid_on) : 'never'}
             </div>
+            {/* THE DISCOUNT BADGE THAT WAS MISSING. Before 0144 the Discounts
+                tab said one school was on SPRING24 and this page said nothing,
+                so an operator opening the one school in particular could not
+                see the promo attached to the invoice they were reading. */}
+            {d.discount && <DiscountBadge d={d.discount} />}
           </div>
         </div>
       </section>
@@ -471,6 +476,44 @@ function LimitForm({ schoolId, lic, mode, onDone }: {
           A reason is required, and eight characters is the floor.
         </span>
       )}
+    </div>
+  )
+}
+
+
+/**
+ * The discount tag on a school's Money block.
+ *
+ * Highlighted so the operator scanning a list of open profiles cannot miss
+ * that this school is on an offer. Names the code, spells the terms in the
+ * words the school itself sees (fn__discount_sentence, one source), and shows
+ * how much has come off so far.
+ */
+function DiscountBadge({ d }: { d: NonNullable<Detail['discount']> }) {
+  const pct = d.kind === 'percent'
+  const flat = d.kind === 'flat'
+  const trial = d.kind === 'trial_days'
+  return (
+    <div className="mt-2 rounded-lg bg-money-50 px-2.5 py-1.5 text-xs text-money-900 ring-1 ring-money-100">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <span className="font-semibold tracking-wide">
+          Discount: {d.code}
+        </span>
+        <span className="tabular-nums">
+          {pct && `${d.value}% off`}
+          {flat && `Rs ${d.value.toLocaleString()} off`}
+          {trial && `${d.value} trial day(s)`}
+        </span>
+      </div>
+      <div className="mt-0.5 text-money-800">{d.summary}</div>
+      <div className="mt-0.5 flex flex-wrap justify-between gap-2 text-money-700">
+        <span>
+          Applied {d.times_applied} time(s)
+          {d.uses_left !== null && ` · ${d.uses_left} use(s) left`}
+          {d.ends_on && ` · ends ${fmtDate(d.ends_on)}`}
+        </span>
+        <span className="font-medium">Saved {formatPkr(d.total_saved)}</span>
+      </div>
     </div>
   )
 }

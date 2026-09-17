@@ -3242,6 +3242,40 @@ select 'a class list knows what it already holds (0143)',
        end
 
 union all
+-- 0144. The admin console could not see the discount, and the code creator
+-- leaned on the table constraints for its refusals.
+select 'the console sees the discount on the school (0144)',
+       case
+         when to_regprocedure('public.fn_platform_school_detail(uuid)') is null
+           then 'note: bundle 45 has not been applied yet, so 0144 is not due'
+         -- The discount block was added by 0144. Read straight out of the
+         -- function body, comments stripped, because there is no reliable
+         -- runtime way to prove a jsonb key exists without a school to call
+         -- the function against.
+         when regexp_replace((select prosrc from pg_proc p
+                                join pg_namespace n on n.oid = p.pronamespace
+                              where n.nspname = 'public'
+                                and p.proname = 'fn_platform_school_detail'),
+                             '--[^' || chr(10) || ']*', '', 'g')
+              not like '%v_disc_block%'
+           then 'FAIL: fn_platform_school_detail does not carry a discount block, so '
+                || 'the operator opening one school in particular cannot tell whether '
+                || 'the promo the Discounts tab knows about is on this school; apply '
+                || 'supabase/bundles/45_the_admin_console_could_not_see_the_discount.sql'
+         when regexp_replace((select prosrc from pg_proc p
+                                join pg_namespace n on n.oid = p.pronamespace
+                              where n.nspname = 'public'
+                                and p.proname = 'fn_platform_save_discount'),
+                             '--[^' || chr(10) || ']*', '', 'g')
+              not like '%payment to the customer%'
+           then 'FAIL: fn_platform_save_discount still leaves the refusal words to the '
+                || 'table constraints, so the operator sees "violates check constraint" '
+                || 'instead of a sentence; apply supabase/bundles/'
+                || '45_the_admin_console_could_not_see_the_discount.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS: no schools yet, as expected'

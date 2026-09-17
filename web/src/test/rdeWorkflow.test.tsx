@@ -191,11 +191,16 @@ describe('the portal generates itself', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: /Save and add the next/ }))
 
-    await waitFor(() => expect(invoked.length).toBe(1))
-    expect(invoked[0].fn).toBe('create-teacher')
-    expect(invoked[0].body.action).toBe('create_batch')
-    expect(invoked[0].body.role).toBe('parent')
-    expect(invoked[0].body.logins[0].email).toBe('shahid03331234567@gmail.com')
+    // Two invocations, in order: the version probe (empty body, GET) that
+    // stops a stale deployment from producing the "ghost" banner, then the
+    // real create_batch. Asserting both counts and the order keeps the probe
+    // from being silently dropped by a future refactor.
+    await waitFor(() => expect(invoked.length).toBe(2))
+    const batch = invoked.find((i) => (i.body as any)?.action === 'create_batch')
+    expect(batch).toBeTruthy()
+    expect(batch!.fn).toBe('create-teacher')
+    expect(batch!.body.role).toBe('parent')
+    expect(batch!.body.logins[0].email).toBe('shahid03331234567@gmail.com')
     // Attached to the family and written to the key ring, both batched.
     await waitFor(() => expect(calls.some((c) => c.name === 'fn_link_parents')).toBe(true))
     expect(calls.some((c) => c.name === 'fn_remember_login_passwords')).toBe(true)
