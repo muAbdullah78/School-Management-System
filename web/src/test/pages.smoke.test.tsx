@@ -148,7 +148,12 @@ const SCREENS: [string, () => Promise<Record<string, unknown>>, string][] = [
   ['Birthdays', () => import('@/pages/people/BirthdaysPage'), 'BirthdaysPage'],
   ['Certificates', () => import('@/pages/certificates/CertificatesPage'), 'CertificatesPage'],
   ['Reports', () => import('@/pages/reports/ReportsPage'), 'ReportsPage'],
+  // The teacher's home: check-in card, manual check-in box, my-attendance.
+  ['MyClass', () => import('@/pages/MyClass'), 'MyClass'],
   ['Settings', () => import('@/pages/SettingsPage'), 'SettingsPage'],
+  // 0145. Subjects are managed here now, and the flex-crushed input lives here.
+  ['Settings/Classes', () => import('@/pages/settings/ClassesSections'), 'ClassesSections'],
+  ['Settings/FeeIncrement', () => import('@/pages/settings/FeeIncrement'), 'FeeIncrement'],
   // Settings renders its FIRST tab, so the others were never opened by
   // anything. Subscription is the one a school looks at when it is deciding
   // whether to pay.

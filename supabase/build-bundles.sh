@@ -872,6 +872,19 @@ emit supabase/bundles/44_a_roll_number_you_can_see.sql \
 emit supabase/bundles/45_the_admin_console_could_not_see_the_discount.sql \
      supabase/migrations/0144*.sql
 
+# --- 46 ----------------------------------------------------------------------
+# Subjects you can manage anywhere, and a defaulters list for any month.
+#
+# Subject creation lived only inside Exam Setup, so a school that had not built
+# an exam had no subjects and the Subject Teachers tab was a dead end. And the
+# defaulters report was a lifetime running balance with no way to isolate one
+# billing month. This adds the CRUD on the per-class subjects table (no schema
+# re-normalisation: it is already the class-to-subject mapping) and a per-month
+# defaulters function, both alongside the existing objects. Re-pasting is a
+# no-op.
+emit supabase/bundles/46_subjects_you_can_manage_and_a_month_of_defaulters.sql \
+     supabase/migrations/0145*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

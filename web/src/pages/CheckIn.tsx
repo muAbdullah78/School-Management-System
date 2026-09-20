@@ -23,6 +23,7 @@ export function CheckIn() {
   const [state, setState] = useState<'idle' | 'working' | 'done' | 'error'>('idle')
   const [result, setResult] = useState<CheckInResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [manual, setManual] = useState('')
 
   async function getCoords(): Promise<{ lat: number | null; lng: number | null }> {
     if (typeof navigator === 'undefined' || !navigator.geolocation) return { lat: null, lng: null }
@@ -35,22 +36,29 @@ export function CheckIn() {
     })
   }
 
-  async function doCheckIn() {
-    if (!code) { setState('error'); setError('This check-in link is missing its code. Scan the QR again.'); return }
+  async function doCheckIn(override?: string) {
+    const use = (override ?? code).trim()
+    if (!use) {
+      // No code in the link and none typed: fall to the manual box rather than
+      // spinning. Common when the camera app strips the query string, or the
+      // school reads the poster code out instead of scanning it.
+      setState('error'); setError(null); return
+    }
     setState('working'); setError(null)
     try {
       const { lat, lng } = await getCoords()
       const device = typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 120) : null
-      const res = await staffCheckIn(code, lat, lng, device)
+      const res = await staffCheckIn(use, lat, lng, device)
       setResult(res); setState('done')
     } catch (e) {
       setError((e as Error).message); setState('error')
     }
   }
 
-  // Auto-attempt once signed in.
+  // Auto-attempt once signed in, but only when the link carried a code.
   useEffect(() => {
-    if (session && state === 'idle') void doCheckIn()
+    if (session && state === 'idle' && code) void doCheckIn()
+    else if (session && state === 'idle' && !code) setState('error')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session])
 
@@ -136,9 +144,29 @@ export function CheckIn() {
             )}
           </div>
         ) : (
-          <div className="mt-6 text-center">
-            <p className="text-sm text-red-600">{error ?? 'Something went wrong.'}</p>
-            <button onClick={doCheckIn} className="mt-3 rounded border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Try again</button>
+          <div className="mt-6">
+            {error && <p className="text-center text-sm text-red-600">{error}</p>}
+            {/* Manual entry: for a camera that would not scan, or a poster code
+                read out by the office. A rotating code cannot be typed and the
+                server says so, so this is honest about being for the static one. */}
+            <p className="mt-2 text-center text-sm text-slate-600">
+              {code ? 'Or type today’s code:' : 'Type today’s check-in code:'}
+            </p>
+            <form className="mt-2 flex items-center justify-center gap-2"
+              onSubmit={(e) => { e.preventDefault(); if (manual.trim()) void doCheckIn(manual) }}>
+              <input value={manual} onChange={(e) => setManual(e.target.value)}
+                placeholder="Code"
+                className="w-40 rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500" />
+              <button type="submit" disabled={!manual.trim()}
+                className="rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
+                Check in
+              </button>
+            </form>
+            {code && (
+              <div className="mt-3 text-center">
+                <button onClick={() => doCheckIn()} className="text-xs text-slate-500 hover:underline">Try the scanned code again</button>
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -574,6 +574,77 @@ begin
     '11. a teacher assigning themselves a subject');
 end $t$;
 
+-- =============================================================================
+-- 12. Subject CRUD (0145): create is deduped, rename guards duplicates, delete
+--     refuses when marks are built on it, and copy-to-classes skips existing.
+-- =============================================================================
+do $t$
+declare
+  v_a uuid := (select id from public.schools where name = 'Subj A');
+  v_c9 uuid := (select id from public.classes where name = 'Class 9' and school_id = v_a);
+  v_c10 uuid := (select id from public.classes where name = 'Class 10' and school_id = v_a);
+  v_phy uuid := (select id from public.subjects where name = 'Physics' and class_id = v_c9);
+  v_again uuid; v_new uuid; v_del jsonb; v_copy jsonb;
+begin
+  perform pg_temp.be('Subj Owner');
+
+  -- create dedupes case-insensitively: 'physics' returns the existing Physics.
+  v_again := public.fn_create_subject(v_c9, 'physics');
+  perform pg_temp.ok(v_again = v_phy,
+    '12a. fn_create_subject hands back the existing row for a case-variant name');
+
+  -- a genuinely new subject is created with nothing built on it.
+  v_new := public.fn_create_subject(v_c9, 'Chemistry');
+  perform pg_temp.ok(v_new is not null and v_new <> v_phy,
+    '12b. a new subject name creates a new row');
+
+  -- rename to an existing name in the same class is refused.
+  perform pg_temp.raises(
+    format($q$select public.fn_update_subject(%L::uuid, 'Physics')$q$, v_new),
+    '12c. renaming a subject onto another in the same class is refused');
+
+  -- a clean rename works.
+  perform public.fn_update_subject(v_new, 'Chem');
+  perform pg_temp.ok(
+    (select name from public.subjects where id = v_new) = 'Chem',
+    '12d. a subject renames');
+
+  -- delete refuses on a subject that carries exam papers.
+  v_del := public.fn_delete_subject(v_phy);
+  perform pg_temp.ok((v_del->>'deleted')::boolean = false,
+    '12e. a subject with exam papers cannot be deleted');
+  perform pg_temp.ok(exists (select 1 from public.subjects where id = v_phy),
+    '12e2. and it is still there');
+
+  -- delete succeeds on the fresh one with nothing attached.
+  v_del := public.fn_delete_subject(v_new);
+  perform pg_temp.ok((v_del->>'deleted')::boolean = true,
+    '12f. a subject with nothing built on it deletes');
+  perform pg_temp.ok(not exists (select 1 from public.subjects where id = v_new),
+    '12f2. and it is gone');
+
+  -- copy Class 9's subjects into Class 10: Physics already there (skipped),
+  -- Islamiat is new (created).
+  v_copy := public.fn_copy_subjects_to_classes(v_c9, array[v_c10]);
+  perform pg_temp.ok((v_copy->>'created')::int >= 1 and (v_copy->>'skipped')::int >= 1,
+    '12g. copy creates the missing subjects and skips the ones already present');
+  perform pg_temp.ok(exists (
+    select 1 from public.subjects where class_id = v_c10 and name = 'Islamiat'),
+    '12g2. Islamiat now exists on Class 10');
+end $t$;
+
+-- A subject_teacher cannot create, rename or delete a subject.
+do $t$
+declare
+  v_a uuid := (select id from public.schools where name = 'Subj A');
+  v_c9 uuid := (select id from public.classes where name = 'Class 9' and school_id = v_a);
+begin
+  perform pg_temp.be('Subj SubjT');
+  perform pg_temp.raises(
+    format($q$select public.fn_create_subject(%L::uuid, 'Biology')$q$, v_c9),
+    '12h. a subject teacher cannot create a subject');
+end $t$;
+
 do $$ begin raise notice 'ALL SUBJECT TEACHER TESTS PASSED'; end $$;
 
 rollback;

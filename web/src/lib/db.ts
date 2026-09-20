@@ -895,6 +895,34 @@ export async function getDefaulters(sessionId: string): Promise<Defaulter[]> {
   return (data as Defaulter[]) ?? []
 }
 
+/** Who owes on ONE billing month's challan, for any month the principal picks.
+ *  0145. Carries that month's charged/paid so the report can show the working,
+ *  which the lifetime running-balance view (getDefaulters) cannot. */
+export interface MonthDefaulter extends Defaulter {
+  charged: number
+  paid: number
+}
+export async function getDefaultersMonth(
+  sessionId: string, month: string,
+): Promise<MonthDefaulter[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_defaulters_month', {
+    p_session_id: sessionId, p_month: month,
+  })
+  if (error) throw new Error(error.message)
+  return (data as MonthDefaulter[]) ?? []
+}
+
+/** The billing months that actually have challans, newest first, for the picker. */
+export async function listBilledMonths(
+  sessionId: string,
+): Promise<{ period_month: string; invoice_count: number }[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_billed_months', { p_session_id: sessionId })
+  if (error) throw new Error(error.message)
+  return (data as { period_month: string; invoice_count: number }[]) ?? []
+}
+
 // ---- Reports ----
 export interface CollectionRow {
   id: string; created_at: string; amount: number; method: string; receipt_no: number | null
@@ -1839,10 +1867,54 @@ export async function setSubjectDetails(
   if (error) throw new Error(error.message)
 }
 
-export async function createSubject(name: string, classId: string, sortOrder = 0): Promise<void> {
+/** Add a subject to a class. Deduped case-insensitively per class by
+ *  fn_create_subject (0145): a double click or a re-add returns the existing
+ *  row's id rather than a second "Maths" nobody can tell from the first. */
+export async function createSubject(
+  name: string, classId: string, sortOrder?: number,
+): Promise<string> {
   const sb = requireSupabase()
-  const { error } = await sb.from('subjects').insert({ name, class_id: classId, sort_order: sortOrder })
+  const { data, error } = await sb.rpc('fn_create_subject', {
+    p_class_id: classId, p_name: name, p_sort_order: sortOrder ?? null,
+  })
   if (error) throw new Error(error.message)
+  return data as string
+}
+
+/** Rename and/or reorder a subject. 0145. */
+export async function updateSubject(
+  subjectId: string, name: string, sortOrder?: number,
+): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_update_subject', {
+    p_subject_id: subjectId, p_name: name, p_sort_order: sortOrder ?? null,
+  })
+  if (error) throw new Error(error.message)
+}
+
+/** Delete a subject. Refused by fn_delete_subject (0145) when exam papers or
+ *  tests carry marks against it; returns {deleted,message} either way so the
+ *  screen can show the reason rather than a raw constraint error. */
+export async function deleteSubject(
+  subjectId: string,
+): Promise<{ deleted: boolean; message: string }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_delete_subject', { p_subject_id: subjectId })
+  if (error) throw new Error(error.message)
+  return data as { deleted: boolean; message: string }
+}
+
+/** Copy one class's subject list into other classes, skipping names a target
+ *  class already has. The "one Physics everywhere" convenience. 0145. */
+export async function copySubjectsToClasses(
+  fromClassId: string, toClassIds: string[],
+): Promise<{ created: number; skipped: number }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_copy_subjects_to_classes', {
+    p_from_class: fromClassId, p_to_class_ids: toClassIds,
+  })
+  if (error) throw new Error(error.message)
+  return data as { created: number; skipped: number }
 }
 
 export async function listExamSubjects(termId: string, classId: string): Promise<ExamSubjectRow[]> {
@@ -2894,6 +2966,40 @@ export async function getMyTodayCheckin(): Promise<{ attendance_date: string; st
  *  used by fn_staff_check_in), so the check-in card doesn't disagree overnight. */
 function pkToday(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Karachi' })
+}
+
+export interface MyAttendanceRow {
+  attendance_date: string
+  status: string
+  checked_at: string | null
+  checked_out_at: string | null
+  worked_minutes: number | null
+}
+
+/** The signed-in teacher's own attendance for a month, newest first.
+ *
+ *  A DIRECT select, not an RPC: the staff_att_select policy (0025) already lets
+ *  a teacher read exactly their own rows (`staff_id = my_staff_id()`), so a
+ *  SECURITY DEFINER function would only restate a rule the row-level policy
+ *  already enforces in one place. `month` is the first of the month; the range
+ *  is [month, next month). */
+export async function getMyStaffAttendance(month: string): Promise<MyAttendanceRow[]> {
+  const sb = requireSupabase()
+  const staffId = (await sb.from('profiles').select('staff_id')
+    .eq('id', (await sb.auth.getUser()).data.user?.id ?? '').maybeSingle()).data?.staff_id
+  if (!staffId) return []
+  const start = month
+  const next = new Date(`${month}T00:00:00Z`)
+  next.setUTCMonth(next.getUTCMonth() + 1)
+  const end = next.toISOString().slice(0, 10)
+  const { data, error } = await sb.from('staff_attendance')
+    .select('attendance_date, status, checked_at, checked_out_at, worked_minutes')
+    .eq('staff_id', staffId)
+    .gte('attendance_date', start)
+    .lt('attendance_date', end)
+    .order('attendance_date', { ascending: false })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as MyAttendanceRow[]
 }
 
 export interface LoginFunctionState {
