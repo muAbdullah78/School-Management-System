@@ -332,6 +332,44 @@ begin
   end;
 end $t$;
 
+-- =============================================================================
+-- Defaulters by billing month (0145). fn_defaulters is a running balance;
+-- fn_defaulters_month isolates one challan month, which is what lets a
+-- principal pull June's list in September.
+-- =============================================================================
+do $t$
+declare
+  v_month date := date_trunc('month', current_date)::date;
+  v_owing record; v_paid_present boolean; v_months int;
+begin
+  perform set_config('test.uid', '00000000-0000-0000-0000-00000000ca01', false);
+
+  -- The picker sees the month that was billed.
+  select count(*) into v_months from public.fn_billed_months(pg_temp.sess())
+   where period_month = v_month and invoice_count >= 1;
+  perform pg_temp.ok(v_months = 1,
+    '23. fn_billed_months lists the billed month for the picker');
+
+  -- RP Owing owes on this month's challan; the numbers come with the row.
+  select * into v_owing from public.fn_defaulters_month(pg_temp.sess(), v_month)
+   where full_name = 'RP Owing';
+  perform pg_temp.ok(v_owing.balance > 0 and v_owing.charged >= v_owing.paid,
+    '24. the month view shows RP Owing owing, with charged and paid');
+
+  -- RP Paid settled in full, so is NOT on the month list.
+  select exists (
+    select 1 from public.fn_defaulters_month(pg_temp.sess(), v_month)
+     where full_name = 'RP Paid') into v_paid_present;
+  perform pg_temp.ok(not v_paid_present,
+    '25. a child who paid that month is not on the month list');
+
+  -- A month with no challans returns nobody rather than everybody.
+  perform pg_temp.ok(
+    not exists (select 1 from public.fn_defaulters_month(pg_temp.sess(),
+                                (v_month - interval '2 months')::date)),
+    '26. a month that was never billed lists no defaulters');
+end $t$;
+
 do $$ begin raise notice '--- reports.sql: all assertions passed'; end $$;
 
 rollback;

@@ -1268,7 +1268,19 @@ with sig(migration, object, present) as (values
          and to_regprocedure('public.fn_platform_save_discount(text,text,text,numeric,text,integer,date,date,date,integer,text[],integer,boolean)') is not null
          and exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
                       where n.nspname = 'public' and p.proname = 'fn_platform_school_detail'
-                        and p.prosrc like '%v_disc_block%')))
+                        and p.prosrc like '%v_disc_block%'))),
+  -- 0145's signature is the subject CRUD set and the per-month defaulters pair.
+  -- A database with the RDE functions but not these has subject creation stuck
+  -- inside Exam Setup and a defaulters report with no month filter, which is the
+  -- product as it shipped rather than a broken state, so MISSING not error.
+  ('0145_subjects_you_can_manage_and_a_month_of_defaulters',
+     'fn_create_subject, fn_update_subject, fn_delete_subject, fn_copy_subjects_to_classes, fn_defaulters_month, fn_billed_months',
+     (select to_regprocedure('public.fn_create_subject(uuid,text,integer)') is not null
+         and to_regprocedure('public.fn_update_subject(uuid,text,integer)') is not null
+         and to_regprocedure('public.fn_delete_subject(uuid)') is not null
+         and to_regprocedure('public.fn_copy_subjects_to_classes(uuid,uuid[])') is not null
+         and to_regprocedure('public.fn_defaulters_month(uuid,date)') is not null
+         and to_regprocedure('public.fn_billed_months(uuid)') is not null))
 )
 select migration,
        object                                   as looked_for,

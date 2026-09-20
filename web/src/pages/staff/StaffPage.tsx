@@ -4,7 +4,7 @@ import {
   getStaffRoster, createStaff, updateStaff, linkStaffProfile, listProfiles,
   staffLeave, staffRejoin, staffSetLoginActive,
   listClasses, listSectionTeachers, getCurrentSession, listTeacherAssignments, setClassTeacher,
-  getSubjectTeachers, setSubjectTeachers, type SubjectTeacherRow,
+  getSubjectTeachers, setSubjectTeachers, type SubjectTeacherRow, createSubject,
   getStaffAttendanceSummary, getStaffMonthAttendance, createTeacherLogin,
   type StaffRow, type StaffInput, type StaffRosterRow, type StaffLeaveResult,
 } from '@/lib/db'
@@ -100,6 +100,7 @@ function StaffTab() {
   const [adding, setAdding] = useState(false)
   const [leaving, setLeaving] = useState<StaffRosterRow | null>(null)
   const [removing, setRemoving] = useState<StaffRow | null>(null)
+  const [giveLoginFor, setGiveLoginFor] = useState<StaffRosterRow | null>(null)
   const [flash, setFlash] = useState<string | null>(null)
 
   const invalidate = () => {
@@ -366,7 +367,8 @@ function StaffTab() {
                     )}
                     <LoginState row={s} canLink={canLink}
                       onOpen={() => login.mutate({ id: s.id, active: true, reason: null })}
-                      onClose={() => login.mutate({ id: s.id, active: false, reason: null })} />
+                      onClose={() => login.mutate({ id: s.id, active: false, reason: null })}
+                      onGive={() => setGiveLoginFor(s)} />
                   </td>
                   <td className="px-3 py-2 text-right">
                     {/* Edit is a write; Attendance and ID card are reads and an
@@ -451,6 +453,13 @@ function StaffTab() {
       )}
       {idCard && <StaffIdCard staff={idCard} onClose={() => setIdCard(null)} />}
       {attFor && <StaffAttendanceModal staff={attFor} onClose={() => setAttFor(null)} />}
+      {giveLoginFor && (
+        <GiveLoginDialog
+          staff={giveLoginFor}
+          onClose={() => setGiveLoginFor(null)}
+          onDone={(msg) => { setGiveLoginFor(null); setFlash(msg); invalidate(); qc.invalidateQueries({ queryKey: ['schoolLogins'] }) }}
+        />
+      )}
     </div>
   )
 }
@@ -460,11 +469,23 @@ function StaffTab() {
  *  Three states, not two. The old screen showed none of them, which is how a
  *  resigned teacher kept working access: "Deactivate" wrote staff.status and
  *  every access check reads profiles.active. */
-function LoginState({ row, canLink, onOpen, onClose }: {
-  row: StaffRosterRow; canLink: boolean; onOpen: () => void; onClose: () => void
+function LoginState({ row, canLink, onOpen, onClose, onGive }: {
+  row: StaffRosterRow; canLink: boolean
+  onOpen: () => void; onClose: () => void; onGive: () => void
 }) {
   if (row.login_active === null) {
-    return <p className="mt-1 text-xs text-slate-400">No account: cannot sign in.</p>
+    // The button the add-staff success message has always promised ("use Give
+    // them a login on their row") and which did not exist until now.
+    return (
+      <p className="mt-1 text-xs text-slate-500">
+        No account: cannot sign in.
+        {canLink && row.status === 'active' && (
+          <button onClick={onGive} className="ml-1 font-medium text-brand-700 hover:underline">
+            Give a login
+          </button>
+        )}
+      </p>
+    )
   }
   if (row.login_active) {
     return (
@@ -486,6 +507,99 @@ function LoginState({ row, canLink, onOpen, onClose }: {
         <button onClick={onOpen} className="ml-1 text-brand-700 hover:underline">Reopen</button>
       )}
     </p>
+  )
+}
+
+/**
+ * Give a loginless staff member a login, later, from their row.
+ *
+ * Mirrors the parent-portal generator: a first-name-plus-number address and a
+ * number password are SUGGESTED so the office can accept them with one press,
+ * and both are editable because a teacher, unlike a parent, often has a real
+ * address they would rather use. The credentials go through the same
+ * createTeacherLogin -> linkStaffProfile path the New Staff form uses, so there
+ * is one implementation of "make a staff login" and it cannot drift.
+ */
+export function suggestStaffEmail(name: string, number: string | null): string {
+  const first = (name.trim().split(/\s+/)[0] ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+  const num = (number ?? '').replace(/[^0-9]/g, '')
+  if (!first || !num) return ''
+  return `${first.slice(0, 30)}${num.slice(0, 30)}@gmail.com`
+}
+
+function GiveLoginDialog({ staff, onClose, onDone }: {
+  staff: StaffRosterRow; onClose: () => void; onDone: (msg: string) => void
+}) {
+  const number = staff.mobile || staff.whatsapp || null
+  const [email, setEmail] = useState(suggestStaffEmail(staff.full_name, number))
+  const [password, setPassword] = useState((number ?? '').replace(/[^0-9]/g, ''))
+  const [role, setRole] = useState<Role>('class_teacher')
+  const [err, setErr] = useState<string | null>(null)
+
+  const go = useMutation({
+    mutationFn: async () => {
+      const created = await createTeacherLogin({
+        email: email.trim(), password, full_name: staff.full_name, role,
+      })
+      try {
+        await linkStaffProfile(staff.id, created.id)
+      } catch (e) {
+        throw new Error(
+          `${staff.full_name} can now sign in as ${created.email}, but joining that `
+          + `login to their staff record failed: ${(e as Error).message} Attach it from `
+          + `"logins not attached to anybody" above; do not create it again.`)
+      }
+      return created
+    },
+    onSuccess: (r) => onDone(
+      `${staff.full_name} can now sign in as ${r.email}.`
+      + (r.remembered === false
+        ? ' Write the password down now: this database has no key ring yet (bundle 22).'
+        : ' The password is saved under Settings, Users.')),
+    onError: (e) => setErr((e as Error).message),
+  })
+
+  const passwordOk = password.length >= 6
+  const emailOk = /.+@.+\..+/.test(email.trim())
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4">
+      <div className="mt-16 w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
+        <h2 className="text-base font-semibold text-slate-800">Give {staff.full_name} a login</h2>
+        <p className="mt-1 text-xs text-slate-500">
+          We have suggested an address and password from their phone number. Change either if
+          you like. They can sign in the moment you save.
+        </p>
+
+        <label className="mt-4 block"><span className="text-sm text-slate-600">Email / username</span>
+          <input value={email} onChange={(e) => setEmail(e.target.value.trim())} className={FIELD}
+            placeholder="teacher0333xxxxxxx@gmail.com" autoComplete="off" />
+        </label>
+        <label className="mt-3 block"><span className="text-sm text-slate-600">Password</span>
+          <input value={password} onChange={(e) => setPassword(e.target.value)} className={FIELD}
+            autoComplete="off" />
+          {!passwordOk && <span className="mt-1 block text-xs text-amber-700">At least 6 characters.</span>}
+        </label>
+        <label className="mt-3 block"><span className="text-sm text-slate-600">They sign in as</span>
+          <select value={role} onChange={(e) => setRole(e.target.value as Role)} className={FIELD}>
+            {ASSIGNABLE_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r] ?? r}</option>)}
+          </select>
+        </label>
+
+        {err && <p className="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
+
+        <div className="mt-4 flex gap-2">
+          <button onClick={() => { setErr(null); go.mutate() }}
+            disabled={go.isPending || !emailOk || !passwordOk}
+            className="flex-1 rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
+            {go.isPending ? 'Creating…' : 'Create the login'}
+          </button>
+          <button onClick={onClose} className="flex-1 rounded border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -1063,12 +1177,29 @@ function SubjectTeachersTab() {
   const session = useQuery({ queryKey: ['currentSession'], queryFn: getCurrentSession })
   const sessionId = session.data?.id
   const staff = useQuery({ queryKey: ['staff'], queryFn: getStaffRoster })
+  // The full active class list, so a class with NO subjects can still be picked
+  // and given its first one here. The register below only carries classes that
+  // already have subjects (fn_subject_teachers inner-joins subjects), which is
+  // exactly the class you cannot reach when you have nothing to assign yet.
+  const allClasses = useQuery({ queryKey: ['classes'], queryFn: listClasses })
   const [classId, setClassId] = useState('')
+  const [newSubject, setNewSubject] = useState('')
+  const [subjErr, setSubjErr] = useState<string | null>(null)
 
   const register = useQuery({
     queryKey: ['subjectTeachers', sessionId],
     queryFn: () => getSubjectTeachers(sessionId!),
     enabled: !!sessionId,
+  })
+
+  const addSubject = useMutation({
+    mutationFn: () => createSubject(newSubject.trim(), classId),
+    onSuccess: () => {
+      setNewSubject(''); setSubjErr(null)
+      qc.invalidateQueries({ queryKey: ['subjectTeachers', sessionId] })
+      qc.invalidateQueries({ queryKey: ['subjects', classId] })
+    },
+    onError: (e) => setSubjErr((e as Error).message),
   })
 
   const save = useMutation({
@@ -1082,9 +1213,11 @@ function SubjectTeachersTab() {
 
   const activeStaff = (staff.data ?? []).filter((s) => s.status === 'active')
   const rows: SubjectTeacherRow[] = (register.data ?? []).filter((r) => r.class_id === classId)
-  const classes = Array.from(
-    new Map((register.data ?? []).map((r) => [r.class_id, { id: r.class_id, name: r.class_name, order: r.level_order }])).values(),
-  ).sort((a, b) => a.order - b.order)
+  // Every active class, so one with no subjects can still be chosen to add its
+  // first. Ordered by the ladder.
+  const classes = (allClasses.data ?? [])
+    .map((c) => ({ id: c.id, name: c.name, order: c.level_order }))
+    .sort((a, b) => a.order - b.order)
   const unassigned = (register.data ?? []).filter((r) => r.teachers.length === 0).length
 
   function toggle(row: SubjectTeacherRow, staffId: string) {
@@ -1132,10 +1265,27 @@ function SubjectTeachersTab() {
         <p className="rounded bg-red-50 p-3 text-sm text-red-700">{(save.error as Error).message}</p>
       )}
 
+      {/* Add a subject right here rather than sending the user to Exams. The
+          same per-class subjects table, surfaced where you assign its teachers.
+          Also managed in Settings -> Classes & Sections. */}
+      {classId && (
+        <form className="flex flex-wrap items-center gap-2"
+          onSubmit={(e) => { e.preventDefault(); if (newSubject.trim()) addSubject.mutate() }}>
+          <input value={newSubject} onChange={(e) => setNewSubject(e.target.value)}
+            placeholder="Add a subject to this class (e.g. Mathematics)"
+            className={`w-64 ${FIELD}`} />
+          <button type="submit" disabled={!newSubject.trim() || addSubject.isPending}
+            className="rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
+            {addSubject.isPending ? 'Adding…' : 'Add subject'}
+          </button>
+          {subjErr && <span className="text-sm text-red-600">{subjErr}</span>}
+        </form>
+      )}
+
       {classId && rows.length === 0 && !register.isLoading && (
         <p className="rounded bg-amber-50 p-3 text-sm text-amber-700">
-          That class has no subjects yet. Add them under Exams → Subjects before assigning
-          teachers.
+          That class has no subjects yet. Add its first one above, or manage the whole
+          list under Settings → Classes & Sections.
         </p>
       )}
 

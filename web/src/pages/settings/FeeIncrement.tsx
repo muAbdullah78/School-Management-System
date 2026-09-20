@@ -4,9 +4,14 @@ import {
   listSessions, listClasses, listFeeHeads, feeIncrement,
   type FeeIncrementResult,
 } from '@/lib/db'
-import { Card, CardTitle, Button, Field, inputClass, MiniStat } from '@/components/ui'
+import { Card, CardTitle, Button, Field, inputClass, MiniStat, LoadError } from '@/components/ui'
 import { IconFees, IconAlert, IconCheck } from '@/components/icons'
 import { fmtPKR, fmtDate, todayISO } from '@/lib/format'
+
+// inputClass without its w-full, for controls that live in a flex row and set
+// their own width. w-full there fights w-32 / flex-1 and the crush is whichever
+// Tailwind emitted last.
+const noWidth = inputClass.replace('w-full ', '')
 
 /**
  * The annual fee increase.
@@ -103,6 +108,7 @@ export function FeeIncrement() {
 
   return (
     <div className="space-y-4">
+      <LoadError of={[sessions, classes, heads]} what="The sessions, classes and fee heads" />
       <Card>
         <CardTitle icon={<IconFees />}>Raise fees across the school</CardTitle>
         <p className="text-sm text-slate-600">
@@ -141,11 +147,18 @@ export function FeeIncrement() {
           </Field>
 
           <Field label="Increase by">
+            {/* inputClass carries w-full, and w-full fought w-32 / flex-1 inside
+                this flex row: whichever width utility Tailwind emitted last won,
+                so the select could take the whole row and crush the number box
+                to a sliver. Strip w-full off both controls and size them
+                explicitly: the select is a fixed 8rem that never shrinks, the
+                input grows and is allowed to shrink (min-w-0) so the digits are
+                always readable. */}
             <div className="flex gap-2">
               <select
                 value={mode}
                 onChange={(e) => change(setMode)(e.target.value as 'percent' | 'amount')}
-                className={`${inputClass} w-32`}
+                className={`${noWidth} w-32 shrink-0`}
               >
                 <option value="percent">Percent</option>
                 <option value="amount">Rupees</option>
@@ -155,7 +168,7 @@ export function FeeIncrement() {
                 value={value}
                 onChange={(e) => change(setValue)(e.target.value.replace(/[^\d.]/g, ''))}
                 placeholder={mode === 'percent' ? '10' : '500'}
-                className={`${inputClass} flex-1 tabular-nums`}
+                className={`${noWidth} min-w-0 flex-1 tabular-nums`}
               />
             </div>
           </Field>

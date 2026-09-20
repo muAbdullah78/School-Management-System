@@ -3276,6 +3276,25 @@ select 'the console sees the discount on the school (0144)',
        end
 
 union all
+-- 0145. Subjects you can manage anywhere, and a defaulters list for any month.
+select 'subjects can be managed and any month has a defaulters list (0145)',
+       case
+         when to_regprocedure('public.fn_create_subject(uuid,text,integer)') is null
+           then 'note: bundle 46 has not been applied yet, so 0145 is not due'
+         when to_regprocedure('public.fn_update_subject(uuid,text,integer)') is null
+           or to_regprocedure('public.fn_delete_subject(uuid)') is null
+           or to_regprocedure('public.fn_copy_subjects_to_classes(uuid,uuid[])') is null
+           then 'FAIL: subject create/rename/delete/copy is not all present, so the '
+                || 'Subject Teachers tab and Classes & Sections cannot manage subjects; '
+                || 'apply supabase/bundles/46_subjects_you_can_manage_and_a_month_of_defaulters.sql'
+         when to_regprocedure('public.fn_defaulters_month(uuid,date)') is null
+           or to_regprocedure('public.fn_billed_months(uuid)') is null
+           then 'FAIL: the defaulters report cannot be filtered to a billing month; '
+                || 'apply supabase/bundles/46_subjects_you_can_manage_and_a_month_of_defaulters.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS: no schools yet, as expected'

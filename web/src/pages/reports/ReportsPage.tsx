@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
-  getCurrentSession, getDefaulters, listCollections, getClassStrength,
+  getCurrentSession, getDefaulters, getDefaultersMonth, listBilledMonths,
+  listCollections, getClassStrength,
   listClasses, listSections, getAttendanceRegister,
   listStudents, getStudentBalance, getStudentLedger,
   getFeeReconciliation, getHeadWiseDues, type FeeReconciliation,
@@ -185,36 +186,102 @@ function CollectionReport() {
   )
 }
 
+/** "2026-09-01" -> "Sep 2026". en-GB so it never renders American. */
+function monthLabel(iso: string): string {
+  const d = new Date(`${iso.slice(0, 7)}-01T00:00:00Z`)
+  return d.toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' })
+}
+
 function DefaultersReport() {
   const session = useQuery({ queryKey: ['currentSession'], queryFn: getCurrentSession })
   const sessionId = session.data?.id
-  const q = useQuery({ queryKey: ['rptDefaulters', sessionId], queryFn: () => getDefaulters(sessionId!), enabled: !!sessionId })
+  // '' = the lifetime running balance (every unpaid challan to date). A month
+  // value isolates that ONE billing cycle, for any past month the principal
+  // wants: June's list while it is September.
+  const [month, setMonth] = useState('')
+
+  const months = useQuery({
+    queryKey: ['billedMonths', sessionId],
+    queryFn: () => listBilledMonths(sessionId!), enabled: !!sessionId,
+  })
+  const running = useQuery({
+    queryKey: ['rptDefaulters', sessionId],
+    queryFn: () => getDefaulters(sessionId!), enabled: !!sessionId && month === '',
+  })
+  const perMonth = useQuery({
+    queryKey: ['rptDefaultersMonth', sessionId, month],
+    queryFn: () => getDefaultersMonth(sessionId!, month), enabled: !!sessionId && month !== '',
+  })
+
+  const isMonth = month !== ''
+  const q = isMonth ? perMonth : running
   const rows = q.data ?? []
   const total = rows.reduce((s, r) => s + r.balance, 0)
 
-  const csv = () => downloadCSV('defaulters.csv',
-    toCSV(['GR', 'Student', 'Class', 'Section', 'Roll', 'Balance'],
-      rows.map((r) => [r.gr_no ?? '', r.full_name, r.class_name, r.section_name ?? '', r.roll_no ?? '', r.balance])))
+  const csv = () => downloadCSV(
+    isMonth ? `defaulters-${month.slice(0, 7)}.csv` : 'defaulters.csv',
+    isMonth
+      ? toCSV(['GR', 'Student', 'Class', 'Section', 'Roll', 'Charged', 'Paid', 'Owes'],
+          (rows as import('@/lib/db').MonthDefaulter[]).map((r) => [
+            r.gr_no ?? '', r.full_name, r.class_name, r.section_name ?? '', r.roll_no ?? '',
+            r.charged, r.paid, r.balance]))
+      : toCSV(['GR', 'Student', 'Class', 'Section', 'Roll', 'Balance'],
+          rows.map((r) => [r.gr_no ?? '', r.full_name, r.class_name, r.section_name ?? '', r.roll_no ?? '', r.balance])))
 
   return (
     <ReportShell title="Fee Defaulters" subtitle={session.data?.name} onCSV={csv}>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <label className="text-sm text-slate-600">Billing month</label>
+        <select value={month} onChange={(e) => setMonth(e.target.value)}
+          className="rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-brand-500 focus:outline-none">
+          <option value="">All months (running balance)</option>
+          {(months.data ?? []).map((m) => (
+            <option key={m.period_month} value={m.period_month}>
+              {monthLabel(m.period_month)}
+            </option>
+          ))}
+        </select>
+        <span className="text-xs text-slate-400">
+          {isMonth
+            ? 'Who still owes on that one month’s challan.'
+            : 'Everyone who owes anything across the whole session.'}
+        </span>
+      </div>
+
       {q.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
       {!q.isLoading && (
         <>
-          <div className="mb-3 text-sm"><span className="font-semibold text-slate-800">Total outstanding: {fmtPKR(total)}</span> <span className="text-slate-500">· {rows.length} students</span></div>
+          <div className="mb-3 text-sm">
+            <span className="font-semibold text-slate-800">
+              {isMonth ? `Outstanding for ${monthLabel(month)}: ` : 'Total outstanding: '}{fmtPKR(total)}
+            </span>{' '}
+            <span className="text-slate-500">· {rows.length} students</span>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                <tr><th className={TH}>GR</th><th className={TH}>Student</th><th className={TH}>Class</th><th className={TH}>Roll</th><th className={`${TH} text-right`}>Balance</th></tr>
+                <tr>
+                  <th className={TH}>GR</th><th className={TH}>Student</th>
+                  <th className={TH}>Class</th><th className={TH}>Roll</th>
+                  {isMonth && <th className={`${TH} text-right`}>Charged</th>}
+                  {isMonth && <th className={`${TH} text-right`}>Paid</th>}
+                  <th className={`${TH} text-right`}>{isMonth ? 'Owes' : 'Balance'}</th>
+                </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {rows.length === 0 && <tr><td colSpan={5} className={`${TD} text-slate-500`}>No defaulters. 🎉</td></tr>}
+                {rows.length === 0 && (
+                  <tr><td colSpan={isMonth ? 7 : 5} className={`${TD} text-slate-500`}>
+                    {isMonth ? 'Nobody owes on that month’s challan. 🎉' : 'No defaulters. 🎉'}
+                  </td></tr>
+                )}
                 {rows.map((r) => (
                   <tr key={r.student_id}>
                     <td className={TD}>{r.gr_no ?? '-'}</td>
                     <td className={TD}>{r.full_name}</td>
                     <td className={TD}>{r.class_name}{r.section_name ? ` · ${r.section_name}` : ''}</td>
                     <td className={TD}>{r.roll_no ?? '-'}</td>
+                    {isMonth && <td className={`${TD} text-right tabular-nums`}>{fmtPKR((r as import('@/lib/db').MonthDefaulter).charged)}</td>}
+                    {isMonth && <td className={`${TD} text-right tabular-nums`}>{fmtPKR((r as import('@/lib/db').MonthDefaulter).paid)}</td>}
                     <td className={`${TD} text-right tabular-nums`}>{fmtPKR(r.balance)}</td>
                   </tr>
                 ))}
