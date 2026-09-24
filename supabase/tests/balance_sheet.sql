@@ -171,7 +171,14 @@ begin
   perform public.fn_record_expense(250, v_cat, current_date, 'Shop', 'cash', 'Chalk');
   perform public.fn_record_other_income(500, 'Canteen', current_date, 'cash');
   -- Dated after every as-at date this file asks about: must never be counted.
-  perform public.fn_record_expense(99999, v_cat, current_date + 60, 'Later', 'cash', 'Future');
+  -- Written straight to the table since 0147, which refuses a future date at
+  -- fn_record_expense. The row still matters: a school that recorded one
+  -- before 0147 has it in its books, and the balance sheet must still leave
+  -- it out of any date before it.
+  insert into public.expenses (spent_on, category_id, amount, payee, method, note,
+                               voucher_no, recorded_by, school_id)
+    values (current_date + 60, v_cat, 99999, 'Later', 'cash', 'Future',
+            public.next_counter('expense_voucher'), v_oa, v_a);
 
   -- BS Left leaves owing 3,000. The arrears must survive the withdrawal.
   update public.students set status = 'withdrawn' where id = v_left;

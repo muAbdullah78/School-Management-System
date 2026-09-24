@@ -49,6 +49,18 @@ export function Deposits() {
   const [refunding, setRefunding] = useState<DepositHeldRow | null>(null)
   const [charging, setCharging] = useState(false)
   const [done, setDone] = useState<DepositRefundResult | null>(null)
+  const [charged, setCharged] = useState<string | null>(null)
+
+  // A refund nets dues and a charge raises one, so both move the child's
+  // balance, the family sheet, the month, arrears and the books. Only the
+  // deposits list and one balance were being re-read.
+  const refreshMoney = () => {
+    for (const k of ['depositsHeld', 'depositHeld', 'studentBalance', 'balance', 'financeSummary',
+      'profitSnapshot', 'familySheet', 'feesMonth', 'feesMonthPupils', 'arrears', 'invoices',
+      'ledger', 'dashboardSummary', 'recentPayments']) {
+      void qc.invalidateQueries({ queryKey: [k] })
+    }
+  }
 
   const rows = held.data ?? []
   const total = rows.reduce((s, r) => s + r.held, 0)
@@ -79,7 +91,7 @@ export function Deposits() {
           : (
             // The row that matters most: a child who has gone and whose money
             // the school still has.
-            <span className="text-amber-700">
+            <span className="font-medium text-due-800">
               {r.status.replace('_', ' ')}
               {r.left_on ? ` · ${fmtDate(r.left_on)}` : ''}
             </span>
@@ -105,7 +117,7 @@ export function Deposits() {
       render: (r) => (
         mayRefund
           ? (
-            <button onClick={() => { setRefunding(r); setDone(null) }}
+            <button onClick={() => { setRefunding(r); setDone(null); setCharged(null) }}
               className="rounded border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">
               Refund
             </button>
@@ -129,20 +141,23 @@ export function Deposits() {
       )}
 
       <div className="mb-4 grid gap-3 sm:grid-cols-3">
-        <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Total held</div>
-          <div className="mt-1 text-2xl font-semibold text-slate-800">{fmtPKR(total)}</div>
-          <div className="mt-1 text-xs text-slate-500">
-            A liability, not income. It is excluded from profit and shown on the balance sheet.
+        <div className="rounded-2xl border border-info-200 bg-info-50 p-4 text-info-900">
+          <div className="text-xs font-medium uppercase tracking-wide opacity-70">Total held</div>
+          <div className="mt-1 text-2xl font-semibold tabular-nums">{fmtPKR(total)}</div>
+          <div className="mt-1 text-xs opacity-80">
+            Families&rsquo; money, not the school&rsquo;s. It is kept out of profit and shown on the balance sheet.
           </div>
         </div>
-        <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Families</div>
-          <div className="mt-1 text-2xl font-semibold text-slate-800">{rows.length}</div>
+        {/* PUPILS, not families. One row is one child, and a family with two
+            children holding deposits was counted twice under "Families". */}
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Pupils</div>
+          <div className="mt-1 text-2xl font-semibold tabular-nums text-slate-800">{rows.length}</div>
+          <div className="mt-1 text-xs text-slate-500">with a deposit held</div>
         </div>
-        <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Already left</div>
-          <div className={`mt-1 text-2xl font-semibold ${leavers.length ? 'text-amber-700' : 'text-slate-800'}`}>
+        <div className={`rounded-2xl border p-4 ${leavers.length ? 'border-due-200 bg-due-50 text-due-900' : 'border-slate-200 bg-white text-slate-800'}`}>
+          <div className="text-xs font-medium uppercase tracking-wide opacity-70">Already left</div>
+          <div className="mt-1 text-2xl font-semibold tabular-nums">
             {leavers.length}
           </div>
           <div className="mt-1 text-xs text-slate-500">
@@ -155,13 +170,16 @@ export function Deposits() {
 
       {mayWrite && refundable.length > 0 && (
         <div className="mb-3">
-          <button onClick={() => setCharging(true)}
-            className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
+          <button onClick={() => { setCharging(true); setCharged(null); setDone(null) }}
+            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
             + Charge a deposit
           </button>
         </div>
       )}
 
+      {charged && (
+        <div className="mb-4 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-800">{charged}</div>
+      )}
       {done && (
         <div className="mb-4 rounded-lg border border-money-200 bg-money-50 px-4 py-3 text-sm text-money-800">
           <div className="font-medium">
@@ -191,6 +209,29 @@ export function Deposits() {
         emptyMessage="Nothing has been collected against a refundable fee head yet."
         exportName="deposits-held"
         printId="report"
+        mobileCard={(r) => (
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="truncate font-medium text-slate-800">{r.full_name}</div>
+              <div className="text-xs text-slate-500">
+                {r.gr_no ?? '-'}{r.class_name ? ` · ${r.class_name}` : ''}
+                {r.status !== 'active' && <span className="font-medium text-due-800"> · {r.status.replace('_', ' ')}{r.left_on ? ` ${fmtDate(r.left_on)}` : ''}</span>}
+              </div>
+              <div className="text-xs text-slate-400">
+                Collected {fmtPKR(r.collected)}{r.refunded ? ` · refunded ${fmtPKR(r.refunded)}` : ''}
+              </div>
+            </div>
+            <div className="shrink-0 text-right">
+              <div className="text-sm font-semibold tabular-nums text-slate-900">{fmtPKR(r.held)}</div>
+              {mayRefund && (
+                <button onClick={() => { setRefunding(r); setDone(null); setCharged(null) }}
+                  className="mt-1 rounded border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                  Refund
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       />
 
       {refunding && (
@@ -199,9 +240,7 @@ export function Deposits() {
           onClose={() => setRefunding(null)}
           onDone={(r) => {
             setRefunding(null); setDone(r)
-            qc.invalidateQueries({ queryKey: ['depositsHeld'] })
-            qc.invalidateQueries({ queryKey: ['studentBalance'] })
-            qc.invalidateQueries({ queryKey: ['financeSummary'] })
+            refreshMoney()
           }}
         />
       )}
@@ -209,9 +248,10 @@ export function Deposits() {
         <ChargeDialog
           heads={refundable}
           onClose={() => setCharging(false)}
-          onDone={() => {
+          onDone={(msg) => {
             setCharging(false)
-            qc.invalidateQueries({ queryKey: ['depositsHeld'] })
+            setCharged(msg)
+            refreshMoney()
           }}
         />
       )}
@@ -262,7 +302,7 @@ function RefundDialog({ row, onClose, onDone }: {
         </div>
 
         {row.status === 'active' && (
-          <div className="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <div className="mt-3 rounded-lg border border-due-200 bg-due-50 px-3 py-2 text-xs text-due-800">
             This pupil has not left. An early refund is allowed and will be recorded
             as such, so it can be told apart from an ordinary leaving refund.
           </div>
@@ -274,7 +314,7 @@ function RefundDialog({ row, onClose, onDone }: {
             onChange={(e) => setAmount(e.target.value)} className={FIELD} />
         </label>
         {tooMuch && (
-          <p className="mt-1 text-xs text-red-600">
+          <p className="mt-1 text-xs text-danger-600">
             Only {fmtPKR(row.held)} is held. The refund cannot be more than that.
           </p>
         )}
@@ -285,7 +325,7 @@ function RefundDialog({ row, onClose, onDone }: {
           <span>
             <span className="text-slate-700">Settle what they owe first</span>
             <span className="block text-xs text-slate-500">
-              {owed > 0
+              {bal.isLoading ? 'Checking what they owe…' : bal.isError ? `Could not read what they owe: ${(bal.error as Error).message}` : owed > 0
                 ? `They owe ${fmtPKR(owed)}. Recorded as an adjustment, so no cash report gains money that did not move.`
                 : 'They owe nothing, so this changes nothing.'}
             </span>
@@ -319,10 +359,13 @@ function RefundDialog({ row, onClose, onDone }: {
           </div>
         </div>
 
-        {m.isError && <p className="mt-2 text-sm text-red-600">{(m.error as Error).message}</p>}
+        {m.isError && <p className="mt-2 text-sm text-danger-600">{(m.error as Error).message}</p>}
 
         <div className="mt-4 flex gap-2">
-          <button onClick={() => m.mutate()} disabled={m.isPending || tooMuch || amt <= 0}
+          {/* Not until the balance is read. The preview above is what the
+              clerk tells the parent, and before the read it said "they owe
+              nothing" for every child. */}
+          <button onClick={() => m.mutate()} disabled={m.isPending || tooMuch || amt <= 0 || (net && !bal.isSuccess)}
             className="flex-1 rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
             {m.isPending ? 'Recording…' : 'Record refund'}
           </button>
@@ -339,7 +382,7 @@ function RefundDialog({ row, onClose, onDone }: {
 function ChargeDialog({ heads, onClose, onDone }: {
   heads: { id: string; name: string }[]
   onClose: () => void
-  onDone: () => void
+  onDone: (message: string) => void
 }) {
   const [term, setTerm] = useState('')
   const [student, setStudent] = useState<StudentRow | null>(null)
@@ -354,7 +397,9 @@ function ChargeDialog({ heads, onClose, onDone }: {
 
   const m = useMutation({
     mutationFn: () => chargeDeposit(student!.id, headId, Number(amount)),
-    onSuccess: onDone,
+    onSuccess: () => onDone(
+      `${fmtPKR(Number(amount))} ${heads.find((h) => h.id === headId)?.name ?? 'deposit'} charged to ${student?.full_name ?? 'the pupil'} on its own challan. It is held once it is paid at the counter.`,
+    ),
   })
 
   return (
@@ -412,7 +457,7 @@ function ChargeDialog({ heads, onClose, onDone }: {
           </>
         )}
 
-        {m.isError && <p className="mt-2 text-sm text-red-600">{(m.error as Error).message}</p>}
+        {m.isError && <p className="mt-2 text-sm text-danger-600">{(m.error as Error).message}</p>}
 
         <div className="mt-4 flex gap-2">
           <button onClick={() => m.mutate()}

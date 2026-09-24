@@ -1,5 +1,8 @@
-import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/auth/AuthProvider'
+import { TabBar } from '@/components/TabBar'
+import { useUrlTab } from '@/lib/useUrlTab'
+import { listPendingPayments } from '@/lib/db'
 import { canWrite } from '@/auth/roles'
 import { ObserverNotice } from '@/components/ObserverNotice'
 import { FamilyCollect } from './FamilyCollect'
@@ -52,27 +55,27 @@ export function FeesPage() {
   const { profile } = useAuth()
   const mayWrite = canWrite(profile?.role)
   const tabs = TABS.filter((t) => mayWrite || !t.writes)
-  const [tab, setTab] = useState<TabKey>(mayWrite ? 'collect' : 'arrears')
+  // In the address bar (/fees?tab=pending), so a link opens the right tab and
+  // a reload stays on it. An observer opens on Arrears, as before: it is the
+  // list they are there to read.
+  const [tab, setTab] = useUrlTab<TabKey>(tabs.map((t) => t.key), mayWrite ? 'collect' : 'arrears')
+  // The count on the Pending tab: money accepted and not yet cleared is the
+  // one list here that goes stale if nobody opens it.
+  const pending = useQuery({ queryKey: ['pendingPayments'], queryFn: listPendingPayments, staleTime: 60_000 })
   return (
     <div>
       {!mayWrite && <ObserverNotice what="fee records" />}
-      <div className="mb-5 flex gap-1 overflow-x-auto border-b border-slate-200">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`-mb-px whitespace-nowrap border-b-2 px-4 py-2.5 text-sm transition ${
-              tab === t.key
-                ? 'border-brand-600 font-semibold text-brand-700'
-                : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <TabBar
+        label="Fees"
+        value={tab}
+        onChange={setTab}
+        tabs={tabs.map((t) => ({
+          key: t.key, label: t.label,
+          count: t.key === 'pending' ? pending.data?.length ?? null : null,
+        }))}
+      />
       <div>
-        {tab === 'collect' && <FamilyCollect />}
+        {tab === 'collect' && <FamilyCollect onOpenPending={() => setTab('pending')} />}
         {tab === 'bulk' && <BulkCollect />}
         {tab === 'challans' && (
           <div className="space-y-5">

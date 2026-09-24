@@ -1,5 +1,6 @@
-import { useState } from 'react'
 import { useAuth } from '@/auth/AuthProvider'
+import { TabBar } from '@/components/TabBar'
+import { useUrlTab } from '@/lib/useUrlTab'
 import { canWrite } from '@/auth/roles'
 import { ObserverNotice } from '@/components/ObserverNotice'
 import { ExamSetup } from './ExamSetup'
@@ -30,20 +31,16 @@ export function ExamsPage() {
   const { profile } = useAuth()
   const mayWrite = canWrite(profile?.role)
   const tabs = TABS.filter((t) => mayWrite || !t.writes)
-  const [tab, setTab] = useState<TabKey>(mayWrite ? 'setup' : 'results')
+  // In the address bar, so /exams?tab=results opens Result Cards and a reload
+  // stays where it was. An observer's first (and only) tab is Result Cards.
+  const [tab, setTab] = useUrlTab<TabKey>(tabs.map((t) => t.key), tabs[0].key)
   return (
     <div>
       <h1 className="text-xl font-semibold text-slate-800">Exams &amp; Results</h1>
       {!mayWrite && <ObserverNotice what="exam results" />}
-      <div className="mt-4 flex gap-1 border-b border-slate-200">
-        {tabs.map((t) => (
-          <button key={t.key} onClick={() => setTab(t.key)}
-            className={`-mb-px border-b-2 px-4 py-2 text-sm ${tab === t.key ? 'border-brand-600 font-medium text-brand-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
-            {t.label}
-          </button>
-        ))}
-      </div>
-      <div className="mt-5">
+      <TabBar label="Exams and results" className="mt-4" value={tab} onChange={setTab}
+        tabs={tabs.map((t) => ({ key: t.key, label: t.label }))} />
+      <div>
         {tab === 'setup' && <ExamSetup />}
         {tab === 'streams' && <StreamsTab />}
         {tab === 'marks' && <MarksEntry />}

@@ -413,6 +413,113 @@ export function StackedColumns({
   )
 }
 
+/* ------------------------------------------------------ paired columns --- */
+
+export interface PairDatum {
+  key: string
+  label: string
+  a: number
+  b: number
+  tipTitle?: string
+}
+
+/**
+ * Two measures of the SAME unit side by side per period: money in and money
+ * out, month by month. One axis, because both are rupees; two measures of
+ * different units would be two charts. Each pair shares a band, the two bars
+ * 2px apart, square at the baseline with a 4px rounded data end. The legend
+ * names both series, so neither colour carries identity alone.
+ *
+ * The default pair is money green against the brand indigo, run through the
+ * palette validator: normal-vision Delta E 31.8, worst colour-blind pair 27.1
+ * (deutan). A grey "out" was tried first and failed the chroma floor, reading
+ * as disabled rather than as a measure. Green's sub-3:1 contrast is relieved,
+ * as the method requires, by the table view every chart carries.
+ */
+export function PairedColumns({
+  data, aLabel, bLabel, aColor = C.good, bColor = C.series, height = 216,
+  formatTick = (n) => compactRs(n, false), formatFull, label,
+}: {
+  data: PairDatum[]
+  aLabel: string
+  bLabel: string
+  aColor?: string
+  bColor?: string
+  height?: number
+  formatTick?: (n: number) => string
+  formatFull: (n: number) => string
+  label: string
+}) {
+  const [ref, width] = useWidth<HTMLDivElement>()
+  const [tip, setTip] = useState<Tip | null>(null)
+  const padL = 40, padR = 8, padT = 12, padB = 26
+  const plotW = Math.max(width - padL - padR, 60)
+  const plotH = height - padT - padB
+  const { top, ticks } = niceScale(Math.max(0, ...data.map((d) => Math.max(d.a, d.b))))
+  const band = plotW / Math.max(data.length, 1)
+  const barW = Math.max(3, Math.min(14, (band - 10) / 2))
+  const y = (v: number) => padT + plotH - (Math.max(v, 0) / top) * plotH
+  const every = band < 34 ? 2 : 1
+
+  const bar = (x: number, v: number, color: string, k: string) => {
+    const t = y(v), h = Math.max(padT + plotH - t, 0)
+    if (h <= 0) return null
+    const rr = Math.min(4, h / 2, barW / 2)
+    const b0 = padT + plotH
+    return (
+      <path key={k} fill={color}
+        d={`M${x},${b0} L${x},${t + rr} Q${x},${t} ${x + rr},${t} L${x + barW - rr},${t} Q${x + barW},${t} ${x + barW},${t + rr} L${x + barW},${b0} Z`} />
+    )
+  }
+
+  return (
+    <div ref={ref} className="relative w-full">
+      <ul className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+        <li className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: aColor }} aria-hidden />{aLabel}</li>
+        <li className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: bColor }} aria-hidden />{bLabel}</li>
+      </ul>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={label} className="block h-auto w-full">
+        {ticks.map((t) => (
+          <g key={t}>
+            <line x1={padL} x2={width - padR} y1={y(t)} y2={y(t)} stroke={t === 0 ? C.axis : C.grid} strokeWidth={1} />
+            <text x={padL - 6} y={y(t)} dy="0.32em" textAnchor="end" fontSize={11} fill={C.muted} className="tabular-nums">
+              {formatTick(t)}
+            </text>
+          </g>
+        ))}
+        {data.map((d, i) => {
+          const cx = padL + band * (i + 0.5)
+          const rows: TipRow[] = [
+            { label: aLabel, value: formatFull(d.a), color: aColor },
+            { label: bLabel, value: formatFull(d.b), color: bColor },
+          ]
+          return (
+            <g key={d.key}>
+              {bar(cx - barW - 1, d.a, aColor, 'a')}
+              {bar(cx + 1, d.b, bColor, 'b')}
+              {i % every === 0 && (
+                <text x={cx} y={height - 8} textAnchor="middle" fontSize={11} fill={C.muted}>{d.label}</text>
+              )}
+              <rect
+                x={padL + band * i} y={padT} width={band} height={plotH}
+                fill="transparent" tabIndex={0}
+                aria-label={`${d.tipTitle ?? d.label}: ${rows.map((r) => `${r.label} ${r.value}`).join(', ')}`}
+                className="cursor-default outline-none focus:fill-slate-900/5 hover:fill-slate-900/5"
+                onPointerEnter={(e) => setTip({ ...pointerAt(e, ref.current), title: d.tipTitle ?? d.label, rows })}
+                onPointerMove={(e) => setTip((t) => (t ? { ...t, ...pointerAt(e, ref.current) } : t))}
+                onPointerLeave={() => setTip(null)}
+                onFocus={(e) => setTip({ ...pointerAt(e, ref.current), title: d.tipTitle ?? d.label, rows })}
+                onBlur={() => setTip(null)}
+              />
+            </g>
+          )
+        })}
+      </svg>
+      <TipBox tip={tip} width={width} />
+    </div>
+  )
+}
+
 /* ---------------------------------------------------------- trend line --- */
 
 export interface TrendPoint {

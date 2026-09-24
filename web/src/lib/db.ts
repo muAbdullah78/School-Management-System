@@ -339,12 +339,15 @@ export async function cancelPendingPayment(paymentId: string, reason: string): P
 export interface PendingPaymentRow {
   id: string; amount: number; method: string; receipt_no: number | null; created_at: string
   note: string | null; student_id: string; student_name: string | null; gr_no: string | null
+  /** A family payment has no student: the father paid for all of them. Named
+   *  from the family, or the list showed "-" for exactly those rows. */
+  family_head: string | null
 }
 export async function listPendingPayments(): Promise<PendingPaymentRow[]> {
   const sb = requireSupabase()
   const rows = unwrap<Record<string, any>[]>(
     await sb.from('payments')
-      .select('id, amount, method, receipt_no, created_at, note, student_id, students(full_name, gr_no)')
+      .select('id, amount, method, receipt_no, created_at, note, student_id, students(full_name, gr_no), families(head_name)')
       .eq('status', 'pending')
       .order('created_at', { ascending: false }),
   )
@@ -353,6 +356,7 @@ export async function listPendingPayments(): Promise<PendingPaymentRow[]> {
     receipt_no: r.receipt_no == null ? null : Number(r.receipt_no),
     created_at: r.created_at, note: r.note, student_id: r.student_id,
     student_name: r.students?.full_name ?? null, gr_no: r.students?.gr_no ?? null,
+    family_head: r.families?.head_name ?? null,
   }))
 }
 
@@ -5100,7 +5104,12 @@ function asFinanceSummary(v: unknown, fn: string): FinanceSummary {
     || typeof o.profit !== 'number'
     || cats === null
   ) throw outOfDate(fn)
-  return { ...o, expenses_by_category: cats } as unknown as FinanceSummary
+  // The split between fees and other income is printed under every tile since
+  // Step 2. Every database since 0030 returns both, and a payload without them
+  // must still add up rather than print "Rs NaN".
+  const other = typeof o.other_income === 'number' ? o.other_income : 0
+  const fee = typeof o.fee_income === 'number' ? o.fee_income : (o.total_income as number) - other
+  return { ...o, fee_income: fee, other_income: other, expenses_by_category: cats } as unknown as FinanceSummary
 }
 
 export async function getFinanceSummary(from: string, to: string): Promise<FinanceSummary> {
@@ -6363,4 +6372,139 @@ export async function myAnnouncements(): Promise<LiveAnnouncement[]> {
   // right failure here: the app works perfectly well without one.
   if (error) return []
   return (data ?? []) as LiveAnnouncement[]
+}
+
+// ============================================================ 0147 ==========
+// The reads behind the Step 2 screens: Attendance, Tests, Exams, Fees and
+// Accounts. Each is a NEW function beside an existing one, so every screen
+// still works on a database without bundle 48 and simply draws no chart.
+
+const n0 = (v: unknown) => Number(v ?? 0)
+const nOrNull = (v: unknown) => (v == null ? null : Number(v))
+
+/** One section's register on one day, with the tally. */
+export interface AttendanceTally {
+  class_id: string; section_id: string | null
+  pupils: number; marked: number
+  present: number; late: number; half_day: number; leave: number; absent: number
+  pct: number | null
+}
+/** A child below 75 per cent this session, the board-exam line. */
+export interface AttendanceWatch {
+  student_id: string; full_name: string; gr_no: string | null
+  class_name: string; section_name: string | null
+  marked: number; present: number; late: number; half_day: number
+  leave: number; absent: number; pct: number
+}
+export interface AttendanceOverview {
+  date: string; today: string
+  sections: AttendanceTally[]
+  trend: AttendanceDay[]
+  watchlist: AttendanceWatch[]
+}
+export async function getAttendanceOverview(sessionId: string, date: string): Promise<AttendanceOverview> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_attendance_overview', { p_session_id: sessionId, p_date: date })
+  if (error) throw new Error(error.message)
+  const d = (data ?? {}) as Record<string, unknown>
+  const counts = (r: Record<string, unknown>) => ({
+    marked: n0(r.marked), present: n0(r.present), late: n0(r.late),
+    half_day: n0(r.half_day), leave: n0(r.leave), absent: n0(r.absent),
+  })
+  return {
+    date: String(d.date ?? date), today: String(d.today ?? date),
+    sections: ((d.sections ?? []) as Record<string, unknown>[]).map((r) => ({
+      class_id: String(r.class_id), section_id: (r.section_id as string | null) ?? null,
+      pupils: n0(r.pupils), ...counts(r), pct: nOrNull(r.pct),
+    })),
+    trend: ((d.trend ?? []) as Record<string, unknown>[]).map((r) => ({
+      date: String(r.date), ...counts(r), pct: nOrNull(r.pct),
+    })),
+    watchlist: ((d.watchlist ?? []) as Record<string, unknown>[]).map((r) => ({
+      student_id: String(r.student_id), full_name: String(r.full_name ?? ''),
+      gr_no: (r.gr_no as string | null) ?? null,
+      class_name: String(r.class_name ?? ''), section_name: (r.section_name as string | null) ?? null,
+      ...counts(r), pct: n0(r.pct),
+    })),
+  }
+}
+
+/** How one test went. Same window and same roll as fn_tests_overview. */
+export interface TestMarks {
+  assessment_id: string; sat: number; absent: number
+  avg_pct: number | null; below_pass: number; top_pct: number | null; pass_pct: number
+}
+export async function listTestsMarks(sessionId: string, from: string, to: string): Promise<TestMarks[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_tests_marks', { p_session_id: sessionId, p_from: from, p_to: to })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    assessment_id: String(r.assessment_id), sat: n0(r.sat), absent: n0(r.absent),
+    avg_pct: nOrNull(r.avg_pct), below_pass: n0(r.below_pass),
+    top_pct: nOrNull(r.top_pct), pass_pct: Number(r.pass_pct ?? 33),
+  }))
+}
+
+/** The head's reopen of a locked test. Owner or principal, with a reason. */
+export async function unlockAssessment(assessmentId: string, reason: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_unlock_assessment', { p_assessment_id: assessmentId, p_reason: reason })
+  if (error) throw new Error(error.message)
+}
+
+/** Marks already on a paper, so Remove can say what it would delete. */
+export async function getPaperMarksCount(examSubjectId: string): Promise<{ marks: number; locked: number }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_paper_marks_count', { p_exam_subject_id: examSubjectId })
+  if (error) throw new Error(error.message)
+  const d = (data ?? {}) as Record<string, unknown>
+  return { marks: n0(d.marks), locked: n0(d.locked) }
+}
+
+/** The day at the counter, in Karachi: cleared money by method, and what is
+ *  still waiting on a bank. */
+export interface FeesToday {
+  today: string
+  cleared_total: number; cleared_receipts: number
+  by_method: { method: string; receipts: number; amount: number }[]
+  pending_count: number; pending_total: number
+}
+export async function getFeesToday(): Promise<FeesToday> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_fees_today')
+  if (error) throw new Error(error.message)
+  const d = (data ?? {}) as Record<string, unknown>
+  return {
+    today: String(d.today ?? ''),
+    cleared_total: n0(d.cleared_total), cleared_receipts: n0(d.cleared_receipts),
+    by_method: ((d.by_method ?? []) as Record<string, unknown>[]).map((r) => ({
+      method: String(r.method), receipts: n0(r.receipts), amount: n0(r.amount),
+    })),
+    pending_count: n0(d.pending_count), pending_total: n0(d.pending_total),
+  }
+}
+
+/** What the month's concessions cost, from the discount lines on its challans. */
+export interface DiscountsMonth { month: string; amount: number; children: number; gross: number }
+export async function getDiscountsMonth(sessionId: string, month?: string | null): Promise<DiscountsMonth> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_discounts_month', { p_session_id: sessionId, p_month: month ?? null })
+  if (error) throw new Error(error.message)
+  const d = (data ?? {}) as Record<string, unknown>
+  return { month: String(d.month ?? ''), amount: n0(d.amount), children: n0(d.children), gross: n0(d.gross) }
+}
+
+/** Income and spending month by month. Each month IS fn_finance_summary. */
+export interface FinanceMonth {
+  month: string; fee_income: number; other_income: number
+  total_income: number; expenses: number; profit: number
+}
+export async function listFinanceMonths(months = 12): Promise<FinanceMonth[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_finance_months', { p_months: months })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    month: String(r.month), fee_income: n0(r.fee_income), other_income: n0(r.other_income),
+    total_income: n0(r.total_income), expenses: n0(r.expenses), profit: n0(r.profit),
+  }))
 }

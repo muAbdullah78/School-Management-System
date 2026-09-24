@@ -2569,6 +2569,15 @@ jobs:
         # was verified to fail on a deliberately planted unscoped function.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/dashboard.sql
 
+      - name: The office all day (0147), Karachi dates, fee reads, finished tests
+        # Accounts dated a payment by the UTC clock, so a fee taken before 05:00
+        # in Karachi counted on the day before. Nine fee reads answered a
+        # teacher's login. A test could lock half marked and never reopen. Each
+        # chart read is asserted equal to a figure already on screen (collected
+        # today, the profit snapshot, the day's register) so a chart cannot tell
+        # a different story from the tile beside it.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/the_office_all_day.sql
+
       - name: Student list — does the fast balance equal the real one?
         # fn_student_list recomputes each balance SET-BASED rather than calling
         # student_balance() per row, because per-row is 800 correlated

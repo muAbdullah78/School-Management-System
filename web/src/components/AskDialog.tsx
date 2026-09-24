@@ -34,7 +34,7 @@ import { useState, type ReactNode } from 'react'
  * being required on the one that matters.
  */
 export function AskDialog({
-  title, intro, amount, reason, confirmLabel, tone = 'brand', busy, error, onCancel, onSubmit,
+  title, intro, amount, reason, confirmLabel, cancelLabel = 'Cancel', tone = 'brand', busy, error, onCancel, onSubmit,
 }: {
   title: string
   /** What this is about: the child, the month, the amount at stake. */
@@ -63,6 +63,8 @@ export function AskDialog({
     placeholder?: string
   }
   confirmLabel: string
+  /** "Stay" reads better than "Cancel" when the question is "leave without saving?". */
+  cancelLabel?: string
   tone?: 'brand' | 'danger'
   busy?: boolean
   error?: string | null
@@ -153,7 +155,7 @@ export function AskDialog({
         <div className="mt-4 flex justify-end gap-2">
           <button type="button" onClick={onCancel}
             className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-            Cancel
+            {cancelLabel}
           </button>
           <button type="submit" disabled={!canSubmit}
             className={`rounded-lg px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50 ${confirmClass}`}>

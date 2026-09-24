@@ -22,7 +22,7 @@
  */
 import { describe, expect, it, vi, afterEach } from 'vitest'
 import { createElement } from 'react'
-import { cleanup, render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fakeSupabase, type FakeOptions } from './fakeSupabase'
@@ -186,7 +186,8 @@ describe('the discount register reads the model the database actually has', () =
 
   it('6. shows the months a concession covers, at both ends', async () => {
     mount(createElement(Discounts), REGISTER)
-    await waitFor(() => expect(screen.getByText('Abdullah Dar')).toBeTruthy())
+    // Twice in the page: the phone list and the desktop table, one shown by CSS.
+    await waitFor(() => expect(screen.getAllByText('Abdullah Dar').length).toBeGreaterThan(0))
     // getByText matches one text NODE, and the cell is built from two, so the
     // whole cell is read instead of asserting on how JSX happened to split it.
     const cells = Array.from(document.querySelectorAll('td')).map((td) => td.textContent ?? '')
@@ -198,17 +199,19 @@ describe('the discount register reads the model the database actually has', () =
 
   it('7. separates "in force" from "approved", which the old list could not', async () => {
     mount(createElement(Discounts), REGISTER)
-    await waitFor(() => expect(screen.getByText('Abdullah Dar')).toBeTruthy())
+    // Twice in the page: the phone list and the desktop table, one shown by CSS.
+    await waitFor(() => expect(screen.getAllByText('Abdullah Dar').length).toBeGreaterThan(0))
     // Both rows are approved. Only one of them is coming off a fee this month,
     // and the old screen showed them identically with a Revoke button each.
-    expect(screen.getAllByText('Approved').length).toBe(2)
-    expect(screen.getAllByText('In force').length).toBe(1)
+    const table = within(document.querySelector('table')!)
+    expect(table.getAllByText('Approved').length).toBe(2)
+    expect(table.getAllByText('In force').length).toBe(1)
     expect(screen.getByText(/1 running this month/)).toBeTruthy()
   })
 
   it('8. keeps a child with no enrolment on the list instead of dropping them', async () => {
     mount(createElement(Discounts), REGISTER)
-    await waitFor(() => expect(screen.getByText('Bilal Dar')).toBeTruthy())
+    await waitFor(() => expect(screen.getAllByText('Bilal Dar').length).toBeGreaterThan(0))
     expect(screen.getByText('not enrolled')).toBeTruthy()
   })
 
@@ -300,7 +303,8 @@ describe('the child page and the counter agree, and its discount button works', 
     mount(createElement(StudentProfile, {
       studentId: 'stu-1', onBack: () => {},
     }), opts)
-    await waitFor(() => expect(screen.getByText('Abdullah Dar')).toBeTruthy())
+    // Twice in the page: the phone list and the desktop table, one shown by CSS.
+    await waitFor(() => expect(screen.getAllByText('Abdullah Dar').length).toBeGreaterThan(0))
     fireEvent.click(screen.getByRole('button', { name: 'Fees' }))
     // Wait for the discount strip to have LOADED, not merely to exist. It
     // renders an ellipsis while fn_student_discounts is in flight, and

@@ -90,9 +90,11 @@ describe('the Fees screen opens on the month', () => {
     await waitFor(() => expect(screen.getByText('Not paid yet')).toBeTruthy())
     expect(screen.queryByText('Owing Child')).toBeNull()
     fireEvent.click(screen.getByText('Not paid yet'))
-    await waitFor(() => expect(screen.getByText('Owing Child')).toBeTruthy())
+    // Twice in the page, which is the phone list and the desktop table; CSS
+    // shows one of them. Each still has to name the child.
+    await waitFor(() => expect(screen.getAllByText('Owing Child').length).toBeGreaterThan(0))
     // The parent's name is there too: the office rings the father, not the child.
-    expect(screen.getByText('Shahid Anwar')).toBeTruthy()
+    expect(screen.getAllByText(/Shahid Anwar/).length).toBeGreaterThan(0)
   })
 
   it('4. keeps "not charged" separate from paid and unpaid', async () => {

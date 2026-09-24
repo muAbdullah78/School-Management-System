@@ -1286,7 +1286,22 @@ with sig(migration, object, present) as (values
   ('0146_the_dashboard_draws_what_it_knows',
      'fn_dashboard_trends, fn_student_marks_trend',
      (select to_regprocedure('public.fn_dashboard_trends()') is not null
-         and to_regprocedure('public.fn_student_marks_trend(uuid)') is not null))
+         and to_regprocedure('public.fn_student_marks_trend(uuid)') is not null)),
+  -- 0147's signature is its new reads plus the Karachi clock in
+  -- fn_finance_summary. Without it the screens work as they shipped, with the
+  -- UTC dating fault, so MISSING rather than broken.
+  ('0147_the_screens_the_office_works_in',
+     'fn_attendance_overview, fn_tests_marks, fn_unlock_assessment, fn_fees_today, fn_discounts_month, fn_finance_months, fn_paper_marks_count',
+     (select to_regprocedure('public.fn_attendance_overview(uuid,date)') is not null
+         and to_regprocedure('public.fn_tests_marks(uuid,date,date)') is not null
+         and to_regprocedure('public.fn_unlock_assessment(uuid,text)') is not null
+         and to_regprocedure('public.fn_fees_today()') is not null
+         and to_regprocedure('public.fn_discounts_month(uuid,date)') is not null
+         and to_regprocedure('public.fn_finance_months(integer)') is not null
+         and to_regprocedure('public.fn_paper_marks_count(uuid)') is not null
+         and exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                      where n.nspname = 'public' and p.proname = 'fn_finance_summary'
+                        and p.prosrc like '%Asia/Karachi%')))
 )
 select migration,
        object                                   as looked_for,

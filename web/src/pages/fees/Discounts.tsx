@@ -42,6 +42,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
   searchStudents, getCurrentEnrollment, addDiscount, listDiscountRegister, setDiscountStatus,
+  getCurrentSession, getDiscountsMonth,
   type StudentRow, type DiscountRow,
 } from '@/lib/db'
 import { DISCOUNT_TYPES, DISCOUNT_STATUS_LABELS } from '@/lib/constants'
@@ -49,11 +50,14 @@ import { fmtPKR, fmtMonth } from '@/lib/format'
 import { useAuth } from '@/auth/AuthProvider'
 import { APPROVER_ROLES, type Role } from '@/auth/roles'
 import { AskDialog } from '@/components/AskDialog'
+import { isMissingFunction } from '@/lib/notInstalled'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
+// Green is money coming IN everywhere in this app, and a discount is money
+// given away, so no status here is green.
 const STATUS_TONE: Record<string, string> = {
-  pending: 'bg-amber-100 text-amber-700', approved: 'bg-emerald-100 text-emerald-700',
-  rejected: 'bg-slate-200 text-slate-600', revoked: 'bg-red-100 text-red-700',
+  pending: 'bg-due-100 text-due-800', approved: 'bg-slate-100 text-slate-700',
+  rejected: 'bg-slate-100 text-slate-500', revoked: 'bg-danger-50 text-danger-700',
 }
 
 function thisMonthISO(): string {
@@ -98,6 +102,21 @@ export function Discounts() {
     queryKey: ['discountRegister', liveOnly],
     queryFn: () => listDiscountRegister(liveOnly),
   })
+  // All of them, for the counts at the top, whatever the filter below shows.
+  const everything = useQuery({
+    queryKey: ['discountRegister', false],
+    queryFn: () => listDiscountRegister(false),
+  })
+  const session = useQuery({ queryKey: ['currentSession'], queryFn: getCurrentSession })
+  // What the concessions cost this month in rupees (0147): the discount lines
+  // on this month's challans, the answer to "what am I giving away".
+  const cost = useQuery({
+    queryKey: ['discountsMonth', session.data?.id],
+    queryFn: () => getDiscountsMonth(session.data!.id),
+    enabled: !!session.data?.id,
+    retry: false,
+  })
+  const [added, setAdded] = useState<string | null>(null)
 
   function refresh() {
     qc.invalidateQueries({ queryKey: ['discountRegister'] })
@@ -108,6 +127,9 @@ export function Discounts() {
     qc.invalidateQueries({ queryKey: ['feesMonth'] })
     qc.invalidateQueries({ queryKey: ['feesMonthPupils'] })
     qc.invalidateQueries({ queryKey: ['studentFeeState'] })
+    qc.invalidateQueries({ queryKey: ['discountsMonth'] })
+    qc.invalidateQueries({ queryKey: ['classDues'] })
+    qc.invalidateQueries({ queryKey: ['arrears'] })
   }
 
   const add = useMutation({
@@ -121,7 +143,12 @@ export function Discounts() {
       // because a role list is a thing that changes.
       if (canApprove) await setDiscountStatus(id, 'approved')
     },
-    onSuccess: () => { setAmount(''); setReason(''); setEndsOn(''); refresh() },
+    onSuccess: () => {
+      // Said in words. The form used to clear itself and say nothing, so the
+      // only sign it had worked was a row appearing further down the page.
+      setAdded(`${DISCOUNT_TYPES.find((t) => t.value === type)?.label ?? type} of ${isPercent ? `${amount}%` : fmtPKR(Number(amount))} ${canApprove ? 'applied' : 'proposed'} for ${student?.full_name ?? 'the child'}.${canApprove ? ' Unpaid challans it covers are repriced now.' : ' It waits for the owner or principal.'}`)
+      setAmount(''); setReason(''); setEndsOn(''); refresh()
+    },
   })
   const setStatus = useMutation({
     mutationFn: (v: { id: string; status: string }) => setDiscountStatus(v.id, v.status),
@@ -133,11 +160,44 @@ export function Discounts() {
   const ready = !!student && Number(amount) > 0 && !endsBeforeStart && !pctTooBig
 
   const rows = register.data ?? []
-  const liveCount = rows.filter((d) => d.live).length
+  const all = everything.data ?? []
+  const liveCount = all.filter((d) => d.live).length
+  const pendingCount = all.filter((d) => d.status === 'pending').length
 
   return (
     <div className="space-y-6">
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
+      {/* ---------------------------------------------------- the numbers -- */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="rounded-2xl border border-brand-200 bg-brand-50 px-4 py-3 text-brand-900">
+          <div className="text-2xl font-semibold tabular-nums">{everything.isLoading ? '-' : liveCount}</div>
+          <div className="text-sm font-medium">Running this month</div>
+          <div className="mt-0.5 text-xs opacity-75">Approved, started, and not ended.</div>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900">
+          <div className="text-2xl font-semibold tabular-nums">
+            {cost.data ? fmtPKR(cost.data.amount) : cost.isError ? '-' : '…'}
+          </div>
+          <div className="text-sm font-medium">Given away this month</div>
+          <div className="mt-0.5 text-xs text-slate-500">
+            {cost.data
+              ? cost.data.gross > 0
+                ? `On ${cost.data.children} child${cost.data.children === 1 ? '' : 'ren'}'s challans, ${Math.round((100 * cost.data.amount) / cost.data.gross)}% of the month's fees.`
+                : 'Nothing has been charged this month yet.'
+              : cost.isError
+                ? isMissingFunction(cost.error) ? 'Needs database update, bundle 48.' : (cost.error as Error).message
+                : 'Adding up this month’s challans…'}
+          </div>
+        </div>
+        <div className={`rounded-2xl border px-4 py-3 ${pendingCount > 0 ? 'border-due-200 bg-due-50 text-due-900' : 'border-slate-200 bg-white text-slate-900'}`}>
+          <div className="text-2xl font-semibold tabular-nums">{everything.isLoading ? '-' : pendingCount}</div>
+          <div className="text-sm font-medium">Waiting for a decision</div>
+          <div className="mt-0.5 text-xs opacity-75">
+            {pendingCount > 0 ? (canApprove ? 'Approve or reject them in the register below.' : 'The owner or principal decides.') : 'Nothing is waiting.'}
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-card">
         <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Give a discount</div>
         <p className="mt-1 text-sm text-slate-600">
           A concession belongs to the <span className="font-medium">child</span> and runs until
@@ -164,9 +224,9 @@ export function Discounts() {
               <div className="text-sm text-slate-700">
                 <span className="font-medium">{student.full_name}</span>{student.gr_no ? ` · ${student.gr_no}` : ''}
                 {enrollment.data ? <span className="text-slate-500"> · {enrollment.data.class_name}{enrollment.data.section_name ? ` · ${enrollment.data.section_name}` : ''}</span>
-                  : enrollment.isFetched ? <span className="text-amber-600"> · not enrolled this session, which does not stop a discount</span> : ''}
+                  : enrollment.isFetched ? <span className="text-due-800"> · not enrolled this session, which does not stop a discount</span> : ''}
               </div>
-              <button onClick={() => { setStudent(null); setTerm('') }} className="text-sm text-brand-700 hover:underline">Change</button>
+              <button onClick={() => { setStudent(null); setTerm(''); setAdded(null) }} className="text-sm text-brand-700 hover:underline">Change</button>
             </div>
             <div className="mt-3 grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
               <label className="block"><span className="text-sm text-slate-600">Type</span>
@@ -193,10 +253,13 @@ export function Discounts() {
                 <input value={reason} onChange={(e) => setReason(e.target.value)} className={FIELD} placeholder="e.g. two siblings" />
               </label>
             </div>
-            {pctTooBig && <p className="mt-2 text-sm text-amber-600">A percentage discount can’t be more than 100%.</p>}
-            {endsBeforeStart && <p className="mt-2 text-sm text-amber-600">The end month can’t be before the month it starts in.</p>}
+            {pctTooBig && <p className="mt-2 text-sm text-danger-600">A percentage discount can’t be more than 100%.</p>}
+            {endsBeforeStart && <p className="mt-2 text-sm text-danger-600">The end month can’t be before the month it starts in.</p>}
             {!endsOn && <p className="mt-2 text-xs text-slate-400">Leave the end month empty and it runs until somebody ends it.</p>}
-            {add.isError && <p className="mt-2 text-sm text-red-600">{(add.error as Error).message}</p>}
+            {add.isError && <p className="mt-2 text-sm text-danger-600">{(add.error as Error).message}</p>}
+            {added && !add.isPending && (
+              <p className="mt-2 rounded-lg bg-brand-50 px-3 py-2 text-sm text-brand-800">{added}</p>
+            )}
             <button onClick={() => add.mutate()} disabled={!ready || add.isPending}
               className="mt-3 rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
               {add.isPending ? 'Saving…' : canApprove ? 'Apply discount' : 'Propose discount'}
@@ -218,7 +281,53 @@ export function Discounts() {
             Only the ones running this month
           </label>
         </div>
-        <div className="mt-2 overflow-x-auto rounded-lg border border-slate-200 bg-white">
+        {/* Phone: one card a concession. */}
+        <ul className="mt-2 divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 bg-white sm:hidden">
+          {register.isLoading && <li className="px-3 py-3 text-sm text-slate-400">Loading…</li>}
+          {register.isError && <li className="px-3 py-3 text-sm text-danger-600">{(register.error as Error).message}</li>}
+          {rows.length === 0 && !register.isLoading && !register.isError && (
+            <li className="px-3 py-3 text-sm text-slate-500">{liveOnly ? 'No discount is running this month.' : 'No discounts yet.'}</li>
+          )}
+          {rows.map((d) => (
+            <li key={d.id} className="px-3 py-2.5">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <button onClick={() => navigate(`/students?student=${d.student_id}`)}
+                    className="block truncate text-left text-sm font-medium text-slate-800 hover:underline">
+                    {d.student_name ?? '-'}
+                  </button>
+                  <div className="text-xs text-slate-500">
+                    {d.class_name ?? 'not enrolled'}{d.section_name ? ` · ${d.section_name}` : ''}
+                    {' · '}{DISCOUNT_TYPES.find((t) => t.value === d.type)?.label ?? d.type}
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    {fmtMonth(d.starts_on)}{d.ends_on ? ` to ${fmtMonth(d.ends_on)}` : ' onwards'}
+                    {d.reason ? ` · ${d.reason}` : ''}
+                  </div>
+                </div>
+                <div className="shrink-0 text-right">
+                  <div className="text-sm font-semibold tabular-nums text-slate-900">{d.is_percent ? `${d.amount}%` : fmtPKR(d.amount)}</div>
+                  {d.live && <span className="mt-0.5 inline-block rounded bg-brand-50 px-1.5 py-0.5 text-[11px] font-medium text-brand-700">In force</span>}
+                  {!d.live && <span className={`mt-0.5 inline-block rounded px-1.5 py-0.5 text-[11px] font-medium ${STATUS_TONE[d.status] ?? ''}`}>{DISCOUNT_STATUS_LABELS[d.status] ?? d.status}</span>}
+                </div>
+              </div>
+              {canApprove && (d.status === 'pending' || d.status === 'approved') && (
+                <div className="mt-2 flex gap-3 text-sm">
+                  {d.status === 'pending' && (
+                    <>
+                      <button onClick={() => setStatus.mutate({ id: d.id, status: 'approved' })} className="font-medium text-brand-700 hover:underline">Approve</button>
+                      <button onClick={() => setStatus.mutate({ id: d.id, status: 'rejected' })} className="text-slate-500 hover:underline">Reject</button>
+                    </>
+                  )}
+                  {d.status === 'approved' && (
+                    <button onClick={() => setRevoking(d)} className="text-danger-600 hover:underline">Revoke</button>
+                  )}
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+        <div className="mt-2 hidden overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-card sm:block">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
@@ -230,8 +339,8 @@ export function Discounts() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {register.isLoading && <tr><td colSpan={8} className="px-3 py-3 text-slate-400">Loading…</td></tr>}
-              {register.isError && <tr><td colSpan={8} className="px-3 py-3 text-red-600">{(register.error as Error).message}</td></tr>}
-              {rows.length === 0 && !register.isLoading && (
+              {register.isError && <tr><td colSpan={8} className="px-3 py-3 text-danger-600">{(register.error as Error).message}</td></tr>}
+              {rows.length === 0 && !register.isLoading && !register.isError && (
                 <tr><td colSpan={8} className="px-3 py-3 text-slate-500">
                   {liveOnly ? 'No discount is running this month.' : 'No discounts yet.'}
                 </td></tr>
@@ -248,7 +357,7 @@ export function Discounts() {
                     <span className="text-slate-400">{d.gr_no ? ` · ${d.gr_no}` : ''}</span>
                   </td>
                   <td className="px-3 py-2 text-slate-600">
-                    {d.class_name ?? <span className="text-amber-600">not enrolled</span>}
+                    {d.class_name ?? <span className="text-due-800">not enrolled</span>}
                     {d.section_name ? ` · ${d.section_name}` : ''}
                   </td>
                   <td className="px-3 py-2 text-slate-600">{DISCOUNT_TYPES.find((t) => t.value === d.type)?.label ?? d.type}</td>
@@ -259,18 +368,18 @@ export function Discounts() {
                   </td>
                   <td className="px-3 py-2 text-slate-500">{d.reason ?? '-'}</td>
                   <td className="whitespace-nowrap px-3 py-2">
-                    {d.live && <span className="mr-1 rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">In force</span>}
+                    {d.live && <span className="mr-1 rounded bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">In force</span>}
                     <span className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_TONE[d.status] ?? ''}`}>{DISCOUNT_STATUS_LABELS[d.status] ?? d.status}</span>
                   </td>
                   <td className="px-3 py-2 text-right">
                     {canApprove && d.status === 'pending' && (
                       <>
-                        <button onClick={() => setStatus.mutate({ id: d.id, status: 'approved' })} className="mr-2 text-sm text-emerald-700 hover:underline">Approve</button>
+                        <button onClick={() => setStatus.mutate({ id: d.id, status: 'approved' })} className="mr-2 text-sm font-medium text-brand-700 hover:underline">Approve</button>
                         <button onClick={() => setStatus.mutate({ id: d.id, status: 'rejected' })} className="text-sm text-slate-500 hover:underline">Reject</button>
                       </>
                     )}
                     {canApprove && d.status === 'approved' && (
-                      <button onClick={() => setRevoking(d)} className="text-sm text-red-600 hover:underline">Revoke</button>
+                      <button onClick={() => setRevoking(d)} className="text-sm text-danger-600 hover:underline">Revoke</button>
                     )}
                   </td>
                 </tr>
@@ -278,7 +387,7 @@ export function Discounts() {
             </tbody>
           </table>
         </div>
-        {setStatus.isError && <p className="mt-2 text-sm text-red-600">{(setStatus.error as Error).message}</p>}
+        {setStatus.isError && <p className="mt-2 text-sm text-danger-600">{(setStatus.error as Error).message}</p>}
         <p className="mt-2 text-xs text-slate-400">
           Anything waiting on a decision is at the top. Open a child to change the amount
           or the months, or to end a concession from a date rather than cancel it outright.
