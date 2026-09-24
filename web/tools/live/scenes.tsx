@@ -11,6 +11,7 @@ import type { QueryKey } from '@tanstack/react-query'
 import type { Profile } from '@/auth/AuthProvider'
 import type { DashboardSummary, DashboardTrends, DraftStudents, StudentWithoutAClass } from '@/lib/db'
 import { Dashboard } from '@/pages/Dashboard'
+import { AdmissionsPage } from '@/pages/admissions/AdmissionsPage'
 import {
   DEMO_DASHBOARD_SUMMARY, DEMO_DASHBOARD_TRENDS, DEMO_PROFILE, DEMO_SCHOOL,
 } from '../demo-data'
@@ -23,6 +24,8 @@ export interface Scene {
   route?: string
   /** RPC or table name -> the error message it fails with. */
   errors?: Record<string, string>
+  /** RPC name -> what it answers, for a write the scene shows succeeding. */
+  data?: Record<string, unknown>
 }
 
 const OWNER: Profile = { ...DEMO_PROFILE, role: 'owner' }
@@ -87,7 +90,34 @@ const common: [QueryKey, unknown][] = [
   [['review-eligibility-card'], { may_review: false, existing_review: null }],
 ]
 
+const SESSION = { id: 'ses-2627', name: DEMO_SCHOOL.session, is_current: true, starts_on: '2026-04-01', ends_on: '2027-03-31' }
+const CLASSES = [
+  { id: 'cn', name: 'Nursery', level_order: 0 }, { id: 'c1', name: 'Class 1', level_order: 1 },
+  { id: 'c2', name: 'Class 2', level_order: 2 }, { id: 'c3', name: 'Class 3', level_order: 3 },
+  { id: 'c5', name: 'Class 5', level_order: 5 }, { id: 'c8', name: 'Class 8', level_order: 8 },
+]
+
 export const SCENES: Record<string, Scene> = {
+  admissions: {
+    title: 'Admit a student',
+    node: <AdmissionsPage />,
+    profile: DEMO_PROFILE,
+    data: {
+      fn_admit_student: {
+        student_id: 'demo-st-9', enrollment_id: 'demo-en-9', gr_no: '1318', roll_no: '35',
+        family_id: 'demo-fam-1', admission_fee_amount: 5000, admission_receipt_no: 20417,
+      },
+    },
+    seeds: [
+      [['currentSession'], SESSION],
+      [['classes'], CLASSES],
+      [['sections', 'c5'], [{ id: 's5a', name: 'A', class_id: 'c5' }, { id: 's5b', name: 'B', class_id: 'c5' }]],
+      [['linkSearch', 'Aslam'], [
+        { id: 'demo-st-1', full_name: 'Ayesha Aslam', gr_no: '1204', father_name: 'Muhammad Aslam', class_name: 'Class 5', section_name: 'B', roll_no: '12' },
+        { id: 'demo-st-2', full_name: 'Bilal Aslam', gr_no: '1207', father_name: 'Muhammad Aslam', class_name: 'Class 8', section_name: 'A', roll_no: '4' },
+      ]],
+    ],
+  },
   dashboard: {
     title: `Dashboard, ${DEMO_SCHOOL.name}, 10:30 on a school day`,
     node: <Dashboard />,

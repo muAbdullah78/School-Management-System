@@ -7,22 +7,28 @@
  * a query function never shows its real failure state. This answers every
  * call the way PostgREST answers a failure, so the page draws exactly what a
  * school would see: an RPC named in window.__liveErrors fails with that
- * message, and anything else fails with a message saying it was not seeded.
+ * message, one named in window.__liveData answers with that value, and anything
+ * else fails with a message saying it was not seeded.
  *
  * Nothing here can reach a network. There is no client to reach one with.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 declare global {
-  interface Window { __liveErrors?: Record<string, string> }
+  interface Window {
+    __liveErrors?: Record<string, string>
+    /** RPC name -> what it answers, for the few WRITES a scene needs to show
+     *  succeeding (an admission, say). Reads are seeded into the cache instead. */
+    __liveData?: Record<string, unknown>
+  }
 }
 
 function failure(message: string) {
   return { data: null, error: { message, code: 'PGRST000', details: null, hint: null } }
 }
 
-function chain(message: string): unknown {
-  const done = Promise.resolve(failure(message))
+function chain(message: string, data?: unknown): unknown {
+  const done = Promise.resolve(data !== undefined ? { data, error: null } : failure(message))
   const self: unknown = new Proxy(function () {}, {
     get(_t, prop) {
       if (prop === 'then') return done.then.bind(done)
@@ -38,7 +44,7 @@ function chain(message: string): unknown {
 const client = {
   rpc(name: string) {
     const msg = window.__liveErrors?.[name] ?? `live preview: ${name} is not seeded`
-    return chain(msg)
+    return chain(msg, window.__liveErrors?.[name] ? undefined : window.__liveData?.[name])
   },
   from(table: string) {
     return chain(window.__liveErrors?.[table] ?? `live preview: table ${table} is not seeded`)

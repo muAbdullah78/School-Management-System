@@ -30,6 +30,7 @@ if (!scene) {
   root.render(<p style={{ padding: 24 }}>No scene called {name}. Try: {Object.keys(SCENES).join(', ')}</p>)
 } else {
   window.__liveErrors = scene.errors ?? {}
+  window.__liveData = scene.data ?? {}
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity, gcTime: Infinity } },
   })
