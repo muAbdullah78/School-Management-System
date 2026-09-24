@@ -461,7 +461,7 @@ function attentionItems({
           detail is only missing from certificates, board forms and the messages you send home.
         </>
       ),
-      action: <ActionLink to="/students">Open the roster</ActionLink>,
+      action: <ActionLink to="/students?drafts=1">Show them</ActionLink>,
     })
   }
 

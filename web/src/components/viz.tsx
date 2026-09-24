@@ -495,7 +495,10 @@ export function TrendLine({
         {reference && (
           <g>
             <line x1={padL} x2={width - padR} y1={y(reference.value)} y2={y(reference.value)} stroke="#cbd5e1" strokeWidth={1} />
-            <text x={width - padR + 4} y={y(reference.value)} dy="0.32em" fontSize={10} fill={C.muted}>
+            {/* Inside the plot, just above its line, at the left: the right-hand
+                margin belongs to the last point's label, and a label hung off
+                the end of the line was cut off at the card's edge. */}
+            <text x={padL + 4} y={y(reference.value) - 4} fontSize={10} fill={C.muted}>
               {reference.label}
             </text>
           </g>
