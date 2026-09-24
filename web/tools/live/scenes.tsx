@@ -16,6 +16,7 @@ import { Dashboard } from '@/pages/Dashboard'
 import { AdmissionsPage } from '@/pages/admissions/AdmissionsPage'
 import { StudentsPage } from '@/pages/students/StudentsPage'
 import { StudentProfile } from '@/pages/students/StudentProfile'
+import { SettingsPage } from '@/pages/SettingsPage'
 import {
   DEMO_DASHBOARD_SUMMARY, DEMO_DASHBOARD_TRENDS, DEMO_PROFILE, DEMO_SCHOOL,
 } from '../demo-data'
@@ -155,7 +156,39 @@ const AYESHA_TESTS = ([
   }
 })
 
+/* The statement that goes with the invoices above: each month charged, then
+   paid in cash a few days later, except August (half) and September (not yet). */
+const AYESHA_LEDGER = (() => {
+  const out: { seq: number; entry_on: string; kind: 'charge' | 'payment'; particulars: string; reference: string; debit: number; credit: number; balance_after: number; recorded_by: string }[] = []
+  let bal = 0, seq = 0
+  const months: [string, string, number][] = [
+    ['2026-04', 'April', 3000], ['2026-05', 'May', 3000], ['2026-06', 'June', 3000],
+    ['2026-08', 'August', 1500], ['2026-09', 'September', 0],
+  ]
+  for (const [ym, name, paid] of months) {
+    bal += 3000
+    out.push({ seq: ++seq, entry_on: `${ym}-01`, kind: 'charge', particulars: `Monthly tuition for ${name} 2026`, reference: `CH-${ym.replace('-', '')}`, debit: 3000, credit: 0, balance_after: bal, recorded_by: 'Rashid Ahmed' })
+    if (paid) {
+      bal -= paid
+      out.push({ seq: ++seq, entry_on: `${ym}-07`, kind: 'payment', particulars: 'Cash at the counter', reference: `R-${20100 + seq}`, debit: 0, credit: paid, balance_after: bal, recorded_by: 'Rashid Ahmed' })
+    }
+  }
+  return out
+})()
+
 export const SCENES: Record<string, Scene> = {
+  settings: {
+    title: 'Settings, Year Rollover',
+    node: <SettingsPage />,
+    profile: OWNER,
+    route: '/settings?tab=rollover',
+    seeds: [
+      [['currentSession'], SESSION],
+      [['sessions'], [SESSION, { id: 'ses-2526', name: '2025-2026', is_current: false, starts_on: '2025-04-01', ends_on: '2026-03-31' }]],
+      [['classes'], CLASSES],
+      [['studentsWithoutAClass'], leftBehind],
+    ],
+  },
   profile: {
     title: 'A student profile',
     node: <StudentProfile studentId={AYESHA.id} onBack={() => {}} />,
@@ -193,8 +226,8 @@ export const SCENES: Record<string, Scene> = {
         month: '2026-09-01', billed: true, state: 'unpaid', charge: 3000, paid: 0, due: 3000,
         arrears_months: 1, arrears_amount: 1500, arrears_oldest: '2026-08-01', balance: 4500, family_credit: 0,
       }],
-      [['ledger', AYESHA.id], []],
-      [['depositHeld', AYESHA.id], 0],
+      [['ledger', AYESHA.id], AYESHA_LEDGER],
+      [['depositHeld', AYESHA.id], 1_000],
       // Attendance & Tests tab, September
       [['attSummary', 'en-1', '2026-09'], { present: 15, absent: 1, leave: 1, late: 1, half_day: 0, marked_days: 18, present_pct: 88.9 }],
       [['monthTests', 'en-1', '2026-09'], AYESHA_TESTS.slice(6).map((t) => ({

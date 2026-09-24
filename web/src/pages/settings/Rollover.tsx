@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  getCurrentSession, listSessions, listClasses, runRollover, undoRollover,
+  getCurrentSession, listSessions, listClasses, runRollover, undoRollover, listStudentsWithoutAClass,
   type RolloverResult, type RolloverUndoResult,
 } from '@/lib/db'
+import { diagnoseNoClass } from '@/lib/noClass'
 import { defaultRolloverRules, rulesToPayload, type RolloverAction, type RolloverRule } from '@/lib/rollover'
 import { fmtPKR } from '@/lib/format'
 import { AskDialog } from '@/components/AskDialog'
@@ -29,8 +30,27 @@ export function Rollover() {
   const [undo, setUndo] = useState<RolloverUndoResult | null>(null)
   const [asking, setAsking] = useState<null | 'commit' | 'undo'>(null)
 
-  // Default the source to the current session once it loads.
-  useEffect(() => { if (current.data && !fromId) setFromId(current.data.id) }, [current.data, fromId])
+  /* WHICH YEAR TO ROLL FROM. This used to default to the current session,
+     which is right for a school that rolls over BEFORE moving the current
+     year on, and exactly wrong for the commoner case: the school switched to
+     2026-2027 first, and its children are still sitting in 2025-2026 on no
+     class list. So when most of the children on no class list were last in
+     one earlier session, that session is chosen as From and the current one
+     as To, and the screen says why. Anything else keeps the old default. */
+  const noClass = useQuery({ queryKey: ['studentsWithoutAClass'], queryFn: listStudentsWithoutAClass })
+  const suggestion = useMemo(() => {
+    if (!noClass.data || !sessions.data || !current.data) return null
+    const dx = diagnoseNoClass(noClass.data, current.data.name)
+    if (!dx.fromSession || dx.leftBehind === 0 || dx.leftBehind < dx.total / 2) return null
+    const from = sessions.data.find((x) => x.name === dx.fromSession)
+    if (!from || from.id === current.data.id) return null
+    return { fromId: from.id, toId: current.data.id, fromName: from.name, toName: current.data.name, count: dx.leftBehind }
+  }, [noClass.data, sessions.data, current.data])
+  useEffect(() => {
+    if (fromId || !current.data || !sessions.data || noClass.isLoading) return
+    if (suggestion) { setFromId(suggestion.fromId); setToId((t) => t || suggestion.toId) }
+    else setFromId(current.data.id)
+  }, [current.data, sessions.data, noClass.isLoading, suggestion, fromId])
   // Seed the per-class rules once classes load.
   useEffect(() => {
     if (classes.data && classes.data.length && Object.keys(rules).length === 0) {
@@ -83,6 +103,14 @@ export function Rollover() {
           attendance, fees or exams are recorded in the new session.
         </p>
       </div>
+
+      {suggestion && fromId === suggestion.fromId && toId === suggestion.toId && (
+        <p className="rounded-lg border border-brand-200 bg-brand-50 px-3 py-2.5 text-sm text-brand-900">
+          Chosen for you: {suggestion.count} student{suggestion.count === 1 ? ' was' : 's were'} last in a class
+          in {suggestion.fromName} and {suggestion.count === 1 ? 'is' : 'are'} on no class list for {suggestion.toName}.
+          Press Preview to see exactly what would happen before anything changes.
+        </p>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block">

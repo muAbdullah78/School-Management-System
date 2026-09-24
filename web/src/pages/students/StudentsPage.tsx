@@ -689,7 +689,7 @@ function StripTile({
         <span className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</span>
       </div>
       <div className="mt-2 text-2xl font-semibold text-slate-900">{value}</div>
-      {sub && <div className="mt-0.5 truncate text-xs text-slate-500">{sub}</div>}
+      {sub && <div className="mt-0.5 text-xs leading-snug text-slate-500">{sub}</div>}
       {cta && <div className="mt-1.5 text-xs font-medium text-brand-700">{cta}</div>}
     </>
   )

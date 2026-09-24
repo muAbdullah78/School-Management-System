@@ -189,4 +189,40 @@ describe('the profile', () => {
     const late = await screen.findByText(/^Overdue since/)
     expect(late.className).toContain('text-danger-800')
   })
+
+  const twoInvoices = () => {
+    const t = todayISO()
+    const o = base('ses', '2026-2027')
+    o.rows!.invoice_balances = [
+      { invoice_id: 'i1', period_month: `${t.slice(0, 7)}-01`, status: 'unpaid', due_date: '2999-12-31',
+        arrears_brought_forward: 0, fine: 0, charge: 3000, allocated: 0, deferred_until: null, defer_reason: null },
+      { invoice_id: 'i2', period_month: '2026-04-01', status: 'unpaid', due_date: '2026-04-10',
+        arrears_brought_forward: 0, fine: 0, charge: 3000, allocated: 0, deferred_until: null, defer_reason: null },
+    ]
+    return o
+  }
+
+  it('the session reads at a glance: a tile a month, the rest of the year to come', async () => {
+    open(profile(), twoInvoices())
+    fireEvent.click(await screen.findByRole('button', { name: 'Fees' }))
+    expect(await screen.findByText('2026-2027 at a glance')).toBeTruthy()
+    expect(await screen.findByRole('button', { name: /^April 2026: Overdue, Rs 3,000/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /^September 2026: Due, Rs 3,000/ })).toBeTruthy()
+    // April to September have happened; October to March are still to come.
+    expect(screen.getAllByLabelText(/: still to come$/)).toHaveLength(12 - Number(todayISO().slice(5, 7)) + 3)
+  })
+
+  it('"Owed" shows only the months with money on them', async () => {
+    open(profile(), twoInvoices())
+    fireEvent.click(await screen.findByRole('button', { name: 'Fees' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Owed 2' }))
+    const lines = [...document.querySelectorAll('[id^="fee-month-"]')].map((e) => e.id)
+    expect(lines).toEqual([`fee-month-${todayISO().slice(0, 7)}`, 'fee-month-2026-04'])
+  })
+
+  it('the old-session warning stands above the Fees tab too, where the clerk actually works', async () => {
+    open(profile(), base('ses-old', '2025-2026'))
+    fireEvent.click(await screen.findByRole('button', { name: 'Fees' }))
+    expect(await screen.findByText('Not on any class list for 2026-2027')).toBeTruthy()
+  })
 })

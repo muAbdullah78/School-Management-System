@@ -161,6 +161,10 @@ export function DataTable<T>({
   const from = page != null && pageSize != null ? page * pageSize + 1 : 1
   const to = page != null && pageSize != null ? Math.min((page + 1) * pageSize, knownTotal) : rows.length
   const lastPage = pageSize ? Math.max(0, Math.ceil(knownTotal / pageSize) - 1) : 0
+  // A screen that draws phone cards is one designed for a phone, and there the
+  // rows-per-page, CSV and Print controls cost a whole toolbar row each for
+  // things nobody does from a phone. They stay from sm up.
+  const deskOnly = mobileCard ? 'hidden sm:inline-block' : ''
 
   return (
     <div>
@@ -180,7 +184,7 @@ export function DataTable<T>({
             value={pageSize}
             onChange={(e) => onPageSizeChange(Number(e.target.value))}
             aria-label="Rows per page"
-            className="rounded border border-slate-300 px-2 py-2 text-sm focus:border-brand-500 focus:outline-none"
+            className={`rounded border border-slate-300 px-2 py-2 text-sm focus:border-brand-500 focus:outline-none ${deskOnly}`}
           >
             {PAGE_SIZES.map((n) => (
               <option key={n} value={n}>
@@ -192,7 +196,7 @@ export function DataTable<T>({
         {exportName && rows.length > 0 && (
           <button
             onClick={exportCsv}
-            className="rounded border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            className={`rounded border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 ${deskOnly}`}
           >
             CSV
           </button>
@@ -200,7 +204,7 @@ export function DataTable<T>({
         {printId && rows.length > 0 && (
           <button
             onClick={() => window.print()}
-            className="rounded border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            className={`rounded border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 ${deskOnly}`}
           >
             Print
           </button>

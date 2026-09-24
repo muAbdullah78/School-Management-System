@@ -10,6 +10,7 @@ import {
 } from '@/lib/db'
 import { useSchoolName } from '@/hooks/useSchoolName'
 import { useUrlTab } from '@/lib/useUrlTab'
+import { inputClass } from '@/components/ui'
 import { ATTENDANCE_SHORT } from '@/lib/constants'
 import { fmtPKR, fmtDate, todayISO } from '@/lib/format'
 import { toCSV, downloadCSV } from '@/lib/csv'
@@ -78,7 +79,16 @@ export function ReportsPage() {
   return (
     <div>
       <h1 className="text-xl font-semibold text-slate-800">Reports</h1>
-      <div className="mt-4 flex flex-wrap gap-1 border-b border-slate-200 print:hidden">
+      {/* ON A PHONE, A LIST, NOT A WALL OF TABS. This screen has more tabs
+          than fit three to a row, so a phone showed five or six rows of them
+          before the first field. The same choices, one tap. */}
+      <label className="mt-4 block sm:hidden print:hidden">
+        <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Section</span>
+        <select value={tab} onChange={(e) => setTab(e.target.value as TabKey)} className={inputClass}>
+          {TABS.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}
+        </select>
+      </label>
+      <div className="mt-4 hidden flex-wrap gap-1 border-b border-slate-200 sm:flex print:hidden">
         {TABS.map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`-mb-px border-b-2 px-4 py-2 text-sm ${tab === t.key ? 'border-brand-600 font-medium text-brand-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>

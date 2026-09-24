@@ -321,7 +321,7 @@ describe('the child page and the counter agree, and its discount button works', 
 
   it('11. labels the fee with the class the FIGURE is for, not this year\'s', async () => {
     await openFees(CHILD)
-    expect(screen.getByText(/Monthly fee \(Class 1\)/)).toBeTruthy()
+    expect(screen.getByText(/Monthly fee · Class 1/)).toBeTruthy()
   })
 
   it('12. THE SHIPPED DEFECT: the discount button sends a CHILD id', async () => {
