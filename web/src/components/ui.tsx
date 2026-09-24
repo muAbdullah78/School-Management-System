@@ -140,14 +140,17 @@ export function StatTile({
 }) {
   return (
     <div
-      className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${TONE_GRADIENT[tone]} p-4 text-white shadow-raised`}
+      className={`relative h-full overflow-hidden rounded-2xl bg-gradient-to-br ${TONE_GRADIENT[tone]} p-3 text-white shadow-raised sm:p-4`}
     >
       <div className="relative z-10">
         <div className="flex items-start justify-between gap-2">
           <span className="text-xs font-medium uppercase tracking-wide text-white/80">{label}</span>
           {icon ? <span className="text-lg text-white/70">{icon}</span> : null}
         </div>
-        <div className="mt-2 text-2xl font-semibold tabular-nums">{value}</div>
+        {/* Proportional figures: a lone headline number set in tabular
+            figures gets a visibly loose "1", and there is no column here for
+            it to line up with. Tables keep tabular-nums. */}
+        <div className="mt-2 text-xl font-semibold sm:text-2xl">{value}</div>
         {sub ? <div className="mt-1 text-xs text-white/75">{sub}</div> : null}
       </div>
       {/* Soft light source, top-right. Keeps the tile from reading as a flat

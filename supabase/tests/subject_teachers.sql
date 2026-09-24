@@ -645,6 +645,39 @@ begin
     '12h. a subject teacher cannot create a subject');
 end $t$;
 
+-- =============================================================================
+-- 13. The marks trend (0146) follows the per-month read's rules across the
+--     whole session, and a test scheduled for later is not a mark.
+-- =============================================================================
+do $t$
+declare
+  r record; v_n int; v_after int;
+  v_a uuid := (select id from public.schools where name = 'Subj A');
+  v_enr uuid := pg_temp.enr('Ali Raza');
+  v_e public.enrollments;
+begin
+  perform pg_temp.be('Subj Owner');
+  select * into v_e from public.enrollments where id = v_enr;
+
+  select * into r from public.fn_student_marks_trend(v_enr) where title = 'Weekly test';
+  perform pg_temp.ok(r.marks = 17 and r.pct = 85.0 and r.passed,
+    '13. the marks trend carries the class test as 85% and passed');
+
+  select count(*) into v_n from public.fn_student_marks_trend(v_enr);
+  perform pg_temp.ok(v_n = (select count(*) from public.fn_student_month_tests(
+                              v_enr, date_trunc('month', current_date)::date)),
+    '13b. and agrees with the per-month read on how many tests there were');
+
+  insert into public.assessments (session_id, class_id, subject_id, title,
+                                  assessment_date, max_marks, school_id)
+  values (v_e.session_id, v_e.class_id,
+          (select id from public.subjects where class_id = v_e.class_id and name = 'Physics'),
+          'Next week', (now() at time zone 'Asia/Karachi')::date + 7, 20, v_a);
+  select count(*) into v_after from public.fn_student_marks_trend(v_enr);
+  perform pg_temp.ok(v_after = v_n,
+    '13c. a test dated next week is left off the line until it has happened');
+end $t$;
+
 do $$ begin raise notice 'ALL SUBJECT TEACHER TESTS PASSED'; end $$;
 
 rollback;

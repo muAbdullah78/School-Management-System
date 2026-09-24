@@ -25,6 +25,7 @@
  * with a spread of Punjabi, Pashto, Sindhi and Muhajir naming patterns because a
  * roll of thirty Ahmeds is not what a school in Rawalpindi looks like.
  */
+import type { DashboardTrends } from '../src/lib/db'
 
 export const DEMO_SCHOOL = {
   name: 'Al Qalam Public School',
@@ -232,4 +233,59 @@ export const DEMO_DASHBOARD_SUMMARY = {
   billed_students_month: 209,
   classes_without_fee: 1,
   session_set: true,
+}
+
+/**
+ * What fn_dashboard_trends (0146) returns for the demo school at 10:30 on a
+ * Thursday: five of seven registers in, two still to come.
+ *
+ * THE ARITHMETIC, so a later edit cannot quietly break it:
+ *   on roll   28 + 30 + 32 + 36 + 30 + 34 + 24 = 214 = DEMO_SCHOOL.students
+ *   marked    28 + 30 + 32 + 18 + 34 = 142 (Class 5 A is half done)
+ *   present 126, late 4, half day 1, absent 9, leave 2: 126+4+1+9+2 = 142
+ *   today     (126 + 4 + 0.5) / 142 = 91.9%, which is the last trend point
+ *   dues      132,000 + 98,500 + 71,000 + 43,500 + 26,000 + 15,000 = 386,000
+ *             = DEMO_DASHBOARD.outstanding, over 7+6+4+3+2+1 = 23 = defaulters
+ * July was never billed (the summer holiday), which is the gap the fixed
+ * six-month axis exists to show. September's due date is the 25th, so its
+ * unpaid part is "not due yet" and only the older months carry red.
+ */
+export const DEMO_DASHBOARD_TRENDS: DashboardTrends = {
+  today: '2026-09-24',
+  session_set: true,
+  sections: [
+    { class_id: 'c3', class_name: 'Class 3', level_order: 3, section_id: 's3a', section_name: 'A', on_roll: 36, marked: 0, present: 0, late: 0, half_day: 0, leave: 0, absent: 0 },
+    { class_id: 'c8', class_name: 'Class 8', level_order: 8, section_id: 's8a', section_name: 'A', on_roll: 24, marked: 0, present: 0, late: 0, half_day: 0, leave: 0, absent: 0 },
+    { class_id: 'cn', class_name: 'Nursery', level_order: 0, section_id: null, section_name: null, on_roll: 28, marked: 28, present: 24, late: 1, half_day: 0, leave: 1, absent: 2 },
+    { class_id: 'c1', class_name: 'Class 1', level_order: 1, section_id: 's1a', section_name: 'A', on_roll: 30, marked: 30, present: 27, late: 0, half_day: 0, leave: 0, absent: 3 },
+    { class_id: 'c2', class_name: 'Class 2', level_order: 2, section_id: null, section_name: null, on_roll: 32, marked: 32, present: 29, late: 1, half_day: 1, leave: 0, absent: 1 },
+    { class_id: 'c5', class_name: 'Class 5', level_order: 5, section_id: 's5a', section_name: 'A', on_roll: 30, marked: 18, present: 16, late: 0, half_day: 0, leave: 0, absent: 2 },
+    { class_id: 'c5', class_name: 'Class 5', level_order: 5, section_id: 's5b', section_name: 'B', on_roll: 34, marked: 34, present: 30, late: 2, half_day: 0, leave: 1, absent: 1 },
+  ],
+  trend: ([
+    ['2026-09-09', 93.5], ['2026-09-10', 92.1], ['2026-09-11', 94.0], ['2026-09-12', 85.4],
+    ['2026-09-14', 89.7], ['2026-09-15', 92.9], ['2026-09-16', 94.4], ['2026-09-17', 93.8],
+    ['2026-09-18', 90.3], ['2026-09-19', 88.6], ['2026-09-21', 91.2], ['2026-09-22', 94.0],
+    ['2026-09-23', 92.1],
+  ] as [string, number][]).map(([date, pct]) => {
+    const marked = 211
+    const absent = Math.round(marked * (1 - pct / 100))
+    return { date, marked, present: marked - absent, late: 0, half_day: 0, leave: 0, absent, pct }
+  }).concat([{ date: '2026-09-24', marked: 142, present: 126, late: 4, half_day: 1, leave: 2, absent: 9, pct: 91.9 }]),
+  months: [
+    { month: '2026-04-01', challans: 209, billed: 612_000, paid: 598_000, overdue: 14_000, not_due: 0 },
+    { month: '2026-05-01', challans: 209, billed: 612_000, paid: 590_500, overdue: 21_500, not_due: 0 },
+    { month: '2026-06-01', challans: 207, billed: 604_000, paid: 571_000, overdue: 33_000, not_due: 0 },
+    { month: '2026-08-01', challans: 211, billed: 618_000, paid: 580_000, overdue: 38_000, not_due: 0 },
+    { month: '2026-09-01', challans: 209, billed: 624_000, paid: 468_000, overdue: 0, not_due: 156_000 },
+  ],
+  dues_by_class: [
+    { class_id: 'c8', class_name: 'Class 8', level_order: 8, students: 7, amount: 132_000 },
+    { class_id: 'c5', class_name: 'Class 5', level_order: 5, students: 6, amount: 98_500 },
+    { class_id: 'c3', class_name: 'Class 3', level_order: 3, students: 4, amount: 71_000 },
+    { class_id: 'c2', class_name: 'Class 2', level_order: 2, students: 3, amount: 43_500 },
+    { class_id: 'c1', class_name: 'Class 1', level_order: 1, students: 2, amount: 26_000 },
+    { class_id: 'cn', class_name: 'Nursery', level_order: 0, students: 1, amount: 15_000 },
+  ],
+  staff: { on_books: DEMO_SCHOOL.staff, marked: 16, present: 13, late: 2, half_day: 0, leave: 0, absent: 1 },
 }

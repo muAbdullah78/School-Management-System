@@ -27,7 +27,7 @@ import { writePage } from './harness'
 import type { Profile } from '../src/auth/AuthProvider'
 import {
   DEMO_PORTAL_ME, DEMO_FEES, DEMO_ATTENDANCE, DEMO_RESULT, DEMO_CHILDREN,
-  DEMO_DASHBOARD_SUMMARY, DEMO_PROFILE, DEMO_SCHOOL, DEMO_PARENT,
+  DEMO_DASHBOARD_SUMMARY, DEMO_DASHBOARD_TRENDS, DEMO_PROFILE, DEMO_SCHOOL, DEMO_PARENT,
 } from './demo-data'
 
 const child = DEMO_CHILDREN[0].student_id
@@ -60,7 +60,7 @@ const SHOTS: {
   { name: 'forgot', node: <ForgotPassword />, profile: null, route: '/forgot' },
   {
     name: 'dashboard', node: <Dashboard />,
-    seeds: [[['dashboardSummary'], DEMO_DASHBOARD_SUMMARY]],
+    seeds: [[['dashboardSummary'], DEMO_DASHBOARD_SUMMARY], [['dashboardTrends'], DEMO_DASHBOARD_TRENDS]],
     profile: DEMO_PROFILE, route: '/',
   },
   {

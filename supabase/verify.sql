@@ -3295,6 +3295,21 @@ select 'subjects can be managed and any month has a defaulters list (0145)',
        end
 
 union all
+-- 0146. The dashboard draws what it knows.
+select 'the dashboard and the student profile have their charts (0146)',
+       case
+         when to_regprocedure('public.fn_defaulters_month(uuid,date)') is null
+           then 'note: bundle 46 has not been applied yet, so 0146 is not due'
+         when to_regprocedure('public.fn_dashboard_trends()') is null
+           then 'FAIL: the dashboard has no chart data, so it shows tiles and nothing '
+                || 'under them; apply supabase/bundles/47_the_dashboard_draws_what_it_knows.sql'
+         when to_regprocedure('public.fn_student_marks_trend(uuid)') is null
+           then 'FAIL: a student profile cannot draw its marks across the year; apply '
+                || 'supabase/bundles/47_the_dashboard_draws_what_it_knows.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS: no schools yet, as expected'

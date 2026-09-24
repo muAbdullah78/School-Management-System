@@ -32,7 +32,7 @@ import { ForgotPassword } from '../src/pages/ForgotPassword'
 import { writePage } from './harness'
 import {
   DEMO_PORTAL_ME, DEMO_FEES, DEMO_ATTENDANCE, DEMO_RESULT, DEMO_CHILDREN,
-  DEMO_DASHBOARD_SUMMARY, DEMO_PROFILE,
+  DEMO_DASHBOARD_SUMMARY, DEMO_DASHBOARD_TRENDS, DEMO_PROFILE,
 } from './demo-data'
 
 /**
@@ -73,7 +73,7 @@ it('writes the page gallery', () => {
           + 'fee structure — which is the reason for the gap. A teacher signing '
           + 'in sees their own class instead of this screen.',
         node: <Dashboard />,
-        seeds: [[['dashboardSummary'], DEMO_DASHBOARD_SUMMARY]],
+        seeds: [[['dashboardSummary'], DEMO_DASHBOARD_SUMMARY], [['dashboardTrends'], DEMO_DASHBOARD_TRENDS]],
         profile: DEMO_PROFILE,
         route: '/',
       },
