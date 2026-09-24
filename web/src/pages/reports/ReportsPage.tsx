@@ -9,6 +9,7 @@ import {
   type StudentRow,
 } from '@/lib/db'
 import { useSchoolName } from '@/hooks/useSchoolName'
+import { useUrlTab } from '@/lib/useUrlTab'
 import { ATTENDANCE_SHORT } from '@/lib/constants'
 import { fmtPKR, fmtDate, todayISO } from '@/lib/format'
 import { toCSV, downloadCSV } from '@/lib/csv'
@@ -68,8 +69,12 @@ type TabKey = (typeof TABS)[number]['key']
 function monthStart() { return `${todayISO().slice(0, 7)}-01` }
 function thisMonth() { return todayISO().slice(0, 7) }
 
+const TAB_KEYS = TABS.map((t) => t.key) as TabKey[]
+
 export function ReportsPage() {
-  const [tab, setTab] = useState<TabKey>('collection')
+  // In the URL, so the dashboard's Day book shortcut opens the Day Book and
+  // not Fee Collection, which is where it used to land.
+  const [tab, setTab] = useUrlTab<TabKey>(TAB_KEYS, 'collection')
   return (
     <div>
       <h1 className="text-xl font-semibold text-slate-800">Reports</h1>

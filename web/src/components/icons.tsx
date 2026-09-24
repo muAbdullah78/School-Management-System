@@ -258,3 +258,20 @@ export const NAV_ICONS: Record<string, (p: IconProps) => JSX.Element> = {
   '/birthdays': IconBirthday,
   '/enquiries': IconEnquiries,
 }
+
+/* Status glyphs for the charts. A status colour never carries meaning alone:
+   each legend row pairs its swatch with one of these and a word, so a reader
+   who cannot tell green from red still reads "present" from "absent". */
+export const IconClock = svg(
+  <>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v5l3 2" />
+  </>,
+)
+export const IconMinus = svg(<path d="M6 12h12" />)
+export const IconTrend = svg(
+  <>
+    <path d="m3 17 6-6 4 4 8-8" />
+    <path d="M15 7h6v6" />
+  </>,
+)

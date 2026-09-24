@@ -662,6 +662,30 @@ export async function getStudentMonthTests(enrollmentId: string, monthFirst: str
 }
 
 /** One student's day-by-day attendance for a month ('YYYY-MM'). */
+/** One class test on a child's line across the session. 0146. */
+export interface MarksPoint {
+  assessment_id: string; title: string; subject_name: string | null
+  assessment_date: string; max_marks: number; marks: number | null
+  is_absent: boolean; pct: number | null; class_avg_pct: number | null
+  pass_pct: number; passed: boolean
+}
+/** Every class test of the session so far, oldest first. SECURITY INVOKER on
+ *  the server, so it shows exactly what the per-month read already shows. */
+export async function getStudentMarksTrend(enrollmentId: string): Promise<MarksPoint[]> {
+  const sb = requireSupabase()
+  const rows = unwrap<Record<string, any>[]>(
+    await sb.rpc('fn_student_marks_trend', { p_enrollment_id: enrollmentId }),
+  )
+  return (rows ?? []).map((r) => ({
+    assessment_id: r.assessment_id, title: r.title, subject_name: r.subject_name ?? null,
+    assessment_date: r.assessment_date, max_marks: Number(r.max_marks),
+    marks: r.marks == null ? null : Number(r.marks), is_absent: !!r.is_absent,
+    pct: r.pct == null ? null : Number(r.pct),
+    class_avg_pct: r.class_avg_pct == null ? null : Number(r.class_avg_pct),
+    pass_pct: Number(r.pass_pct ?? 33), passed: !!r.passed,
+  }))
+}
+
 export async function getStudentMonthAttendance(
   enrollmentId: string, month: string,
 ): Promise<{ attendance_date: string; status: string }[]> {
@@ -4250,6 +4274,85 @@ export interface DashboardSummary {
    * the tile counts, which previously looked like one of the two being wrong.
    */
   students_without_a_class: number
+}
+
+/** One class and section on today's register. 0146. */
+export interface SectionToday {
+  class_id: string; class_name: string; level_order: number
+  section_id: string | null; section_name: string | null
+  on_roll: number; marked: number
+  present: number; late: number; half_day: number; leave: number; absent: number
+}
+export interface AttendanceDay {
+  date: string; marked: number
+  present: number; late: number; half_day: number; leave: number; absent: number
+  /** fn__attendance_pct: the one rule, so this and the tile cannot disagree. */
+  pct: number | null
+}
+export interface BillingMonth {
+  month: string; challans: number
+  billed: number; paid: number
+  /** Still owed on challans whose own due date has passed. */
+  overdue: number
+  /** Still owed, but not due yet (or no due date set). */
+  not_due: number
+}
+export interface ClassDues { class_id: string; class_name: string; level_order: number; students: number; amount: number }
+export interface StaffToday {
+  on_books: number; marked: number
+  present: number; late: number; half_day: number; leave: number; absent: number
+}
+export interface DashboardTrends {
+  today: string
+  session_set: boolean
+  sections: SectionToday[]
+  trend: AttendanceDay[]
+  months: BillingMonth[]
+  dues_by_class: ClassDues[]
+  staff: StaffToday
+}
+
+const num = (v: unknown) => (v == null ? 0 : Number(v))
+
+/**
+ * What the dashboard charts are drawn from. 0146.
+ *
+ * Its own read rather than more fields on fn_dashboard_summary, which is
+ * reproduced whole by anything that edits it. Every figure is built to agree
+ * with a tile on the same page: the sections sum to Active students and the
+ * dues sum to Outstanding. Numbers arrive as strings from numeric columns, so
+ * they are coerced once here rather than at every chart.
+ */
+export async function getDashboardTrends(): Promise<DashboardTrends> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_dashboard_trends')
+  if (error) throw new Error(error.message)
+  const d = (data ?? {}) as Record<string, any>
+  const counts = (r: Record<string, any>) => ({
+    present: num(r.present), late: num(r.late), half_day: num(r.half_day),
+    leave: num(r.leave), absent: num(r.absent), marked: num(r.marked),
+  })
+  return {
+    today: String(d.today ?? ''),
+    session_set: d.session_set === true,
+    sections: ((d.sections ?? []) as Record<string, any>[]).map((r) => ({
+      class_id: r.class_id, class_name: r.class_name, level_order: num(r.level_order),
+      section_id: r.section_id ?? null, section_name: r.section_name ?? null,
+      on_roll: num(r.on_roll), ...counts(r),
+    })),
+    trend: ((d.trend ?? []) as Record<string, any>[]).map((r) => ({
+      date: r.date, ...counts(r), pct: r.pct == null ? null : Number(r.pct),
+    })),
+    months: ((d.months ?? []) as Record<string, any>[]).map((r) => ({
+      month: r.month, challans: num(r.challans), billed: num(r.billed), paid: num(r.paid),
+      overdue: num(r.overdue), not_due: num(r.not_due),
+    })),
+    dues_by_class: ((d.dues_by_class ?? []) as Record<string, any>[]).map((r) => ({
+      class_id: r.class_id, class_name: r.class_name, level_order: num(r.level_order),
+      students: num(r.students), amount: num(r.amount),
+    })),
+    staff: { on_books: num(d.staff?.on_books), ...counts(d.staff ?? {}) },
+  }
 }
 
 export async function getDashboardSummary(): Promise<DashboardSummary> {

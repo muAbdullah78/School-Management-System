@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useUrlTab } from '@/lib/useUrlTab'
 import { SchoolProfile } from './settings/SchoolProfile'
 import { Sessions } from './settings/Sessions'
 import { ClassesSections } from './settings/ClassesSections'
@@ -46,9 +46,13 @@ const SECTIONS = [
 ] as const
 
 type SectionKey = (typeof SECTIONS)[number]['key']
+const KEYS = SECTIONS.map((s) => s.key) as SectionKey[]
 
 export function SettingsPage() {
-  const [section, setSection] = useState<SectionKey>('school')
+  // In the URL, so a warning elsewhere can link straight to the tab that fixes
+  // it: the dashboard sends a school with children left out of this session to
+  // /settings?tab=rollover rather than telling it which tab to go and find.
+  const [section, setSection] = useUrlTab<SectionKey>(KEYS, 'school')
   return (
     <div>
       <h1 className="text-xl font-semibold text-slate-800">Settings</h1>

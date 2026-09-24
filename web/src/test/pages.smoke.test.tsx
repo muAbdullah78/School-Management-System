@@ -141,6 +141,9 @@ const SCREENS: [string, () => Promise<Record<string, unknown>>, string][] = [
   ['Dashboard', () => import('@/pages/Dashboard'), 'Dashboard'],
   ['Students', () => import('@/pages/students/StudentsPage'), 'StudentsPage'],
   ['Admissions', () => import('@/pages/admissions/EnquiriesPage'), 'EnquiriesPage'],
+  // The admission form itself, which the entry above never opened: that one is
+  // Enquiries. Rebuilt as four steps, so it is worth knowing it opens at all.
+  ['Admissions/Admit', () => import('@/pages/admissions/AdmissionsPage'), 'AdmissionsPage'],
   ['Attendance', () => import('@/pages/attendance/AttendancePage'), 'AttendancePage'],
   ['Fees', () => import('@/pages/fees/FeesPage'), 'FeesPage'],
   ['Accounts', () => import('@/pages/accounts/AccountsPage'), 'AccountsPage'],

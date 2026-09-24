@@ -219,6 +219,107 @@ begin
 end $t$;
 
 -- =============================================================================
+-- 21-30: THE CHARTS (0146). Every chart figure must agree with a tile on the
+-- same page, stay inside its own school, and invent nothing: a school that has
+-- marked no register gets no trend point, not a zero.
+-- =============================================================================
+do $t$
+declare
+  v_today date := (now() at time zone 'Asia/Karachi')::date;
+  v_t jsonb; v_s jsonb; v_m jsonb; v_sum int; v_dues numeric;
+  v_enr1 uuid; v_enr2 uuid; v_staff uuid;
+begin
+  perform set_config('test.uid', '00000000-0000-0000-0000-00000000db01', false);
+  v_t := public.fn_dashboard_trends();
+
+  select coalesce(sum((x->>'on_roll')::int), 0) into v_sum
+    from jsonb_array_elements(v_t->'sections') x;
+  perform pg_temp.ok(v_sum = pg_temp.dn('active_students'),
+    '21. the class-by-class register sums to the Active students tile (' || v_sum || ')');
+
+  perform pg_temp.ok(jsonb_array_length(v_t->'trend') = 0,
+    '22. a school that has marked no register gets no trend points, not zeros');
+  perform pg_temp.ok(not exists (select 1 from jsonb_array_elements(v_t->'sections') x
+                                 where (x->>'marked')::int > 0),
+    '22b. and every section reads as not marked');
+
+  -- One present and one absent in Dash Class, today.
+  select e.id into v_enr1 from public.enrollments e
+    join public.students s on s.id = e.student_id where s.full_name = 'DB A One';
+  select e.id into v_enr2 from public.enrollments e
+    join public.students s on s.id = e.student_id where s.full_name = 'DB A Two';
+  insert into public.attendance_daily (enrollment_id, attendance_date, status, school_id)
+  values (v_enr1, v_today, 'present', public.current_school_id()),
+         (v_enr2, v_today, 'absent',  public.current_school_id());
+  v_t := public.fn_dashboard_trends();
+
+  select x into v_s from jsonb_array_elements(v_t->'sections') x
+   where x->>'class_name' = 'Dash Class';
+  perform pg_temp.ok((v_s->>'marked')::int = 2 and (v_s->>'present')::int = 1
+                     and (v_s->>'absent')::int = 1,
+    '23. the marked section reports its present and its absent');
+
+  perform pg_temp.ok(v_t->'sections'->0->>'class_name' = 'Dash Unpriced',
+    '24. the section nobody has marked sorts to the top of the list');
+
+  perform pg_temp.ok(jsonb_array_length(v_t->'trend') = 1
+                     and (v_t->'trend'->0->>'pct')::numeric = 50.0,
+    '25. today is one trend point at 50%, computed by fn__attendance_pct');
+
+  select x into v_m from jsonb_array_elements(v_t->'months') x
+   where (x->>'month')::date = date_trunc('month', v_today)::date;
+  perform pg_temp.ok((v_m->>'billed')::numeric = 2000 and (v_m->>'paid')::numeric = 0
+                     and (v_m->>'not_due')::numeric = 2000
+                     and (v_m->>'overdue')::numeric = 0,
+    '26. this month shows Rs 2,000 raised, nothing paid, none of it due yet ('
+      || coalesce(v_m::text, 'no month') || ')');
+
+  -- A challan past its own due date is overdue; the other is still not due.
+  update public.invoices set due_date = v_today - 1
+   where school_id = public.current_school_id()
+     and student_id = (select id from public.students where full_name = 'DB A One');
+  v_t := public.fn_dashboard_trends();
+  select x into v_m from jsonb_array_elements(v_t->'months') x
+   where (x->>'month')::date = date_trunc('month', v_today)::date;
+  perform pg_temp.ok((v_m->>'overdue')::numeric = 1000 and (v_m->>'not_due')::numeric = 1000,
+    '27. a challan past its due date moves to overdue and the other stays not due');
+
+  select coalesce(sum((x->>'amount')::numeric), 0) into v_dues
+    from jsonb_array_elements(v_t->'dues_by_class') x;
+  perform pg_temp.ok(v_dues = pg_temp.dn('outstanding'),
+    '28. dues by class add up to the Outstanding tile to the rupee (' || v_dues || ')');
+  perform pg_temp.ok(not exists (select 1 from jsonb_array_elements(v_t->'dues_by_class') x
+                                 where x->>'class_name' = 'Dash Unpriced'),
+    '28b. a class billed Rs 0 carries no dues bar');
+
+  insert into public.staff (full_name, designation, school_id)
+    values ('Dash Staff', 'Teacher', public.current_school_id()) returning id into v_staff;
+  insert into public.staff_attendance (staff_id, attendance_date, status, source, school_id)
+    values (v_staff, v_today, 'present', 'manual', public.current_school_id());
+  v_t := public.fn_dashboard_trends();
+  perform pg_temp.ok((v_t->'staff'->>'on_books')::int = 1
+                     and (v_t->'staff'->>'present')::int = 1,
+    '29. the staff room counts who is in today');
+end $t$;
+
+-- School B sees only its own register and its own challans.
+do $t$
+declare v_t jsonb; v_sum int; v_m jsonb;
+begin
+  perform set_config('test.uid', '00000000-0000-0000-0000-00000000db02', false);
+  v_t := public.fn_dashboard_trends();
+  select coalesce(sum((x->>'on_roll')::int), 0) into v_sum
+    from jsonb_array_elements(v_t->'sections') x;
+  perform pg_temp.ok(v_sum = 5, '30. school B''s register is its own five children (' || v_sum || ')');
+  select x into v_m from jsonb_array_elements(v_t->'months') x
+   where (x->>'month')::date = date_trunc('month', current_date)::date;
+  perform pg_temp.ok((v_m->>'billed')::numeric = 100000,
+    '30b. and its month is its own Rs 100,000, with none of A''s challans in it');
+  perform pg_temp.ok(jsonb_array_length(v_t->'trend') = 0,
+    '30c. and A''s register marks put no point on B''s trend line');
+end $t$;
+
+-- =============================================================================
 -- 16-17: no current session must not look like an empty school
 -- =============================================================================
 do $t$
@@ -254,6 +355,16 @@ begin
     '18. a teacher is not shown the school''s money');
   perform pg_temp.ok(pg_temp.dn('collected_today') = 0,
     '19. and the figure is zero for them rather than merely hidden in the UI');
+
+  -- The chart read carries the school's money in every call, so a teacher is
+  -- refused it outright rather than handed a half-empty copy.
+  begin
+    perform public.fn_dashboard_trends();
+    raise exception 'FAIL  31. a teacher was given the dashboard charts';
+  exception when others then
+    if sqlerrm like 'FAIL%' then raise; end if;
+    raise notice 'PASS  31. a teacher is refused the dashboard charts (%)', sqlerrm;
+  end;
 end $t$;
 
 -- =============================================================================

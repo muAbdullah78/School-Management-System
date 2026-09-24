@@ -12,16 +12,18 @@ import {
   type StudentDiscount,
   recordPayment, billStudentMonth, deferInvoice, undoDefer, addAdjustment, voidInvoice,
   getStudentLedger, getDepositHeld,
-  getStudentMonthTests, getStudentMonthAttendance,
+  getStudentMonthTests, getStudentMonthAttendance, getStudentMarksTrend, getCurrentSession,
   type StudentProfile as Student, type EnrollmentInfo, type InvoiceBalance, type MonthTestRow,
 } from '@/lib/db'
+import { C, MeterRing, StackBar, TrendLine, attendanceParts } from '@/components/viz'
+import { canAccess } from '@/navigation'
 import { useEmailCheck, EmailVerdictLine } from '@/components/EmailAvailability'
 import {
   GENDERS, STUDENT_STATUS_LABELS, PAYMENT_METHODS, PAYMENT_STATUS_LABELS,
   ATTENDANCE_STATUSES, ATTENDANCE_SHORT, DISCOUNT_TYPES, RELATIONS,
 } from '@/lib/constants'
 import { fmtPKR, fmtDate, fmtMonth, waLink, todayISO } from '@/lib/format'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/auth/AuthProvider'
 import { APPROVER_ROLES, ADMIN_ROLES, canWrite, type Role } from '@/auth/roles'
 import { ObserverNotice } from '@/components/ObserverNotice'
@@ -95,6 +97,7 @@ export function StudentProfile({ studentId, onBack, onOpen }: { studentId: strin
   const student = useQuery({ queryKey: ['student', studentId], queryFn: () => getStudent(studentId) })
   const enroll = useQuery({ queryKey: ['enrollments', studentId], queryFn: () => getStudentEnrollments(studentId) })
   const guardians = useQuery({ queryKey: ['guardians', studentId], queryFn: () => getGuardians(studentId) })
+  const session = useQuery({ queryKey: ['currentSession'], queryFn: getCurrentSession })
 
   const [tab, setTab] = useState<Tab>('Overview')
 
@@ -138,7 +141,11 @@ export function StudentProfile({ studentId, onBack, onOpen }: { studentId: strin
 
       <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-start gap-4">
+          {/* Compact: the face is the button. The full control put an "Add
+              photograph" button and two lines of help between the photo and the
+              child's name, which pushed the name halfway across the page. */}
           <PhotoUpload
+            compact
             name={s.full_name}
             path={s.photo_path}
             size="lg"
@@ -167,9 +174,15 @@ export function StudentProfile({ studentId, onBack, onOpen }: { studentId: strin
                 </span>
               )}
             </div>
-            <div className="mt-0.5 text-sm text-slate-500">
-              GR {s.gr_no ?? '-'}{s.father_name ? ` · ${s.father_name}` : ''}
-              {cur ? ` · ${cur.class_name}${cur.section_name ? ` (${cur.section_name})` : ''}${cur.roll_no ? ` · Roll ${cur.roll_no}` : ''}` : ''}
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-500">
+              {cur && (
+                <span className="rounded-md bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-700 ring-1 ring-brand-100">
+                  {cur.class_name}{cur.section_name ? ` · ${cur.section_name}` : ''}
+                </span>
+              )}
+              <span>GR {s.gr_no ?? '-'}</span>
+              {cur?.roll_no && <span>· Roll {cur.roll_no}</span>}
+              {s.father_name && <span>· {s.father_name}</span>}
             </div>
           </div>
         </div>
@@ -197,7 +210,21 @@ export function StudentProfile({ studentId, onBack, onOpen }: { studentId: strin
 
       <div className="mt-5">
         {tab === 'Overview' && (
-          <Overview student={s} guardians={guardians.data ?? []} enrollments={enroll.data ?? []} canEdit={canEdit} onOpen={onOpen} />
+          <>
+            {/* The latest enrolment is not always THIS session's. A child the
+                rollover left behind still shows last year's class here, and the
+                Fees and Attendance tabs then work on last year, looking normal. */}
+            {cur && session.data && cur.session_id !== session.data.id && (
+              <StaleEnrolment enrollment={cur} currentSession={session.data.name} canSettings={canAccess('/settings', role)} />
+            )}
+            {cur && (
+              <Glance
+                student={s} enrollment={cur} canFinanceView={canFinanceView}
+                onOpenTab={setTab}
+              />
+            )}
+            <Overview student={s} guardians={guardians.data ?? []} enrollments={enroll.data ?? []} canEdit={canEdit} onOpen={onOpen} />
+          </>
         )}
         {tab === 'Fees' && (
           !canFinanceView
@@ -424,6 +451,217 @@ function LeavingDialog({ student, onClose, onDone }: {
   )
 }
 
+/** "9 years", from a date of birth, as of today. Schools admit by age. */
+function ageOn(dob: string): string {
+  const [y, m, d] = dob.split('-').map(Number)
+  const [ty, tm, td] = todayISO().split('-').map(Number)
+  if (!y || !m || !d) return ''
+  let age = ty - y
+  if (tm < m || (tm === m && td < d)) age--
+  if (age < 1) {
+    const months = (ty - y) * 12 + (tm - m) - (td < d ? 1 : 0)
+    return `${Math.max(months, 0)} month${months === 1 ? '' : 's'}`
+  }
+  return `${age} year${age === 1 ? '' : 's'}`
+}
+
+function StaleEnrolment({
+  enrollment, currentSession, canSettings,
+}: { enrollment: EnrollmentInfo; currentSession: string; canSettings: boolean }) {
+  return (
+    <div className="mb-4 flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-due-200 bg-due-50/70 p-4 text-sm">
+      <div className="max-w-[80ch]">
+        <p className="font-semibold text-due-900">Not on any class list for {currentSession}</p>
+        <p className="mt-0.5 text-due-800">
+          The last class on record is {enrollment.class_name}
+          {enrollment.section_name ? ` ${enrollment.section_name}` : ''} in {enrollment.session_name}. Until this child
+          is carried into {currentSession} there is no challan, no register and no result card for them this
+          session, and the figures below are from {enrollment.session_name}.
+          {!canSettings && ' Ask the owner or principal to run Year Rollover under Settings.'}
+        </p>
+      </div>
+      {canSettings && (
+        <Link
+          to="/settings?tab=rollover"
+          className="shrink-0 rounded-lg bg-due-600 px-3 py-1.5 font-medium text-white shadow-card hover:bg-due-700"
+        >
+          Open Year Rollover
+        </Link>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The child at a glance: attendance this session, what is owed, and how the
+ * class tests have gone. The page used to open on a bio-data list, so "is this
+ * child coming to school, and are they keeping up" meant opening two tabs and
+ * reading a month at a time.
+ *
+ * Every figure is the one the tabs show: the attendance is fn_attendance_summary
+ * over the whole session (the one rule, 0100), the balance is the Fees tab's own
+ * read under the same key, and the tests are the per-month tests with the month
+ * bound taken off (0146).
+ */
+function Glance({
+  student, enrollment, canFinanceView, onOpenTab,
+}: {
+  student: Student
+  enrollment: EnrollmentInfo
+  canFinanceView: boolean
+  onOpenTab: (t: Tab) => void
+}) {
+  const today = todayISO()
+  const from = enrollment.session_starts ?? student.admission_date ?? today
+  const to = enrollment.session_ends && enrollment.session_ends < today ? enrollment.session_ends : today
+  const att = useQuery({
+    queryKey: ['attSummary', enrollment.enrollment_id, 'session', from, to],
+    queryFn: () => attendanceSummary(enrollment.enrollment_id, from, to),
+  })
+  const balance = useQuery({
+    queryKey: ['balance', student.id],
+    queryFn: () => getStudentBalance(student.id),
+    enabled: canFinanceView,
+  })
+  const marks = useQuery({
+    queryKey: ['marksTrend', enrollment.enrollment_id],
+    queryFn: () => getStudentMarksTrend(enrollment.enrollment_id),
+  })
+
+  const a = att.data
+  const counts = a
+    ? { present: a.present, late: a.late, half_day: a.half_day, leave: a.leave, absent: a.absent, marked: a.marked_days }
+    : null
+  const parts = counts ? attendanceParts(counts) : []
+  const pts = (marks.data ?? []).filter((m) => m.assessment_date)
+  const scored = pts.filter((m) => m.pct != null)
+  const last = scored[scored.length - 1]
+  const passMark = pts[0]?.pass_pct ?? 33
+  const failed = scored.filter((m) => !m.passed).length
+
+  return (
+    <div className="mb-4 grid gap-4 lg:grid-cols-3">
+      {/* Attendance */}
+      <section className="rounded-2xl bg-white p-4 shadow-card ring-1 ring-slate-200/80">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-slate-900">Attendance, {enrollment.session_name}</h2>
+          <button onClick={() => onOpenTab('Attendance & Tests')} className="text-xs font-medium text-brand-700 hover:underline">
+            By month
+          </button>
+        </div>
+        {att.isError ? (
+          <p className="mt-3 text-sm text-danger-700">Could not be loaded: {(att.error as Error).message}</p>
+        ) : (
+          <div className="mt-3 flex items-center gap-4">
+            <MeterRing
+              value={a && a.marked_days > 0 ? a.present_pct : null}
+              size={96}
+              thickness={10}
+              label={`Attendance this session: ${a?.present_pct ?? 'no register yet'}`}
+              sub={a && a.marked_days > 0 ? 'so far' : undefined}
+            />
+            <div className="min-w-0 flex-1 text-sm">
+              {a && a.marked_days > 0 ? (
+                <>
+                  <p className="text-slate-600">
+                    Over {a.marked_days} marked day{a.marked_days === 1 ? '' : 's'}
+                  </p>
+                  <div className="mt-2">
+                    <StackBar parts={parts} height={8} label={`Attendance: ${parts.map((x) => `${x.label} ${x.value}`).join(', ')}`} />
+                  </div>
+                  <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+                    {parts.filter((x) => x.value > 0).map((x) => (
+                      <span key={x.key} className="inline-flex items-center gap-1">
+                        <span className="h-2 w-2 rounded-sm" style={{ background: x.color }} aria-hidden />
+                        {x.value} {x.label.toLowerCase()}
+                      </span>
+                    ))}
+                  </p>
+                </>
+              ) : (
+                <p className="text-slate-500">{att.isLoading ? 'Loading…' : 'No register has been marked for this child yet.'}</p>
+              )}
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* Fees */}
+      {canFinanceView && (
+        <section className="rounded-2xl bg-white p-4 shadow-card ring-1 ring-slate-200/80">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-slate-900">Fees</h2>
+            <button onClick={() => onOpenTab('Fees')} className="text-xs font-medium text-brand-700 hover:underline">
+              Statement
+            </button>
+          </div>
+          {balance.isError ? (
+            <p className="mt-3 text-sm text-danger-700">Could not be loaded: {(balance.error as Error).message}</p>
+          ) : balance.data == null ? (
+            <p className="mt-3 text-sm text-slate-400">Loading…</p>
+          ) : (
+            <div className="mt-3">
+              <p className={`text-2xl font-semibold ${balance.data > 0 ? 'text-due-700' : balance.data < 0 ? 'text-info-700' : 'text-money-700'}`}>
+                {balance.data > 0 ? fmtPKR(balance.data) : balance.data < 0 ? fmtPKR(-balance.data) : 'Paid up'}
+              </p>
+              <p className="mt-0.5 text-sm text-slate-500">
+                {balance.data > 0
+                  ? 'owed, everything on the ledger together'
+                  : balance.data < 0
+                    ? 'paid in advance, taken off the next challan'
+                    : 'Nothing is owed today.'}
+              </p>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Tests */}
+      <section className={`rounded-2xl bg-white p-4 shadow-card ring-1 ring-slate-200/80 ${canFinanceView ? '' : 'lg:col-span-2'}`}>
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-slate-900">Class tests</h2>
+          {scored.length > 0 && (
+            <span className="text-xs text-slate-500">
+              {scored.length} marked{failed ? ` · ${failed} below ${passMark}%` : ' · all passed'}
+            </span>
+          )}
+        </div>
+        {marks.isError ? (
+          <p className="mt-3 text-sm text-danger-700">Could not be loaded: {(marks.error as Error).message}</p>
+        ) : scored.length === 0 ? (
+          <p className="mt-3 text-sm text-slate-500">{marks.isLoading ? 'Loading…' : `No class test has been marked for this child in ${enrollment.session_name}.`}</p>
+        ) : (
+          <div className="mt-2">
+            <TrendLine
+              height={120}
+              label={`Class test marks, ${scored.length} tests`}
+              reference={{ value: passMark, label: `pass ${passMark}%` }}
+              points={pts.map((m) => ({
+                key: m.assessment_id,
+                label: fmtDate(m.assessment_date).replace(/ \d{4}$/, ''),
+                value: m.pct,
+                // Below the pass mark in red: the one point a parent meeting is about.
+                color: m.pct != null && !m.passed ? C.bad : undefined,
+                tipTitle: `${m.title}${m.subject_name ? ` · ${m.subject_name}` : ''}`,
+                tipRows: [
+                  { label: 'this child', value: m.is_absent ? 'absent' : m.pct == null ? '-' : `${m.pct}%`, color: C.series },
+                  { label: 'class average', value: m.class_avg_pct == null ? '-' : `${m.class_avg_pct}%` },
+                ],
+              }))}
+            />
+            {last && (
+              <p className="mt-1 truncate text-xs text-slate-500">
+                Latest: {last.pct}% in {last.title}{last.subject_name ? ` · ${last.subject_name}` : ''}
+                {last.class_avg_pct != null ? ` (class ${last.class_avg_pct}%)` : ''}
+              </p>
+            )}
+          </div>
+        )}
+      </section>
+    </div>
+  )
+}
+
 function Overview({
   student, guardians, enrollments, canEdit, onOpen,
 }: {
@@ -512,29 +750,28 @@ function Overview({
           <div className="text-xs uppercase tracking-wide text-slate-500">Bio-data</div>
           {canEdit && <button onClick={() => { setF(student); setEditing(true) }} className="text-sm text-brand-700 hover:underline">Edit</button>}
         </div>
+        {/* The father, mother and phone numbers used to be listed here AND in
+            the contact card beside it, so half of each card was the other card.
+            Each fact now lives once. */}
         <dl className="mt-2 space-y-1.5 text-sm">
           <Info label="GR No" value={student.gr_no} />
           <Info label="Admission No" value={student.admission_no} />
-          <Info label="Father" value={student.father_name} />
-          <Info label="Mother" value={student.mother_name} />
           <Info label="Gender" value={student.gender ? (GENDERS.find((g) => g.value === student.gender)?.label ?? student.gender) : null} />
-          <Info label="Date of birth" value={student.dob ? fmtDate(student.dob) : null} />
+          <Info label="Date of birth" value={student.dob ? `${fmtDate(student.dob)} · ${ageOn(student.dob)}` : null} />
           <Info label="B-Form" value={student.b_form} />
-          <Info label="Phone" value={student.phone} />
-          <Info label="WhatsApp" value={student.whatsapp} />
-          <Info label="Address" value={student.address} />
           <Info label="Admitted" value={student.admission_date ? fmtDate(student.admission_date) : null} />
         </dl>
       </div>
 
       <div className="space-y-4">
         <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Guardian / contact</div>
+          <div className="text-xs uppercase tracking-wide text-slate-500">Family and contact</div>
           <dl className="mt-2 space-y-1.5 text-sm">
             <Info label="Father" value={student.father_name} />
             <Info label="Mother" value={student.mother_name} />
             <Info label="Phone" value={student.phone} />
             <Info label="WhatsApp" value={student.whatsapp} />
+            <Info label="Address" value={student.address} />
           </dl>
           {guardians.length > 0 && (
             <ul className="mt-2 space-y-1 border-t border-slate-100 pt-2 text-sm">
@@ -1256,7 +1493,10 @@ function FeesTab({
         </div>
         <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
           <div className="text-xs uppercase tracking-wide text-slate-500">Current balance</div>
-          <div className={`mt-1 text-2xl font-semibold ${bal > 0 ? 'text-red-600' : bal < 0 ? 'text-sky-600' : 'text-emerald-600'}`}>
+          {/* Amber for owed, as on the overview and the roster: a balance mixes
+              late months with this month's not-yet-due fee, and the red is kept
+              for the lines above that really are late. */}
+          <div className={`mt-1 text-2xl font-semibold ${bal > 0 ? 'text-due-700' : bal < 0 ? 'text-info-700' : 'text-money-700'}`}>
             {balance.isLoading ? '…' : fmtPKR(bal)}
           </div>
           {(deposit.data ?? 0) > 0 && (
@@ -1565,18 +1805,55 @@ function MonthLine({
   canCollect?: boolean
 }) {
   void enrollment
-  const paidDate = row.invoice?.status === 'paid' ? row.invoice.due_date : null
+  /* Unpaid is two facts, split by the challan's own due date: owed and not due
+     yet (amber), or owed and late (red). They used to share one red line, so a
+     challan issued this morning looked exactly like one ignored since June:
+     the same split the dashboard's fee chart makes. Presentation only; the
+     state itself is unchanged. */
+  const due = row.invoice?.due_date ?? null
+  const late = (row.state === 'unpaid' || row.state === 'partial') && !!due && due < todayISO()
+  const paidShare = row.charge > 0 ? Math.min(Math.max((row.charge - row.due) / row.charge, 0), 1) : 0
+  const pill = 'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ring-1'
   return (
     <div className="flex flex-wrap items-center gap-3 py-2.5">
       <div className="w-32 text-sm font-medium text-slate-700">{row.label}</div>
-      <div className="flex-1 min-w-[8rem] text-sm">
-        {row.state === 'paid' && <span className="text-emerald-600">✓ Paid {fmtPKR(row.charge)}{paidDate ? ` · due ${fmtDate(paidDate)}` : ''}</span>}
-        {row.state === 'free' && <span className="text-emerald-600">✓ Free (Rs 0)</span>}
-        {row.state === 'partial' && <span className="text-amber-700">Partial · {fmtPKR(row.charge - row.due)} of {fmtPKR(row.charge)} · {fmtPKR(row.due)} left</span>}
-        {row.state === 'unpaid' && <span className="text-red-600">Unpaid · {fmtPKR(row.due)} due</span>}
-        {row.state === 'unbilled' && <span className="text-slate-500">Not billed · {fmtPKR(row.due)} expected</span>}
+      <div className="flex min-w-[8rem] flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+        {row.state === 'paid' && (
+          <span className={`${pill} bg-money-50 text-money-800 ring-money-200`}>✓ Paid · {fmtPKR(row.charge)}</span>
+        )}
+        {row.state === 'free' && (
+          <span className={`${pill} bg-slate-100 text-slate-600 ring-slate-200`}>Free · Rs 0</span>
+        )}
+        {row.state === 'partial' && (
+          <>
+            {late
+              ? <span className={`${pill} bg-danger-50 text-danger-800 ring-danger-200`}>Part paid · {fmtPKR(row.due)} overdue</span>
+              : <span className={`${pill} bg-due-50 text-due-800 ring-due-200`}>Part paid · {fmtPKR(row.due)} left</span>}
+            <span className="inline-flex items-center gap-2 text-xs text-slate-500">
+              <span className="relative h-1.5 w-20 overflow-hidden rounded-full bg-due-100" aria-hidden>
+                <span className="absolute inset-y-0 left-0 rounded-full bg-money-500" style={{ width: `${paidShare * 100}%` }} />
+              </span>
+              {fmtPKR(row.charge - row.due)} of {fmtPKR(row.charge)}
+            </span>
+          </>
+        )}
+        {row.state === 'unpaid' && (
+          late
+            ? <span className={`${pill} bg-danger-50 text-danger-800 ring-danger-200`}>Overdue since {fmtDate(due)} · {fmtPKR(row.due)}</span>
+            : <span className={`${pill} bg-due-50 text-due-800 ring-due-200`}>{due ? `Due ${fmtDate(due)}` : 'Unpaid'} · {fmtPKR(row.due)}</span>
+        )}
+        {row.state === 'unbilled' && (
+          <span className={`${pill} border border-dashed border-slate-300 bg-white text-slate-500 ring-transparent`}>
+            Not billed yet · {fmtPKR(row.due)} expected
+          </span>
+        )}
         {row.state === 'deferred' && (
-          <span className="text-sky-700">Deferred{row.invoice?.deferred_until ? ` until ${fmtDate(row.invoice.deferred_until)}` : ''} · {fmtPKR(row.due)} still owed{row.invoice?.defer_reason ? ` · ${row.invoice.defer_reason}` : ''}</span>
+          <span className={`${pill} bg-info-50 text-info-800 ring-info-200`}>
+            Delayed{row.invoice?.deferred_until ? ` until ${fmtDate(row.invoice.deferred_until)}` : ''} · {fmtPKR(row.due)} still owed
+          </span>
+        )}
+        {row.state === 'deferred' && row.invoice?.defer_reason && (
+          <span className="text-xs text-slate-500">{row.invoice.defer_reason}</span>
         )}
       </div>
       <div className="flex gap-2">
@@ -2060,18 +2337,33 @@ function AttendanceTestsTab({ student, enrollment }: { student: Student; enrollm
       </div>
 
       {/* Attendance stats for the month */}
-      <div>
+      <div className="rounded-2xl bg-white p-4 shadow-card ring-1 ring-slate-200/80">
+        {summary.isError && (
+          <p className="mb-2 text-sm text-danger-700">The month could not be loaded: {(summary.error as Error).message}</p>
+        )}
         <div className="flex flex-wrap items-baseline gap-2">
-          <div className="text-3xl font-semibold text-slate-800">{d?.present_pct == null ? '-' : `${d.present_pct}%`}</div>
+          <div className="text-3xl font-semibold text-slate-900">{d?.present_pct == null ? '-' : `${d.present_pct}%`}</div>
           <div className="text-sm text-slate-500">
-            present over {d?.marked_days ?? 0} marked day{(d?.marked_days ?? 0) === 1 ? '' : 's'} · {monthLabel(effMonth)}{isCurrent ? ' (so far)' : ''}
+            attendance over {d?.marked_days ?? 0} marked day{(d?.marked_days ?? 0) === 1 ? '' : 's'} · {monthLabel(effMonth)}{isCurrent ? ' (so far)' : ''}
           </div>
         </div>
+        {d && d.marked_days > 0 && (
+          <div className="mt-3">
+            <StackBar
+              height={10}
+              parts={attendanceParts({ ...d, marked: d.marked_days })}
+              label={`${monthLabel(effMonth)}: ${attendanceParts({ ...d, marked: d.marked_days }).map((x) => `${x.label} ${x.value}`).join(', ')}`}
+            />
+          </div>
+        )}
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-5">
           {ATTENDANCE_STATUSES.map((st) => (
-            <div key={st.value} className="rounded-lg bg-white p-3 text-center shadow-sm ring-1 ring-slate-200">
-              <div className="text-2xl font-semibold text-slate-800">{(d as any)?.[st.value] ?? 0}</div>
-              <div className="text-xs text-slate-500">{st.label}</div>
+            <div key={st.value} className="rounded-xl bg-slate-50 p-3 text-center ring-1 ring-slate-200/70">
+              <div className="text-2xl font-semibold text-slate-900">{(d as any)?.[st.value] ?? 0}</div>
+              <div className="mt-0.5 inline-flex items-center gap-1.5 text-xs text-slate-500">
+                <span className="h-2 w-2 rounded-sm" style={{ background: STATUS_SWATCH[st.value] ?? C.none }} aria-hidden />
+                {st.label}
+              </div>
             </div>
           ))}
         </div>
@@ -2097,6 +2389,12 @@ function AttendanceTestsTab({ student, enrollment }: { student: Student; enrollm
       {report && <StudentMonthReport data={report} onClose={() => setReport(null)} />}
     </div>
   )
+}
+
+/** The swatch each status wears, from the one validated order in viz.tsx, so
+ *  a day marked late is the same amber here as on the dashboard. */
+const STATUS_SWATCH: Record<string, string> = {
+  present: C.good, late: C.warn, half_day: C.warn, absent: C.bad, leave: C.info,
 }
 
 function TestRow({ t }: { t: MonthTestRow }) {

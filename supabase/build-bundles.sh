@@ -885,6 +885,18 @@ emit supabase/bundles/45_the_admin_console_could_not_see_the_discount.sql \
 emit supabase/bundles/46_subjects_you_can_manage_and_a_month_of_defaulters.sql \
      supabase/migrations/0145*.sql
 
+# --- 47 ----------------------------------------------------------------------
+# The dashboard draws what it knows.
+#
+# A school shown the software liked the logic and found every screen a wall of
+# bare numbers. Two new reads feed the charts: fn_dashboard_trends (today's
+# register by section, fourteen school days, six billing months split into paid,
+# overdue and not yet due, dues by class, the staff room) and
+# fn_student_marks_trend (a child's class tests across the session). Both are
+# new objects beside the existing ones, so re-pasting is a no-op.
+emit supabase/bundles/47_the_dashboard_draws_what_it_knows.sql \
+     supabase/migrations/0146*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

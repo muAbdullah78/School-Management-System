@@ -1280,7 +1280,13 @@ with sig(migration, object, present) as (values
          and to_regprocedure('public.fn_delete_subject(uuid)') is not null
          and to_regprocedure('public.fn_copy_subjects_to_classes(uuid,uuid[])') is not null
          and to_regprocedure('public.fn_defaulters_month(uuid,date)') is not null
-         and to_regprocedure('public.fn_billed_months(uuid)') is not null))
+         and to_regprocedure('public.fn_billed_months(uuid)') is not null)),
+  -- 0146 adds two reads for the charts. Without them the dashboard shows its
+  -- tiles and nothing beneath, which is the product as it shipped, so MISSING.
+  ('0146_the_dashboard_draws_what_it_knows',
+     'fn_dashboard_trends, fn_student_marks_trend',
+     (select to_regprocedure('public.fn_dashboard_trends()') is not null
+         and to_regprocedure('public.fn_student_marks_trend(uuid)') is not null))
 )
 select migration,
        object                                   as looked_for,

@@ -84,6 +84,7 @@ export function DataTable<T>({
   exportName,
   toolbarExtra,
   printId,
+  mobileCard,
 }: {
   rows: T[]
   columns: Column<T>[]
@@ -107,6 +108,16 @@ export function DataTable<T>({
   toolbarExtra?: ReactNode
   /** Element id for the print stylesheet to target. */
   printId?: string
+  /**
+   * On a phone, each row drawn as this card instead of a table row.
+   *
+   * A table of five columns on a 360px screen either scrolls sideways, hiding
+   * the column the reader wanted (on the roster that was Owes), or wraps every
+   * name onto three lines. Both the cards and the table are rendered and CSS
+   * picks one, so search, sorting, paging and CSV stay shared, and print always
+   * gets the table.
+   */
+  mobileCard?: (row: T) => ReactNode
 }) {
   const [sortKey, setSortKey] = useState<string | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
@@ -208,8 +219,28 @@ export function DataTable<T>({
           </div>
         )}
 
+        {!loading && !error && rows.length > 0 && mobileCard && (
+          <ul className="divide-y divide-slate-100 sm:hidden print:hidden">
+            {sorted.map((r) => (
+              <li key={rowKey(r)}>
+                {onRowClick ? (
+                  <button
+                    type="button"
+                    onClick={() => onRowClick(r)}
+                    className="block w-full px-3 py-2.5 text-left hover:bg-brand-50/60 focus:bg-brand-50/60 focus:outline-none"
+                  >
+                    {mobileCard(r)}
+                  </button>
+                ) : (
+                  <div className="px-3 py-2.5">{mobileCard(r)}</div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+
         {!loading && !error && rows.length > 0 && (
-          <table className="min-w-full text-sm">
+          <table className={`min-w-full text-sm ${mobileCard ? 'hidden sm:table print:table' : ''}`}>
             <thead className="sticky top-0 z-10 bg-slate-50">
               <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
                 {columns.map((c) => {
@@ -219,7 +250,7 @@ export function DataTable<T>({
                       key={c.key}
                       scope="col"
                       aria-sort={active ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
-                      className={`px-3 py-2 font-medium ${c.align === 'right' ? 'text-right' : ''} ${
+                      className={`px-2 py-2 font-medium sm:px-3 ${c.align === 'right' ? 'text-right' : ''} ${
                         c.secondary ? 'hidden sm:table-cell' : ''
                       }`}
                     >
@@ -266,7 +297,7 @@ export function DataTable<T>({
                   {columns.map((c) => (
                     <td
                       key={c.key}
-                      className={`px-3 py-2 ${c.align === 'right' ? 'text-right tabular-nums' : ''} ${
+                      className={`px-2 py-2 sm:px-3 ${c.align === 'right' ? 'text-right tabular-nums' : ''} ${
                         c.secondary ? 'hidden sm:table-cell' : ''
                       }`}
                     >

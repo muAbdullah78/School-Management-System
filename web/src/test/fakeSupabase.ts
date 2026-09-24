@@ -28,6 +28,12 @@ export interface FakeOptions {
   rpc?: Record<string, unknown>
   /** Make every table read fail, to exercise the error paths. */
   failEverything?: string
+  /**
+   * Make ONE rpc fail with this message, the way PostgREST would. A screen
+   * that treats "this function is not installed yet" differently from "this
+   * read failed" can only be tested by failing one call and not the rest.
+   */
+  rpcErrors?: Record<string, string>
   /** Records every table and RPC a screen touched, for coverage reporting. */
   seen?: { tables: Set<string>; rpcs: Set<string> }
   /**
@@ -132,7 +138,9 @@ export function fakeSupabase(opts: FakeOptions = {}) {
       const value = has ? opts.rpc![name] : null
       const r = opts.failEverything
         ? { data: null, error: { message: opts.failEverything, code: 'PGRST000' } }
-        : { data: value, error: null }
+        : opts.rpcErrors && name in opts.rpcErrors
+          ? { data: null, error: { message: opts.rpcErrors[name], code: 'PGRST202' } }
+          : { data: value, error: null }
       // An RPC result is also chainable in places (.select(), .single()), so it
       // gets the same treatment rather than a bare promise.
       const t: any = {
