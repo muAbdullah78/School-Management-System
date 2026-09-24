@@ -137,87 +137,111 @@ function RemarkSheet({ termId, classId }: { termId: string; classId: string }) {
   }
 
   const value = (r: ExamRemarkRow) => drafts[r.student_id] ?? r.remark ?? ''
+  const unsaved = rows.filter((r) => value(r) !== (r.remark ?? ''))
+
+  // ALL AT ONCE. A class teacher writing thirty remarks had to press thirty
+  // Save buttons, and one missed was a card printed without its remark. They
+  // go one at a time underneath (there is no batch function), in order, and
+  // stop at the first refusal so the message names the child it was about.
+  const saveAll = useMutation({
+    mutationFn: async () => {
+      let n = 0
+      for (const r of unsaved) {
+        try {
+          await setExamRemark(termId, r.student_id, value(r))
+        } catch (e) {
+          throw new Error(`${r.student_name}: ${(e as Error).message}${n ? ` (${n} saved before this one)` : ''}`)
+        }
+        setSaved((m) => ({ ...m, [r.student_id]: true }))
+        n += 1
+      }
+      return n
+    },
+    onSuccess: () => setErr(null),
+    onError: (e) => setErr((e as Error).message),
+    onSettled: () => { void qc.invalidateQueries({ queryKey: ['examRemarks', termId, classId] }) },
+  })
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-slate-500">
-          {written} of {rows.length} written.{' '}
+          <span className="font-medium text-slate-800">{written} of {rows.length}</span> written.{' '}
           {written < rows.length && (
             <span className="text-slate-400">
               Blank is fine. An empty remark simply prints nothing.
             </span>
           )}
         </p>
-        {err && <span className="text-sm text-danger-600">{err}</span>}
+        <button
+          type="button"
+          disabled={unsaved.length === 0 || saveAll.isPending || save.isPending}
+          onClick={() => saveAll.mutate()}
+          className="rounded bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+        >
+          {saveAll.isPending ? 'Saving…' : unsaved.length ? `Save all ${unsaved.length} changed` : 'All saved'}
+        </button>
+      </div>
+      {err && <p className="mb-3 rounded-xl border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">{err}</p>}
+      <div className="mb-3 h-1.5 overflow-hidden rounded-full bg-slate-100" aria-hidden>
+        <div className="h-full rounded-full bg-brand-500" style={{ width: `${rows.length ? (100 * written) / rows.length : 0}%` }} />
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
-              <th scope="col" className="pb-2 pr-3">Roll</th>
-              <th scope="col" className="pb-2 pr-3">Student</th>
-              <th scope="col" className="pb-2 pr-3 text-right">Result</th>
-              <th scope="col" className="pb-2">Remark</th>
-              <th scope="col" className="pb-2 pl-3"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.student_id} className="border-b border-slate-100 align-top">
-                <td className="py-2 pr-3 tabular-nums text-slate-500">{r.roll_no ?? '-'}</td>
-                <td className="py-2 pr-3">
-                  <div className="text-slate-800">{r.student_name}</div>
-                  <div className="text-xs text-slate-400">{r.gr_no ?? '-'}</div>
-                </td>
+      {/* One card a pupil at every width: the remark box needs the width more
+          than the table needed its columns, and on a phone the old table left
+          the box about eight characters wide. */}
+      <ul className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white">
+        {rows.map((r) => {
+          const dirty = value(r) !== (r.remark ?? '')
+          return (
+            <li key={r.student_id} className="p-3">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                <div className="min-w-0">
+                  <span className="mr-2 text-xs tabular-nums text-slate-400">{r.roll_no ?? '-'}</span>
+                  <span className="font-medium text-slate-800">{r.student_name}</span>
+                  <span className="ml-1.5 text-xs text-slate-400">{r.gr_no ?? ''}</span>
+                </div>
                 {/* The child's own result, beside the box. A remark written
                     without it is a remark about nothing. */}
-                <td className="py-2 pr-3 text-right">
-                  {r.percentage == null ? (
-                    <span className="text-slate-300">-</span>
-                  ) : (
-                    <div>
-                      <div className="tabular-nums text-slate-700">{r.percentage}%</div>
-                      <div className="text-xs text-slate-400">
-                        {r.grade ?? '-'}
-                        {r.class_position != null && ` · pos ${r.class_position}`}
-                      </div>
-                    </div>
+                <div className="text-xs text-slate-500">
+                  {r.percentage == null ? 'No result yet' : (
+                    <>
+                      <b className="font-semibold tabular-nums text-slate-800">{r.percentage}%</b>
+                      {' · '}{r.grade ?? '-'}
+                      {r.class_position != null && ` · position ${r.class_position}`}
+                    </>
                   )}
-                </td>
-                <td className="py-2">
-                  <textarea
-                    rows={2}
-                    value={value(r)}
-                    onChange={(e) => {
-                      setDrafts((m) => ({ ...m, [r.student_id]: e.target.value }))
-                      setSaved((m) => ({ ...m, [r.student_id]: false }))
-                    }}
-                    placeholder="A hardworking and well-mannered student."
-                    className={`block w-full ${FIELD}`}
-                  />
-                  {r.remark?.trim() && r.remark_by_name !== '-' && (
-                    <div className="mt-0.5 text-xs text-slate-400">
-                      by {r.remark_by_name}
-                    </div>
-                  )}
-                </td>
-                <td className="py-2 pl-3">
-                  <button
-                    type="button"
-                    disabled={save.isPending || value(r) === (r.remark ?? '')}
-                    onClick={() => save.mutate({ studentId: r.student_id, text: value(r) })}
-                    className="rounded border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-                  >
-                    {saved[r.student_id] ? 'Saved' : 'Save'}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                </div>
+              </div>
+              <textarea
+                rows={2}
+                value={value(r)}
+                onChange={(e) => {
+                  setDrafts((m) => ({ ...m, [r.student_id]: e.target.value }))
+                  setSaved((m) => ({ ...m, [r.student_id]: false }))
+                }}
+                placeholder="A hardworking and well-mannered student."
+                className={`mt-2 block w-full ${FIELD} ${dirty ? 'border-due-300 bg-due-50/40' : ''}`}
+              />
+              <div className="mt-1.5 flex items-center justify-between gap-2">
+                <span className="text-xs text-slate-400">
+                  {dirty ? <span className="text-due-800">Not saved yet</span>
+                    : saved[r.student_id] ? <span className="text-brand-700">Saved</span>
+                    : r.remark?.trim() && r.remark_by_name !== '-' ? `by ${r.remark_by_name}` : ''}
+                </span>
+                <button
+                  type="button"
+                  disabled={save.isPending || saveAll.isPending || !dirty}
+                  onClick={() => save.mutate({ studentId: r.student_id, text: value(r) })}
+                  className="rounded border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                >
+                  Save
+                </button>
+              </div>
+            </li>
+          )
+        })}
+      </ul>
 
       <p className="mt-3 text-xs leading-relaxed text-slate-500">
         Remarks are kept per exam term, not per printed card, so regenerating the result cards

@@ -3310,6 +3310,35 @@ select 'the dashboard and the student profile have their charts (0146)',
        end
 
 union all
+-- 0147. The screens the office works in all day.
+select 'accounts in Karachi time, fee reads for the fee office, tests that lock only when finished (0147)',
+       case
+         when to_regprocedure('public.fn_dashboard_trends()') is null
+           then 'note: bundle 47 has not been applied yet, so 0147 is not due'
+         when to_regprocedure('public.fn_attendance_overview(uuid,date)') is null
+           or to_regprocedure('public.fn_tests_marks(uuid,date,date)') is null
+           or to_regprocedure('public.fn_unlock_assessment(uuid,text)') is null
+           or to_regprocedure('public.fn_fees_today()') is null
+           or to_regprocedure('public.fn_finance_months(integer)') is null
+           then 'FAIL: the Attendance, Tests, Fees and Accounts charts have nothing to draw; '
+                || 'apply supabase/bundles/48_the_screens_the_office_works_in.sql'
+         when not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                           where n.nspname = 'public' and p.proname = 'fn_finance_summary'
+                             and p.prosrc like '%Asia/Karachi%')
+           then 'FAIL: Accounts still dates a payment by the UTC clock, so a fee taken before '
+                || '05:00 counts on the day before; apply supabase/bundles/48_the_screens_the_office_works_in.sql'
+         when exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                       where n.nspname = 'public'
+                         and p.proname in ('fn_class_dues', 'fn_recent_payments', 'fn_counter_summary',
+                                           'fn_report_unpaid_invoices', 'fn_challan', 'fn_challans_for_class',
+                                           'fn_challan_months', 'fn_student_list')
+                         and p.prosrc ~ 'if\s+not\s+public\.is_staff\(\)\s+then')
+           then 'FAIL: a teacher''s login can still read the school''s fee records; apply '
+                || 'supabase/bundles/48_the_screens_the_office_works_in.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS: no schools yet, as expected'

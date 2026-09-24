@@ -1,3 +1,4 @@
+import { isMissingFunction } from '@/lib/notInstalled'
 import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -80,12 +81,6 @@ export function attendancePct(a: { present: number; late: number; half_day: numb
 // tiles and the charts always describe the same moment.
 const REFRESH = 5 * 60 * 1000
 
-/** PostgREST's answer when a function does not exist yet: the bundle that adds
- *  it has not been applied. Worded by PostgREST, so matched loosely. */
-function isMissingFunction(e: unknown): boolean {
-  const m = (e as Error)?.message ?? ''
-  return /could not find the function|schema cache/i.test(m)
-}
 
 /** "24 Sep", "Thu 24 Sep", from a plain date, without the browser's timezone
  *  moving it a day. */

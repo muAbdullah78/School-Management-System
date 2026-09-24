@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getCurrentSession, listClasses, listExamTerms, listExamSubjects, getMarksheet, enterMarks,
 } from '@/lib/db'
+import { AskDialog } from '@/components/AskDialog'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 type Entry = { marks: string; practical: string; is_absent: boolean }
@@ -46,9 +47,10 @@ export function MarksEntry() {
         is_absent: r.is_absent,
       }
     }
+    // NOT setMsg(null): saving refetches the marksheet, and clearing the
+    // message on every load wiped "Saved 34" the moment it appeared.
     setEntries(next)
     setReason('')
-    setMsg(null)
   }, [marksheet.data])
 
   // How many marks differ from what was loaded, and only counting rows that
@@ -56,12 +58,45 @@ export function MarksEntry() {
   // correction, and asking a teacher to justify it would train them to ignore
   // the box.
   const changed = rows.filter((r) => {
-    if (r.marks == null) return false
+    if (r.marks == null && r.practical_marks == null) return false
     const e = entries[r.enrollment_id]
     if (!e) return false
     const now = e.is_absent || e.marks === '' ? null : Number(e.marks)
-    return now !== Number(r.marks)
+    const nowP = e.is_absent || e.practical === '' ? null : Number(e.practical)
+    // A practical re-marked is a correction too: the pass mark applies to the
+    // combined figure, so it can turn a PASS into a FAIL.
+    return (r.marks != null && now !== Number(r.marks))
+      || (hasPractical && r.practical_marks != null && nowP !== Number(r.practical_marks))
   })
+
+  // Anything typed that is not saved yet, first entries included. Switching
+  // term, class or subject used to throw it away without a word.
+  const dirty = rows.some((r) => {
+    const e = entries[r.enrollment_id]
+    if (!e) return false
+    return e.is_absent !== r.is_absent
+      || (!e.is_absent && e.marks !== (r.marks == null ? '' : String(r.marks)))
+      || (hasPractical && !e.is_absent && e.practical !== (r.practical_marks == null ? '' : String(r.practical_marks)))
+  })
+  const [pendingPick, setPendingPick] = useState<null | (() => void)>(null)
+  const guard = (run: () => void) => (dirty ? setPendingPick(() => run) : run())
+
+  // The paper's own pass mark, against theory plus practical, which is the
+  // figure the card will judge. Live, as marks are typed.
+  const paper = (examSubjects.data ?? []).find((es) => es.id === examSubjectId)
+  const outOf = (maxMarks ?? 0) + practicalMax
+  const typedTotals = rows.flatMap((r) => {
+    const e = entries[r.enrollment_id]
+    if (!e || e.is_absent || (e.marks === '' && e.practical === '')) return []
+    const t = Number(e.marks || 0) + (hasPractical ? Number(e.practical || 0) : 0)
+    return Number.isFinite(t) ? [t] : []
+  })
+  const absentN = rows.filter((r) => entries[r.enrollment_id]?.is_absent).length
+  const blankN = rows.length - typedTotals.length - absentN
+  const avgPct = typedTotals.length && outOf > 0
+    ? Math.round((1000 * typedTotals.reduce((a, b) => a + b, 0)) / typedTotals.length / outOf) / 10
+    : null
+  const belowPass = paper ? typedTotals.filter((t) => t < paper.pass_marks).length : 0
 
   const save = useMutation({
     mutationFn: () => enterMarks(examSubjectId, rows.map((r) => {
@@ -104,21 +139,21 @@ export function MarksEntry() {
       <div className="grid gap-3 sm:grid-cols-3">
         <label className="block">
           <span className="text-sm text-slate-600">Term</span>
-          <select value={termId} onChange={(e) => { setTermId(e.target.value); setExamSubjectId('') }} className={FIELD}>
+          <select value={termId} onChange={(e) => { const v = e.target.value; guard(() => { setTermId(v); setExamSubjectId(''); setMsg(null) }) }} className={FIELD}>
             <option value="">Select term…</option>
             {terms.data?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
         </label>
         <label className="block">
           <span className="text-sm text-slate-600">Class</span>
-          <select value={classId} onChange={(e) => { setClassId(e.target.value); setExamSubjectId('') }} className={FIELD}>
+          <select value={classId} onChange={(e) => { const v = e.target.value; guard(() => { setClassId(v); setExamSubjectId(''); setMsg(null) }) }} className={FIELD}>
             <option value="">Select class…</option>
             {classes.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </label>
         <label className="block">
           <span className="text-sm text-slate-600">Subject</span>
-          <select value={examSubjectId} onChange={(e) => setExamSubjectId(e.target.value)} className={FIELD} disabled={!termId || !classId}>
+          <select value={examSubjectId} onChange={(e) => { const v = e.target.value; guard(() => { setExamSubjectId(v); setMsg(null) }) }} className={FIELD} disabled={!termId || !classId}>
             <option value="">{!termId || !classId ? 'Pick term & class' : 'Select subject…'}</option>
             {examSubjects.data?.map((es) => (
               <option key={es.id} value={es.id}>
@@ -141,7 +176,16 @@ export function MarksEntry() {
           {rows.length === 0 && !marksheet.isLoading && <p className="text-sm text-slate-500">No active students in this class.</p>}
           {rows.length > 0 && (
             <>
-              <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+              <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <Stat label="Marked" value={`${typedTotals.length + absentN} of ${rows.length}`}
+                  sub={blankN > 0 ? `${blankN} still blank` : 'everyone done'} tone={blankN > 0 ? 'due' : 'plain'} />
+                <Stat label="Class average" value={avgPct == null ? '-' : `${avgPct}%`}
+                  sub={`out of ${outOf}${absentN ? `, ${absentN} absent left out` : ''}`} tone="plain" />
+                <Stat label="Pass mark" value={paper ? String(paper.pass_marks) : '-'} sub={`of ${outOf}`} tone="plain" />
+                <Stat label="Below pass" value={String(belowPass)}
+                  sub={belowPass ? 'would fail this paper' : 'nobody below the pass mark'} tone={belowPass ? 'danger' : 'plain'} />
+              </div>
+              <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                     <tr>
@@ -166,7 +210,8 @@ export function MarksEntry() {
                           <td className="px-3 py-2">
                             <input type="number" min="0" max={r.max_marks} step="0.5" disabled={e.is_absent || r.is_locked}
                               value={e.is_absent ? '' : e.marks} onChange={(ev) => upd(r.enrollment_id, { marks: ev.target.value })}
-                              className={`w-24 rounded border px-2 py-1 text-sm ${bad ? 'border-red-400' : 'border-slate-300'} disabled:bg-slate-100`} />
+                              inputMode="decimal"
+                              className={`w-20 rounded border px-2 py-1.5 text-sm tabular-nums sm:w-24 ${bad ? 'border-danger-400 bg-danger-50' : 'border-slate-300'} disabled:bg-slate-100`} />
                           </td>
                           {hasPractical && (
                             <td className="px-3 py-2">
@@ -174,7 +219,8 @@ export function MarksEntry() {
                                 disabled={e.is_absent || r.is_locked}
                                 value={e.is_absent ? '' : e.practical}
                                 onChange={(ev) => upd(r.enrollment_id, { practical: ev.target.value })}
-                                className={`w-24 rounded border px-2 py-1 text-sm ${pbad ? 'border-red-400' : 'border-slate-300'} disabled:bg-slate-100`} />
+                                inputMode="decimal"
+                                className={`w-20 rounded border px-2 py-1.5 text-sm tabular-nums sm:w-24 ${pbad ? 'border-danger-400 bg-danger-50' : 'border-slate-300'} disabled:bg-slate-100`} />
                             </td>
                           )}
                           {hasPractical && (
@@ -207,14 +253,14 @@ export function MarksEntry() {
                   first entry is not a correction, and demanding a reason for
                   one would train teachers to type anything to get past it. */}
               {changed.length > 0 && (
-                <div className="mt-4 rounded border border-amber-300 bg-amber-50 p-3">
+                <div className="mt-4 rounded-xl border border-due-300 bg-due-50 p-3">
                   <label className="block text-sm">
-                    <span className="font-medium text-amber-900">
+                    <span className="font-medium text-due-900">
                       {changed.length === 1
                         ? `Changing ${changed[0].full_name}'s mark`
                         : `Changing ${changed.length} marks that were already entered`}
                     </span>
-                    <span className="mt-1 block text-xs text-amber-800">
+                    <span className="mt-1 block text-xs text-due-800">
                       {changed.slice(0, 4).map((r) => {
                         const e = entries[r.enrollment_id]
                         const now = e?.is_absent || e?.marks === '' ? '-' : e?.marks
@@ -226,9 +272,9 @@ export function MarksEntry() {
                       value={reason}
                       onChange={(ev) => setReason(ev.target.value)}
                       placeholder="Why? e.g. re-totalled question 7, paper remarked on appeal"
-                      className="mt-2 block w-full rounded border border-amber-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
+                      className="mt-2 block w-full rounded border border-due-300 px-3 py-2 text-sm focus:border-due-500 focus:outline-none"
                     />
-                    <span className="mt-1 block text-xs text-amber-700">
+                    <span className="mt-1 block text-xs text-due-700">
                       Recorded against these marks only, and shown in Reports → Mark Changes.
                       Leaving it blank is allowed, and the change is still recorded as
                       &ldquo;none given&rdquo;.
@@ -237,24 +283,48 @@ export function MarksEntry() {
                 </div>
               )}
 
-              <div className="mt-4 flex items-center gap-3">
+              <div className="mt-4 flex flex-wrap items-center gap-3">
                 <button onClick={() => save.mutate()} disabled={save.isPending || overMax}
                   className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
                   {save.isPending ? 'Saving…' : 'Save marks'}
                 </button>
-                {overMax && <span className="text-sm text-red-600">Some marks exceed the maximum.</span>}
+                {overMax && <span className="text-sm text-danger-600">Some marks are below 0 or above the paper&rsquo;s maximum.</span>}
                 <span className="text-xs text-slate-500">
                   A blank box means <strong>not marked yet</strong> and keeps that paper out of the
                   pupil&rsquo;s total. Tick <strong>Absent</strong> for a pupil who did not sit it:
                   that scores zero and counts.
                 </span>
-                {msg && <span className="text-sm text-emerald-700">{msg}</span>}
-                {save.isError && <span className="text-sm text-red-600">{(save.error as Error).message}</span>}
+                {msg && <span className="text-sm font-medium text-brand-700">{msg}</span>}
+                {save.isError && <span className="text-sm text-danger-600">{(save.error as Error).message}</span>}
               </div>
             </>
           )}
         </div>
       )}
+
+      {pendingPick && (
+        <AskDialog
+          title="Leave without saving?"
+          intro={<>The marks typed on this sheet have not been saved. Opening another paper throws them away.
+            Press <b>Stay</b>, then <b>Save marks</b>, to keep them.</>}
+          confirmLabel="Discard the marks" cancelLabel="Stay" tone="danger"
+          onCancel={() => setPendingPick(null)}
+          onSubmit={() => { const run = pendingPick; setPendingPick(null); run() }}
+        />
+      )}
+    </div>
+  )
+}
+
+function Stat({ label, value, sub, tone }: { label: string; value: string; sub: string; tone: 'plain' | 'due' | 'danger' }) {
+  const skin = tone === 'due' ? 'border-due-200 bg-due-50 text-due-900'
+    : tone === 'danger' ? 'border-danger-200 bg-danger-50 text-danger-900'
+    : 'border-slate-200 bg-white text-slate-900'
+  return (
+    <div className={`rounded-xl border px-3 py-2 ${skin}`}>
+      <div className="text-[11px] font-medium uppercase tracking-wide opacity-70">{label}</div>
+      <div className="text-lg font-semibold tabular-nums">{value}</div>
+      <div className="text-xs opacity-75">{sub}</div>
     </div>
   )
 }

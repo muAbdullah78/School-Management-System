@@ -33,6 +33,7 @@ import {
 } from '@/lib/db'
 import { fmtPKR } from '@/lib/format'
 import { Button } from '@/components/ui'
+import { C, StackBar, pctOf, type Segment } from '@/components/viz'
 
 type Which = 'paid' | 'unpaid' | 'not_billed' | null
 
@@ -41,6 +42,13 @@ function monthLabel(iso: string): string {
   return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-GB', {
     month: 'long', year: 'numeric', timeZone: 'UTC',
   })
+}
+
+/** A month label moved by whole months, from the month the SERVER says it is. */
+function shiftMonth(iso: string, by: number): string {
+  const [y, m] = iso.split('-').map(Number)
+  const d = new Date(Date.UTC(y, m - 1 + by, 1))
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-01`
 }
 
 function dayLabel(iso: string): string {
@@ -90,13 +98,17 @@ export function MonthHeader({
   const qc = useQueryClient()
   const [open, setOpen] = useState<Which>(null)
   const [monthOffset, setMonthOffset] = useState(0)
+  // THE MONTH THE SERVER SAYS IT IS, remembered from the first answer, and
+  // every other month counted from it. "Previous" used to count from the
+  // browser's UTC month, and from midnight to 05:00 on the 1st Karachi is in
+  // the new month while UTC is still in the old one: Previous then jumped from
+  // October straight to August and September could not be reached at all.
+  const [base, setBase] = useState<string | null>(null)
 
   const month = useMemo(() => {
-    if (monthOffset === 0) return null
-    const now = new Date()
-    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + monthOffset, 1))
-    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-01`
-  }, [monthOffset])
+    if (monthOffset === 0 || !base) return null
+    return shiftMonth(base, monthOffset)
+  }, [monthOffset, base])
 
   // Raise anything outstanding before asking what the month looks like, so the
   // first render is the truth rather than the truth minus whatever nobody has
@@ -132,13 +144,26 @@ export function MonthHeader({
   })
 
   const d = m.data
+  useEffect(() => {
+    if (monthOffset === 0 && d?.month) setBase(d.month)
+  }, [monthOffset, d?.month])
   const toggle = (w: Exclude<Which, null>) => setOpen((cur) => (cur === w ? null : w))
+
+  // Who has settled, in one bar: paid in full, part paid, nothing yet, and the
+  // children nobody charged, which are never folded into either side.
+  const people: Segment[] = d ? [
+    { key: 'paid', label: 'Paid in full', value: d.paid, color: C.good },
+    { key: 'part', label: 'Part paid', value: d.part_paid, color: C.warn },
+    { key: 'none', label: 'Nothing paid yet', value: Math.max(d.unpaid - d.part_paid, 0), color: C.bad },
+    { key: 'nb', label: 'No challan', value: d.not_billed, color: C.none },
+  ] : []
+  const inPct = d && d.charged_total > 0 ? pctOf(d.paid_total, d.charged_total) : null
 
   return (
     <section className="mb-5">
       {/* ------------------------------------------- the month, and the day -- */}
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <div className="flex items-baseline gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-baseline sm:gap-3">
           <h2 className="text-xl font-semibold text-slate-900">
             {d ? monthLabel(d.month) : '…'}
           </h2>
@@ -147,7 +172,7 @@ export function MonthHeader({
           )}
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="soft" tone="neutral" onClick={() => setMonthOffset((o) => o - 1)}>
+          <Button variant="soft" tone="neutral" disabled={!base} onClick={() => setMonthOffset((o) => o - 1)}>
             ← Previous
           </Button>
           {monthOffset !== 0 && (
@@ -209,7 +234,7 @@ export function MonthHeader({
         <CountTile
           label="Paid this month"
           value={d?.paid ?? '-'}
-          sub={d ? `${fmtPKR(d.paid_total)} received` : ' '}
+          sub={d ? `${fmtPKR(d.paid_total)} of this month's fee in` : ' '}
           tone="paid"
           active={open === 'paid'}
           onClick={() => toggle('paid')}
@@ -217,7 +242,7 @@ export function MonthHeader({
         <CountTile
           label="Not paid yet"
           value={d?.unpaid ?? '-'}
-          sub={d ? `${fmtPKR(d.due_total)} outstanding` : ' '}
+          sub={d ? `${fmtPKR(d.due_total)} still to come${d.part_paid ? `, ${d.part_paid} part paid` : ''}` : ' '}
           tone="unpaid"
           active={open === 'unpaid'}
           onClick={() => toggle('unpaid')}
@@ -231,6 +256,40 @@ export function MonthHeader({
           onClick={d && d.not_billed > 0 ? () => toggle('not_billed') : undefined}
         />
       </div>
+
+      {/* ------------------------------------------------ the month, drawn -- */}
+      {d && d.roll > 0 && (
+        <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-card">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <h3 className="text-sm font-semibold text-slate-900">
+              The month so far
+            </h3>
+            {inPct != null && (
+              <p className="text-sm text-slate-600">
+                <b className="font-semibold tabular-nums text-money-700">{fmtPKR(d.paid_total)}</b>
+                {' '}of {fmtPKR(d.charged_total)} charged is in
+                <span className="ml-1 font-semibold tabular-nums text-slate-900">({inPct}%)</span>
+              </p>
+            )}
+          </div>
+          <div className="mt-3">
+            <StackBar parts={people} total={d.roll} height={12}
+              label={`This month: ${people.map((p) => `${p.label} ${p.value}`).join(', ')}`} />
+          </div>
+          <ul className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+            {people.map((p) => (
+              <li key={p.key} className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-sm" style={{ background: p.color }} aria-hidden />
+                {p.label} <b className="font-semibold tabular-nums text-slate-900">{p.value}</b>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-slate-400">
+            Counts children, against this month&rsquo;s challans only. Money paid towards earlier months is on
+            Arrears, and the day&rsquo;s cash is on Accounts.
+          </p>
+        </div>
+      )}
 
       {/* --------------------------------------------------------- the list -- */}
       {open && (
@@ -249,7 +308,26 @@ export function MonthHeader({
             <p className="px-4 py-6 text-sm text-slate-400">Nobody.</p>
           ) : (
             <div className="max-h-96 overflow-y-auto">
-              <table className="w-full text-sm">
+              <ul className="divide-y divide-slate-100 sm:hidden">
+                {list.data!.map((p) => (
+                  <li key={p.student_id}>
+                    <button type="button" disabled={!onPick} onClick={onPick ? () => onPick(p) : undefined}
+                      className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-slate-50 disabled:cursor-default">
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-slate-800">{p.full_name}</span>
+                        <span className="block truncate text-xs text-slate-500">
+                          {p.class_name}{p.section_name ? ` (${p.section_name})` : ''} · {p.family_head ?? '-'}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-right text-sm font-semibold tabular-nums text-slate-900">
+                        {fmtPKR(open === 'paid' ? p.paid : p.due)}
+                        <span className="block text-[11px] font-normal text-slate-400">of {fmtPKR(p.charge)}</span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <table className="hidden w-full text-sm sm:table">
                 <thead className="sticky top-0 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                   <tr>
                     <th className="px-4 py-2 font-medium">Pupil</th>

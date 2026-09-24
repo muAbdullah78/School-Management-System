@@ -16,6 +16,8 @@ import { AttendanceSheet, type AttendanceSheetData } from './AttendanceSheet'
 import { AttendanceOverview } from './AttendanceOverview'
 import { SubjectAttendance } from './SubjectAttendance'
 import { LoadError } from '@/components/ui'
+import { TabBar } from '@/components/TabBar'
+import { StackBar, attendanceParts } from '@/components/viz'
 
 type Marks = Record<string, AttendanceStatus>
 
@@ -62,7 +64,7 @@ export function AttendancePage() {
           <LoadError of={[session]} what="The attendance register" />
           <h1 className="text-xl font-semibold text-slate-800">Attendance</h1>
           {!session.isError && (
-            <p className="mt-4 rounded bg-amber-50 p-3 text-sm text-amber-700">
+            <p className="mt-4 rounded-xl border border-due-200 bg-due-50 p-3 text-sm text-due-800">
               {session.isLoading
                 ? 'Loading…'
                 : 'No current academic session is set. Create one in Settings first.'}
@@ -117,19 +119,15 @@ function TeacherAttendance({ sessionId }: { sessionId: string | null }) {
 
   return (
     <div>
-      <div className="mb-4 flex gap-1 border-b border-slate-200">
-        {([['daily', 'Daily register'], ['subject', 'Subject attendance']] as const).map(([k, label]) => (
-          <button key={k} onClick={() => setTab(k)}
-            className={
-              '-mb-px border-b-2 px-3 py-2 text-sm font-medium '
-              + (tab === k
-                ? 'border-brand-600 text-brand-700'
-                : 'border-transparent text-slate-500 hover:text-slate-700')
-            }>
-            {label}
-          </button>
-        ))}
-      </div>
+      <TabBar
+        label="Which register"
+        value={tab}
+        onChange={setTab}
+        tabs={[
+          { key: 'daily', label: 'Daily register' },
+          { key: 'subject', label: 'Subject attendance' },
+        ]}
+      />
       {tab === 'daily'
         ? <MarkRegister />
         : sessionId
@@ -152,6 +150,10 @@ function MarkRegister() {
   const [classId, setClassId] = useState('')
   const [sectionChoice, setSectionChoice] = useState('')
   const [date, setDate] = useState(todayISO())
+  /* A change of class, section or date that is waiting on "discard your
+     marks?". Without this, a teacher who had marked thirty children and then
+     touched the date picker lost every mark without a word. */
+  const [pendingPick, setPendingPick] = useState<null | { what: string; run: () => void }>(null)
 
   // A teacher only sees classes/sections they are assigned to (mirrors the RLS).
   const allowedClassIds = isTeach ? new Set((myAssign.data ?? []).map((a) => a.class_id)) : null
@@ -217,6 +219,16 @@ function MarkRegister() {
     () => rows.some((r) => marks[r.enrollment_id] !== (r.status ?? null)),
     [rows, marks],
   )
+  // Children with nothing stored yet. They are SHOWN as Present so marking a
+  // full class is one press, and the page says so, because a register saved
+  // without looking would otherwise record thirty children present who were
+  // never checked.
+  const unmarkedOnServer = rows.filter((r) => !r.status).length
+
+  function guard(what: string, run: () => void) {
+    if (dirty && !dayLocked) setPendingPick({ what, run })
+    else run()
+  }
 
   const tally = useMemo(() => {
     const t: Record<string, number> = {}
@@ -406,16 +418,16 @@ function MarkRegister() {
             {dayLocked ? (
               <span className="rounded-full bg-slate-200 px-2.5 py-0.5 text-xs font-medium text-slate-600">🔒 Locked</span>
             ) : dirty ? (
-              <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">Unsaved changes</span>
+              <span className="rounded-full bg-due-100 px-2.5 py-0.5 text-xs font-medium text-due-800">Unsaved changes</span>
             ) : (
-              <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700">All saved</span>
+              <span className="rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-medium text-brand-700 ring-1 ring-brand-100">All saved</span>
             )}
           </div>
         )}
       </div>
 
       {!session.data && !session.isLoading && (
-        <p className="mt-4 rounded bg-amber-50 p-3 text-sm text-amber-700">
+        <p className="mt-4 rounded-xl border border-due-200 bg-due-50 p-3 text-sm text-due-800">
           No current academic session is set. Create one in Settings first.
         </p>
       )}
@@ -425,7 +437,7 @@ function MarkRegister() {
         <label className="block">
           <span className="text-sm text-slate-600">Class</span>
           <select value={classId} className={selectCls}
-            onChange={(e) => { setClassId(e.target.value); setSectionChoice('') }}>
+            onChange={(e) => { const v = e.target.value; guard('another class', () => { setClassId(v); setSectionChoice('') }) }}>
             <option value="">Select class…</option>
             {classOptions.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
@@ -434,7 +446,7 @@ function MarkRegister() {
           <span className="text-sm text-slate-600">Section</span>
           <select value={sectionChoice} className={selectCls}
             disabled={!classId || !hasSections}
-            onChange={(e) => setSectionChoice(e.target.value)}>
+            onChange={(e) => { const v = e.target.value; guard('another section', () => setSectionChoice(v)) }}>
             {!classId ? (
               <option value="">Pick a class first</option>
             ) : !hasSections ? (
@@ -450,14 +462,14 @@ function MarkRegister() {
         <label className="block">
           <span className="text-sm text-slate-600">Date</span>
           <input type="date" value={date} max={todayISO()} className={selectCls}
-            onChange={(e) => setDate(e.target.value)} />
+            onChange={(e) => { const v = e.target.value; if (v) guard('another day', () => setDate(v)) }} />
         </label>
       </div>
 
       {/* Roster */}
       <div className="mt-5">
         {!online && rows.length > 0 && (
-          <p className="mb-3 rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <p className="mb-3 rounded-xl border border-due-200 bg-due-50 px-3 py-2 text-sm text-due-800">
             You’re offline: showing your saved copy of this class. Marks you save will sync when you reconnect.
           </p>
         )}
@@ -465,7 +477,7 @@ function MarkRegister() {
           <p className="text-sm text-slate-500">Pick a class{hasSections ? ', section' : ''} and date to load the roster.</p>
         )}
         {ready && roster.isLoading && <p className="text-sm text-slate-500">Loading roster…</p>}
-        {ready && roster.isError && <p className="text-sm text-red-600">{(roster.error as Error).message}</p>}
+        {ready && roster.isError && <p className="text-sm text-danger-600">{(roster.error as Error).message}</p>}
         {ready && roster.data && rows.length === 0 && (
           <p className="rounded bg-slate-50 p-3 text-sm text-slate-500">No active students found for this selection.</p>
         )}
@@ -484,10 +496,29 @@ function MarkRegister() {
               </button>
               <div className="ml-auto flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-600">
                 {ATTENDANCE_STATUSES.map((s) => (
-                  <span key={s.value}><span className="font-semibold">{s.short}</span> {tally[s.value] ?? 0}</span>
+                  <span key={s.value}>{s.label} <b className="font-semibold tabular-nums text-slate-900">{tally[s.value] ?? 0}</b></span>
                 ))}
               </div>
+              <div className="w-full pt-1">
+                <StackBar
+                  height={8}
+                  total={rows.length}
+                  label={`This register: ${ATTENDANCE_STATUSES.map((s) => `${s.label} ${tally[s.value] ?? 0}`).join(', ')}`}
+                  parts={attendanceParts({
+                    present: tally.present ?? 0, late: tally.late ?? 0, half_day: tally.half_day ?? 0,
+                    leave: tally.leave ?? 0, absent: tally.absent ?? 0, marked: rows.length,
+                  }, rows.length)}
+                />
+              </div>
             </div>
+
+            {!dayLocked && unmarkedOnServer > 0 && (
+              <div className="border-x border-due-200 bg-due-50 px-3 py-2 text-xs text-due-800">
+                {unmarkedOnServer === rows.length
+                  ? 'Nothing is saved for this day yet. Everyone is shown as Present until you change them and press Save attendance.'
+                  : `${unmarkedOnServer} child${unmarkedOnServer === 1 ? ' has' : 'ren have'} nothing saved yet and ${unmarkedOnServer === 1 ? 'is' : 'are'} shown as Present until you save.`}
+              </div>
+            )}
 
             {dayLocked && (
               <div className="border-x border-slate-200 bg-slate-100 px-3 py-2 text-xs text-slate-500">
@@ -513,13 +544,13 @@ function MarkRegister() {
                   )}
                 </div>
                 {reopen.isError && (
-                  <p className="mt-1.5 text-red-600">{(reopen.error as Error)?.message}</p>
+                  <p className="mt-1.5 text-danger-600">{(reopen.error as Error)?.message}</p>
                 )}
               </div>
             )}
 
             {!dayLocked && justReopened && (
-              <div className="border-x border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <div className="border-x border-due-200 bg-due-50 px-3 py-2 text-xs text-due-800">
                 Reopened, and it is on the school&rsquo;s history with your reason. Correct the
                 register, then press <b>Finalize &amp; lock</b> again so it cannot be changed
                 after this.
@@ -532,10 +563,12 @@ function MarkRegister() {
                 <div
                   key={r.enrollment_id}
                   onMouseDown={() => setActiveIdx(i)}
-                  className={`flex flex-wrap items-center gap-3 px-3 py-2 ${i === activeIdx && !dayLocked ? 'bg-brand-50/60' : ''}`}
+                  className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2 ${i === activeIdx && !dayLocked ? 'bg-brand-50/60' : ''}`}
                 >
                   <div className="w-8 text-right text-xs text-slate-400">{r.roll_no ?? '-'}</div>
-                  <div className="min-w-0 flex-1">
+                  {/* At least 10rem for the name: on a phone the five buttons
+                      drop under it instead of squeezing it to "Ayesha A...". */}
+                  <div className="min-w-[10rem] flex-1">
                     <div className="truncate text-sm font-medium text-slate-800">
                       {r.full_name}
                       {r.is_locked && !dayLocked && <span className="ml-1 text-xs text-slate-400" title="Locked">🔒</span>}
@@ -569,9 +602,9 @@ function MarkRegister() {
                   {finalize.isPending ? 'Finalizing…' : 'Finalize & lock'}
                 </button>
               )}
-              {saveMsg && <span className="text-sm text-emerald-700">{saveMsg}</span>}
+              {saveMsg && <span className="text-sm font-medium text-brand-700">{saveMsg}</span>}
               {(save.isError || finalize.isError) && (
-                <span className="text-sm text-red-600">
+                <span className="text-sm text-danger-600">
                   {((save.error ?? finalize.error) as Error)?.message}
                 </span>
               )}
@@ -586,9 +619,10 @@ function MarkRegister() {
               <AskDialog
                 title="Finalize this day?"
                 intro={<>
-                  The register for <b>{date}</b> is locked and can no longer be edited by anybody,
-                  including you. Anything wrong after this has to be put right through a correction,
-                  which is recorded.
+                  The register for <b>{date}</b> is locked and can no longer be changed by a
+                  teacher. If a mark turns out to be wrong, only the owner or the principal can
+                  reopen the day, and they have to give a reason, which is kept on the school&rsquo;s
+                  history.
                 </>}
                 confirmLabel="Finalize and lock" tone="danger"
                 busy={finalize.isPending}
@@ -622,7 +656,7 @@ function MarkRegister() {
               />
             )}
 
-            <p className="mt-3 text-xs text-slate-500">
+            <p className="mt-3 hidden text-xs text-slate-500 sm:block">
               Tip: click a row, then press <kbd className="rounded border px-1">P</kbd>/<kbd className="rounded border px-1">A</kbd>/<kbd className="rounded border px-1">L</kbd>/<kbd className="rounded border px-1">T</kbd>/<kbd className="rounded border px-1">H</kbd> (or 1–5) to mark and jump to the next student.
             </p>
           </>
@@ -630,6 +664,21 @@ function MarkRegister() {
       </div>
 
       {sheet && <AttendanceSheet data={sheet} onClose={() => setSheet(null)} />}
+
+      {pendingPick && (
+        <AskDialog
+          title="Leave without saving?"
+          intro={<>
+            The marks on this register have not been saved. Opening {pendingPick.what} throws
+            them away. Press <b>Stay</b> and then <b>Save attendance</b> to keep them.
+          </>}
+          confirmLabel="Discard the marks"
+          cancelLabel="Stay"
+          tone="danger"
+          onCancel={() => setPendingPick(null)}
+          onSubmit={() => { const run = pendingPick.run; setPendingPick(null); run() }}
+        />
+      )}
     </div>
   )
 }
@@ -638,7 +687,7 @@ function StatusChips({
   value, onChange, disabled,
 }: { value: AttendanceStatus | undefined; onChange: (s: AttendanceStatus) => void; disabled?: boolean }) {
   return (
-    <div className="flex gap-1">
+    <div className="ml-11 flex gap-1.5 sm:ml-0 sm:gap-1">
       {ATTENDANCE_STATUSES.map((s) => {
         const on = value === s.value
         return (
@@ -648,7 +697,9 @@ function StatusChips({
             disabled={disabled}
             title={s.label}
             onClick={() => onChange(s.value)}
-            className={`h-8 w-9 rounded text-xs font-semibold ring-1 transition ${on ? s.on : `bg-white ${s.off}`} ${disabled ? 'opacity-60' : ''}`}
+            aria-label={s.label}
+            aria-pressed={on}
+            className={`h-10 w-11 rounded-lg text-sm font-semibold ring-1 transition sm:h-8 sm:w-9 sm:rounded sm:text-xs ${on ? s.on : `bg-white ${s.off}`} ${disabled ? 'opacity-60' : ''}`}
           >
             {s.short}
           </button>

@@ -3,11 +3,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getCurrentSession, listClasses, listExamTerms, createExamTerm,
   listSubjects, createSubject, listExamSubjects, upsertExamSubject, removeExamSubject,
-  listClassRoster, setSubjectDetails,
+  listClassRoster, setSubjectDetails, getPaperMarksCount,
   type ExamSubjectRow, type SubjectRow,
 } from '@/lib/db'
 import { TERM_TYPES } from '@/lib/constants'
-import { fmtDate, todayISO } from '@/lib/format'
+import { fmtDate } from '@/lib/format'
+import { AskDialog } from '@/components/AskDialog'
+import { isMissingFunction } from '@/lib/notInstalled'
 import { DateSheet } from './DateSheet'
 import { AdmitCards } from './AdmitCards'
 
@@ -32,10 +34,22 @@ export function ExamSetup() {
   const [termId, setTermId] = useState('')
   const [classId, setClassId] = useState('')
 
+  // THE END DATE HAD max={today}, so a term could only be created once it was
+  // over: "First Term, 1 to 30 October" could not be set up in September,
+  // which is exactly when a school sets it up. The rule that matters is the
+  // order of the two dates, and that both or neither are given.
+  const termProblem = !name.trim()
+    ? null
+    : (!!starts) !== (!!ends)
+      ? 'Give both the start and the end date, or neither.'
+      : starts && ends && ends < starts
+        ? 'The term cannot end before it starts.'
+        : null
+
   return (
     <div className="space-y-8">
       {!session.data && !session.isLoading && (
-        <p className="rounded bg-amber-50 p-3 text-sm text-amber-700">No current academic session. Create one in Settings first.</p>
+        <p className="rounded-xl border border-due-200 bg-due-50 p-3 text-sm text-due-800">No current academic session. Create one in Settings first.</p>
       )}
 
       {/* Terms */}
@@ -52,7 +66,7 @@ export function ExamSetup() {
             ))}
           </ul>
         </div>
-        <form className="mt-3 grid gap-3 sm:grid-cols-4" onSubmit={(e) => { e.preventDefault(); if (sessionId && name.trim()) addTerm.mutate() }}>
+        <form className="mt-3 grid gap-3 sm:grid-cols-4" onSubmit={(e) => { e.preventDefault(); if (sessionId && name.trim() && !termProblem) addTerm.mutate() }}>
           <label className="block sm:col-span-2">
             <span className="text-sm text-slate-600">Term name</span>
             <input value={name} onChange={(e) => setName(e.target.value)} className={FIELD} placeholder="e.g. First Term 2025" />
@@ -64,7 +78,7 @@ export function ExamSetup() {
             </select>
           </label>
           <div className="flex items-end">
-            <button type="submit" disabled={!sessionId || !name.trim() || addTerm.isPending}
+            <button type="submit" disabled={!sessionId || !name.trim() || !!termProblem || addTerm.isPending}
               className="w-full rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
               {addTerm.isPending ? 'Adding…' : 'Add term'}
             </button>
@@ -75,9 +89,10 @@ export function ExamSetup() {
           </label>
           <label className="block">
             <span className="text-sm text-slate-600">Ends</span>
-            <input type="date" max={todayISO()} value={ends} onChange={(e) => setEnds(e.target.value)} className={FIELD} />
+            <input type="date" min={starts || undefined} value={ends} onChange={(e) => setEnds(e.target.value)} className={FIELD} />
           </label>
-          {addTerm.isError && <p className="text-sm text-red-600 sm:col-span-4">{(addTerm.error as Error).message}</p>}
+          {termProblem && <p className="text-sm text-danger-600 sm:col-span-4">{termProblem}</p>}
+          {addTerm.isError && <p className="text-sm text-danger-600 sm:col-span-4">{(addTerm.error as Error).message}</p>}
         </form>
       </section>
 
@@ -136,15 +151,19 @@ function PaperSetup({
 
   return (
     <div className="mt-4">
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-        <table className="w-full text-sm">
+      {/* overflow-x-auto, not overflow-hidden. Eight columns do not fit a
+          phone, and a hidden overflow simply cut off the Include and Remove
+          buttons with no way to reach them. */}
+      <p className="mb-1 text-xs text-slate-400 lg:hidden">Scroll the table sideways for dates and the buttons.</p>
+      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+        <table className="w-full min-w-[56rem] text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-3 py-2">Subject</th>
               <th className="px-3 py-2 w-40">Stream</th>
               <th className="px-3 py-2 w-24">Theory</th>
               <th className="px-3 py-2 w-24">Practical</th>
-              <th className="px-3 py-2 w-24">Pass</th>
+              <th className="px-3 py-2 w-24">Pass mark</th>
               <th className="px-3 py-2 w-36">Date</th>
               <th className="px-3 py-2 w-28">Time</th>
               <th className="px-3 py-2 w-40">In this term</th>
@@ -178,7 +197,7 @@ function PaperSetup({
             Print admit cards
           </button>
         </div>
-        {addSubj.isError && <span className="w-full text-sm text-red-600">{(addSubj.error as Error).message}</span>}
+        {addSubj.isError && <span className="w-full text-sm text-danger-600">{(addSubj.error as Error).message}</span>}
       </div>
 
       {show === 'date' && (
@@ -200,16 +219,45 @@ function PaperRow({ subject, termId, classId, existing }: { subject: SubjectRow;
   const [ptime, setPtime] = useState(existing?.paper_time ?? '')
   const [stream, setStream] = useState(subject.stream ?? '')
   const included = !!existing
+  const [saved, setSaved] = useState(false)
+  const [asking, setAsking] = useState<null | { marks: number; locked: number; unknown: boolean }>(null)
+
+  // A pass mark above the paper's total means nobody can pass, and it went in
+  // without a word. The pass mark is out of theory plus practical.
+  const total = Number(max) + (subject.is_practical ? Number(pmax) || 0 : 0)
+  const paperProblem = !(Number(max) > 0)
+    ? 'The theory paper needs a total above zero.'
+    : subject.is_practical && Number(pmax) < 0
+      ? 'The practical cannot be out of less than zero.'
+      : !(Number(pass) >= 0)
+        ? 'The pass mark cannot be below zero.'
+        : Number(pass) > total
+          ? `The pass mark (${pass}) is more than the paper is out of (${total}), so nobody could pass.`
+          : null
 
   const save = useMutation({
     mutationFn: () => upsertExamSubject(
       termId, classId, subject.id, Number(max), Number(pass),
       subject.is_practical ? Number(pmax) : 0, pdate || null, ptime || null),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['examSubjects', termId, classId] }),
+    onSuccess: () => { setSaved(true); qc.invalidateQueries({ queryKey: ['examSubjects', termId, classId] }) },
   })
   const remove = useMutation({
     mutationFn: () => removeExamSubject(existing!.id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['examSubjects', termId, classId] }),
+    onSuccess: () => {
+      setAsking(null)
+      qc.invalidateQueries({ queryKey: ['examSubjects', termId, classId] })
+      qc.invalidateQueries({ queryKey: ['resultReadiness'] })
+    },
+  })
+  // Ask what Remove would delete BEFORE offering the button that deletes it.
+  // Removing a paper cascades its unlocked marks, and the old button did that
+  // on one click with no question.
+  const count = useMutation({
+    mutationFn: () => getPaperMarksCount(existing!.id),
+    onSuccess: (c) => setAsking({ ...c, unknown: false }),
+    onError: (e) => {
+      if (isMissingFunction(e)) setAsking({ marks: 0, locked: 0, unknown: true })
+    },
   })
   // Stream and the practical flag live on the SUBJECT, not the paper: they are
   // the same every term, and a school that had to restate them each term would
@@ -225,6 +273,8 @@ function PaperRow({ subject, termId, classId, existing }: { subject: SubjectRow;
 
   const err = (details.isError && (details.error as Error).message)
     || (save.isError && (save.error as Error).message)
+    || (count.isError && !isMissingFunction(count.error) && (count.error as Error).message)
+    || paperProblem
     || null
 
   return (
@@ -256,37 +306,64 @@ function PaperRow({ subject, termId, classId, existing }: { subject: SubjectRow;
             className="w-32 rounded border border-slate-300 px-2 py-1 text-sm"
           />
         </td>
-        <td className="px-3 py-2"><input type="number" min="1" value={max} onChange={(e) => setMax(e.target.value)} className="w-16 rounded border border-slate-300 px-2 py-1 text-sm" /></td>
+        <td className="px-3 py-2"><input type="number" min="1" value={max} onChange={(e) => { setMax(e.target.value); setSaved(false) }} className="w-16 rounded border border-slate-300 px-2 py-1 text-sm" /></td>
         <td className="px-3 py-2">
           {subject.is_practical
-            ? <input type="number" min="0" value={pmax} onChange={(e) => setPmax(e.target.value)} className="w-16 rounded border border-slate-300 px-2 py-1 text-sm" />
+            ? <input type="number" min="0" value={pmax} onChange={(e) => { setPmax(e.target.value); setSaved(false) }} className="w-16 rounded border border-slate-300 px-2 py-1 text-sm" />
             : <span className="text-xs text-slate-400">-</span>}
         </td>
         <td className="px-3 py-2">
-          <input type="number" min="0" value={pass} onChange={(e) => setPass(e.target.value)} className="w-16 rounded border border-slate-300 px-2 py-1 text-sm" />
+          <input type="number" min="0" max={total || undefined} value={pass} onChange={(e) => { setPass(e.target.value); setSaved(false) }}
+            className={`w-16 rounded border px-2 py-1 text-sm ${paperProblem ? 'border-danger-400 bg-danger-50' : 'border-slate-300'}`} />
           {subject.is_practical && Number(pmax) > 0 && (
             <div className="text-[10px] text-slate-400">of {Number(max) + Number(pmax)}</div>
           )}
         </td>
-        <td className="px-3 py-2"><input type="date" value={pdate} onChange={(e) => setPdate(e.target.value)} className="rounded border border-slate-300 px-2 py-1 text-sm" /></td>
-        <td className="px-3 py-2"><input value={ptime} onChange={(e) => setPtime(e.target.value)} placeholder="09:00 AM" className="w-24 rounded border border-slate-300 px-2 py-1 text-sm" /></td>
+        <td className="px-3 py-2"><input type="date" value={pdate} onChange={(e) => { setPdate(e.target.value); setSaved(false) }} className="rounded border border-slate-300 px-2 py-1 text-sm" /></td>
+        <td className="px-3 py-2"><input value={ptime} onChange={(e) => { setPtime(e.target.value); setSaved(false) }} placeholder="09:00 AM" className="w-24 rounded border border-slate-300 px-2 py-1 text-sm" /></td>
         <td className="px-3 py-2">
-          <div className="flex gap-2">
-            <button onClick={() => save.mutate()} disabled={save.isPending}
+          <div className="flex items-center gap-2">
+            <button onClick={() => save.mutate()} disabled={save.isPending || !!paperProblem}
               className={`rounded px-2.5 py-1 text-xs font-medium ${included ? 'border border-slate-300 text-slate-700 hover:bg-slate-50' : 'bg-brand-600 text-white hover:bg-brand-700'} disabled:opacity-60`}>
               {included ? 'Update' : 'Include'}
             </button>
             {included && (
-              <button onClick={() => remove.mutate()} disabled={remove.isPending}
-                className="rounded border border-red-300 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-60">
-                Remove
+              <button onClick={() => count.mutate()} disabled={remove.isPending || count.isPending}
+                className="rounded border border-danger-300 px-2.5 py-1 text-xs font-medium text-danger-700 hover:bg-danger-50 disabled:opacity-60">
+                {count.isPending ? 'Checking…' : 'Remove'}
               </button>
             )}
+            {saved && !save.isPending && <span className="text-xs font-medium text-brand-700">Saved</span>}
           </div>
+          {asking && (
+            <AskDialog
+              title={`Remove ${subject.name} from this term?`}
+              intro={
+                asking.locked > 0 ? (
+                  <>This paper has <b>{asking.locked}</b> locked mark{asking.locked === 1 ? '' : 's'}, so it cannot
+                    be removed. Locked marks are kept for good; ask for the paper to be unlocked first.</>
+                ) : asking.unknown ? (
+                  <>Any marks already entered on this paper are deleted with it, and cannot be brought back.</>
+                ) : asking.marks > 0 ? (
+                  <><b>{asking.marks}</b> mark{asking.marks === 1 ? ' has' : 's have'} already been entered on this paper.
+                    Removing it deletes {asking.marks === 1 ? 'that mark' : 'all of them'}, and they cannot be brought
+                    back. Result cards already generated keep their copy.</>
+                ) : (
+                  <>No marks have been entered on it yet, so nothing else is lost.</>
+                )
+              }
+              confirmLabel={asking.locked > 0 ? 'Close' : asking.marks > 0 ? `Remove it and delete ${asking.marks} mark${asking.marks === 1 ? '' : 's'}` : 'Remove it'}
+              tone={asking.locked > 0 ? 'brand' : 'danger'}
+              busy={remove.isPending}
+              error={remove.error ? (remove.error as Error).message : null}
+              onCancel={() => setAsking(null)}
+              onSubmit={() => (asking.locked > 0 ? setAsking(null) : remove.mutate())}
+            />
+          )}
         </td>
       </tr>
       {err && (
-        <tr><td colSpan={8} className="px-3 pb-2 text-xs text-red-600">{err}</td></tr>
+        <tr><td colSpan={8} className="px-3 pb-2 text-xs text-danger-600">{err}</td></tr>
       )}
     </>
   )

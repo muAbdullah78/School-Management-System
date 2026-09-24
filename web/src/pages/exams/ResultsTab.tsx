@@ -8,6 +8,8 @@ import {
 import { useAuth } from '@/auth/AuthProvider'
 import { ResultCardPrint } from './ResultCardPrint'
 import { TabulationSheet } from './TabulationSheet'
+import { AskDialog } from '@/components/AskDialog'
+import { C, ChartCard, Donut, HBars, Legend, MiniTable, type Segment } from '@/components/viz'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 
@@ -83,24 +85,24 @@ export function ResultsTab() {
               a silent zero: the old generator marked children nobody had marked
               as having failed, and said nothing. */}
           {fatal.length > 0 && (
-            <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3">
-              <div className="text-sm font-semibold text-red-800">
+            <div className="mb-4 rounded-xl border border-danger-200 bg-danger-50 p-3">
+              <div className="text-sm font-semibold text-danger-800">
                 These have to be fixed before any card can be generated
               </div>
-              <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-red-700">
+              <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-danger-700">
                 {fatal.map((b) => <li key={b.problem + b.detail}>{b.detail}</li>)}
               </ul>
             </div>
           )}
           {fatal.length === 0 && missing.length > 0 && (
-            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
-              <div className="text-sm font-semibold text-amber-800">
+            <div className="mb-4 rounded-xl border border-due-200 bg-due-50 p-3">
+              <div className="text-sm font-semibold text-due-800">
                 Marks are still missing
               </div>
-              <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-amber-700">
+              <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-due-700">
                 {missing.map((b) => <li key={b.detail}>{b.detail}</li>)}
               </ul>
-              <p className="mt-2 text-xs text-amber-700">
+              <p className="mt-2 text-xs text-due-700">
                 Enter them and the cards will be complete. You can also generate
                 <strong> provisional</strong> cards now. Those pupils are marked out of only
                 the papers they have sat, the card says PROVISIONAL, and they take no
@@ -118,7 +120,7 @@ export function ResultsTab() {
             )}
             {canGenerate && fatal.length === 0 && missing.length > 0 && (
               <button onClick={() => generate.mutate(true)} disabled={generate.isPending}
-                className="rounded border border-amber-400 bg-white px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-50 disabled:opacity-60">
+                className="rounded border border-due-400 bg-white px-4 py-2 text-sm font-medium text-due-800 hover:bg-due-50 disabled:opacity-60">
                 {generate.isPending ? 'Generating…' : 'Generate provisional cards anyway'}
               </button>
             )}
@@ -129,14 +131,14 @@ export function ResultsTab() {
               </button>
             )}
             {generate.isSuccess && (
-              <span className={generate.data.provisional ? 'text-sm text-amber-700' : 'text-sm text-emerald-700'}>
+              <span className={generate.data.provisional ? 'text-sm text-due-700' : 'text-sm font-medium text-brand-700'}>
                 {generate.data.generated} card{generate.data.generated === 1 ? '' : 's'} generated
                 {generate.data.provisional
                   ? `: provisional, ${generate.data.missing_marks} mark${generate.data.missing_marks === 1 ? '' : 's'} still missing.`
                   : '.'}
               </span>
             )}
-            {generate.isError && <span className="text-sm text-red-600">{(generate.error as Error).message}</span>}
+            {generate.isError && <span className="text-sm text-danger-600">{(generate.error as Error).message}</span>}
           </div>
           <p className="mt-2 text-xs text-slate-500">
             Re-generating creates a new version from the current marks; earlier versions are kept. Cards print from a frozen snapshot.
@@ -147,10 +149,34 @@ export function ResultsTab() {
               cards={cards.data ?? []} canRelease={canRelease} />
           )}
 
-          <div className="mt-4 overflow-hidden rounded-lg border border-slate-200 bg-white">
+          {(cards.data?.length ?? 0) > 0 && <ClassSummary cards={cards.data ?? []} />}
+
+          {/* Phone: one card a pupil. The table below cut its last three
+              columns off at 390px, including the only button on the row. */}
+          {(cards.data?.length ?? 0) > 0 && (
+            <ul className="mt-4 divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 bg-white sm:hidden">
+              {cards.data!.map((c) => (
+                <li key={c.id} className="flex items-center gap-3 px-3 py-2.5">
+                  <span className="w-7 shrink-0 text-center text-sm font-semibold tabular-nums text-slate-500">{c.position ?? '-'}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium text-slate-800">{c.full_name}</div>
+                    <div className="text-xs text-slate-500">
+                      {c.percentage == null ? '-' : `${c.percentage}%`} · {c.grade ?? '-'} · <Verdict c={c} />
+                      {c.frozen?.withheld ? ' · withheld' : ''}{c.frozen?.provisional ? ' · provisional' : ''}
+                    </div>
+                  </div>
+                  <button onClick={() => setCard(c)} className="shrink-0 rounded border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                    View
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className={`mt-4 overflow-x-auto rounded-lg border border-slate-200 bg-white ${(cards.data?.length ?? 0) > 0 ? 'hidden sm:block' : ''}`}>
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                <tr><th className="px-3 py-2 w-12">#</th><th className="px-3 py-2">Student</th><th className="px-3 py-2 w-24 text-right">Total</th><th className="px-3 py-2 w-20 text-right">%</th><th className="px-3 py-2 w-20">Grade</th><th className="px-3 py-2 w-24">Result</th><th className="px-3 py-2 w-28"></th></tr>
+                <tr><th className="px-3 py-2 w-16">Position</th><th className="px-3 py-2">Student</th><th className="px-3 py-2 w-24 text-right">Total</th><th className="px-3 py-2 w-20 text-right">%</th><th className="px-3 py-2 w-20">Grade</th><th className="px-3 py-2 w-24">Result</th><th className="px-3 py-2 w-28"></th></tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {cards.isLoading && <tr><td colSpan={7} className="px-3 py-3 text-slate-500">Loading…</td></tr>}
@@ -160,9 +186,9 @@ export function ResultsTab() {
                     <td className="px-3 py-2 text-slate-500">{c.position ?? '-'}</td>
                     <td className="px-3 py-2 text-slate-800">
                       {c.full_name}<span className="text-slate-400"> · {c.gr_no ?? 'no GR'}</span>
-                      {c.frozen?.withheld && <span className="ml-1 rounded bg-red-100 px-1.5 py-0.5 text-xs text-red-700">withheld</span>}
+                      {c.frozen?.withheld && <span className="ml-1 rounded bg-danger-100 px-1.5 py-0.5 text-xs text-danger-700">withheld</span>}
                       {c.frozen?.provisional && (
-                        <span className="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">
+                        <span className="ml-1 rounded bg-due-100 px-1.5 py-0.5 text-xs text-due-800">
                           provisional
                         </span>
                       )}
@@ -171,26 +197,9 @@ export function ResultsTab() {
                     <td className="px-3 py-2 text-right text-slate-700">{c.total_marks ?? '-'}/{c.total_max ?? '-'}</td>
                     <td className="px-3 py-2 text-right text-slate-700">{c.percentage == null ? '-' : `${c.percentage}%`}</td>
                     <td className="px-3 py-2 font-medium text-slate-800">{c.grade ?? '-'}</td>
-                    <td className="px-3 py-2">
-                      {/* PENDING, not a blank: a card with no verdict is a card
-                          whose marks are not all in, and saying so is the point. */}
-                      {c.frozen?.result === 'PASS' && <span className="font-semibold text-money-700">PASS</span>}
-                      {c.frozen?.result === 'FAIL' && (
-                        <span className="font-semibold text-danger-600">
-                          FAIL
-                          {(c.frozen.failed_subjects ?? 0) > 0 && (
-                            <span className="ml-1 text-xs font-normal text-slate-500">
-                              in {c.frozen.failed_subjects}
-                            </span>
-                          )}
-                        </span>
-                      )}
-                      {(c.frozen?.result === 'PENDING' || !c.frozen?.result) && (
-                        <span className="text-xs text-slate-400">pending</span>
-                      )}
-                    </td>
+                    <td className="px-3 py-2"><Verdict c={c} /></td>
                     <td className="px-3 py-2 text-right">
-                      <button onClick={() => setCard(c)} className="rounded border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                      <button onClick={() => setCard(c)} className="whitespace-nowrap rounded border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">
                         View / print
                       </button>
                     </td>
@@ -230,8 +239,9 @@ function ReleaseToParents({ termId, classId, cards, canRelease }: {
   const qc = useQueryClient()
   const invalidate = () => qc.invalidateQueries({ queryKey: ['resultCards', termId, classId] })
 
-  const publish = useMutation({ mutationFn: () => publishResults(termId, classId), onSuccess: invalidate })
-  const withdraw = useMutation({ mutationFn: () => unpublishResults(termId, classId), onSuccess: invalidate })
+  const [asking, setAsking] = useState<'release' | 'withdraw' | null>(null)
+  const publish = useMutation({ mutationFn: () => publishResults(termId, classId), onSuccess: () => { setAsking(null); invalidate() } })
+  const withdraw = useMutation({ mutationFn: () => unpublishResults(termId, classId), onSuccess: () => { setAsking(null); invalidate() } })
 
   // published_at is per card, so a class can be part-released after a
   // re-generate. Report the real split rather than a single yes/no.
@@ -246,21 +256,21 @@ function ReleaseToParents({ termId, classId, cards, canRelease }: {
         <div className="text-sm">
           {released === 0 && <span className="text-slate-600">Not released: parents cannot see these results.</span>}
           {released > 0 && released < total && (
-            <span className="text-amber-700">{released} of {total} released. The rest are still hidden from parents.</span>
+            <span className="text-due-800">{released} of {total} released. The rest are still hidden from parents.</span>
           )}
           {released === total && total > 0 && (
-            <span className="text-money-700">✓ Released: parents can see these in the portal.</span>
+            <span className="font-medium text-brand-700">✓ Released: parents can see these in the portal.</span>
           )}
         </div>
 
         {canRelease && released < total && (
-          <button onClick={() => publish.mutate()} disabled={busy}
-            className="rounded bg-money-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-money-700 disabled:opacity-60">
+          <button onClick={() => setAsking('release')} disabled={busy}
+            className="rounded bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-60">
             {publish.isPending ? 'Releasing…' : 'Release to parents'}
           </button>
         )}
         {canRelease && released > 0 && (
-          <button onClick={() => withdraw.mutate()} disabled={busy}
+          <button onClick={() => setAsking('withdraw')} disabled={busy}
             className="rounded border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60">
             {withdraw.isPending ? 'Withdrawing…' : 'Withdraw'}
           </button>
@@ -270,11 +280,152 @@ function ReleaseToParents({ termId, classId, cards, canRelease }: {
       {!canRelease && (
         <p className="mt-2 text-xs text-slate-400">Only the owner or principal can release results.</p>
       )}
-      {err && <p className="mt-2 text-xs text-red-600">{err.message}</p>}
+      {err && !asking && <p className="mt-2 text-xs text-danger-600">{err.message}</p>}
+      {asking && (
+        <AskDialog
+          title={asking === 'release' ? 'Release these results to parents?' : 'Withdraw these results from parents?'}
+          intro={asking === 'release'
+            ? <>{total - released} card{total - released === 1 ? '' : 's'} become visible in the parent portal as soon as you press
+                Release. Check the cards first: a parent who has seen a result remembers it even if it is withdrawn later.</>
+            : <>Parents stop seeing these {released} result{released === 1 ? '' : 's'} in the portal at once. Nothing is deleted,
+                and you can release them again.</>}
+          confirmLabel={asking === 'release' ? 'Release to parents' : 'Withdraw'}
+          tone={asking === 'release' ? 'brand' : 'danger'}
+          busy={busy}
+          error={err ? err.message : null}
+          onCancel={() => setAsking(null)}
+          onSubmit={() => (asking === 'release' ? publish.mutate() : withdraw.mutate())}
+        />
+      )}
       <p className="mt-2 text-xs text-slate-500">
         Releasing only affects what parents see in the portal. Printing and re-generating are unaffected,
         and a withdrawn result disappears from the portal immediately.
       </p>
+    </div>
+  )
+}
+
+/** PENDING, not a blank: a card with no verdict is a card whose marks are not
+ *  all in, and saying so is the point. */
+function Verdict({ c }: { c: ResultCardRow }) {
+  if (c.frozen?.result === 'PASS') return <span className="font-semibold text-money-700">PASS</span>
+  if (c.frozen?.result === 'FAIL') {
+    return (
+      <span className="font-semibold text-danger-600">
+        FAIL
+        {(c.frozen.failed_subjects ?? 0) > 0 && (
+          <span className="ml-1 text-xs font-normal text-slate-500">in {c.frozen.failed_subjects}</span>
+        )}
+      </span>
+    )
+  }
+  return <span className="text-xs text-slate-400">pending</span>
+}
+
+/**
+ * The class at a glance, from the cards themselves.
+ *
+ * Everything here is read off the frozen cards on screen, the same snapshot
+ * that prints, so the summary cannot disagree with a card a parent is handed.
+ * Pass is money green here for one reason: it is the colour the printed card
+ * already uses for PASS, and two greens meaning two things on one screen is
+ * worse than one green meaning "good" twice.
+ */
+function ClassSummary({ cards }: { cards: ResultCardRow[] }) {
+  const pass = cards.filter((c) => c.frozen?.result === 'PASS').length
+  const fail = cards.filter((c) => c.frozen?.result === 'FAIL').length
+  const pending = cards.length - pass - fail
+  const parts: Segment[] = [
+    { key: 'pass', label: 'Passed', value: pass, color: C.good },
+    { key: 'fail', label: 'Failed', value: fail, color: C.bad },
+    { key: 'pending', label: 'Pending', value: pending, color: C.none },
+  ]
+  const decided = pass + fail
+  const passRate = decided ? Math.round((100 * pass) / decided) : null
+
+  // Grades best first, ordered by the percentages behind them rather than
+  // alphabetically, which would put A before A+ and F before E.
+  const grades = new Map<string, { n: number; pct: number }>()
+  for (const c of cards) {
+    if (!c.grade) continue
+    const g = grades.get(c.grade) ?? { n: 0, pct: 0 }
+    g.n += 1; g.pct += c.percentage ?? 0
+    grades.set(c.grade, g)
+  }
+  const gradeRows = [...grades.entries()]
+    .sort((a, b) => b[1].pct / b[1].n - a[1].pct / a[1].n)
+    .map(([g, v]) => [g, v.n] as const)
+
+  // Each subject's average, over the pupils who have a mark in it.
+  const subj = new Map<string, { sum: number; n: number; failed: number }>()
+  for (const c of cards) {
+    for (const s of c.frozen?.subjects ?? []) {
+      if (!s.marked || s.obtained == null || !s.out_of) continue
+      const cur = subj.get(s.subject) ?? { sum: 0, n: 0, failed: 0 }
+      cur.sum += (100 * s.obtained) / s.out_of; cur.n += 1
+      if (s.passed === false) cur.failed += 1
+      subj.set(s.subject, cur)
+    }
+  }
+  const subjRows = [...subj.entries()].map(([name, v]) => ({
+    key: name, label: name, value: Math.round((10 * v.sum) / v.n) / 10,
+    sub: v.failed ? `${v.failed} failed` : undefined,
+  }))
+
+  const top = cards.filter((c) => c.position != null && c.position <= 3)
+    .sort((a, b) => (a.position ?? 99) - (b.position ?? 99))
+
+  return (
+    <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <ChartCard
+        title="How the class did"
+        subtitle={passRate == null ? 'No verdicts yet' : `${passRate}% of decided cards passed`}
+        table={<MiniTable head={['', 'Pupils']} align={['l', 'r']} rows={parts.map((p) => [p.label, p.value])} />}
+      >
+        <div className="flex flex-col items-center gap-4 sm:flex-row lg:flex-col">
+          <Donut
+            segments={parts}
+            label={`Results: ${pass} passed, ${fail} failed, ${pending} pending`}
+            center={<>
+              <span className="text-2xl font-semibold text-slate-900">{passRate == null ? '-' : `${passRate}%`}</span>
+              <span className="text-[11px] text-slate-500">passed</span>
+            </>}
+          />
+          <div className="w-full min-w-0 flex-1"><Legend items={parts} total={cards.length} /></div>
+        </div>
+        {top.length > 0 && (
+          <div className="mt-4 border-t border-slate-100 pt-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Position holders</div>
+            <ol className="mt-1.5 space-y-1 text-sm">
+              {top.map((c) => (
+                <li key={c.id} className="flex items-center gap-2">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs font-semibold text-brand-700 ring-1 ring-brand-100">{c.position}</span>
+                  <span className="min-w-0 flex-1 truncate text-slate-800">{c.full_name}</span>
+                  <span className="tabular-nums text-slate-600">{c.percentage == null ? '-' : `${c.percentage}%`}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
+      </ChartCard>
+
+      <ChartCard
+        title="Average by subject"
+        subtitle="Over the pupils marked in each paper"
+        className="lg:col-span-2"
+        table={<MiniTable head={['Subject', 'Average', 'Failed']} align={['l', 'r', 'r']}
+          rows={[...subj.entries()].map(([name, v]) => [name, `${Math.round((10 * v.sum) / v.n) / 10}%`, v.failed])} />}
+        footer={gradeRows.length ? (
+          <span className="flex flex-wrap gap-x-3 gap-y-1">
+            <span className="font-medium text-slate-600">Grades:</span>
+            {gradeRows.map(([g, n]) => <span key={g}><b className="font-semibold text-slate-800">{g}</b> {n}</span>)}
+          </span>
+        ) : undefined}
+      >
+        {subjRows.length
+          ? <HBars rows={subjRows} format={(n) => `${n}%`} label="Average mark by subject" />
+          : <p className="text-sm text-slate-500">No subject has marks on these cards yet.</p>}
+      </ChartCard>
     </div>
   )
 }

@@ -897,6 +897,20 @@ emit supabase/bundles/46_subjects_you_can_manage_and_a_month_of_defaulters.sql \
 emit supabase/bundles/47_the_dashboard_draws_what_it_knows.sql \
      supabase/migrations/0146*.sql
 
+# --- 48 ----------------------------------------------------------------------
+# The screens the office works in all day.
+#
+# Accounts dated a payment by the server's UTC clock, so a fee taken before
+# 05:00 in Karachi landed on the day before, and an expense could be dated next
+# month. Nine fee reads answered any teacher's login. The due day could fall
+# before the billing day. A test could be locked with children unmarked and
+# never reopened. This fixes those and adds the reads the redrawn Attendance,
+# Tests, Exams, Fees and Accounts screens draw from. Every changed function
+# keeps its signature and every new one is created or replaced, so re-pasting
+# is a no-op.
+emit supabase/bundles/48_the_screens_the_office_works_in.sql \
+     supabase/migrations/0147*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

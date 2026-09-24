@@ -81,14 +81,29 @@ export function StreamsTab() {
     },
     onSuccess: (n) => {
       setSaved(n === 0 ? 'Nothing had changed.' : `Saved ${n} pupil${n === 1 ? '' : 's'}.`)
+    },
+    // Saved one pupil at a time, so a failure half way leaves the first half
+    // saved. Re-reading on failure as well shows exactly which ones went in,
+    // instead of leaving the screen claiming nothing was saved. The result
+    // cards for this class depend on these values.
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: ['classStreams', classId] })
-      // The result cards for this class depend on these values.
       qc.invalidateQueries({ queryKey: ['resultReadiness'] })
     },
   })
 
   const rows = pupils.data ?? []
   const noStream = rows.filter((p) => !(edits[p.enrollment_id]?.stream ?? '').trim()).length
+  // A stream no subject in the class carries is allowed (a school may be
+  // adding one), but it matches no streamed paper, so that pupil's card would
+  // carry only the subjects everybody takes. Worth a question before saving:
+  // "science" typed as "sceince" is the usual cause. Compared without case, as
+  // the result card compares it.
+  const known = new Set(knownStreams.map((x) => x.toLowerCase()))
+  const strays = knownStreams.length === 0 ? 0 : rows.filter((p) => {
+    const v = (edits[p.enrollment_id]?.stream ?? '').trim().toLowerCase()
+    return v !== '' && !known.has(v)
+  }).length
   const dirty = rows.some((p) => {
     const e = edits[p.enrollment_id]
     if (!e) return false
@@ -174,6 +189,18 @@ export function StreamsTab() {
             </button>
           </div>
 
+          {strays > 0 && (
+            <p className="mt-3 rounded-xl border border-due-200 bg-due-50 px-3 py-2 text-sm text-due-800">
+              {strays} pupil{strays === 1 ? ' has' : 's have'} a stream that none of this class&rsquo;s subjects
+              uses ({knownStreams.join(', ')} are). Their result card would carry only the subjects every pupil
+              takes. Check the spelling, or give a subject that stream under Setup.
+            </p>
+          )}
+          {/* One list for the whole table. It used to be repeated inside every
+              row, which put forty elements with the same id on the page. */}
+          <datalist id="known-streams">
+            {knownStreams.map((st) => <option key={st} value={st} />)}
+          </datalist>
           <div className="mt-3 overflow-x-auto rounded-lg border border-slate-200 bg-white">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
@@ -208,8 +235,8 @@ export function StreamsTab() {
                 className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
                 {save.isPending ? 'Saving…' : 'Save'}
               </button>
-              {saved && <span className="text-sm text-emerald-700">{saved}</span>}
-              {save.isError && <span className="text-sm text-red-600">{(save.error as Error).message}</span>}
+              {saved && <span className="text-sm font-medium text-brand-700">{saved}</span>}
+              {save.isError && <span className="text-sm text-danger-600">{(save.error as Error).message}</span>}
               {!dirty && !saved && <span className="text-xs text-slate-400">No changes to save.</span>}
             </div>
           )}
@@ -222,7 +249,7 @@ export function StreamsTab() {
       {classId && rows.length === 0 && !pupils.isLoading && (
         <p className="mt-5 text-sm text-slate-500">Nobody is enrolled in this class this session.</p>
       )}
-      {pupils.isError && <p className="mt-5 text-sm text-red-600">{(pupils.error as Error).message}</p>}
+      {pupils.isError && <p className="mt-5 text-sm text-danger-600">{(pupils.error as Error).message}</p>}
     </div>
   )
 }
@@ -235,8 +262,10 @@ function StreamRow({ pupil, edit, known, canEdit, onChange }: {
   onChange: (patch: Partial<Edit>) => void
 }) {
   const missing = known.length > 0 && !edit.stream.trim()
+  const stray = known.length > 0 && !!edit.stream.trim()
+    && !known.some((k) => k.toLowerCase() === edit.stream.trim().toLowerCase())
   return (
-    <tr className={missing ? 'bg-amber-50/60' : ''}>
+    <tr className={missing || stray ? 'bg-due-50/60' : ''}>
       <td className="px-3 py-2 text-slate-500">{pupil.roll_no ?? '-'}</td>
       <td className="px-3 py-2 text-slate-800">
         {pupil.full_name}
@@ -254,11 +283,8 @@ function StreamRow({ pupil, edit, known, canEdit, onChange }: {
           value={edit.stream} disabled={!canEdit}
           onChange={(e) => onChange({ stream: e.target.value })}
           placeholder={known.length > 0 ? 'required' : 'none'}
-          className={`w-32 rounded border px-2 py-1 text-sm disabled:bg-slate-100 ${missing ? 'border-amber-400' : 'border-slate-300'}`}
+          className={`w-32 rounded border px-2 py-1 text-sm disabled:bg-slate-100 ${missing || stray ? 'border-due-400' : 'border-slate-300'}`}
         />
-        <datalist id="known-streams">
-          {known.map((s) => <option key={s} value={s} />)}
-        </datalist>
       </td>
       <td className="px-3 py-2">
         <input

@@ -57,12 +57,15 @@ import {
   findByVoucher,
   listStudents,
   getStudentFamilyId,
+  getFeesToday,
   type FamilyChild,
   type FamilyHit,
   type FamilyPaymentResult,
 } from '@/lib/db'
 import { DISCOUNT_TYPES } from '@/lib/constants'
 import { MonthHeader } from './MonthHeader'
+import { isMissingFunction } from '@/lib/notInstalled'
+import { fmtDate } from '@/lib/format'
 import { Receipt, type ReceiptData } from '@/components/Receipt'
 import { Avatar } from '@/components/Avatar'
 import { useStudentFaces } from '@/hooks/useStudentFaces'
@@ -96,6 +99,61 @@ const METHODS = [
   { value: 'easypaisa', label: 'EasyPaisa' },
   { value: 'other', label: 'Other' },
 ]
+
+const methodLabel = (m: string) => METHODS.find((x) => x.value === m)?.label ?? m.replace(/_/g, ' ')
+
+/**
+ * The day at the counter: what has come in today, by method, and what is
+ * waiting on a bank. The figure the person holding the cash box counts
+ * against at closing, which until now meant leaving for a report.
+ *
+ * "Today" is Karachi's (fn_fees_today), the same as the dashboard's collected
+ * today, so the two can never disagree. Nothing at all is drawn on a database
+ * without bundle 48: the counter is the one screen that must never carry a
+ * notice nobody at the window can act on.
+ */
+function TodayAtCounter({ onPending }: { onPending: () => void }) {
+  const today = useQuery({ queryKey: ['feesToday'], queryFn: getFeesToday, retry: false, refetchInterval: 60_000 })
+  if (today.isError) {
+    if (isMissingFunction(today.error)) return null
+    return <p className="mb-4 text-sm text-danger-600">{(today.error as Error).message}</p>
+  }
+  const t = today.data
+  if (!t) return null
+  const max = Math.max(1, ...t.by_method.map((m) => m.amount))
+  return (
+    <section className="mb-5 rounded-2xl border border-money-200 bg-gradient-to-br from-money-50 to-white p-4 shadow-card">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <h2 className="text-sm font-semibold text-money-900">Today at the counter{t.today ? `, ${fmtDate(t.today)}` : ''}</h2>
+        <p className="text-sm text-money-800">
+          <b className="text-lg font-semibold tabular-nums text-money-900">{money(t.cleared_total)}</b>
+          {' '}in {t.cleared_receipts} receipt{t.cleared_receipts === 1 ? '' : 's'}
+        </p>
+      </div>
+      {t.by_method.length > 0 ? (
+        <ul className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
+          {t.by_method.map((m) => (
+            <li key={m.method} className="text-sm">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-slate-700">{methodLabel(m.method)} <span className="text-xs text-slate-400">{m.receipts}</span></span>
+                <span className="font-medium tabular-nums text-slate-900">{money(m.amount)}</span>
+              </div>
+              <div className="mt-1 h-1.5 rounded-r bg-money-500" style={{ width: `${Math.max(3, (100 * Math.max(m.amount, 0)) / max)}%` }} />
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 text-sm text-slate-500">Nothing taken yet today.</p>
+      )}
+      {t.pending_count > 0 && (
+        <button type="button" onClick={onPending}
+          className="mt-3 text-left text-xs font-medium text-due-800 hover:underline">
+          {t.pending_count} payment{t.pending_count === 1 ? '' : 's'} ({money(t.pending_total)}) waiting for the bank to clear, not counted above. Verify under Pending →
+        </button>
+      )}
+    </section>
+  )
+}
 
 function monthLabel(m: string | null): string {
   if (!m) return 'Other charges'
@@ -276,7 +334,7 @@ function ChildFeeCard({
   )
 }
 
-export function FamilyCollect() {
+export function FamilyCollect({ onOpenPending }: { onOpenPending?: () => void } = {}) {
   const qc = useQueryClient()
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
@@ -287,6 +345,10 @@ export function FamilyCollect() {
   const [note, setNote] = useState('')
   const [pending, setPending] = useState(false)
   const [result, setResult] = useState<FamilyPaymentResult | null>(null)
+  /* The method the payment was TAKEN by, kept with the result. The receipt
+     used to read the live dropdown, so changing it after paying printed a
+     receipt saying cash for a bank transfer. */
+  const [paidWith, setPaidWith] = useState('cash')
   /* The receipt is a real document now, not window.print() on this page.
      "Print receipt" used to call window.print() directly, and the print rule in
      index.css hides `body *` and reveals only named ids, so it printed a BLANK
@@ -338,7 +400,7 @@ export function FamilyCollect() {
   const openStudent = useMutation({
     mutationFn: (studentId: string) => getStudentFamilyId(studentId),
     onSuccess: (famId) => {
-      if (famId) { setFamilyId(famId); setResult(null); setScanErr(null) }
+      if (famId) { openFamily(famId); setScanErr(null) }
       else setScanErr('That student is not attached to a family: open their profile to fix it.')
     },
   })
@@ -348,7 +410,7 @@ export function FamilyCollect() {
     mutationFn: (code: string) => findByVoucher(code),
     onSuccess: (hit) => {
       setScanErr(null)
-      if (hit?.family_id) { setFamilyId(hit.family_id); setResult(null) }
+      if (hit?.family_id) openFamily(hit.family_id)
       else setScanErr('No challan with that code. Check the digits, or search by name instead.')
     },
     onError: (e) => setScanErr((e as Error).message),
@@ -375,9 +437,24 @@ export function FamilyCollect() {
       recordFamilyPayment(familyId as string, Number(amount), method, note || undefined, pending),
     onSuccess: (r) => {
       setResult(r)
+      setPaidWith(method)
       setAmount('')
       setNote('')
+      // The next payment starts from cash and cleared. A "not cleared yet"
+      // tick left over from a bank challan made the next family's cash a
+      // pending payment with no receipt.
+      setMethod('cash')
+      setPending(false)
       void qc.invalidateQueries({ queryKey: ['familySheet', familyId] })
+      // The month at the top of this screen and every list built on it. They
+      // used to stay as they were until a reload, so a child who had just paid
+      // was still counted as not paid.
+      void qc.invalidateQueries({ queryKey: ['feesMonth'] })
+      void qc.invalidateQueries({ queryKey: ['feesMonthPupils'] })
+      void qc.invalidateQueries({ queryKey: ['feesToday'] })
+      void qc.invalidateQueries({ queryKey: ['arrears'] })
+      void qc.invalidateQueries({ queryKey: ['classDues'] })
+      void qc.invalidateQueries({ queryKey: ['pendingPayments'] })
       void qc.invalidateQueries({ queryKey: ['findFamily'] })
       void qc.invalidateQueries({ queryKey: ['dashboardSummary'] })
       // The counter's own figures. Without these the clerk takes Rs 1,000,
@@ -387,9 +464,18 @@ export function FamilyCollect() {
     },
   })
 
-  function pick(h: FamilyHit) {
-    setFamilyId(h.family_id)
+  /** Every way into a family goes through here, so each starts clean. */
+  function openFamily(id: string) {
+    setFamilyId(id)
     setResult(null)
+    setAmount('')
+    setNote('')
+    setMethod('cash')
+    setPending(false)
+  }
+
+  function pick(h: FamilyHit) {
+    openFamily(h.family_id)
   }
 
   function reset() {
@@ -397,6 +483,8 @@ export function FamilyCollect() {
     setResult(null)
     setAmount('')
     setNote('')
+    setMethod('cash')
+    setPending(false)
     setQuery('')
     setSubmitted('')
   }
@@ -431,9 +519,10 @@ export function FamilyCollect() {
         <MonthHeader
           sessionId={session.data.id}
           canWrite
-          onPick={(p) => { if (p.family_id) setFamilyId(p.family_id) }}
+          onPick={(p) => { if (p.family_id) openFamily(p.family_id) }}
         />
       )}
+      {!familyId && <TodayAtCounter onPending={() => onOpenPending?.()} />}
 
       {/* ---------------------------------------------------------- search -- */}
       {/* Two ways in, side by side, because they answer different questions:
@@ -466,7 +555,7 @@ export function FamilyCollect() {
               value={sQuery}
               onChange={(e) => { setSQuery(e.target.value); setScanErr(null) }}
               placeholder="Student name, GR number, or scan the fee slip"
-              className={`${inputClass} min-w-[14rem] flex-1`}
+              className={`${inputClass} min-w-0 flex-1 sm:min-w-[14rem]`}
             />
           </form>
 
@@ -526,12 +615,14 @@ export function FamilyCollect() {
             }}
             className="flex flex-wrap gap-2"
           >
+            {/* No autoFocus here: two on one page and the browser picks the
+                last, so the cursor landed in the CNIC box, not the child box
+                a fee slip is searched by. */}
             <input
-              autoFocus
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Father’s CNIC, phone, parent name, student name or GR number"
-              className={`${inputClass} min-w-[18rem] flex-1`}
+              className={`${inputClass} min-w-0 flex-1 sm:min-w-[18rem]`}
             />
             <Button type="submit" icon={<IconSearch />}>
               Search
@@ -616,7 +707,31 @@ export function FamilyCollect() {
             />
           )}
           {recent.data && recent.data.length > 0 && (
-            <div className="-mx-4 overflow-x-auto sm:mx-0">
+            <ul className="divide-y divide-slate-100 sm:hidden">
+              {recent.data.map((r) => (
+                <li key={r.payment_id} className="py-2.5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium text-slate-800">{r.student_name}</div>
+                      <div className="truncate text-xs text-slate-500">
+                        #{r.receipt_no ?? '-'} · {methodLabel(r.method)} · {r.received_by}
+                      </div>
+                      <div className="truncate text-xs text-slate-400">
+                        {r.status === 'pending' ? 'Not applied to any month until it clears' : r.paid_for ?? 'Held as advance for the family'}
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <div className={`text-sm font-semibold tabular-nums ${r.is_reversal ? 'text-danger-700' : 'text-slate-900'}`}>{money(r.amount)}</div>
+                      {r.is_reversal && <Badge tone="danger">reversed</Badge>}
+                      {r.status === 'pending' && <Badge tone="due">waiting for bank</Badge>}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          {recent.data && recent.data.length > 0 && (
+            <div className="hidden overflow-x-auto sm:block">
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
@@ -636,18 +751,25 @@ export function FamilyCollect() {
                       <td className="whitespace-nowrap px-3 py-2 tabular-nums text-slate-500">
                         {r.receipt_no ?? '-'}
                         {r.is_reversal && <Badge tone="danger">reversed</Badge>}
-                        {r.status === 'pending' && <Badge tone="due">pending</Badge>}
+                        {r.status === 'pending' && <Badge tone="due">waiting for bank</Badge>}
                       </td>
                       <td className="px-3 py-2 text-slate-800">{r.student_name}</td>
                       <td className="px-3 py-2 text-slate-600">{r.parent_name ?? '-'}</td>
                       <td className="whitespace-nowrap px-3 py-2 text-slate-600">
                         {r.class_name ?? '-'}{r.section_name ? `-${r.section_name}` : ''}
                       </td>
-                      <td className="px-3 py-2 text-slate-600">{r.paid_for ?? 'held as advance'}</td>
+                      <td className="px-3 py-2 text-slate-600">
+                        {/* A pending payment has no allocations yet, so "no
+                            months" does not mean advance: nothing is applied
+                            until it clears. */}
+                        {r.status === 'pending'
+                          ? <span className="text-due-800">Not applied until it clears</span>
+                          : r.paid_for ?? <span className="text-info-700">Held as advance</span>}
+                      </td>
                       <td className="whitespace-nowrap px-3 py-2 text-right font-semibold tabular-nums text-slate-800">
                         {money(r.amount)}
                       </td>
-                      <td className="whitespace-nowrap px-3 py-2 text-slate-500">{r.method}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-slate-500">{methodLabel(r.method)}</td>
                       <td className="px-3 py-2 text-slate-500">{r.received_by}</td>
                     </tr>
                   ))}
@@ -777,8 +899,7 @@ export function FamilyCollect() {
                               receiptNo: result.receipt_no,
                               studentName: s?.family.head_name ?? 'Family',
                               amount: result.allocated + result.credit,
-                              method:
-                                METHODS.find((m) => m.value === method)?.label ?? method,
+                              method: methodLabel(paidWith),
                               balanceAfter: result.family_outstanding ?? 0,
                               note: null,
                               payerLabel: 'Received from',
