@@ -78,7 +78,37 @@ export function FeeStatement({
 
   return (
     <div className="space-y-2">
-      <div className="overflow-x-auto rounded-lg border border-slate-200">
+      {/* ON A PHONE, one entry per line: what it was on the left, the money and
+          the running balance on the right. The table below needs 36rem, so on a
+          phone it scrolled sideways and the balance column, the one a parent is
+          reading for, was the one off the edge. Both are rendered and CSS picks
+          one; print always gets the table. */}
+      <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 sm:hidden print:hidden">
+        {entries.map((e) => (
+          <li key={e.seq} className="flex items-start justify-between gap-3 px-3 py-2.5 text-sm">
+            <div className="min-w-0">
+              <div>
+                <span className={`mr-1.5 rounded px-1.5 py-0.5 text-[11px] font-medium ${KIND_TONE[e.kind] ?? 'bg-slate-100 text-slate-600'}`}>
+                  {KIND_LABEL[e.kind] ?? e.kind}
+                </span>
+                <span className="text-slate-800">{e.particulars}</span>
+              </div>
+              <div className="mt-0.5 text-xs text-slate-400">
+                {fmtDate(e.entry_on)}
+                {e.reference ? ` · ${e.reference}` : ''}
+                {showRecordedBy && e.recorded_by ? ` · ${e.recorded_by}` : ''}
+              </div>
+            </div>
+            <div className="shrink-0 text-right tabular-nums">
+              {e.debit > 0 && <div className="font-medium text-slate-800">{fmtPKR(e.debit)}</div>}
+              {e.credit > 0 && <div className="font-medium text-money-700">&minus; {fmtPKR(e.credit)}</div>}
+              <div className="text-xs text-slate-400">bal {fmtPKR(e.balance_after)}</div>
+            </div>
+          </li>
+        ))}
+      </ul>
+
+      <div className="hidden overflow-x-auto rounded-lg border border-slate-200 sm:block print:block">
         <table className="w-full min-w-[36rem] text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>

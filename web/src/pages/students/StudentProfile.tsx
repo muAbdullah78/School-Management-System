@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
+import { IconAlert, IconCheck, IconClock, IconMinus } from '@/components/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getStudent, getStudentEnrollments, getGuardians, updateStudent, setStudentStatus,
@@ -56,6 +57,10 @@ type Tab = (typeof TABS)[number]
 
 // ---- month helpers ----
 function ym(dateISO: string): string { return dateISO.slice(0, 7) }
+function shortMonth(y: string): string {
+  const [yy, mm] = y.split('-').map(Number)
+  return new Date(Date.UTC(yy, mm - 1, 1)).toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' })
+}
 function monthFirst(y: string): string { return `${y}-01` }
 function monthLast(y: string): string {
   const [yy, mm] = y.split('-').map(Number)
@@ -199,24 +204,27 @@ export function StudentProfile({ studentId, onBack, onOpen }: { studentId: strin
 
       {!mayWrite && <ObserverNotice what="this pupil's record" />}
 
-      <div className="mt-4 flex gap-1 border-b border-slate-200">
+      {/* One line on any phone: the tabs scroll sideways rather than wrapping
+          "Attendance & Tests" onto two lines under a taller underline. */}
+      <div className="-mx-4 mt-4 flex gap-1 overflow-x-auto border-b border-slate-200 px-4 sm:mx-0 sm:px-0">
         {TABS.map((t) => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`-mb-px border-b-2 px-4 py-2 text-sm ${tab === t ? 'border-brand-600 font-medium text-brand-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+          <button key={t} onClick={() => setTab(t)} aria-current={tab === t ? 'page' : undefined}
+            className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2.5 text-sm sm:px-4 sm:py-2 ${tab === t ? 'border-brand-600 font-medium text-brand-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
             {t}
           </button>
         ))}
       </div>
 
       <div className="mt-5">
+        {/* The latest enrolment is not always THIS session's. A child the
+            rollover left behind still shows last year's class, and the Fees and
+            Attendance tabs then work on last year looking entirely normal, so
+            the warning sits above every tab rather than only the first. */}
+        {cur && session.data && cur.session_id !== session.data.id && (
+          <StaleEnrolment enrollment={cur} currentSession={session.data.name} canSettings={canAccess('/settings', role)} />
+        )}
         {tab === 'Overview' && (
           <>
-            {/* The latest enrolment is not always THIS session's. A child the
-                rollover left behind still shows last year's class here, and the
-                Fees and Attendance tabs then work on last year, looking normal. */}
-            {cur && session.data && cur.session_id !== session.data.id && (
-              <StaleEnrolment enrollment={cur} currentSession={session.data.name} canSettings={canAccess('/settings', role)} />
-            )}
             {cur && (
               <Glance
                 student={s} enrollment={cur} canFinanceView={canFinanceView}
@@ -1381,6 +1389,8 @@ function FeesTab({
   }, [invoices.data, enrollment, student.admission_date, net, grossFee])
 
   const bal = balance.data ?? 0
+  const [owedOnly, setOwedOnly] = useState(false)
+  const owedRows = rows.filter((r) => r.due > 0 && r.state !== 'paid' && r.state !== 'free')
   const hasOlderUnpaid = (fromKey: string) =>
     rows.some((r) => r.key < fromKey && (r.state === 'unpaid' || r.state === 'partial' || r.state === 'unbilled' || r.state === 'deferred'))
 
@@ -1419,54 +1429,107 @@ function FeesTab({
 
   return (
     <div className="space-y-4">
-      {/* ------------------------------------------- this month, in one line -- */}
-      {/* The first question anybody opening this tab has, and the tab could not
-          answer it. It showed a balance, a list of months and a statement, and
-          left the clerk to work out from them whether September was settled. */}
-      {fs && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
-          <span className="text-xs uppercase tracking-wide text-slate-500">
-            {new Date(fs.month + 'T00:00:00Z').toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })}
-          </span>
-          <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${MONTH_TAG[fs.state].cls}`}>
-            {MONTH_TAG[fs.state].label}
-          </span>
-          {fs.state !== 'not_billed' && (
-            <span className="text-sm text-slate-600">
-              {fmtPKR(fs.charge)} charged{fs.paid > 0 ? `, ${fmtPKR(fs.paid)} received` : ''}
-              {fs.due > 0 ? `, ${fmtPKR(fs.due)} still due` : ''}
-            </span>
+      {/* ------------------------------------------------ the summary card -- */}
+      {/* One card for the three questions the tab is opened to answer, in the
+          order they are asked at the counter: what is owed, is THIS month done,
+          and what does a month cost. They were three separate boxes and a
+          one-line strip, each with a tiny grey caption, and on a phone the
+          answer to the first question was the third thing down the screen. */}
+      <section className="grid divide-y divide-slate-100 overflow-hidden rounded-2xl bg-white shadow-card ring-1 ring-slate-200/80 lg:grid-cols-3 lg:divide-x lg:divide-y-0">
+        <div className="p-4">
+          <h3 className="text-xs font-medium uppercase tracking-wide text-slate-500">Balance</h3>
+          {/* Amber for owed, as on the overview and the roster: a balance mixes
+              late months with this month's not-yet-due fee, and the red is kept
+              for the months below that really are late. */}
+          <div className={`mt-1 text-3xl font-semibold ${bal > 0 ? 'text-due-700' : bal < 0 ? 'text-info-700' : 'text-money-700'}`}>
+            {balance.isLoading ? '…' : bal === 0 ? 'Paid up' : fmtPKR(Math.abs(bal))}
+          </div>
+          <p className="mt-0.5 text-sm text-slate-500">
+            {bal > 0 ? 'owed, every month together' : bal < 0 ? 'paid in advance, taken off the next challan' : 'Nothing is owed today.'}
+          </p>
+          {(deposit.data ?? 0) > 0 && (
+            <p className="mt-2 rounded-lg bg-money-50 px-2.5 py-1.5 text-xs text-money-800 ring-1 ring-money-100">
+              Plus {fmtPKR(deposit.data ?? 0)} held as a refundable deposit. Not owed, and repayable
+              when the child leaves.
+            </p>
           )}
-          {fs.arrears_months > 0 && (
-            <span className="rounded-full bg-danger-100 px-2.5 py-0.5 text-xs font-medium text-danger-800">
-              {fs.arrears_months} earlier month{fs.arrears_months === 1 ? '' : 's'} unpaid
-              {' · '}{fmtPKR(fs.arrears_amount)}
-            </span>
-          )}
-          {fs.family_credit > 0 && (
-            <span className="rounded-full bg-info-100 px-2.5 py-0.5 text-xs font-medium text-info-800">
-              {fmtPKR(fs.family_credit)} held in advance for this family
-            </span>
+          {canCollect && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button onClick={() => setPay({ defaultAmount: bal > 0 ? bal : 0, note: '' })}
+                className="rounded-lg bg-brand-600 px-3.5 py-2 text-sm font-medium text-white shadow-card hover:bg-brand-700">
+                Record payment
+              </button>
+              {bal > 0 && (
+                <button onClick={() => setSettle(true)}
+                  className="rounded-lg bg-white px-3.5 py-2 text-sm font-medium text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50">
+                  Settle balance
+                </button>
+              )}
+            </div>
           )}
         </div>
-      )}
 
-      {/* Header: monthly fee + balance + actions */}
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
+        {/* The first question anybody opening this tab has, and the tab could
+            not answer it: it showed a balance, a list of months and a
+            statement, and left the clerk to work out whether September was
+            settled. */}
+        <div className="p-4">
+          <h3 className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            {fs
+              ? new Date(fs.month + 'T00:00:00Z').toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+              : 'This month'}
+          </h3>
+          {feeState.isError ? (
+            <p className="mt-2 text-sm text-danger-700">Could not be loaded: {(feeState.error as Error).message}</p>
+          ) : !fs ? (
+            <p className="mt-2 text-sm text-slate-400">Loading…</p>
+          ) : (
+            <>
+              <div className="mt-2">
+                <span className={`rounded-full px-2.5 py-1 text-sm font-medium ${MONTH_TAG[fs.state].cls}`}>
+                  {MONTH_TAG[fs.state].label}
+                </span>
+              </div>
+              {fs.state !== 'not_billed' ? (
+                <dl className="mt-3 space-y-1 text-sm">
+                  <div className="flex justify-between gap-3"><dt className="text-slate-500">Charged</dt><dd className="font-medium text-slate-800">{fmtPKR(fs.charge)}</dd></div>
+                  <div className="flex justify-between gap-3"><dt className="text-slate-500">Received</dt><dd className="font-medium text-money-700">{fmtPKR(fs.paid)}</dd></div>
+                  {fs.due > 0 && <div className="flex justify-between gap-3"><dt className="text-slate-500">Still due</dt><dd className="font-semibold text-due-700">{fmtPKR(fs.due)}</dd></div>}
+                </dl>
+              ) : (
+                <p className="mt-2 text-sm text-slate-500">No challan for this month yet.</p>
+              )}
+              <div className="mt-3 flex flex-wrap gap-2">
+                {fs.arrears_months > 0 && (
+                  <span className="rounded-full bg-danger-50 px-2.5 py-0.5 text-xs font-medium text-danger-800 ring-1 ring-danger-200">
+                    {fs.arrears_months} earlier month{fs.arrears_months === 1 ? '' : 's'} unpaid
+                    {' · '}{fmtPKR(fs.arrears_amount)}
+                  </span>
+                )}
+                {fs.family_credit > 0 && (
+                  <span className="rounded-full bg-info-50 px-2.5 py-0.5 text-xs font-medium text-info-800 ring-1 ring-info-200">
+                    {fmtPKR(fs.family_credit)} held in advance for this family
+                  </span>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="p-4">
           {/* THE CLASS THE FIGURE IS THE FEE OF, out of the same function that
               works the figure out. This read enrollment.class_name, which is the
               CURRENT enrolment, so asking what an earlier month cost printed
               that month's money under this year's class name. 0141 makes
               fn_student_fee_for_month say which enrolment it answered for. */}
-          <div className="text-xs uppercase tracking-wide text-slate-500">
-            Monthly fee{feeClass ? ` (${feeClass})` : ''}
-          </div>
+          <h3 className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            Monthly fee{feeClass ? ` · ${feeClass}` : ''}
+          </h3>
           {monthlyFee.isLoading ? <div className="mt-1 text-slate-400">…</div> : (
-            <div className="mt-1 flex items-baseline gap-2">
-              <span className="text-2xl font-semibold text-slate-800">{fmtPKR(net)}</span>
+            <div className="mt-1 flex flex-wrap items-baseline gap-2">
+              <span className="text-3xl font-semibold text-slate-900">{fmtPKR(net)}</span>
               {grossFee > net && <span className="text-sm text-slate-400 line-through">{fmtPKR(grossFee)}</span>}
-              {isFree && <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">Free student</span>}
+              {isFree && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">Free student</span>}
             </div>
           )}
           {/* WHAT TOOK IT DOWN, in rupees, beside the figure it took down.
@@ -1477,7 +1540,7 @@ function FeesTab({
           {(monthlyFee.data?.lines.length ?? 0) > 0 && (
             <ul className="mt-1.5 space-y-0.5">
               {monthlyFee.data?.lines.map((l) => (
-                <li key={l.discount_id} className="text-xs text-emerald-700">
+                <li key={l.discount_id} className="text-xs text-money-700">
                   {DISCOUNT_TYPES.find((t) => t.value === l.type)?.label ?? l.type}
                   {' '}{l.is_percent ? `${l.rate}% off` : `${fmtPKR(l.rate)} off`}
                   <span className="text-slate-500">
@@ -1488,40 +1551,17 @@ function FeesTab({
             </ul>
           )}
           {grossFee === 0 && !monthlyFee.isLoading && (
-            <p className="mt-1 text-xs text-amber-600">No monthly fee set for this class: set it in Settings → Fee structure.</p>
+            <p className="mt-1 text-xs text-due-700">No monthly fee set for this class: set it in Settings, Fee Structure.</p>
           )}
         </div>
-        <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Current balance</div>
-          {/* Amber for owed, as on the overview and the roster: a balance mixes
-              late months with this month's not-yet-due fee, and the red is kept
-              for the lines above that really are late. */}
-          <div className={`mt-1 text-2xl font-semibold ${bal > 0 ? 'text-due-700' : bal < 0 ? 'text-info-700' : 'text-money-700'}`}>
-            {balance.isLoading ? '…' : fmtPKR(bal)}
-          </div>
-          {(deposit.data ?? 0) > 0 && (
-            <p className="mt-2 rounded bg-money-50 px-2.5 py-1.5 text-xs text-money-800">
-              Plus {fmtPKR(deposit.data ?? 0)} held as a refundable deposit. Not owed, and repayable
-              when the child leaves.
-            </p>
-          )}
-          {canCollect && (
-            <div className="mt-2 flex flex-wrap gap-2">
-              <button onClick={() => setPay({ defaultAmount: bal > 0 ? bal : 0, note: '' })}
-                className="rounded bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700">Record payment</button>
-              {bal > 0 && (
-                <button onClick={() => setSettle(true)}
-                  className="rounded border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50">Settle balance</button>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
+      </section>
+
+      <YearAtAGlance rows={rows} sessionName={enrollment.session_name} sessionEnds={enrollment.session_ends} />
 
       {/* Discount strip */}
-      <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
+      <div className="rounded-2xl bg-white p-4 shadow-card ring-1 ring-slate-200/80">
         <div className="flex items-center justify-between">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Discount on fee</div>
+          <h3 className="text-sm font-semibold text-slate-900">Discount on fee</h3>
           {/* canApprove, not canCollect. fn_add_discount admits owner and
               principal and nobody else, so offering the button to anyone else
               is a button that always fails. */}
@@ -1626,11 +1666,27 @@ function FeesTab({
       )}
 
       {/* Month-by-month list */}
-      <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
-        <div className="text-xs uppercase tracking-wide text-slate-500">Fee by month</div>
+      <div className="rounded-2xl bg-white p-4 shadow-card ring-1 ring-slate-200/80">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-slate-900">Fee by month</h3>
+          {/* Twelve green rows and one that matters is a list the eye has to
+              search. The switch shows only the months with money on them. */}
+          {owedRows.length > 0 && owedRows.length < rows.length && (
+            <div className="inline-flex rounded-lg bg-slate-100 p-0.5 text-xs font-medium" role="group" aria-label="Which months">
+              <button type="button" onClick={() => setOwedOnly(false)} aria-pressed={!owedOnly}
+                className={`rounded-md px-2.5 py-1.5 ${!owedOnly ? 'bg-white text-slate-900 shadow-card' : 'text-slate-600'}`}>
+                All {rows.length}
+              </button>
+              <button type="button" onClick={() => setOwedOnly(true)} aria-pressed={owedOnly}
+                className={`rounded-md px-2.5 py-1.5 ${owedOnly ? 'bg-white text-slate-900 shadow-card' : 'text-slate-600'}`}>
+                Owed {owedRows.length}
+              </button>
+            </div>
+          )}
+        </div>
         <div className="mt-2 divide-y divide-slate-100">
           {rows.length === 0 && <p className="py-3 text-sm text-slate-400">No months to show yet.</p>}
-          {rows.map((r) => (
+          {(owedOnly ? owedRows : rows).map((r) => (
             <MonthLine key={r.key} row={r} enrollment={enrollment}
               onPay={() => setPay({ month: r.key, billMonthISO: r.invoice ? undefined : monthFirst(r.key), defaultAmount: r.due, note: `Fee · ${r.label}` })}
               onDelay={() => setDefer({ invoiceId: r.invoice?.invoice_id, billMonthISO: r.invoice ? undefined : monthFirst(r.key), label: r.label })}
@@ -1660,17 +1716,17 @@ function FeesTab({
           statement answers "why is the total that number", which is what a
           parent asks when the two do not look the same, and until 0098 the
           product had no answer to it at all. */}
-      <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
+      <div className="rounded-2xl bg-white p-4 shadow-card ring-1 ring-slate-200/80">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <div className="text-xs uppercase tracking-wide text-slate-500">Statement</div>
+            <h3 className="text-sm font-semibold text-slate-900">Statement</h3>
             <p className="mt-0.5 text-xs text-slate-400">
               Every charge, discount, late fee, adjustment and payment, in order.
             </p>
           </div>
           {(ledger.data?.length ?? 0) > 0 && (
             <button onClick={() => setPrintStatement(true)}
-              className="rounded border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50">
+              className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50 sm:py-1.5 sm:text-xs">
               Print statement
             </button>
           )}
@@ -1689,13 +1745,14 @@ function FeesTab({
       </div>
 
       {/* Activity / ledger (collapsible) */}
-      <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
-        <button onClick={() => setShowActivity((v) => !v)} className="flex w-full items-center justify-between text-xs uppercase tracking-wide text-slate-500">
-          <span>Activity &amp; receipts</span>
-          <span className="text-slate-400">{showActivity ? 'Hide' : 'Show'}</span>
+      <div className="rounded-2xl bg-white p-4 shadow-card ring-1 ring-slate-200/80">
+        <button onClick={() => setShowActivity((v) => !v)} className="flex w-full items-center justify-between py-1 text-left">
+          <span className="text-sm font-semibold text-slate-900">Receipts and payments</span>
+          <span className="text-xs font-medium text-brand-700">{showActivity ? 'Hide' : 'Show'}</span>
         </button>
         {showActivity && (
-          <table className="mt-3 w-full text-sm">
+          <div className="mt-3 overflow-x-auto">
+          <table className="w-full min-w-[32rem] text-sm">
             <thead className="text-left text-xs text-slate-400"><tr><th className="py-1">Receipt</th><th>Date</th><th>Amount</th><th>Method</th><th>Status</th><th>Note</th></tr></thead>
             <tbody>
               {payments.data?.map((p) => (
@@ -1711,6 +1768,7 @@ function FeesTab({
               {payments.data?.length === 0 && <tr><td colSpan={6} className="py-3 text-slate-400">No payments yet.</td></tr>}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
@@ -1788,6 +1846,147 @@ function FeesTab({
   )
 }
 
+type Look = { tone: 'good' | 'warn' | 'bad' | 'info' | 'none' | 'free' | 'later'; word: string; glyph: string }
+
+/** One month's standing, in the words and colours the rest of the app uses:
+ *  green paid, amber owed but not late, red late, sky delayed on purpose,
+ *  a dashed outline for a month nobody has billed. */
+function lookOf(r: MonthRow): Look {
+  const due = r.invoice?.due_date ?? null
+  const late = (r.state === 'unpaid' || r.state === 'partial') && !!due && due < todayISO()
+  switch (r.state) {
+    case 'paid': return { tone: 'good', word: 'Paid', glyph: 'check' }
+    case 'free': return { tone: 'free', word: 'Free', glyph: '' }
+    case 'partial': return late ? { tone: 'bad', word: 'Part, late', glyph: 'alert' } : { tone: 'warn', word: 'Part paid', glyph: 'clock' }
+    case 'unpaid': return late ? { tone: 'bad', word: 'Overdue', glyph: 'alert' } : { tone: 'warn', word: 'Due', glyph: 'clock' }
+    case 'deferred': return { tone: 'info', word: 'Delayed', glyph: 'minus' }
+    default: return { tone: 'none', word: 'Not billed', glyph: '' }
+  }
+}
+
+const LOOK_TILE: Record<Look['tone'], string> = {
+  good: 'bg-money-50 text-money-800 ring-1 ring-money-200',
+  warn: 'bg-due-50 text-due-800 ring-1 ring-due-200',
+  bad: 'bg-danger-50 text-danger-800 ring-1 ring-danger-300',
+  info: 'bg-info-50 text-info-800 ring-1 ring-info-200',
+  free: 'bg-slate-100 text-slate-600 ring-1 ring-slate-200',
+  none: 'bg-white text-slate-500 border border-dashed border-slate-300',
+  later: 'bg-slate-50 text-slate-400 ring-1 ring-slate-100',
+}
+const LOOK_BAR: Record<Look['tone'], string> = {
+  good: C.good, warn: C.warn, bad: C.bad, info: C.info, free: C.none, none: C.none, later: 'transparent',
+}
+const LOOK_GLYPH: Record<string, ReactNode> = {
+  check: <IconCheck className="h-3 w-3" />, clock: <IconClock className="h-3 w-3" />,
+  alert: <IconAlert className="h-3 w-3" />, minus: <IconMinus className="h-3 w-3" />,
+}
+
+/**
+ * The session as a row of months, each one a tile coloured by where it stands.
+ *
+ * The month list below answers "which months are owed" one line at a time, and
+ * for a child who paid eleven months and missed one, the one is the eighth
+ * identical-looking line. Here the pattern is visible from across a desk: a
+ * run of green with one red tile, or a family that pays every other month.
+ * Each tile is a button that jumps to its line, where the actions are.
+ */
+function YearAtAGlance({ rows, sessionName, sessionEnds }: { rows: MonthRow[]; sessionName: string; sessionEnds: string | null }) {
+  if (rows.length === 0) return null
+  const months = [...rows].reverse() // oldest first, the way a year is read
+  // The rest of the session, drawn faint, so the grid is always the whole
+  // year and "three months in" is visible without counting.
+  const lastKey = months[months.length - 1].key
+  const upcoming = sessionEnds && ym(sessionEnds) > lastKey
+    ? monthsRange(lastKey, ym(sessionEnds)).reverse().filter((k) => k > lastKey)
+    : []
+  const sum = (f: (r: MonthRow) => number) => months.reduce((a, r) => a + f(r), 0)
+  const billed = sum((r) => (r.invoice ? r.charge : 0))
+  const paid = sum((r) => (r.invoice ? Math.max(r.charge - r.due, 0) : 0))
+  const lateAmt = sum((r) => (lookOf(r).tone === 'bad' ? r.due : 0))
+  const dueAmt = sum((r) => (lookOf(r).tone === 'warn' ? r.due : 0))
+  const delayed = sum((r) => (lookOf(r).tone === 'info' ? r.due : 0))
+  const unbilled = sum((r) => (r.state === 'unbilled' ? r.due : 0))
+  const settled = months.filter((r) => r.state === 'paid' || r.state === 'free').length
+  const parts = [
+    { key: 'paid', label: 'Paid', value: paid, color: C.good },
+    { key: 'due', label: 'Not due yet', value: dueAmt, color: C.warn },
+    { key: 'late', label: 'Overdue', value: lateAmt, color: C.bad },
+    { key: 'delayed', label: 'Delayed', value: delayed, color: C.info },
+    { key: 'unbilled', label: 'Not billed yet', value: unbilled, color: C.none },
+  ]
+
+  function jump(key: string) {
+    const el = document.getElementById(`fee-month-${key}`)
+    el?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+    el?.classList.add('bg-brand-50/70')
+    window.setTimeout(() => el?.classList.remove('bg-brand-50/70'), 1200)
+  }
+
+  return (
+    <section className="rounded-2xl bg-white p-4 shadow-card ring-1 ring-slate-200/80">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-sm font-semibold text-slate-900">{sessionName} at a glance</h3>
+        <p className="text-xs text-slate-500">
+          {settled} of {months.length} month{months.length === 1 ? '' : 's'} settled
+          {billed > 0 ? ` · ${fmtPKR(paid)} paid of ${fmtPKR(billed)} billed` : ''}
+        </p>
+      </div>
+      <div className="mt-3">
+        <StackBar parts={parts} height={8} label={`${sessionName}: ${parts.map((p) => `${p.label} ${fmtPKR(p.value)}`).join(', ')}`} />
+      </div>
+      <ol className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-6 lg:grid-cols-12">
+        {months.map((r) => {
+          const l = lookOf(r)
+          const [y, m] = r.key.split('-').map(Number)
+          const short = new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' })
+          const amount = r.state === 'paid' || r.state === 'free' ? r.charge : r.due
+          return (
+            <li key={r.key}>
+              <button
+                type="button"
+                onClick={() => jump(r.key)}
+                title={`${r.label}: ${l.word}, ${fmtPKR(amount)}`}
+                aria-label={`${r.label}: ${l.word}, ${fmtPKR(amount)}. Go to this month`}
+                className={`relative flex h-full w-full flex-col items-start overflow-hidden rounded-xl px-2.5 pb-2 pt-3 text-left transition hover:-translate-y-0.5 hover:shadow-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ${LOOK_TILE[l.tone]}`}
+              >
+                <span className="absolute inset-x-0 top-0 h-1" style={{ background: LOOK_BAR[l.tone] }} aria-hidden />
+                <span className="text-sm font-semibold">
+                  {short} <span className="text-[11px] font-normal opacity-70">{String(y).slice(2)}</span>
+                </span>
+                <span className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-medium leading-tight">
+                  {l.glyph && <span aria-hidden className="shrink-0">{LOOK_GLYPH[l.glyph]}</span>}{l.word}
+                </span>
+              </button>
+            </li>
+          )
+        })}
+        {upcoming.map((k) => {
+          const [y, m] = k.split('-').map(Number)
+          const short = new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' })
+          return (
+            <li key={k} aria-label={`${short} ${y}: still to come`}>
+              <div className={`flex h-full w-full flex-col items-start rounded-xl px-2.5 pb-2 pt-3 ${LOOK_TILE.later}`}>
+                <span className="text-sm font-semibold">
+                  {short} <span className="text-[11px] font-normal opacity-70">{String(y).slice(2)}</span>
+                </span>
+                <span className="mt-0.5 text-[11px] leading-tight">To come</span>
+              </div>
+            </li>
+          )
+        })}
+      </ol>
+      <p className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+        {parts.filter((p) => p.value > 0).map((p) => (
+          <span key={p.key} className="inline-flex items-center gap-1">
+            <span className="h-2 w-2 rounded-sm" style={{ background: p.color }} aria-hidden />
+            {p.label} {fmtPKR(p.value)}
+          </span>
+        ))}
+      </p>
+    </section>
+  )
+}
+
 function MonthLine({
   row, enrollment, onPay, onDelay, onUndoDefer, onPrint, onCancel, canCollect = true,
 }: {
@@ -1813,10 +2012,22 @@ function MonthLine({
   const due = row.invoice?.due_date ?? null
   const late = (row.state === 'unpaid' || row.state === 'partial') && !!due && due < todayISO()
   const paidShare = row.charge > 0 ? Math.min(Math.max((row.charge - row.due) / row.charge, 0), 1) : 0
-  const pill = 'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ring-1'
+  const pill = 'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ring-1'
+  // Buttons a thumb can hit on a phone (36px), the old compact size from sm up.
+  const btn = 'rounded-lg px-3 py-2 text-xs sm:rounded sm:px-2.5 sm:py-1'
+  /* On a phone a month with money on it gets two lines, the month and where it
+     stands, then its buttons underneath; a settled month keeps one line with
+     its Print button at the end. Squeezing both on one line wrapped the status
+     pill round the buttons. */
+  const busy = (canCollect && row.state !== 'paid' && row.state !== 'free') || !!onCancel
   return (
-    <div className="flex flex-wrap items-center gap-3 py-2.5">
-      <div className="w-32 text-sm font-medium text-slate-700">{row.label}</div>
+    <div id={`fee-month-${row.key}`} className={`flex scroll-mt-24 gap-x-3 gap-y-2 rounded-lg py-3 transition-colors sm:flex-row sm:flex-wrap sm:items-center sm:py-2.5 ${busy ? 'flex-col' : 'flex-wrap items-center'}`}>
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1.5">
+      <div className="w-20 text-sm font-medium text-slate-700 sm:w-32">
+        {/* "September 2026" wraps in a phone's label column; "Sep 2026" does not. */}
+        <span className="sm:hidden">{shortMonth(row.key)}</span>
+        <span className="hidden sm:inline">{row.label}</span>
+      </div>
       <div className="flex min-w-[8rem] flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-sm">
         {row.state === 'paid' && (
           <span className={`${pill} bg-money-50 text-money-800 ring-money-200`}>✓ Paid · {fmtPKR(row.charge)}</span>
@@ -1856,24 +2067,25 @@ function MonthLine({
           <span className="text-xs text-slate-500">{row.invoice.defer_reason}</span>
         )}
       </div>
-      <div className="flex gap-2">
+      </div>
+      <div className="ml-auto flex flex-wrap justify-end gap-2">
         {canCollect && (row.state === 'unpaid' || row.state === 'partial' || row.state === 'unbilled') && (
           <>
-            <button onClick={onPay} className="rounded bg-brand-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-brand-700">Mark paid</button>
-            <button onClick={onDelay} className="rounded border border-slate-300 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50">Delay</button>
+            <button onClick={onPay} className={`${btn} bg-brand-600 font-medium text-white hover:bg-brand-700`}>Mark paid</button>
+            <button onClick={onDelay} className={`${btn} border border-slate-300 text-slate-600 hover:bg-slate-50`}>Delay</button>
           </>
         )}
         {canCollect && row.state === 'deferred' && (
           <>
-            <button onClick={onPay} className="rounded bg-brand-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-brand-700">Mark paid</button>
-            {onUndoDefer && <button onClick={onUndoDefer} className="rounded border border-slate-300 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50">Undo delay</button>}
+            <button onClick={onPay} className={`${btn} bg-brand-600 font-medium text-white hover:bg-brand-700`}>Mark paid</button>
+            {onUndoDefer && <button onClick={onUndoDefer} className={`${btn} border border-slate-300 text-slate-600 hover:bg-slate-50`}>Undo delay</button>}
           </>
         )}
         {/* Reprint. Deliberately available on PAID months too: a parent asking
             for a duplicate of a settled challan is routine, and the slip shows
             the payment against it. */}
         {onPrint && (
-          <button onClick={onPrint} className="rounded border border-slate-300 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50">Print challan</button>
+          <button onClick={onPrint} className={`${btn} border border-slate-300 text-slate-600 hover:bg-slate-50`}>Print<span className="hidden sm:inline"> challan</span></button>
         )}
         {/* Last, and the only one in red. "Delay" and "Cancel" sit two buttons
             apart and mean opposite things. One keeps the debt, the other says
@@ -1881,7 +2093,7 @@ function MonthLine({
             destructive and asks for a reason before it does anything. */}
         {onCancel && (
           <button onClick={onCancel}
-            className="rounded border border-red-200 px-2.5 py-1 text-xs text-red-700 hover:bg-red-50">
+            className={`${btn} border border-red-200 text-red-700 hover:bg-red-50`}>
             Cancel charge
           </button>
         )}

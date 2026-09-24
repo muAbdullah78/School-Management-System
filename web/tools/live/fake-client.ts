@@ -47,7 +47,10 @@ const client = {
     return chain(msg, window.__liveErrors?.[name] ? undefined : window.__liveData?.[name])
   },
   from(table: string) {
-    return chain(window.__liveErrors?.[table] ?? `live preview: table ${table} is not seeded`)
+    // A table read answers with window.__liveData['table:<name>'] when a scene
+    // provides one (the school's name for the shell, say), else it fails.
+    const data = window.__liveErrors?.[table] ? undefined : window.__liveData?.[`table:${table}`]
+    return chain(window.__liveErrors?.[table] ?? `live preview: table ${table} is not seeded`, data)
   },
   storage: {
     from() {

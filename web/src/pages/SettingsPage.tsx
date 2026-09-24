@@ -1,4 +1,5 @@
 import { useUrlTab } from '@/lib/useUrlTab'
+import { inputClass } from '@/components/ui'
 import { SchoolProfile } from './settings/SchoolProfile'
 import { Sessions } from './settings/Sessions'
 import { ClassesSections } from './settings/ClassesSections'
@@ -56,7 +57,16 @@ export function SettingsPage() {
   return (
     <div>
       <h1 className="text-xl font-semibold text-slate-800">Settings</h1>
-      <div className="mt-4 flex flex-wrap gap-1 border-b border-slate-200">
+      {/* ON A PHONE, A LIST, NOT A WALL OF TABS. This screen has more tabs
+          than fit three to a row, so a phone showed five or six rows of them
+          before the first field. The same choices, one tap. */}
+      <label className="mt-4 block sm:hidden">
+        <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Section</span>
+        <select value={section} onChange={(e) => setSection(e.target.value as SectionKey)} className={inputClass}>
+          {SECTIONS.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}
+        </select>
+      </label>
+      <div className="mt-4 hidden flex-wrap gap-1 border-b border-slate-200 sm:flex">
         {SECTIONS.map((s) => (
           <button key={s.key} onClick={() => setSection(s.key)}
             className={`-mb-px border-b-2 px-4 py-2 text-sm ${
