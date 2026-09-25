@@ -89,12 +89,16 @@ function builder(table: string, opts: FakeOptions): any {
   // wrong would hand callers an array where they expect a row, and produce
   // crashes the real client never would.
   let shape: 'many' | 'one' = 'many'
+  // range(from, to) is honoured, as PostgREST honours it. db.ts pages every
+  // report until an empty page comes back, and a fake that answered every
+  // page with the same rows would never send the empty one.
+  let span: [number, number] | null = null
 
   const result = () =>
     fail
       ? { data: null, error: { message: fail, code: 'PGRST000', details: '', hint: '' }, count: null, status: 400 }
       : {
-          data: shape === 'one' ? (rows[0] ?? null) : rows,
+          data: shape === 'one' ? (rows[0] ?? null) : span ? rows.slice(span[0], span[1] + 1) : rows,
           error: null,
           count: rows.length,
           status: 200,
@@ -116,6 +120,9 @@ function builder(table: string, opts: FakeOptions): any {
       if (prop in t) return t[prop as keyof typeof t]
       if (prop === 'single' || prop === 'maybeSingle') {
         return () => { shape = 'one'; return chain }
+      }
+      if (prop === 'range') {
+        return (a: number, b: number) => { span = [a, b]; return chain }
       }
       // Every other builder method (select, eq, order, limit, insert, update,
       // delete, in, is, or, gte...) keeps the chain going.
@@ -142,16 +149,22 @@ export function fakeSupabase(opts: FakeOptions = {}) {
           ? { data: null, error: { message: opts.rpcErrors[name], code: 'PGRST202' } }
           : { data: value, error: null }
       // An RPC result is also chainable in places (.select(), .single()), so it
-      // gets the same treatment rather than a bare promise.
-      const t: any = {
+      // gets the same treatment rather than a bare promise. range() slices a
+      // set-returning answer, as PostgREST does.
+      const thenable = (res: unknown): any => ({
         then: (ok: (v: unknown) => unknown, e?: (x: unknown) => unknown) =>
-          Promise.resolve(r).then(ok, e),
-        catch: (e: (x: unknown) => unknown) => Promise.resolve(r).catch(e),
-        finally: (f: () => void) => Promise.resolve(r).finally(f),
-      }
+          Promise.resolve(res).then(ok, e),
+        catch: (e: (x: unknown) => unknown) => Promise.resolve(res).catch(e),
+        finally: (f: () => void) => Promise.resolve(res).finally(f),
+      })
+      const t: any = thenable(r)
       return new Proxy(t, {
         get(tt, prop) {
           if (prop in tt) return tt[prop as keyof typeof tt]
+          if (prop === 'range') {
+            return (a: number, b: number) => thenable(
+              Array.isArray(r.data) ? { ...r, data: (r.data as unknown[]).slice(a, b + 1) } : r)
+          }
           return () => new Proxy(t, { get: (a, b) => (b in a ? a[b as keyof typeof a] : () => a) })
         },
       })

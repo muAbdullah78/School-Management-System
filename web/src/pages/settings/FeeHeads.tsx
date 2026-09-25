@@ -4,6 +4,7 @@ import { listFeeHeadsFull, upsertFeeHead, setFeeHeadActive, type FeeHeadRow } fr
 import { useAuth } from '@/auth/AuthProvider'
 import { canWrite } from '@/auth/roles'
 import { ObserverNotice } from '@/components/ObserverNotice'
+import { Button } from '@/components/ui'
 
 const FIELD = 'rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-brand-500 focus:outline-none'
 
@@ -61,7 +62,7 @@ export function FeeHeads() {
       {!mayWrite && <ObserverNotice what="the fee heads this school charges" />}
 
       {heads.data?.length === 0 && !heads.isLoading && (
-        <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+        <div className="rounded-2xl border border-due-200 bg-due-50 p-4 text-sm text-due-900">
           <div className="font-medium">Nothing is set up yet.</div>
           <div className="mt-1">
             Almost every school starts with <span className="font-medium">Tuition</span> (monthly),
@@ -71,70 +72,46 @@ export function FeeHeads() {
         </div>
       )}
 
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-3 py-2">Fee head</th>
-              <th className="px-3 py-2 w-48">Charged</th>
-              <th className="px-3 py-2 w-20">Order</th>
-              <th className="px-3 py-2 w-44"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {heads.isLoading && <tr><td colSpan={4} className="px-3 py-3 text-slate-500">Loading…</td></tr>}
-            {heads.data?.map((h) => (
-              <tr key={h.id} className={h.active ? '' : 'opacity-60'}>
-                <td className="px-3 py-2 text-slate-800">
-                  {h.name}
-                  {h.is_refundable && (
-                    <span className="ml-2 rounded bg-sky-100 px-1.5 py-0.5 text-xs text-sky-800">refundable</span>
-                  )}
-                  {!h.active && (
-                    <span className="ml-2 rounded bg-slate-200 px-1.5 py-0.5 text-xs text-slate-600">off</span>
-                  )}
-                </td>
-                <td className="px-3 py-2 text-slate-600">
-                  {h.is_recurring ? 'Every month' : 'Once'}
-                  <span className="ml-1 text-slate-400">· {h.type.replace('_', ' ')}</span>
-                </td>
-                <td className="px-3 py-2 text-slate-500">{h.sort_order}</td>
-                <td className="px-3 py-2 text-right whitespace-nowrap">
-                  {mayWrite && (
-                    <>
-                      <button onClick={() => setEditing(h)}
-                        className="rounded border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">
-                        Edit
-                      </button>
-                      <button onClick={() => toggle.mutate({ id: h.id, active: !h.active })}
-                        disabled={toggle.isPending}
-                        className="ml-1 rounded border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-                        title={h.in_use
-                          ? 'This head has already been billed, so it cannot be deleted: switching it off stops it being charged and keeps past challans readable.'
-                          : 'Stop charging this head'}>
-                        {h.active ? 'Switch off' : 'Switch on'}
-                      </button>
-                    </>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {toggle.isError && <p className="text-sm text-red-600">{(toggle.error as Error).message}</p>}
+      <ul className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card">
+        {heads.isLoading && <li className="px-4 py-3 text-sm text-slate-500">Loading…</li>}
+        {heads.data?.map((h) => (
+          <li key={h.id} className={`flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 ${h.active ? '' : 'bg-slate-50'}`}>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className={`font-medium ${h.active ? 'text-slate-900' : 'text-slate-500'}`}>{h.name}</span>
+                <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${h.is_recurring ? 'bg-brand-50 text-brand-800 ring-brand-100' : 'bg-slate-100 text-slate-600 ring-slate-200'}`}>
+                  {h.is_recurring ? 'every month' : 'once'}
+                </span>
+                {h.is_refundable && <span className="rounded-full bg-info-50 px-2 py-0.5 text-[11px] font-medium text-info-800 ring-1 ring-info-100">refundable</span>}
+                {!h.active && <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] text-slate-600">switched off</span>}
+              </div>
+              <div className="text-xs text-slate-500">
+                {TYPES.find((t) => t.value === h.type)?.label.split(':')[0] ?? h.type} · order {h.sort_order}
+                {h.in_use ? ' · already on challans' : ''}
+              </div>
+            </div>
+            {mayWrite && (
+              <div className="flex gap-1.5">
+                <Button size="sm" variant="soft" tone="brand" onClick={() => setEditing(h)}>Edit</Button>
+                <Button size="sm" variant="ghost" onClick={() => toggle.mutate({ id: h.id, active: !h.active })} disabled={toggle.isPending}
+                  title={h.in_use
+                    ? 'This head has already been billed, so it cannot be deleted: switching it off stops it being charged and keeps past challans readable.'
+                    : 'Stop charging this head'}>
+                  {h.active ? 'Switch off' : 'Switch on'}
+                </Button>
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+      {toggle.isError && <p className="text-sm text-danger-600">{(toggle.error as Error).message}</p>}
 
       <div className="flex items-center justify-between">
         <label className="flex items-center gap-2 text-xs text-slate-600">
           <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
           Show ones that are switched off
         </label>
-        {mayWrite && (
-          <button onClick={() => setAdding(true)}
-            className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
-            Add a fee head
-          </button>
-        )}
+        {mayWrite && <Button onClick={() => setAdding(true)}>+ Add a fee head</Button>}
       </div>
 
       <p className="text-xs text-slate-500">
@@ -189,8 +166,8 @@ function FeeHeadDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center">
-      <div className="w-full max-w-lg rounded-lg bg-white p-5 shadow-lg">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 sm:items-center" role="dialog" aria-modal="true">
+      <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-pop">
         <h2 className="text-base font-semibold text-slate-800">
           {head ? `Edit ${head.name}` : 'Add a fee head'}
         </h2>
@@ -224,22 +201,19 @@ function FeeHeadDialog({
             </label>
           </div>
           {refundable && (
-            <p className="rounded border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
+            <p className="rounded border border-info-200 bg-info-50 px-3 py-2 text-xs text-info-900">
               A refundable head is money the school <span className="font-medium">holds</span>, not
               income. It appears as a liability on the balance sheet and can be refunded or netted
               against arrears when the child leaves. It cannot also be charged monthly.
             </p>
           )}
-          {save.isError && <p className="text-sm text-red-600">{(save.error as Error).message}</p>}
+          {save.isError && <p className="text-sm text-danger-600">{(save.error as Error).message}</p>}
         </div>
         <div className="mt-4 flex gap-2">
-          <button onClick={() => save.mutate()} disabled={save.isPending || !name.trim()}
-            className="flex-1 rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
+          <Button className="flex-1" onClick={() => save.mutate()} disabled={save.isPending || !name.trim()}>
             {save.isPending ? 'Saving…' : 'Save'}
-          </button>
-          <button onClick={onClose} className="flex-1 rounded border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">
-            Cancel
-          </button>
+          </Button>
+          <Button className="flex-1" variant="soft" tone="neutral" onClick={onClose}>Cancel</Button>
         </div>
       </div>
     </div>

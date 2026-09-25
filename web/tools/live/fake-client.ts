@@ -34,6 +34,12 @@ function chain(message: string, data?: unknown): unknown {
       if (prop === 'then') return done.then.bind(done)
       if (prop === 'catch') return done.catch.bind(done)
       if (prop === 'finally') return done.finally.bind(done)
+      // range() slices a list, as PostgREST does. db.ts pages the reports
+      // until an empty page comes back, and a preview that answered every page
+      // with the same rows would repeat them two hundred times.
+      if (prop === 'range') {
+        return (a: number, b: number) => chain(message, Array.isArray(data) ? data.slice(a, b + 1) : data)
+      }
       return () => self
     },
     apply() { return self },

@@ -1,8 +1,11 @@
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { listAuditLog, listProfiles } from '@/lib/db'
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import { listAuditLogPage, listProfiles, type AuditRow } from '@/lib/db'
 import { ROLE_LABELS, type Role } from '@/auth/roles'
-import { fmtDateTime } from '@/lib/format'
+import { fmtDate } from '@/lib/format'
+import { ymd } from '@/lib/dates'
+import { Button, inputClass } from '@/components/ui'
+import { RangePicker, type Range } from '@/pages/reports/kit'
 
 /**
  * THE AUDIT LOG, IN ENGLISH.
@@ -98,22 +101,39 @@ export function areaLabel(entity: string): string {
   return AREA[entity] ?? entity
 }
 
-/** Green for something new, amber for a change, red for a removal. */
+/** Brand for something new, amber for a change, red for a removal. Green is
+ *  kept for money coming in, on every screen, so it is not used here. */
 const TONE: Record<string, string> = {
-  INSERT: 'text-emerald-700', UPDATE: 'text-amber-700', DELETE: 'text-red-600',
+  INSERT: 'text-brand-700', UPDATE: 'text-due-800', DELETE: 'text-danger-700',
 }
 function tone(action: string): string {
   if (TONE[action]) return TONE[action]
   // A named action is an exercise of authority over a closed document, which
   // is the thing a reader is most often scanning for.
-  return 'text-slate-800'
+  return 'text-slate-900'
 }
 
+const PAGE = 200
+
+/**
+ * WHAT WAS WRONG. It read the last 300 entries, full stop: no dates, no way
+ * back. A school asking "who changed this mark in March?" in September had no
+ * answer once 300 other things had happened since, which in a busy school is a
+ * week. Additions were printed in the green every other screen keeps for money.
+ * And on a phone it was a five-column table that scrolled sideways.
+ */
 export function AuditLog() {
-  const log = useQuery({ queryKey: ['auditLog'], queryFn: () => listAuditLog(300) })
+  const [range, setRange] = useState<Range>({ from: '', to: '' })
+  const log = useInfiniteQuery({
+    queryKey: ['auditLog', range.from, range.to],
+    queryFn: ({ pageParam }) => listAuditLogPage(range.from || null, range.to || null, pageParam, PAGE),
+    initialPageParam: 0,
+    getNextPageParam: (last, all) => (last.length < PAGE ? undefined : all.length * PAGE),
+  })
   const profiles = useQuery({ queryKey: ['profiles'], queryFn: listProfiles })
   const [entity, setEntity] = useState('')
   const [q, setQ] = useState('')
+  const data = useMemo(() => (log.data?.pages ?? []).flat(), [log.data])
 
   const nameById = useMemo(() => {
     const m = new Map<string, string>()
@@ -121,77 +141,109 @@ export function AuditLog() {
     return m
   }, [profiles.data])
 
-  /** Areas present, labelled and sorted by the label the reader sees. */
   const areas = useMemo(() => {
-    const seen = new Set((log.data ?? []).map((r) => r.entity))
-    return [...seen]
-      .map((e) => ({ value: e, label: areaLabel(e) }))
-      .sort((a, b) => a.label.localeCompare(b.label))
-  }, [log.data])
+    const seen = new Set(data.map((r) => r.entity))
+    return [...seen].map((e) => ({ value: e, label: areaLabel(e) })).sort((a, b) => a.label.localeCompare(b.label))
+  }, [data])
 
   const needle = q.trim().toLowerCase()
-  const rows = (log.data ?? []).filter((r) => {
+  const who = (r: AuditRow) => (r.actor ? (nameById.get(r.actor) ?? (r.actor_role ? ROLE_LABELS[r.actor_role as Role] ?? 'A login' : 'A login')) : 'The system')
+  const rows = data.filter((r) => {
     if (entity && r.entity !== entity) return false
     if (!needle) return true
-    const who = r.actor ? (nameById.get(r.actor) ?? '') : 'system'
-    return `${describeAudit(r.action, r.entity)} ${areaLabel(r.entity)} ${who} ${r.reason ?? ''}`
-      .toLowerCase().includes(needle)
+    return `${describeAudit(r.action, r.entity)} ${areaLabel(r.entity)} ${who(r)} ${r.reason ?? ''}`.toLowerCase().includes(needle)
   })
+  const removals = rows.filter((r) => r.action === 'DELETE').length
+  const people = new Set(rows.map((r) => r.actor ?? 'system')).size
+  // Grouped by day, newest first, the way anyone reads a diary.
+  const days = useMemo(() => {
+    const m = new Map<string, AuditRow[]>()
+    for (const r of rows) { const d = ymd(new Date(r.created_at)); m.set(d, [...(m.get(d) ?? []), r]) }
+    return [...m.entries()]
+  }, [rows])
 
   return (
     <div className="max-w-4xl space-y-4">
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <div className="text-sm font-medium text-slate-800">Audit log</div>
-        <p className="mt-1 text-sm text-slate-600">
-          A tamper-evident trail of every change to money, marks, attendance, discounts and permissions:
-          who did what, when, and (where given) why. Visible only to the owner and principal.
-        </p>
-        <div className="mt-3 flex flex-wrap items-end gap-3">
-          <label className="inline-block">
-            <span className="block text-xs text-slate-500">Filter by area</span>
-            <select value={entity} onChange={(e) => setEntity(e.target.value)}
-              className="mt-1 rounded border border-slate-300 px-2 py-1 text-sm focus:border-brand-500 focus:outline-none">
-              <option value="">All areas</option>
-              {areas.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
-            </select>
-          </label>
-          <label className="inline-block">
-            <span className="block text-xs text-slate-500">Search who, what or why</span>
-            <input value={q} onChange={(e) => setQ(e.target.value)}
-              placeholder="reopened, Ayesha, discount"
-              className="mt-1 w-56 rounded border border-slate-300 px-2 py-1 text-sm focus:border-brand-500 focus:outline-none" />
-          </label>
-        </div>
+      <p className="text-sm text-slate-600">
+        A trail of every change to money, marks, attendance, discounts and access: who did what, when, and (where
+        given) why. Only the owner and principal can see it, and nobody can edit it.
+      </p>
+      <RangePicker value={range} onChange={setRange} blank />
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-slate-500">Area</span>
+          <select value={entity} onChange={(e) => setEntity(e.target.value)} className={`${inputClass} w-auto`}>
+            <option value="">Every area</option>
+            {areas.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
+          </select>
+        </label>
+        <label className="block min-w-0 flex-1 sm:max-w-xs">
+          <span className="mb-1 block text-xs font-medium text-slate-500">Find who, what or why</span>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="reopened, Ayesha, discount" className={inputClass} />
+        </label>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-            <tr><th className="px-3 py-2">When</th><th className="px-3 py-2">Who</th><th className="px-3 py-2">What happened</th><th className="px-3 py-2">Area</th><th className="px-3 py-2">Reason</th></tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {log.isLoading && <tr><td colSpan={5} className="px-3 py-3 text-slate-500">Loading…</td></tr>}
-            {!log.isLoading && rows.length === 0 && <tr><td colSpan={5} className="px-3 py-3 text-slate-500">No audit entries{entity || needle ? ' match that' : ' yet'}.</td></tr>}
-            {rows.map((r) => (
-              <tr key={r.id}>
-                <td className="px-3 py-2 whitespace-nowrap text-slate-500">{fmtDateTime(r.created_at)}</td>
-                <td className="px-3 py-2 text-slate-700">
-                  {r.actor ? (nameById.get(r.actor) ?? 'User') : 'System'}
-                  {r.actor_role && <span className="text-slate-400"> · {ROLE_LABELS[r.actor_role as Role] ?? r.actor_role}</span>}
-                </td>
-                <td className={`px-3 py-2 font-medium ${tone(r.action)}`}>{describeAudit(r.action, r.entity)}</td>
-                <td className="px-3 py-2 text-slate-600">{areaLabel(r.entity)}</td>
-                <td className="px-3 py-2 text-slate-500">{r.reason ?? '-'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {log.isError && <p className="rounded-xl bg-danger-50 px-3 py-2 text-sm text-danger-700">{(log.error as Error).message}</p>}
+      {log.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+
+      {!log.isLoading && (
+        <div className="grid grid-cols-3 gap-3">
+          <Stat n={rows.length} label={`change${rows.length === 1 ? '' : 's'} shown`} />
+          <Stat n={people} label={people === 1 ? 'person' : 'people'} />
+          <Stat n={removals} label="removals" danger={removals > 0} />
+        </div>
+      )}
+
+      {!log.isLoading && rows.length === 0 && (
+        <p className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm text-slate-500">
+          Nothing {entity || needle ? 'matches that' : range.from || range.to ? 'in these dates' : 'recorded yet'}.
+        </p>
+      )}
+
+      <div className="space-y-3">
+        {days.map(([day, list]) => (
+          <section key={day} className="rounded-2xl border border-slate-200 bg-white shadow-card">
+            <h3 className="border-b border-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{fmtDate(day)} · {list.length}</h3>
+            <ul className="divide-y divide-slate-100">
+              {list.map((r) => (
+                <li key={r.id} className="flex flex-wrap items-start gap-x-4 gap-y-0.5 px-4 py-2.5 text-sm">
+                  <span className="w-12 shrink-0 tabular-nums text-slate-400">{fmtTime(r.created_at)}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className={`font-medium ${tone(r.action)}`}>{describeAudit(r.action, r.entity)}</div>
+                    <div className="text-xs text-slate-500">
+                      {who(r)}{r.actor_role && r.actor && nameById.has(r.actor) ? ` · ${ROLE_LABELS[r.actor_role as Role] ?? r.actor_role}` : ''} · {areaLabel(r.entity)}
+                    </div>
+                    {r.reason && <div className="mt-0.5 text-xs text-slate-700">&ldquo;{r.reason}&rdquo;</div>}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))}
       </div>
-      {log.isError && <p className="text-sm text-red-600">{(log.error as Error).message}</p>}
+
+      {log.hasNextPage && (
+        <Button variant="soft" tone="neutral" disabled={log.isFetchingNextPage}
+          onClick={() => void log.fetchNextPage()}>
+          {log.isFetchingNextPage ? 'Loading…' : `Show the ${PAGE} before these`}
+        </Button>
+      )}
       <p className="text-xs text-slate-400">
-        Showing the most recent {(log.data ?? []).length} entries
-        {rows.length !== (log.data ?? []).length ? `, ${rows.length} shown` : ''}.
+        {data.length} entr{data.length === 1 ? 'y' : 'ies'} read{log.hasNextPage ? `, newest first. There are older ones.` : '. That is all of them for these dates.'}
       </p>
     </div>
   )
+}
+
+function Stat({ n, label, danger }: { n: number; label: string; danger?: boolean }) {
+  return (
+    <div className={`rounded-2xl border px-4 py-3 ${danger ? 'border-danger-200 bg-danger-50' : 'border-slate-200 bg-white'}`}>
+      <div className={`text-2xl font-semibold tabular-nums ${danger ? 'text-danger-700' : 'text-slate-900'}`}>{n}</div>
+      <div className="text-xs text-slate-500">{label}</div>
+    </div>
+  )
+}
+
+function fmtTime(ts: string): string {
+  return new Date(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Karachi' })
 }

@@ -1,6 +1,8 @@
 import { fmtPKR, fmtDate } from '@/lib/format'
 import { useSchoolName } from '@/hooks/useSchoolName'
 import { useSchoolLogo } from '@/hooks/useSchoolLogo'
+import { useQuery } from '@tanstack/react-query'
+import { getSchoolSettings } from '@/lib/db'
 
 export interface ReceiptData {
   receiptNo: number
@@ -34,6 +36,10 @@ export interface ReceiptData {
 export function Receipt({ data, onClose }: { data: ReceiptData; onClose: () => void }) {
   const schoolName = useSchoolName()
   const logo = useSchoolLogo()
+  // The receipt prefix from Settings, School profile. It was saved there and
+  // read by nothing, so a school that typed "R-" never saw it on a receipt.
+  const settings = useQuery({ queryKey: ['schoolSettings'], queryFn: getSchoolSettings, staleTime: 5 * 60 * 1000 })
+  const prefix = settings.data?.receipt_prefix?.trim() ?? ''
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center print:static print:bg-white print:p-0">
       <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-lg print:max-w-none print:shadow-none" id="receipt">
@@ -45,7 +51,7 @@ export function Receipt({ data, onClose }: { data: ReceiptData; onClose: () => v
           <div className="text-xs uppercase tracking-wide text-slate-500">Fee Receipt</div>
         </div>
         <div className="mt-4 space-y-1.5 text-sm">
-          <Row label="Receipt No" value={`#${data.receiptNo}`} />
+          <Row label="Receipt No" value={prefix ? `${prefix}${data.receiptNo}` : `#${data.receiptNo}`} />
           <Row label="Date" value={fmtDate(data.date ?? new Date().toISOString())} />
           <Row label={data.payerLabel ?? 'Student'} value={data.studentName} />
           {data.grNo && <Row label="GR No" value={data.grNo} />}

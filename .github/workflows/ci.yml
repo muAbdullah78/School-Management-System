@@ -337,6 +337,11 @@ jobs:
       PGUSER: postgres
       PGPASSWORD: postgres
       PGDATABASE: postgres
+      # The suites run their sessions on a school's clock. Since 0148 every
+      # function that works out a date runs in Karachi, and a suite whose own
+      # current_date was UTC disagreed with them from 19:00 to 24:00 UTC, so
+      # the same commit passed by day and failed by night.
+      PGTZ: Asia/Karachi
     steps:
       - uses: actions/checkout@v4
       - name: Install psql client
@@ -2577,6 +2582,16 @@ jobs:
         # today, the profit snapshot, the day's register) so a chart cannot tell
         # a different story from the tile beside it.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/the_office_all_day.sql
+
+      - name: The staff room and the settings (0148), logins that cannot repoint themselves
+        # Any login could edit its own profiles row, including the staff record
+        # and the family it points at, so a teacher could take over a colleague's
+        # classes and a parent could read another family. A principal could make
+        # themselves owner. Asserted as the authenticated role, because a
+        # superuser is exempt from RLS. Also: nobody who has left teaches, a typed
+        # day has no arrival time, a family receipt names its children and counts
+        # on the day in Karachi, and years and classes cannot be duplicated.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/the_staff_room_and_the_settings.sql
 
       - name: Student list — does the fast balance equal the real one?
         # fn_student_list recomputes each balance SET-BASED rather than calling
