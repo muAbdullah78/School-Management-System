@@ -6,7 +6,7 @@ import { useLicence } from '@/hooks/useLicence'
 import { useQuery } from '@tanstack/react-query'
 import { exportAllData, getSchoolSettings, EXPORT_TABLES, type ExportResult } from '@/lib/db'
 import { downloadJSON } from '@/lib/csv'
-import { LoadError } from '@/components/ui'
+import { LoadError, Button } from '@/components/ui'
 
 export function Backup() {
   const settings = useQuery({ queryKey: ['schoolSettings'], queryFn: getSchoolSettings })
@@ -36,17 +36,16 @@ export function Backup() {
   return (
     <div className="max-w-2xl space-y-4">
       <LoadError of={[settings]} what="The school profile" />
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <div className="text-sm font-medium text-slate-800">Export all data</div>
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-card sm:p-5">
+        <div className="text-sm font-semibold text-slate-900">Download everything</div>
         <p className="mt-1 text-sm text-slate-600">
           Download a complete copy of your school’s data as a single JSON file: students, fees, attendance,
           marks, certificates and settings. This is <span className="font-medium">your</span> data; keep periodic
           backups somewhere safe (a USB drive or your own cloud storage). It complements Supabase’s own automatic backups.
         </p>
-        <button onClick={runExport} disabled={busy}
-          className="mt-3 rounded bg-brand-600 px-5 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
-          {busy ? 'Exporting…' : 'Download full backup (JSON)'}
-        </button>
+        <Button className="mt-3" onClick={runExport} disabled={busy}>
+          {busy ? 'Reading your records…' : 'Download the full backup'}
+        </Button>
 
         {busy && progress && (
           <div className="mt-3">
@@ -57,20 +56,20 @@ export function Backup() {
           </div>
         )}
 
-        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+        {error && <p className="mt-3 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
         {result && (
-          <div className="mt-3 rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+          <div className="mt-3 rounded-xl border border-brand-200 bg-brand-50 p-3 text-sm text-brand-800">
             Backup downloaded: {totalRows.toLocaleString()} rows across {Object.keys(result.counts).length} tables.
             {errorCount > 0 && (
-              <span className="text-amber-700"> {errorCount} table{errorCount === 1 ? '' : 's'} skipped (no permission): {Object.keys(result.errors).join(', ')}.</span>
+              <span className="text-due-800"> {errorCount} table{errorCount === 1 ? '' : 's'} skipped (no permission): {Object.keys(result.errors).join(', ')}.</span>
             )}
           </div>
         )}
       </div>
 
-      <details className="rounded-lg border border-slate-200 bg-white p-4">
-        <summary className="cursor-pointer text-sm font-medium text-slate-700">What’s included</summary>
+      <details className="rounded-2xl border border-slate-200 bg-white p-4 shadow-card">
+        <summary className="cursor-pointer text-sm font-medium text-slate-800">What is in it ({EXPORT_TABLES.length} kinds of record)</summary>
         <div className="mt-2 flex flex-wrap gap-1.5">
           {EXPORT_TABLES.map((t) => (
             <span key={t} className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{t}</span>

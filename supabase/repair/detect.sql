@@ -1301,7 +1301,19 @@ with sig(migration, object, present) as (values
          and to_regprocedure('public.fn_paper_marks_count(uuid)') is not null
          and exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
                       where n.nspname = 'public' and p.proname = 'fn_finance_summary'
-                        and p.prosrc like '%Asia/Karachi%')))
+                        and p.prosrc like '%Asia/Karachi%'))),
+  -- 0148's signature is its new reads and the trigger that stops a login
+  -- repointing itself. Without it the screens work as they shipped, with the
+  -- hole open, so MISSING rather than broken.
+  ('0148_the_staff_room_the_reports_and_the_settings',
+     'fn_fee_receipts, fn_staff_mark_rest_present, fn_add_session, fn_set_session_dates, trg_profiles_link_guard',
+     (select to_regprocedure('public.fn_fee_receipts(date,date)') is not null
+         and to_regprocedure('public.fn_staff_mark_rest_present(date)') is not null
+         and to_regprocedure('public.fn_add_session(text,date,date)') is not null
+         and to_regprocedure('public.fn_set_session_dates(uuid,date,date)') is not null
+         and exists (select 1 from pg_trigger t
+                      where t.tgrelid = 'public.profiles'::regclass
+                        and t.tgname = 'trg_profiles_link_guard' and not t.tgisinternal)))
 )
 select migration,
        object                                   as looked_for,

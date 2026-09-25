@@ -4,13 +4,17 @@ import { getSchoolSettings, type StaffRow } from '@/lib/db'
 import { QrCode } from '@/components/QrCode'
 import { Avatar } from '@/components/Avatar'
 import { signPath } from '@/lib/photos'
+import { Button } from '@/components/ui'
 
 /** A printable staff ID card with an on-device QR. Print-only (staff cards aren't
  *  serial-tracked like student certificates); reuses the #certificate print CSS. */
 export function StaffIdCard({ staff, onClose }: { staff: StaffRow; onClose: () => void }) {
   const schoolName = useSchoolName()
   const settings = useQuery({ queryKey: ['schoolSettings'], queryFn: getSchoolSettings })
-  const qrText = staff.employee_no ? `EMP:${staff.employee_no}` : `STAFF:${staff.full_name}`
+  // The record's own id when there is no employee number. The name alone was
+  // what it used to carry, and a school with two Muhammad Alis printed two cards
+  // with the same code.
+  const qrText = staff.employee_no ? `EMP:${staff.employee_no}` : `STAFF:${staff.id}`
 
   // Signed URLs, minted per view. Both queries are keyed on the path so a card
   // reopened for the same person reuses the cached URL instead of re-signing.
@@ -26,9 +30,10 @@ export function StaffIdCard({ staff, onClose }: { staff: StaffRow; onClose: () =
   })
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 print:static print:block print:bg-white print:p-0">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 print:static print:block print:bg-white print:p-0"
+      role="dialog" aria-modal="true" aria-label={`${staff.full_name}: ID card`}>
       <div className="print:max-w-none" id="certificate">
-        <div className="w-[340px] overflow-hidden rounded-xl border border-slate-300 bg-white shadow-lg print:shadow-none">
+        <div className="w-[340px] max-w-full overflow-hidden rounded-xl border border-slate-300 bg-white shadow-pop print:shadow-none">
           <div className="flex items-center gap-2 bg-brand-700 px-4 py-2 text-white">
             {logo.data && (
               // On the coloured header a white plate keeps a dark logo readable;
@@ -57,6 +62,7 @@ export function StaffIdCard({ staff, onClose }: { staff: StaffRow; onClose: () =
               <div className="mt-1 grid grid-cols-[auto,1fr] gap-x-2">
                 <span className="text-slate-400">Emp #</span><span>{staff.employee_no ?? '-'}</span>
                 <span className="text-slate-400">Mobile</span><span>{staff.mobile ?? '-'}</span>
+                {staff.cnic && <><span className="text-slate-400">CNIC</span><span className="tabular-nums">{staff.cnic}</span></>}
               </div>
             </div>
           </div>
@@ -70,8 +76,8 @@ export function StaffIdCard({ staff, onClose }: { staff: StaffRow; onClose: () =
         </div>
 
         <div className="mt-4 flex gap-2 print:hidden">
-          <button onClick={() => window.print()} className="flex-1 rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">Print</button>
-          <button onClick={onClose} className="flex-1 rounded border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">Close</button>
+          <Button className="flex-1" onClick={() => window.print()}>Print</Button>
+          <Button className="flex-1" variant="soft" tone="neutral" onClick={onClose}>Close</Button>
         </div>
       </div>
     </div>

@@ -129,7 +129,7 @@ export function Rollover() {
         </label>
       </div>
       {otherSessions.length === 0 && (
-        <p className="rounded bg-amber-50 p-3 text-sm text-amber-700">
+        <p className="rounded bg-due-50 p-3 text-sm text-due-700">
           You need a second session to roll into. Create next year’s session under <span className="font-medium">Sessions</span> first.
         </p>
       )}
@@ -191,7 +191,7 @@ export function Rollover() {
         </button>
       </div>
       {(preflight.isError || commit.isError || undoMut.isError) && (
-        <p className="text-sm text-red-600">
+        <p className="text-sm text-danger-600">
           {((preflight.error || commit.error || undoMut.error) as Error).message}
         </p>
       )}
@@ -248,7 +248,7 @@ function ResultView({ result, committed, toName }: { result: RolloverResult; com
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="flex items-center gap-2">
-        <span className={`rounded px-2 py-0.5 text-xs font-medium ${committed ? 'bg-emerald-100 text-emerald-700' : 'bg-sky-100 text-sky-700'}`}>
+        <span className={`rounded px-2 py-0.5 text-xs font-medium ${committed ? 'bg-brand-100 text-brand-700' : 'bg-info-100 text-info-700'}`}>
           {committed ? 'Rollover complete' : 'Preview. Nothing saved yet'}
         </span>
         <span className="text-sm text-slate-600">{result.total} student{result.total === 1 ? '' : 's'}</span>
@@ -262,7 +262,7 @@ function ResultView({ result, committed, toName }: { result: RolloverResult; com
       </div>
 
       {committed && (
-        <p className="mt-3 rounded bg-emerald-50 p-3 text-sm text-emerald-800">
+        <p className="mt-3 rounded bg-brand-50 p-3 text-sm text-brand-800">
           Done. When you’re ready to start the new year, set <span className="font-medium">{toName}</span> as the current
           session under <span className="font-medium">Sessions</span>.
         </p>
@@ -305,16 +305,16 @@ function ResultView({ result, committed, toName }: { result: RolloverResult; com
 
 function ActionBadge({ action, message }: { action: string; message: string | null }) {
   const tone: Record<string, string> = {
-    promote: 'text-emerald-700', retain: 'text-sky-700', graduate: 'text-violet-700',
-    skipped: 'text-amber-700', unmapped: 'text-red-600',
+    promote: 'text-brand-700', retain: 'text-info-700', graduate: 'text-slate-700',
+    skipped: 'text-due-700', unmapped: 'text-danger-600',
   }
   return <span className={tone[action] ?? 'text-slate-600'} title={message ?? ''}>{action}{message ? ' •' : ''}</span>
 }
 
 function Chip({ label, value, tone }: { label: string; value: number; tone: string }) {
   const tones: Record<string, string> = {
-    emerald: 'bg-emerald-50 text-emerald-700', sky: 'bg-sky-50 text-sky-700',
-    violet: 'bg-violet-50 text-violet-700', amber: 'bg-amber-50 text-amber-700', red: 'bg-red-50 text-red-700',
+    emerald: 'bg-brand-50 text-brand-700', sky: 'bg-info-50 text-info-700',
+    violet: 'bg-slate-50 text-slate-700', amber: 'bg-due-50 text-due-700', red: 'bg-danger-50 text-danger-700',
   }
   return <span className={`rounded px-2 py-1 font-medium ${tones[tone]}`}>{label}: {value}</span>
 }

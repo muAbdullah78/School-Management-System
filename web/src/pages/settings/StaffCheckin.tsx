@@ -66,12 +66,12 @@ export function StaffCheckin() {
             <tr>
               <td className="px-3 py-2 font-medium text-slate-800">Rotating screen</td>
               <td className="px-3 py-2 text-slate-600">Leave a phone, tablet or the office monitor on the gate screen</td>
-              <td className="px-3 py-2 font-medium text-emerald-700">under a minute</td>
+              <td className="px-3 py-2 font-medium text-brand-700">under a minute</td>
             </tr>
             <tr>
               <td className="px-3 py-2 font-medium text-slate-800">Printed poster</td>
               <td className="px-3 py-2 text-slate-600">Print the QR once and put it on the wall</td>
-              <td className="px-3 py-2 font-medium text-amber-700">for ever</td>
+              <td className="px-3 py-2 font-medium text-due-700">for ever</td>
             </tr>
           </tbody>
         </table>
@@ -111,7 +111,7 @@ export function StaffCheckin() {
         <p className="mt-2 text-xs text-slate-500">
           Generating a new code deactivates the previous one, so an old printout or a saved link stops working.
         </p>
-        {gen.isError && <p className="mt-2 text-sm text-red-600">{(gen.error as Error).message}</p>}
+        {gen.isError && <p className="mt-2 text-sm text-danger-600">{(gen.error as Error).message}</p>}
         <button onClick={() => gen.mutate()} disabled={gen.isPending}
           className="mt-3 rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
           {gen.isPending ? 'Generating…' : rotating ? 'Generate & open gate screen' : 'Generate & show QR'}
@@ -224,12 +224,12 @@ function GateScreen({ schoolName, base, onClose }: { schoolName: string; base: s
           </div>
         )}
         {d?.status === 'static' && (
-          <div className="mt-4 text-sm text-amber-300">
+          <div className="mt-4 text-sm text-due-300">
             This is a static code. A photograph of it keeps working. Switch to a rotating code if you
             want that closed.
           </div>
         )}
-        {disp.isError && <p className="mt-4 text-sm text-red-400">{(disp.error as Error).message}</p>}
+        {disp.isError && <p className="mt-4 text-sm text-danger-400">{(disp.error as Error).message}</p>}
 
         <ol className="mx-auto mt-6 max-w-xs list-decimal pl-5 text-left text-sm text-slate-300">
           <li>Scan with your phone camera.</li>
@@ -282,12 +282,12 @@ function SchoolDay({ settings, onSaved }: { settings: SchoolSettings | null | un
         <label className="block"><span className="text-sm text-slate-600">Grace (minutes)</span>
           <input type="number" min="0" max="240" value={grace} onChange={(e) => setGrace(e.target.value)} className={FIELD} /></label>
       </div>
-      {save.isError && <p className="mt-2 text-sm text-red-600">{(save.error as Error).message}</p>}
+      {save.isError && <p className="mt-2 text-sm text-danger-600">{(save.error as Error).message}</p>}
       <button onClick={() => save.mutate()} disabled={save.isPending}
         className="mt-3 rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
         {save.isPending ? 'Saving…' : 'Save school day'}
       </button>
-      {save.isSuccess && <span className="ml-2 text-sm text-emerald-600">Saved.</span>}
+      {save.isSuccess && <span className="ml-2 text-sm text-brand-600">Saved.</span>}
     </div>
   )
 }
@@ -354,16 +354,16 @@ function Geofence({ settings, onSaved }: { settings: SchoolSettings | null | und
             <button type="button" onClick={useCurrent} className="rounded border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50">
               Use my current location
             </button>
-            {geoErr && <span className="ml-2 text-xs text-red-600">{geoErr}</span>}
+            {geoErr && <span className="ml-2 text-xs text-danger-600">{geoErr}</span>}
           </div>
         </div>
       )}
-      {save.isError && <p className="mt-2 text-sm text-red-600">{(save.error as Error).message}</p>}
+      {save.isError && <p className="mt-2 text-sm text-danger-600">{(save.error as Error).message}</p>}
       <button onClick={() => save.mutate()} disabled={save.isPending}
         className="mt-3 rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
         {save.isPending ? 'Saving…' : 'Save location check'}
       </button>
-      {save.isSuccess && <span className="ml-2 text-sm text-emerald-600">Saved.</span>}
+      {save.isSuccess && <span className="ml-2 text-sm text-brand-600">Saved.</span>}
     </div>
   )
 }

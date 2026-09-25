@@ -4,7 +4,7 @@ import {
   testsOverview, listTestsMarks, unlockAssessment,
   type TestOverviewRow, type TestState, type TestMarks,
 } from '@/lib/db'
-import { fmtDate, todayISO } from '@/lib/format'
+import { fmtDate, todayISO, shiftDate } from '@/lib/format'
 import { LoadError, EmptyState, inputClass } from '@/components/ui'
 import { C, ChartCard, HBars, MiniTable, StackBar, type Segment } from '@/components/viz'
 import { ChartUnavailable } from '@/components/ChartUnavailable'
@@ -50,10 +50,9 @@ const STATE: Record<TestState, { label: string; cls: string; color: string }> = 
 }
 
 /** A plain date moved by whole days, in UTC, where a date has no clock. */
-export function shiftDate(iso: string, days: number): string {
-  const [y, m, d] = iso.split('-').map(Number)
-  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10)
-}
+// Moved to lib/format, where the staff register uses it too. Re-exported so
+// nothing that imported it from here breaks.
+export { shiftDate }
 
 type Range = { from: string; to: string }
 

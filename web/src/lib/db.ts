@@ -76,6 +76,55 @@ function unwrap<T>(res: { data: T | null; error: { message: string } | null }): 
 }
 
 /**
+ * EVERY ROW, NOT THE FIRST THOUSAND.
+ *
+ * Supabase answers any request with at most "Max rows" rows (1,000 unless the
+ * project was changed), set-returning functions included, and says nothing when
+ * it stops. Not one report paged. So a school of 800 with three months unpaid
+ * got the first 1,000 of 2,400 challans on Unpaid Challans, and the total at
+ * the top, added up in the browser from what arrived, was simply wrong. The
+ * attendance register of a class of 40 reaches 1,040 marks by the 26th school
+ * day, and the last days of every month printed blank.
+ *
+ * It asks for a page at a time and stops at the first EMPTY page, not the
+ * first short one: a project whose cap was lowered to 500 answers 500 to a
+ * request for 1,000, and "short means finished" would stop there. The cost is
+ * one extra round trip per report. The functions all sort their output, and
+ * PostgREST applies the range to that sorted result, so pages do not overlap.
+ */
+const PAGE = 1000
+const MAX_PAGES = 200
+
+export async function rpcAll<T = Record<string, unknown>>(fn: string, args: Record<string, unknown>): Promise<T[]> {
+  const sb = requireSupabase()
+  const out: T[] = []
+  for (let i = 0; i < MAX_PAGES; i++) {
+    const { data, error } = await sb.rpc(fn, args).range(out.length, out.length + PAGE - 1)
+    if (error) throw new Error(error.message)
+    const rows = (data ?? []) as T[]
+    if (rows.length === 0) break
+    out.push(...rows)
+  }
+  return out
+}
+
+/** The same, for a table read. `page` builds the query for one range; it must
+ *  carry an order, or two pages can overlap and a row can be missed. */
+export async function selectAll<T = Record<string, any>>(
+  page: (from: number, to: number) => PromiseLike<{ data: unknown; error: { message: string } | null }>,
+): Promise<T[]> {
+  const out: T[] = []
+  for (let i = 0; i < MAX_PAGES; i++) {
+    const { data, error } = await page(out.length, out.length + PAGE - 1)
+    if (error) throw new Error(error.message)
+    const rows = (data ?? []) as T[]
+    if (rows.length === 0) break
+    out.push(...rows)
+  }
+  return out
+}
+
+/**
  * A write that changed nothing is an ERROR, not a success.
  *
  * Row Level Security treats the three write verbs differently, and forgetting
@@ -414,10 +463,8 @@ export async function voidInvoice(
 }
 
 export async function getVoidedInvoices(from: string, to: string): Promise<VoidedInvoice[]> {
-  const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_voided_invoices', { p_from: from, p_to: to })
-  if (error) throw new Error(error.message)
-  return ((data ?? []) as VoidedInvoice[]).map((r) => ({ ...r, amount: Number(r.amount) }))
+  const data = await rpcAll<VoidedInvoice>('fn_voided_invoices', { p_from: from, p_to: to })
+  return data.map((r) => ({ ...r, amount: Number(r.amount) }))
 }
 
 /* ===========================================================================
@@ -917,10 +964,7 @@ export async function getFeeReconciliation(sessionId: string): Promise<FeeReconc
 }
 
 export async function getDefaulters(sessionId: string): Promise<Defaulter[]> {
-  const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_defaulters', { p_session_id: sessionId })
-  if (error) throw new Error(error.message)
-  return (data as Defaulter[]) ?? []
+  return rpcAll<Defaulter>('fn_defaulters', { p_session_id: sessionId })
 }
 
 /** Who owes on ONE billing month's challan, for any month the principal picks.
@@ -933,12 +977,7 @@ export interface MonthDefaulter extends Defaulter {
 export async function getDefaultersMonth(
   sessionId: string, month: string,
 ): Promise<MonthDefaulter[]> {
-  const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_defaulters_month', {
-    p_session_id: sessionId, p_month: month,
-  })
-  if (error) throw new Error(error.message)
-  return (data as MonthDefaulter[]) ?? []
+  return rpcAll<MonthDefaulter>('fn_defaulters_month', { p_session_id: sessionId, p_month: month })
 }
 
 /** The billing months that actually have challans, newest first, for the picker. */
@@ -1000,11 +1039,15 @@ export async function getAttendanceRegister(
   const last = `${month}-${String(lastDay).padStart(2, '0')}`
   const dates = Array.from({ length: lastDay }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`)
 
-  let rq = sb.from('enrollments')
-    .select('id, roll_no, students!inner(full_name)')
-    .eq('session_id', sessionId).eq('class_id', classId).eq('status', 'active')
-  if (sectionId) rq = rq.eq('section_id', sectionId)
-  const enr = unwrap<Record<string, any>[]>(await rq)
+  // A fresh query per page: a supabase-js builder mutates itself, so re-using
+  // one appends its order again on every page.
+  const enr = await selectAll((a, b) => {
+    let rq = sb.from('enrollments')
+      .select('id, roll_no, students!inner(full_name)')
+      .eq('session_id', sessionId).eq('class_id', classId).eq('status', 'active')
+    if (sectionId) rq = rq.eq('section_id', sectionId)
+    return rq.order('id').range(a, b)
+  })
   const rollNum = (r: string | null) => {
     const n = parseInt((r ?? '').replace(/[^0-9]/g, ''), 10)
     return Number.isNaN(n) ? Number.MAX_SAFE_INTEGER : n
@@ -1015,12 +1058,11 @@ export async function getAttendanceRegister(
 
   if (students.length > 0) {
     const byId = new Map(students.map((s) => [s.enrollment_id, s]))
-    const marks = unwrap<Record<string, any>[]>(
-      await sb.from('attendance_daily')
-        .select('enrollment_id, attendance_date, status')
-        .in('enrollment_id', students.map((s) => s.enrollment_id))
-        .gte('attendance_date', first).lte('attendance_date', last),
-    )
+    const marks = await selectAll((a, b) => sb.from('attendance_daily')
+      .select('id, enrollment_id, attendance_date, status')
+      .in('enrollment_id', students.map((s) => s.enrollment_id))
+      .gte('attendance_date', first).lte('attendance_date', last)
+      .order('id').range(a, b))
     for (const mk of marks) {
       const s = byId.get(mk.enrollment_id)
       if (s) s.marks[mk.attendance_date] = mk.status
@@ -1032,11 +1074,9 @@ export async function getAttendanceRegister(
 /** Active-enrolment head-count per class/section with a gender split. */
 export async function getClassStrength(sessionId: string): Promise<ClassStrengthRow[]> {
   const sb = requireSupabase()
-  const rows = unwrap<Record<string, any>[]>(
-    await sb.from('enrollments')
-      .select('class_id, section_id, classes(name, level_order), sections(name, sort_order), students(gender)')
-      .eq('session_id', sessionId).eq('status', 'active'),
-  )
+  const rows = await selectAll((a, b) => sb.from('enrollments')
+    .select('id, class_id, section_id, classes(name, level_order), sections(name, sort_order), students(gender)')
+    .eq('session_id', sessionId).eq('status', 'active').order('id').range(a, b))
   const map = new Map<string, ClassStrengthRow>()
   for (const r of rows) {
     const key = `${r.class_id}|${r.section_id ?? ''}`
@@ -1681,10 +1721,8 @@ export async function setStudentStatus(
  *  the bug class documented in migration 0047. Office roles only: it carries
  *  arrears. */
 export async function getStudentsLeft(from: string | null, to: string | null): Promise<StudentLeftRow[]> {
-  const sb = requireSupabase()
-  const rows = unwrap<Record<string, any>[]>(
-    await sb.rpc('fn_students_left', { p_from: from || null, p_to: to || null }))
-  return (rows ?? []).map((r) => ({
+  const rows = await rpcAll<Record<string, any>>('fn_students_left', { p_from: from || null, p_to: to || null })
+  return rows.map((r) => ({
     left_on: r.left_on,
     student_id: r.student_id,
     student_name: r.student_name,
@@ -3855,15 +3893,29 @@ export async function listAuditLog(limit = 200): Promise<AuditRow[]> {
 /** Every domain table, in dependency-ish order, for a complete backup. */
 export const EXPORT_TABLES = [
   'school_settings', 'academic_sessions', 'classes', 'sections', 'subjects',
-  'profiles', 'staff', 'students', 'guardians', 'enrollments',
-  'fee_heads', 'fee_structures', 'student_fee_items', 'discounts',
-  'invoices', 'invoice_lines', 'payments', 'payment_allocations', 'adjustments',
-  'attendance_daily', 'assessments', 'exam_terms', 'exam_subjects', 'mark_entries',
-  'result_cards', 'certificates', 'counters', 'audit_log',
+  'profiles', 'staff', 'families', 'students', 'guardians', 'enrollments',
+  'fee_heads', 'fee_structures', 'student_fee_items', 'discounts', 'billing_months',
+  'invoices', 'invoice_lines', 'payments', 'payment_allocations', 'adjustments', 'deposit_refunds',
+  'expense_categories', 'expenses', 'other_income',
+  'attendance_daily', 'attendance_subject', 'assessments', 'exam_terms', 'exam_subjects', 'mark_entries',
+  'exam_remarks', 'result_cards', 'certificates', 'certificate_cancellations', 'counters', 'audit_log',
   // Added by 0019/0022 and previously missing here, which made a "complete
   // backup" silently omit family links, teacher assignments and staff attendance.
-  'student_links', 'teacher_assignments', 'staff_attendance', 'staff_checkin_codes',
+  'student_links', 'teacher_assignments', 'subject_teachers', 'staff_attendance', 'staff_checkin_codes',
+  // 0148. Also missing until now, and the first two are the ones a restore
+  // could least do without: every family link, and the whole expense book.
+  // families, expenses, expense_categories, other_income, attendance_subject,
+  // exam_remarks, subject_teachers, deposit_refunds, billing_months,
+  // certificate_cancellations and the two enquiry tables were all school data
+  // this "complete backup" left out.
+  'admission_enquiries', 'enquiry_contacts',
 ] as const
+
+/** The column each table is paged in order of. Most have an id; the three
+ *  that do not are keyed by what makes their row unique. */
+const EXPORT_ORDER: Partial<Record<(typeof EXPORT_TABLES)[number], string>> = {
+  school_settings: 'school_id', counters: 'key',
+}
 
 export interface ExportResult {
   exported_at: string
@@ -3872,17 +3924,20 @@ export interface ExportResult {
   counts: Record<string, number>
 }
 
-async function fetchAllRows(table: string): Promise<any[]> {
+/**
+ * Every row of one table, in a fixed order.
+ *
+ * It paged with no ORDER BY and stopped at the first short page. With no order
+ * Postgres may hand back the rows of a busy table in a different order for each
+ * page, so a backup could hold one payment twice and another not at all. And a
+ * project whose row cap is set below 1,000 answers every page short, so the
+ * "complete backup" stopped after the first page of every table and said
+ * nothing. selectAll pages by a stable key and stops only at an empty page.
+ */
+async function fetchAllRows(table: (typeof EXPORT_TABLES)[number]): Promise<any[]> {
   const sb = requireSupabase()
-  const page = 1000
-  const out: any[] = []
-  for (let from = 0; ; from += page) {
-    const { data, error } = await sb.from(table).select('*').range(from, from + page - 1)
-    if (error) throw new Error(error.message)
-    out.push(...(data ?? []))
-    if (!data || data.length < page) break
-  }
-  return out
+  const key = EXPORT_ORDER[table] ?? 'id'
+  return selectAll((a, b) => sb.from(table).select('*').order(key).range(a, b))
 }
 
 /** Read every table the current user is allowed to (RLS applies) into one object.
@@ -5222,12 +5277,8 @@ export interface LedgerRow {
 export async function getLedger(
   from: string, to: string, kind: 'all' | 'income' | 'expense' = 'all',
 ): Promise<LedgerRow[]> {
-  const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_report_ledger', {
-    p_from: from, p_to: to, p_kind: kind,
-  })
-  if (error) throw new Error(error.message)
-  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+  const data = await rpcAll('fn_report_ledger', { p_from: from, p_to: to, p_kind: kind })
+  return data.map((r) => ({
     ...(r as unknown as LedgerRow),
     debit: Number(r.debit ?? 0),
     credit: Number(r.credit ?? 0),
@@ -5253,10 +5304,8 @@ export interface UnpaidInvoiceRow {
 
 /** Per CHALLAN, not per student, which is what the defaulter report cannot say. */
 export async function getUnpaidInvoices(sessionId: string): Promise<UnpaidInvoiceRow[]> {
-  const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_report_unpaid_invoices', { p_session_id: sessionId })
-  if (error) throw new Error(error.message)
-  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+  const data = await rpcAll('fn_report_unpaid_invoices', { p_session_id: sessionId })
+  return data.map((r) => ({
     ...(r as unknown as UnpaidInvoiceRow),
     days_overdue: Number(r.days_overdue ?? 0),
     charge: Number(r.charge ?? 0),
@@ -5285,10 +5334,8 @@ export interface DiscountReportRow {
 export async function getDiscountReport(
   from: string | null, to: string | null,
 ): Promise<DiscountReportRow[]> {
-  const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_report_discounts', { p_from: from, p_to: to })
-  if (error) throw new Error(error.message)
-  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+  const data = await rpcAll('fn_report_discounts', { p_from: from, p_to: to })
+  return data.map((r) => ({
     ...(r as unknown as DiscountReportRow),
     amount: Number(r.amount ?? 0),
   }))
@@ -5311,10 +5358,7 @@ export interface AdmissionReportRow {
 export async function getAdmissionReport(
   from: string | null, to: string | null,
 ): Promise<AdmissionReportRow[]> {
-  const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_report_admissions', { p_from: from, p_to: to })
-  if (error) throw new Error(error.message)
-  return (data ?? []) as AdmissionReportRow[]
+  return rpcAll<AdmissionReportRow>('fn_report_admissions', { p_from: from, p_to: to })
 }
 
 export interface BalanceSheet {
@@ -5548,10 +5592,8 @@ export interface MarkCorrection {
 export async function getMarkCorrections(
   from: string | null = null, to: string | null = null,
 ): Promise<MarkCorrection[]> {
-  const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_mark_corrections', { p_from: from, p_to: to })
-  if (error) throw new Error(error.message)
-  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+  const data = await rpcAll('fn_mark_corrections', { p_from: from, p_to: to })
+  return data.map((r) => ({
     ...(r as unknown as MarkCorrection),
     was: r.was == null ? null : Number(r.was),
     now_is: r.now_is == null ? null : Number(r.now_is),
@@ -5575,10 +5617,7 @@ export interface AttendanceCorrection {
 export async function getAttendanceCorrections(
   from: string | null = null, to: string | null = null,
 ): Promise<AttendanceCorrection[]> {
-  const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_attendance_corrections', { p_from: from, p_to: to })
-  if (error) throw new Error(error.message)
-  return (data ?? []) as AttendanceCorrection[]
+  return rpcAll<AttendanceCorrection>('fn_attendance_corrections', { p_from: from, p_to: to })
 }
 
 // ---- Admission enquiries (their "Admission Inquiries") --------------------
@@ -6507,4 +6546,156 @@ export async function listFinanceMonths(months = 12): Promise<FinanceMonth[]> {
     month: String(r.month), fee_income: n0(r.fee_income), other_income: n0(r.other_income),
     total_income: n0(r.total_income), expenses: n0(r.expenses), profit: n0(r.profit),
   }))
+}
+
+// ============================================================ 0148 ==========
+
+/** Every section of every class, for the school-wide class-teacher board.
+ *  One read instead of one per class. */
+export interface SectionAllRow { id: string; name: string; class_id: string; class_teacher_id: string | null; sort_order: number | null }
+export async function listAllSections(): Promise<SectionAllRow[]> {
+  const sb = requireSupabase()
+  return unwrap(await sb.from('sections').select('id, name, class_id, class_teacher_id, sort_order').order('sort_order'))
+}
+
+/** Everybody on the staff not yet marked for the day becomes Present, typed by
+ *  the office, in one statement. Anyone already marked or scanned is left alone.
+ *  Returns how many were marked. */
+export async function markRestOfStaffPresent(date: string): Promise<number> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_staff_mark_rest_present', { p_date: date })
+  if (error) throw new Error(error.message)
+  return Number(data ?? 0)
+}
+
+/** One fee receipt, as the Fee Collection report and the Day Book print it. */
+export interface FeeReceipt {
+  id: string
+  paid_at: string
+  /** The day in Karachi, not in UTC. */
+  paid_on: string
+  /** HH:MM in Karachi. */
+  time: string
+  receipt_no: number | null
+  amount: number
+  method: string
+  /** The family's head, or the child when it was paid for one child. */
+  payer: string
+  /** Every child the money went to, by name. A family payment has no single
+   *  student on the payment row, which is why the old report printed "-". */
+  children: string | null
+  child_count: number
+  gr_no: string | null
+  class_label: string | null
+  is_reversal: boolean
+  recorded_by: string
+  note: string | null
+}
+export interface FeeReceipts {
+  from: string; to: string
+  total: number; receipts: number; reversals: number; reversed: number
+  pending_count: number; pending_total: number
+  by_method: { method: string; receipts: number; amount: number }[]
+  by_day: { day: string; receipts: number; amount: number }[]
+  rows: FeeReceipt[]
+}
+
+/**
+ * Cleared fee receipts between two days, counted by the day in Karachi (0148).
+ *
+ * Replaces a plain select on payments that compared created_at with the date as
+ * UTC (so a receipt at 02:00 on the 1st fell in the month before), named no child
+ * on a family payment, and stopped at Supabase's 1,000-row cap. One jsonb value,
+ * so the cap cannot cut it short.
+ */
+export async function getFeeReceipts(from: string, to: string): Promise<FeeReceipts> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_fee_receipts', { p_from: from, p_to: to })
+  if (error) throw new Error(error.message)
+  const d = (data ?? {}) as Record<string, any>
+  const n = (v: unknown) => Number(v ?? 0)
+  return {
+    from: d.from ?? from, to: d.to ?? to,
+    total: n(d.total), receipts: n(d.receipts), reversals: n(d.reversals), reversed: n(d.reversed),
+    pending_count: n(d.pending_count), pending_total: n(d.pending_total),
+    by_method: ((d.by_method ?? []) as any[]).map((m) => ({ method: m.method, receipts: n(m.receipts), amount: n(m.amount) })),
+    by_day: ((d.by_day ?? []) as any[]).map((m) => ({ day: m.day, receipts: n(m.receipts), amount: n(m.amount) })),
+    rows: ((d.rows ?? []) as any[]).map((r) => ({
+      id: r.id, paid_at: r.paid_at, paid_on: r.paid_on, time: r.time ?? '',
+      receipt_no: r.receipt_no == null ? null : Number(r.receipt_no),
+      amount: n(r.amount), method: r.method, payer: r.payer ?? '-',
+      children: r.children ?? null, child_count: n(r.child_count),
+      gr_no: r.gr_no ?? null, class_label: r.class_label ?? null,
+      is_reversal: !!r.is_reversal, recorded_by: r.recorded_by ?? '-', note: r.note ?? null,
+    })),
+  }
+}
+
+/**
+ * Add a school year (0148). Refuses a name already used, missing or reversed
+ * dates, and dates that overlap another year: 0130 decides which year a date
+ * belongs to from these, and two years claiming the same week make that answer
+ * a coin toss. A database without 0148 falls back to the plain insert.
+ */
+export async function addSession(name: string, startsOn: string, endsOn: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_add_session', { p_name: name, p_starts: startsOn, p_ends: endsOn })
+  if (!error) return
+  if (/could not find the function|schema cache/i.test(error.message)) return createSession(name, startsOn, endsOn)
+  throw new Error(error.message)
+}
+
+/**
+ * Put right a year's first and last day (0148). The screen used to tell a
+ * school whose year had no dates to "add it again below", which made a second
+ * year of the same name with nothing in it. Refuses dates that would leave
+ * this year's attendance or challans outside it, or overlap another year.
+ */
+export async function setSessionDates(sessionId: string, startsOn: string, endsOn: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_set_session_dates', { p_session_id: sessionId, p_starts: startsOn, p_ends: endsOn })
+  if (error) throw new Error(error.message)
+}
+
+/** Rename a class. 0148 refuses a blank name or one another class already has. */
+export async function renameClass(id: string, name: string): Promise<void> {
+  const sb = requireSupabase()
+  await mustWrite(await sb.from('classes').update({ name: name.trim() }).eq('id', id).select('id'), 'The class name')
+}
+
+/** Put the classes in this order, lowest first, numbered 10, 20, 30. Written
+ *  whole rather than as a swap of two, so two classes left on the same number
+ *  by an earlier screen are separated at the same time. */
+export async function setClassOrder(ids: string[]): Promise<void> {
+  const sb = requireSupabase()
+  for (let i = 0; i < ids.length; i++) {
+    await mustWrite(await sb.from('classes').update({ level_order: (i + 1) * 10 }).eq('id', ids[i]).select('id'), 'The class order')
+  }
+}
+
+/** Rename a section. The database already refuses two of the same name in one class. */
+export async function renameSection(id: string, name: string): Promise<void> {
+  const sb = requireSupabase()
+  await mustWrite(await sb.from('sections').update({ name: name.trim() }).eq('id', id).select('id'), 'The section name')
+}
+
+/**
+ * A page of the audit log between two days in Karachi, newest first. The old
+ * reader took the last 300 entries and nothing else, so "who changed this mark
+ * in March?" had no answer once three hundred other things had happened since.
+ */
+export async function listAuditLogPage(
+  from: string | null, to: string | null, offset: number, limit = 200,
+): Promise<AuditRow[]> {
+  const sb = requireSupabase()
+  let q = sb.from('audit_log')
+    .select('id, actor, actor_role, action, entity, entity_id, reason, created_at')
+    .order('created_at', { ascending: false }).order('id', { ascending: false })
+  if (from) q = q.gte('created_at', `${from}T00:00:00+05:00`)
+  if (to) {
+    const [y, m, d] = to.split('-').map(Number)
+    const next = new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10)
+    q = q.lt('created_at', `${next}T00:00:00+05:00`)
+  }
+  return unwrap(await q.range(offset, offset + limit - 1))
 }

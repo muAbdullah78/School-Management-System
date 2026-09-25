@@ -32,6 +32,9 @@
 #   export PGHOST=/tmp/pgd PGPORT=5455 PGUSER=postgres
 set -uo pipefail
 cd "$(dirname "$0")/.."
+# The same clock CI gives the suites: a school's day, not the server's. See the
+# PGTZ note in .github/workflows/ci.yml.
+export PGTZ=Asia/Karachi
 
 QUICK=0
 [ "${1:-}" = "--quick" ] && QUICK=1

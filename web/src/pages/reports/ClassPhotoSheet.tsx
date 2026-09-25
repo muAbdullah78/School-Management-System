@@ -23,8 +23,11 @@ import { PhotoUpload } from '@/components/PhotoUpload'
 import { SchoolMark } from '@/components/Avatar'
 import { useSchoolName } from '@/hooks/useSchoolName'
 import { useAuth } from '@/auth/AuthProvider'
+import { Button, inputClass } from '@/components/ui'
+import { C, pctOf } from '@/components/viz'
+import { Empty, Failed, Loading } from './kit'
 
-const SELECT = 'rounded border border-slate-300 px-2 py-2 text-sm focus:border-brand-500 focus:outline-none'
+const SELECT = `${inputClass} w-auto`
 
 export function ClassPhotoSheet() {
   const qc = useQueryClient()
@@ -87,7 +90,7 @@ export function ClassPhotoSheet() {
     <div>
       <div className="flex flex-wrap items-end gap-2 print:hidden">
         <label className="block">
-          <span className="block text-xs text-slate-500">Class</span>
+          <span className="mb-1 block text-xs font-medium text-slate-500">Class</span>
           <select
             value={classId}
             onChange={(e) => { setClassId(e.target.value); setSectionId('') }}
@@ -98,7 +101,7 @@ export function ClassPhotoSheet() {
           </select>
         </label>
         <label className="block">
-          <span className="block text-xs text-slate-500">Section</span>
+          <span className="mb-1 block text-xs font-medium text-slate-500">Section</span>
           <select value={sectionId} onChange={(e) => setSectionId(e.target.value)}
             disabled={!classId} className={SELECT}>
             <option value="">All sections</option>
@@ -106,38 +109,34 @@ export function ClassPhotoSheet() {
           </select>
         </label>
         {rows.length > 0 && (
-          <label className="flex items-center gap-1.5 pb-2 text-xs text-slate-600">
+          <label className="flex items-center gap-1.5 pb-2 text-sm text-slate-600">
             <input type="checkbox" checked={onlyMissing}
-              onChange={(e) => setOnlyMissing(e.target.checked)} className="h-4 w-4" />
+              onChange={(e) => setOnlyMissing(e.target.checked)} className="h-4 w-4 accent-brand-600" />
             Only those without a photograph
           </label>
         )}
         {rows.length > 0 && (
-          <button onClick={() => window.print()}
-            className="ml-auto rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-            Print sheet
-          </button>
+          <Button variant="soft" tone="brand" className="ml-auto" onClick={() => window.print()}>Print the sheet</Button>
         )}
       </div>
 
       {!classId && (
-        <p className="mt-6 text-sm text-slate-500">
-          Choose a class to see its photo sheet.
-          {mayEdit && ' Tap any face to add or change a photograph. This is the quickest way to photograph a whole class.'}
-        </p>
+        <div className="mt-4">
+          <Empty title="Choose a class">
+            {mayEdit ? 'Tap any face to add or change a photograph. This is the quickest way to photograph a whole class.' : 'Every face in the class, with roll numbers, ready to print.'}
+          </Empty>
+        </div>
       )}
 
-      {pupils.isLoading && <p className="mt-6 text-sm text-slate-500">Loading…</p>}
-      {pupils.isError && <p className="mt-6 text-sm text-red-600">{(pupils.error as Error).message}</p>}
+      {pupils.isLoading && <Loading what="the class" />}
+      {pupils.isError && <div className="mt-4"><Failed error={pupils.error} /></div>}
 
-      {classId && !pupils.isLoading && rows.length === 0 && (
-        <p className="mt-6 text-sm text-slate-500">
-          Nobody is enrolled in this class in the current session.
-        </p>
+      {classId && !pupils.isLoading && !pupils.isError && rows.length === 0 && (
+        <div className="mt-4"><Empty title="Nobody is enrolled in this class in the current session" /></div>
       )}
 
       {rows.length > 0 && (
-        <div className="mt-4" id="report">
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-card print:border-0 print:p-0 print:shadow-none" id="report">
           {/* The letterhead, so a printed sheet is recognisably the school's. */}
           <div className="mb-3 flex items-center gap-3 border-b border-slate-200 pb-3">
             <SchoolMark name={schoolName} url={logo.data ?? null} />
@@ -152,10 +151,16 @@ export function ClassPhotoSheet() {
                   : ' · every pupil photographed'}
               </div>
             </div>
+            <div className="ml-auto w-40 print:hidden" aria-label={`${pctOf(rows.length - missing, rows.length)}% photographed`}>
+              <div className="flex justify-between text-[11px] text-slate-500"><span>Photographed</span><b className="tabular-nums text-slate-800">{pctOf(rows.length - missing, rows.length)}%</b></div>
+              <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100">
+                <div className="h-full rounded-full" style={{ width: `${pctOf(rows.length - missing, rows.length)}%`, background: C.series }} />
+              </div>
+            </div>
           </div>
 
           {onlyMissing && shown.length === 0 && (
-            <p className="text-sm text-money-700">
+            <p className="text-sm font-medium text-brand-700">
               Every pupil in this class has a photograph.
             </p>
           )}

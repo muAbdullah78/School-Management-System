@@ -3339,6 +3339,38 @@ select 'accounts in Karachi time, fee reads for the fee office, tests that lock 
        end
 
 union all
+-- 0148. The staff room, the reports and the settings.
+select 'logins that cannot repoint themselves, reports in Karachi time, years and classes that cannot be duplicated (0148)',
+       case
+         when to_regprocedure('public.fn_attendance_overview(uuid,date)') is null
+           then 'note: bundle 48 has not been applied yet, so 0148 is not due'
+         when not exists (select 1 from pg_trigger t
+                           where t.tgrelid = 'public.profiles'::regclass
+                             and t.tgname = 'trg_profiles_link_guard' and not t.tgisinternal)
+           then 'FAIL: any login can repoint its own profile at another staff record or family; '
+                || 'apply supabase/bundles/49_the_staff_room_the_reports_and_the_settings.sql'
+         when not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                           where n.nspname = 'public' and p.proname = 'guard_profile_role'
+                             and p.prosrc like '%Only an owner can make somebody an owner%')
+           then 'FAIL: a principal can make themselves the owner; apply '
+                || 'supabase/bundles/49_the_staff_room_the_reports_and_the_settings.sql'
+         when to_regprocedure('public.fn_fee_receipts(date,date)') is null
+           or to_regprocedure('public.fn_staff_mark_rest_present(date)') is null
+           or to_regprocedure('public.fn_add_session(text,date,date)') is null
+           or to_regprocedure('public.fn_set_session_dates(uuid,date,date)') is null
+           then 'FAIL: the Fee collection report, the staff register and the Sessions screen have '
+                || 'nothing to call; apply supabase/bundles/49_the_staff_room_the_reports_and_the_settings.sql'
+         when exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                       where n.nspname = 'public'
+                         and p.proname in ('fn_report_ledger', 'fn_report_balance_sheet', 'fn_report_unpaid_invoices',
+                                           'fn_mark_corrections', 'fn_attendance_corrections', 'fn_voided_invoices')
+                         and not ('TimeZone=Asia/Karachi' = any(coalesce(p.proconfig, '{}'::text[]))))
+           then 'FAIL: the reports still count days by the UTC clock, so they disagree with Accounts; '
+                || 'apply supabase/bundles/49_the_staff_room_the_reports_and_the_settings.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS: no schools yet, as expected'

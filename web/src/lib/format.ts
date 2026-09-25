@@ -66,6 +66,13 @@ export function monthToDate(ym: string): string {
 }
 
 /** Today as YYYY-MM-DD in local time (the value shape a <input type="date"> wants). */
+/** A calendar date moved by whole days, in plain calendar arithmetic (UTC, so
+ *  no daylight-saving or timezone offset can skip or repeat a day). */
+export function shiftDate(iso: string, days: number): string {
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10)
+}
+
 export function todayISO(): string {
   const d = new Date()
   const m = String(d.getMonth() + 1).padStart(2, '0')

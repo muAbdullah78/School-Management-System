@@ -42,63 +42,53 @@ export function SupportVisits() {
   }
 
   const rows = visits.data ?? []
+  const open = rows.filter((v) => v.ended_at === null).length
+  const minutes = rows.reduce((t, v) => t + (v.minutes ?? 0), 0)
 
   return (
     <div className="max-w-3xl space-y-4">
-      <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700">
-        <div className="font-medium text-slate-800">
-          Our support team can enter your account to help you
-        </div>
-        <p className="mt-1.5 text-slate-600">
-          When you call us about a problem, we can open your account and see exactly
-          what you are seeing. We <span className="font-medium">cannot change anything</span>{' '}
-          while we are in there: not a fee, not a mark, not a payment. The software
-          refuses it.
-        </p>
-        <p className="mt-1.5 text-slate-600">
-          Every visit is listed below, with the reason. If you ever see a visit here
-          that you did not expect, ask us about it.
+      <div className="rounded-2xl border border-brand-100 bg-brand-50 p-4 text-sm text-brand-900">
+        <div className="font-semibold">Our support team can enter your account to help you</div>
+        <p className="mt-1.5 text-brand-800">
+          When you call us about a problem, we can open your account and see exactly what you are seeing. We{' '}
+          <b>cannot change anything</b> while we are in there: not a fee, not a mark, not a payment. The software
+          refuses it. Every visit is listed below, with the reason. If you see one you did not expect, ask us about it.
         </p>
       </div>
 
       {visits.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
-      {visits.error && (
-        <p className="text-sm text-red-600">{(visits.error as Error).message}</p>
+      {visits.error && <p className="rounded-xl bg-danger-50 px-3 py-2 text-sm text-danger-700">{(visits.error as Error).message}</p>}
+
+      {!visits.isLoading && !visits.error && (
+        <div className="grid grid-cols-3 gap-3">
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3"><div className="text-2xl font-semibold tabular-nums text-slate-900">{rows.length}</div><div className="text-xs text-slate-500">visits</div></div>
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3"><div className="text-2xl font-semibold tabular-nums text-slate-900">{minutes}</div><div className="text-xs text-slate-500">minutes in all</div></div>
+          <div className={`rounded-2xl border px-4 py-3 ${open ? 'border-due-200 bg-due-50' : 'border-slate-200 bg-white'}`}><div className={`text-2xl font-semibold tabular-nums ${open ? 'text-due-800' : 'text-slate-900'}`}>{open}</div><div className="text-xs text-slate-500">happening now</div></div>
+        </div>
       )}
 
-      {!visits.isLoading && rows.length === 0 && (
-        <div className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
+      {!visits.isLoading && rows.length === 0 && !visits.error && (
+        <p className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm text-slate-500">
           Nobody from our team has ever opened your account.
-        </div>
+        </p>
       )}
 
       {rows.length > 0 && (
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-3 py-2 w-52">When</th>
-                <th className="px-3 py-2 w-24">How long</th>
-                <th className="px-3 py-2">Reason given</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {rows.map((v, i) => (
-                <tr key={i}>
-                  <td className="px-3 py-2 text-slate-600">{fmtDateTime(v.started_at)}</td>
-                  <td className="px-3 py-2 text-slate-600">
-                    {/* A visit still open reads as such rather than as zero
-                        minutes, which would look like nothing happened. */}
-                    {v.ended_at === null
-                      ? <span className="font-medium text-amber-700">in progress</span>
-                      : `${v.minutes} min`}
-                  </td>
-                  <td className="px-3 py-2 text-slate-800">{v.reason}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ul className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white shadow-card">
+          {rows.map((v, i) => (
+            <li key={i} className="flex flex-wrap items-start justify-between gap-2 px-4 py-3">
+              <div className="min-w-0">
+                <div className="text-sm text-slate-900">{v.reason}</div>
+                <div className="text-xs text-slate-500">{fmtDateTime(v.started_at)}</div>
+              </div>
+              {/* A visit still open reads as such rather than as zero minutes,
+                  which would look like nothing happened. */}
+              {v.ended_at === null
+                ? <span className="rounded-full bg-due-50 px-2 py-0.5 text-xs font-medium text-due-800 ring-1 ring-due-200">in progress</span>
+                : <span className="text-xs tabular-nums text-slate-600">{v.minutes} min</span>}
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   )

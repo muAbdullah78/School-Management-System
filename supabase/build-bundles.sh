@@ -911,6 +911,20 @@ emit supabase/bundles/47_the_dashboard_draws_what_it_knows.sql \
 emit supabase/bundles/48_the_screens_the_office_works_in.sql \
      supabase/migrations/0147*.sql
 
+# --- 49 ----------------------------------------------------------------------
+# The staff room, the reports and the settings.
+#
+# Any login could edit its own profile row, including the staff record and the
+# family it points at, so a teacher could take over a colleague's classes and a
+# parent could read another family's fees. A principal could make themselves
+# owner. Every report dated its rows by the UTC clock. A class with children in
+# it could be switched off, and a year with no dates could only be "added
+# again". This fixes those and adds the reads the redrawn Staff, Reports and
+# Settings screens draw from. Every changed function keeps its signature, every
+# rewrite checks whether it is already done, so re-pasting is a no-op.
+emit supabase/bundles/49_the_staff_room_the_reports_and_the_settings.sql \
+     supabase/migrations/0148*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

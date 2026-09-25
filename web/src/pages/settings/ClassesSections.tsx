@@ -3,92 +3,267 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   listClassesAll, createClass, setClassActive, listSections, createSection,
   listSubjects, createSubject, updateSubject, deleteSubject, copySubjectsToClasses,
+  renameClass, setClassOrder, renameSection, getCurrentSession, getClassStrength,
   type ClassFull, type SubjectRow,
 } from '@/lib/db'
-import { LoadError } from '@/components/ui'
+import { LoadError, Button } from '@/components/ui'
+import { AskDialog } from '@/components/AskDialog'
+import { ObserverNotice } from '@/components/ObserverNotice'
+import { useAuth } from '@/auth/AuthProvider'
+import { canWrite } from '@/auth/roles'
 
-const FIELD = 'rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
+const FIELD = 'rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100'
 
+/**
+ * The class ladder.
+ *
+ * WHAT WAS WRONG. A class could not be renamed, a section could not be renamed,
+ * and the order was a number typed once when the class was made and never
+ * editable again, so "Prep" added in the second week sat above Class 10 for
+ * ever. Two classes could both be called "Class 5". And "Deactivate" on a class
+ * with thirty children in it hid those children from every class picker in the
+ * app (their register, their challans, their results) with no question asked.
+ * The database now refuses that and says how many are in it; the screen shows
+ * the count before anybody presses anything.
+ */
 export function ClassesSections() {
   const qc = useQueryClient()
+  const { profile } = useAuth()
+  const mayWrite = canWrite(profile?.role)
   const classes = useQuery({ queryKey: ['classesAll'], queryFn: listClassesAll })
+  const session = useQuery({ queryKey: ['currentSession'], queryFn: getCurrentSession })
+  const strength = useQuery({ queryKey: ['rptStrength', session.data?.id], queryFn: () => getClassStrength(session.data!.id), enabled: !!session.data?.id })
   const [name, setName] = useState('')
-  const [order, setOrder] = useState('')
-
-  const add = useMutation({
-    mutationFn: () => createClass(name.trim(), Number(order) || (classes.data?.length ?? 0) * 10 + 10),
-    onSuccess: () => { setName(''); setOrder(''); qc.invalidateQueries({ queryKey: ['classesAll'] }); qc.invalidateQueries({ queryKey: ['classes'] }) },
-  })
+  const [showOff, setShowOff] = useState(false)
 
   const all = classes.data ?? []
+  const active = all.filter((c) => c.active)
+  const off = all.filter((c) => !c.active)
+  const pupils = (className: string, section?: string | null) => (strength.data ?? [])
+    .filter((r) => r.class_name === className && (section === undefined || (r.section_name ?? null) === section))
+    .reduce((t, r) => t + r.total, 0)
+  const taken = !!name.trim() && all.some((c) => c.name.trim().toLowerCase() === name.trim().toLowerCase())
+
+  const refresh = () => { qc.invalidateQueries({ queryKey: ['classesAll'] }); qc.invalidateQueries({ queryKey: ['classes'] }) }
+  const add = useMutation({
+    mutationFn: () => createClass(name.trim(), (Math.max(0, ...all.map((c) => c.level_order)) || 0) + 10),
+    onSuccess: () => { setName(''); refresh() },
+  })
+  const move = useMutation({
+    mutationFn: (ids: string[]) => setClassOrder(ids),
+    onSuccess: refresh,
+  })
+  function shift(id: string, by: -1 | 1) {
+    const ids = active.map((c) => c.id)
+    const i = ids.indexOf(id)
+    const j = i + by
+    if (i < 0 || j < 0 || j >= ids.length) return
+    ;[ids[i], ids[j]] = [ids[j], ids[i]]
+    move.mutate([...ids, ...off.map((c) => c.id)])
+  }
+
+  const onRoll = (strength.data ?? []).reduce((t, r) => t + r.total, 0)
 
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="max-w-4xl space-y-4">
       <LoadError of={[classes]} what="Your classes" />
+      {!mayWrite && <ObserverNotice what="the classes" />}
+
+      {active.length > 0 && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <Stat n={active.length} label={active.length === 1 ? 'class' : 'classes'} />
+          <Stat n={onRoll} label={`children in ${session.data?.name ?? 'this year'}`} />
+          <Stat n={off.length} label="switched off" />
+        </div>
+      )}
+      {move.isError && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{(move.error as Error).message}</p>}
+
       <div className="space-y-3">
-        {all.length === 0 && <p className="text-sm text-slate-500">No classes yet. Add the first one below.</p>}
-        {all.map((c) => <ClassCard key={c.id} cls={c} allClasses={all} />)}
+        {all.length === 0 && !classes.isLoading && (
+          <p className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm text-slate-500">No classes yet. Add the first one below.</p>
+        )}
+        {active.map((c, i) => (
+          <ClassCard key={c.id} cls={c} allClasses={all} mayWrite={mayWrite} pupils={pupils}
+            first={i === 0} last={i === active.length - 1} moving={move.isPending}
+            onUp={() => shift(c.id, -1)} onDown={() => shift(c.id, 1)} />
+        ))}
       </div>
 
-      <form className="flex flex-wrap items-end gap-2" onSubmit={(e) => { e.preventDefault(); if (name.trim()) add.mutate() }}>
-        <label className="block">
-          <span className="text-sm text-slate-600">New class</span>
-          <input value={name} onChange={(e) => setName(e.target.value)} className={`mt-1 w-56 ${FIELD}`} placeholder="e.g. Class 1 / Nursery" />
-        </label>
-        <label className="block">
-          <span className="text-sm text-slate-600">Order</span>
-          <input type="number" value={order} onChange={(e) => setOrder(e.target.value)} className={`mt-1 w-24 ${FIELD}`} placeholder="auto" />
-        </label>
-        <button type="submit" disabled={!name.trim() || add.isPending}
-          className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
-          {add.isPending ? 'Adding…' : 'Add class'}
-        </button>
-        {add.isError && <span className="self-center text-sm text-red-600">{(add.error as Error).message}</span>}
-      </form>
-      <p className="text-xs text-slate-500">Order sets the class ladder (lower first). Deactivating a class hides it from new admissions without deleting history.</p>
+      {mayWrite && (
+        <form className="flex flex-wrap items-end gap-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-card" onSubmit={(e) => { e.preventDefault(); if (name.trim() && !taken) add.mutate() }}>
+          <label className="block min-w-0 flex-1">
+            <span className="mb-1 block text-xs font-medium text-slate-600">Add a class</span>
+            <input value={name} onChange={(e) => setName(e.target.value)} className={`w-full ${FIELD}`} placeholder="e.g. Nursery, Class 1, Class 9" />
+            {taken && <span className="mt-1 block text-xs text-danger-700">There is already a class called that.</span>}
+          </label>
+          <Button type="submit" disabled={!name.trim() || taken || add.isPending}>{add.isPending ? 'Adding…' : 'Add class'}</Button>
+          {add.isError && <span className="w-full text-sm text-danger-700">{(add.error as Error).message}</span>}
+          <p className="w-full text-xs text-slate-500">It goes at the bottom of the ladder. Move it up with the arrows.</p>
+        </form>
+      )}
+
+      {off.length > 0 && (
+        <div>
+          <button type="button" onClick={() => setShowOff(!showOff)} className="text-sm font-medium text-brand-700 hover:underline">
+            {showOff ? 'Hide' : 'Show'} the {off.length} switched-off class{off.length === 1 ? '' : 'es'}
+          </button>
+          {showOff && (
+            <div className="mt-2 space-y-3">
+              {off.map((c) => (
+                <ClassCard key={c.id} cls={c} allClasses={all} mayWrite={mayWrite} pupils={pupils} first last moving={false} onUp={() => {}} onDown={() => {}} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      <p className="text-xs text-slate-500">
+        The order is the class ladder: Year rollover promotes each class to the one below it, and every
+        list in the app follows it. Switching a class off hides it from new admissions and keeps its history.
+      </p>
     </div>
   )
 }
 
-function ClassCard({ cls, allClasses }: { cls: ClassFull; allClasses: ClassFull[] }) {
+function Stat({ n, label }: { n: number; label: string }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-card">
+      <div className="text-2xl font-semibold tabular-nums text-slate-900">{n}</div>
+      <div className="text-xs text-slate-500">{label}</div>
+    </div>
+  )
+}
+
+function ClassCard({ cls, allClasses, mayWrite, pupils, first, last, moving, onUp, onDown }: {
+  cls: ClassFull; allClasses: ClassFull[]; mayWrite: boolean
+  pupils: (className: string, section?: string | null) => number
+  first: boolean; last: boolean; moving: boolean; onUp: () => void; onDown: () => void
+}) {
   const qc = useQueryClient()
   const sections = useQuery({ queryKey: ['sections', cls.id], queryFn: () => listSections(cls.id) })
   const [sec, setSec] = useState('')
+  const [renaming, setRenaming] = useState(false)
+  const [newName, setNewName] = useState(cls.name)
+  const [askOff, setAskOff] = useState(false)
+  const n = pupils(cls.name)
 
+  const refresh = () => { qc.invalidateQueries({ queryKey: ['classesAll'] }); qc.invalidateQueries({ queryKey: ['classes'] }) }
   const addSec = useMutation({
     mutationFn: () => createSection(cls.id, sec.trim(), sections.data?.length ?? 0),
-    onSuccess: () => { setSec(''); qc.invalidateQueries({ queryKey: ['sections', cls.id] }) },
+    onSuccess: () => { setSec(''); qc.invalidateQueries({ queryKey: ['sections', cls.id] }); qc.invalidateQueries({ queryKey: ['allSections'] }) },
   })
   const toggle = useMutation({
     mutationFn: () => setClassActive(cls.id, !cls.active),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['classesAll'] }),
+    onSuccess: () => { setAskOff(false); refresh() },
   })
+  const rename = useMutation({
+    mutationFn: () => renameClass(cls.id, newName),
+    onSuccess: () => { setRenaming(false); refresh() },
+  })
+  const nameTaken = newName.trim().toLowerCase() !== cls.name.trim().toLowerCase()
+    && allClasses.some((c) => c.name.trim().toLowerCase() === newName.trim().toLowerCase())
 
   return (
-    <div className={`rounded-lg border border-slate-200 bg-white p-3 ${cls.active ? '' : 'opacity-60'}`}>
-      <div className="flex items-center justify-between">
-        <div className="font-medium text-slate-800">{cls.name} <span className="text-xs text-slate-400">· order {cls.level_order}</span>{!cls.active && <span className="ml-2 text-xs text-slate-500">(inactive)</span>}</div>
-        <button onClick={() => toggle.mutate()} disabled={toggle.isPending}
-          className="rounded border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60">
-          {cls.active ? 'Deactivate' : 'Activate'}
-        </button>
+    <div className={`rounded-2xl border border-slate-200 bg-white p-4 shadow-card ${cls.active ? '' : 'bg-slate-50'}`}>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        {renaming ? (
+          <form className="flex min-w-0 flex-1 flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); if (newName.trim() && !nameTaken) rename.mutate() }}>
+            <input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)} className={`min-w-0 flex-1 ${FIELD}`} aria-label="Class name" />
+            <Button type="submit" size="sm" disabled={!newName.trim() || nameTaken || rename.isPending}>Save</Button>
+            <Button type="button" size="sm" variant="soft" tone="neutral" onClick={() => { setRenaming(false); setNewName(cls.name); rename.reset() }}>Cancel</Button>
+            {nameTaken && <span className="w-full text-xs text-danger-700">Another class is already called that.</span>}
+            {rename.isError && <span className="w-full text-xs text-danger-700">{(rename.error as Error).message}</span>}
+          </form>
+        ) : (
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`text-base font-semibold ${cls.active ? 'text-slate-900' : 'text-slate-500'}`}>{cls.name}</span>
+              {!cls.active && <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-600">switched off</span>}
+            </div>
+            <div className="text-xs text-slate-500">{n} {n === 1 ? 'child' : 'children'} this year</div>
+          </div>
+        )}
+        {mayWrite && !renaming && (
+          <div className="flex flex-wrap items-center gap-1">
+            {cls.active && (
+              <>
+                <button type="button" onClick={onUp} disabled={first || moving} aria-label={`Move ${cls.name} up`}
+                  className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 ring-1 ring-slate-200 hover:bg-slate-50 disabled:opacity-30">↑</button>
+                <button type="button" onClick={onDown} disabled={last || moving} aria-label={`Move ${cls.name} down`}
+                  className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 ring-1 ring-slate-200 hover:bg-slate-50 disabled:opacity-30">↓</button>
+              </>
+            )}
+            <Button size="sm" variant="ghost" onClick={() => setRenaming(true)}>Rename</Button>
+            <Button size="sm" variant="ghost" onClick={() => { toggle.reset(); if (cls.active) setAskOff(true); else toggle.mutate() }}>
+              {cls.active ? 'Switch off' : 'Switch on'}
+            </Button>
+          </div>
+        )}
       </div>
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <span className="text-xs uppercase tracking-wide text-slate-400">Sections:</span>
-        {sections.data?.length === 0 && <span className="text-sm text-slate-400">none</span>}
+      {toggle.isError && !askOff && <p className="mt-2 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{(toggle.error as Error).message}</p>}
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <span className="text-xs font-medium text-slate-500">Sections</span>
+        {sections.data?.length === 0 && <span className="text-sm text-slate-400">none: the class is one register</span>}
         {sections.data?.map((s) => (
-          <span key={s.id} className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-700">{s.name}</span>
+          <SectionChip key={s.id} id={s.id} name={s.name} count={pupils(cls.name, s.name)} mayWrite={mayWrite}
+            onChanged={() => { qc.invalidateQueries({ queryKey: ['sections', cls.id] }); qc.invalidateQueries({ queryKey: ['allSections'] }) }} />
         ))}
-        <form className="ml-auto flex items-center gap-1" onSubmit={(e) => { e.preventDefault(); if (sec.trim()) addSec.mutate() }}>
-          <input value={sec} onChange={(e) => setSec(e.target.value)} placeholder="+ section (A, B…)" className={`w-32 ${FIELD} py-1`} />
-          <button type="submit" disabled={!sec.trim() || addSec.isPending}
-            className="rounded border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60">Add</button>
-        </form>
+        {mayWrite && (
+          <form className="ml-auto flex items-center gap-1" onSubmit={(e) => { e.preventDefault(); if (sec.trim()) addSec.mutate() }}>
+            <input value={sec} onChange={(e) => setSec(e.target.value)} placeholder="New section (A, B…)" aria-label={`New section for ${cls.name}`} className={`w-36 ${FIELD} py-1`} />
+            <Button type="submit" size="sm" variant="soft" tone="brand" disabled={!sec.trim() || addSec.isPending}>Add</Button>
+          </form>
+        )}
       </div>
-      {addSec.isError && <p className="mt-1 text-xs text-red-600">{(addSec.error as Error).message}</p>}
+      {addSec.isError && <p className="mt-1 text-xs text-danger-700">{(addSec.error as Error).message}</p>}
 
       <SubjectsBlock cls={cls} allClasses={allClasses} />
+
+      {askOff && n > 0 && (
+        <div className="mt-3 rounded-xl border border-due-200 bg-due-50 p-3 text-sm text-due-900" role="alert">
+          <b>{n} {n === 1 ? 'child is' : 'children are'} in {cls.name} this year</b>, so it cannot be switched off: a
+          switched-off class disappears from every class list, and their register, challans and results could not be
+          reached. Move them to another class first, or switch it off after Year rollover has moved them on.
+          <div className="mt-2"><Button size="sm" variant="soft" tone="neutral" onClick={() => setAskOff(false)}>Close</Button></div>
+        </div>
+      )}
+      {askOff && n === 0 && (
+        <AskDialog
+          title={`Switch off ${cls.name}?`}
+          intro={<>Nobody is in {cls.name} this year. It stops appearing for new admissions and keeps everything from earlier years.</>}
+          confirmLabel="Switch it off"
+          tone="danger"
+          busy={toggle.isPending}
+          error={toggle.error ? (toggle.error as Error).message : null}
+          onCancel={() => setAskOff(false)}
+          onSubmit={() => toggle.mutate()}
+        />
+      )}
     </div>
+  )
+}
+
+function SectionChip({ id, name, count, mayWrite, onChanged }: {
+  id: string; name: string; count: number; mayWrite: boolean; onChanged: () => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [v, setV] = useState(name)
+  const save = useMutation({ mutationFn: () => renameSection(id, v), onSuccess: () => { setEditing(false); onChanged() } })
+  if (editing) {
+    return (
+      <form className="inline-flex flex-wrap items-center gap-1" onSubmit={(e) => { e.preventDefault(); if (v.trim()) save.mutate() }}>
+        <input autoFocus value={v} onChange={(e) => setV(e.target.value)} aria-label="Section name" className={`w-20 ${FIELD} py-0.5 text-xs`} />
+        <button type="submit" disabled={save.isPending} className="text-xs font-medium text-brand-700 hover:underline">Save</button>
+        <button type="button" onClick={() => { setEditing(false); setV(name); save.reset() }} className="text-xs text-slate-400 hover:underline">Cancel</button>
+        {save.isError && <span className="text-xs text-danger-700">{(save.error as Error).message}</span>}
+      </form>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-medium text-brand-800 ring-1 ring-brand-100">
+      {name}<span className="font-normal text-brand-600">· {count}</span>
+      {mayWrite && <button type="button" onClick={() => setEditing(true)} className="ml-0.5 text-brand-400 hover:text-brand-700" aria-label={`Rename section ${name}`}>✎</button>}
+    </span>
   )
 }
 
@@ -120,9 +295,9 @@ function SubjectsBlock({ cls, allClasses }: { cls: ClassFull; allClasses: ClassF
   const list = subjects.data ?? []
 
   return (
-    <div className="mt-3 border-t border-slate-100 pt-2">
+    <div className="mt-3 border-t border-slate-100 pt-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs uppercase tracking-wide text-slate-400">Subjects:</span>
+        <span className="text-xs font-medium text-slate-500">Subjects</span>
         {subjects.isLoading && <span className="text-sm text-slate-400">…</span>}
         {!subjects.isLoading && list.length === 0 && <span className="text-sm text-slate-400">none</span>}
         {list.map((s) => (
@@ -153,7 +328,7 @@ function SubjectsBlock({ cls, allClasses }: { cls: ClassFull; allClasses: ClassF
         </div>
       )}
 
-      {err && <p className="mt-1 text-xs text-red-600">{err}</p>}
+      {err && <p className="mt-1 text-xs text-danger-700">{err}</p>}
     </div>
   )
 }
@@ -197,13 +372,13 @@ function SubjectChip({ subject, onChanged, onError }: {
   }
 
   return (
-    <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-700">
+    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs text-slate-700">
       {subject.name}
       {subject.is_practical && <span className="text-[10px] text-slate-400">(prac)</span>}
       {confirming ? (
         <>
           <button onClick={() => remove.mutate()} disabled={remove.isPending}
-            className="text-red-600 hover:underline">remove?</button>
+            className="text-danger-700 hover:underline">remove?</button>
           <button onClick={() => setConfirming(false)} className="text-slate-400 hover:underline">no</button>
         </>
       ) : (
@@ -211,7 +386,7 @@ function SubjectChip({ subject, onChanged, onError }: {
           <button onClick={() => { onError(null); setEditing(true) }}
             className="text-slate-400 hover:text-brand-700" title="Rename">✎</button>
           <button onClick={() => { onError(null); setConfirming(true) }}
-            className="text-slate-400 hover:text-red-600" title="Delete">✕</button>
+            className="text-slate-400 hover:text-danger-700" title="Delete">✕</button>
         </>
       )}
     </span>
