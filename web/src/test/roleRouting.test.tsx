@@ -145,8 +145,11 @@ describe('the register', () => {
   it('lets a subject teacher reach the subject register from the same screen', async () => {
     const u = await open(ATTENDANCE[0], ATTENDANCE[1], 'subject_teacher')
     fireEvent.click(u.getByRole('button', { name: /subject attendance/i }))
+    // The same allowance open() gives: the tab switch goes through the router,
+    // and on a loaded machine (preflight runs every file at once) one second
+    // was not always enough.
     await waitFor(() =>
-      expect(u.queryByText(/it is not the daily register/i)).not.toBeNull())
+      expect(u.queryByText(/it is not the daily register/i)).not.toBeNull(), { timeout: 4000 })
   })
 })
 
