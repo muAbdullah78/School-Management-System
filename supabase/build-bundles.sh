@@ -954,6 +954,19 @@ emit supabase/bundles/50_the_gate_the_phone_and_the_bill.sql \
 emit supabase/bundles/51_a_parent_sees_the_weekly_test.sql \
      supabase/migrations/0150*.sql
 
+# --- 52 ----------------------------------------------------------------------
+# The teacher's own day.
+#
+# A teacher who only teaches a subject had an empty portal: every teacher
+# screen read the class teacher's table. This lists both, gives the home
+# screen one read for the day (the register, birthdays, this week's tests and
+# the tests to mark), lets a teacher remove an empty test set by mistake, and
+# freezes a locked test and a total that marks were saved out of. New
+# functions and a trigger that checks whether it exists, so re-pasting is a
+# no-op.
+emit supabase/bundles/52_the_teachers_own_day.sql \
+     supabase/migrations/0151*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

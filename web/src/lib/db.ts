@@ -2208,6 +2208,37 @@ export async function enterAssessmentMarks(
   return data as MarkResult
 }
 
+/** Remove a test set by mistake (0151): only while unlocked and empty. */
+export async function deleteMyTest(assessmentId: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_delete_my_test', { p_assessment_id: assessmentId })
+  if (error) {
+    if (isMissingFunction(error)) {
+      throw new Error('Removing a test needs the latest database update (bundle 52). Ask the office to apply it.')
+    }
+    throw new Error(error.message)
+  }
+}
+
+/** Correct a test's title, date or total. The database refuses a locked test,
+ *  and a total once any mark has been saved out of it (0151). */
+export async function updateAssessment(assessmentId: string, patch: {
+  title?: string; assessmentDate?: string; maxMarks?: number
+}): Promise<void> {
+  const sb = requireSupabase()
+  const row: Record<string, unknown> = {}
+  if (patch.title !== undefined) row.title = patch.title
+  if (patch.assessmentDate !== undefined) row.assessment_date = patch.assessmentDate
+  if (patch.maxMarks !== undefined) row.max_marks = patch.maxMarks
+  const { data, error } = await sb.from('assessments').update(row).eq('id', assessmentId).select('id')
+  if (error) throw new Error(error.message)
+  // A row the policy does not let this login change comes back as zero rows,
+  // not as an error. Saying nothing would look like success.
+  if (!data || (Array.isArray(data) && data.length === 0)) {
+    throw new Error('This test could not be changed. It may belong to a class or subject you do not teach.')
+  }
+}
+
 export async function lockAssessment(assessmentId: string): Promise<void> {
   const sb = requireSupabase()
   const { error } = await sb.rpc('fn_lock_assessment', { p_assessment_id: assessmentId })
@@ -2760,6 +2791,88 @@ export async function getMyAssignments(): Promise<MyAssignment[]> {
     class_id: r.class_id, class_name: r.class_name, level_order: Number(r.level_order ?? 0),
     section_id: r.section_id ?? null, section_name: r.section_name ?? null,
   }))
+}
+
+/**
+ * Everything the signed-in teacher teaches this year (0151): the classes they
+ * are class teacher of (subject null) and the ones they teach a subject in.
+ *
+ * fn_my_assignments above is only the first half, and every teacher screen
+ * used it, so a teacher who only teaches Maths to Class 4 had an empty portal.
+ * The daily register still uses fn_my_assignments, because it is the class
+ * teacher's (0134). On a database older than bundle 52 this falls back to the
+ * class-teacher rows, which is exactly what the screens showed before.
+ */
+export interface MyTeachingRow {
+  class_id: string; class_name: string; level_order: number
+  section_id: string | null; section_name: string | null
+  is_class_teacher: boolean
+  subject_id: string | null; subject_name: string | null
+}
+export async function getMyTeaching(): Promise<MyTeachingRow[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_my_teaching')
+  if (error) {
+    if (!isMissingFunction(error)) throw new Error(error.message)
+    return (await getMyAssignments()).map((a) => ({ ...a, is_class_teacher: true, subject_id: null, subject_name: null }))
+  }
+  return ((data ?? []) as Record<string, any>[]).map((r) => ({
+    class_id: r.class_id, class_name: r.class_name, level_order: Number(r.level_order ?? 0),
+    section_id: r.section_id ?? null, section_name: r.section_name ?? null,
+    is_class_teacher: !!r.is_class_teacher,
+    subject_id: r.subject_id ?? null, subject_name: r.subject_name ?? null,
+  }))
+}
+
+/** One of the teacher's classes on the home screen (fn_my_day, 0151). */
+export interface MyDayClass {
+  class_id: string; class_name: string
+  section_id: string | null; section_name: string | null
+  is_class_teacher: boolean
+  subjects: string[]
+  pupils: number
+  /** Today's register. Null on a subject teacher's card: the register is the
+   *  class teacher's, and they are not asked about one they cannot mark. */
+  register: { marked: number; present: number; late: number; half_day: number; absent: number; leave: number; locked: boolean } | null
+}
+export interface MyDay {
+  today: string
+  session_id: string | null
+  classes: MyDayClass[]
+  birthdays: { full_name: string; class_name: string; section_name: string | null; turning: number }[]
+  upcoming: { id: string; title: string; date: string; max_marks: number; class_id: string; class_name: string; section_name: string | null; subject_name: string | null }[]
+  to_mark: number
+}
+/** Null when the school's database is older than bundle 52. */
+export async function getMyDay(): Promise<MyDay | null> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_my_day')
+  if (error) {
+    if (isMissingFunction(error)) return null
+    throw new Error(error.message)
+  }
+  const d = data as any
+  // No answer at all is treated as "not installed": the screen falls back to
+  // the class teacher's list, which is what it showed before. An answer in the
+  // wrong shape is a database behind the app, and says so.
+  if (d == null) return null
+  if (!Array.isArray(d.classes)) throw outOfDate('fn_my_day')
+  return {
+    today: String(d.today ?? ''), session_id: d.session_id ?? null,
+    classes: d.classes.map((c: any) => ({
+      class_id: c.class_id, class_name: c.class_name, section_id: c.section_id ?? null, section_name: c.section_name ?? null,
+      is_class_teacher: !!c.is_class_teacher, subjects: Array.isArray(c.subjects) ? c.subjects : [],
+      pupils: Number(c.pupils ?? 0),
+      register: c.register ? {
+        marked: Number(c.register.marked ?? 0), present: Number(c.register.present ?? 0), late: Number(c.register.late ?? 0),
+        half_day: Number(c.register.half_day ?? 0), absent: Number(c.register.absent ?? 0), leave: Number(c.register.leave ?? 0),
+        locked: !!c.register.locked,
+      } : null,
+    })),
+    birthdays: Array.isArray(d.birthdays) ? d.birthdays.map((b: any) => ({ ...b, turning: Number(b.turning ?? 0) })) : [],
+    upcoming: Array.isArray(d.upcoming) ? d.upcoming.map((u: any) => ({ ...u, max_marks: Number(u.max_marks ?? 0) })) : [],
+    to_mark: Number(d.to_mark ?? 0),
+  }
 }
 
 export interface TeacherAssignmentRow {

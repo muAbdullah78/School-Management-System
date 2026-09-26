@@ -17,8 +17,8 @@ import { PCard, PTitle, Problem, dayLabel } from './portalKit'
  *  record is not colour alone, for a colour-blind parent and for a printout. */
 export const DAY: Record<string, { cell: string; chip: string; letter: string; label: string }> = {
   present: { cell: 'bg-money-500 text-white', chip: 'bg-money-50 text-money-800 ring-money-200', letter: 'P', label: 'Present' },
-  late: { cell: 'bg-due-400 text-slate-900', chip: 'bg-due-50 text-due-800 ring-due-200', letter: 'L', label: 'Late' },
-  half_day: { cell: 'bg-due-200 text-due-900', chip: 'bg-due-50 text-due-800 ring-due-200', letter: 'H', label: 'Half day' },
+  late: { cell: 'bg-due-400 text-slate-900', chip: 'bg-due-50 text-due-800 ring-due-200', letter: 'Lt', label: 'Late' },
+  half_day: { cell: 'bg-due-200 text-due-900', chip: 'bg-due-50 text-due-800 ring-due-200', letter: '½', label: 'Half day' },
   absent: { cell: 'bg-danger-500 text-white', chip: 'bg-danger-50 text-danger-700 ring-danger-200', letter: 'A', label: 'Absent' },
   leave: { cell: 'bg-sky-400 text-white', chip: 'bg-sky-50 text-sky-800 ring-sky-200', letter: 'Lv', label: 'Leave' },
 }

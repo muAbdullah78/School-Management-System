@@ -1334,7 +1334,17 @@ with sig(migration, object, present) as (values
      (select to_regprocedure('public.fn_portal_child_tests(uuid)') is not null
          and exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
                       where n.nspname = 'public' and p.proname = 'fn_portal_me'
-                        and p.prosrc like '%class_teacher%')))
+                        and p.prosrc like '%class_teacher%'))),
+  -- 0151's signature is the teacher's reads and the frozen-test trigger.
+  -- Without them the teacher screens fall back to the class teacher's list.
+  ('0151_the_teachers_own_day',
+     'fn_my_teaching, fn_my_day, fn_delete_my_test, trg_assessment_edits',
+     (select to_regprocedure('public.fn_my_teaching()') is not null
+         and to_regprocedure('public.fn_my_day()') is not null
+         and to_regprocedure('public.fn_delete_my_test(uuid)') is not null
+         and exists (select 1 from pg_trigger t
+                      where t.tgrelid = 'public.assessments'::regclass
+                        and t.tgname = 'trg_assessment_edits' and not t.tgisinternal)))
 )
 select migration,
        object                                   as looked_for,

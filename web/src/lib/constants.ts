@@ -43,11 +43,17 @@ export interface AttendanceStatusMeta {
   off: string
 }
 export const ATTENDANCE_STATUSES: AttendanceStatusMeta[] = [
-  { value: 'present',  label: 'Present',   short: 'P',  key: 'p', on: 'bg-emerald-600 text-white ring-emerald-600', off: 'text-emerald-700 ring-emerald-200 hover:bg-emerald-50' },
-  { value: 'absent',   label: 'Absent',    short: 'A',  key: 'a', on: 'bg-red-600 text-white ring-red-600',         off: 'text-red-700 ring-red-200 hover:bg-red-50' },
-  { value: 'leave',    label: 'Leave',     short: 'L',  key: 'l', on: 'bg-sky-600 text-white ring-sky-600',         off: 'text-sky-700 ring-sky-200 hover:bg-sky-50' },
-  { value: 'late',     label: 'Late',      short: 'Lt', key: 't', on: 'bg-amber-500 text-white ring-amber-500',     off: 'text-amber-700 ring-amber-200 hover:bg-amber-50' },
-  { value: 'half_day', label: 'Half day',  short: '½',  key: 'h', on: 'bg-violet-600 text-white ring-violet-600',   off: 'text-violet-700 ring-violet-200 hover:bg-violet-50' },
+  // ONE SET OF LETTERS, used by the register, the teacher's calendar and the
+  // parent portal alike. Leave was "L" here while the calendars used "L" for
+  // Late, so a teacher and a parent could read the same letter two ways. The
+  // keyboard keys are unchanged (t is late, l is leave), because teachers who
+  // mark by keyboard already know them. Brand colours, not raw Tailwind ones:
+  // green is present, amber is late or half day, red absent, sky leave.
+  { value: 'present',  label: 'Present',   short: 'P',  key: 'p', on: 'bg-money-600 text-white ring-money-600',  off: 'text-money-700 ring-money-200 hover:bg-money-50' },
+  { value: 'absent',   label: 'Absent',    short: 'A',  key: 'a', on: 'bg-danger-600 text-white ring-danger-600', off: 'text-danger-700 ring-danger-200 hover:bg-danger-50' },
+  { value: 'leave',    label: 'Leave',     short: 'Lv', key: 'l', on: 'bg-sky-600 text-white ring-sky-600',       off: 'text-sky-700 ring-sky-200 hover:bg-sky-50' },
+  { value: 'late',     label: 'Late',      short: 'Lt', key: 't', on: 'bg-due-500 text-white ring-due-500',       off: 'text-due-800 ring-due-200 hover:bg-due-50' },
+  { value: 'half_day', label: 'Half day',  short: '½',  key: 'h', on: 'bg-due-300 text-due-900 ring-due-300',     off: 'text-due-800 ring-due-200 hover:bg-due-50' },
 ]
 export const ATTENDANCE_LABELS: Record<string, string> = Object.fromEntries(
   ATTENDANCE_STATUSES.map((s) => [s.value, s.label]),

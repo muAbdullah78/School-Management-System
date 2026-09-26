@@ -1144,7 +1144,7 @@ describe('a finalised register has a way back', () => {
   it('and reopening it asks why, then calls the database', async () => {
     const seen = { tables: new Set<string>(), rpcs: new Set<string>() }
     current.opts = { ...LOCKED_DAY, seen }
-    const { getByRole, getByLabelText, queryByText } = await openLockedDay(OWNER)
+    const { getByRole, getAllByRole, getByLabelText, queryByText } = await openLockedDay(OWNER)
     fireEvent.click(getByRole('button', { name: /reopen this day/i }))
 
     // The reason is not optional, and the dialog says so before the database
@@ -1171,7 +1171,9 @@ describe('a finalised register has a way back', () => {
     await waitFor(() => expect(queryByText(/Reopened, and it is on the school/i)).not.toBeNull())
     // And the day is editable again, with a way to close it. By role, because
     // the notice itself names that button and a text match finds both.
-    expect(getByRole('button', { name: /finalize & lock/i })).not.toBeNull()
+    // getAll: the button is drawn twice, in the desktop bar and in the phone
+    // row under the register (one of them hidden by CSS jsdom does not apply).
+    expect(getAllByRole('button', { name: /finalize & lock/i }).length).toBeGreaterThan(0)
   })
 
   it('a class teacher is told who to ask instead', async () => {

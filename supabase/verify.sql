@@ -3421,6 +3421,27 @@ select 'a parent sees every locked class test and the tests coming up, each chil
        end
 
 union all
+-- 0151. The teacher's own day.
+select 'subject teachers see their classes, the teacher''s day in one read, a locked test cannot change (0151)',
+       case
+         when to_regprocedure('public.fn_portal_child_tests(uuid)') is null
+           then 'note: bundle 51 has not been applied yet, so 0151 is not due'
+         when to_regprocedure('public.fn_my_teaching()') is null
+           or to_regprocedure('public.fn_my_day()') is null
+           then 'FAIL: a subject teacher still sees an empty portal; apply '
+                || 'supabase/bundles/52_the_teachers_own_day.sql'
+         when to_regprocedure('public.fn_delete_my_test(uuid)') is null
+           then 'FAIL: a test set by mistake cannot be removed by its teacher; apply '
+                || 'supabase/bundles/52_the_teachers_own_day.sql'
+         when not exists (select 1 from pg_trigger t
+                           where t.tgrelid = 'public.assessments'::regclass
+                             and t.tgname = 'trg_assessment_edits' and not t.tgisinternal)
+           then 'FAIL: a locked test can still be edited, and a total changed under saved marks; apply '
+                || 'supabase/bundles/52_the_teachers_own_day.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS: no schools yet, as expected'

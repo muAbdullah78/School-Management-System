@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import {
-  listClasses, listSections, listSubjects, getMyAssignments,
+  listSections, listSubjects, getMyTeaching,
   subjectRoster, markSubjectAttendance,
   type AttendanceStatus,
 } from '@/lib/db'
 import { ATTENDANCE_STATUSES } from '@/lib/constants'
 import { todayISO } from '@/lib/format'
 import { LoadError, inputClass } from '@/components/ui'
+import { AskDialog } from '@/components/AskDialog'
+import { sectionScope, subjectScope, taughtClasses } from '@/lib/teaching'
 
 /**
  * A subject teacher's own register, for their own subject.
@@ -30,18 +33,27 @@ import { LoadError, inputClass } from '@/components/ui'
  */
 export function SubjectAttendance({ sessionId }: { sessionId: string }) {
   const qc = useQueryClient()
-  const classes = useQuery({ queryKey: ['classes'], queryFn: listClasses })
-  const mine = useQuery({ queryKey: ['myAssignments'], queryFn: getMyAssignments })
+  /* THE CLASSES A TEACHER TEACHES, NOT THE ONES THEY ARE CLASS TEACHER OF.
+     This screen read fn_my_assignments, the class teacher's table, so the
+     subject teachers it exists for were offered no class at all (0151). */
+  const mine = useQuery({ queryKey: ['myTeaching'], queryFn: getMyTeaching })
+  const teaching = mine.data ?? []
 
-  const [classId, setClassId] = useState('')
-  const [sectionChoice, setSectionChoice] = useState('')
+  // A link from the teacher's home names the class (and section).
+  const [params] = useSearchParams()
+  const [classId, setClassId] = useState(() => params.get('classId') ?? '')
+  const [sectionChoice, setSectionChoice] = useState(() => params.get('sectionId') ?? '')
   const [subjectId, setSubjectId] = useState('')
   const [date, setDate] = useState(todayISO())
   const [marks, setMarks] = useState<Record<string, AttendanceStatus>>({})
   const [msg, setMsg] = useState<string | null>(null)
+  /* Marks changed on the screen since the list loaded. Changing the class,
+     section, subject or date threw them away without a word; now it asks. */
+  const [touched, setTouched] = useState(false)
+  const [pendingPick, setPendingPick] = useState<null | { what: string; run: () => void }>(null)
+  const guard = (what: string, run: () => void) => { if (touched) setPendingPick({ what, run }); else run() }
 
-  const allowedClassIds = new Set((mine.data ?? []).map((a) => a.class_id))
-  const classOptions = (classes.data ?? []).filter((c) => allowedClassIds.has(c.id))
+  const classOptions = taughtClasses(teaching).map((c) => ({ id: c.class_id, name: c.class_name }))
 
   const sections = useQuery({
     queryKey: ['sections', classId],
@@ -54,23 +66,41 @@ export function SubjectAttendance({ sessionId }: { sessionId: string }) {
     enabled: !!classId,
   })
 
-  const myClassAssign = (mine.data ?? []).filter((a) => a.class_id === classId)
-  const wholeClass = myClassAssign.some((a) => a.section_id === null)
-  const allowedSectionIds = wholeClass
-    ? null
-    : new Set(myClassAssign.map((a) => a.section_id).filter(Boolean) as string[])
-  const sectionOptions = (sections.data ?? []).filter((s) => !allowedSectionIds || allowedSectionIds.has(s.id))
+  const scope = sectionScope(teaching, classId)
+  const sectionOptions = (sections.data ?? []).filter((s) => !scope.ids || scope.ids.has(s.id))
   const hasSections = sectionOptions.length > 0
   const sectionId: string | null = hasSections ? (sectionChoice || null) : null
+  // Only the subjects this teacher teaches here: all of them for the class
+  // teacher, their own for a subject teacher. The database refuses the rest,
+  // and a picker that offers them is a refusal waiting to happen.
+  const subj = subjectScope(teaching, classId, sectionId)
+  const subjectOptions = (subjects.data ?? []).filter((s) => subj.any || subj.ids.has(s.id))
 
-  // One class, one section: fill them in rather than making a teacher pick from
-  // a list of one. Same behaviour as the daily register.
+  // One class, one section, one subject: fill them in rather than making a
+  // teacher pick from a list of one.
   useEffect(() => {
-    if (classId || !mine.data || mine.data.length !== 1) return
-    setClassId(mine.data[0].class_id)
-    if (mine.data[0].section_id) setSectionChoice(mine.data[0].section_id)
+    if (classId || classOptions.length !== 1) return
+    setClassId(classOptions[0].id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mine.data])
+  }, [classOptions.length])
+  useEffect(() => {
+    if (!classId || !sections.isSuccess) return
+    if (sectionChoice && !sectionOptions.some((x) => x.id === sectionChoice)) setSectionChoice('')
+    else if (!sectionChoice && sectionOptions.length === 1) setSectionChoice(sectionOptions[0].id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [classId, sections.isSuccess, sections.data, mine.data, sectionChoice])
+  useEffect(() => {
+    if (!classId || !subjects.isSuccess) return
+    if (subjectId && !subjectOptions.some((x) => x.id === subjectId)) setSubjectId('')
+    else if (!subjectId && subjectOptions.length === 1) setSubjectId(subjectOptions[0].id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [classId, sectionId, subjects.isSuccess, subjects.data, mine.data, subjectId])
+  // A class from a link that this teacher does not teach is dropped once the
+  // list has loaded, instead of opening a roster the picker does not show.
+  useEffect(() => {
+    if (classId && mine.data && !classOptions.some((c) => c.id === classId)) { setClassId(''); setSectionChoice('') }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [classId, mine.data])
 
   const ready = !!classId && !!subjectId && (!hasSections || !!sectionChoice)
   const roster = useQuery({
@@ -89,6 +119,7 @@ export function SubjectAttendance({ sessionId }: { sessionId: string }) {
     for (const r of roster.data) next[r.enrollment_id] = r.status ?? r.day_status ?? 'present'
     setMarks(next)
     setMsg(null)
+    setTouched(false)
   }, [roster.data])
 
   const tally = useMemo(() => {
@@ -107,13 +138,14 @@ export function SubjectAttendance({ sessionId }: { sessionId: string }) {
     ),
     onSuccess: (res) => {
       setMsg(`Saved ${res.marked}.`)
+      setTouched(false)
       qc.invalidateQueries({ queryKey: ['subjectRoster'] })
     },
   })
 
   return (
     <div>
-      <LoadError of={[classes, mine, sections, subjects, roster]} what="Subject attendance" />
+      <LoadError of={[mine, sections, subjects, roster]} what="Subject attendance" />
       <p className="text-sm text-slate-500">
         Optional. This is your own record for your subject: it is not the daily
         register, it is not locked, and it does not change any attendance
@@ -124,7 +156,7 @@ export function SubjectAttendance({ sessionId }: { sessionId: string }) {
         <label className="block">
           <span className="text-sm text-slate-600">Class</span>
           <select value={classId} className={inputClass}
-            onChange={(e) => { setClassId(e.target.value); setSectionChoice(''); setSubjectId('') }}>
+            onChange={(e) => { const v = e.target.value; guard('another class', () => { setClassId(v); setSectionChoice(''); setSubjectId('') }) }}>
             <option value="">Select class…</option>
             {classOptions.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
@@ -132,7 +164,7 @@ export function SubjectAttendance({ sessionId }: { sessionId: string }) {
         <label className="block">
           <span className="text-sm text-slate-600">Section</span>
           <select value={sectionChoice} className={inputClass} disabled={!classId || !hasSections}
-            onChange={(e) => setSectionChoice(e.target.value)}>
+            onChange={(e) => { const v = e.target.value; guard('another section', () => setSectionChoice(v)) }}>
             {!classId ? <option value="">Pick a class first</option>
               : !hasSections ? <option value="">(no sections)</option>
               : <>
@@ -144,22 +176,29 @@ export function SubjectAttendance({ sessionId }: { sessionId: string }) {
         <label className="block">
           <span className="text-sm text-slate-600">Subject</span>
           <select value={subjectId} className={inputClass} disabled={!classId}
-            onChange={(e) => setSubjectId(e.target.value)}>
+            onChange={(e) => { const v = e.target.value; guard('another subject', () => setSubjectId(v)) }}>
             <option value="">Select subject…</option>
-            {(subjects.data ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {subjectOptions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </label>
         <label className="block">
           <span className="text-sm text-slate-600">Date</span>
           <input type="date" value={date} max={todayISO()} className={inputClass}
-            onChange={(e) => setDate(e.target.value)} />
+            onChange={(e) => { const v = e.target.value; if (v) guard('another day', () => setDate(v)) }} />
         </label>
       </div>
 
       {classOptions.length === 0 && !mine.isLoading && (
-        <p className="mt-4 rounded bg-amber-50 p-3 text-sm text-amber-700">
-          You are not assigned to any class yet. Ask the office to add you under
-          Settings, Staff, Subject Teachers.
+        <p className="mt-4 rounded-2xl bg-due-50 p-3 text-sm text-due-800 ring-1 ring-due-200">
+          No class or subject is assigned to you yet. Ask the office to add you under
+          Staff: Subject teachers.
+        </p>
+      )}
+      {classId && subjects.isSuccess && subjectOptions.length === 0 && (
+        <p className="mt-4 rounded-2xl bg-due-50 p-3 text-sm text-due-800 ring-1 ring-due-200">
+          {(subjects.data ?? []).length === 0
+            ? 'This class has no subjects yet. The office adds them in Settings: Classes and sections.'
+            : 'None of this class\'s subjects is assigned to you. Ask the office to add you under Staff: Subject teachers.'}
         </p>
       )}
 
@@ -197,7 +236,7 @@ export function SubjectAttendance({ sessionId }: { sessionId: string }) {
                     const on = marks[r.enrollment_id] === s.value
                     return (
                       <button key={s.value} type="button" aria-pressed={on} aria-label={`${r.full_name}: ${s.label}`}
-                        onClick={() => setMarks((m) => ({ ...m, [r.enrollment_id]: s.value }))}
+                        onClick={() => { setMarks((m) => ({ ...m, [r.enrollment_id]: s.value })); setTouched(true); setMsg(null) }}
                         className={`h-10 rounded-lg text-sm font-semibold ring-1 transition ${on ? s.on : s.off}`}
                         style={{ touchAction: 'manipulation' }}>
                         {s.short}
@@ -234,7 +273,7 @@ export function SubjectAttendance({ sessionId }: { sessionId: string }) {
                           const on = marks[r.enrollment_id] === s.value
                           return (
                             <button key={s.value} type="button"
-                              onClick={() => setMarks((m) => ({ ...m, [r.enrollment_id]: s.value }))}
+                              onClick={() => { setMarks((m) => ({ ...m, [r.enrollment_id]: s.value })); setTouched(true); setMsg(null) }}
                               aria-pressed={on}
                               className={`rounded-lg px-2.5 py-1 text-xs font-medium ring-1 ${on ? s.on : s.off}`}>
                               {s.short}
@@ -258,6 +297,21 @@ export function SubjectAttendance({ sessionId }: { sessionId: string }) {
             {save.isError && <span className="text-sm text-danger-700">{(save.error as Error).message}</span>}
           </div>
         </>
+      )}
+
+      {pendingPick && (
+        <AskDialog
+          title="Leave without saving?"
+          intro={<>
+            The marks on this list have not been saved. Opening {pendingPick.what} throws
+            them away. Press <b>Stay</b> and then <b>Save subject attendance</b> to keep them.
+          </>}
+          confirmLabel="Discard the marks"
+          cancelLabel="Stay"
+          tone="danger"
+          onCancel={() => setPendingPick(null)}
+          onSubmit={() => { const run = pendingPick.run; setPendingPick(null); setTouched(false); run() }}
+        />
       )}
     </div>
   )

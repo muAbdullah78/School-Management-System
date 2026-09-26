@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
-  getMyAssignments, getMyCheckin, getMyStaffDays, pkToday,
-  type CheckInResult, type MyAttendanceRow, type MyCheckin,
+  getMyAssignments, getMyCheckin, getMyDay, getMyStaffDays, pkToday,
+  type CheckInResult, type MyAttendanceRow, type MyCheckin, type MyDay, type MyDayClass,
 } from '@/lib/db'
 import { useAuth } from '@/auth/AuthProvider'
 import { LoadError, buttonClass } from '@/components/ui'
@@ -11,13 +11,37 @@ import { useTableChanges } from '@/lib/live'
 import { shiftDate } from '@/lib/format'
 import { CheckInPanel } from '@/components/checkin/CheckInPanel'
 import { STATUS_WORD, hoursWorked, pkTime, resultHeadline } from '@/components/checkin/checkinKit'
+import { StackBar, attendanceParts } from '@/components/viz'
+import { DateChip, SubjectChip } from '@/components/chips'
+import { IconAlert, IconAttendance, IconBirthday, IconCheck, IconClock, IconTests } from '@/components/icons'
 
-/** The teacher's home: today's own check-in first, then their week and month,
- *  then their classes with the fast path to the register and their tests. */
+/**
+ * The teacher's home.
+ *
+ * It answered "what are my classes" and nothing about today, so a teacher had
+ * to open each register to find out whether it was marked, and open Tests to
+ * find out what was waiting. It now answers the morning's questions on one
+ * screen, from one read (fn_my_day, 0151): is each register marked, saved or
+ * locked, whose birthday is it, what tests are this week, how many are waiting
+ * for marks, and am I checked in.
+ *
+ * A subject teacher sees their classes too. Every teacher screen used to read
+ * the class teacher's table only, so a teacher who taught Maths to Class 4 and
+ * was nobody's class teacher saw "no class assigned" here.
+ *
+ * On a phone the check-in comes first, because it is the one thing that has to
+ * happen on arrival. On a laptop it moves to a column on the right with the
+ * birthdays and the teacher's own attendance, beside the classes.
+ */
 export function MyClass() {
   const { profile } = useAuth()
   const qc = useQueryClient()
-  const assignments = useQuery({ queryKey: ['myAssignments'], queryFn: getMyAssignments })
+  const day = useQuery({ queryKey: ['myDay'], queryFn: getMyDay, refetchOnWindowFocus: true, refetchInterval: 120_000 })
+  // Only when the day read is missing (a database before bundle 52): the class
+  // teacher's own list, which is what this screen showed before.
+  const assignments = useQuery({
+    queryKey: ['myAssignments'], queryFn: getMyAssignments, enabled: day.data === null,
+  })
   // Polled as well as live: the office marking a teacher from their desk has to
   // reach the teacher's phone without the teacher knowing to reload.
   const me = useQuery({ queryKey: ['myCheckin'], queryFn: getMyCheckin, refetchInterval: 60_000 })
@@ -28,59 +52,260 @@ export function MyClass() {
   }, !!staffId)
 
   const linked = me.data ? me.data.linked : !!staffId
+  const d = day.data
+  const classes: MyDayClass[] = d
+    ? d.classes
+    : (assignments.data ?? []).map((a) => ({
+        class_id: a.class_id, class_name: a.class_name, section_id: a.section_id, section_name: a.section_name,
+        is_class_teacher: true, subjects: [], pupils: 0, register: null,
+      }))
+  const loadingClasses = day.isLoading || (day.data === null && assignments.isLoading)
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-800">Welcome{profile?.full_name ? `, ${profile.full_name}` : ''}</h1>
-        <p className="mt-0.5 text-sm text-slate-500">Your day, your attendance, and your classes.</p>
-      </div>
+      <Hero name={profile?.full_name ?? null} day={d ?? null} classes={classes} />
 
-      <LoadError of={[assignments]} what="Your classes" />
+      <LoadError of={[day, assignments]} what="Your classes" />
 
-      <TodayCard me={me.data} loading={me.isLoading} error={me.error as Error | null}
-        onRetry={() => void me.refetch()} />
-
-      {linked && <MyDays />}
-
-      <div>
-        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">My classes</div>
-        {assignments.isLoading ? (
-          <p className="mt-2 text-sm text-slate-400">Loading…</p>
-        ) : (assignments.data?.length ?? 0) === 0 ? (
-          <p className="mt-2 rounded-xl bg-slate-50 p-3 text-sm text-slate-500">
-            You have no class assigned yet. The principal assigns your class in Staff, Class teachers.
-          </p>
-        ) : (
-          <div className="mt-2 grid gap-3 sm:grid-cols-2">
-            {assignments.data?.map((a) => (
-              <div key={`${a.class_id}-${a.section_id ?? 'all'}`} className="rounded-2xl bg-white p-4 shadow-card ring-1 ring-slate-200">
-                <div className="text-base font-semibold text-slate-800">
-                  {a.class_name}{a.section_name ? ` · Section ${a.section_name}` : ''}
-                </div>
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  {/* The class and section ride in the URL, so the register
-                      opens on this class with today's roster already loading. */}
-                  <Link to={registerLink(a.class_id, a.section_id)}
-                    className="rounded-xl bg-brand-600 px-3 py-2.5 text-center text-sm font-medium text-white hover:bg-brand-700">Mark attendance</Link>
-                  <Link to="/assessments"
-                    className="rounded-xl border border-slate-300 px-3 py-2.5 text-center text-sm font-medium text-slate-700 hover:bg-slate-50">Tests</Link>
-                </div>
+      {/* One DOM, two layouts. On a phone the two column wrappers dissolve
+          (`contents`) and `order` puts the check-in first; on a laptop they are
+          the two columns. Rendering the check-in twice would have meant two
+          copies of its state, and a check-out started in one of them. */}
+      <div className="flex flex-col gap-5 lg:grid lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
+        <div className="contents lg:block lg:min-w-0 lg:space-y-5">
+          <section className="order-2 lg:order-none" aria-labelledby="my-classes">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <h2 id="my-classes" className="text-base font-semibold text-slate-900">Your classes today</h2>
+              {classes.length > 0 && <span className="text-xs text-slate-500">{classes.length} class{classes.length === 1 ? '' : 'es'}</span>}
+            </div>
+            {loadingClasses ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {[0, 1].map((i) => <div key={i} className="h-44 animate-pulse rounded-3xl bg-white shadow-card ring-1 ring-slate-200/70" />)}
               </div>
-            ))}
+            ) : classes.length === 0 ? (
+              <div className="rounded-3xl bg-white p-5 text-sm text-slate-600 shadow-card ring-1 ring-slate-200/70">
+                <p className="font-medium text-slate-800">No class or subject is assigned to you yet.</p>
+                <p className="mt-1">The office assigns classes in Staff: Class teachers, and subjects in Staff: Subject teachers.</p>
+              </div>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {classes.map((c) => <ClassCard key={`${c.class_id}-${c.section_id ?? 'all'}`} c={c} today={d?.today ?? pkToday()} />)}
+              </div>
+            )}
+          </section>
+
+          {d && (d.to_mark > 0 || d.upcoming.length > 0) && (
+            <div className="order-3 lg:order-none"><ThisWeek day={d} /></div>
+          )}
+        </div>
+
+        <div className="contents lg:block lg:space-y-5">
+          <div className="order-1 lg:order-none">
+            <TodayCard me={me.data} loading={me.isLoading} error={me.error as Error | null}
+              onRetry={() => void me.refetch()} />
           </div>
-        )}
+          {d && d.birthdays.length > 0 && (
+            <div className="order-4 lg:order-none"><Birthdays list={d.birthdays} /></div>
+          )}
+          {linked && <div className="order-5 lg:order-none"><MyDays /></div>}
+        </div>
       </div>
     </div>
   )
 }
 
-/** The daily register, opened on one class (and section, when the assignment
- *  names one). AttendancePage reads these two parameters. */
-function registerLink(classId: string, sectionId: string | null): string {
+/** The daily register, opened on one class (and section, when the card names
+ *  one). AttendancePage reads these parameters; `tab=subject` opens subject
+ *  attendance instead, for a subject teacher. */
+function registerLink(classId: string, sectionId: string | null, tab?: 'subject'): string {
   const q = new URLSearchParams({ classId })
   if (sectionId) q.set('sectionId', sectionId)
+  if (tab) q.set('tab', tab)
   return `/attendance?${q.toString()}`
+}
+
+function testsLink(classId: string): string {
+  return `/assessments?${new URLSearchParams({ classId }).toString()}`
+}
+
+/* ------------------------------------------------------------------ hero --- */
+
+function Hero({ name, day, classes }: { name: string | null; day: MyDay | null; classes: MyDayClass[] }) {
+  const today = day?.today ?? pkToday()
+  const pupils = classes.reduce((n, c) => n + c.pupils, 0)
+  const unmarked = classes.filter((c) => c.register && !c.register.locked && c.register.marked < c.pupils && c.pupils > 0).length
+  const chips: { text: string; skin: string }[] = []
+  if (classes.length) chips.push({ text: `${classes.length} class${classes.length === 1 ? '' : 'es'}${pupils ? ` · ${pupils} pupils` : ''}`, skin: 'bg-white/15 ring-white/25' })
+  if (unmarked) chips.push({ text: `${unmarked} register${unmarked === 1 ? '' : 's'} to mark`, skin: 'bg-due-400 text-slate-900 ring-due-300' })
+  if (day?.to_mark) chips.push({ text: `${day.to_mark} test${day.to_mark === 1 ? '' : 's'} to mark`, skin: 'bg-due-400 text-slate-900 ring-due-300' })
+  if (day?.birthdays.length) chips.push({ text: `${day.birthdays.length} birthday${day.birthdays.length === 1 ? '' : 's'} today`, skin: 'bg-fuchsia-400/90 text-white ring-fuchsia-300' })
+
+  return (
+    <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-700 via-brand-600 to-violet-600 p-5 text-white shadow-card sm:p-6">
+      <span aria-hidden="true" className="pointer-events-none absolute -right-12 -top-16 h-48 w-48 rounded-full bg-white/10" />
+      <span aria-hidden="true" className="pointer-events-none absolute -bottom-10 right-24 h-28 w-28 rounded-full bg-violet-300/20" />
+      <div className="relative">
+        <p className="text-sm text-white/80">Assalam-o-Alaikum,</p>
+        <h1 className="break-words text-2xl font-bold leading-tight">{name ?? 'Teacher'}</h1>
+        <p className="mt-1 text-sm text-white/80">
+          {new Date(`${today}T00:00:00`).toLocaleDateString('en-PK', { weekday: 'long', day: 'numeric', month: 'long' })}
+        </p>
+        {chips.length > 0 && (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {chips.map((c) => (
+              <span key={c.text} className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${c.skin}`}>{c.text}</span>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+/* ------------------------------------------------------------ class card --- */
+
+function ClassCard({ c, today }: { c: MyDayClass; today: string }) {
+  const reg = c.register
+  const sunday = new Date(`${today}T00:00:00`).getDay() === 0
+  const state: { word: string; skin: string; icon: ReactNode } | null = !reg ? null
+    : reg.locked ? { word: 'Register locked', skin: 'bg-slate-100 text-slate-700 ring-slate-200', icon: <IconCheck /> }
+      : c.pupils > 0 && reg.marked >= c.pupils ? { word: 'Register saved', skin: 'bg-money-50 text-money-800 ring-money-200', icon: <IconCheck /> }
+        : reg.marked > 0 ? { word: `${reg.marked} of ${c.pupils} marked`, skin: 'bg-due-50 text-due-800 ring-due-200', icon: <IconClock /> }
+          : sunday ? { word: 'Sunday', skin: 'bg-slate-100 text-slate-600 ring-slate-200', icon: <IconClock /> }
+            : { word: 'Not marked yet', skin: 'bg-due-50 text-due-800 ring-due-200', icon: <IconAlert /> }
+
+  return (
+    <article className="flex flex-col rounded-3xl bg-white p-4 shadow-card ring-1 ring-slate-200/70">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h3 className="text-lg font-bold text-slate-900">
+            {c.class_name}{c.section_name ? <span className="font-semibold text-slate-500"> · {c.section_name}</span> : null}
+          </h3>
+          <p className="mt-0.5 text-xs text-slate-500">
+            {c.pupils ? `${c.pupils} pupil${c.pupils === 1 ? '' : 's'}` : 'No pupils on the roll yet'}
+          </p>
+        </div>
+        {c.is_class_teacher && (
+          <span className="shrink-0 rounded-full bg-brand-50 px-2.5 py-1 text-[11px] font-semibold text-brand-700 ring-1 ring-brand-200">
+            Class teacher
+          </span>
+        )}
+      </div>
+
+      {c.subjects.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {c.subjects.map((s) => <SubjectChip key={s} name={s} />)}
+        </div>
+      )}
+
+      {state && reg && (
+        <div className="mt-3 rounded-2xl bg-slate-50/80 p-3 ring-1 ring-slate-100">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${state.skin}`}>
+              {state.icon} {state.word}
+            </span>
+            {reg.marked > 0 && (
+              <span className="text-xs text-slate-600">
+                {reg.present + reg.late + reg.half_day} in · {reg.absent} absent{reg.leave ? ` · ${reg.leave} leave` : ''}
+              </span>
+            )}
+          </div>
+          {reg.marked > 0 && c.pupils > 0 && (
+            <div className="mt-2.5">
+              <StackBar height={8} total={c.pupils}
+                label={`Today's register for ${c.class_name}: ${reg.present} present, ${reg.late + reg.half_day} late or half day, ${reg.absent} absent, ${reg.leave} on leave, ${c.pupils - reg.marked} not marked`}
+                parts={attendanceParts({ present: reg.present, late: reg.late, half_day: reg.half_day, leave: reg.leave, absent: reg.absent, marked: reg.marked }, c.pupils)} />
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="mt-auto grid grid-cols-2 gap-2 pt-3">
+        {c.is_class_teacher ? (
+          <Link to={registerLink(c.class_id, c.section_id)}
+            className={buttonClass({ className: 'w-full py-2.5' })}>
+            <IconAttendance /> {reg?.locked ? 'Register' : reg && reg.marked > 0 ? 'Register' : 'Mark attendance'}
+          </Link>
+        ) : (
+          <Link to={registerLink(c.class_id, c.section_id, 'subject')}
+            className={buttonClass({ className: 'w-full py-2.5' })}>
+            <IconAttendance /> Attendance
+          </Link>
+        )}
+        <Link to={testsLink(c.class_id)} className={buttonClass({ variant: 'soft', className: 'w-full py-2.5' })}>
+          <IconTests /> Tests
+        </Link>
+      </div>
+    </article>
+  )
+}
+
+/* ------------------------------------------------------------- this week --- */
+
+function ThisWeek({ day }: { day: MyDay }) {
+  return (
+    <section className="rounded-3xl bg-white p-4 shadow-card ring-1 ring-slate-200/70 sm:p-5" aria-labelledby="this-week">
+      <h2 id="this-week" className="flex items-center gap-2.5 text-base font-semibold text-slate-900">
+        <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-violet-50 text-violet-600"><IconTests /></span>
+        Tests this week
+      </h2>
+      {day.to_mark > 0 && (
+        <Link to="/assessments"
+          className="mt-3 flex items-center justify-between gap-3 rounded-2xl bg-due-50 px-3.5 py-3 text-sm font-semibold text-due-900 ring-1 ring-due-200 hover:bg-due-100">
+          <span className="flex items-center gap-2"><IconAlert /> {day.to_mark} test{day.to_mark === 1 ? ' is' : 's are'} waiting for marks</span>
+          <span aria-hidden="true">›</span>
+        </Link>
+      )}
+      {day.upcoming.length > 0 ? (
+        <ul className="mt-3 space-y-2">
+          {day.upcoming.map((t) => (
+            <li key={t.id}>
+              <Link to={testsLink(t.class_id)}
+                className="flex items-center gap-3 rounded-2xl bg-slate-50/70 p-2.5 ring-1 ring-slate-100 hover:bg-brand-50/60">
+                <DateChip date={t.date} tone={t.date === day.today ? 'due' : 'brand'} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold text-slate-900">{t.title}</span>
+                  <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+                    {t.class_name}{t.section_name ? ` ${t.section_name}` : ''}
+                    {t.subject_name && <SubjectChip name={t.subject_name} />}
+                    <span>out of {t.max_marks}</span>
+                  </span>
+                </span>
+                {t.date === day.today && (
+                  <span className="shrink-0 rounded-full bg-brand-600 px-2.5 py-0.5 text-[11px] font-semibold text-white">Today</span>
+                )}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-3 text-sm text-slate-500">Nothing scheduled for the next seven days.</p>
+      )}
+    </section>
+  )
+}
+
+/* ------------------------------------------------------------- birthdays --- */
+
+function Birthdays({ list }: { list: MyDay['birthdays'] }) {
+  return (
+    <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-fuchsia-500 via-violet-500 to-brand-600 p-4 text-white shadow-card sm:p-5">
+      <span aria-hidden="true" className="absolute right-6 top-3 h-2 w-2 rounded-full bg-due-300" />
+      <span aria-hidden="true" className="absolute bottom-4 right-16 h-1.5 w-1.5 rounded-full bg-sky-200" />
+      <h2 className="flex items-center gap-2.5 text-base font-bold">
+        <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/20"><IconBirthday /></span>
+        Birthday{list.length === 1 ? '' : 's'} today
+      </h2>
+      <ul className="mt-3 space-y-1.5">
+        {list.map((b) => (
+          <li key={`${b.full_name}-${b.class_name}`} className="rounded-2xl bg-white/15 px-3 py-2 text-sm">
+            <b className="font-semibold">{b.full_name}</b> turns {b.turning}
+            <span className="block text-xs text-white/80">{b.class_name}{b.section_name ? ` · ${b.section_name}` : ''}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
 }
 
 /** The time now, refreshed every half minute, so "check-out opens at 08:07"
@@ -94,7 +319,7 @@ function useNow(stepMs = 30_000): number {
   return now
 }
 
-const CARD = 'rounded-2xl bg-white p-4 shadow-card ring-1 ring-slate-200'
+const CARD = 'rounded-3xl bg-white p-4 shadow-card ring-1 ring-slate-200/70 sm:p-5'
 
 function TodayCard({ me, loading, error, onRetry }: {
   me: MyCheckin | undefined; loading: boolean; error: Error | null; onRetry: () => void
@@ -269,8 +494,8 @@ function Outcome({ r, onClose }: { r: CheckInResult; onClose: () => void }) {
  *  record is not colour alone, for a colour-blind teacher and for a printout. */
 const DAY_SKIN: Record<string, { cell: string; letter: string; label: string }> = {
   present: { cell: 'bg-money-500 text-white', letter: 'P', label: 'Present' },
-  late: { cell: 'bg-due-400 text-slate-900', letter: 'L', label: 'Late' },
-  half_day: { cell: 'bg-due-200 text-due-900', letter: 'H', label: 'Half day' },
+  late: { cell: 'bg-due-400 text-slate-900', letter: 'Lt', label: 'Late' },
+  half_day: { cell: 'bg-due-200 text-due-900', letter: '½', label: 'Half day' },
   leave: { cell: 'bg-info-200 text-info-900', letter: 'Lv', label: 'Leave' },
   absent: { cell: 'bg-danger-500 text-white', letter: 'A', label: 'Absent' },
 }
