@@ -176,9 +176,13 @@ function TermForm({ sessionId, session, terms, term, onDone }: {
   onDone: (id: string | null) => void
 }) {
   const qc = useQueryClient()
-  const [name, setName] = useState(term?.name ?? '')
+  // A new term opens on the first type this year does not have yet, already
+  // named: after First Term the next one offered is Mid Term, not a blank box.
+  const used = new Set(terms.map((t) => t.name.trim().toLowerCase()))
+  const suggested = TERM_TYPES.find((x) => x.value !== 'other' && !used.has(x.label.toLowerCase())) ?? TERM_TYPES[TERM_TYPES.length - 1]
+  const [name, setName] = useState(term?.name ?? (suggested.value === 'other' ? '' : suggested.label))
   const [named, setNamed] = useState(!!term)
-  const [type, setType] = useState(term?.term_type ?? 'first')
+  const [type, setType] = useState(term?.term_type ?? suggested.value)
   const [starts, setStarts] = useState(term?.starts_on ?? '')
   const [ends, setEnds] = useState(term?.ends_on ?? '')
   const [withhold, setWithhold] = useState(term?.result_withheld_for_defaulters ?? true)

@@ -3,14 +3,14 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/auth/AuthProvider'
 import { ROLE_LABELS } from '@/auth/roles'
-import { canAccess, visibleNav } from '@/navigation'
+import { NAV_GROUPS, canAccess, navLabel, visibleNav } from '@/navigation'
 import { PRODUCT_NAME, guideUrl } from '@/lib/config'
 import { useSchoolName } from '@/hooks/useSchoolName'
 import { OfflineIndicator } from '@/components/OfflineIndicator'
 import { LicenceBanner } from '@/components/LicenceBanner'
 import { OperatorBanner } from './OperatorBanner'
 import { AnnouncementBanner } from './AnnouncementBanner'
-import { NAV_ICONS, IconBook, IconLogout, IconAlert, IconMenu, IconX } from '@/components/icons'
+import { NAV_ICONS, IconBook, IconLogout, IconAlert, IconMenu, IconX, IconLock, IconSidebarFold } from '@/components/icons'
 import { EmptyState } from '@/components/ui'
 import { GlobalSearch } from '@/components/GlobalSearch'
 import { ModuleSearch } from '@/components/ModuleSearch'
@@ -45,6 +45,8 @@ import { FIT_MAX_LINES, fitSchoolName } from '@/lib/schoolLabel'
    only number under which the fit holds at both. 320px is the floor because
    that is the narrowest phone still sold in this market. */
 const NAME_BOX_PX = 142
+
+const RAIL_KEY = 'tsm.sidebar.folded'
 
 const CLAMP: Record<number, string> = {
   1: 'line-clamp-1',
@@ -146,6 +148,17 @@ export function AppShell() {
   // The single truth. `navOpen` is only ever asked about below `lg`, so nothing
   // downstream has to remember that an open drawer means nothing on a desktop.
   const drawerOpen = navOpen && !isDesktop
+
+  /* The folded rail: a desktop choice, remembered on this computer. Storage
+     can throw (a private window, blocked site data), and then the sidebar
+     simply opens unfolded. */
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try { return window.localStorage.getItem(RAIL_KEY) === '1' } catch { return false }
+  })
+  useEffect(() => {
+    try { window.localStorage.setItem(RAIL_KEY, collapsed ? '1' : '0') } catch { /* not remembered, that is all */ }
+  }, [collapsed])
+  const rail = collapsed && isDesktop
   const closeNav = useCallback(() => setNavOpen(false), [])
   const menuButtonRef = useRef<HTMLButtonElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
@@ -277,51 +290,45 @@ export function AppShell() {
           ? {}
           : { role: 'dialog', 'aria-modal': true, 'aria-label': 'Menu' })}
         className={
-          'fixed inset-y-0 left-0 z-50 flex w-72 max-w-[calc(100vw-3rem)] flex-col '
-          + 'bg-gradient-to-b from-brand-900 via-brand-900 to-brand-950 text-brand-50 '
-          + 'shadow-2xl transition-[transform,visibility] duration-300 ease-out '
+          'fixed inset-y-0 left-0 z-50 flex w-72 max-w-[calc(100vw-3rem)] flex-col overflow-hidden '
+          + 'bg-gradient-to-b from-brand-900 via-brand-900 to-violet-950 text-brand-50 '
+          + 'shadow-2xl transition-[transform,visibility,width] duration-300 ease-out '
           + 'motion-reduce:transition-none print:hidden '
-          + 'lg:static lg:z-auto lg:w-64 lg:max-w-none lg:shrink-0 '
+          + 'lg:static lg:z-auto lg:max-w-none lg:shrink-0 '
+          + (rail ? 'lg:w-[4.75rem] ' : 'lg:w-64 ')
           + 'lg:visible lg:translate-x-0 lg:shadow-none '
           + (drawerOpen ? 'visible translate-x-0' : 'invisible -translate-x-full')
         }
       >
+        {/* A glow in the corner, drawn and not a picture: it costs no request
+            and tints with the brand. */}
+        <span className="pointer-events-none absolute -left-16 -top-24 h-56 w-56 rounded-full bg-fuchsia-500/20 blur-3xl" />
+        <span className="pointer-events-none absolute -bottom-24 -right-20 h-56 w-56 rounded-full bg-brand-400/10 blur-3xl" />
+
         {/* School identity.
-            shrink-0 here and on the footer below, so that on a short window --
-            a phone turned sideways is 390px tall -- the module list is the one
-            thing that gives way. Without it every child of this column shares
-            the squeeze, the 40px logo and the sign out row compress, and their
-            contents spill out of boxes that are no longer tall enough. */}
-        <div className="flex shrink-0 items-center gap-3 border-b border-white/10 px-4 py-4">
-          {/* The school's OWN logo, if they have uploaded one.
-              It was wired into every printed document (challan, receipt, result
-              card, certificate, ID card) and into nothing on screen, so a school
-              that uploaded a logo saw it in Settings, saw it on paper, and
-              nowhere else. The first thing they said was that the upload had not
-              worked. It had.
-              Falls back to the first letter, which is a perfectly good mark and
-              the commonest case: most schools never upload one. */}
+            shrink-0 here and on the footer below, so that on a short window
+            the module list is the one thing that gives way. */}
+        <div className={`relative flex shrink-0 items-center gap-3 border-b border-white/10 py-4 ${rail ? 'justify-center px-2' : 'px-4'}`}>
+          {/* The school's OWN logo, if they have uploaded one, else its first
+              letter: most schools never upload one. */}
           {logo ? (
             <img
               src={logo}
               alt=""
-              className="h-10 w-10 shrink-0 rounded-xl bg-white object-contain p-0.5 ring-1 ring-white/15"
+              className="h-10 w-10 shrink-0 rounded-xl bg-white object-contain p-0.5 shadow-lg shadow-brand-950/40 ring-1 ring-white/20"
             />
           ) : (
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-sm font-bold ring-1 ring-white/15">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-fuchsia-400 to-brand-500 text-base font-bold text-white shadow-lg shadow-brand-950/40 ring-1 ring-white/20">
               {(schoolName ?? 'S').slice(0, 1).toUpperCase()}
             </span>
           )}
-          <div className="min-w-0 flex-1">
-            {/* WRAPS, NEVER TRUNCATES. `break-words` is the guard against the
-                one input the ladder cannot help with: a single unbroken token
-                longer than the box, which no font size makes fit and which
-                would otherwise run out through the side of the sidebar. The
-                clamp is the ladder's own maximum, so the two can never
-                disagree about how tall this is allowed to get, and `title`
-                carries the whole name for the rare case that reaches it. */}
+          <div className={`min-w-0 flex-1 ${rail ? 'hidden' : ''}`}>
+            {/* WRAPS, NEVER TRUNCATES. `break-words` is the guard against a
+                single unbroken token longer than the box; the clamp is the
+                ladder's own maximum; `title` carries the whole name when the
+                clamp is reached. */}
             <div
-              className={`break-words font-semibold leading-tight ${CLAMP[FIT_MAX_LINES] ?? 'line-clamp-3'}`}
+              className={`break-words font-semibold leading-tight text-white ${CLAMP[FIT_MAX_LINES] ?? 'line-clamp-3'}`}
               style={{ fontSize: `${fitted.size}px`, ...fitted.style }}
               dir={fitted.rtl ? 'rtl' : undefined}
               lang={fitted.rtl ? 'ur' : undefined}
@@ -329,9 +336,8 @@ export function AppShell() {
             >
               {fitted.text}
             </div>
-            {/* The vendor's name, under the school's own. The line above is
-                the school; this line is who made it. */}
-            <div className="mt-0.5 text-[11px] uppercase tracking-wide text-brand-200/70">
+            {/* The vendor's name, under the school's own. */}
+            <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-brand-200/70">
               {PRODUCT_NAME}
             </div>
           </div>
@@ -343,109 +349,158 @@ export function AppShell() {
             type="button"
             onClick={closeNav}
             aria-label="Close menu"
-            className="-mr-1.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-brand-100/80 transition hover:bg-white/10 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 lg:hidden"
+            className="-mr-1.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-brand-100/80 transition hover:bg-white/10 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 lg:hidden"
           >
             <IconX className="h-5 w-5" />
           </button>
         </div>
 
-        <ModuleSearch items={nav} onFilter={setShownNav} />
+        {/* A search over five rows is a box to look past: shown when the list
+            is long enough to need one, and never in the folded rail. */}
+        {nav.length > 7 && !rail && <ModuleSearch items={nav} onFilter={setShownNav} />}
 
         {/* overscroll-contain so flicking to the bottom of the module list on a
             phone stops there instead of handing the rest of the gesture to the
             page underneath the drawer. */}
-        <nav className="flex-1 space-y-0.5 overflow-y-auto overscroll-contain p-2">
+        <nav aria-label="Modules" className={`relative flex-1 overflow-y-auto overscroll-contain pb-3 pt-1 ${rail ? 'px-2' : 'px-3'}`}
+          style={{ scrollbarWidth: 'thin' }}>
           {shownNav.length === 0 && (
             <p className="px-3 py-4 text-xs text-brand-200/60">No module matches that.</p>
           )}
-          {shownNav.map((item) => {
-            const Icon = NAV_ICONS[item.path]
+          {NAV_GROUPS.map((g, gi) => {
+            const items = shownNav.filter((n) => n.group === g.key)
+            if (items.length === 0) return null
+            // Named sections earn their room on a long list. A teacher's five
+            // rows are split by a hairline instead of five headings over them.
+            const named = nav.length > 7 && !rail
+            const first = !NAV_GROUPS.slice(0, gi).some((x) => shownNav.some((n) => n.group === x.key))
             return (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                end={item.path === '/'}
-                /* The route effect above closes the drawer on every navigation,
-                   which covers every link here but one: tapping the module you
-                   are already on does not change the path, so nothing fires and
-                   the drawer would sit there looking stuck. */
-                onClick={closeNav}
-                className={({ isActive }) =>
-                  `group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition ${
-                    isActive
-                      ? 'bg-white/15 font-medium text-white shadow-sm'
-                      : 'text-brand-100/75 hover:bg-white/10 hover:text-white'
-                  }`
-                }
-              >
-                {({ isActive }) => (
-                  <>
-                    <span
-                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition ${
-                        isActive
-                          ? 'bg-white/20 text-white'
-                          : 'bg-white/5 text-brand-200/80 group-hover:bg-white/10 group-hover:text-white'
-                      }`}
-                    >
-                      {Icon ? <Icon /> : null}
-                    </span>
-                    <span className="truncate">{item.label}</span>
-                  </>
-                )}
-              </NavLink>
+              <div key={g.key} role="group" aria-label={g.label}>
+                {named ? (
+                  <div className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-brand-200/50">
+                    {g.label}
+                  </div>
+                ) : !first ? (
+                  <div className={`my-2 h-px bg-white/10 ${rail ? 'mx-2' : 'mx-3'}`} />
+                ) : <div className="h-2" />}
+                <ul className="space-y-0.5">
+                  {items.map((item) => {
+                    const Icon = NAV_ICONS[item.path]
+                    const label = navLabel(item, role)
+                    return (
+                      <li key={item.path}>
+                        <NavLink
+                          to={item.path}
+                          end={item.path === '/'}
+                          /* Tapping the module you are already on does not
+                             change the path, so the route effect never fires
+                             and the drawer would sit there looking stuck. */
+                          onClick={closeNav}
+                          title={rail ? label : undefined}
+                          className={({ isActive }) =>
+                            `group relative flex items-center gap-3 rounded-xl text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 ${
+                              rail ? 'justify-center px-0 py-2.5' : 'px-3 py-2'} ${
+                              isActive
+                                ? 'bg-white text-brand-900 shadow-lg shadow-brand-950/30'
+                                : 'text-brand-100/80 hover:bg-white/10 hover:text-white'
+                            }`
+                          }
+                        >
+                          {({ isActive }) => (
+                            <>
+                              <span className={`flex shrink-0 items-center justify-center text-[1.15rem] transition ${
+                                isActive ? 'text-brand-600' : 'text-brand-300 group-hover:text-white'}`}>
+                                {Icon ? <Icon /> : null}
+                              </span>
+                              <span className={rail ? 'sr-only' : 'truncate'}>{label}</span>
+                              {isActive && !rail && (
+                                <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-fuchsia-500" aria-hidden />
+                              )}
+                            </>
+                          )}
+                        </NavLink>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
             )
           })}
         </nav>
 
-        {/* Who am I */}
-        <div className="shrink-0 border-t border-white/10 p-3">
-          <div className="flex items-center gap-2.5 rounded-lg bg-white/5 px-2.5 py-2">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/15 text-xs font-semibold">
-              {initials}
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-xs font-medium text-white">
-                {profile?.full_name ?? (visit ? 'Support visit' : 'User')}
+        {/* Who am I, and the three things a person does to their own account.
+            One card instead of three full-width buttons stacked the same
+            weight as the modules above them. */}
+        <div className={`relative shrink-0 border-t border-white/10 ${rail ? 'p-2' : 'p-3'}`}>
+          <div className={`rounded-2xl bg-white/[0.07] ring-1 ring-white/10 ${rail ? 'p-1.5' : 'p-2.5'}`}>
+            <div className={`flex items-center gap-2.5 ${rail ? 'justify-center' : ''}`}
+              title={rail ? `${profile?.full_name ?? (visit ? 'Support visit' : 'User')}${profile ? `, ${ROLE_LABELS[profile.role]}` : ''}` : undefined}>
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-fuchsia-400 to-violet-500 text-xs font-bold text-white ring-2 ring-white/20">
+                {initials}
+              </span>
+              <div className={`min-w-0 flex-1 ${rail ? 'hidden' : ''}`}>
+                <div className="truncate text-sm font-semibold text-white">
+                  {profile?.full_name ?? (visit ? 'Support visit' : 'User')}
+                </div>
+                <div className="truncate text-[11px] text-brand-200/80">
+                  {profile ? ROLE_LABELS[profile.role] : (visit ? 'Read only' : '')}
+                </div>
               </div>
-              <div className="truncate text-[11px] text-brand-200/70">
-                {profile ? ROLE_LABELS[profile.role] : (visit ? 'Read only' : '')}
-              </div>
+              {/* Folding is a desktop choice, remembered on this computer: on a
+                  laptop the register and the marks sheet get 180 pixels back.
+                  Not rendered at all below `lg`, where a hidden button would
+                  still be the last stop of the drawer's focus trap. */}
+              {isDesktop && !rail && (
+                <button type="button" onClick={() => setCollapsed(true)} aria-label="Collapse the sidebar"
+                  title="Collapse the sidebar"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-brand-200/70 transition hover:bg-white/10 hover:text-white">
+                  <IconSidebarFold className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+            {/* A staff member could not change their own password anywhere in
+                the software before this row. The handbook opens in a new tab,
+                because losing half-entered attendance to a Help click is what
+                stops people clicking Help. */}
+            <div className={`mt-2 grid gap-1 ${rail ? 'grid-cols-1' : 'grid-cols-3'}`}>
+              <a
+                href={guideUrl}
+                target="_blank"
+                rel="noopener"
+                onClick={closeNav}
+                title="How to use this: the handbook, in a new tab"
+                className="flex flex-col items-center gap-0.5 rounded-xl px-1 py-1.5 text-[11px] font-medium text-brand-100/90 transition hover:bg-white/10 hover:text-white"
+              >
+                <IconBook className="h-4 w-4" />
+                <span className={rail ? 'sr-only' : ''}>Guide</span>
+              </a>
+              <NavLink
+                to="/password"
+                onClick={closeNav}
+                title={rail ? 'Password' : undefined}
+                className="flex flex-col items-center gap-0.5 rounded-xl px-1 py-1.5 text-[11px] font-medium text-brand-100/90 transition hover:bg-white/10 hover:text-white"
+              >
+                <IconLock className="h-4 w-4" />
+                <span className={rail ? 'sr-only' : ''}>Password</span>
+              </NavLink>
+              <button
+                type="button"
+                onClick={() => void signOut()}
+                title={rail ? 'Sign out' : undefined}
+                className="flex flex-col items-center gap-0.5 rounded-xl px-1 py-1.5 text-[11px] font-medium text-brand-100/90 transition hover:bg-danger-500/20 hover:text-white"
+              >
+                <IconLogout className="h-4 w-4" />
+                <span className={rail ? 'sr-only' : ''}>Sign out</span>
+              </button>
             </div>
           </div>
-          {/* A staff member could not change their own password anywhere in the
-              software. The only remedy was to ask the vendor to set one by hand
-              and send it over WhatsApp. */}
-          {/* The handbook, on its own row rather than as a third button beside
-              Password and Sign out: at this width three of them are cramped,
-              and this is the one a new clerk needs in their first week. New
-              tab, because losing half-entered attendance to a Help click is
-              exactly the kind of thing that stops people clicking Help. */}
-          <a
-            href={guideUrl}
-            target="_blank"
-            rel="noopener"
-            onClick={closeNav}
-            className="mt-2 flex items-center justify-center gap-1.5 rounded-lg bg-white/10 px-2 py-1.5 text-xs font-medium text-brand-50 transition hover:bg-white/20"
-          >
-            <IconBook />
-            How to use this
-          </a>
-          <div className="mt-2 flex gap-2">
-            <NavLink
-              to="/password"
-              onClick={closeNav}
-              className="flex flex-1 items-center justify-center rounded-lg bg-white/10 px-2 py-1.5 text-xs font-medium text-brand-50 transition hover:bg-white/20"
-            >
-              Password
-            </NavLink>
-            <button
-              onClick={() => void signOut()}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-white/10 px-2 py-1.5 text-xs font-medium text-brand-50 transition hover:bg-white/20"
-            >
-              <IconLogout />
-              Sign out
+          {rail && (
+            <button type="button" onClick={() => setCollapsed(false)} aria-label="Expand the sidebar"
+              title="Expand the sidebar"
+              className="mt-2 flex w-full items-center justify-center rounded-xl py-1.5 text-brand-200/70 transition hover:bg-white/10 hover:text-white">
+              <IconSidebarFold className="h-4 w-4 rotate-180" />
             </button>
-          </div>
+          )}
         </div>
       </aside>
 
@@ -535,7 +590,7 @@ export function AppShell() {
             <div className="flex min-w-0 flex-1 items-center gap-2 text-xs text-slate-500">
               {current ? (
                 <>
-                  <span className="truncate font-medium text-slate-700">{current.label}</span>
+                  <span className="truncate font-medium text-slate-700">{navLabel(current, role)}</span>
                   <span className="hidden text-slate-300 sm:inline">·</span>
                   <span className="hidden truncate sm:inline">{current.blurb}</span>
                 </>
