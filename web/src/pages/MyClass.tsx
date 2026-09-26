@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import {
   getMyAssignments, getMyCheckin, getMyStaffDays, pkToday,
   type CheckInResult, type MyAttendanceRow, type MyCheckin,
@@ -16,7 +16,6 @@ import { STATUS_WORD, hoursWorked, pkTime, resultHeadline } from '@/components/c
  *  then their classes with the fast path to the register and their tests. */
 export function MyClass() {
   const { profile } = useAuth()
-  const navigate = useNavigate()
   const qc = useQueryClient()
   const assignments = useQuery({ queryKey: ['myAssignments'], queryFn: getMyAssignments })
   // Polled as well as live: the office marking a teacher from their desk has to
@@ -60,10 +59,12 @@ export function MyClass() {
                   {a.class_name}{a.section_name ? ` · Section ${a.section_name}` : ''}
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-2">
-                  <button onClick={() => navigate('/attendance')}
-                    className="rounded-xl bg-brand-600 px-3 py-2.5 text-sm font-medium text-white hover:bg-brand-700">Mark attendance</button>
-                  <button onClick={() => navigate('/assessments')}
-                    className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">Tests</button>
+                  {/* The class and section ride in the URL, so the register
+                      opens on this class with today's roster already loading. */}
+                  <Link to={registerLink(a.class_id, a.section_id)}
+                    className="rounded-xl bg-brand-600 px-3 py-2.5 text-center text-sm font-medium text-white hover:bg-brand-700">Mark attendance</Link>
+                  <Link to="/assessments"
+                    className="rounded-xl border border-slate-300 px-3 py-2.5 text-center text-sm font-medium text-slate-700 hover:bg-slate-50">Tests</Link>
                 </div>
               </div>
             ))}
@@ -72,6 +73,14 @@ export function MyClass() {
       </div>
     </div>
   )
+}
+
+/** The daily register, opened on one class (and section, when the assignment
+ *  names one). AttendancePage reads these two parameters. */
+function registerLink(classId: string, sectionId: string | null): string {
+  const q = new URLSearchParams({ classId })
+  if (sectionId) q.set('sectionId', sectionId)
+  return `/attendance?${q.toString()}`
 }
 
 /** The time now, refreshed every half minute, so "check-out opens at 08:07"
@@ -276,6 +285,8 @@ function DayChip({ status }: { status: string }) {
   )
 }
 
+const MONTH_GRID = 'grid grid-cols-[repeat(7,minmax(0,2.75rem))] justify-center gap-1'
+
 function monthBounds(ym: string, today: string): { from: string; to: string; last: string } {
   const [y, m] = ym.split('-').map(Number)
   const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate()
@@ -334,7 +345,10 @@ function MyDays() {
   const pickedRow = picked ? mo.get(picked) ?? null : null
 
   return (
-    <div className={CARD}>
+    // Capped and centred: at full content width on a laptop the month grid
+    // drew seven 150px squares a row, about 1000px of mostly empty calendar.
+    // A phone is narrower than the cap, so nothing changes there.
+    <div className={`${CARD} mx-auto w-full max-w-md`}>
       <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">My attendance</div>
 
       {/* ---- the last seven days ------------------------------------- */}
@@ -396,10 +410,13 @@ function MyDays() {
               <Count n={m.leave} label="Leave" skin="text-info-700" />
             </div>
 
-            <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[11px] text-slate-400">
+            {/* Each column is at most 2.75rem, so a day is a compact square
+                on any screen. On a phone the columns shrink to fit, exactly as
+                before; wider than that, the grid sits centred at its cap. */}
+            <div className={`mt-3 ${MONTH_GRID} text-center text-[11px] text-slate-400`}>
               {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => <div key={d}>{d}</div>)}
             </div>
-            <div className="mt-1 grid grid-cols-7 gap-1">
+            <div className={`mt-1 ${MONTH_GRID}`}>
               {cells.map((d, i) => {
                 if (!d) return <div key={`b${i}`} />
                 const future = d > today
@@ -409,7 +426,7 @@ function MyDays() {
                 return (
                   <button key={d} type="button" disabled={future} onClick={() => setPicked(on ? null : d)}
                     aria-label={`${d}: ${future ? 'not yet' : s.label}`} aria-pressed={on}
-                    className={`flex aspect-square flex-col items-center justify-center rounded-lg text-xs tabular-nums transition ${
+                    className={`flex aspect-square w-full flex-col items-center justify-center rounded-lg text-xs tabular-nums transition ${
                       future ? 'text-slate-300' : month.isLoading ? 'animate-pulse bg-slate-100 text-transparent' : s.cell} ${
                       on ? 'ring-2 ring-brand-600 ring-offset-1' : ''}`}>
                     <span className="font-semibold">{Number(d.slice(8, 10))}</span>
