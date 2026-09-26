@@ -255,9 +255,11 @@ function MarksSheet({ paper, reach, teaching, classId, className, termId }: {
   }
 
   const save = useMutation({
-    // Every pupil on the sheet this person may mark, not only the ones a search
-    // is showing: a blank sent clears a mark, a blank never sent keeps one.
-    mutationFn: () => enterMarks(paper.id, rows.filter((r) => !r.is_locked).map((r) => {
+    // ONLY THE ROWS THIS PERSON CHANGED. A blank sent now clears a mark (0152),
+    // so sending the whole sheet would let a copy opened an hour ago wipe the
+    // marks a colleague has entered since: their boxes are blank on the old
+    // copy. A row nobody touched here is not sent, and keeps whatever it has.
+    mutationFn: () => enterMarks(paper.id, dirtyRows.map((r) => {
       const x = e(r)
       return {
         enrollment_id: r.enrollment_id,
@@ -268,7 +270,8 @@ function MarksSheet({ paper, reach, teaching, classId, className, termId }: {
     }), reason.trim() || null),
     onSuccess: (res) => {
       const blankLeft = rows.filter((r) => !r.is_locked && isBlank(e(r))).length
-      setMsg(`Saved. ${res.marked} marked${res.cleared ? `, ${res.cleared} cleared` : ''}${blankLeft ? `, ${blankLeft} still blank` : ''}${res.skipped ? `, ${res.skipped} locked` : ''}.`)
+      const saved = res.written ?? res.marked
+      setMsg(`Saved ${saved} mark${saved === 1 ? '' : 's'}${res.cleared ? `, cleared ${res.cleared}` : ''}${blankLeft ? `; ${blankLeft} still blank` : ''}${res.skipped ? `; ${res.skipped} locked, not changed` : ''}.`)
       void qc.invalidateQueries({ queryKey: ['marksheet', paper.id] })
       void qc.invalidateQueries({ queryKey: ['paperProgress', termId, classId] })
       void qc.invalidateQueries({ queryKey: ['examOverview', termId] })

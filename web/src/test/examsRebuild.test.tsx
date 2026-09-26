@@ -105,11 +105,10 @@ describe('a teacher marks the papers they teach, and only their own section', ()
     fireEvent.click(screen.getByRole('button', { name: /Save 1 change/ }))
     await waitFor(() => expect(calls!.some((c) => c.name === 'fn_enter_marks')).toBe(true))
     const sent = calls!.find((c) => c.name === 'fn_enter_marks')!.args.p_marks as { enrollment_id: string; marks: number | null }[]
-    expect(sent.map((r) => r.enrollment_id).sort()).toEqual(['en1', 'en2'])
-    expect(sent.find((r) => r.enrollment_id === 'en1')!.marks).toBe(61)
-    // A blank box is sent as a blank, which the database now treats as "not
-    // marked" (0152) instead of storing a zero.
-    expect(sent.find((r) => r.enrollment_id === 'en2')!.marks).toBeNull()
+    // Only the row that was typed in. The untouched blank beside it is not
+    // sent: a blank now clears (0152), and an old copy of the sheet must not
+    // clear a mark a colleague entered since.
+    expect(sent).toEqual([{ enrollment_id: 'en1', marks: 61, practical_marks: null, is_absent: false }])
   })
 
   it('opens Exams to class and subject teachers in the sidebar', () => {
