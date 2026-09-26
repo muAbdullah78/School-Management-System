@@ -7,7 +7,7 @@ import {
 import { formatPkr } from '@/lib/licence'
 import { myDiscount, previewDiscount, TERM_LABEL } from '@/lib/plans'
 import { fmtDate } from '@/lib/format'
-import { Button, inputClass } from '@/components/ui'
+import { Button, inputClass, buttonClass } from '@/components/ui'
 
 const CARD = 'rounded-2xl border border-slate-200 bg-white p-4 shadow-card'
 const HEAD = 'text-xs font-semibold uppercase tracking-wide text-slate-500'
@@ -247,7 +247,7 @@ export function YourAccountBlock() {
                 : 'Nothing is taken automatically. You send the payment, we match it to your invoice, and we remind you before it is due.'}
             </p>
           )}
-          <button onClick={open} className="mt-1.5 text-xs font-medium text-brand-700 hover:underline">
+          <button onClick={open} className={buttonClass({ variant: 'soft', size: 'sm', className: 'mt-2' })}>
             {m ? 'Change' : 'Tell us where it will come from'}
           </button>
         </div>
@@ -314,7 +314,7 @@ export function LeaveOrStayPanel() {
           <p className="text-sm text-slate-600">
             Your subscription is set to end on {fmtDate(n.period_end)}.{' '}
             <button onClick={() => stay.mutate()} disabled={stay.isPending}
-              className="font-medium text-brand-700 hover:underline disabled:opacity-60">
+              className={buttonClass({ variant: 'soft', size: 'sm', className: 'ml-1' })}>
               {stay.isPending ? 'Restarting…' : 'Carry on instead'}
             </button>
           </p>

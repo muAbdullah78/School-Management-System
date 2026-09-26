@@ -6,9 +6,9 @@ import {
   type AttendanceDayRow, type SubjectAttendanceDayRow, type AttendanceTally,
   type AttendanceDay, type AttendanceWatch,
 } from '@/lib/db'
-import { todayISO, fmtDate } from '@/lib/format'
+import { todayISO, fmtDate, grLabel } from '@/lib/format'
 import { ATTENDANCE_STATUSES } from '@/lib/constants'
-import { Button, Card, CardTitle, EmptyState, LoadError, inputClass } from '@/components/ui'
+import { Button, Card, CardTitle, EmptyState, LoadError, inputClass, buttonClass } from '@/components/ui'
 import {
   C, ChartCard, Donut, Legend, MiniTable, StackBar, TrendLine, attendanceParts, severity,
 } from '@/components/viz'
@@ -445,7 +445,7 @@ function Watchlist({ rows, date }: { rows: AttendanceWatch[]; date: string }) {
                 </Link>
                 <div className="text-xs text-slate-500">
                   {w.class_name}{w.section_name ? ` · ${w.section_name}` : ''}
-                  {w.gr_no ? ` · GR ${w.gr_no}` : ''}
+                  {w.gr_no ? ` · ${grLabel(w.gr_no)}` : ''}
                   <span className="block sm:inline">
                     <span className="hidden sm:inline"> · </span>
                     {w.absent} absent, {w.leave} on leave, of {w.marked} days
@@ -501,7 +501,7 @@ function ReadOnlyRegister({
   return (
     <Card className="mt-6">
       <CardTitle right={
-        <button onClick={onClose} className="text-sm font-normal normal-case text-brand-700 hover:underline">
+        <button onClick={onClose} className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm', className: 'normal-case tracking-normal' })}>
           Close
         </button>
       }>

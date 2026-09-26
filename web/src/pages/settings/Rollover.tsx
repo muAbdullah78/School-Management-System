@@ -6,7 +6,7 @@ import {
 } from '@/lib/db'
 import { diagnoseNoClass } from '@/lib/noClass'
 import { defaultRolloverRules, rulesToPayload, type RolloverAction, type RolloverRule } from '@/lib/rollover'
-import { fmtPKR } from '@/lib/format'
+import { fmtPKR, grLabel } from '@/lib/format'
 import { AskDialog } from '@/components/AskDialog'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
@@ -277,7 +277,7 @@ function ResultView({ result, committed, toName }: { result: RolloverResult; com
               <ActionBadge action={r.action} message={r.message} />
             </div>
             <div className="mt-0.5 text-xs text-slate-600">
-              {r.from_class ?? '-'} → {r.to_class ?? '-'}{r.roll_no ? ` · roll ${r.roll_no}` : ''}{r.gr_no ? ` · GR ${r.gr_no}` : ''}
+              {r.from_class ?? '-'} → {r.to_class ?? '-'}{r.roll_no ? ` · roll ${r.roll_no}` : ''}{r.gr_no ? ` · ${grLabel(r.gr_no)}` : ''}
             </div>
             {Number(r.balance) > 0 && <div className="mt-0.5 text-xs text-due-800">Arrears carried {fmtPKR(Number(r.balance))}</div>}
             {r.message && <div className="mt-0.5 text-xs text-slate-500">{r.message}</div>}

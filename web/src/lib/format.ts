@@ -123,3 +123,17 @@ export function fmtMonth(iso: string | null | undefined): string {
     month: 'short', year: 'numeric', timeZone: 'UTC',
   })
 }
+
+/**
+ * A GR number as it should be read: "GR 1204", or the school's own prefix.
+ *
+ * The number is stored WITH the prefix the school set ("GR-0012", "AQ/12"),
+ * and sixteen screens printed "GR " in front of it, so a school with a
+ * prefix read "GR GR-0012" on every card. The word is added only when the
+ * stored number starts with a digit, which is a school with no prefix.
+ */
+export function grLabel(gr: string | null | undefined): string {
+  const g = (gr ?? '').trim()
+  if (!g) return ''
+  return /^[0-9]/.test(g) ? `GR ${g}` : g
+}

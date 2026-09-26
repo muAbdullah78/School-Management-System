@@ -65,7 +65,7 @@ import {
 import { DISCOUNT_TYPES } from '@/lib/constants'
 import { MonthHeader } from './MonthHeader'
 import { isMissingFunction } from '@/lib/notInstalled'
-import { fmtDate } from '@/lib/format'
+import { fmtDate, grLabel } from '@/lib/format'
 import { Receipt, type ReceiptData } from '@/components/Receipt'
 import { Avatar } from '@/components/Avatar'
 import { useStudentFaces } from '@/hooks/useStudentFaces'
@@ -80,6 +80,7 @@ import {
   inputClass,
   MiniStat,
   money,
+  buttonClass,
 } from '@/components/ui'
 import {
   IconSearch,
@@ -147,7 +148,7 @@ function TodayAtCounter({ onPending }: { onPending: () => void }) {
       )}
       {t.pending_count > 0 && (
         <button type="button" onClick={onPending}
-          className="mt-3 text-left text-xs font-medium text-due-800 hover:underline">
+          className={buttonClass({ variant: 'soft', tone: 'due', size: 'sm', className: 'mt-3 text-left' })}>
           {t.pending_count} payment{t.pending_count === 1 ? '' : 's'} ({money(t.pending_total)}) waiting for the bank to clear, not counted above. Verify under Pending →
         </button>
       )}
@@ -249,7 +250,7 @@ function ChildFeeCard({
               <span className="text-sm font-medium text-slate-800 group-hover:underline">
                 {c.full_name}
               </span>
-              {c.gr_no ? <span className="text-xs text-slate-400">GR {c.gr_no}</span> : null}
+              {c.gr_no ? <span className="text-xs text-slate-400">{grLabel(c.gr_no)}</span> : null}
               {c.status !== 'active' && <Badge tone="neutral">{c.status}</Badge>}
             </span>
             <span className="block truncate text-xs text-slate-500">
@@ -515,6 +516,11 @@ export function FamilyCollect({ onOpenPending }: { onOpenPending?: () => void } 
           timezone, so a fee taken before 5am Karachi showed on yesterday. The
           day's cash total belongs on Accounts; this screen is about the month.
           Clicking a count opens the names. */}
+      {/* ON A PHONE THE SEARCH COMES FIRST. The clerk at the window came to
+          find a child, and below the month's four figures and the day's till
+          the search box was a thousand pixels down. From lg up the page reads
+          as before: the month, the day, then the search. */}
+      <div className="flex flex-col">
       {!familyId && session.data?.id && (
         <MonthHeader
           sessionId={session.data.id}
@@ -529,7 +535,7 @@ export function FamilyCollect({ onOpenPending }: { onOpenPending?: () => void } 
           a child (a fee slip, a name at the window) or the father (paying for
           all of them). Both open the same family sheet. */}
       {!familyId && (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="order-first mb-5 grid grid-cols-1 gap-4 lg:order-none lg:mb-0 lg:grid-cols-2">
         <Card>
           <CardTitle icon={<IconStudents />}>By student, or scan the challan</CardTitle>
           <form
@@ -570,8 +576,8 @@ export function FamilyCollect({ onOpenPending }: { onOpenPending?: () => void } 
             {students.data && students.data.length === 0 && (
               <EmptyState
                 icon={<IconStudents />}
-                title="No student matches"
-                message="Try fewer letters, or a GR number."
+                title={sQuery.trim() ? 'No student matches' : 'Nobody is on the roll yet'}
+                message={sQuery.trim() ? 'Try fewer letters, or a GR number.' : 'Admit a child first, then take their fee here.'}
               />
             )}
             {students.data && students.data.length > 0 && (
@@ -687,6 +693,7 @@ export function FamilyCollect({ onOpenPending }: { onOpenPending?: () => void } 
         </Card>
         </div>
       )}
+      </div>
 
       {/* -------------------------------------------------- today's receipts -- */}
       {/* On screen before anyone searches. It answers "what have we taken
@@ -869,7 +876,7 @@ export function FamilyCollect({ onOpenPending }: { onOpenPending?: () => void } 
                           <li key={i} className="flex justify-between gap-3">
                             <span className="min-w-0 truncate">
                               {a.student_name}
-                              {a.gr_no ? ` (GR ${a.gr_no})` : ''} · {monthLabel(a.period_month)}
+                              {a.gr_no ? ` (${grLabel(a.gr_no)})` : ''} · {monthLabel(a.period_month)}
                             </span>
                             <span className="shrink-0 tabular-nums">{money(a.amount)}</span>
                           </li>
@@ -907,7 +914,7 @@ export function FamilyCollect({ onOpenPending }: { onOpenPending?: () => void } 
                               advance: result.credit,
                               covers: (result.applied ?? []).map((a) => ({
                                 label:
-                                  `${a.student_name}${a.gr_no ? ` (GR ${a.gr_no})` : ''}` +
+                                  `${a.student_name}${a.gr_no ? ` (${grLabel(a.gr_no)})` : ''}` +
                                   ` · ${monthLabel(a.period_month)}`,
                                 amount: a.amount,
                               })),

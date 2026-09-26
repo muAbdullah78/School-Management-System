@@ -19,7 +19,7 @@ import { StaffDayRegister } from './StaffDayRegister'
 import { PhotoUpload } from '@/components/PhotoUpload'
 import { Avatar } from '@/components/Avatar'
 import { removeStaffPhoto, signPaths, uploadStaffPhoto } from '@/lib/photos'
-import { LoadError, Button, inputClass } from '@/components/ui'
+import { LoadError, Button, inputClass, buttonClass } from '@/components/ui'
 import { TabBar } from '@/components/TabBar'
 import { useUrlTab } from '@/lib/useUrlTab'
 import { AskDialog } from '@/components/AskDialog'
@@ -350,7 +350,7 @@ function StaffTab() {
       {flash && (
         <div className="flex items-start justify-between gap-3 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-800">
           <span>{flash}</span>
-          <button onClick={() => setFlash(null)} className="shrink-0 text-brand-700 hover:underline">Dismiss</button>
+          <button onClick={() => setFlash(null)} className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm', className: 'shrink-0' })}>Dismiss</button>
         </div>
       )}
 
@@ -534,7 +534,7 @@ function StaffTab() {
       {filter === 'everyone' && !term && left.length > 0 && (
         <p className="text-xs text-slate-500">
           {left.length} {left.length === 1 ? 'person who has left is' : 'people who have left are'} not shown.{' '}
-          <button type="button" onClick={() => setFilter('left')} className="font-medium text-brand-700 hover:underline">Show them</button>
+          <button type="button" onClick={() => setFilter('left')} className={buttonClass({ variant: 'soft', size: 'sm', className: 'ml-1' })}>Show them</button>
         </p>
       )}
       {link.isError && !relinking && <p className="text-sm text-danger-600">{(link.error as Error).message}</p>}
@@ -690,17 +690,18 @@ function LoginState({ row, canLink, onOpen, onClose, onGive, onChange, changing 
   onChange?: () => void; changing: boolean
 }) {
   if (!canLink || row.status !== 'active') return null
-  const link = 'font-medium hover:underline'
+  const go = buttonClass({ variant: 'soft', size: 'sm' })
+  const quiet = buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm' })
   return (
-    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs">
-      {row.login_active === null && <button onClick={onGive} className={`${link} text-brand-700`}>Give a login</button>}
-      {row.login_active === true && <button onClick={onClose} className={`${link} text-slate-500`}>Suspend</button>}
+    <div className="mt-2 flex flex-wrap gap-2 text-xs">
+      {row.login_active === null && <button onClick={onGive} className={go}>Give a login</button>}
+      {row.login_active === true && <button onClick={onClose} className={quiet}>Suspend</button>}
       {/* Reopening is offered only for somebody who is still on the staff:
           reopening a departed person's login would leave the two facts
           contradicting each other, and SQL refuses it anyway. */}
-      {row.login_active === false && <button onClick={onOpen} className={`${link} text-brand-700`}>Reopen</button>}
+      {row.login_active === false && <button onClick={onOpen} className={go}>Reopen</button>}
       {onChange && (
-        <button onClick={onChange} aria-expanded={changing} className={`${link} text-slate-500`}>
+        <button onClick={onChange} aria-expanded={changing} className={quiet}>
           {changing ? 'Keep it as it is' : row.profile_id ? 'Change login' : 'Attach an existing login'}
         </button>
       )}

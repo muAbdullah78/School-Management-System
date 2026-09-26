@@ -263,13 +263,16 @@ describe('money does not move on one click', () => {
 /* -------------------------------------------------------------- the tabs --- */
 
 describe('the tab bar', () => {
-  it('has no negative margin to overflow with, and clips vertically', () => {
+  it('wraps rather than scrolling, so no tab or its count is ever hidden, and has no negative margin', () => {
     render(createElement(TabBar, {
       label: 'Fees', value: 'b', onChange: () => {},
       tabs: [{ key: 'a', label: 'Collect' }, { key: 'b', label: 'Pending', count: 3 }],
     }))
     const nav = screen.getByRole('navigation', { name: 'Fees' })
-    expect(nav.className).toContain('overflow-y-hidden')
+    // A sideways-scrolling row hid "Pending 43" off a phone's edge, and its
+    // overflow once gave Windows a vertical scrollbar under the labels.
+    expect(nav.className).toContain('flex-wrap')
+    expect(nav.className).not.toMatch(/overflow-(x|y)?-?(auto|scroll)/)
     expect(nav.innerHTML).not.toContain('-mb-px')
     expect(screen.getByRole('button', { name: /Pending/ }).getAttribute('aria-current')).toBe('page')
     expect(screen.getByLabelText('3 waiting')).toBeTruthy()

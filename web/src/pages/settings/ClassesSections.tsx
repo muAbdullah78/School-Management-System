@@ -6,7 +6,7 @@ import {
   renameClass, setClassOrder, renameSection, getCurrentSession, getClassStrength,
   type ClassFull, type SubjectRow,
 } from '@/lib/db'
-import { LoadError, Button } from '@/components/ui'
+import { LoadError, Button, buttonClass } from '@/components/ui'
 import { AskDialog } from '@/components/AskDialog'
 import { ObserverNotice } from '@/components/ObserverNotice'
 import { useAuth } from '@/auth/AuthProvider'
@@ -104,7 +104,7 @@ export function ClassesSections() {
 
       {off.length > 0 && (
         <div>
-          <button type="button" onClick={() => setShowOff(!showOff)} className="text-sm font-medium text-brand-700 hover:underline">
+          <button type="button" onClick={() => setShowOff(!showOff)} className={buttonClass({ variant: 'soft', size: 'sm' })}>
             {showOff ? 'Hide' : 'Show'} the {off.length} switched-off class{off.length === 1 ? '' : 'es'}
           </button>
           {showOff && (
@@ -253,8 +253,8 @@ function SectionChip({ id, name, count, mayWrite, onChanged }: {
     return (
       <form className="inline-flex flex-wrap items-center gap-1" onSubmit={(e) => { e.preventDefault(); if (v.trim()) save.mutate() }}>
         <input autoFocus value={v} onChange={(e) => setV(e.target.value)} aria-label="Section name" className={`w-20 ${FIELD} py-0.5 text-xs`} />
-        <button type="submit" disabled={save.isPending} className="text-xs font-medium text-brand-700 hover:underline">Save</button>
-        <button type="button" onClick={() => { setEditing(false); setV(name); save.reset() }} className="text-xs text-slate-400 hover:underline">Cancel</button>
+        <button type="submit" disabled={save.isPending} className={buttonClass({ size: 'sm' })}>Save</button>
+        <button type="button" onClick={() => { setEditing(false); setV(name); save.reset() }} className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm' })}>Cancel</button>
         {save.isError && <span className="text-xs text-danger-700">{(save.error as Error).message}</span>}
       </form>
     )
@@ -316,7 +316,7 @@ function SubjectsBlock({ cls, allClasses }: { cls: ClassFull; allClasses: ClassF
         <div className="mt-1.5">
           {!copying ? (
             <button onClick={() => { setErr(null); setCopying(true) }}
-              className="text-xs text-brand-700 hover:underline">
+              className={buttonClass({ variant: 'soft', size: 'sm' })}>
               Copy these subjects to other classes
             </button>
           ) : (
@@ -364,9 +364,9 @@ function SubjectChip({ subject, onChanged, onError }: {
         <input autoFocus value={name} onChange={(e) => setName(e.target.value)}
           className={`w-32 ${FIELD} py-0.5 text-xs`} />
         <button type="submit" disabled={rename.isPending}
-          className="text-xs text-brand-700 hover:underline">Save</button>
+          className={buttonClass({ size: 'sm' })}>Save</button>
         <button type="button" onClick={() => { setEditing(false); setName(subject.name) }}
-          className="text-xs text-slate-400 hover:underline">Cancel</button>
+          className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm' })}>Cancel</button>
       </form>
     )
   }

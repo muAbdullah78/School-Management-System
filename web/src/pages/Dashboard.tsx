@@ -17,7 +17,7 @@ import { diagnoseNoClass } from '@/lib/noClass'
 import { requireSupabase } from '@/lib/supabase'
 import { isConfigured } from '@/lib/config'
 import { fmtPKR } from '@/lib/format'
-import { Card, StatTile, PageHeader, EmptyState } from '@/components/ui'
+import { Card, StatTile, PageHeader, EmptyState, buttonClass } from '@/components/ui'
 import {
   C, ChartCard, Donut, HBars, Legend, MiniTable, StackBar, StackedColumns, TrendLine,
   attendanceParts, pctOf, type BarRow, type ColumnDatum, type Segment,
@@ -614,7 +614,7 @@ function RegisterToday({
         {canAdd && (
           <Link
             to="/students?add=bulk"
-            className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-brand-700 hover:underline"
+            className={buttonClass({ variant: 'soft', className: 'mt-3' })}
           >
             Add a whole class at once <IconChevron className="h-4 w-4" />
           </Link>
@@ -712,7 +712,7 @@ function RegisterToday({
             <button
               type="button"
               onClick={() => setAll((v) => !v)}
-              className="mt-3 text-xs font-medium text-brand-700 hover:underline"
+              className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm', className: 'mt-3' })}
             >
               {all ? 'Show fewer' : `Show all ${sections.length} classes`}
             </button>
@@ -791,8 +791,8 @@ function StaffCard({ staff, fetching }: { staff: StaffToday; fetching: boolean }
       fetching={fetching}
       title="Staff today"
       action={
-        <Link to="/staff" className="text-xs font-medium text-brand-700 hover:underline">
-          Staff
+        <Link to="/staff?tab=attendance" className={buttonClass({ variant: 'soft', size: 'sm' })}>
+          Open register
         </Link>
       }
     >
@@ -882,7 +882,7 @@ function FeeMonths({
       }
       action={
         roleCanFees ? (
-          <Link to="/fees" className="text-xs font-medium text-brand-700 hover:underline">Fees</Link>
+          <Link to="/fees" className={buttonClass({ variant: 'soft', size: 'sm' })}>Open fees</Link>
         ) : undefined
       }
       table={
@@ -959,8 +959,8 @@ function DuesByClass({
       subtitle={rows.length ? `${fmtPKR(total)} owed by ${plural(students, 'student')}` : undefined}
       action={
         roleCanReports ? (
-          <Link to="/reports?tab=defaulters" className="text-xs font-medium text-brand-700 hover:underline">
-            Defaulters
+          <Link to="/reports?tab=defaulters" className={buttonClass({ variant: 'soft', size: 'sm' })}>
+            See defaulters
           </Link>
         ) : undefined
       }

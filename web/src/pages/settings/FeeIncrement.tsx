@@ -4,7 +4,7 @@ import {
   listSessions, listClasses, listFeeHeads, feeIncrement,
   type FeeIncrementResult,
 } from '@/lib/db'
-import { Card, CardTitle, Button, Field, inputClass, MiniStat, LoadError } from '@/components/ui'
+import { Card, CardTitle, Button, Field, inputClass, MiniStat, LoadError, buttonClass } from '@/components/ui'
 import { IconFees, IconAlert, IconCheck } from '@/components/icons'
 import { fmtPKR, fmtDate, todayISO } from '@/lib/format'
 
@@ -366,7 +366,7 @@ function Picker({
         {selected.length > 0 && (
           <button
             onClick={() => onChange([])}
-            className="text-xs font-medium text-brand-600 hover:underline"
+            className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm' })}
           >
             Clear
           </button>

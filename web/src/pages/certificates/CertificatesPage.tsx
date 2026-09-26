@@ -10,7 +10,7 @@ import { CertificatePrint, type CertificatePrintData } from './CertificatePrint'
 import { useAuth } from '@/auth/AuthProvider'
 import { canWrite } from '@/auth/roles'
 import { ObserverNotice } from '@/components/ObserverNotice'
-import { LoadError } from '@/components/ui'
+import { LoadError, buttonClass } from '@/components/ui'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 const CONDUCTS = ['Excellent', 'Very Good', 'Good', 'Satisfactory']
@@ -155,7 +155,7 @@ export function CertificatesPage() {
           <div className="mt-3">
             <div className="flex items-center justify-between">
               <div className="text-sm text-slate-700"><span className="font-medium">{student.full_name}</span>{student.gr_no ? ` · ${student.gr_no}` : ''}</div>
-              <button onClick={reset} className="text-sm text-brand-700 hover:underline">Change student</button>
+              <button onClick={reset} className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm' })}>Change student</button>
             </div>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <label className="block">

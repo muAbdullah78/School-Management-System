@@ -5,7 +5,7 @@ import {
   type TestOverviewRow, type TestState, type TestMarks,
 } from '@/lib/db'
 import { fmtDate, todayISO, shiftDate } from '@/lib/format'
-import { LoadError, EmptyState, inputClass } from '@/components/ui'
+import { LoadError, EmptyState, inputClass, buttonClass } from '@/components/ui'
 import { C, ChartCard, HBars, MiniTable, StackBar, type Segment } from '@/components/viz'
 import { ChartUnavailable } from '@/components/ChartUnavailable'
 import { AskDialog } from '@/components/AskDialog'
@@ -370,7 +370,7 @@ function TestList({
             </div>
             {mayReopen && r.state === 'locked' && (
               <button type="button" onClick={() => onReopen(r)}
-                className="mt-2 text-xs font-medium text-brand-700 hover:underline">
+                className={buttonClass({ variant: 'soft', size: 'sm', className: 'mt-2' })}>
                 Reopen for corrections
               </button>
             )}
@@ -413,7 +413,7 @@ function TestList({
                 <StatePill r={r} />
                 {mayReopen && r.state === 'locked' && (
                   <button type="button" onClick={() => onReopen(r)}
-                    className="ml-2 text-xs font-medium text-brand-700 hover:underline">
+                    className={buttonClass({ variant: 'soft', size: 'sm', className: 'ml-2' })}>
                     Reopen
                   </button>
                 )}

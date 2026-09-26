@@ -8,6 +8,7 @@ import { CheckInPanel } from '@/components/checkin/CheckInPanel'
 import {
   STATUS_WORD, deviceLabel, getCoords, hoursWorked, pkTime, resultHeadline,
 } from '@/components/checkin/checkinKit'
+import { buttonClass } from '@/components/ui'
 
 /**
  * The page the gate QR opens (…/checkin?c=TOKEN), outside the app shell.
@@ -109,7 +110,7 @@ export function CheckIn() {
 
         {session && (
           <div className="mt-5 border-t border-slate-100 pt-3 text-center">
-            <Link to="/" className="text-sm font-medium text-brand-700 hover:underline">Open the app</Link>
+            <Link to="/" className={buttonClass({ variant: 'soft' })}>Open the app</Link>
           </div>
         )}
       </div>

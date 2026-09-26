@@ -49,8 +49,7 @@ import {
 } from '@/lib/db'
 import {
   Card, CardTitle, PageHeader, StatTile, Button, Badge, Field, inputClass,
-  EmptyState, money,
-} from '@/components/ui'
+  EmptyState, money, buttonClass } from '@/components/ui'
 import { IconWallet, IconAlert, IconCheck, IconReports } from '@/components/icons'
 import { useAuth } from '@/auth/AuthProvider'
 import { canWrite } from '@/auth/roles'
@@ -421,7 +420,7 @@ export function AccountsPage() {
                       <div className="shrink-0 text-right">
                         <div className={`text-sm font-semibold tabular-nums ${e.amount < 0 ? 'text-money-700' : 'text-slate-900'}`}>{money(e.amount)}</div>
                         {e.amount > 0 && !e.reversal_of && mayWrite && (
-                          <button className="text-xs text-danger-600 hover:underline"
+                          <button className={buttonClass({ variant: 'soft', tone: 'danger', size: 'sm', className: 'mt-1' })}
                             onClick={() => setReversing({ kind: 'expense', id: e.id, amount: e.amount, what: `voucher #${e.voucher_no} · ${catName(e.category_id)}` })}>
                             Reverse
                           </button>
@@ -458,7 +457,7 @@ export function AccountsPage() {
                           <td className="py-2 text-right">
                             {e.amount > 0 && !e.reversal_of && mayWrite && (
                               <button
-                                className="text-xs text-danger-600 hover:underline"
+                                className={buttonClass({ variant: 'soft', tone: 'danger', size: 'sm' })}
                                 onClick={() => setReversing({
                                   kind: 'expense', id: e.id, amount: e.amount,
                                   what: `voucher #${e.voucher_no} · ${catName(e.category_id)}`,
@@ -505,7 +504,7 @@ export function AccountsPage() {
                     <div className="shrink-0 text-right">
                       <div className={`text-sm font-semibold tabular-nums ${i.amount < 0 ? 'text-danger-600' : 'text-money-700'}`}>{money(i.amount)}</div>
                       {i.amount > 0 && !i.reversal_of && mayWrite && (
-                        <button className="text-xs text-danger-600 hover:underline"
+                        <button className={buttonClass({ variant: 'soft', tone: 'danger', size: 'sm', className: 'mt-1' })}
                           onClick={() => setReversing({ kind: 'income', id: i.id, amount: i.amount, what: i.source })}>
                           Reverse
                         </button>
@@ -752,7 +751,7 @@ function ManageCategories() {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="mt-1 text-xs font-medium text-brand-600 hover:underline"
+        className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm', className: 'mt-1' })}
       >
         Manage categories
       </button>
@@ -802,9 +801,9 @@ function ManageCategories() {
                 <button
                   onClick={() => rename.mutate({ id: c.id, name: editName })}
                   disabled={!editName.trim() || rename.isPending}
-                  className="shrink-0 text-xs font-medium text-brand-600 hover:underline disabled:opacity-50"
+                  className={buttonClass({ size: 'sm', className: 'shrink-0' })}
                 >
-                  save
+                  Save
                 </button>
                 <button
                   onClick={() => setEditing(null)}

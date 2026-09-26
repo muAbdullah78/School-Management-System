@@ -7,7 +7,7 @@ import {
 import { QrCode } from '@/components/QrCode'
 import { useSchoolName } from '@/hooks/useSchoolName'
 import { fmtDate, todayISO } from '@/lib/format'
-import { LoadError, Button, inputClass } from '@/components/ui'
+import { LoadError, Button, inputClass, buttonClass } from '@/components/ui'
 import { AskDialog } from '@/components/AskDialog'
 import { isMissingFunction } from '@/lib/notInstalled'
 
@@ -254,7 +254,7 @@ function NewCode({ base, setBase, replacing, onDone, onCancel }: {
       {/* The link the QR opens is right for every school that uses the app at
           its own address, which is all of them. It is still editable, but out
           of the way, because a principal who "tidies" it breaks every QR. */}
-      <button type="button" onClick={() => setAdvanced((v) => !v)} className="mt-3 text-xs font-medium text-slate-500 hover:underline">
+      <button type="button" onClick={() => setAdvanced((v) => !v)} className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm', className: 'mt-3' })}>
         {advanced ? 'Hide' : 'Advanced: the link the QR opens'}
       </button>
       {advanced && (

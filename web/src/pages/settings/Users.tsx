@@ -7,7 +7,7 @@ import {
 import { ASSIGNABLE_ROLES, ROLE_LABELS, isRetired, type LiveRole, type Role } from '@/auth/roles'
 import { useAuth } from '@/auth/AuthProvider'
 import { fmtDate } from '@/lib/format'
-import { LoadError, Button, inputClass } from '@/components/ui'
+import { LoadError, Button, inputClass, buttonClass } from '@/components/ui'
 import { AskDialog } from '@/components/AskDialog'
 import { KeyRing } from './KeyRing'
 import { useEmailCheck, EmailVerdictLine } from '@/components/EmailAvailability'
@@ -138,7 +138,7 @@ export function Users() {
       {flash && (
         <div className="flex items-start justify-between gap-3 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-800">
           <span>{flash}</span>
-          <button onClick={() => setFlash(null)} className="shrink-0 text-brand-700 hover:underline">Dismiss</button>
+          <button onClick={() => setFlash(null)} className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm', className: 'shrink-0' })}>Dismiss</button>
         </div>
       )}
 

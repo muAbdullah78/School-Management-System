@@ -11,7 +11,7 @@ import {
   type DiscountPreview, type MyDiscount,
 } from '@/lib/plans'
 import { fmtDate, fmtDateTime } from '@/lib/format'
-import { Button, inputClass } from '@/components/ui'
+import { Button, inputClass, buttonClass } from '@/components/ui'
 import { NextPaymentPanel, YourAccountBlock, LeaveOrStayPanel } from './NextPayment'
 import { RoomForPupils } from './RoomForPupils'
 
@@ -231,7 +231,7 @@ function Documents({ docs, onPrint }: { docs: MyBillingDocument[]; onPrint: (id:
                   </div>
                   <div className="shrink-0 text-right">
                     <div className="text-sm font-semibold tabular-nums">{credit ? `− ${formatPkr(d.total)}` : formatPkr(d.total)}</div>
-                    <button onClick={() => onPrint(d.id)} className="text-xs font-medium text-brand-700 hover:underline">Print</button>
+                    <button onClick={() => onPrint(d.id)} className={buttonClass({ variant: 'soft', size: 'sm', className: 'mt-1' })}>Print</button>
                   </div>
                 </li>
               )
@@ -258,7 +258,7 @@ function Documents({ docs, onPrint }: { docs: MyBillingDocument[]; onPrint: (id:
                     <td className="py-1.5 text-slate-600">{fmtDate(d.period_start)} to {fmtDate(d.period_end)}</td>
                     <td className="py-1.5 text-right tabular-nums">{credit ? `− ${formatPkr(d.total)}` : formatPkr(d.total)}</td>
                     <td className="py-1.5 text-right tabular-nums text-slate-500">{credit || d.voided ? '-' : formatPkr(d.paid)}</td>
-                    <td className="py-1.5 text-right"><button onClick={() => onPrint(d.id)} className="text-xs text-brand-700 hover:underline">Print</button></td>
+                    <td className="py-1.5 text-right"><button onClick={() => onPrint(d.id)} className={buttonClass({ variant: 'soft', size: 'sm' })}>Print</button></td>
                   </tr>
                 )
               })}
@@ -315,7 +315,7 @@ function PrintDialog({ invoiceId, onClose }: { invoiceId: string; onClose: () =>
       <div className="mx-auto max-w-3xl rounded-2xl bg-white p-3 shadow-pop">
         <div className="flex items-center justify-between gap-2 print:hidden">
           <Button size="sm" onClick={() => window.print()}>Print</Button>
-          <button onClick={onClose} className="text-sm text-slate-500 hover:underline">Close</button>
+          <button onClick={onClose} className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm' })}>Close</button>
         </div>
         {q.isLoading && <p className="p-4 text-sm text-slate-500">Loading…</p>}
         {q.error && <p className="p-4 text-sm text-danger-700">{(q.error as Error).message}</p>}
@@ -527,7 +527,7 @@ function ApplyCodePanel({ current }: { current: MyDiscount | null }) {
             </span>
           </span>
           {!showRemove ? (
-            <button className="text-xs font-medium text-slate-600 hover:underline" onClick={() => setShowRemove(true)}>Remove</button>
+            <button className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm' })} onClick={() => setShowRemove(true)}>Remove</button>
           ) : (
             <span className="flex gap-2">
               <Button size="sm" variant="soft" tone="neutral" onClick={() => setShowRemove(false)} disabled={busy}>Keep</Button>

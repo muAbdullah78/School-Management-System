@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { buttonClass } from '@/components/ui'
 
 // The Shape Detection API is not in TypeScript's DOM library yet.
 interface DetectedCode { rawValue: string }
@@ -92,7 +93,7 @@ export function QrScanner({ onCode, onCancel }: { onCode: (raw: string) => void;
     return (
       <div className="rounded-2xl border border-due-200 bg-due-50 p-4 text-sm text-due-900">
         <p>{problem}</p>
-        <button type="button" onClick={onCancel} className="mt-2 font-medium text-brand-700 hover:underline">
+        <button type="button" onClick={onCancel} className={buttonClass({ variant: 'soft', size: 'sm', className: 'mt-2' })}>
           Type the PIN instead
         </button>
       </div>
@@ -108,7 +109,7 @@ export function QrScanner({ onCode, onCancel }: { onCode: (raw: string) => void;
       </div>
       <p className="mt-2 text-center text-sm text-slate-600">Point the camera at the QR on the gate screen.</p>
       <div className="mt-2 text-center">
-        <button type="button" onClick={onCancel} className="text-sm font-medium text-slate-600 hover:underline">Cancel</button>
+        <button type="button" onClick={onCancel} className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm' })}>Cancel</button>
       </div>
     </div>
   )

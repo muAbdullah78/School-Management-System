@@ -346,6 +346,9 @@ export const STEP2_SCENES: Record<string, Scene> = {
       [['sections', 'c5'], [{ id: 'c5-b', name: 'B', class_id: 'c5' }]],
       [['roster', SESSION.id, 'c5', 'c5-b', TODAY], ROSTER_5B],
     ],
+    // The page opens on the real today, which the seed above was pinned to
+    // once; answering the read itself keeps the scene working on any day.
+    data: { fn_section_roster: ROSTER_5B },
   },
   attendance: {
     title: 'Attendance, the head at 10:30',

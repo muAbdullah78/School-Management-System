@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { IconCheck, IconClock, IconMinus, IconX } from './icons'
+import { buttonClass } from '@/components/ui'
 
 /*
  * The chart kit. Plain SVG and CSS, no charting library.
@@ -784,20 +785,23 @@ export function ChartCard({
 }) {
   const [asTable, setAsTable] = useState(false)
   return (
-    <section className={`rounded-2xl bg-white p-5 shadow-card ring-1 ring-slate-200/70 ${className}`}>
-      <div className="flex items-start justify-between gap-3">
+    <section className={`rounded-2xl bg-white p-4 shadow-card ring-1 ring-slate-200/70 sm:p-5 ${className}`}>
+      {/* On a phone the title takes the whole width and the buttons sit under
+          it. Side by side, two buttons squeezed "Where the dues are" into a
+          column one word wide. */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
         <div className="min-w-0 flex-1">
           <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
           {subtitle && <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>}
         </div>
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-x-3 gap-y-1">
+        <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:justify-end">
           {action}
           {table && (
             <button
               type="button"
               onClick={() => setAsTable((v) => !v)}
               aria-pressed={asTable}
-              className="text-xs font-medium text-brand-700 hover:underline"
+              className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm' })}
             >
               {asTable ? 'View as chart' : 'View as table'}
             </button>
@@ -822,25 +826,45 @@ export function MiniTable({
   align?: ('l' | 'r')[]
 }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
-            {head.map((h, i) => (
-              <th key={h} className={`py-1.5 font-medium ${align?.[i] === 'r' ? 'text-right' : ''}`}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {rows.map((r, i) => (
-            <tr key={i}>
-              {r.map((c, j) => (
-                <td key={j} className={`py-1.5 ${align?.[j] === 'r' ? 'text-right tabular-nums' : 'text-slate-700'}`}>{c}</td>
+    <>
+      {/* A phone reads each row as a small card: the first cell as its name,
+          the rest as label and value. Six columns across a phone scrolled
+          sideways and lost the month name off the left. */}
+      <ul className="divide-y divide-slate-100 sm:hidden">
+        {rows.map((r, i) => (
+          <li key={i} className="py-2">
+            <div className="text-sm font-medium text-slate-900">{r[0]}</div>
+            <dl className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
+              {r.slice(1).map((c, j) => (
+                <div key={j} className="flex items-baseline justify-between gap-2">
+                  <dt className="text-slate-500">{head[j + 1]}</dt>
+                  <dd className={`text-slate-800 ${align?.[j + 1] === 'r' ? 'tabular-nums' : ''}`}>{c}</dd>
+                </div>
+              ))}
+            </dl>
+          </li>
+        ))}
+      </ul>
+      <div className="hidden overflow-x-auto sm:block">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+              {head.map((h, i) => (
+                <th key={h} className={`py-1.5 font-medium ${align?.[i] === 'r' ? 'text-right' : ''}`}>{h}</th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {rows.map((r, i) => (
+              <tr key={i}>
+                {r.map((c, j) => (
+                  <td key={j} className={`py-1.5 ${align?.[j] === 'r' ? 'text-right tabular-nums' : 'text-slate-700'}`}>{c}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   )
 }

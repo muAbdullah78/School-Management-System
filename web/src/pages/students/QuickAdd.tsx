@@ -33,7 +33,7 @@ import { DISCOUNT_TYPES } from '@/lib/constants'
 import { Card, CardTitle, Button, Badge, EmptyState } from '@/components/ui'
 import { IconStudents, IconCheck, IconAlert, IconFamily, IconWallet } from '@/components/icons'
 import { DateTriple, FIELD, missingFields, finishedMonths } from './rdeShared'
-import { fmtMonth } from '@/lib/format'
+import { fmtMonth, grLabel } from '@/lib/format'
 
 type Blank = {
   full_name: string; roll_no: string; gr_no: string
@@ -427,7 +427,7 @@ export function QuickAdd({
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-money-50 px-3 py-2">
               <span className="text-sm text-money-900">
                 Joins <span className="font-medium">{sibling.full_name}</span>
-                {sibling.gr_no ? ` (GR ${sibling.gr_no})` : ''}&rsquo;s family. From the next
+                {sibling.gr_no ? ` (${grLabel(sibling.gr_no)})` : ''}&rsquo;s family. From the next
                 challan the house gets <span className="font-medium">one bill</span> for both.
               </span>
               <button onClick={() => { setSibling(null); setSibTerm('') }}
@@ -516,7 +516,7 @@ export function QuickAdd({
                     <span className={a.status === 'error' ? 'text-danger-700' : 'text-slate-800'}>
                       {a.full_name}
                     </span>
-                    {a.gr_no && <span className="text-xs text-slate-400"> · GR {a.gr_no}</span>}
+                    {a.gr_no && <span className="text-xs text-slate-400"> · {grLabel(a.gr_no)}</span>}
                   </span>
                   {a.status === 'error'
                     ? <Badge tone="danger">failed</Badge>

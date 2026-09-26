@@ -8,7 +8,7 @@ import { fmtDate, todayISO, shiftDate } from '@/lib/format'
 import { useAuth } from '@/auth/AuthProvider'
 import { canWrite } from '@/auth/roles'
 import { ObserverNotice } from '@/components/ObserverNotice'
-import { LoadError, Button, inputClass, inputBase } from '@/components/ui'
+import { LoadError, Button, inputClass, inputBase, buttonClass } from '@/components/ui'
 import { AskDialog } from '@/components/AskDialog'
 import { StackBar, attendanceParts } from '@/components/viz'
 import { isMissingFunction } from '@/lib/notInstalled'
@@ -151,7 +151,7 @@ export function StaffDayRegister() {
       {flash && (
         <div className="flex items-start justify-between gap-3 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-800">
           <span>{flash}</span>
-          <button onClick={() => setFlash(null)} className="shrink-0 text-brand-700 hover:underline">Dismiss</button>
+          <button onClick={() => setFlash(null)} className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm', className: 'shrink-0' })}>Dismiss</button>
         </div>
       )}
 
