@@ -70,6 +70,10 @@ export interface SectionReach {
   whole: boolean
   /** The sections, when not `whole`. */
   ids: Set<string>
+  /** The same sections by name, for a read that carries names rather than
+   *  ids. A section's name is unique in its class (sections_class_id_name_key),
+   *  so within one class the two say the same thing. */
+  names: Set<string>
 }
 
 function reach(mine: MyTeachingRow[]): SectionReach {
@@ -78,6 +82,7 @@ function reach(mine: MyTeachingRow[]): SectionReach {
     none: mine.length === 0,
     whole,
     ids: new Set(mine.map((r) => r.section_id).filter(Boolean) as string[]),
+    names: new Set(mine.map((r) => r.section_name).filter(Boolean) as string[]),
   }
 }
 
@@ -104,4 +109,10 @@ export function classTeacherReach(rows: MyTeachingRow[], classId: string): Secti
 export function inReach(r: SectionReach, sectionId: string | null | undefined): boolean {
   if (r.none) return false
   return r.whole || sectionId == null || r.ids.has(sectionId)
+}
+
+/** inReach, for a row that carries its section's NAME (within one class). */
+export function inReachByName(r: SectionReach, sectionName: string | null | undefined): boolean {
+  if (r.none) return false
+  return r.whole || sectionName == null || r.names.has(sectionName)
 }

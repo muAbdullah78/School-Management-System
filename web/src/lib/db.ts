@@ -5911,11 +5911,6 @@ export interface ExamRemarkRow {
   percentage: number | null
   grade: string | null
   class_position: number | null
-  /** 0152: the pupil's section, so a class teacher of one section is shown
-   *  their own pupils, and whether the class's result is out (remarks are then
-   *  frozen). Absent before bundle 53. */
-  section_id?: string | null
-  released?: boolean
 }
 
 /** Every child in the class, remark or not. A teacher needs to see who is left. */
@@ -5932,6 +5927,18 @@ export async function listExamRemarks(
     percentage: r.percentage == null ? null : Number(r.percentage),
     class_position: r.class_position == null ? null : Number(r.class_position),
   }))
+}
+
+/** Whether a class's result for a term has been released (0152). Remarks are
+ *  frozen once it has. False before bundle 53, where nothing is ever locked. */
+export async function getClassReleased(examTermId: string, classId: string): Promise<boolean> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_exam_class_released', { p_exam_term_id: examTermId, p_class_id: classId })
+  if (error) {
+    if (isMissingFunction(error)) return false
+    throw new Error(error.message)
+  }
+  return data === true
 }
 
 /** Blank removes the remark rather than storing an empty string. */

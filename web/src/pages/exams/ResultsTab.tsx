@@ -227,6 +227,7 @@ function ClassResults({ termId, classId, termName, className, role }: {
     void qc.invalidateQueries({ queryKey: ['examOverview', termId] })
     void qc.invalidateQueries({ queryKey: ['examRemarks', termId, classId] })
     void qc.invalidateQueries({ queryKey: ['paperProgress', termId, classId] })
+    void qc.invalidateQueries({ queryKey: ['classReleased', termId, classId] })
   }
   const generate = useMutation({
     mutationFn: (allowIncomplete: boolean) => generateResultCards(termId, classId, allowIncomplete),

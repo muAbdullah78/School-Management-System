@@ -189,14 +189,14 @@ describe('Remarks', () => {
   it('shows a class teacher their own section, and a released class read-only', async () => {
     const r = (i: number, name: string, sec: string) => ({
       student_id: `st${i}`, student_name: name, gr_no: null, roll_no: String(i), section_name: sec.toUpperCase(),
-      section_id: `c8-${sec}`, remark: null, remark_by_name: '-', updated_at: null, percentage: 70, grade: 'A',
-      class_position: i, released: true,
+      remark: null, remark_by_name: '-', updated_at: null, percentage: 70, grade: 'A', class_position: i,
     })
     mount(createElement(ExamsPage), {
       rows: BASE_ROWS,
       rpc: {
         fn_my_teaching: [{ class_id: 'c8', class_name: 'Class 8', level_order: 80, section_id: 'c8-a', section_name: 'A', is_class_teacher: true, subject_id: null, subject_name: null }],
         fn_exam_remarks: [r(1, 'Ahmed Raza', 'a'), r(2, 'Zainab Iqbal', 'b')],
+        fn_exam_class_released: true,
       },
     }, as('class_teacher', 'Sidra Batool'), '/exams?tab=remarks&term=t1&class=c8')
     const box = await screen.findByLabelText('Remark for Ahmed Raza')

@@ -383,6 +383,8 @@ select pg_temp.be('Sidra Hold');
 select pg_temp.raises(
   $$ select public.fn_set_exam_remark(pg_temp.term(), pg_temp.kid('Nine A'), 'Changed after release.') $$,
   '29. a released result''s remark cannot change', '%released to parents%');
+select pg_temp.ok(public.fn_exam_class_released(pg_temp.term(), pg_temp.c5()),
+  '29b. and the remark screen is told the class is released');
 
 do $t$
 declare j jsonb; v_kid uuid := pg_temp.kid('Nine A');
@@ -410,8 +412,9 @@ begin
   n := public.fn_unpublish_results(pg_temp.term(), pg_temp.c5());
   perform pg_temp.ok(n = 3 and not exists (select 1 from public.mark_entries me
                                    join public.exam_subjects es on es.id = me.exam_subject_id
-                                  where es.exam_term_id = pg_temp.term() and me.is_locked),
-    '32. withdrawing unlocks every mark of the class');
+                                  where es.exam_term_id = pg_temp.term() and me.is_locked)
+                     and not public.fn_exam_class_released(pg_temp.term(), pg_temp.c5()),
+    '32. withdrawing unlocks every mark of the class, and the class is no longer released');
   perform pg_temp.be('Hold Owner');
   perform public.fn_enter_marks(pg_temp.paper('Maths'), jsonb_build_array(pg_temp.m('Ten A', 75)),
                                 're-totalled question 4');

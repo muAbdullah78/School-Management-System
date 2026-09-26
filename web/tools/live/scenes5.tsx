@@ -107,9 +107,9 @@ const cardFor = (p: typeof PUPILS[number], i: number) => {
 const CARDS = PUPILS.map(cardFor)
 const REMARKS = PUPILS.map((p, i) => ({
   student_id: p.student_id, student_name: p.full_name, gr_no: p.gr_no, roll_no: p.roll_no, section_name: p.section_name,
-  section_id: p.section_id, remark: i < 3 ? ['Excellent result. Keep up the hard work.', 'Works well and is keen to learn.', ''][i] || null : null,
+  remark: i < 3 ? ['Excellent result. Keep up the hard work.', 'Works well and is keen to learn.', ''][i] || null : null,
   remark_by_name: 'Sidra Batool', updated_at: null, percentage: CARDS[i].percentage, grade: CARDS[i].grade,
-  class_position: CARDS[i].position, released: false,
+  class_position: CARDS[i].position,
 }))
 const HOLDERS = ['Class 8', 'Class 9', 'Class 10'].flatMap((cn, ci) => [0, 1, 2].map((k) => ({
   class_id: `c${8 + ci}`, class_name: cn, level_order: 80 + ci * 10, class_position: k === 2 && ci === 1 ? 2 : k + 1,
@@ -133,7 +133,7 @@ const base = {
   })),
   fn_exam_paper_progress: PROGRESS, fn_exam_term_overview: OVERVIEW,
   fn_exam_marksheet: PHYSICS_SHEET, fn_result_readiness: [],
-  'table:result_cards': CARDS, fn_exam_remarks: REMARKS, fn_position_holders: HOLDERS,
+  'table:result_cards': CARDS, fn_exam_remarks: REMARKS, fn_exam_class_released: false, fn_position_holders: HOLDERS,
   fn_class_streams: PUPILS.map((p, i) => ({ ...p, bise_reg_no: i === 0 ? '2026-BISE-01234' : i === 1 ? '2026-BISE-01234' : null, stream: i === 3 ? null : p.stream })),
   'table:school_settings': { name: 'Al Qalam Public School', pass_percent: 33 },
 }

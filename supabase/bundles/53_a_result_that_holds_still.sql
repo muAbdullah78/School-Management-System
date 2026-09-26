@@ -792,18 +792,21 @@ $$;
 revoke all on function public.fn_set_exam_remark(uuid, uuid, text) from public, anon;
 grant execute on function public.fn_set_exam_remark(uuid, uuid, text) to authenticated;
 
-drop function if exists public.fn_exam_remarks(uuid, uuid);
-create function public.fn_exam_remarks(p_exam_term_id uuid, p_class_id uuid)
+-- The remark list keeps its shape. Bundle 4 creates it with these eleven
+-- columns, and a school told to re-run bundle 4 must not have it fail on a
+-- changed return type: the body is corrected (deleted pupils left out, roll 10
+-- after roll 9, sections in order) and the section and the release are asked
+-- for separately (fn_exam_class_released, and the section's name, which is
+-- unique in its class).
+create or replace function public.fn_exam_remarks(p_exam_term_id uuid, p_class_id uuid)
 returns table (
   student_id uuid, student_name text, gr_no text, roll_no text, section_name text,
   remark text, remark_by_name text, updated_at timestamptz,
-  percentage numeric, grade text, class_position integer,
-  section_id uuid, released boolean
+  percentage numeric, grade text, class_position integer
 ) language plpgsql stable security definer set search_path = public as $$
 declare
-  v_school   uuid := public.current_school_id();
-  v_session  uuid;
-  v_released boolean;
+  v_school  uuid := public.current_school_id();
+  v_session uuid;
 begin
   if not public.is_staff() then
     raise exception 'Not permitted' using errcode = '42501';
@@ -814,13 +817,11 @@ begin
   select session_id into v_session from public.exam_terms
   where id = p_exam_term_id and school_id = v_school;
   if v_session is null then raise exception 'Exam term not found'; end if;
-  v_released := public.fn__exam_results_released(p_exam_term_id, p_class_id, v_school);
 
   return query
   select s.id, s.full_name, s.gr_no, e.roll_no, sec.name,
          r.remark, coalesce(p.full_name, '-'), r.updated_at,
-         rc.percentage, rc.grade, rc.position,
-         e.section_id, v_released
+         rc.percentage, rc.grade, rc.position
   from public.enrollments e
   join public.students s on s.id = e.student_id and s.school_id = v_school
                         and s.deleted_at is null
@@ -847,6 +848,23 @@ $$;
 
 revoke all on function public.fn_exam_remarks(uuid, uuid) from public, anon;
 grant execute on function public.fn_exam_remarks(uuid, uuid) to authenticated;
+
+-- Whether a class's result for a term is out, for the screens that freeze
+-- once it is (the remarks). The same test the triggers apply.
+create or replace function public.fn_exam_class_released(p_exam_term_id uuid, p_class_id uuid)
+returns boolean language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.is_staff() then
+    raise exception 'Not permitted' using errcode = '42501';
+  end if;
+  perform public.assert_own('exam_terms', p_exam_term_id);
+  perform public.assert_own('classes', p_class_id);
+  return public.fn__exam_results_released(p_exam_term_id, p_class_id, public.current_school_id());
+end;
+$$;
+
+revoke all on function public.fn_exam_class_released(uuid, uuid) from public, anon;
+grant execute on function public.fn_exam_class_released(uuid, uuid) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 5. The readiness check says when the cards are out of date

@@ -17,11 +17,11 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  listExamRemarks, setExamRemark, getPositionHolders,
+  listExamRemarks, setExamRemark, getPositionHolders, getClassReleased,
   type ExamRemarkRow, type PositionHolder,
 } from '@/lib/db'
 import { useAuth } from '@/auth/AuthProvider'
-import { taughtClasses, classTeacherReach, inReach } from '@/lib/teaching'
+import { taughtClasses, classTeacherReach, inReachByName } from '@/lib/teaching'
 import { Avatar } from '@/components/Avatar'
 import { IconLock, IconPrint, IconTrophy, IconExams, IconCheck } from '@/components/icons'
 import {
@@ -110,8 +110,11 @@ function RemarkSheet({ termId, classId, className, reach }: {
   const [open, setOpen] = useState<string | null>(null)
 
   const q = useQuery({ queryKey: ['examRemarks', termId, classId], queryFn: () => listExamRemarks(termId, classId) })
-  const rows = useMemo(() => (q.data ?? []).filter((r) => !reach || r.section_id === undefined || inReach(reach, r.section_id)), [q.data, reach])
-  const released = rows.some((r) => r.released)
+  const releasedQ = useQuery({ queryKey: ['classReleased', termId, classId], queryFn: () => getClassReleased(termId, classId) })
+  // A class teacher of one section writes for that section; the list carries
+  // each pupil's section by name, which is unique within the class.
+  const rows = useMemo(() => (q.data ?? []).filter((r) => !reach || inReachByName(reach, r.section_name)), [q.data, reach])
+  const released = releasedQ.data === true
 
   const value = (r: ExamRemarkRow) => drafts[r.student_id] ?? r.remark ?? ''
   const unsaved = rows.filter((r) => value(r).trim() !== (r.remark ?? '').trim())
