@@ -24,9 +24,10 @@ import { ForgotPassword } from '../src/pages/ForgotPassword'
 import { PortalStatement } from '../src/components/PortalStatement'
 import { Receipt } from '../src/components/Receipt'
 import { writePage } from './harness'
+import { today as pkToday } from '../src/lib/dates'
 import type { Profile } from '../src/auth/AuthProvider'
 import {
-  DEMO_PORTAL_ME, DEMO_FEES, DEMO_ATTENDANCE, DEMO_RESULT, DEMO_CHILDREN,
+  DEMO_PORTAL_ME, DEMO_FEES, DEMO_RESULT, demoPortalMonth, demoPortalTests, DEMO_CHILDREN,
   DEMO_DASHBOARD_SUMMARY, DEMO_DASHBOARD_TRENDS, DEMO_PROFILE, DEMO_SCHOOL, DEMO_PARENT,
 } from './demo-data'
 
@@ -34,7 +35,8 @@ const child = DEMO_CHILDREN[0].student_id
 const portalSeeds = [
   [['portalMe'], DEMO_PORTAL_ME],
   [['portalFees', child], DEMO_FEES],
-  [['portalAtt', child], DEMO_ATTENDANCE],
+  [['portalAttMonth', child, pkToday().slice(0, 7)], demoPortalMonth(pkToday())],
+  [['portalTests', child], demoPortalTests(pkToday())],
   [['portalResults', child], [DEMO_RESULT]],
 ] as [readonly unknown[], unknown][]
 

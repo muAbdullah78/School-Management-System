@@ -1326,7 +1326,15 @@ with sig(migration, object, present) as (values
                         and column_name = 'pin')
          and exists (select 1 from pg_trigger t
                       where t.tgrelid = 'public.enrollments'::regclass
-                        and t.tgname = 'trg_enrollments_roll_guard' and not t.tgisinternal)))
+                        and t.tgname = 'trg_enrollments_roll_guard' and not t.tgisinternal))),
+  -- 0150's signature is the portal's test read. Without it the parent's
+  -- Results tab shows exam cards only, as it shipped, so MISSING not broken.
+  ('0150_a_parent_sees_the_weekly_test',
+     'fn_portal_child_tests, fn_portal_me.class_teacher',
+     (select to_regprocedure('public.fn_portal_child_tests(uuid)') is not null
+         and exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                      where n.nspname = 'public' and p.proname = 'fn_portal_me'
+                        and p.prosrc like '%class_teacher%')))
 )
 select migration,
        object                                   as looked_for,

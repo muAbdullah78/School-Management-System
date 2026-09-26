@@ -183,6 +183,56 @@ export const DEMO_RESULT = {
   ],
 }
 
+function shiftDay(d: string, n: number): string {
+  const t = new Date(`${d}T00:00:00Z`)
+  t.setUTCDate(t.getUTCDate() + n)
+  return t.toISOString().slice(0, 10)
+}
+
+/**
+ * The portal's attendance for the CURRENT month.
+ *
+ * Built from today's date, because the Attendance tab opens on this month's
+ * calendar: a fixed month would leave the calendar empty whatever day the
+ * pictures are taken. Sundays off, one absence, one late day, one day of leave.
+ */
+export function demoPortalMonth(today: string) {
+  const days: { date: string; status: string }[] = []
+  for (let d = `${today.slice(0, 7)}-01`; d <= today; d = shiftDay(d, 1)) {
+    if (new Date(`${d}T00:00:00Z`).getUTCDay() === 0) continue
+    const n = Number(d.slice(8, 10))
+    days.push({ date: d, status: n === 9 ? 'absent' : n === 15 ? 'late' : n === 18 ? 'leave' : 'present' })
+  }
+  days.reverse()
+  const count = (s: string) => days.filter((x) => x.status === s).length
+  return {
+    from: `${today.slice(0, 7)}-01`, to: today,
+    present: count('present'), late: count('late'), absent: count('absent'), leave: count('leave'), half_day: 0,
+    marked: days.length,
+    percent: days.length ? Math.round(((count('present') + count('late')) / days.length) * 100) : null,
+    days,
+  }
+}
+
+/** The weekly tests, dated back from today, with one absence, one test below
+ *  the pass mark, and one small class where the average is left out (0150). */
+export function demoPortalTests(today: string) {
+  return {
+    today,
+    tests: [
+      { id: 'dt1', title: 'Weekly test 4', subject: 'Mathematics', date: shiftDay(today, -2), max_marks: 20, marks: 18, is_absent: false, class_marked: 31, class_average: 13.6, class_highest: 19, session: '2026-2027' },
+      { id: 'dt2', title: 'Spelling test', subject: 'English', date: shiftDay(today, -5), max_marks: 10, marks: 9, is_absent: false, class_marked: 30, class_average: 7.1, class_highest: 9, session: '2026-2027' },
+      { id: 'dt3', title: 'Chapter 3 quiz', subject: 'Science', date: shiftDay(today, -9), max_marks: 25, marks: null, is_absent: true, class_marked: 29, class_average: 17.2, class_highest: 24, session: '2026-2027' },
+      { id: 'dt4', title: 'Weekly test 3', subject: 'Mathematics', date: shiftDay(today, -12), max_marks: 20, marks: 14, is_absent: false, class_marked: 31, class_average: 12.9, class_highest: 20, session: '2026-2027' },
+      { id: 'dt5', title: 'Imla', subject: 'Urdu', date: shiftDay(today, -16), max_marks: 10, marks: 3, is_absent: false, class_marked: 4, class_average: null, class_highest: null, session: '2026-2027' },
+    ],
+    upcoming: [
+      { id: 'du1', title: 'Weekly test 5', subject: 'Mathematics', date: shiftDay(today, 3), max_marks: 20, status: 'upcoming' },
+      { id: 'du2', title: 'Map work', subject: 'Social Studies', date: shiftDay(today, -1), max_marks: 15, status: 'awaiting' },
+    ],
+  }
+}
+
 export const DEMO_PORTAL_ME = {
   profile_id: 'demo-parent-1',
   full_name: DEMO_PARENT.full_name,

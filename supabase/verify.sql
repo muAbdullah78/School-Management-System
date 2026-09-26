@@ -3404,6 +3404,23 @@ select 'a check-in PIN a teacher can type, a register that says how, a roll a lo
        end
 
 union all
+-- 0150. A parent sees the weekly test.
+select 'a parent sees every locked class test and the tests coming up, each child listed once (0150)',
+       case
+         when to_regprocedure('public.fn_my_checkin()') is null
+           then 'note: bundle 50 has not been applied yet, so 0150 is not due'
+         when to_regprocedure('public.fn_portal_child_tests(uuid)') is null
+           then 'FAIL: a locked class test never reaches the parent''s portal; apply '
+                || 'supabase/bundles/51_a_parent_sees_the_weekly_test.sql'
+         when not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                           where n.nspname = 'public' and p.proname = 'fn_portal_me'
+                             and p.prosrc like '%class_teacher%')
+           then 'FAIL: the portal can list a child twice and does not know the class teacher; apply '
+                || 'supabase/bundles/51_a_parent_sees_the_weekly_test.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS: no schools yet, as expected'

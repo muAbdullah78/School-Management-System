@@ -2604,6 +2604,17 @@ jobs:
         # write a pupil onto the roll directly.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/the_gate_the_phone_and_the_bill.sql
 
+      - name: A parent sees the weekly test (0150), locked marks reach the portal
+        # A teacher marked and locked a weekly test and the parent's Results tab
+        # said nothing was published: no portal read had ever looked at a class
+        # test. Walked as the real logins: the teacher sets, marks and locks it,
+        # and the parent sees nothing while it is being marked, then the mark
+        # the moment it locks. The class average and highest appear only when
+        # five or more pupils have a mark, so they cannot give away another
+        # child's. Another section's test, a test the child joined too late for,
+        # and another family's child are all kept out.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/a_parent_sees_the_weekly_test.sql
+
       - name: Student list — does the fast balance equal the real one?
         # fn_student_list recomputes each balance SET-BASED rather than calling
         # student_balance() per row, because per-row is 800 correlated
