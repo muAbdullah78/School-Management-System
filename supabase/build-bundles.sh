@@ -967,6 +967,20 @@ emit supabase/bundles/51_a_parent_sees_the_weekly_test.sql \
 emit supabase/bundles/52_the_teachers_own_day.sql \
      supabase/migrations/0151*.sql
 
+# --- 53 ----------------------------------------------------------------------
+# A result that holds still.
+#
+# A blank marks box was saved as a zero and failed the pupil; a section's
+# teacher could mark the whole class; nothing ever locked, so a released result
+# could change underneath the parent. This clears blanks (and repairs the rows
+# already stored), checks every mark against the paper's own sheet and the
+# pupil's section, locks a class when its results are released, says when the
+# cards are out of date, lets an exam term be corrected, and sends the class
+# teacher's remark to the portal. Functions are replaced and triggers dropped
+# before they are created, so re-pasting is a no-op.
+emit supabase/bundles/53_a_result_that_holds_still.sql \
+     supabase/migrations/0152*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

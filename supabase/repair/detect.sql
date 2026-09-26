@@ -1347,7 +1347,16 @@ with sig(migration, object, present) as (values
          and to_regprocedure('public.fn_delete_my_test(uuid)') is not null
          and exists (select 1 from pg_trigger t
                       where t.tgrelid = 'public.assessments'::regclass
-                        and t.tgname = 'trg_assessment_edits' and not t.tgisinternal)))
+                        and t.tgname = 'trg_assessment_edits' and not t.tgisinternal))),
+  -- 0152's signature is the release lock on marks and the term writer.
+  -- Without them a released result can change and a term cannot be corrected.
+  ('0152_a_result_that_holds_still',
+     'trg_marks_released_hold, fn_save_exam_term, fn_exam_term_overview',
+     (select exists (select 1 from pg_trigger t
+                      where t.tgrelid = 'public.mark_entries'::regclass
+                        and t.tgname = 'trg_marks_released_hold' and not t.tgisinternal)
+         and to_regprocedure('public.fn_save_exam_term(uuid,uuid,text,text,date,date,boolean)') is not null
+         and to_regprocedure('public.fn_exam_term_overview(uuid)') is not null))
 )
 select migration,
        object                                   as looked_for,

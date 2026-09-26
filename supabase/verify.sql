@@ -3449,6 +3449,29 @@ select 'subject teachers see their classes, the teacher''s day in one read, a lo
        end
 
 union all
+-- 0152. A result that holds still.
+select 'a blank box is not a zero, a released result is locked, a term can be corrected (0152)',
+       case
+         when to_regprocedure('public.fn_my_day()') is null
+           then 'note: bundle 52 has not been applied yet, so 0152 is not due'
+         when not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                           where n.nspname = 'public' and p.proname = 'fn_enter_marks'
+                             and p.prosrc like '%cleared%')
+           then 'FAIL: a blank marks box is still saved as a zero; apply '
+                || 'supabase/bundles/53_a_result_that_holds_still.sql'
+         when not exists (select 1 from pg_trigger t
+                           where t.tgrelid = 'public.mark_entries'::regclass
+                             and t.tgname = 'trg_marks_released_hold' and not t.tgisinternal)
+           then 'FAIL: a released result''s marks can still change; apply '
+                || 'supabase/bundles/53_a_result_that_holds_still.sql'
+         when to_regprocedure('public.fn_save_exam_term(uuid,uuid,text,text,date,date,boolean)') is null
+           or to_regprocedure('public.fn_exam_term_overview(uuid)') is null
+           then 'FAIL: an exam term cannot be corrected and the term overview is missing; apply '
+                || 'supabase/bundles/53_a_result_that_holds_still.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS: no schools yet, as expected'
