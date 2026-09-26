@@ -2624,6 +2624,16 @@ jobs:
         # a total that marks were saved out of cannot change.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/the_teachers_own_day.sql
 
+      - name: A result that holds still (0152), blanks, sections, the release lock, the term
+        # A blank marks box was saved as a zero and failed the pupil, a
+        # section's teacher could mark the whole class, and nothing ever locked.
+        # Walked as real logins: a blank stores nothing and clears, a pupil off
+        # the paper or of another section is refused, releasing locks the marks,
+        # papers and remarks by every path, a change or a clear makes the cards
+        # out of date and release refuses them, the parent sees the remark, and a
+        # term can be corrected and deleted only when empty.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/a_result_that_holds_still.sql
+
       - name: Student list — does the fast balance equal the real one?
         # fn_student_list recomputes each balance SET-BASED rather than calling
         # student_balance() per row, because per-row is 800 correlated
