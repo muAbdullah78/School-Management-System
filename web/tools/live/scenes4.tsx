@@ -56,7 +56,31 @@ const IN = {
     checked_out_at: null, late_minutes: 0, worked_minutes: null, reason: null },
   can_check_out: true, out_opens_at: at(today, '08:07'),
 }
-const teacherData = (me: unknown) => ({ fn_my_checkin: me, fn_my_staff_attendance: DAYS, fn_my_assignments: ASSIGNED })
+// The class teacher's day (fn_my_day, 0151): 1-A half marked, 1-B saved,
+// a Maths class taught as a subject teacher, a birthday, two tests to mark.
+const TEACHING = [
+  ...ASSIGNED.map((a) => ({ ...a, is_class_teacher: true, subject_id: null, subject_name: null })),
+  { class_id: 'c3', class_name: 'Class 3', level_order: 30, section_id: null, section_name: null, is_class_teacher: false, subject_id: 's-maths3', subject_name: 'Maths' },
+]
+const shiftDay = (d: string, n: number) => { const t = new Date(`${d}T00:00:00Z`); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10) }
+const MY_DAY = {
+  today, session_id: 'sess', to_mark: 2,
+  classes: [
+    { class_id: 'c1', class_name: 'Class 1', section_id: 'c1-a', section_name: 'A', is_class_teacher: true, subjects: [], pupils: 28,
+      register: { marked: 12, present: 10, late: 1, half_day: 0, absent: 1, leave: 0, locked: false } },
+    { class_id: 'c1', class_name: 'Class 1', section_id: 'c1-b', section_name: 'B', is_class_teacher: true, subjects: [], pupils: 26,
+      register: { marked: 26, present: 23, late: 1, half_day: 0, absent: 1, leave: 1, locked: false } },
+    { class_id: 'c3', class_name: 'Class 3', section_id: null, section_name: null, is_class_teacher: false, subjects: ['Maths'], pupils: 31, register: null },
+  ],
+  birthdays: [{ full_name: 'Hamna Masood', class_name: 'Class 1', section_name: 'A', turning: 7 }],
+  upcoming: [
+    { id: 'u1', title: 'Dictation', date: today, max_marks: 10, class_id: 'c1', class_name: 'Class 1', section_name: 'A', subject_name: 'English' },
+    { id: 'u2', title: 'Tables quiz', date: shiftDay(today, 3), max_marks: 20, class_id: 'c3', class_name: 'Class 3', section_name: null, subject_name: 'Maths' },
+  ],
+}
+const teacherData = (me: unknown) => ({
+  fn_my_checkin: me, fn_my_staff_attendance: DAYS, fn_my_assignments: ASSIGNED, fn_my_teaching: TEACHING, fn_my_day: MY_DAY,
+})
 
 const SETTINGS = {
   name: DEMO_SCHOOL.name, day_starts_at: '07:45:00', day_ends_at: '13:30:00', late_grace_minutes: 10,
@@ -325,5 +349,57 @@ STEP4_SCENES['portal-quiet'] = {
       tests: [{ id: 'q1', title: 'Weekly test 1', subject: 'Maths', date: today, max_marks: 25, marks: 21, is_absent: false, class_marked: 3, class_average: null, class_highest: null, session: '2026-2027' }],
       upcoming: [],
     },
+  },
+}
+
+// ------------------------------------------------------------- 0151 teacher --
+// A teacher who is nobody's class teacher and teaches Maths to Class 3.
+STEP4_SCENES['teacher-home-subject'] = {
+  title: 'Teacher home, a subject teacher only', node: <MyClass />, profile: TEACHER, route: '/',
+  seeds: [SEED_SESSION],
+  data: {
+    fn_my_checkin: { ...NOT_IN, mode: null }, fn_my_staff_attendance: [], fn_my_assignments: [],
+    fn_my_teaching: [TEACHING[2]],
+    fn_my_day: { ...MY_DAY, to_mark: 0, birthdays: [], classes: [MY_DAY.classes[2]], upcoming: [MY_DAY.upcoming[1]] },
+  },
+}
+STEP4_SCENES['attendance-subject-teacher'] = {
+  title: 'Attendance, a subject teacher only', node: <AttendancePage />, profile: TEACHER, route: '/attendance',
+  seeds: [SEED_SESSION],
+  data: { fn_my_assignments: [], fn_my_teaching: [TEACHING[2]], 'table:sections': [], 'table:subjects': [{ id: 's-maths3', name: 'Maths', class_id: 'c3' }] },
+}
+import { TestsPage as TeacherTestsPage } from '@/pages/assessments/TestsPage'
+const T_TESTS = [
+  { id: 't1', title: 'Weekly test 4', assessment_date: shiftDay(today, 4), max_marks: 20, is_locked: false, section_id: 'c1-a', subject_id: 's-eng', sections: { name: 'A' }, subjects: { name: 'English' } },
+  { id: 't2', title: 'Dictation', assessment_date: today, max_marks: 10, is_locked: false, section_id: 'c1-a', subject_id: 's-eng', sections: { name: 'A' }, subjects: { name: 'English' } },
+  { id: 't3', title: 'Weekly test 3', assessment_date: shiftDay(today, -3), max_marks: 20, is_locked: false, section_id: 'c1-a', subject_id: 's-urdu', sections: { name: 'A' }, subjects: { name: 'Urdu' } },
+  { id: 't4', title: 'Spelling bee', assessment_date: shiftDay(today, -6), max_marks: 25, is_locked: false, section_id: null, subject_id: null, sections: null, subjects: null },
+  { id: 't5', title: 'Weekly test 2', assessment_date: shiftDay(today, -10), max_marks: 20, is_locked: true, section_id: 'c1-a', subject_id: 's-urdu', sections: { name: 'A' }, subjects: { name: 'Urdu' } },
+]
+STEP4_SCENES['tests-teacher'] = {
+  title: 'Tests, a class teacher with tests in every state', node: <TeacherTestsPage />, profile: TEACHER, route: '/assessments?classId=c1',
+  seeds: [SEED_SESSION],
+  data: {
+    fn_my_teaching: TEACHING, fn_my_assignments: ASSIGNED,
+    'table:assessments': T_TESTS,
+    'table:subjects': [{ id: 's-eng', name: 'English', class_id: 'c1' }, { id: 's-urdu', name: 'Urdu', class_id: 'c1' }],
+    'table:sections': [{ id: 'c1-a', name: 'A', class_id: 'c1' }, { id: 'c1-b', name: 'B', class_id: 'c1' }],
+    fn_my_unmarked_tests: [{ assessment_id: 't3', title: 'Weekly test 3', assessment_date: shiftDay(today, -3), class_id: 'c1', class_name: 'Class 1', section_name: 'A', subject_name: 'Urdu', pupils: 28, marked: 19, days_late: 3 }],
+    fn_assessment_marksheet: ['Ayesha Aslam', 'Zainab Khattak', 'Omar Farooq', 'Hira Baig', 'Daniyal Shah'].map((full_name, i) => ({
+      enrollment_id: `e${i}`, student_id: `s${i}`, full_name, roll_no: String(i + 1), section_name: 'A',
+      marks: i < 3 ? 12 + i * 3 : null, is_absent: i === 3, is_locked: false, max_marks: 20,
+    })),
+  },
+}
+STEP4_SCENES['birthdays-teacher'] = {
+  title: 'Birthdays, a teacher, my classes', node: <BirthdaysPage />, profile: TEACHER, route: '/birthdays',
+  seeds: [SEED_SESSION],
+  data: {
+    fn_my_teaching: TEACHING,
+    fn_birthdays: [
+      { kind: 'student', id: 'b1', full_name: 'Hamna Masood', dob: '2019-01-01', turning: 7, birthday: today, days_away: 0, class_name: 'Class 1', detail: 'Masood Ahmed', phone: '03001234567' },
+      { kind: 'student', id: 'b2', full_name: 'Zainab Khattak', dob: '2018-01-01', turning: 8, birthday: today, days_away: 3, class_name: 'Class 3', detail: 'Imran Khattak', phone: '03007654321' },
+      { kind: 'student', id: 'b3', full_name: 'Ali Raza', dob: '2012-01-01', turning: 14, birthday: today, days_away: 0, class_name: 'Class 8', detail: 'Raza Ali', phone: '03009876543' },
+    ],
   },
 }

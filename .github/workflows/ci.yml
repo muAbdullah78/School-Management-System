@@ -2615,6 +2615,15 @@ jobs:
         # and another family's child are all kept out.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/a_parent_sees_the_weekly_test.sql
 
+      - name: The teacher's own day (0151), subject teachers, the day in one read, frozen tests
+        # A subject-only teacher had an empty portal because every teacher
+        # screen read the class teacher's table. Walked as real logins: the
+        # subject teacher sees their class and may set a test in their subject
+        # only, the day counts the register for the class teacher alone, a
+        # teacher removes an empty test and nothing else, and a locked test or
+        # a total that marks were saved out of cannot change.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/the_teachers_own_day.sql
+
       - name: Student list — does the fast balance equal the real one?
         # fn_student_list recomputes each balance SET-BASED rather than calling
         # student_balance() per row, because per-row is 800 correlated

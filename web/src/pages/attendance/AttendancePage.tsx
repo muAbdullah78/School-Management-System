@@ -6,6 +6,7 @@ import {
   markAttendance, finalizeAttendance, unlockAttendance, getMyAssignments,
   type AttendanceStatus, type RosterRow,
 } from '@/lib/db'
+import { Avatar } from '@/components/Avatar'
 import { ATTENDANCE_STATUSES } from '@/lib/constants'
 import { todayISO } from '@/lib/format'
 import { AskDialog } from '@/components/AskDialog'
@@ -124,7 +125,28 @@ export function AttendancePage() {
  * go looking for it will not keep it.
  */
 function TeacherAttendance({ sessionId }: { sessionId: string | null }) {
-  const [tab, setTab] = useState<'daily' | 'subject'>('daily')
+  /* The tab lives in the URL (?tab=subject), so the teacher's home can open
+     subject attendance for a subject teacher's class. With no tab named, a
+     teacher who is nobody's class teacher opens on subject attendance: the
+     daily register is not theirs to mark (0134), and landing on an empty
+     class picker told them nothing. */
+  const [params, setParams] = useSearchParams()
+  // The class teacher's own list, the same one the register reads and the
+  // same rule the database applies to it: a teacher with no class-teacher
+  // assignment is not asked to mark a register.
+  const assigned = useQuery({ queryKey: ['myAssignments'], queryFn: getMyAssignments })
+  const classTeacher = assigned.data ? assigned.data.length > 0 : true
+  const urlTab = params.get('tab')
+  const tab: 'daily' | 'subject' = urlTab === 'daily' || urlTab === 'subject' ? urlTab : classTeacher ? 'daily' : 'subject'
+  const setTab = (t: 'daily' | 'subject') => {
+    const next = new URLSearchParams(params)
+    next.set('tab', t)
+    setParams(next, { replace: true })
+  }
+
+  if (assigned.isLoading) {
+    return <div className="h-40 animate-pulse rounded-3xl bg-white shadow-card ring-1 ring-slate-200/70" />
+  }
 
   return (
     <div>
@@ -138,7 +160,7 @@ function TeacherAttendance({ sessionId }: { sessionId: string | null }) {
         ]}
       />
       {tab === 'daily'
-        ? <MarkRegister />
+        ? <MarkRegister onSubject={() => setTab('subject')} />
         : sessionId
           ? <SubjectAttendance sessionId={sessionId} />
           : <p className="text-sm text-slate-500">No current academic session is set.</p>}
@@ -146,7 +168,7 @@ function TeacherAttendance({ sessionId }: { sessionId: string | null }) {
   )
 }
 
-function MarkRegister() {
+function MarkRegister({ onSubject }: { onSubject?: () => void } = {}) {
   const qc = useQueryClient()
   // These reads are wrapped in offlineFirst so the pickers + roster still work on
   // a cold start with no connection (served from the last cached copy).
@@ -450,22 +472,49 @@ function MarkRegister() {
   }, [])
 
   const selectCls =
-    'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none'
+    'mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50 disabled:text-slate-400'
+
+  /* NOT THE CLASS TEACHER OF ANYTHING. The register is the class teacher's
+     (0134), so a subject teacher had an empty class picker here and no idea
+     why. Said in words, with the way to their own register. */
+  if (isTeach && myAssign.data && myAssign.data.length === 0) {
+    return (
+      <div className="rounded-3xl bg-white p-5 shadow-card ring-1 ring-slate-200/70">
+        <h1 className="text-xl font-bold text-slate-900">Daily register</h1>
+        <p className="mt-2 text-sm text-slate-600">
+          The daily register is kept by each class&rsquo;s class teacher, and you are not the class
+          teacher of any class this year. For the subjects you teach, mark attendance in Subject attendance.
+        </p>
+        {onSubject && (
+          <button type="button" onClick={onSubject} className={buttonClass({ className: 'mt-4' })}>
+            Open subject attendance
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  const dateWord = date === todayISO()
+    ? 'Today'
+    : new Date(`${date}T00:00:00`).toLocaleDateString('en-PK', { weekday: 'long', day: 'numeric', month: 'long' })
 
   return (
     <div>
       <LoadError of={[session, classes, sections, roster]} what="The attendance register" />
 
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <h1 className="text-xl font-semibold text-slate-800">Attendance</h1>
+        <div>
+          <h1 className="text-xl font-bold text-slate-900">Daily register</h1>
+          <p className="text-sm text-slate-500">{dateWord}</p>
+        </div>
         {rows.length > 0 && (
           <div className="flex items-center gap-2 text-sm">
             {dayLocked ? (
-              <span className="rounded-full bg-slate-200 px-2.5 py-0.5 text-xs font-medium text-slate-600">🔒 Locked</span>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">Locked</span>
             ) : dirty ? (
-              <span className="rounded-full bg-due-100 px-2.5 py-0.5 text-xs font-medium text-due-800">Unsaved changes</span>
+              <span className="rounded-full bg-due-50 px-3 py-1 text-xs font-semibold text-due-800 ring-1 ring-due-200">Unsaved changes</span>
             ) : (
-              <span className="rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-medium text-brand-700 ring-1 ring-brand-100">All saved</span>
+              <span className="rounded-full bg-money-50 px-3 py-1 text-xs font-semibold text-money-800 ring-1 ring-money-200">All saved</span>
             )}
           </div>
         )}
@@ -478,7 +527,7 @@ function MarkRegister() {
       )}
 
       {/* Pickers */}
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      <div className="mt-4 grid gap-3 rounded-3xl bg-white p-4 shadow-card ring-1 ring-slate-200/70 sm:grid-cols-3">
         <label className="block">
           <span className="text-sm text-slate-600">Class</span>
           <select value={classId} className={selectCls}
@@ -530,18 +579,20 @@ function MarkRegister() {
         {ready && rows.length > 0 && (
           <>
             {/* Toolbar */}
-            <div className="flex flex-wrap items-center gap-2 rounded-t-lg border border-b-0 border-slate-200 bg-slate-50 px-3 py-2">
+            <div className="flex flex-wrap items-center gap-2 rounded-t-3xl border border-b-0 border-slate-200 bg-white px-4 py-3">
               <button onClick={() => setAll('present')} disabled={dayLocked}
-                className="rounded border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                className={buttonClass({ variant: 'soft', size: 'sm' })}>
                 Mark all present
               </button>
               <button onClick={() => setAll('absent')} disabled={dayLocked}
-                className="rounded border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm' })}>
                 Mark all absent
               </button>
-              <div className="ml-auto flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-600">
+              <div className="flex w-full flex-wrap gap-1.5 sm:ml-auto sm:w-auto">
                 {ATTENDANCE_STATUSES.map((s) => (
-                  <span key={s.value}>{s.label} <b className="font-semibold tabular-nums text-slate-900">{tally[s.value] ?? 0}</b></span>
+                  <span key={s.value} className={`rounded-full bg-white px-2.5 py-1 text-xs font-semibold ring-1 ${s.off}`}>
+                    {s.label} <b className="tabular-nums">{tally[s.value] ?? 0}</b>
+                  </span>
                 ))}
               </div>
               <div className="w-full pt-1">
@@ -603,14 +654,15 @@ function MarkRegister() {
             )}
 
             {/* Grid */}
-            <div className="divide-y divide-slate-100 rounded-b-lg border border-slate-200 bg-white">
+            <div className="divide-y divide-slate-100 overflow-hidden rounded-b-3xl border border-slate-200 bg-white">
               {rows.map((r, i) => (
                 <div
                   key={r.enrollment_id}
                   onMouseDown={() => setActiveIdx(i)}
                   className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2 ${i === activeIdx && !dayLocked ? 'bg-brand-50/60' : ''}`}
                 >
-                  <div className="w-8 text-right text-xs text-slate-400">{r.roll_no ?? '-'}</div>
+                  <div className="w-6 text-right text-xs tabular-nums text-slate-400">{r.roll_no ?? '-'}</div>
+                  <Avatar name={r.full_name} size="sm" />
                   {/* At least 10rem for the name: on a phone the five buttons
                       drop under it instead of squeezing it to "Ayesha A...". */}
                   <div className="min-w-[10rem] flex-1">
@@ -641,13 +693,15 @@ function MarkRegister() {
                   {save.isPending ? 'Saving…' : dirty ? 'Save attendance' : 'Saved'}
                 </button>
               )}
+              {/* Only Save rides the bar on a phone. With Print and Finalize in
+                  it too, the bar wrapped to two rows and covered three pupils. */}
               <button onClick={openSheet}
-                className="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                className={`${dayLocked ? 'inline-flex' : 'hidden sm:inline-flex'} rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50`}>
                 Print sheet
               </button>
               {!dayLocked && (
                 <button onClick={doFinalize} disabled={finalize.isPending}
-                  className="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60">
+                  className="hidden rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60 sm:inline-flex">
                   {finalize.isPending ? 'Finalizing…' : 'Finalize & lock'}
                 </button>
               )}
@@ -658,8 +712,20 @@ function MarkRegister() {
                 </span>
               )}
             </div>
+            {!dayLocked && (
+              <div className="mt-3 grid grid-cols-2 gap-2 sm:hidden">
+                <button onClick={openSheet}
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                  Print sheet
+                </button>
+                <button onClick={doFinalize} disabled={finalize.isPending}
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60">
+                  {finalize.isPending ? 'Finalizing…' : 'Finalize & lock'}
+                </button>
+              </div>
+            )}
             {finalizeBlocked && (
-              <p className="mt-2 rounded border border-due-200 bg-due-50 px-3 py-2 text-sm text-due-800">
+              <p className="mt-2 rounded-xl border border-due-200 bg-due-50 px-3 py-2 text-sm text-due-800">
                 {finalizeBlocked}
               </p>
             )}
@@ -706,7 +772,7 @@ function MarkRegister() {
             )}
 
             <p className="mt-3 hidden text-xs text-slate-500 sm:block">
-              Tip: click a row, then press <kbd className="rounded border px-1">P</kbd>/<kbd className="rounded border px-1">A</kbd>/<kbd className="rounded border px-1">L</kbd>/<kbd className="rounded border px-1">T</kbd>/<kbd className="rounded border px-1">H</kbd> (or 1–5) to mark and jump to the next student.
+              Tip: click a row, then press <kbd className="rounded border px-1">P</kbd> present, <kbd className="rounded border px-1">A</kbd> absent, <kbd className="rounded border px-1">L</kbd> leave, <kbd className="rounded border px-1">T</kbd> late or <kbd className="rounded border px-1">H</kbd> half day to mark and jump to the next student.
             </p>
           </>
         )}
@@ -736,7 +802,7 @@ function StatusChips({
   value, onChange, disabled,
 }: { value: AttendanceStatus | undefined; onChange: (s: AttendanceStatus) => void; disabled?: boolean }) {
   return (
-    <div className="ml-11 flex gap-1.5 sm:ml-0 sm:gap-1">
+    <div className="grid w-full grid-cols-5 gap-1.5 sm:flex sm:w-auto sm:gap-1">
       {ATTENDANCE_STATUSES.map((s) => {
         const on = value === s.value
         return (
@@ -748,9 +814,12 @@ function StatusChips({
             onClick={() => onChange(s.value)}
             aria-label={s.label}
             aria-pressed={on}
-            className={`h-10 w-11 rounded-lg text-sm font-semibold ring-1 transition sm:h-8 sm:w-9 sm:rounded sm:text-xs ${on ? s.on : `bg-white ${s.off}`} ${disabled ? 'opacity-60' : ''}`}
+            style={{ touchAction: 'manipulation' }}
+            className={`h-10 w-full rounded-xl text-sm font-semibold ring-1 transition active:scale-95 sm:h-9 sm:w-auto sm:rounded-full sm:px-3 sm:text-xs ${on ? `${s.on} shadow-sm` : `bg-white ${s.off}`} ${disabled ? 'opacity-60' : ''}`}
           >
-            {s.short}
+            {/* The word on a wider screen; the shared letters on a phone. */}
+            <span className="sm:hidden">{s.short}</span>
+            <span className="hidden sm:inline">{s.label}</span>
           </button>
         )
       })}

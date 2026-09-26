@@ -443,6 +443,13 @@ select 'the observer role (0059)',
                                            -- list as "nothing to mark" rather
                                            -- than "not your list".
                                            'fn_my_unmarked_tests',
+                                           -- fn_my_day (0151) is the same kind:
+                                           -- a teacher's OWN classes, registers
+                                           -- and tests for today. An observer
+                                           -- teaches nothing, so on may_view the
+                                           -- home screen would read as "no
+                                           -- classes" rather than "not yours".
+                                           'fn_my_day',
                                            'fn_checkin_display',
                                            'fn_pending_invites',
                                            -- fn_preview_discount (0131) works
@@ -3417,6 +3424,27 @@ select 'a parent sees every locked class test and the tests coming up, each chil
                              and p.prosrc like '%class_teacher%')
            then 'FAIL: the portal can list a child twice and does not know the class teacher; apply '
                 || 'supabase/bundles/51_a_parent_sees_the_weekly_test.sql'
+         else 'PASS'
+       end
+
+union all
+-- 0151. The teacher's own day.
+select 'subject teachers see their classes, the teacher''s day in one read, a locked test cannot change (0151)',
+       case
+         when to_regprocedure('public.fn_portal_child_tests(uuid)') is null
+           then 'note: bundle 51 has not been applied yet, so 0151 is not due'
+         when to_regprocedure('public.fn_my_teaching()') is null
+           or to_regprocedure('public.fn_my_day()') is null
+           then 'FAIL: a subject teacher still sees an empty portal; apply '
+                || 'supabase/bundles/52_the_teachers_own_day.sql'
+         when to_regprocedure('public.fn_delete_my_test(uuid)') is null
+           then 'FAIL: a test set by mistake cannot be removed by its teacher; apply '
+                || 'supabase/bundles/52_the_teachers_own_day.sql'
+         when not exists (select 1 from pg_trigger t
+                           where t.tgrelid = 'public.assessments'::regclass
+                             and t.tgname = 'trg_assessment_edits' and not t.tgisinternal)
+           then 'FAIL: a locked test can still be edited, and a total changed under saved marks; apply '
+                || 'supabase/bundles/52_the_teachers_own_day.sql'
          else 'PASS'
        end
 
