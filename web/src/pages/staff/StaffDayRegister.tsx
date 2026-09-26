@@ -8,10 +8,11 @@ import { fmtDate, todayISO, shiftDate } from '@/lib/format'
 import { useAuth } from '@/auth/AuthProvider'
 import { canWrite } from '@/auth/roles'
 import { ObserverNotice } from '@/components/ObserverNotice'
-import { LoadError, Button, inputClass } from '@/components/ui'
+import { LoadError, Button, inputClass, inputBase } from '@/components/ui'
 import { AskDialog } from '@/components/AskDialog'
 import { StackBar, attendanceParts } from '@/components/viz'
 import { isMissingFunction } from '@/lib/notInstalled'
+import { useTableChanges } from '@/lib/live'
 
 const STATUSES: { value: AttendanceStatus; label: string }[] = [
   { value: 'present', label: 'Present' },
@@ -58,7 +59,20 @@ export function StaffDayRegister() {
   const { profile } = useAuth()
   const mayWrite = canWrite(profile?.role)
 
-  const rows = useQuery({ queryKey: ['staffDay', date], queryFn: () => getStaffAttendanceDay(date) })
+  const isToday = date === today
+  // TODAY'S REGISTER KEEPS ITSELF UP TO DATE. The office used to watch a list
+  // that only changed when somebody pressed reload, so a teacher who had just
+  // checked in at the gate still showed "Not marked". Realtime where the
+  // project has it, and a poll every 20 seconds either way, so a school with
+  // Realtime off still sees a check-in within seconds. A past day does not
+  // change on its own and is not polled.
+  const rows = useQuery({
+    queryKey: ['staffDay', date], queryFn: () => getStaffAttendanceDay(date),
+    refetchInterval: isToday ? 20_000 : false,
+  })
+  const live = useTableChanges(
+    'staff_attendance', profile?.school_id ? `school_id=eq.${profile.school_id}` : null,
+    () => { void qc.invalidateQueries({ queryKey: ['staffDay', date] }) }, isToday)
   const settings = useQuery({ queryKey: ['schoolSettings'], queryFn: getSchoolSettings })
 
   const all = rows.data ?? []
@@ -91,11 +105,18 @@ export function StaffDayRegister() {
         <Button variant="soft" tone="neutral" aria-label="The day before" onClick={() => setDate(shiftDate(date, -1))}>‹</Button>
         <input type="date" max={today} value={date} aria-label="Date"
           onChange={(e) => e.target.value && setDate(e.target.value > today ? today : e.target.value)}
-          className={`${inputClass} w-auto`} />
+          className={`${inputBase} w-auto`} />
         <Button variant="soft" tone="neutral" aria-label="The day after" disabled={date >= today}
           onClick={() => setDate(shiftDate(date, 1) > today ? today : shiftDate(date, 1))}>›</Button>
         {date !== today && <Button variant="ghost" onClick={() => setDate(today)}>Today</Button>}
         <span className="text-sm font-medium text-slate-700">{date === today ? 'Today, ' : ''}{fmtDate(date)}</span>
+        {isToday && rows.data && (
+          <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-slate-500" aria-live="polite">
+            <span className={`h-2 w-2 rounded-full ${live ? 'bg-money-500' : 'bg-slate-300'}`} aria-hidden="true" />
+            {live ? 'Live' : 'Refreshes every 20 seconds'}
+            {' · '}updated {new Date(rows.dataUpdatedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Karachi' })}
+          </span>
+        )}
       </div>
 
       {/* ---------------------------------------------------- the numbers -- */}
@@ -115,7 +136,7 @@ export function StaffDayRegister() {
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs text-slate-500">
               {typed.length === 0
-                ? 'Every mark today came from a check-in scan.'
+                ? 'Every mark today came from a check-in, by QR or PIN.'
                 : `${typed.length} ${typed.length === 1 ? 'mark was' : 'marks were'} typed by the office, not scanned.`}
             </p>
             {mayWrite && notMarked.length > 0 && (
@@ -281,7 +302,9 @@ function How({ r }: { r: StaffDayRow }) {
     <div className="text-xs">
       {r.scanned ? (
         <span className="text-slate-600">
-          Scanned{r.code_label ? ` · ${r.code_label}` : ''}
+          {/* A PIN can be read out over the phone to somebody at home and a QR
+              has to be pointed at, so the office sees which one it was. */}
+          {r.method === 'pin' ? 'Typed the PIN' : 'Scanned the QR'}{r.code_label ? ` · ${r.code_label}` : ''}
           {r.source === 'manual' && (
             <span className="text-due-800"> · status changed by {r.marked_by_name ?? 'the office'}</span>
           )}

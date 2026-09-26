@@ -9,7 +9,7 @@ import {
   type StudentRow, type MonthDefaulter, type FeeReceipt,
 } from '@/lib/db'
 import { useUrlTab } from '@/lib/useUrlTab'
-import { inputClass } from '@/components/ui'
+import { inputClass, inputBase } from '@/components/ui'
 import { ATTENDANCE_SHORT } from '@/lib/constants'
 import { fmtPKR, fmtDate, todayISO } from '@/lib/format'
 import { today, monthStart } from '@/lib/dates'
@@ -106,14 +106,16 @@ const TAB_KEYS = ITEMS.map((i) => i.key) as TabKey[]
 export function ReportsPage() {
   // In the URL, so the dashboard's Day book shortcut opens the Day Book and
   // not Fee Collection, which is where it used to land.
-  const [tab, setTab] = useUrlTab<TabKey>(TAB_KEYS, 'collection')
+  const [tab, setTab, nav] = useUrlTab<TabKey>(TAB_KEYS, 'collection')
   return (
     <div>
-      <div className="print:hidden">
+      <div className={`print:hidden ${nav.picked ? 'hidden lg:block' : ''}`}>
         <h1 className="text-xl font-semibold text-slate-800">Reports</h1>
         <p className="mt-0.5 text-sm text-slate-500">Every report prints, saves as PDF, and downloads to Excel as CSV.</p>
       </div>
-      <SectionLayout groups={GROUPS} value={tab} onChange={setTab} label="Report">
+      <SectionLayout groups={GROUPS} value={tab} onChange={setTab} label="Report"
+        picked={nav.picked} onPick={(k) => setTab(k, { explicit: true, push: true })}
+        onIndex={nav.clear} indexLabel="All reports">
         {tab === 'collection' && <CollectionReport />}
         {tab === 'daybook' && <DayBookReport />}
         {tab === 'statement' && <LedgerReport />}
@@ -137,8 +139,8 @@ export function ReportsPage() {
   )
 }
 
-const TH = 'px-3 py-2 text-left font-medium'
-const TD = 'px-3 py-2'
+const TH = 'px-2 py-2 text-left font-medium sm:px-3'
+const TD = 'px-2 py-2 sm:px-3'
 
 /** "Aisha, Bilal and Omar", for the few-children case; the count past three. */
 function whoFor(r: FeeReceipt): string {
@@ -341,7 +343,7 @@ function DayBookReport() {
         <Chip on={date === today()} onClick={() => setDate(today())}>Today</Chip>
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-slate-500">Day</span>
-          <input type="date" value={date} max={today()} onChange={(e) => e.target.value && setDate(e.target.value)} className={`${inputClass} w-auto`} />
+          <input type="date" value={date} max={today()} onChange={(e) => e.target.value && setDate(e.target.value)} className={`${inputBase} w-auto`} />
         </label>
       </div>
       {(fees.isLoading || other.isLoading) && <Loading what="the day" />}
@@ -478,7 +480,7 @@ function DefaultersReport() {
       <div className="flex flex-wrap items-end gap-3 print:hidden">
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-slate-500">Billing month</span>
-          <select value={month} onChange={(e) => setMonth(e.target.value)} className={`${inputClass} w-auto`}>
+          <select value={month} onChange={(e) => setMonth(e.target.value)} className={`${inputBase} w-auto`}>
             <option value="">Every month this session</option>
             {(months.data ?? []).map((m) => (
               <option key={m.period_month} value={m.period_month}>{monthLabel(m.period_month)}</option>
@@ -488,7 +490,7 @@ function DefaultersReport() {
         {byClass.length > 1 && (
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-slate-500">Class</span>
-            <select value={classFilter} onChange={(e) => setClassFilter(e.target.value)} className={`${inputClass} w-auto`}>
+            <select value={classFilter} onChange={(e) => setClassFilter(e.target.value)} className={`${inputBase} w-auto`}>
               <option value="">Every class</option>
               {byClass.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
             </select>
@@ -795,21 +797,21 @@ function AttendanceRegisterReport() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-2 print:hidden">
         <label className="block"><span className="mb-1 block text-xs font-medium text-slate-500">Class</span>
-          <select value={classId} onChange={(e) => { setClassId(e.target.value); setSectionChoice('') }} className={`${inputClass} w-auto`}>
+          <select value={classId} onChange={(e) => { setClassId(e.target.value); setSectionChoice('') }} className={`${inputBase} w-auto`}>
             <option value="">Choose a class…</option>
             {classes.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </label>
         {hasSections && (
           <label className="block"><span className="mb-1 block text-xs font-medium text-slate-500">Section</span>
-            <select value={sectionChoice} onChange={(e) => setSectionChoice(e.target.value)} className={`${inputClass} w-auto`}>
+            <select value={sectionChoice} onChange={(e) => setSectionChoice(e.target.value)} className={`${inputBase} w-auto`}>
               <option value="">Every section</option>
               {sections.data?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </label>
         )}
         <label className="block"><span className="mb-1 block text-xs font-medium text-slate-500">Month</span>
-          <input type="month" value={month} max={todayISO().slice(0, 7)} onChange={(e) => e.target.value && setMonth(e.target.value)} className={`${inputClass} w-auto`} />
+          <input type="month" value={month} max={todayISO().slice(0, 7)} onChange={(e) => e.target.value && setMonth(e.target.value)} className={`${inputBase} w-auto`} />
         </label>
       </div>
       {!classId && <Empty title="Choose a class">The register for any month of this session, ruled like the paper one.</Empty>}
@@ -827,7 +829,42 @@ function AttendanceRegisterReport() {
           {reg.students.length === 0 ? (
             <div className="mt-4"><Empty title="Nobody is enrolled here this session" /></div>
           ) : (
-            <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200">
+            <>
+            {/* A PHONE GETS ONE CARD PER CHILD. Thirty-one day columns cannot fit
+                a phone, and a grid that scrolls sideways loses the child's name
+                off the left the moment it moves. Each card keeps the name, the
+                totals, and the month as a strip of small squares. The grid
+                itself is still what prints. */}
+            <ul className="mt-4 space-y-2 sm:hidden print:hidden">
+              {reg.students.map((s, si) => {
+                const sm = sums[si]
+                return (
+                  <li key={s.enrollment_id} className="rounded-xl border border-slate-200 bg-white p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 text-sm font-medium text-slate-900">
+                        {s.roll_no && <span className="mr-1.5 tabular-nums text-slate-400">{s.roll_no}</span>}{s.full_name}
+                      </div>
+                      <div className="shrink-0 text-right text-xs tabular-nums text-slate-600">
+                        <span className={`text-base font-semibold ${sm.pct == null ? 'text-slate-400' : sm.pct < 75 ? 'text-danger-700' : sm.pct < 90 ? 'text-due-800' : 'text-slate-900'}`}>{sm.pct == null ? '-' : `${sm.pct}%`}</span>
+                        <div>{sm.present} P · <span className={sm.absent ? 'text-danger-700' : ''}>{sm.absent} A</span></div>
+                      </div>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-0.5" aria-label={`${s.full_name}: ${sm.present} present, ${sm.absent} absent`}>
+                      {reg.dates.map((d, di) => {
+                        const v = s.marks[d]
+                        return (
+                          <span key={d} title={`${dayNums[di]}: ${v ?? 'not marked'}`}
+                            className={`flex h-5 w-5 items-center justify-center rounded text-[9px] font-semibold ${v ? `${v === 'present' ? 'bg-money-50 ' : ''}${CELL[v] ?? 'bg-slate-100 text-slate-700'}` : sunday(d) ? 'bg-slate-100 text-slate-300' : 'border border-dashed border-slate-200 text-slate-300'}`}>
+                            {v ? ATTENDANCE_SHORT[v] ?? '?' : dayNums[di]}
+                          </span>
+                        )
+                      })}
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+            <div className="mt-4 hidden overflow-x-auto rounded-xl border border-slate-200 sm:block print:block">
               <table className="w-full border-collapse text-[11px]">
                 <thead>
                   <tr className="bg-slate-50 text-slate-500">
@@ -872,6 +909,7 @@ function AttendanceRegisterReport() {
                 </tfoot>
               </table>
             </div>
+            </>
           )}
           <Note>P present · Lt late · ½ half day · L leave · A absent · a dot is a day not marked. Sundays are shaded. Late and half day count as present in the percentage. Prints best in landscape.</Note>
         </ReportFrame>

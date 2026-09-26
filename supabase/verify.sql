@@ -3371,6 +3371,39 @@ select 'logins that cannot repoint themselves, reports in Karachi time, years an
        end
 
 union all
+-- 0149. The gate, the phone and the bill.
+select 'a check-in PIN a teacher can type, a register that says how, a roll a login cannot write past the plan (0149)',
+       case
+         when to_regprocedure('public.fn_fee_receipts(date,date)') is null
+           then 'note: bundle 49 has not been applied yet, so 0149 is not due'
+         when to_regprocedure('public.fn_my_checkin()') is null
+           or to_regprocedure('public.fn_my_staff_attendance(date,date)') is null
+           or to_regprocedure('public.fn_switch_off_checkin()') is null
+           or not exists (select 1 from information_schema.columns
+                           where table_schema = 'public' and table_name = 'staff_checkin_codes'
+                             and column_name = 'pin')
+           then 'FAIL: teachers still cannot type a check-in code and their phone cannot read their own days; '
+                || 'apply supabase/bundles/50_the_gate_the_phone_and_the_bill.sql'
+         when not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                           where n.nspname = 'public' and p.proname = 'fn_request_student_limit'
+                             and p.prosrc like '%would still%')
+           then 'FAIL: a school over its plan can ask for less room than it already has; apply '
+                || 'supabase/bundles/50_the_gate_the_phone_and_the_bill.sql'
+         when not exists (select 1 from pg_trigger t
+                           where t.tgrelid = 'public.enrollments'::regclass
+                             and t.tgname = 'trg_enrollments_roll_guard' and not t.tgisinternal)
+           then 'FAIL: a login can write a pupil onto the roll directly, past the plan; apply '
+                || 'supabase/bundles/50_the_gate_the_phone_and_the_bill.sql'
+         when exists (select 1 from pg_publication where pubname = 'supabase_realtime')
+          and not exists (select 1 from pg_publication_tables
+                           where pubname = 'supabase_realtime'
+                             and schemaname = 'public' and tablename = 'staff_attendance')
+           then 'FAIL: the staff register will not update itself when a teacher checks in; apply '
+                || 'supabase/bundles/50_the_gate_the_phone_and_the_bill.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS: no schools yet, as expected'

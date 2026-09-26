@@ -1,75 +1,69 @@
-import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
-  getMyAssignments, getMyTodayCheckin, getMyStaffAttendance, staffCheckIn,
-  type MyAttendanceRow,
+  getMyAssignments, getMyCheckin, getMyStaffDays, pkToday,
+  type CheckInResult, type MyAttendanceRow, type MyCheckin,
 } from '@/lib/db'
 import { useAuth } from '@/auth/AuthProvider'
 import { LoadError } from '@/components/ui'
-import { fmtDate } from '@/lib/format'
+import { useTableChanges } from '@/lib/live'
+import { shiftDate } from '@/lib/format'
+import { CheckInPanel } from '@/components/checkin/CheckInPanel'
+import { STATUS_WORD, hoursWorked, pkTime, resultHeadline } from '@/components/checkin/checkinKit'
 
-/** The teacher's home: their assigned class(es), a fast path to mark attendance
- *  and open their tests, today's own check-in, and their attendance record. */
+/** The teacher's home: today's own check-in first, then their week and month,
+ *  then their classes with the fast path to the register and their tests. */
 export function MyClass() {
   const { profile } = useAuth()
   const navigate = useNavigate()
+  const qc = useQueryClient()
   const assignments = useQuery({ queryKey: ['myAssignments'], queryFn: getMyAssignments })
-  const checkin = useQuery({ queryKey: ['myTodayCheckin'], queryFn: getMyTodayCheckin })
+  // Polled as well as live: the office marking a teacher from their desk has to
+  // reach the teacher's phone without the teacher knowing to reload.
+  const me = useQuery({ queryKey: ['myCheckin'], queryFn: getMyCheckin, refetchInterval: 60_000 })
+  const staffId = profile?.staff_id ?? null
+  useTableChanges('staff_attendance', staffId ? `staff_id=eq.${staffId}` : null, () => {
+    void qc.invalidateQueries({ queryKey: ['myCheckin'] })
+    void qc.invalidateQueries({ queryKey: ['myDays'] })
+  }, !!staffId)
 
-  const linked = !!profile?.staff_id
+  const linked = me.data ? me.data.linked : !!staffId
 
   return (
     <div className="space-y-5">
       <div>
         <h1 className="text-xl font-semibold text-slate-800">Welcome{profile?.full_name ? `, ${profile.full_name}` : ''}</h1>
-        <p className="mt-0.5 text-sm text-slate-500">Your classes for the current session.</p>
+        <p className="mt-0.5 text-sm text-slate-500">Your day, your attendance, and your classes.</p>
       </div>
 
-      <LoadError of={[assignments, checkin]} what="Your home screen" />
+      <LoadError of={[assignments]} what="Your classes" />
 
-      {/* Check-in status + the two ways in: scan the wall QR, or type today's code. */}
-      <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
-        <div className="text-xs uppercase tracking-wide text-slate-500">Today’s check-in</div>
-        {!linked ? (
-          <p className="mt-1 text-sm text-amber-600">Your login isn’t linked to a staff record yet: ask the principal to link it in Staff.</p>
-        ) : checkin.isLoading ? (
-          <p className="mt-1 text-sm text-slate-400">…</p>
-        ) : checkin.data ? (
-          <p className="mt-1 text-sm text-emerald-700">
-            ✓ Checked in{checkin.data.checked_at ? ` at ${new Date(checkin.data.checked_at).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit' })}` : ''} · {fmtDate(checkin.data.attendance_date)}
-          </p>
-        ) : (
-          <CheckInBox />
-        )}
-      </div>
+      <TodayCard me={me.data} loading={me.isLoading} error={me.error as Error | null}
+        onRetry={() => void me.refetch()} />
 
-      {/* The teacher's own attendance record. Nothing in the portal showed this
-          before: a teacher could not see their own present/absent history, only
-          today's tick. */}
-      {linked && <MyAttendance />}
+      {linked && <MyDays />}
 
-      {/* Assigned classes */}
       <div>
-        <div className="text-xs uppercase tracking-wide text-slate-500">My classes</div>
+        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">My classes</div>
         {assignments.isLoading ? (
           <p className="mt-2 text-sm text-slate-400">Loading…</p>
         ) : (assignments.data?.length ?? 0) === 0 ? (
-          <p className="mt-2 rounded bg-slate-50 p-3 text-sm text-slate-500">
-            You have no class assigned yet. The principal assigns your class in Staff → Class teachers.
+          <p className="mt-2 rounded-xl bg-slate-50 p-3 text-sm text-slate-500">
+            You have no class assigned yet. The principal assigns your class in Staff, Class teachers.
           </p>
         ) : (
           <div className="mt-2 grid gap-3 sm:grid-cols-2">
             {assignments.data?.map((a) => (
-              <div key={`${a.class_id}-${a.section_id ?? 'all'}`} className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
+              <div key={`${a.class_id}-${a.section_id ?? 'all'}`} className="rounded-2xl bg-white p-4 shadow-card ring-1 ring-slate-200">
                 <div className="text-base font-semibold text-slate-800">
                   {a.class_name}{a.section_name ? ` · Section ${a.section_name}` : ''}
                 </div>
-                <div className="mt-3 flex flex-wrap gap-2">
+                <div className="mt-3 grid grid-cols-2 gap-2">
                   <button onClick={() => navigate('/attendance')}
-                    className="rounded bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700">Mark attendance</button>
+                    className="rounded-xl bg-brand-600 px-3 py-2.5 text-sm font-medium text-white hover:bg-brand-700">Mark attendance</button>
                   <button onClick={() => navigate('/assessments')}
-                    className="rounded border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">Tests</button>
+                    className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">Tests</button>
                 </div>
               </div>
             ))}
@@ -80,146 +74,401 @@ export function MyClass() {
   )
 }
 
-/**
- * Mark myself present by typing today's code, when scanning is not an option.
- *
- * The wall QR opens /checkin?c=CODE and submits automatically; this is the
- * fallback for a camera that will not focus, or a school that reads the poster
- * code out. Location is sent best-effort, exactly as the QR path does, so a
- * school using the geofence gets the same check either way. A ROTATING code
- * cannot be typed (it is a token that changes every 30 seconds) and the server
- * says so plainly, so this box is honest about being for the static code.
- */
-function CheckInBox() {
-  const qc = useQueryClient()
-  const [code, setCode] = useState('')
-  const [msg, setMsg] = useState<string | null>(null)
-  const [err, setErr] = useState<string | null>(null)
+/** The time now, refreshed every half minute, so "check-out opens at 08:07"
+ *  turns into a button by itself. */
+function useNow(stepMs = 30_000): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(Date.now()), stepMs)
+    return () => window.clearInterval(t)
+  }, [stepMs])
+  return now
+}
 
-  async function coords(): Promise<{ lat: number | null; lng: number | null }> {
-    if (typeof navigator === 'undefined' || !navigator.geolocation) return { lat: null, lng: null }
-    return new Promise((resolve) => {
-      navigator.geolocation.getCurrentPosition(
-        (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
-        () => resolve({ lat: null, lng: null }),
-        { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 },
-      )
-    })
+const CARD = 'rounded-2xl bg-white p-4 shadow-card ring-1 ring-slate-200'
+
+function TodayCard({ me, loading, error, onRetry }: {
+  me: MyCheckin | undefined; loading: boolean; error: Error | null; onRetry: () => void
+}) {
+  const qc = useQueryClient()
+  const now = useNow()
+  const [panel, setPanel] = useState<'in' | 'out' | null>(null)
+  const [outcome, setOutcome] = useState<CheckInResult | null>(null)
+
+  function done(r: CheckInResult) {
+    setOutcome(r)
+    setPanel(null)
+    void qc.invalidateQueries({ queryKey: ['myCheckin'] })
+    void qc.invalidateQueries({ queryKey: ['myDays'] })
   }
 
-  const go = useMutation({
-    mutationFn: async () => {
-      const { lat, lng } = await coords()
-      const device = typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 120) : null
-      return staffCheckIn(code.trim(), lat, lng, device)
-    },
-    onSuccess: (r) => {
-      // staffCheckIn throws on a refusal, so anything that resolves is a real
-      // record: a check-in, a second-scan check-out, or an already-marked day.
-      setErr(null)
-      setMsg(
-        r.status === 'out' ? 'Checked out.'
-          : r.status === 'already' ? 'You were already checked in today.'
-            : r.status === 'office_marked' ? 'The office already marked you present today.'
-              : 'Checked in.')
-      void qc.invalidateQueries({ queryKey: ['myTodayCheckin'] })
-      void qc.invalidateQueries({ queryKey: ['myAttendance'] })
-    },
-    onError: (e) => setErr((e as Error).message),
-  })
+  const head = <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Today’s check-in</div>
+
+  if (loading) {
+    return <div className={CARD}>{head}<div className="mt-3 h-16 animate-pulse rounded-xl bg-slate-100" /></div>
+  }
+  if (error || !me) {
+    return (
+      <div className={CARD}>
+        {head}
+        <p className="mt-2 text-sm text-danger-700">Your check-in could not be loaded. {error?.message}</p>
+        <button onClick={onRetry} className="mt-2 text-sm font-medium text-brand-700 hover:underline">Try again</button>
+      </div>
+    )
+  }
+  if (!me.linked) {
+    return (
+      <div className={CARD}>
+        {head}
+        <p className="mt-2 text-sm text-due-800">
+          Your login is not linked to a staff record yet, so you cannot check in. Ask the principal to link it
+          in Staff, on your name, with the Login button.
+        </p>
+      </div>
+    )
+  }
+  if (!me.active) {
+    return (
+      <div className={CARD}>
+        {head}
+        <p className="mt-2 text-sm text-slate-700">Your staff record is marked as left, so check-in is closed. Speak to the office if that is wrong.</p>
+      </div>
+    )
+  }
+
+  const rec = me.record
+  const officeTyped = !!rec && !rec.scanned
+  const outOpens = me.out_opens_at ? new Date(me.out_opens_at).getTime() : null
+  const outReady = me.can_check_out && (outOpens == null || now >= outOpens)
 
   return (
-    <div className="mt-1">
-      <p className="text-sm text-slate-600">
-        Not checked in yet. Scan the school’s check-in QR with your phone camera, or type
-        today’s code:
-      </p>
-      <form className="mt-2 flex flex-wrap items-center gap-2"
-        onSubmit={(e) => { e.preventDefault(); if (code.trim()) go.mutate() }}>
-        <input value={code} onChange={(e) => { setCode(e.target.value); setErr(null); setMsg(null) }}
-          placeholder="Today’s code"
-          className="w-40 rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500" />
-        <button type="submit" disabled={!code.trim() || go.isPending}
-          className="rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
-          {go.isPending ? 'Checking in…' : 'Check in'}
-        </button>
-      </form>
-      {msg && <p className="mt-1 text-sm text-emerald-700">{msg}</p>}
-      {err && <p className="mt-1 text-sm text-red-600">{err}</p>}
+    <div className={CARD}>
+      <div className="flex items-start justify-between gap-2">
+        {head}
+        <span className="text-xs text-slate-400">{new Date(`${me.today}T00:00:00`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
+      </div>
+
+      {outcome && <Outcome r={outcome} onClose={() => setOutcome(null)} />}
+
+      {/* ---- recorded already ------------------------------------------ */}
+      {rec && (
+        <div className="mt-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <DayChip status={rec.status} />
+            {officeTyped && <span className="text-sm text-slate-600">marked by the office</span>}
+            {!officeTyped && rec.method && (
+              <span className="text-xs text-slate-500">{rec.method === 'pin' ? 'with the PIN' : 'by QR'}</span>
+            )}
+          </div>
+          {!officeTyped && (
+            <dl className="mt-3 grid grid-cols-3 gap-2 text-center">
+              <Fact k="In" v={pkTime(rec.checked_at)} />
+              <Fact k="Out" v={rec.checked_out_at ? pkTime(rec.checked_out_at) : 'Not yet'} />
+              <Fact k="At school" v={rec.worked_minutes != null ? hoursWorked(rec.worked_minutes) : '-'} />
+            </dl>
+          )}
+          {rec.late_minutes != null && rec.late_minutes > 0 && (
+            <p className="mt-2 text-xs text-due-800">{rec.late_minutes} minutes after the start of the day.</p>
+          )}
+          {rec.reason && <p className="mt-2 text-xs text-slate-600">Note from the office: {rec.reason}</p>}
+
+          {/* The check-out, when the database would take one. */}
+          {me.can_check_out && panel !== 'out' && (
+            <div className="mt-3 border-t border-slate-100 pt-3">
+              {outReady ? (
+                <button onClick={() => { setOutcome(null); setPanel('out') }}
+                  className="w-full rounded-xl bg-brand-600 px-4 py-3 text-sm font-semibold text-white hover:bg-brand-700 sm:w-auto">
+                  {rec.checked_out_at ? 'Check out again (moves your leaving time)' : 'Check out'}
+                </button>
+              ) : (
+                <p className="text-sm text-slate-500">Check-out opens at {pkTime(me.out_opens_at)}, so a double scan on arrival does not check you out.</p>
+              )}
+            </div>
+          )}
+          {officeTyped && (
+            <p className="mt-2 text-xs text-slate-500">The office recorded today, so there is nothing to scan. Speak to them if it is wrong.</p>
+          )}
+        </div>
+      )}
+
+      {/* ---- nothing recorded yet ------------------------------------- */}
+      {!rec && me.full && me.mode === null && (
+        <p className="mt-3 text-sm text-slate-600">
+          Your school has not switched on self check-in, so the office marks your attendance. You will see it
+          here once they do.
+        </p>
+      )}
+      {!rec && (me.mode !== null || !me.full) && (
+        <div className="mt-3">
+          <p className="mb-3 text-sm text-slate-700">You have not checked in today.</p>
+          <CheckInPanel intent="in" mode={me.mode} geofence={me.geofence} known={me.full} onResult={done} />
+        </div>
+      )}
+
+      {rec && panel === 'out' && (
+        <div className="mt-3 border-t border-slate-100 pt-3">
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-sm font-medium text-slate-800">Check out</p>
+            <button onClick={() => setPanel(null)} className="text-sm text-slate-500 hover:underline">Cancel</button>
+          </div>
+          <CheckInPanel intent="out" mode={me.mode} geofence={me.geofence} known={me.full} onResult={done} />
+        </div>
+      )}
     </div>
   )
 }
 
-const STATUS_STYLE: Record<string, string> = {
-  present: 'text-emerald-700',
-  late: 'text-amber-700',
-  absent: 'text-red-600',
-  leave: 'text-slate-500',
+function Fact({ k, v }: { k: string; v: string }) {
+  return (
+    <div className="rounded-xl bg-slate-50 px-2 py-2">
+      <dt className="text-[11px] uppercase tracking-wide text-slate-500">{k}</dt>
+      <dd className="mt-0.5 text-base font-semibold tabular-nums text-slate-900">{v}</dd>
+    </div>
+  )
 }
 
-function hhmm(iso: string | null): string {
-  if (!iso) return '-'
-  return new Date(iso).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit' })
+function Outcome({ r, onClose }: { r: CheckInResult; onClose: () => void }) {
+  const good = r.status === 'ok' || r.status === 'out'
+  const skin = r.status === 'office_marked' || r.status === 'already'
+    ? 'bg-info-50 text-info-900 ring-info-100'
+    : r.attendance_status === 'late' && r.status === 'ok'
+      ? 'bg-due-50 text-due-900 ring-due-100'
+      : 'bg-money-50 text-money-900 ring-money-100'
+  return (
+    <div role="status" className={`mt-3 flex items-start justify-between gap-3 rounded-xl px-3 py-2 text-sm ring-1 ${skin}`}>
+      <div>
+        <p className="font-medium">{resultHeadline(r)}</p>
+        {good && r.status === 'out' && r.worked_minutes != null && (
+          <p className="text-xs opacity-90">{hoursWorked(r.worked_minutes)} at school today.</p>
+        )}
+        {r.status === 'office_marked' && (
+          <p className="text-xs opacity-90">
+            Recorded as {STATUS_WORD[r.attendance_status ?? ''] ?? r.attendance_status}{r.reason ? `: ${r.reason}` : ''}.
+          </p>
+        )}
+      </div>
+      <button onClick={onClose} className="shrink-0 text-xs underline opacity-80">Close</button>
+    </div>
+  )
 }
 
-/** The teacher's own month of attendance, newest first. */
-function MyAttendance() {
-  // First of a month, in local terms; shifted by the arrows.
-  const [anchor, setAnchor] = useState(() => {
-    const d = new Date()
-    return new Date(d.getFullYear(), d.getMonth(), 1)
-  })
-  const monthIso = `${anchor.getFullYear()}-${String(anchor.getMonth() + 1).padStart(2, '0')}-01`
-  const q = useQuery({
-    queryKey: ['myAttendance', monthIso],
-    queryFn: () => getMyStaffAttendance(monthIso),
-  })
-  const rows = q.data ?? []
-  const present = rows.filter((r) => r.status === 'present' || r.status === 'late').length
-  const label = anchor.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
-  const thisMonth = new Date().getFullYear() === anchor.getFullYear()
-    && new Date().getMonth() === anchor.getMonth()
+// ---------------------------------------------------------------------------
+// The teacher's own days
+// ---------------------------------------------------------------------------
 
-  const shift = (n: number) => setAnchor((a) => new Date(a.getFullYear(), a.getMonth() + n, 1))
+/** One colour and one letter per kind of day. The letter is there so the
+ *  record is not colour alone, for a colour-blind teacher and for a printout. */
+const DAY_SKIN: Record<string, { cell: string; letter: string; label: string }> = {
+  present: { cell: 'bg-money-500 text-white', letter: 'P', label: 'Present' },
+  late: { cell: 'bg-due-400 text-slate-900', letter: 'L', label: 'Late' },
+  half_day: { cell: 'bg-due-200 text-due-900', letter: 'H', label: 'Half day' },
+  leave: { cell: 'bg-info-200 text-info-900', letter: 'Lv', label: 'Leave' },
+  absent: { cell: 'bg-danger-500 text-white', letter: 'A', label: 'Absent' },
+}
+const NONE = { cell: 'border border-dashed border-slate-300 bg-white text-slate-400', letter: '-', label: 'Not recorded' }
+
+function DayChip({ status }: { status: string }) {
+  const s = DAY_SKIN[status]
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-sm font-semibold ${s ? s.cell : 'bg-slate-100 text-slate-700'}`}>
+      {s?.label ?? status}
+    </span>
+  )
+}
+
+function monthBounds(ym: string, today: string): { from: string; to: string; last: string } {
+  const [y, m] = ym.split('-').map(Number)
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate()
+  const last = `${ym}-${String(lastDay).padStart(2, '0')}`
+  return { from: `${ym}-01`, to: last < today ? last : today, last }
+}
+
+function weekdayOf(iso: string): number {
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay() // 0 Sunday
+}
+
+function MyDays() {
+  const today = pkToday()
+  const weekFrom = shiftDate(today, -6)
+  const week = useQuery({
+    queryKey: ['myDays', weekFrom, today], queryFn: () => getMyStaffDays(weekFrom, today),
+  })
+  const [ym, setYm] = useState(today.slice(0, 7))
+  const mb = monthBounds(ym, today)
+  const month = useQuery({
+    queryKey: ['myDays', mb.from, mb.to], queryFn: () => getMyStaffDays(mb.from, mb.to),
+    enabled: mb.from <= today,
+  })
+  const [picked, setPicked] = useState<string | null>(null)
+
+  const byDate = (rows: MyAttendanceRow[] | undefined) => new Map((rows ?? []).map((r) => [r.attendance_date, r]))
+  const wk = byDate(week.data)
+  const mo = byDate(month.data)
+  const days7 = Array.from({ length: 7 }, (_, i) => shiftDate(weekFrom, i))
+
+  const tally = (rows: MyAttendanceRow[]) => ({
+    in: rows.filter((r) => r.status === 'present' || r.status === 'late' || r.status === 'half_day').length,
+    late: rows.filter((r) => r.status === 'late').length,
+    absent: rows.filter((r) => r.status === 'absent').length,
+    leave: rows.filter((r) => r.status === 'leave').length,
+  })
+  const w = tally(week.data ?? [])
+  const m = tally(month.data ?? [])
+  const shift = (n: number) => {
+    const [y, mm] = ym.split('-').map(Number)
+    const d = new Date(Date.UTC(y, mm - 1 + n, 1))
+    setYm(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`)
+    setPicked(null)
+  }
+  const monthLabel = new Date(`${ym}-01T00:00:00`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+  const thisMonth = ym === today.slice(0, 7)
+
+  // Mondays first, as a Pakistani school week runs.
+  const lead = (weekdayOf(`${ym}-01`) + 6) % 7
+  const nDays = Number(mb.last.slice(8, 10))
+  const cells: (string | null)[] = [
+    ...Array.from({ length: lead }, () => null),
+    ...Array.from({ length: nDays }, (_, i) => `${ym}-${String(i + 1).padStart(2, '0')}`),
+  ]
+  const pickedRow = picked ? mo.get(picked) ?? null : null
 
   return (
-    <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-xs uppercase tracking-wide text-slate-500">My attendance</div>
-        <div className="flex items-center gap-2 text-sm">
-          <button onClick={() => shift(-1)} className="rounded border border-slate-300 px-2 py-0.5 text-slate-600 hover:bg-slate-50">‹</button>
-          <span className="min-w-[7.5rem] text-center font-medium text-slate-700">{label}</span>
-          <button onClick={() => shift(1)} disabled={thisMonth}
-            className="rounded border border-slate-300 px-2 py-0.5 text-slate-600 hover:bg-slate-50 disabled:opacity-40">›</button>
+    <div className={CARD}>
+      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">My attendance</div>
+
+      {/* ---- the last seven days ------------------------------------- */}
+      <div className="mt-3">
+        <div className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-2">
+          <p className="text-sm font-medium text-slate-800">The last 7 days</p>
+          {week.data && (
+            <p className="text-xs text-slate-500">
+              {w.in} in{w.late ? ` · ${w.late} late` : ''}{w.absent ? ` · ${w.absent} absent` : ''}{w.leave ? ` · ${w.leave} leave` : ''}
+            </p>
+          )}
         </div>
+        {week.error ? (
+          <Failed onRetry={() => void week.refetch()} />
+        ) : (
+          <ol className="mt-2 grid grid-cols-7 gap-1.5">
+            {days7.map((d) => {
+              const r = wk.get(d)
+              const s = r ? DAY_SKIN[r.status] ?? NONE : NONE
+              const isToday = d === today
+              return (
+                <li key={d} className="text-center">
+                  <div className={`text-[11px] ${isToday ? 'font-semibold text-brand-700' : 'text-slate-500'}`}>
+                    {isToday ? 'Today' : new Date(`${d}T00:00:00`).toLocaleDateString('en-GB', { weekday: 'short' })}
+                  </div>
+                  <div title={`${d}: ${s.label}`} aria-label={`${d}: ${s.label}`}
+                    className={`mt-1 flex h-11 items-center justify-center rounded-xl text-sm font-bold ${week.isLoading ? 'animate-pulse bg-slate-100 text-transparent' : s.cell}`}>
+                    {week.isLoading ? '' : s.letter}
+                  </div>
+                  <div className="mt-0.5 text-[11px] tabular-nums text-slate-400">{Number(d.slice(8, 10))}</div>
+                </li>
+              )
+            })}
+          </ol>
+        )}
+        {week.data && week.data.length === 0 && (
+          <p className="mt-2 text-xs text-slate-500">Nothing recorded in the last seven days. A day appears here the moment you check in or the office marks you.</p>
+        )}
       </div>
 
-      {q.isLoading ? (
-        <p className="mt-2 text-sm text-slate-400">…</p>
-      ) : rows.length === 0 ? (
-        <p className="mt-2 text-sm text-slate-500">No attendance recorded this month yet.</p>
-      ) : (
-        <>
-          <div className="mt-1 text-sm text-slate-600">{present} day{present === 1 ? '' : 's'} present this month.</div>
-          <div className="mt-2 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-left text-xs uppercase tracking-wide text-slate-400">
-                <tr><th className="py-1">Date</th><th className="py-1">Status</th><th className="py-1">In</th><th className="py-1">Out</th></tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {rows.map((r: MyAttendanceRow) => (
-                  <tr key={r.attendance_date}>
-                    <td className="py-1.5 text-slate-700">{fmtDate(r.attendance_date)}</td>
-                    <td className={`py-1.5 font-medium capitalize ${STATUS_STYLE[r.status] ?? 'text-slate-600'}`}>{r.status}</td>
-                    <td className="py-1.5 tabular-nums text-slate-600">{hhmm(r.checked_at)}</td>
-                    <td className="py-1.5 tabular-nums text-slate-600">{hhmm(r.checked_out_at)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
+      {/* ---- the month ---------------------------------------------- */}
+      <div className="mt-5 border-t border-slate-100 pt-4">
+        <div className="flex items-center justify-between gap-2">
+          <button onClick={() => shift(-1)} aria-label="The month before"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50">‹</button>
+          <p className="text-sm font-semibold text-slate-800">{monthLabel}</p>
+          <button onClick={() => shift(1)} disabled={thisMonth} aria-label="The month after"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 disabled:opacity-40">›</button>
+        </div>
+
+        {month.error ? (
+          <Failed onRetry={() => void month.refetch()} />
+        ) : (
+          <>
+            <div className="mt-3 grid grid-cols-4 gap-2 text-center">
+              <Count n={m.in} label="Days in" skin="text-money-700" />
+              <Count n={m.late} label="Late" skin="text-due-700" />
+              <Count n={m.absent} label="Absent" skin="text-danger-700" />
+              <Count n={m.leave} label="Leave" skin="text-info-700" />
+            </div>
+
+            <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[11px] text-slate-400">
+              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => <div key={d}>{d}</div>)}
+            </div>
+            <div className="mt-1 grid grid-cols-7 gap-1">
+              {cells.map((d, i) => {
+                if (!d) return <div key={`b${i}`} />
+                const future = d > today
+                const r = mo.get(d)
+                const s = r ? DAY_SKIN[r.status] ?? NONE : NONE
+                const on = picked === d
+                return (
+                  <button key={d} type="button" disabled={future} onClick={() => setPicked(on ? null : d)}
+                    aria-label={`${d}: ${future ? 'not yet' : s.label}`} aria-pressed={on}
+                    className={`flex aspect-square flex-col items-center justify-center rounded-lg text-xs tabular-nums transition ${
+                      future ? 'text-slate-300' : month.isLoading ? 'animate-pulse bg-slate-100 text-transparent' : s.cell} ${
+                      on ? 'ring-2 ring-brand-600 ring-offset-1' : ''}`}>
+                    <span className="font-semibold">{Number(d.slice(8, 10))}</span>
+                  </button>
+                )
+              })}
+            </div>
+
+            {picked && (
+              <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                <span className="font-medium">
+                  {new Date(`${picked}T00:00:00`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}:
+                </span>{' '}
+                {pickedRow ? (
+                  <>
+                    {DAY_SKIN[pickedRow.status]?.label ?? pickedRow.status}
+                    {pickedRow.checked_at && pickedRow.method && `, in ${pkTime(pickedRow.checked_at)}`}
+                    {pickedRow.checked_out_at && `, out ${pkTime(pickedRow.checked_out_at)}`}
+                    {pickedRow.worked_minutes != null && ` (${hoursWorked(pickedRow.worked_minutes)})`}
+                    {pickedRow.method === 'pin' ? ', with the PIN' : pickedRow.method === 'qr' ? ', by QR' : ', marked by the office'}
+                    {pickedRow.reason && <span className="block text-xs text-slate-500">{pickedRow.reason}</span>}
+                  </>
+                ) : 'nothing recorded.'}
+              </div>
+            )}
+            {month.data && month.data.length === 0 && (
+              <p className="mt-2 text-xs text-slate-500">Nothing recorded in {monthLabel}.</p>
+            )}
+          </>
+        )}
+
+        {/* The key, so no colour has to be guessed. */}
+        <ul className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-600">
+          {[...Object.values(DAY_SKIN), NONE].map((s) => (
+            <li key={s.label} className="inline-flex items-center gap-1">
+              <span className={`inline-flex h-4 min-w-4 items-center justify-center rounded px-0.5 text-[9px] font-bold ${s.cell}`}>{s.letter}</span>
+              {s.label}
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
+  )
+}
+
+function Count({ n, label, skin }: { n: number; label: string; skin: string }) {
+  return (
+    <div className="rounded-xl bg-slate-50 px-1 py-2">
+      <div className={`text-lg font-semibold tabular-nums ${skin}`}>{n}</div>
+      <div className="text-[11px] text-slate-500">{label}</div>
+    </div>
+  )
+}
+
+function Failed({ onRetry }: { onRetry: () => void }) {
+  return (
+    <p className="mt-2 text-sm text-danger-700">
+      Your attendance could not be loaded.{' '}
+      <button onClick={onRetry} className="font-medium text-brand-700 hover:underline">Try again</button>
+    </p>
   )
 }

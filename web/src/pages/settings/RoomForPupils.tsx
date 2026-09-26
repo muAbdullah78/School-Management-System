@@ -8,7 +8,7 @@ import { formatPkr } from '@/lib/licence'
 import { termSentence } from '@/lib/plans'
 import { fmtDate } from '@/lib/format'
 
-const FIELD = 'w-full rounded border border-slate-300 px-2 py-1.5 text-sm'
+const FIELD = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100'
 
 /**
  * How many pupils the school may have, and how to ask for more.
@@ -59,8 +59,8 @@ function Body({ d }: { d: MyStudentLimit }) {
   // nothing to say and nothing to ask for.
   if (d.limit === null) {
     return (
-      <section className="rounded-lg border border-slate-200 bg-white p-4">
-        <div className="text-xs uppercase tracking-wide text-slate-500">Your roll</div>
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-card">
+        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Your roll</div>
         <p className="mt-1 text-sm text-slate-700">
           {d.students.toLocaleString()} pupils. Your plan has no limit on how many
           you may have.
@@ -80,7 +80,7 @@ function Body({ d }: { d: MyStudentLimit }) {
 
   if (quiet) {
     return (
-      <section className="rounded-lg border border-slate-200 bg-white px-4 py-2.5">
+      <section className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-card">
         <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
           <span className="text-slate-600">
             <span className="font-medium text-slate-800">
@@ -103,17 +103,27 @@ function Body({ d }: { d: MyStudentLimit }) {
     )
   }
 
+  // OVER, not just full. A school can be above its plan (a plan changed under
+  // it, a roll from before the limit was enforced), and "238 of 150 places
+  // used" read as a typo. It says how far over, because that is the number
+  // the request has to cover.
+  const over = Math.max(d.students - d.limit, 0)
   return (
-    <section className={`rounded-lg border p-4 ${
-      d.at_limit ? 'border-amber-300 bg-amber-50'
-        : d.warn ? 'border-amber-200 bg-white' : 'border-slate-200 bg-white'}`}>
+    <section className={`rounded-2xl border p-4 shadow-card ${
+      over > 0 ? 'border-danger-200 bg-danger-50/60'
+        : d.at_limit ? 'border-due-300 bg-due-50'
+          : d.warn ? 'border-due-200 bg-white' : 'border-slate-200 bg-white'}`}>
       <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-        {d.at_limit ? 'Your roll is full' : 'Room on your roll'}
+        {over > 0 ? 'Your roll is over your plan' : d.at_limit ? 'Your roll is full' : 'Room on your roll'}
       </div>
 
       <p className="mt-1 text-sm text-slate-800">
-        <span className="text-lg font-semibold">{d.students.toLocaleString()}</span>{' '}
-        of {d.limit.toLocaleString()} places used
+        <span className="text-lg font-semibold tabular-nums">{d.students.toLocaleString()}</span>{' '}
+        {over > 0 ? (
+          <>pupils, <span className="font-semibold text-danger-800">{over.toLocaleString()} more</span> than the {d.limit.toLocaleString()} your plan covers</>
+        ) : (
+          <>of {d.limit.toLocaleString()} places used</>
+        )}
         {d.room !== null && d.room > 0 && (
           <span className="text-slate-600">
             , {d.room.toLocaleString()} left
@@ -131,7 +141,7 @@ function Body({ d }: { d: MyStudentLimit }) {
           reading this arrived from a refused admission and will not take in
           anything else until it knows how bad this is. */}
       {d.at_limit ? (
-        <p className="mt-2 text-sm text-amber-900">
+        <p className={`mt-2 text-sm ${over > 0 ? 'text-danger-900' : 'text-due-900'}`}>
           <span className="font-medium">New admissions are paused</span> until
           there is room. Everything else is untouched: the register, the fees,
           the marks, the reports and every child already on the roll carry on
@@ -154,8 +164,8 @@ function Body({ d }: { d: MyStudentLimit }) {
 function Answer({ req }: { req: NonNullable<MyStudentLimit['request']> }) {
   const granted = req.status === 'granted'
   return (
-    <div className={`mt-3 rounded border px-3 py-2 text-sm ${
-      granted ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+    <div className={`mt-3 rounded-xl border px-3 py-2 text-sm ${
+      granted ? 'border-brand-200 bg-brand-50 text-brand-900'
         : 'border-slate-200 bg-white text-slate-700'}`}>
       <p className="font-medium">
         {granted
@@ -191,7 +201,7 @@ function Waiting({ req }: { req: NonNullable<MyStudentLimit['request']> }) {
   })
 
   return (
-    <div className="mt-3 rounded border border-slate-200 bg-white px-3 py-2 text-sm">
+    <div className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
       <p className="font-medium text-slate-800">
         {req.wants === 'move_up'
           ? `You asked us to move you up to a plan covering ${req.requested_limit.toLocaleString()} pupils`
@@ -201,7 +211,7 @@ function Waiting({ req }: { req: NonNullable<MyStudentLimit['request']> }) {
         Sent {fmtDate(req.requested_at)}. We will answer here.
       </p>
       <p className="mt-1 text-xs text-slate-500">You told us: “{req.reason}”</p>
-      {err && <p className="mt-1 text-xs text-rose-700">{err}</p>}
+      {err && <p className="mt-1 text-xs text-danger-700">{err}</p>}
       <button onClick={() => { setErr(null); drop.mutate() }} disabled={drop.isPending}
         className="mt-1.5 text-xs text-slate-400 hover:text-slate-700 hover:underline disabled:opacity-60">
         {drop.isPending ? 'Taking it back…' : 'Take this request back'}
@@ -217,7 +227,11 @@ function AskForm({ d }: { d: MyStudentLimit }) {
   // A round number above what they have, not a blank box. A school that has to
   // invent a figure invents the smallest one that solves today, and is back
   // here in a month.
-  const [howMany, setHowMany] = useState(String(roundUpRoom(d.limit ?? d.students)))
+  // Above the ROLL as well as the limit. A school with 238 pupils on a 150
+  // plan was offered "room for 200", which the database took, and which would
+  // have left every admission refused after it was granted.
+  const floor = Math.max(d.limit ?? 0, d.students)
+  const [howMany, setHowMany] = useState(String(roundUpRoom(floor)))
   const [reason, setReason] = useState('')
   const [err, setErr] = useState<string | null>(null)
   const [done, setDone] = useState<string | null>(null)
@@ -227,7 +241,7 @@ function AskForm({ d }: { d: MyStudentLimit }) {
   // that rewrites itself when you press something else is a field people stop
   // trusting.
   const asking = wants === 'move_up' && next ? next.covers : Number(howMany)
-  const validNumber = Number.isInteger(asking) && asking > (d.limit ?? 0)
+  const validNumber = Number.isInteger(asking) && asking > floor
   const reasonOk = reason.trim().length >= 8
 
   const send = useMutation({
@@ -242,7 +256,7 @@ function AskForm({ d }: { d: MyStudentLimit }) {
 
   if (done) {
     return (
-      <div className="mt-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+      <div className="mt-3 rounded-xl border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-brand-900">
         <p className="font-medium">Sent. Thank you.</p>
         <p className="mt-0.5">{done}</p>
       </div>
@@ -250,10 +264,10 @@ function AskForm({ d }: { d: MyStudentLimit }) {
   }
 
   return (
-    <div className="mt-3 rounded border border-slate-200 bg-white p-3">
+    <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
       <p className="text-sm font-medium text-slate-800">Ask us for more room</p>
 
-      {err && <p className="mt-2 rounded bg-rose-50 px-2 py-1.5 text-sm text-rose-800">{err}</p>}
+      {err && <p className="mt-2 rounded-lg bg-danger-50 px-2 py-1.5 text-sm text-danger-800">{err}</p>}
 
       <div className="mt-2 space-y-2">
         <Choice
@@ -281,10 +295,10 @@ function AskForm({ d }: { d: MyStudentLimit }) {
           <span className="text-xs font-medium text-slate-600">
             How many pupils you need room for
           </span>
-          <input type="number" min={(d.limit ?? 0) + 1} step={1} className={FIELD}
+          <input type="number" inputMode="numeric" min={floor + 1} step={1} className={FIELD}
             value={howMany} onChange={(e) => setHowMany(e.target.value)} />
-          <span className="mt-0.5 block text-xs text-slate-400">
-            More than the {(d.limit ?? 0).toLocaleString()} you have now. Ask for
+          <span className="mt-0.5 block text-xs text-slate-500">
+            More than the {floor.toLocaleString()} {d.students > (d.limit ?? 0) ? 'pupils on your roll now' : 'your plan covers now'}. Ask for
             the roll you expect by the end of the year, not by Friday: asking
             twice takes twice as long.
           </span>
@@ -306,14 +320,14 @@ function AskForm({ d }: { d: MyStudentLimit }) {
       <button
         onClick={() => { setErr(null); send.mutate() }}
         disabled={send.isPending || !validNumber || !reasonOk}
-        className="mt-3 rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
+        className="mt-3 w-full rounded-lg bg-brand-600 px-3 py-2.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60 sm:w-auto">
         {send.isPending ? 'Sending…'
           : wants === 'move_up' && next ? `Ask to move up to ${next.name}`
           : 'Send this request'}
       </button>
       {!validNumber && wants === 'more_room' && (
         <p className="mt-1 text-xs text-slate-400">
-          Ask for more than the {(d.limit ?? 0).toLocaleString()} you already have.
+          Ask for more than {floor.toLocaleString()}.
         </p>
       )}
       {validNumber && !reasonOk && (

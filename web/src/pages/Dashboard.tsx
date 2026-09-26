@@ -6,6 +6,7 @@ import { useAuth } from '@/auth/AuthProvider'
 import { ROLE_LABELS, canWrite, isTeacher } from '@/auth/roles'
 import { canAccess } from '@/navigation'
 import { MyClass } from './MyClass'
+import { RollLimitNotice } from '@/components/RollLimitNotice'
 import {
   getCurrentSession, getDashboardSummary, getDashboardTrends, getDraftStudents,
   listStudentsWithoutAClass,
@@ -189,6 +190,7 @@ export function Dashboard() {
 
       {configured && (
         <>
+          <RollLimitNotice />
           {summary.isError && (
             <div className="mb-5 flex items-start gap-3 rounded-xl border border-danger-100 bg-danger-50 p-4 text-sm text-danger-700">
               <span className="mt-0.5 text-danger-500">

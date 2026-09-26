@@ -179,10 +179,10 @@ export const STEP3_SCENES: Record<string, Scene> = {
   },
   'staff-attendance': {
     title: 'Staff, the day register', node: <StaffPage />, profile: OWNER, route: '/staff?tab=attendance',
-    seeds: [SEED_SESSION, [['schoolSettings'], { day_starts_at: '08:00' }]], data: { ...staffData, fn_staff_attendance_day: DAY },
+    seeds: [SEED_SESSION, [['schoolSettings'], { day_starts_at: '08:00' }]], data: { ...staffData, fn_staff_register_day: DAY },
   },
   'reports-collection': {
-    title: 'Reports, fee collection', node: <ReportsPage />, profile: OWNER, route: '/reports',
+    title: 'Reports, fee collection', node: <ReportsPage />, profile: OWNER, route: '/reports?tab=collection',
     seeds: [SEED_SESSION], data: { fn_fee_receipts: RECEIPTS },
   },
   'reports-daybook': {
@@ -211,7 +211,7 @@ export const STEP3_SCENES: Record<string, Scene> = {
     seeds: [SEED_SESSION], data: { 'table:enrollments': STRENGTH_ENROL },
   },
   'settings-profile': {
-    title: 'Settings, school profile', node: <SettingsPage />, profile: OWNER, route: '/settings',
+    title: 'Settings, school profile', node: <SettingsPage />, profile: OWNER, route: '/settings?tab=school',
     seeds: [SEED_SESSION, [['schoolSettings'], { name: DEMO_SCHOOL.name, name_short: 'CPS', address: '12 Main Boulevard, Gulberg III, Lahore', phone: '042-35761234', email: 'office@city.edu.pk', principal_name: 'Mrs Farzana Aslam', grade_scale: 'letter', pass_percent: 33, gr_prefix: 'GR-', receipt_prefix: 'R-', logo_path: null }]],
     data: { 'table:school_settings': [{ name: DEMO_SCHOOL.name, name_short: 'CPS', address: '12 Main Boulevard, Gulberg III, Lahore', phone: '042-35761234', email: 'office@city.edu.pk', principal_name: 'Mrs Farzana Aslam', grade_scale: 'letter', pass_percent: 33, gr_prefix: 'GR-', receipt_prefix: 'R-', logo_path: null }] },
   },

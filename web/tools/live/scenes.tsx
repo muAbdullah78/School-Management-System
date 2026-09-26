@@ -22,6 +22,7 @@ import {
 } from '../demo-data'
 import { STEP2_SCENES } from './scenes2'
 import { STEP3_SCENES } from './scenes3'
+import { STEP4_SCENES } from './scenes4'
 
 export interface Scene {
   title: string
@@ -181,6 +182,7 @@ const AYESHA_LEDGER = (() => {
 export const SCENES: Record<string, Scene> = {
   ...STEP2_SCENES,
   ...STEP3_SCENES,
+  ...STEP4_SCENES,
   settings: {
     title: 'Settings, Year Rollover',
     node: <SettingsPage />,

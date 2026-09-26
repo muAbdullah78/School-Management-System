@@ -268,7 +268,24 @@ function ResultView({ result, committed, toName }: { result: RolloverResult; com
         </p>
       )}
 
-      <div className="mt-4 overflow-x-auto">
+      {/* One card per child on a phone: seven columns do not fit one. */}
+      <ul className="mt-4 space-y-2 sm:hidden">
+        {result.rows.slice(0, 300).map((r, i) => (
+          <li key={r.student_id + i} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+            <div className="flex items-start justify-between gap-2">
+              <span className="min-w-0 font-medium text-slate-900">{r.name}</span>
+              <ActionBadge action={r.action} message={r.message} />
+            </div>
+            <div className="mt-0.5 text-xs text-slate-600">
+              {r.from_class ?? '-'} → {r.to_class ?? '-'}{r.roll_no ? ` · roll ${r.roll_no}` : ''}{r.gr_no ? ` · GR ${r.gr_no}` : ''}
+            </div>
+            {Number(r.balance) > 0 && <div className="mt-0.5 text-xs text-due-800">Arrears carried {fmtPKR(Number(r.balance))}</div>}
+            {r.message && <div className="mt-0.5 text-xs text-slate-500">{r.message}</div>}
+          </li>
+        ))}
+        {result.rows.length > 300 && <li className="text-xs text-slate-400">Showing the first 300 of {result.rows.length}.</li>}
+      </ul>
+      <div className="mt-4 hidden overflow-x-auto sm:block">
         <table className="min-w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-slate-400">

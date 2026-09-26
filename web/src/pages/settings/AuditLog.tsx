@@ -4,7 +4,7 @@ import { listAuditLogPage, listProfiles, type AuditRow } from '@/lib/db'
 import { ROLE_LABELS, type Role } from '@/auth/roles'
 import { fmtDate } from '@/lib/format'
 import { ymd } from '@/lib/dates'
-import { Button, inputClass } from '@/components/ui'
+import { Button, inputClass, inputBase } from '@/components/ui'
 import { RangePicker, type Range } from '@/pages/reports/kit'
 
 /**
@@ -172,7 +172,7 @@ export function AuditLog() {
       <div className="flex flex-wrap items-end gap-2">
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-slate-500">Area</span>
-          <select value={entity} onChange={(e) => setEntity(e.target.value)} className={`${inputClass} w-auto`}>
+          <select value={entity} onChange={(e) => setEntity(e.target.value)} className={`${inputBase} w-auto`}>
             <option value="">Every area</option>
             {areas.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
           </select>

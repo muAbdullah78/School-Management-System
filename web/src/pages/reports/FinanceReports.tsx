@@ -21,7 +21,7 @@ import {
 import { DataTable, type Column } from '@/components/DataTable'
 import { fmtPKR, fmtDate } from '@/lib/format'
 import { daysAgo, monthStart, today } from '@/lib/dates'
-import { inputClass } from '@/components/ui'
+import { inputBase } from '@/components/ui'
 import { StackBar, HBars, StackedColumns, ChartCard, MiniTable, C, compactRs, pctOf, type Segment } from '@/components/viz'
 import { ATTENDANCE_LABELS } from '@/lib/constants'
 import {
@@ -532,7 +532,7 @@ export function BalanceSheetReport() {
         <Chip on={asAt === lastDayOfJune()} onClick={() => setAsAt(lastDayOfJune())}>30 June</Chip>
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-slate-500">As at</span>
-          <input type="date" value={asAt} max={today()} onChange={(e) => e.target.value && setAsAt(e.target.value)} className={`${inputClass} w-auto`} />
+          <input type="date" value={asAt} max={today()} onChange={(e) => e.target.value && setAsAt(e.target.value)} className={`${inputBase} w-auto`} />
         </label>
       </div>
       {q.isLoading && <Loading what="the position" />}

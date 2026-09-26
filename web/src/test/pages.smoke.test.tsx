@@ -267,13 +267,21 @@ describe('every screen opens for a brand new school with no data', () => {
  * passes only by actually putting the reason in front of the user.
  */
 const FAIL_MARKER = 'permission denied for table'
+const FIRST_SCREEN: Record<string, string> = {
+  Settings: '/settings?tab=school',
+  Reports: '/reports?tab=collection',
+}
 
 describe('a screen says so when its reads fail, rather than looking empty', () => {
   for (const entry of SCREENS) {
     it(entry[0], async () => {
       current.opts = { failEverything: FAIL_MARKER }
       const Comp = await load(entry)
-      const { container } = await mount(Comp!)
+      // On a phone, Settings and Reports open on the list of their screens,
+      // which reads nothing. The question here is about a screen that reads,
+      // so they are opened on their first screen by name.
+      const route = FIRST_SCREEN[entry[0]] ?? '/'
+      const { container } = await mount(Comp!, route)
       expect(
         container.textContent ?? '',
         `${entry[0]} rendered without showing why its data is missing. A failed ` +

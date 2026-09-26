@@ -163,7 +163,7 @@ describe('the day’s staff register', () => {
     { staff_id: 's2', full_name: 'Bilal Ahmed', designation: null, employee_no: null, status: 'not marked', checked_at: null, checked_out_at: null, late_minutes: null, worked_minutes: null, source: null, scanned: false, code_label: null, code_window: null, device: null, reason: null, marked_by_name: null },
   ]
   it('a day typed by the office shows no arrival time, and marking the rest asks first', async () => {
-    const o: FakeOptions = { rpc: { fn_staff_attendance_day: day }, calls: [] }
+    const o: FakeOptions = { rpc: { fn_staff_register_day: day }, calls: [] }
     open(createElement(StaffDayRegister), o)
     const table = await screen.findByRole('table')
     // 09:05 UTC would print as 14:05 in Karachi: the moment somebody typed it.
