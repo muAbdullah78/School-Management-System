@@ -209,6 +209,9 @@ with sig(migration, object, present) as (values
                                   -- papers still to mark, which an observer and
                                   -- a principal do not have.
                                   'fn_my_unmarked_tests',
+                                  -- fn_my_day (0151): a teacher's own day, which
+                                  -- an observer does not have either.
+                                  'fn_my_day',
                                   'fn_pending_invites',
                                   -- fn_preview_discount (0131): what a code takes
                                   -- off a plan. Reads the code list and the price

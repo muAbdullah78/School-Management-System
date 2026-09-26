@@ -443,6 +443,13 @@ select 'the observer role (0059)',
                                            -- list as "nothing to mark" rather
                                            -- than "not your list".
                                            'fn_my_unmarked_tests',
+                                           -- fn_my_day (0151) is the same kind:
+                                           -- a teacher's OWN classes, registers
+                                           -- and tests for today. An observer
+                                           -- teaches nothing, so on may_view the
+                                           -- home screen would read as "no
+                                           -- classes" rather than "not yours".
+                                           'fn_my_day',
                                            'fn_checkin_display',
                                            'fn_pending_invites',
                                            -- fn_preview_discount (0131) works

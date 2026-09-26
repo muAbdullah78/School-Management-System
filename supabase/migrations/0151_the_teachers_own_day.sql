@@ -294,6 +294,7 @@ begin
      is distinct from (old.max_marks, old.class_id, old.section_id, old.session_id) then
     select exists (select 1 from public.mark_entries me
                     where me.assessment_id = old.id
+                      and me.school_id = old.school_id
                       and (me.marks is not null or me.is_absent))
       into v_has_marks;
     if v_has_marks and new.max_marks is distinct from old.max_marks then

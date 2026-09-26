@@ -193,6 +193,12 @@ def main() -> int:
                                  -- "nothing to mark" rather than "this is not
                                  -- your list"; the raise says which.
                                  'fn_my_unmarked_tests',
+                                 -- fn_my_day (0151): the same kind, a teacher's
+                                 -- OWN classes, registers and tests for today.
+                                 -- An observer teaches nothing; on may_view the
+                                 -- home screen would read "no classes" rather
+                                 -- than "this is not your day".
+                                 'fn_my_day',
                                  'fn_checkin_display', 'fn_pending_invites',
                                  -- fn_preview_discount (0131): what a code
                                  -- takes off a plan. Reads the code list and
