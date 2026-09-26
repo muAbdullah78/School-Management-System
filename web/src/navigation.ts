@@ -33,7 +33,10 @@ export const NAV: NavItem[] = [
   { path: '/students', label: 'Students', roles: ['owner', 'principal', 'admin_clerk', 'accountant', 'readonly'], blurb: 'The lifelong student profile: bio-data, history, attendance, marks, fee ledger.' },
   { path: '/attendance', label: 'Attendance', roles: ['owner', 'principal', 'admin_clerk', 'class_teacher', 'subject_teacher'], blurb: 'Daily attendance marking (fast keyboard/tap entry), printable sheet, finalize & lock.' },
   { path: '/assessments', label: 'Tests', roles: ['owner', 'principal', 'class_teacher', 'subject_teacher'], blurb: 'Daily/weekly/monthly test marks entry.' },
-  { path: '/exams', label: 'Exams & Results', roles: ['owner', 'principal', 'admin_clerk', 'readonly'], blurb: 'Exam terms, subject papers, marks entry, grading, class positions, printable result cards.' },
+  // Teachers since 0152: marks for the papers they teach, and a class teacher's
+  // remarks and result cards. The database let them mark since 0085; the
+  // sidebar never showed them the way in.
+  { path: '/exams', label: 'Exams & Results', roles: ['owner', 'principal', 'admin_clerk', 'class_teacher', 'subject_teacher', 'readonly'], blurb: 'Exam terms, subject papers, marks entry, grading, class positions, printable result cards.' },
   { path: '/fees', label: 'Fees', roles: ['owner', 'principal', 'admin_clerk', 'accountant', 'readonly'], blurb: 'Fee heads, monthly challans, arrears, partial payments, fines, discounts, receipts, defaulters.' },
   { path: '/accounts', label: 'Accounts', roles: ['owner', 'principal', 'accountant', 'readonly'], blurb: 'Expenses, non-fee income, and the profit figure. Fee income is derived from receipts and never typed in.' },
   { path: '/staff', label: 'Staff', roles: ['owner', 'principal', 'admin_clerk', 'readonly'], blurb: 'Staff records and the link to teacher logins.' },

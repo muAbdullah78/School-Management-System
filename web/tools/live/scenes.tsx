@@ -23,6 +23,7 @@ import {
 import { STEP2_SCENES } from './scenes2'
 import { STEP3_SCENES } from './scenes3'
 import { STEP4_SCENES } from './scenes4'
+import { EXAM_SCENES } from './scenes5'
 
 export interface Scene {
   title: string
@@ -183,6 +184,7 @@ export const SCENES: Record<string, Scene> = {
   ...STEP2_SCENES,
   ...STEP3_SCENES,
   ...STEP4_SCENES,
+  ...EXAM_SCENES,
   settings: {
     title: 'Settings, Year Rollover',
     node: <SettingsPage />,

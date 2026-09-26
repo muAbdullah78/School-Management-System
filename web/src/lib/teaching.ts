@@ -61,3 +61,47 @@ export function subjectScope(rows: MyTeachingRow[], classId: string, sectionId: 
 export function isClassTeacherAnywhere(rows: MyTeachingRow[]): boolean {
   return rows.some((r) => r.is_class_teacher)
 }
+
+/** Which sections of a class a teacher may act in, for one kind of work. */
+export interface SectionReach {
+  /** Nothing to do in this class at all. */
+  none: boolean
+  /** Every section, a class with no sections included. */
+  whole: boolean
+  /** The sections, when not `whole`. */
+  ids: Set<string>
+}
+
+function reach(mine: MyTeachingRow[]): SectionReach {
+  const whole = mine.some((r) => r.section_id === null)
+  return {
+    none: mine.length === 0,
+    whole,
+    ids: new Set(mine.map((r) => r.section_id).filter(Boolean) as string[]),
+  }
+}
+
+/**
+ * The sections whose marks a teacher may enter on one EXAM paper. The same rule
+ * as the database's fn_enter_marks (0152): the class teacher of a section marks
+ * every subject there, a subject teacher only their subject, and a row with no
+ * section covers the whole class. An exam paper is set for the class, so a
+ * section's teacher sees and saves only their own section's pupils.
+ */
+export function paperReach(rows: MyTeachingRow[], classId: string, subjectId: string): SectionReach {
+  return reach(rows.filter((r) => r.class_id === classId && (r.is_class_teacher || r.subject_id === subjectId)))
+}
+
+/** The sections of a class a teacher is the CLASS teacher of: where they write
+ *  the report-card remark (0049, 0152). */
+export function classTeacherReach(rows: MyTeachingRow[], classId: string): SectionReach {
+  return reach(rows.filter((r) => r.class_id === classId && r.is_class_teacher))
+}
+
+/** Whether a pupil in `sectionId` is inside the reach. A pupil with no section
+ *  is inside any reach in their class, as the database treats a null section
+ *  as "any" (fn_may_mark_subject). */
+export function inReach(r: SectionReach, sectionId: string | null | undefined): boolean {
+  if (r.none) return false
+  return r.whole || sectionId == null || r.ids.has(sectionId)
+}

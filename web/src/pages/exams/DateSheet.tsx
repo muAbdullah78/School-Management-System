@@ -39,10 +39,14 @@ export function DateSheet({
           <tbody>
             {ordered.map((p) => (
               <tr key={p.id} className="border-b border-slate-100">
-                <td className="py-1.5 pr-2 text-slate-800">{p.subject_name}</td>
+                <td className="py-1.5 pr-2 text-slate-800">
+                  {p.subject_name}
+                  {p.subject_stream && <span className="ml-1 text-xs text-slate-500">({p.subject_stream} only)</span>}
+                </td>
                 <td className="py-1.5 pr-2 text-slate-700">{p.exam_date ? fmtDate(p.exam_date) : '-'}</td>
                 <td className="py-1.5 pr-2 text-slate-700">{p.paper_time || '-'}</td>
-                <td className="py-1.5 text-right text-slate-600">{p.max_marks}</td>
+                {/* The whole paper, theory and practical: a 75 + 25 paper is out of 100. */}
+                <td className="py-1.5 text-right text-slate-600">{p.max_marks + (p.practical_max ?? 0)}</td>
               </tr>
             ))}
           </tbody>

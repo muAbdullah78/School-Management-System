@@ -318,6 +318,18 @@ function TermResult({ r }: { r: PortalResult }) {
                 })}
               </ul>
             )}
+
+            {/* The class teacher's remark (0152). It printed on no card and
+                reached no parent before; it is frozen once the result is out,
+                so it says what the printed card says. */}
+            {r.remark && (
+              <figure className="mt-4 rounded-2xl bg-violet-50 px-4 py-3 ring-1 ring-violet-100">
+                <figcaption className="text-[11px] font-semibold uppercase tracking-wide text-violet-700">
+                  Class teacher&rsquo;s remark
+                </figcaption>
+                <blockquote className="mt-1 text-sm leading-relaxed text-slate-800">{r.remark}</blockquote>
+              </figure>
+            )}
           </>
         )}
       </div>
