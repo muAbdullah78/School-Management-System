@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import {
   getCurrentSession, listClasses, listSections, getRoster,
   markAttendance, finalizeAttendance, unlockAttendance, getMyAssignments,
@@ -49,7 +50,15 @@ export function AttendancePage() {
     queryKey: ['currentSession'],
     queryFn: () => offlineFirst('currentSession', getCurrentSession),
   })
-  const [marking, setMarking] = useState(false)
+  const [params, setParams] = useSearchParams()
+  const [marking, setMarking] = useState(() => !!params.get('classId'))
+  function backToOverview() {
+    // The class goes with the register, or a reload would reopen marking.
+    const next = new URLSearchParams(params)
+    next.delete('classId'); next.delete('sectionId')
+    setParams(next, { replace: true })
+    setMarking(false)
+  }
 
   if (overseer) {
     if (!session.data) {
@@ -76,7 +85,7 @@ export function AttendancePage() {
     if (role === 'owner' && marking) {
       return (
         <div>
-          <button onClick={() => setMarking(false)}
+          <button onClick={backToOverview}
             className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm', className: 'mb-3' })}>
             &larr; Back to the day&rsquo;s overview
           </button>
@@ -147,8 +156,12 @@ function MarkRegister() {
   const classes = useQuery({ queryKey: ['classes'], queryFn: () => offlineFirst('classes', listClasses) })
   const myAssign = useQuery({ queryKey: ['myAssignments'], queryFn: getMyAssignments, enabled: isTeach })
 
-  const [classId, setClassId] = useState('')
-  const [sectionChoice, setSectionChoice] = useState('')
+  /* ?classId=&sectionId= (the "Mark attendance" button on a teacher's home)
+     opens the register on that class, on today, with the roster loading. The
+     date is deliberately NOT read from the URL: a link opens today's register. */
+  const [params, setParams] = useSearchParams()
+  const [classId, setClassId] = useState(() => params.get('classId') ?? '')
+  const [sectionChoice, setSectionChoice] = useState(() => params.get('sectionId') ?? '')
   const [date, setDate] = useState(todayISO())
   /* A change of class, section or date that is waiting on "discard your
      marks?". Without this, a teacher who had marked thirty children and then
@@ -181,6 +194,38 @@ function MarkRegister() {
     if (a.section_id) setSectionChoice(a.section_id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTeach, myAssign.data])
+
+  /* A class or section from the URL is only a request. One that is not in the
+     picker (another teacher's class, a deleted section, an edited link) is
+     dropped the moment the lists load, so the page falls back to "pick a
+     class" instead of loading a roster the picker does not show. */
+  useEffect(() => {
+    if (!classId) return
+    const known = isTeach
+      ? (myAssign.data ? myAssign.data.some((a) => a.class_id === classId) : null)
+      : (classes.data ? classes.data.some((c) => c.id === classId) : null)
+    if (known === false) { setClassId(''); setSectionChoice('') }
+  }, [classId, isTeach, myAssign.data, classes.data])
+
+  useEffect(() => {
+    if (!classId || !sections.isSuccess || (isTeach && !myAssign.data)) return
+    if (sectionChoice && !sectionOptions.some((s) => s.id === sectionChoice)) setSectionChoice('')
+    // A class with one section the user may mark has nothing to choose, so the
+    // roster loads straight away. Only while nothing is picked, so no marks
+    // can be lost by it.
+    else if (!sectionChoice && sectionOptions.length === 1) setSectionChoice(sectionOptions[0].id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [classId, sectionChoice, sections.isSuccess, sections.data, isTeach, myAssign.data])
+
+  /* The URL follows the pickers, so a reload or a shared link reopens the same
+     class, and a class changed by hand is not snapped back by a stale link. */
+  useEffect(() => {
+    const next = new URLSearchParams(params)
+    if (classId) next.set('classId', classId); else next.delete('classId')
+    if (classId && sectionChoice) next.set('sectionId', sectionChoice); else next.delete('sectionId')
+    if (next.toString() !== params.toString()) setParams(next, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [classId, sectionChoice])
 
   const sessionId = session.data?.id
   const ready =
