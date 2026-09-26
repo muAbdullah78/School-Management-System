@@ -65,7 +65,12 @@ export interface RosterRow {
   enrollment_id: string; student_id: string; full_name: string; father_name: string | null
   roll_no: string | null; status: AttendanceStatus | null; is_locked: boolean
 }
-export interface MarkResult { marked: number; skipped: number; total: number }
+export interface MarkResult {
+  marked: number; skipped: number; total: number
+  /** 0152 on exam marks: boxes emptied, which clears the mark that was there,
+   *  and rows actually changed. Absent before 0152 and on the register. */
+  cleared?: number; written?: number
+}
 export interface AttendanceSummary {
   present: number; absent: number; leave: number; late: number; half_day: number
   marked_days: number; present_pct: number | null
@@ -1794,10 +1799,15 @@ export interface ExamSubjectRow {
 export interface ClassRosterRow {
   enrollment_id: string; student_id: string; full_name: string; father_name: string | null
   gr_no: string | null; roll_no: string | null; section_name: string | null
+  /** The pupil's stream, so an admit card lists only the papers they sit. */
+  stream?: string | null
 }
 export interface MarksheetRow {
   enrollment_id: string; student_id: string; full_name: string; roll_no: string | null
   section_name: string | null; marks: number | null; is_absent: boolean; is_locked: boolean; max_marks: number
+  /** The pupil's section (0152 exam marksheet), so a section's teacher is shown
+   *  their own pupils. Absent before bundle 53 and on an assessment sheet. */
+  section_id?: string | null
   /** Absent on an assessment marksheet, which has no practical concept. */
   practical_marks?: number | null
   practical_max?: number
@@ -1810,6 +1820,10 @@ export interface ResultCardRow {
   /** Set by fn_publish_results. Non-null means parents can see this card in the
    *  portal. Null means it exists but is withheld. */
   published_at: string | null
+  /** Read live for the printed card: the section and the father's name are
+   *  facts about the pupil, not about the marks the card froze. */
+  section_name?: string | null
+  father_name?: string | null
 }
 export interface ResultCardFrozen {
   subjects: {
@@ -1902,6 +1916,107 @@ export async function createExamTerm(
     session_id: sessionId, name, term_type: termType, starts_on: startsOn || null, ends_on: endsOn || null,
   })
   if (error) throw new Error(error.message)
+}
+
+/**
+ * Create or correct an exam term (0152). One writer for both, so the rules live
+ * once: a name unique in its year, both dates or neither and in order, inside
+ * the year, and the switch for withholding results over unpaid fees.
+ *
+ * Before bundle 53 there is no such function: a new term falls back to the
+ * plain insert above and an edit to a direct update, which the table's own
+ * policy allows the office. The checks the function makes are made on the
+ * screen as well, so the fallback does not let a bad term in.
+ */
+export async function saveExamTerm(t: {
+  id: string | null; sessionId: string; name: string; termType: string
+  startsOn: string | null; endsOn: string | null; withhold: boolean
+}): Promise<string | null> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_save_exam_term', {
+    p_id: t.id, p_session_id: t.sessionId, p_name: t.name, p_term_type: t.termType,
+    p_starts_on: t.startsOn || null, p_ends_on: t.endsOn || null, p_withhold: t.withhold,
+  })
+  if (!error) return (data as string | null) ?? null
+  if (!isMissingFunction(error)) throw new Error(error.message)
+  if (!t.id) {
+    await createExamTerm(t.sessionId, t.name, t.termType, t.startsOn ?? undefined, t.endsOn ?? undefined)
+    return null
+  }
+  await mustWrite(
+    await sb.from('exam_terms').update({
+      name: t.name, term_type: t.termType, starts_on: t.startsOn || null, ends_on: t.endsOn || null,
+      result_withheld_for_defaulters: t.withhold,
+    }).eq('id', t.id).select('id'),
+    'Saving the term')
+  return t.id
+}
+
+/** Delete an EMPTY exam term (0152): no marks, no result cards, no remarks. */
+export async function deleteExamTerm(id: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_delete_exam_term', { p_id: id })
+  if (error) {
+    if (isMissingFunction(error)) {
+      throw new Error('Deleting a term needs the latest database update. Ask the office to paste bundle 53.')
+    }
+    throw new Error(error.message)
+  }
+}
+
+/** One class's progress in an exam term (fn_exam_term_overview, 0152). */
+export interface ExamTermOverviewRow {
+  class_id: string; class_name: string; level_order: number
+  papers: number; pupils: number; marks_expected: number; marks_entered: number
+  /** Pupils with a card, counting each pupil's newest card once. */
+  cards: number
+  /** Of those, how many newest cards parents can see. */
+  released: number
+  /** Pupils whose newest card is NOT released but an older one is: after a
+   *  re-generation the parent still sees the earlier version. */
+  older_released: number
+  generated_at: string | null
+  /** Pupils whose card no longer matches their marks. */
+  out_of_date: number
+}
+
+/** Every class in one read. Null before bundle 53, so the screen can say why
+ *  the overview is missing instead of showing an empty one. */
+export async function getExamTermOverview(termId: string): Promise<ExamTermOverviewRow[] | null> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_exam_term_overview', { p_exam_term_id: termId })
+  if (error) {
+    if (isMissingFunction(error)) return null
+    throw new Error(error.message)
+  }
+  return ((data ?? []) as Record<string, any>[]).map((r) => ({
+    class_id: r.class_id, class_name: r.class_name, level_order: Number(r.level_order ?? 0),
+    papers: Number(r.papers ?? 0), pupils: Number(r.pupils ?? 0),
+    marks_expected: Number(r.marks_expected ?? 0), marks_entered: Number(r.marks_entered ?? 0),
+    cards: Number(r.cards ?? 0), released: Number(r.released ?? 0),
+    older_released: Number(r.older_released ?? 0),
+    generated_at: r.generated_at ?? null, out_of_date: Number(r.out_of_date ?? 0),
+  }))
+}
+
+/** One paper's marks progress in one section (fn_exam_paper_progress, 0152). */
+export interface PaperProgressRow {
+  exam_subject_id: string; section_id: string | null
+  pupils: number; entered: number; absent: number; locked: number
+}
+
+export async function getExamPaperProgress(termId: string, classId: string): Promise<PaperProgressRow[] | null> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_exam_paper_progress', { p_exam_term_id: termId, p_class_id: classId })
+  if (error) {
+    if (isMissingFunction(error)) return null
+    throw new Error(error.message)
+  }
+  return ((data ?? []) as Record<string, any>[]).map((r) => ({
+    exam_subject_id: r.exam_subject_id, section_id: r.section_id ?? null,
+    pupils: Number(r.pupils ?? 0), entered: Number(r.entered ?? 0),
+    absent: Number(r.absent ?? 0), locked: Number(r.locked ?? 0),
+  }))
 }
 
 export async function listSubjects(classId: string): Promise<SubjectRow[]> {
@@ -2033,7 +2148,7 @@ export async function listClassRoster(sessionId: string, classId: string): Promi
   const sb = requireSupabase()
   const rows = unwrap<Record<string, any>[]>(
     await sb.from('enrollments')
-      .select('id, student_id, roll_no, students!inner(full_name, father_name, gr_no), sections(name, sort_order)')
+      .select('id, student_id, roll_no, stream, students!inner(full_name, father_name, gr_no), sections(name, sort_order)')
       .eq('session_id', sessionId).eq('class_id', classId).eq('status', 'active'),
   )
   const rollNum = (r: string | null) => {
@@ -2045,7 +2160,7 @@ export async function listClassRoster(sessionId: string, classId: string): Promi
       enrollment_id: r.id, student_id: r.student_id,
       full_name: r.students?.full_name ?? '-', father_name: r.students?.father_name ?? null,
       gr_no: r.students?.gr_no ?? null, roll_no: r.roll_no ?? null,
-      section_name: r.sections?.name ?? null, _sort: r.sections?.sort_order ?? 0,
+      section_name: r.sections?.name ?? null, stream: r.stream ?? null, _sort: r.sections?.sort_order ?? 0,
     }))
     .sort((a, b) => a._sort - b._sort || rollNum(a.roll_no) - rollNum(b.roll_no) || a.full_name.localeCompare(b.full_name))
     .map(({ _sort, ...rest }) => rest)
@@ -2320,7 +2435,7 @@ export async function listResultCards(termId: string, classId: string): Promise<
   const sb = requireSupabase()
   const rows = unwrap<Record<string, any>[]>(
     await sb.from('result_cards')
-      .select('id, enrollment_id, student_id, total_marks, total_max, percentage, grade, position, attendance_pct, version, frozen, published_at, students(full_name, gr_no), enrollments!inner(class_id, roll_no)')
+      .select('id, enrollment_id, student_id, total_marks, total_max, percentage, grade, position, attendance_pct, version, frozen, published_at, students(full_name, gr_no, father_name), enrollments!inner(class_id, roll_no, sections(name))')
       .eq('exam_term_id', termId)
       .eq('enrollments.class_id', classId)
       .order('version', { ascending: false }),
@@ -2338,6 +2453,8 @@ export async function listResultCards(termId: string, classId: string): Promise<
       grade: r.grade, position: r.position, attendance_pct: r.attendance_pct,
       version: r.version, frozen: r.frozen as ResultCardFrozen,
       published_at: r.published_at ?? null,
+      section_name: r.enrollments?.sections?.name ?? null,
+      father_name: r.students?.father_name ?? null,
     })
   }
   return out.sort((a, b) => (a.position ?? 1e9) - (b.position ?? 1e9))
@@ -5115,6 +5232,9 @@ export interface PortalResult {
     passed: boolean | null
     grade: string | null
   }[]
+  /** The class teacher's remark for this term (0152). It cannot change once the
+   *  result is released, so it says what the printed card says. */
+  remark?: string | null
   issued_at: string | null
 }
 
@@ -5807,6 +5927,18 @@ export async function listExamRemarks(
     percentage: r.percentage == null ? null : Number(r.percentage),
     class_position: r.class_position == null ? null : Number(r.class_position),
   }))
+}
+
+/** Whether a class's result for a term has been released (0152). Remarks are
+ *  frozen once it has. False before bundle 53, where nothing is ever locked. */
+export async function getClassReleased(examTermId: string, classId: string): Promise<boolean> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_exam_class_released', { p_exam_term_id: examTermId, p_class_id: classId })
+  if (error) {
+    if (isMissingFunction(error)) return false
+    throw new Error(error.message)
+  }
+  return data === true
 }
 
 /** Blank removes the remark rather than storing an empty string. */

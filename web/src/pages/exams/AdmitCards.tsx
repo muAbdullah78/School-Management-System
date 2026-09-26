@@ -33,7 +33,13 @@ export function AdmitCards({
           </div>
         </div>
 
-        {roster.map((s) => (
+        {roster.map((s) => {
+          // Only the papers this pupil sits: a Science pupil's slip listed the
+          // Arts papers too, the same stream rule the marksheet applies
+          // (fn_takes_subject, compared without case).
+          const mine = ordered.filter((p) => !p.subject_stream
+            || (s.stream ?? '').trim().toLowerCase() === p.subject_stream.trim().toLowerCase())
+          return (
           <div key={s.enrollment_id} className="mb-4 break-inside-avoid rounded-lg border border-slate-300 p-4 print:mb-0 print:break-after-page print:border-slate-400">
             <div className="text-center">
               <div className="text-lg font-semibold text-slate-800">{schoolName}</div>
@@ -57,7 +63,7 @@ export function AdmitCards({
                 </tr>
               </thead>
               <tbody>
-                {ordered.map((p) => (
+                {mine.map((p) => (
                   <tr key={p.id} className="border-b border-slate-100">
                     <td className="py-1 pr-2 text-slate-800">{p.subject_name}</td>
                     <td className="py-1 pr-2 text-slate-700">{p.exam_date ? fmtDate(p.exam_date) : '-'}</td>
@@ -72,7 +78,8 @@ export function AdmitCards({
               <span>Principal: __________</span>
             </div>
           </div>
-        ))}
+          )
+        })}
         {roster.length === 0 && <div className="p-3 text-center text-sm text-slate-500">No active students in this class.</div>}
       </div>
     </div>

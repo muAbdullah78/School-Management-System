@@ -275,3 +275,39 @@ export const IconTrend = svg(
     <path d="M15 7h6v6" />
   </>,
 )
+
+/* The small verbs the Exams screens needed (0152): edit, remove, add, copy, a
+   lock for a released result, a trophy for the position holders, and the
+   double chevron that folds the desktop sidebar. */
+export const IconPencil = svg(
+  <>
+    <path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z" />
+    <path d="m13.5 6.5 4 4" />
+  </>,
+)
+export const IconTrash = svg(
+  <>
+    <path d="M4 7h16M10 11v6M14 11v6" />
+    <path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />
+  </>,
+)
+export const IconPlus = svg(<path d="M12 5v14M5 12h14" />)
+export const IconCopy = svg(
+  <>
+    <rect x="8" y="8" width="12" height="12" rx="2" />
+    <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
+  </>,
+)
+export const IconLock = svg(
+  <>
+    <rect x="5" y="11" width="14" height="10" rx="2" />
+    <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+  </>,
+)
+export const IconTrophy = svg(
+  <>
+    <path d="M8 4h8v5a4 4 0 0 1-8 0z" />
+    <path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 21h8M9 17h6" />
+  </>,
+)
+export const IconSidebarFold = svg(<path d="m11 17-5-5 5-5M18 17l-5-5 5-5" />)

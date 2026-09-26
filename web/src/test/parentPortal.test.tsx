@@ -122,6 +122,20 @@ describe('the weekly test', () => {
   })
 })
 
+describe('the term result', () => {
+  it('carries the class teacher\'s remark, which reached no parent before 0152', async () => {
+    const result = {
+      result_card_id: 'rc1', term: 'First Term', withheld: false, obtained_marks: 321, total_marks: 400,
+      percentage: 80.25, grade: 'A+', grade_scale: 'letter', position: 1, attendance_pct: 96, result: 'PASS',
+      failed_subjects: 0, pass_percent: 33, provisional: false, unmarked_subjects: 0, subjects: [],
+      remark: 'Excellent result. Keep up the hard work.', issued_at: '2026-09-29T08:00:00Z',
+    }
+    open({ rpc: { ...RPC, fn_portal_child_results: [result] } }, '/portal?tab=results')
+    expect(await screen.findByText('Excellent result. Keep up the hard work.')).toBeTruthy()
+    expect(screen.getByText(/Class teacher.s remark/)).toBeTruthy()
+  })
+})
+
 describe('the fees tab', () => {
   it('a Rs 0 challan says No fee, not a green Paid', async () => {
     open({ rpc: RPC })
