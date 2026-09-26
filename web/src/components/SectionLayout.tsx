@@ -82,14 +82,15 @@ export function SectionLayout<K extends string>({
               {g.items.map((i) => (
                 <li key={i.key}>
                   <button type="button" onClick={() => (onPick ?? onChange)(i.key)}
-                    className="flex w-full items-center gap-3 px-4 py-3 text-left transition active:bg-slate-50">
+                    className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition hover:bg-brand-50 active:bg-brand-100"
+                    style={{ touchAction: 'manipulation' }}>
                     <span className="min-w-0 flex-1">
                       <span className="block text-sm font-medium text-slate-900">{i.label}</span>
                       {i.ask && <span className="mt-0.5 block text-xs leading-snug text-slate-500">{i.ask}</span>}
                     </span>
-                    <svg viewBox="0 0 20 20" className="h-4 w-4 shrink-0 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                      <path d="m7 4 6 6-6 6" />
-                    </svg>
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600" aria-hidden="true">
+                      <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.25"><path d="m7 4 6 6-6 6" /></svg>
+                    </span>
                   </button>
                 </li>
               ))}
@@ -102,21 +103,27 @@ export function SectionLayout<K extends string>({
 
   return (
     <div ref={top} className="mt-4 scroll-mt-4 lg:grid lg:grid-cols-[14rem,minmax(0,1fr)] lg:gap-6">
+      {/* THE RAIL IS A MENU OF BUTTONS. It was plain words down the left, and
+          schools read the list as a table of contents rather than something to
+          press. Each group is now a card, each screen a full-width row that
+          lights up under the pointer, and the open one is solid. */}
       <nav aria-label={label} className="hidden lg:block print:hidden">
-        <div className="sticky top-4 space-y-4">
+        <div className="sticky top-4 space-y-3">
           {groups.map((g) => (
-            <div key={g.title}>
-              <div className="px-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{g.title}</div>
-              <ul className="mt-1 space-y-0.5">
+            <div key={g.title} className="rounded-2xl border border-slate-200 bg-white p-1.5 shadow-card">
+              <div className="px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{g.title}</div>
+              <ul className="space-y-0.5">
                 {g.items.map((i) => {
                   const on = i.key === value
                   return (
                     <li key={i.key}>
                       <button type="button" onClick={() => onChange(i.key)} aria-current={on ? 'page' : undefined}
-                        className={`w-full rounded-lg px-3 py-1.5 text-left text-sm transition ${
-                          on ? 'bg-brand-50 font-semibold text-brand-800 ring-1 ring-brand-100'
-                            : 'text-slate-600 hover:bg-white hover:text-slate-900'}`}>
-                        {i.label}
+                        className={`group flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
+                          on ? 'bg-brand-600 text-white shadow-sm'
+                            : 'text-slate-700 hover:bg-brand-50 hover:text-brand-800'}`}>
+                        <span className="truncate">{i.label}</span>
+                        <svg viewBox="0 0 20 20" className={`h-3.5 w-3.5 shrink-0 ${on ? 'text-white/80' : 'text-slate-300 group-hover:text-brand-500'}`}
+                          fill="none" stroke="currentColor" strokeWidth="2.25" aria-hidden="true"><path d="m7 4 6 6-6 6" /></svg>
                       </button>
                     </li>
                   )
@@ -131,7 +138,7 @@ export function SectionLayout<K extends string>({
         {/* Below lg: the way back to the list, where the rail would be. */}
         {!wide && picked !== undefined && (
           <button type="button" onClick={back}
-            className="-ml-1 mb-3 inline-flex items-center gap-1 rounded-lg px-1 py-1 text-sm font-medium text-brand-700 hover:bg-brand-50 print:hidden">
+            className="mb-3 inline-flex items-center gap-1 rounded-full bg-white px-3 py-1.5 text-sm font-medium text-brand-700 shadow-sm ring-1 ring-brand-200 hover:bg-brand-50 print:hidden">
             <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m13 4-6 6 6 6" /></svg>
             {indexLabel ?? 'All'}
           </button>

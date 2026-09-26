@@ -154,3 +154,107 @@ STEP4_SCENES['subscription'] = {
   title: 'Settings, subscription, over the plan', node: <SettingsPage />, profile: OWNER, route: '/settings?tab=subscription',
   seeds: [SEED_SESSION], data: { fn_my_billing: BILLING, fn_my_next_payment: NEXT, fn_my_student_limit: LIMIT, fn_my_discount: null },
 }
+
+// Birthdays and Enquiries, which had no scene at all.
+import { BirthdaysPage } from '@/pages/people/BirthdaysPage'
+import { EnquiriesPage } from '@/pages/admissions/EnquiriesPage'
+const bday = (i: number, kind: 'student' | 'staff', name: string, cls: string, away: number) => ({
+  kind, id: `b${i}`, full_name: name, dob: '2016-09-26', turning: kind === 'staff' ? 34 : 10,
+  birthday: dayBack(-away), days_away: away, class_name: cls, detail: kind === 'staff' ? 'Class Teacher' : `Father: Tariq ${name.split(' ')[1] ?? ''}`,
+  phone: i % 3 === 0 ? null : '0300-1234567',
+})
+STEP4_SCENES['birthdays'] = {
+  title: 'Birthdays', node: <BirthdaysPage />, profile: OWNER, route: '/birthdays', seeds: [SEED_SESSION],
+  data: { fn_birthdays: [bday(1, 'student', 'Ayesha Aslam', 'Class 5 B', 0), bday(2, 'student', 'Hamza Qureshi', 'Class 1 A', 0), bday(3, 'staff', 'Bushra Naz', 'Staff', 0), bday(4, 'student', 'Iqra Nadeem', 'Class 2', 3)] },
+}
+const enq = (i: number, child: string, status: string, overdue: number, source: string) => ({
+  id: `e${i}`, enquiry_no: 100 + i, child_name: child, father_name: 'Imran Khan', phone: '0321-5551234', whatsapp: null,
+  class_name: 'Class 3', class_wanted: 'Class 3', session_name: '2026-2027', source, status,
+  follow_up_on: overdue ? dayBack(overdue) : today, days_overdue: overdue, contacts: i % 3, last_contact_at: null,
+  last_outcome: i % 2 ? 'Will visit on Saturday' : null, lost_reason: null, notes: null, created_at: `${dayBack(10)}T09:00:00Z`,
+  created_by_name: 'Rashid Ahmed', admitted_student_id: null,
+})
+STEP4_SCENES['enquiries'] = {
+  title: 'Enquiries', node: <EnquiriesPage />, profile: OWNER, route: '/enquiries', seeds: [SEED_SESSION],
+  data: {
+    fn_enquiry_summary: { open: 14, due_today: 3, overdue: 2, open_no_date: 0, this_month: 9, admitted: 21, lost: 6, decided: 27, conversion_rate: 77.8 },
+    fn_enquiry_list: [enq(1, 'Zara Imran', 'new', 2, 'walk_in'), enq(2, 'Ali Hassan', 'contacted', 0, 'referral'), enq(3, 'Noor Fatima', 'visited', 0, 'facebook')],
+    fn_enquiry_sources: [{ source: 'walk_in', enquiries: 12, admitted: 8, lost: 2, open: 2, conversion_rate: 80 }],
+    'table:classes': [{ id: 'c3', name: 'Class 3', level_order: 30, active: true }],
+  },
+}
+
+// Every remaining sub screen of Fees, Exams and Accounts, unseeded, to check
+// the controls fit a phone.
+import { FeesPage } from '@/pages/fees/FeesPage'
+import { ExamsPage } from '@/pages/exams/ExamsPage'
+import { AccountsPage } from '@/pages/accounts/AccountsPage'
+import { AttendancePage } from '@/pages/attendance/AttendancePage'
+const CLERK: Profile = { ...DEMO_PROFILE, role: 'admin_clerk' }
+for (const k of ['discounts', 'deposits']) {
+  STEP4_SCENES[`fees-${k}`] = { title: `Fees, ${k}`, node: <FeesPage />, profile: CLERK, route: `/fees?tab=${k}`, seeds: [SEED_SESSION] }
+}
+for (const k of ['setup', 'streams', 'marks', 'remarks']) {
+  STEP4_SCENES[`exams-${k}`] = { title: `Exams, ${k}`, node: <ExamsPage />, profile: OWNER, route: `/exams?tab=${k}`, seeds: [SEED_SESSION] }
+}
+for (const k of ['expense', 'income']) {
+  STEP4_SCENES[`accounts-${k}`] = { title: `Accounts, ${k}`, node: <AccountsPage />, profile: OWNER, route: `/accounts?tab=${k}`, seeds: [SEED_SESSION] }
+}
+STEP4_SCENES['attendance-teacher'] = { title: 'Attendance, a class teacher, unseeded', node: <AttendancePage />, profile: TEACHER, route: '/attendance', seeds: [SEED_SESSION] }
+
+// Exams with data, for the phone cards. The screenshot script picks the first
+// term, class and paper in each dropdown.
+const TERMS = [{ id: 'term1', name: 'First Term', term_type: 'term', starts_on: '2026-09-01', ends_on: '2026-09-30', result_withheld_for_defaulters: false }]
+const EX_CLASSES = [{ id: 'c9', name: 'Class 9', level_order: 90 }]
+const EX_SUBJECTS = [
+  { id: 'es1', subject_id: 's1', max_marks: 75, pass_marks: 33, practical_max: 25, exam_date: '2026-09-21', paper_time: '09:00 AM', subjects: { name: 'Physics', sort_order: 1, stream: 'Science', is_practical: true } },
+  { id: 'es2', subject_id: 's2', max_marks: 100, pass_marks: 33, practical_max: 0, exam_date: '2026-09-22', paper_time: '09:00 AM', subjects: { name: 'English', sort_order: 2, stream: null, is_practical: false } },
+]
+const PUPILS = ['Ahmed Raza', 'Fatima Noor', 'Hassan Ali', 'Mehwish Tariq'].map((n, i) => ({
+  enrollment_id: `en${i}`, student_id: `st${i}`, full_name: n, father_name: null, gr_no: `GR ${1400 + i}`, roll_no: String(i + 1), section_name: 'A',
+}))
+const SHEET = PUPILS.map((p, i) => ({
+  ...p, max_marks: 75, practical_max: 25, marks: i === 2 ? null : 40 + i * 7, practical_marks: i === 2 ? null : 18 + i, is_absent: i === 2, is_locked: false,
+}))
+const examData = {
+  'table:exam_terms': TERMS, 'table:classes': EX_CLASSES, 'table:exam_subjects': EX_SUBJECTS,
+  'table:subjects': [{ id: 's1', name: 'Physics', class_id: 'c9', sort_order: 1, stream: 'Science', is_practical: true }, { id: 's2', name: 'English', class_id: 'c9', sort_order: 2, stream: null, is_practical: false }],
+  'table:enrollments': [], fn_exam_marksheet: SHEET,
+  fn_class_streams: PUPILS.map((p, i) => ({ ...p, stream: i % 2 ? 'Science' : 'Arts', bise_reg_no: i === 0 ? '2026-BISE-01234' : null })),
+}
+for (const k of ['setup', 'streams', 'marks']) {
+  STEP4_SCENES[`exams-${k}-data`] = { title: `Exams, ${k}, with data`, node: <ExamsPage />, profile: OWNER, route: `/exams?tab=${k}`, seeds: [SEED_SESSION], data: examData }
+}
+
+// The parent portal, which parents use on their phones and nothing else.
+import { PortalPage } from '@/pages/portal/PortalPage'
+const PARENT: Profile = { ...DEMO_PROFILE, role: 'parent', full_name: 'Muhammad Aslam', staff_id: null }
+STEP4_SCENES['portal'] = {
+  title: 'Parent portal', node: <PortalPage />, profile: PARENT, route: '/portal', seeds: [SEED_SESSION],
+  data: {
+    fn_portal_me: {
+      profile_id: 'pp', full_name: 'Muhammad Aslam', role: 'parent', school_name: DEMO_SCHOOL.name,
+      children: [
+        { student_id: 'k1', full_name: 'Ayesha Aslam', gr_no: 'GR 1204', class_name: 'Class 5', section_name: 'B', status: 'active' },
+        { student_id: 'k2', full_name: 'Bilal Aslam', gr_no: 'GR 1207', class_name: 'Class 8', section_name: 'A', status: 'active' },
+      ],
+      classes: [],
+    },
+    fn_portal_child_fees: {
+      student_id: 'k1', balance: 4500, family_outstanding: 22500, family_credit: 0,
+      invoices: [
+        { period_month: '2026-09-01', due_date: '2026-09-10', charge: 4500, paid: 0, outstanding: 4500, status: 'unpaid' },
+        { period_month: '2026-08-01', due_date: '2026-08-10', charge: 4500, paid: 4500, outstanding: 0, status: 'paid' },
+      ],
+      receipts: [{ receipt_no: 20398, amount: 4500, method: 'cash', paid_on: '2026-08-06', received_by: 'Rashid Ahmed' }],
+      adjustments: [], charges_not_on_a_challan: 0, deposit_held: 0,
+    },
+    fn_portal_child_ledger: [
+      { seq: 1, entry_on: '2026-08-01', kind: 'charge', particulars: 'Tuition, August', reference: 'CH-0801', debit: 4500, credit: 0, balance_after: 4500 },
+      { seq: 2, entry_on: '2026-08-06', kind: 'payment', particulars: 'Receipt #20398, cash', reference: '#20398', debit: 0, credit: 4500, balance_after: 0 },
+      { seq: 3, entry_on: '2026-09-01', kind: 'charge', particulars: 'Tuition, September', reference: 'CH-0901', debit: 4500, credit: 0, balance_after: 4500 },
+    ],
+    fn_portal_child_attendance: { from: '2026-09-01', to: today, present: 19, marked: 20, percent: 95, absent: 1, late: 0, half_day: 0, leave: 0 },
+    fn_portal_child_results: [],
+  },
+}

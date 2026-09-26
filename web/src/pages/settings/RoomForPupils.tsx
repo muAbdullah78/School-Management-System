@@ -7,6 +7,7 @@ import {
 import { formatPkr } from '@/lib/licence'
 import { termSentence } from '@/lib/plans'
 import { fmtDate } from '@/lib/format'
+import { buttonClass } from '@/components/ui'
 
 const FIELD = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100'
 
@@ -95,7 +96,7 @@ function Body({ d }: { d: MyStudentLimit }) {
             )}
           </span>
           <button onClick={() => setOpen(true)}
-            className="text-xs text-brand-700 hover:underline">
+            className={buttonClass({ variant: 'soft', size: 'sm' })}>
             Need room for more?
           </button>
         </div>
@@ -213,7 +214,7 @@ function Waiting({ req }: { req: NonNullable<MyStudentLimit['request']> }) {
       <p className="mt-1 text-xs text-slate-500">You told us: “{req.reason}”</p>
       {err && <p className="mt-1 text-xs text-danger-700">{err}</p>}
       <button onClick={() => { setErr(null); drop.mutate() }} disabled={drop.isPending}
-        className="mt-1.5 text-xs text-slate-400 hover:text-slate-700 hover:underline disabled:opacity-60">
+        className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm', className: 'mt-2' })}>
         {drop.isPending ? 'Taking it back…' : 'Take this request back'}
       </button>
     </div>

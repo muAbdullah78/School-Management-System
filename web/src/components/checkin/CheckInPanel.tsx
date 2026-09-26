@@ -3,6 +3,7 @@ import { staffCheckIn, type CheckInResult } from '@/lib/db'
 import { PinPad } from './PinPad'
 import { QrScanner, canScanInApp } from './QrScanner'
 import { codeFromScan, coordsProblem, deviceLabel, getCoords } from './checkinKit'
+import { buttonClass } from '@/components/ui'
 
 /**
  * The two ways a teacher checks themselves in or out from their own phone:
@@ -110,7 +111,7 @@ export function CheckInPanel({
               <li>Tap the link that appears. It opens this app and checks you {intent}.</li>
             </ol>
             <p className="mt-2 text-xs text-slate-500">This browser cannot scan inside the app. The PIN works on every phone.</p>
-            <button type="button" onClick={() => setTab('pin')} className="mt-2 font-medium text-brand-700 hover:underline">
+            <button type="button" onClick={() => setTab('pin')} className={buttonClass({ variant: 'soft', size: 'sm', className: 'mt-2' })}>
               Type the PIN instead
             </button>
           </div>

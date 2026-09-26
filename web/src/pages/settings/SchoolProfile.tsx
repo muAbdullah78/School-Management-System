@@ -5,7 +5,7 @@ import { PhotoUpload } from '@/components/PhotoUpload'
 import { SchoolMark } from '@/components/Avatar'
 import { removeLogo, signPath, uploadLogo } from '@/lib/photos'
 import { useAuth } from '@/auth/AuthProvider'
-import { LoadError, Button, inputClass } from '@/components/ui'
+import { LoadError, Button, inputClass, buttonClass } from '@/components/ui'
 
 const EMPTY: SchoolSettings = {
   name: '', name_short: '', address: '', phone: '', email: '', principal_name: '',
@@ -174,7 +174,7 @@ export function SchoolProfile() {
         <div className="sticky bottom-3 z-10 flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 shadow-raised backdrop-blur">
           <Button type="submit" disabled={!dirty || !ok || save.isPending}>{save.isPending ? 'Saving…' : 'Save the profile'}</Button>
           {dirty && <span className="text-sm font-medium text-due-800">Unsaved changes</span>}
-          {dirty && <button type="button" onClick={() => { setF(base); save.reset() }} className="text-sm text-slate-500 hover:underline">Undo them</button>}
+          {dirty && <button type="button" onClick={() => { setF(base); save.reset() }} className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm' })}>Undo them</button>}
           {!dirty && saved && <span className="text-sm font-medium text-brand-700">Saved. Every printout uses it from now on.</span>}
           {!ok && dirty && <span className="text-sm text-danger-700">Fix the boxes marked in red first.</span>}
         </div>

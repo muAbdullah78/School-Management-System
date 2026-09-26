@@ -6,7 +6,7 @@ import {
   type CheckInResult, type MyAttendanceRow, type MyCheckin,
 } from '@/lib/db'
 import { useAuth } from '@/auth/AuthProvider'
-import { LoadError } from '@/components/ui'
+import { LoadError, buttonClass } from '@/components/ui'
 import { useTableChanges } from '@/lib/live'
 import { shiftDate } from '@/lib/format'
 import { CheckInPanel } from '@/components/checkin/CheckInPanel'
@@ -112,7 +112,7 @@ function TodayCard({ me, loading, error, onRetry }: {
       <div className={CARD}>
         {head}
         <p className="mt-2 text-sm text-danger-700">Your check-in could not be loaded. {error?.message}</p>
-        <button onClick={onRetry} className="mt-2 text-sm font-medium text-brand-700 hover:underline">Try again</button>
+        <button onClick={onRetry} className={buttonClass({ variant: 'soft', size: 'sm', className: 'mt-2' })}>Try again</button>
       </div>
     )
   }
@@ -209,7 +209,7 @@ function TodayCard({ me, loading, error, onRetry }: {
         <div className="mt-3 border-t border-slate-100 pt-3">
           <div className="mb-3 flex items-center justify-between">
             <p className="text-sm font-medium text-slate-800">Check out</p>
-            <button onClick={() => setPanel(null)} className="text-sm text-slate-500 hover:underline">Cancel</button>
+            <button onClick={() => setPanel(null)} className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm' })}>Cancel</button>
           </div>
           <CheckInPanel intent="out" mode={me.mode} geofence={me.geofence} known={me.full} onResult={done} />
         </div>
@@ -468,7 +468,7 @@ function Failed({ onRetry }: { onRetry: () => void }) {
   return (
     <p className="mt-2 text-sm text-danger-700">
       Your attendance could not be loaded.{' '}
-      <button onClick={onRetry} className="font-medium text-brand-700 hover:underline">Try again</button>
+      <button onClick={onRetry} className={buttonClass({ variant: 'soft', size: 'sm', className: 'ml-1' })}>Try again</button>
     </p>
   )
 }

@@ -66,23 +66,20 @@ export function ExamSetup() {
             ))}
           </ul>
         </div>
-        <form className="mt-3 grid gap-3 sm:grid-cols-4" onSubmit={(e) => { e.preventDefault(); if (sessionId && name.trim() && !termProblem) addTerm.mutate() }}>
-          <label className="block sm:col-span-2">
+        {/* The button comes after the dates, on a phone as well: it sat
+            between the type and the dates and was pressed before either date
+            was filled in. */}
+        <form className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4" onSubmit={(e) => { e.preventDefault(); if (sessionId && name.trim() && !termProblem) addTerm.mutate() }}>
+          <label className="col-span-2 block">
             <span className="text-sm text-slate-600">Term name</span>
             <input value={name} onChange={(e) => setName(e.target.value)} className={FIELD} placeholder="e.g. First Term 2025" />
           </label>
-          <label className="block">
+          <label className="col-span-2 block sm:col-span-1">
             <span className="text-sm text-slate-600">Type</span>
             <select value={type} onChange={(e) => setType(e.target.value)} className={FIELD}>
               {TERM_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
             </select>
           </label>
-          <div className="flex items-end">
-            <button type="submit" disabled={!sessionId || !name.trim() || !!termProblem || addTerm.isPending}
-              className="w-full rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
-              {addTerm.isPending ? 'Adding…' : 'Add term'}
-            </button>
-          </div>
           <label className="block">
             <span className="text-sm text-slate-600">Starts</span>
             <input type="date" value={starts} onChange={(e) => setStarts(e.target.value)} className={FIELD} />
@@ -91,8 +88,14 @@ export function ExamSetup() {
             <span className="text-sm text-slate-600">Ends</span>
             <input type="date" min={starts || undefined} value={ends} onChange={(e) => setEnds(e.target.value)} className={FIELD} />
           </label>
-          {termProblem && <p className="text-sm text-danger-600 sm:col-span-4">{termProblem}</p>}
-          {addTerm.isError && <p className="text-sm text-danger-600 sm:col-span-4">{(addTerm.error as Error).message}</p>}
+          <div className="col-span-2 flex items-end sm:col-span-1">
+            <button type="submit" disabled={!sessionId || !name.trim() || !!termProblem || addTerm.isPending}
+              className="w-full rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white shadow-card hover:bg-brand-700 disabled:opacity-60">
+              {addTerm.isPending ? 'Adding…' : 'Add term'}
+            </button>
+          </div>
+          {termProblem && <p className="col-span-2 text-sm text-danger-600 sm:col-span-4">{termProblem}</p>}
+          {addTerm.isError && <p className="col-span-2 text-sm text-danger-600 sm:col-span-4">{(addTerm.error as Error).message}</p>}
         </form>
       </section>
 
@@ -154,10 +157,13 @@ function PaperSetup({
       {/* overflow-x-auto, not overflow-hidden. Eight columns do not fit a
           phone, and a hidden overflow simply cut off the Include and Remove
           buttons with no way to reach them. */}
-      <p className="mb-1 text-xs text-slate-400 lg:hidden">Scroll the table sideways for dates and the buttons.</p>
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-        <table className="w-full min-w-[56rem] text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+      {/* On a phone each paper is a card: the subject, its six fields in two
+          columns with their names, and the buttons. It used to be a table
+          fifty-six rems wide with a note asking the reader to scroll it. */}
+      <p className="mb-1 hidden text-xs text-slate-400 sm:block lg:hidden">Scroll the table sideways for dates and the buttons.</p>
+      <div className="rounded-lg border border-slate-200 bg-white sm:overflow-x-auto">
+        <table className="block w-full text-sm sm:table sm:min-w-[56rem]">
+          <thead className="hidden bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500 sm:table-header-group">
             <tr>
               <th className="px-3 py-2">Subject</th>
               <th className="px-3 py-2 w-40">Stream</th>
@@ -169,8 +175,8 @@ function PaperSetup({
               <th className="px-3 py-2 w-40">In this term</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
-            {subjects.data?.length === 0 && <tr><td colSpan={8} className="px-3 py-3 text-slate-500">No subjects for this class yet: add one below.</td></tr>}
+          <tbody className="block divide-y divide-slate-100 sm:table-row-group">
+            {subjects.data?.length === 0 && <tr className="block sm:table-row"><td colSpan={8} className="block px-3 py-3 text-slate-500 sm:table-cell">No subjects for this class yet: add one below.</td></tr>}
             {subjects.data?.map((s) => (
               <PaperRow key={s.id} subject={s} termId={termId} classId={classId} existing={byId.get(s.id)} />
             ))}
@@ -179,15 +185,15 @@ function PaperSetup({
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (newSubj.trim()) addSubj.mutate() }}>
+        <form className="flex w-full gap-2 sm:w-auto" onSubmit={(e) => { e.preventDefault(); if (newSubj.trim()) addSubj.mutate() }}>
           <input value={newSubj} onChange={(e) => setNewSubj(e.target.value)} placeholder="Add subject (e.g. Mathematics)"
-            className="w-56 rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none" />
+            className="min-w-0 flex-1 rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none sm:w-56 sm:flex-none" />
           <button type="submit" disabled={!newSubj.trim() || addSubj.isPending}
             className="rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60">
             {addSubj.isPending ? 'Adding…' : 'Add subject'}
           </button>
         </form>
-        <div className="ml-auto flex gap-2">
+        <div className="grid w-full grid-cols-2 gap-2 sm:ml-auto sm:flex sm:w-auto">
           <button onClick={() => setShow('date')} disabled={papers.length === 0}
             className="rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
             Print date sheet
@@ -279,8 +285,8 @@ function PaperRow({ subject, termId, classId, existing }: { subject: SubjectRow;
 
   return (
     <>
-      <tr>
-        <td className="px-3 py-2 font-medium text-slate-800">
+      <tr className="grid grid-cols-2 gap-x-3 gap-y-2 p-3 sm:table-row sm:p-0">
+        <td className="col-span-2 font-medium text-slate-800 sm:table-cell sm:px-3 sm:py-2">
           {subject.name}
           <label className="mt-0.5 flex items-center gap-1 text-[11px] font-normal text-slate-500">
             <input
@@ -291,7 +297,8 @@ function PaperRow({ subject, termId, classId, existing }: { subject: SubjectRow;
             has a practical
           </label>
         </td>
-        <td className="px-3 py-2">
+        <td className="sm:table-cell sm:px-3 sm:py-2">
+          <span className="mb-0.5 block text-[11px] font-normal text-slate-500 sm:hidden">Stream</span>
           {/* Blank = every pupil in the class takes it. A value = only pupils
               whose enrolment stream matches, compared without case, so
               "science" and "Science" are the same stream. */}
@@ -303,33 +310,35 @@ function PaperRow({ subject, termId, classId, existing }: { subject: SubjectRow;
               }
             }}
             placeholder="all pupils"
-            className="w-32 rounded border border-slate-300 px-2 py-1 text-sm"
+            className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm sm:w-32 sm:py-1"
           />
         </td>
-        <td className="px-3 py-2"><input type="number" min="1" value={max} onChange={(e) => { setMax(e.target.value); setSaved(false) }} className="w-16 rounded border border-slate-300 px-2 py-1 text-sm" /></td>
-        <td className="px-3 py-2">
+        <td className="sm:table-cell sm:px-3 sm:py-2"><span className="mb-0.5 block text-[11px] font-normal text-slate-500 sm:hidden">Theory out of</span><input type="number" inputMode="numeric" min="1" value={max} onChange={(e) => { setMax(e.target.value); setSaved(false) }} className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm sm:w-16 sm:py-1" /></td>
+        <td className="sm:table-cell sm:px-3 sm:py-2">
+          <span className="mb-0.5 block text-[11px] font-normal text-slate-500 sm:hidden">Practical out of</span>
           {subject.is_practical
-            ? <input type="number" min="0" value={pmax} onChange={(e) => { setPmax(e.target.value); setSaved(false) }} className="w-16 rounded border border-slate-300 px-2 py-1 text-sm" />
-            : <span className="text-xs text-slate-400">-</span>}
+            ? <input type="number" inputMode="numeric" min="0" value={pmax} onChange={(e) => { setPmax(e.target.value); setSaved(false) }} className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm sm:w-16 sm:py-1" />
+            : <span className="text-xs text-slate-400">none</span>}
         </td>
-        <td className="px-3 py-2">
-          <input type="number" min="0" max={total || undefined} value={pass} onChange={(e) => { setPass(e.target.value); setSaved(false) }}
-            className={`w-16 rounded border px-2 py-1 text-sm ${paperProblem ? 'border-danger-400 bg-danger-50' : 'border-slate-300'}`} />
+        <td className="sm:table-cell sm:px-3 sm:py-2">
+          <span className="mb-0.5 block text-[11px] font-normal text-slate-500 sm:hidden">Pass mark</span>
+          <input type="number" inputMode="numeric" min="0" max={total || undefined} value={pass} onChange={(e) => { setPass(e.target.value); setSaved(false) }}
+            className={`w-full rounded border px-2 py-1.5 text-sm sm:w-16 sm:py-1 ${paperProblem ? 'border-danger-400 bg-danger-50' : 'border-slate-300'}`} />
           {subject.is_practical && Number(pmax) > 0 && (
             <div className="text-[10px] text-slate-400">of {Number(max) + Number(pmax)}</div>
           )}
         </td>
-        <td className="px-3 py-2"><input type="date" value={pdate} onChange={(e) => { setPdate(e.target.value); setSaved(false) }} className="rounded border border-slate-300 px-2 py-1 text-sm" /></td>
-        <td className="px-3 py-2"><input value={ptime} onChange={(e) => { setPtime(e.target.value); setSaved(false) }} placeholder="09:00 AM" className="w-24 rounded border border-slate-300 px-2 py-1 text-sm" /></td>
-        <td className="px-3 py-2">
+        <td className="sm:table-cell sm:px-3 sm:py-2"><span className="mb-0.5 block text-[11px] font-normal text-slate-500 sm:hidden">Date</span><input type="date" value={pdate} onChange={(e) => { setPdate(e.target.value); setSaved(false) }} className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm sm:w-auto sm:py-1" /></td>
+        <td className="sm:table-cell sm:px-3 sm:py-2"><span className="mb-0.5 block text-[11px] font-normal text-slate-500 sm:hidden">Time</span><input value={ptime} onChange={(e) => { setPtime(e.target.value); setSaved(false) }} placeholder="09:00 AM" className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm sm:w-24 sm:py-1" /></td>
+        <td className="col-span-2 sm:table-cell sm:px-3 sm:py-2">
           <div className="flex items-center gap-2">
             <button onClick={() => save.mutate()} disabled={save.isPending || !!paperProblem}
-              className={`rounded px-2.5 py-1 text-xs font-medium ${included ? 'border border-slate-300 text-slate-700 hover:bg-slate-50' : 'bg-brand-600 text-white hover:bg-brand-700'} disabled:opacity-60`}>
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium ${included ? 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50' : 'bg-brand-600 text-white shadow-card hover:bg-brand-700'} disabled:opacity-60`}>
               {included ? 'Update' : 'Include'}
             </button>
             {included && (
               <button onClick={() => count.mutate()} disabled={remove.isPending || count.isPending}
-                className="rounded border border-danger-300 px-2.5 py-1 text-xs font-medium text-danger-700 hover:bg-danger-50 disabled:opacity-60">
+                className="rounded-lg border border-danger-300 bg-white px-3 py-1.5 text-xs font-medium text-danger-700 hover:bg-danger-50 disabled:opacity-60">
                 {count.isPending ? 'Checking…' : 'Remove'}
               </button>
             )}
@@ -363,7 +372,7 @@ function PaperRow({ subject, termId, classId, existing }: { subject: SubjectRow;
         </td>
       </tr>
       {err && (
-        <tr><td colSpan={8} className="px-3 pb-2 text-xs text-danger-600">{err}</td></tr>
+        <tr className="block sm:table-row"><td colSpan={8} className="block px-3 pb-2 text-xs text-danger-600 sm:table-cell">{err}</td></tr>
       )}
     </>
   )

@@ -28,13 +28,15 @@ const TONE_SOLID: Record<Tone, string> = {
   neutral: 'bg-slate-700 text-white',
 }
 
+// A 200 ring, not 100: at 100 the outline vanished on a phone in daylight and
+// a soft button read as a coloured word.
 const TONE_SOFT: Record<Tone, string> = {
-  brand: 'bg-brand-50 text-brand-700 ring-brand-100',
-  money: 'bg-money-50 text-money-700 ring-money-100',
-  due: 'bg-due-50 text-due-700 ring-due-100',
-  danger: 'bg-danger-50 text-danger-700 ring-danger-100',
-  info: 'bg-info-50 text-info-700 ring-info-100',
-  neutral: 'bg-slate-100 text-slate-700 ring-slate-200',
+  brand: 'bg-brand-50 text-brand-700 ring-brand-200',
+  money: 'bg-money-50 text-money-700 ring-money-200',
+  due: 'bg-due-50 text-due-800 ring-due-200',
+  danger: 'bg-danger-50 text-danger-700 ring-danger-200',
+  info: 'bg-info-50 text-info-700 ring-info-200',
+  neutral: 'bg-white text-slate-700 ring-slate-300',
 }
 
 const TONE_GRADIENT: Record<Tone, string> = {
@@ -199,6 +201,25 @@ type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   icon?: ReactNode
 }
 
+/**
+ * The classes of a Button, for the places that have to be a link (a <Link>
+ * to another screen) and still look pressable. An action styled as a coloured
+ * word is an action a school does not find: "Approve", "Edit", "Change" and
+ * "Print" all used to be that.
+ */
+export function buttonClass({
+  tone = 'brand', variant = 'solid', size = 'md', className = '',
+}: { tone?: Tone; variant?: 'solid' | 'soft' | 'ghost'; size?: 'sm' | 'md'; className?: string } = {}): string {
+  const sizing = size === 'sm' ? 'px-2.5 py-1.5 text-xs' : 'px-3.5 py-2 text-sm'
+  const look =
+    variant === 'solid'
+      ? `${TONE_SOLID[tone]} shadow-card hover:brightness-110`
+      : variant === 'soft'
+        ? `${TONE_SOFT[tone]} ring-1 hover:brightness-95`
+        : 'text-slate-600 hover:bg-slate-100'
+  return `inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50 ${sizing} ${look} ${className}`
+}
+
 export function Button({
   tone = 'brand',
   variant = 'solid',
@@ -208,18 +229,8 @@ export function Button({
   children,
   ...rest
 }: ButtonProps) {
-  const sizing = size === 'sm' ? 'px-2.5 py-1.5 text-xs' : 'px-3.5 py-2 text-sm'
-  const look =
-    variant === 'solid'
-      ? `${TONE_SOLID[tone]} shadow-card hover:brightness-110`
-      : variant === 'soft'
-        ? `${TONE_SOFT[tone]} ring-1 hover:brightness-95`
-        : 'text-slate-600 hover:bg-slate-100'
   return (
-    <button
-      className={`inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${sizing} ${look} ${className}`}
-      {...rest}
-    >
+    <button className={buttonClass({ tone, variant, size, className })} {...rest}>
       {icon}
       {children}
     </button>

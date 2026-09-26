@@ -9,7 +9,7 @@ import {
   type StudentRow, type MonthDefaulter, type FeeReceipt,
 } from '@/lib/db'
 import { useUrlTab } from '@/lib/useUrlTab'
-import { inputClass, inputBase } from '@/components/ui'
+import { inputClass, inputBase, buttonClass } from '@/components/ui'
 import { ATTENDANCE_SHORT } from '@/lib/constants'
 import { fmtPKR, fmtDate, todayISO } from '@/lib/format'
 import { today, monthStart } from '@/lib/dates'
@@ -975,7 +975,7 @@ function StudentLedgerReport() {
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2 print:hidden">
         <div className="text-sm text-slate-700"><span className="font-semibold text-slate-900">{student.full_name}</span>{student.gr_no ? ` · ${student.gr_no}` : ''}</div>
-        <button onClick={() => { setStudent(null); setTerm('') }} className="text-sm font-medium text-brand-700 hover:underline">Another child</button>
+        <button onClick={() => { setStudent(null); setTerm('') }} className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm' })}>Another child</button>
       </div>
       {ledger.isLoading && <Loading what="the account" />}
       {ledger.isError && <Failed error={ledger.error} />}

@@ -25,7 +25,7 @@ import {
   getPortalChildResults,
 } from '@/lib/db'
 import { FeeStatement } from '@/components/FeeStatement'
-import { Card, CardTitle, Badge, EmptyState, Button, money, MiniStat } from '@/components/ui'
+import { Card, CardTitle, Badge, EmptyState, Button, money, MiniStat, buttonClass } from '@/components/ui'
 import {
   IconStudents,
   IconWallet,
@@ -38,6 +38,7 @@ import {
 } from '@/components/icons'
 import { guideUrl } from '@/lib/config'
 import { monthsAgoStart, today } from '@/lib/dates'
+import { grLabel } from '@/lib/format'
 
 function monthLabel(m: string | null): string {
   if (!m) return 'Other charges'
@@ -239,7 +240,7 @@ export function PortalPage() {
                   <p className="mt-0.5 truncate text-xs text-slate-500">
                     {activeChild?.class_name ?? 'Not enrolled'}
                     {activeChild?.section_name ? ` · ${activeChild.section_name}` : ''}
-                    {activeChild?.gr_no ? ` · GR ${activeChild.gr_no}` : ''}
+                    {activeChild?.gr_no ? ` · ${grLabel(activeChild.gr_no)}` : ''}
                   </p>
                 </div>
               </div>
@@ -399,7 +400,7 @@ export function PortalPage() {
                         right={
                           <button
                             onClick={() => setStatement(true)}
-                            className="text-xs font-medium text-brand-600 hover:underline"
+                            className={buttonClass({ variant: 'soft', size: 'sm' })}
                           >
                             Print statement
                           </button>

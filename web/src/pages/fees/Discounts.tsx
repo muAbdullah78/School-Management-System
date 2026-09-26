@@ -51,6 +51,7 @@ import { useAuth } from '@/auth/AuthProvider'
 import { APPROVER_ROLES, type Role } from '@/auth/roles'
 import { AskDialog } from '@/components/AskDialog'
 import { isMissingFunction } from '@/lib/notInstalled'
+import { buttonClass } from '@/components/ui'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 // Green is money coming IN everywhere in this app, and a discount is money
@@ -226,7 +227,7 @@ export function Discounts() {
                 {enrollment.data ? <span className="text-slate-500"> · {enrollment.data.class_name}{enrollment.data.section_name ? ` · ${enrollment.data.section_name}` : ''}</span>
                   : enrollment.isFetched ? <span className="text-due-800"> · not enrolled this session, which does not stop a discount</span> : ''}
               </div>
-              <button onClick={() => { setStudent(null); setTerm(''); setAdded(null) }} className="text-sm text-brand-700 hover:underline">Change</button>
+              <button onClick={() => { setStudent(null); setTerm(''); setAdded(null) }} className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm' })}>Change</button>
             </div>
             <div className="mt-3 grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
               <label className="block"><span className="text-sm text-slate-600">Type</span>
@@ -312,15 +313,15 @@ export function Discounts() {
                 </div>
               </div>
               {canApprove && (d.status === 'pending' || d.status === 'approved') && (
-                <div className="mt-2 flex gap-3 text-sm">
+                <div className="mt-2 flex flex-wrap gap-2 text-sm">
                   {d.status === 'pending' && (
                     <>
-                      <button onClick={() => setStatus.mutate({ id: d.id, status: 'approved' })} className="font-medium text-brand-700 hover:underline">Approve</button>
-                      <button onClick={() => setStatus.mutate({ id: d.id, status: 'rejected' })} className="text-slate-500 hover:underline">Reject</button>
+                      <button disabled={setStatus.isPending} onClick={() => setStatus.mutate({ id: d.id, status: 'approved' })} className={buttonClass({ size: 'sm' })}>Approve</button>
+                      <button disabled={setStatus.isPending} onClick={() => setStatus.mutate({ id: d.id, status: 'rejected' })} className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm' })}>Reject</button>
                     </>
                   )}
                   {d.status === 'approved' && (
-                    <button onClick={() => setRevoking(d)} className="text-danger-600 hover:underline">Revoke</button>
+                    <button onClick={() => setRevoking(d)} className={buttonClass({ variant: 'soft', tone: 'danger', size: 'sm' })}>Revoke</button>
                   )}
                 </div>
               )}
@@ -374,12 +375,12 @@ export function Discounts() {
                   <td className="px-3 py-2 text-right">
                     {canApprove && d.status === 'pending' && (
                       <>
-                        <button onClick={() => setStatus.mutate({ id: d.id, status: 'approved' })} className="mr-2 text-sm font-medium text-brand-700 hover:underline">Approve</button>
-                        <button onClick={() => setStatus.mutate({ id: d.id, status: 'rejected' })} className="text-sm text-slate-500 hover:underline">Reject</button>
+                        <button disabled={setStatus.isPending} onClick={() => setStatus.mutate({ id: d.id, status: 'approved' })} className={buttonClass({ size: 'sm', className: 'mr-2' })}>Approve</button>
+                        <button disabled={setStatus.isPending} onClick={() => setStatus.mutate({ id: d.id, status: 'rejected' })} className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm' })}>Reject</button>
                       </>
                     )}
                     {canApprove && d.status === 'approved' && (
-                      <button onClick={() => setRevoking(d)} className="text-sm text-danger-600 hover:underline">Revoke</button>
+                      <button onClick={() => setRevoking(d)} className={buttonClass({ variant: 'soft', tone: 'danger', size: 'sm' })}>Revoke</button>
                     )}
                   </td>
                 </tr>

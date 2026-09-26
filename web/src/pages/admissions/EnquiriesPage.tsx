@@ -10,6 +10,7 @@
  * breakdown lives: "the banner on the main road produced four enquiries and
  * one admission" is the only marketing data a school this size will ever have.
  */
+import { TabBar } from '@/components/TabBar'
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -20,11 +21,12 @@ import {
   type AddEnquiryResult,
 } from '@/lib/db'
 import { DataTable, type Column } from '@/components/DataTable'
-import { fmtDate } from '@/lib/format'
+import { fmtDate, grLabel } from '@/lib/format'
 import { useAuth } from '@/auth/AuthProvider'
 import { canWrite } from '@/auth/roles'
 import { ObserverNotice } from '@/components/ObserverNotice'
 import { daysFromNow } from '@/lib/dates'
+import { buttonClass } from '@/components/ui'
 
 const FIELD =
   'rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
@@ -166,7 +168,7 @@ export function EnquiriesPage() {
       value: (r) => r.admitted_gr_no ?? r.lost_reason,
       render: (r) =>
         r.admitted_gr_no ? (
-          <span className="text-money-700">GR {r.admitted_gr_no}</span>
+          <span className="text-brand-700">{grLabel(r.admitted_gr_no)}</span>
         ) : r.lost_reason ? (
           <span className="text-slate-500">{r.lost_reason}</span>
         ) : (
@@ -186,7 +188,7 @@ export function EnquiriesPage() {
         </div>
         {mayWrite && (
           <button type="button" onClick={() => setAdding(true)}
-            className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
+            className={buttonClass({ className: 'w-full sm:w-auto' })}>
             Record an enquiry
           </button>
         )}
@@ -197,13 +199,14 @@ export function EnquiriesPage() {
       {/* The worklist framing. "Overdue" first and in red, because it is the
           only figure here that means somebody must do something today. */}
       {s && (
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-5">
           <Tile label="Overdue" value={s.overdue} tone={s.overdue > 0 ? 'bad' : 'good'}
                 note={s.overdue > 0 ? 'Ring these first' : 'Nobody is waiting'} />
           <Tile label="Due today" value={s.due_today} tone={s.due_today > 0 ? 'warn' : 'plain'} />
           <Tile label="Open" value={s.open} tone="plain" />
           <Tile label="This month" value={s.this_month} tone="plain" />
           <Tile
+            wide
             label="Converted"
             // null, not 0%. A school that has decided nothing has not failed.
             value={s.conversion_rate == null ? '-' : `${s.conversion_rate}%`}
@@ -226,20 +229,14 @@ export function EnquiriesPage() {
         </div>
       )}
 
-      <div className="mt-5 flex flex-wrap gap-1 border-b border-slate-200">
-        {([
-          ['worklist', 'To call'],
-          ['all', 'All enquiries'],
-          ['sources', 'Where they came from'],
-        ] as const).map(([k, label]) => (
-          <button key={k} onClick={() => setTab(k)}
-            className={`-mb-px border-b-2 px-4 py-2 text-sm ${tab === k ? 'border-brand-600 font-medium text-brand-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
-            {label}
-          </button>
-        ))}
-      </div>
+      <TabBar label="Enquiries" className="mt-5" value={tab} onChange={setTab}
+        tabs={[
+          { key: 'worklist', label: 'To call' },
+          { key: 'all', label: 'All enquiries' },
+          { key: 'sources', label: 'Where they came from' },
+        ]} />
 
-      <div className="mt-5">
+      <div>
         {tab === 'sources' ? (
           <SourceBreakdown
             rows={sources.data ?? []}
@@ -251,7 +248,32 @@ export function EnquiriesPage() {
             rows={list.data ?? []}
             columns={columns}
             rowKey={(r) => r.id}
-            total={list.data?.[0]?.total_count}
+            total={list.data?.length ? (list.data[0].total_count || undefined) : undefined}
+            mobileCard={(r) => (
+              // A card a parent's call can be made from: the name, what is
+              // owed to them (a call, and how late), and the number as a button.
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-medium text-slate-900">
+                    <span className="mr-1 text-xs tabular-nums text-slate-400">#{r.enquiry_no}</span>{r.child_name}
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    {r.father_name ?? 'Parent'}{r.class_name ? ` · ${r.class_name}` : r.class_wanted ? ` · ${r.class_wanted}` : ''}
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+                    <Pill status={r.status} />
+                    {r.days_overdue > 0
+                      ? <span className="font-medium text-danger-700">{r.days_overdue} day{r.days_overdue === 1 ? '' : 's'} late</span>
+                      : r.follow_up_on ? <span className="text-slate-500">Call {fmtDate(r.follow_up_on)}</span> : null}
+                    {r.last_outcome && <span className="text-slate-400">· {r.last_outcome}</span>}
+                  </div>
+                </div>
+                <a href={`tel:${r.whatsapp ?? r.phone}`} onClick={(e) => e.stopPropagation()}
+                  className={buttonClass({ variant: 'soft', size: 'sm', className: 'shrink-0' })}>
+                  Call
+                </a>
+              </div>
+            )}
             search={search}
             onSearchChange={setSearch}
             searchPlaceholder="Child, father, phone or enquiry number…"
@@ -299,18 +321,20 @@ export function EnquiriesPage() {
   )
 }
 
-function Tile({ label, value, tone, note }: {
-  label: string; value: number | string; tone: 'plain' | 'good' | 'bad' | 'warn'; note?: string
+// Good is the brand colour, not green: green in this product means money in,
+// and neither a conversion rate nor an empty worklist is money.
+function Tile({ label, value, tone, note, wide = false }: {
+  label: string; value: number | string; tone: 'plain' | 'good' | 'bad' | 'warn'; note?: string; wide?: boolean
 }) {
-  const ring = tone === 'good' ? 'border-money-300 bg-money-50'
+  const ring = tone === 'good' ? 'border-brand-200 bg-brand-50'
     : tone === 'bad' ? 'border-danger-300 bg-danger-50'
-    : tone === 'warn' ? 'border-amber-300 bg-amber-50'
+    : tone === 'warn' ? 'border-due-300 bg-due-50'
     : 'border-slate-200 bg-white'
-  const text = tone === 'good' ? 'text-money-800'
+  const text = tone === 'good' ? 'text-brand-800'
     : tone === 'bad' ? 'text-danger-700'
-    : tone === 'warn' ? 'text-amber-800' : 'text-slate-800'
+    : tone === 'warn' ? 'text-due-800' : 'text-slate-800'
   return (
-    <div className={`rounded border p-3 ${ring}`}>
+    <div className={`rounded-xl border p-3 shadow-card ${ring} ${wide ? 'col-span-2 lg:col-span-1' : ''}`}>
       <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
       <div className={`mt-0.5 text-2xl font-semibold tabular-nums ${text}`}>{value}</div>
       {note && <div className="mt-0.5 text-xs text-slate-500">{note}</div>}
@@ -614,7 +638,7 @@ function EnquiryDrawer({ enquiry, onClose, onChanged }: {
         {closed ? (
           <div className="mt-5 rounded border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
             {enquiry.status === 'admitted' ? (
-              <>Admitted{enquiry.admitted_gr_no ? ` as GR ${enquiry.admitted_gr_no}` : ''}. The
+              <>Admitted{enquiry.admitted_gr_no ? ` as ${grLabel(enquiry.admitted_gr_no)}` : ''}. The
               enquiry is kept as the record of where this admission came from.</>
             ) : (
               <>

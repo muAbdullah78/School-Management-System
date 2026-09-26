@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 /**
  * Refundable deposits: what the school is holding, and giving it back.
  *
@@ -31,6 +32,7 @@ import { useAuth } from '@/auth/AuthProvider'
 import { canWrite } from '@/auth/roles'
 import { ObserverNotice } from '@/components/ObserverNotice'
 import { DataTable, type Column } from '@/components/DataTable'
+import { buttonClass } from '@/components/ui'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 
@@ -134,9 +136,12 @@ export function Deposits() {
       {refundable.length === 0 && (
         <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
           No fee head is marked <strong>refundable</strong> yet, so the school is holding
-          nothing. Mark a head refundable under <strong>Settings → Fee structure</strong>:
+          nothing. Mark a charge refundable under <strong>Settings, Fee heads</strong>:
           typically &ldquo;Security Deposit&rdquo;. Until then nothing on this screen changes,
           and no figure anywhere else changes either.
+          <Link to="/settings?tab=feeheads" className={buttonClass({ variant: 'soft', size: 'sm', className: 'mt-2 flex w-fit' })}>
+            Open Fee heads
+          </Link>
         </div>
       )}
 
@@ -439,7 +444,7 @@ function ChargeDialog({ heads, onClose, onDone }: {
                 <span className="text-slate-400">{student.gr_no ? ` · ${student.gr_no}` : ''}</span>
               </span>
               <button onClick={() => { setStudent(null); setTerm('') }}
-                className="text-xs text-brand-700 hover:underline">Change</button>
+                className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm' })}>Change</button>
             </div>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <label className="block">

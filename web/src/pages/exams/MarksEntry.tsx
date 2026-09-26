@@ -185,7 +185,63 @@ export function MarksEntry() {
                 <Stat label="Below pass" value={String(belowPass)}
                   sub={belowPass ? 'would fail this paper' : 'nobody below the pass mark'} tone={belowPass ? 'danger' : 'plain'} />
               </div>
-              <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+              {/* A PHONE GETS ONE CARD PER PUPIL. The table squeezed the name to
+                  a sliver beside two boxes and a checkbox, scrolled sideways when
+                  the paper had a practical, and "Absent" was a 16 pixel box.
+                  The boxes and the toggle here are the same state as the table. */}
+              <ul className="space-y-2 sm:hidden">
+                {rows.map((r) => {
+                  const e = entries[r.enrollment_id] ?? { marks: '', practical: '', is_absent: false }
+                  const bad = !e.is_absent && e.marks !== '' && (Number(e.marks) < 0 || Number(e.marks) > r.max_marks)
+                  const pbad = hasPractical && !e.is_absent && e.practical !== ''
+                    && (Number(e.practical) < 0 || Number(e.practical) > practicalMax)
+                  const box = (isBad: boolean) => `w-full rounded-lg border px-3 py-2.5 text-base tabular-nums ${isBad ? 'border-danger-400 bg-danger-50' : 'border-slate-300'} disabled:bg-slate-100`
+                  return (
+                    <li key={r.enrollment_id} className={`rounded-xl border border-slate-200 bg-white p-3 ${r.is_locked ? 'opacity-60' : ''}`}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 text-sm font-medium text-slate-900">
+                          {r.roll_no != null && <span className="mr-1.5 tabular-nums text-slate-400">{r.roll_no}</span>}
+                          {r.full_name}{r.section_name ? <span className="font-normal text-slate-400"> · {r.section_name}</span> : ''}
+                          {r.is_locked && <span className="ml-1 text-xs font-normal text-slate-500">locked</span>}
+                        </div>
+                        <button type="button" disabled={r.is_locked} aria-pressed={e.is_absent}
+                          onClick={() => upd(r.enrollment_id, { is_absent: !e.is_absent })}
+                          className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ring-1 transition ${
+                            e.is_absent ? 'bg-danger-600 text-white ring-danger-600' : 'bg-white text-slate-600 ring-slate-300'}`}
+                          style={{ touchAction: 'manipulation' }}>
+                          Absent
+                        </button>
+                      </div>
+                      <div className={`mt-2 grid gap-2 ${hasPractical ? 'grid-cols-3' : 'grid-cols-1'}`}>
+                        <label className="block">
+                          <span className="text-[11px] text-slate-500">{hasPractical ? 'Theory' : 'Marks'} /{r.max_marks}</span>
+                          <input type="number" min="0" max={r.max_marks} step="0.5" disabled={e.is_absent || r.is_locked}
+                            value={e.is_absent ? '' : e.marks} onChange={(ev) => upd(r.enrollment_id, { marks: ev.target.value })}
+                            inputMode="decimal" aria-label={`${r.full_name}, ${hasPractical ? 'theory' : 'marks'}`} className={box(bad)} />
+                        </label>
+                        {hasPractical && (
+                          <label className="block">
+                            <span className="text-[11px] text-slate-500">Practical /{practicalMax}</span>
+                            <input type="number" min="0" max={practicalMax} step="0.5" disabled={e.is_absent || r.is_locked}
+                              value={e.is_absent ? '' : e.practical} onChange={(ev) => upd(r.enrollment_id, { practical: ev.target.value })}
+                              inputMode="decimal" aria-label={`${r.full_name}, practical`} className={box(pbad)} />
+                          </label>
+                        )}
+                        {hasPractical && (
+                          <div>
+                            <span className="text-[11px] text-slate-500">Total</span>
+                            <div className="px-1 py-2.5 text-base font-semibold tabular-nums text-slate-800">
+                              {e.is_absent ? '0' : (e.marks === '' && e.practical === '' ? '-' : Number(e.marks || 0) + Number(e.practical || 0))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      {(bad || pbad) && <p className="mt-1 text-xs text-danger-700">More than the paper allows.</p>}
+                    </li>
+                  )
+                })}
+              </ul>
+              <div className="hidden overflow-x-auto rounded-lg border border-slate-200 bg-white sm:block">
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                     <tr>

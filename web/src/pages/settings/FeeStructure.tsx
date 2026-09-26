@@ -4,7 +4,7 @@ import { getCurrentSession, getFeeStructure, listClasses, setFeeAmount, type Fee
 import { fmtDate, fmtPKR } from '@/lib/format'
 import { useAuth } from '@/auth/AuthProvider'
 import { canWrite } from '@/auth/roles'
-import { Button } from '@/components/ui'
+import { Button, buttonClass } from '@/components/ui'
 import { ObserverNotice } from '@/components/ObserverNotice'
 
 const key = (c: string, h: string) => `${c}:${h}`
@@ -170,7 +170,7 @@ export function FeeStructure({ onSetUpHeads }: { onSetUpHeads?: () => void }) {
                   ))}
                 </div>
                 {mayWrite && i > 0 && (
-                  <button type="button" onClick={() => copyFromAbove(i)} className="mt-2 text-xs font-medium text-brand-700 hover:underline">
+                  <button type="button" onClick={() => copyFromAbove(i)} className={buttonClass({ variant: 'soft', size: 'sm', className: 'mt-2' })}>
                     Same as {list[i - 1].name}
                   </button>
                 )}
@@ -224,7 +224,7 @@ export function FeeStructure({ onSetUpHeads }: { onSetUpHeads?: () => void }) {
                 {save.isPending ? 'Saving…' : changed.length ? `Save ${changed.length} change${changed.length === 1 ? '' : 's'}` : 'No changes to save'}
               </Button>
               {changed.length > 0 && !save.isPending && (
-                <button type="button" onClick={() => { setEdits({}); setResult(null) }} className="text-sm text-slate-500 hover:underline">Undo them</button>
+                <button type="button" onClick={() => { setEdits({}); setResult(null) }} className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm' })}>Undo them</button>
               )}
               {bad.length > 0 && <span className="text-sm text-danger-700">Fix the {bad.length} box{bad.length === 1 ? '' : 'es'} in red first.</span>}
               {result && result.failed.length === 0 && <span className="text-sm font-medium text-brand-700">{result.ok} saved. New challans use them from today.</span>}

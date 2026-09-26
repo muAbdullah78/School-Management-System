@@ -15,7 +15,7 @@ import { offlineFirst } from '@/lib/offlineCache'
 import { AttendanceSheet, type AttendanceSheetData } from './AttendanceSheet'
 import { AttendanceOverview } from './AttendanceOverview'
 import { SubjectAttendance } from './SubjectAttendance'
-import { LoadError } from '@/components/ui'
+import { LoadError, buttonClass } from '@/components/ui'
 import { TabBar } from '@/components/TabBar'
 import { StackBar, attendanceParts } from '@/components/viz'
 
@@ -77,7 +77,7 @@ export function AttendancePage() {
       return (
         <div>
           <button onClick={() => setMarking(false)}
-            className="text-sm text-brand-700 hover:underline">
+            className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm', className: 'mb-3' })}>
             &larr; Back to the day&rsquo;s overview
           </button>
           <MarkRegister />
@@ -584,21 +584,25 @@ function MarkRegister() {
               ))}
             </div>
 
-            {/* Actions */}
-            <div className="mt-4 flex flex-wrap items-center gap-2">
+            {/* Actions. ON A PHONE THEY STAY AT THE BOTTOM OF THE SCREEN: with
+                forty children the Save button was forty rows down, and a teacher
+                who marked the absent three and put the phone away had saved
+                nothing. There are no text boxes on this screen, so the bar can
+                never sit over a keyboard. */}
+            <div className="sticky bottom-0 z-10 -mx-4 mt-4 flex flex-wrap items-center gap-2 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
               {!dayLocked && (
                 <button onClick={() => save.mutate()} disabled={save.isPending || !dirty}
-                  className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
-                  {save.isPending ? 'Saving…' : 'Save attendance'}
+                  className="flex-1 rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-card hover:bg-brand-700 disabled:opacity-60 sm:flex-none">
+                  {save.isPending ? 'Saving…' : dirty ? 'Save attendance' : 'Saved'}
                 </button>
               )}
               <button onClick={openSheet}
-                className="rounded border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
                 Print sheet
               </button>
               {!dayLocked && (
                 <button onClick={doFinalize} disabled={finalize.isPending}
-                  className="rounded border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60">
+                  className="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60">
                   {finalize.isPending ? 'Finalizing…' : 'Finalize & lock'}
                 </button>
               )}

@@ -29,7 +29,7 @@ import { canWrite } from '@/auth/roles'
 import { canAccess } from '@/navigation'
 import { diagnoseNoClass } from '@/lib/noClass'
 import { useStudentFaces } from '@/hooks/useStudentFaces'
-import { fmtDate } from '@/lib/format'
+import { fmtDate, grLabel } from '@/lib/format'
 import { DataTable, type Column } from '@/components/DataTable'
 import { fmtPKR } from '@/lib/format'
 import { StudentProfile } from './StudentProfile'
@@ -184,7 +184,7 @@ export function StudentsPage() {
               {drafts.data?.has(r.student_id) && <Badge tone="due">draft</Badge>}
             </div>
             <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-slate-400">
-              <span className="whitespace-nowrap">GR {r.gr_no ?? '-'}</span>
+              <span className="whitespace-nowrap">{r.gr_no ? grLabel(r.gr_no) : 'No GR'}</span>
               {r.status !== 'active' && <Badge tone="neutral">{r.status.replace('_', ' ')}</Badge>}
             </div>
 
@@ -313,7 +313,7 @@ export function StudentsPage() {
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-slate-400">
                   <ClassPill row={r} />
-                  <span className="whitespace-nowrap">GR {r.gr_no ?? '-'}{r.roll_no ? ` · Roll ${r.roll_no}` : ''}</span>
+                  <span className="whitespace-nowrap">{r.gr_no ? grLabel(r.gr_no) : 'No GR'}{r.roll_no ? ` · Roll ${r.roll_no}` : ''}</span>
                   {r.status !== 'active' && <Badge tone="neutral">{r.status.replace('_', ' ')}</Badge>}
                 </div>
               </div>
@@ -491,7 +491,24 @@ function NotInAClass({
         </div>
       </div>
       {open && (
-        <div className="mt-3 overflow-x-auto rounded-xl border border-due-200 bg-white">
+        <>
+        {/* Cards on a phone: each child is one tap to open. */}
+        <ul className="mt-3 divide-y divide-slate-100 rounded-xl border border-due-200 bg-white sm:hidden">
+          {rows.map((r) => (
+            <li key={r.student_id}>
+              <button type="button" onClick={() => onOpen(r.student_id)} className="w-full px-3 py-2.5 text-left active:bg-slate-50">
+                <div className="text-sm font-medium text-slate-900">
+                  {r.full_name}{r.gr_no && <span className="ml-1 text-xs font-normal text-slate-400">{grLabel(r.gr_no)}</span>}
+                </div>
+                <div className="text-xs text-slate-500">
+                  {r.father_name || 'Father not recorded'}
+                  {' · '}{r.last_class ? `last in ${r.last_class}${r.last_session ? ` (${r.last_session})` : ''}` : 'never enrolled'}
+                </div>
+              </button>
+            </li>
+          ))}
+        </ul>
+        <div className="mt-3 hidden overflow-x-auto rounded-xl border border-due-200 bg-white sm:block">
           <table className="w-full min-w-[32rem] text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
@@ -510,7 +527,7 @@ function NotInAClass({
                 >
                   <td className="px-3 py-2 text-slate-800">
                     {r.full_name}
-                    {r.gr_no && <span className="ml-1 text-xs text-slate-400">GR {r.gr_no}</span>}
+                    {r.gr_no && <span className="ml-1 text-xs text-slate-400">{grLabel(r.gr_no)}</span>}
                   </td>
                   <td className="px-3 py-2 text-slate-600">{r.father_name || '-'}</td>
                   <td className="whitespace-nowrap px-3 py-2 text-slate-500">
@@ -529,6 +546,7 @@ function NotInAClass({
             </tbody>
           </table>
         </div>
+        </>
       )}
     </div>
   )
@@ -690,7 +708,14 @@ function StripTile({
       </div>
       <div className="mt-2 text-2xl font-semibold text-slate-900">{value}</div>
       {sub && <div className="mt-0.5 text-xs leading-snug text-slate-500">{sub}</div>}
-      {cta && <div className="mt-1.5 text-xs font-medium text-brand-700">{cta}</div>}
+      {/* The whole tile is the button; the chip says so. As a line of blue
+          text it read as a caption. */}
+      {cta && (
+        <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-700 ring-1 ring-brand-200">
+          {cta}
+          <svg viewBox="0 0 20 20" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true"><path d="m7 4 6 6-6 6" /></svg>
+        </div>
+      )}
     </>
   )
   const cls = `block h-full rounded-2xl bg-white p-3.5 text-left shadow-card ring-1 transition sm:p-4 ${

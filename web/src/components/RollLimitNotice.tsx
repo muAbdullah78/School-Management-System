@@ -4,6 +4,7 @@ import { useAuth } from '@/auth/AuthProvider'
 import { useLicence } from '@/hooks/useLicence'
 import { limitBanner } from '@/lib/licence'
 import { pkToday } from '@/lib/db'
+import { buttonClass } from '@/components/ui'
 
 /**
  * "Your roll is full", on the dashboard only.
@@ -42,9 +43,9 @@ export function RollLimitNotice() {
       <p className="min-w-0">{limit.text}</p>
       <div className="flex shrink-0 items-center gap-3">
         {canFix && (
-          <Link to="/settings?tab=subscription" className="font-medium text-brand-700 hover:underline">Ask for room</Link>
+          <Link to="/settings?tab=subscription" className={buttonClass({ size: 'sm' })}>Ask for room</Link>
         )}
-        <button type="button" onClick={hide} className="text-xs text-slate-500 hover:underline">Hide until tomorrow</button>
+        <button type="button" onClick={hide} className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm' })}>Hide until tomorrow</button>
       </div>
     </div>
   )

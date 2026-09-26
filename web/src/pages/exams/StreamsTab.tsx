@@ -201,9 +201,11 @@ export function StreamsTab() {
           <datalist id="known-streams">
             {knownStreams.map((st) => <option key={st} value={st} />)}
           </datalist>
-          <div className="mt-3 overflow-x-auto rounded-lg border border-slate-200 bg-white">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          {/* On a phone each pupil is a stacked card (the table's own rows shown
+              as blocks), with the two boxes full width and labelled. */}
+          <div className="mt-3 rounded-lg border border-slate-200 bg-white sm:overflow-x-auto">
+            <table className="block w-full text-sm sm:table">
+              <thead className="hidden bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500 sm:table-header-group">
                 <tr>
                   <th className="px-3 py-2 w-14">Roll</th>
                   <th className="px-3 py-2">Student</th>
@@ -211,7 +213,7 @@ export function StreamsTab() {
                   <th className="px-3 py-2 w-52">Board registration no</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="block divide-y divide-slate-100 sm:table-row-group">
                 {rows.map((p) => (
                   <StreamRow
                     key={p.enrollment_id} pupil={p} canEdit={canEdit}
@@ -232,7 +234,7 @@ export function StreamsTab() {
           {canEdit && (
             <div className="mt-4 flex items-center gap-3">
               <button onClick={() => save.mutate()} disabled={!dirty || save.isPending}
-                className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
+                className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-card hover:bg-brand-700 disabled:opacity-60">
                 {save.isPending ? 'Saving…' : 'Save'}
               </button>
               {saved && <span className="text-sm font-medium text-brand-700">{saved}</span>}
@@ -265,16 +267,18 @@ function StreamRow({ pupil, edit, known, canEdit, onChange }: {
   const stray = known.length > 0 && !!edit.stream.trim()
     && !known.some((k) => k.toLowerCase() === edit.stream.trim().toLowerCase())
   return (
-    <tr className={missing || stray ? 'bg-due-50/60' : ''}>
-      <td className="px-3 py-2 text-slate-500">{pupil.roll_no ?? '-'}</td>
-      <td className="px-3 py-2 text-slate-800">
+    <tr className={`block p-3 sm:table-row sm:p-0 ${missing || stray ? 'bg-due-50/60' : ''}`}>
+      <td className="hidden px-3 py-2 text-slate-500 sm:table-cell">{pupil.roll_no ?? '-'}</td>
+      <td className="block font-medium text-slate-800 sm:table-cell sm:px-3 sm:py-2 sm:font-normal">
+        <span className="mr-1.5 text-slate-400 sm:hidden">{pupil.roll_no ?? ''}</span>
         {pupil.full_name}
         <span className="text-slate-400">
           {pupil.gr_no ? ` · ${pupil.gr_no}` : ''}
           {pupil.section_name ? ` · ${pupil.section_name}` : ''}
         </span>
       </td>
-      <td className="px-3 py-2">
+      <td className="mt-2 block sm:mt-0 sm:table-cell sm:px-3 sm:py-2">
+        <span className="mb-0.5 block text-[11px] text-slate-500 sm:hidden">Stream</span>
         {/* A datalist, not a free field with no help and not a closed dropdown:
             the school must be able to name a stream this class has never used,
             while being nudged to reuse the exact spelling its subjects carry. */}
@@ -283,15 +287,16 @@ function StreamRow({ pupil, edit, known, canEdit, onChange }: {
           value={edit.stream} disabled={!canEdit}
           onChange={(e) => onChange({ stream: e.target.value })}
           placeholder={known.length > 0 ? 'required' : 'none'}
-          className={`w-32 rounded border px-2 py-1 text-sm disabled:bg-slate-100 ${missing || stray ? 'border-due-400' : 'border-slate-300'}`}
+          className={`w-full rounded-lg border px-3 py-2 text-sm disabled:bg-slate-100 sm:w-32 sm:rounded sm:px-2 sm:py-1 ${missing || stray ? 'border-due-400' : 'border-slate-300'}`}
         />
       </td>
-      <td className="px-3 py-2">
+      <td className="mt-2 block sm:mt-0 sm:table-cell sm:px-3 sm:py-2">
+        <span className="mb-0.5 block text-[11px] text-slate-500 sm:hidden">Board registration no</span>
         <input
           value={edit.bise} disabled={!canEdit}
           onChange={(e) => onChange({ bise: e.target.value })}
           placeholder="e.g. 2026-BISE-01234"
-          className="w-44 rounded border border-slate-300 px-2 py-1 text-sm disabled:bg-slate-100"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100 sm:w-44 sm:rounded sm:px-2 sm:py-1"
         />
       </td>
     </tr>

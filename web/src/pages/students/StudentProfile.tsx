@@ -1,3 +1,4 @@
+import { TabBar } from '@/components/TabBar'
 import { useMemo, useState, type ReactNode } from 'react'
 import { IconAlert, IconCheck, IconClock, IconMinus } from '@/components/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -23,7 +24,7 @@ import {
   GENDERS, STUDENT_STATUS_LABELS, PAYMENT_METHODS, PAYMENT_STATUS_LABELS,
   ATTENDANCE_STATUSES, ATTENDANCE_SHORT, DISCOUNT_TYPES, RELATIONS,
 } from '@/lib/constants'
-import { fmtPKR, fmtDate, fmtMonth, waLink, todayISO } from '@/lib/format'
+import { fmtPKR, fmtDate, fmtMonth, waLink, todayISO, grLabel } from '@/lib/format'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/auth/AuthProvider'
 import { APPROVER_ROLES, ADMIN_ROLES, canWrite, type Role } from '@/auth/roles'
@@ -40,6 +41,7 @@ import { FeeStatement, FeeStatementDoc } from '@/components/FeeStatement'
 import { missingFields } from './rdeShared'
 import { studentDeleteBlockers, deleteStudent } from '@/lib/db'
 import { ParentLink } from '@/components/ParentLink'
+import { buttonClass } from '@/components/ui'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 /**
@@ -122,7 +124,7 @@ export function StudentProfile({ studentId, onBack, onOpen }: { studentId: strin
   if (!student.data) {
     return (
       <div className="max-w-md">
-        <button onClick={onBack} className="text-sm text-brand-700 hover:underline">
+        <button onClick={onBack} className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm' })}>
           &larr; Back to students
         </button>
         <div className="mt-4 rounded-xl border border-slate-200 bg-white p-5">
@@ -142,7 +144,7 @@ export function StudentProfile({ studentId, onBack, onOpen }: { studentId: strin
 
   return (
     <div>
-      <button onClick={onBack} className="text-sm text-brand-700 hover:underline">← Back to students</button>
+      <button onClick={onBack} className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm' })}>← Back to students</button>
 
       <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-start gap-4">
@@ -185,7 +187,7 @@ export function StudentProfile({ studentId, onBack, onOpen }: { studentId: strin
                   {cur.class_name}{cur.section_name ? ` · ${cur.section_name}` : ''}
                 </span>
               )}
-              <span>GR {s.gr_no ?? '-'}</span>
+              <span>{s.gr_no ? grLabel(s.gr_no) : 'No GR number'}</span>
               {cur?.roll_no && <span>· Roll {cur.roll_no}</span>}
               {s.father_name && <span>· {s.father_name}</span>}
             </div>
@@ -194,8 +196,8 @@ export function StudentProfile({ studentId, onBack, onOpen }: { studentId: strin
         <div className="flex flex-wrap gap-2">
           {wa && (
             <a href={wa} target="_blank" rel="noopener noreferrer"
-              className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">
-              WhatsApp
+              className={buttonClass({ size: 'sm' })}>
+              WhatsApp the family
             </a>
           )}
           {canStatus && <StatusAction student={s} />}
@@ -204,18 +206,10 @@ export function StudentProfile({ studentId, onBack, onOpen }: { studentId: strin
 
       {!mayWrite && <ObserverNotice what="this pupil's record" />}
 
-      {/* One line on any phone: the tabs scroll sideways rather than wrapping
-          "Attendance & Tests" onto two lines under a taller underline. */}
-      <div className="-mx-4 mt-4 flex gap-1 overflow-x-auto border-b border-slate-200 px-4 sm:mx-0 sm:px-0">
-        {TABS.map((t) => (
-          <button key={t} onClick={() => setTab(t)} aria-current={tab === t ? 'page' : undefined}
-            className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2.5 text-sm sm:px-4 sm:py-2 ${tab === t ? 'border-brand-600 font-medium text-brand-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
-            {t}
-          </button>
-        ))}
-      </div>
+      <TabBar label="This pupil" className="mt-4" value={tab} onChange={setTab}
+        tabs={TABS.map((t) => ({ key: t, label: t }))} />
 
-      <div className="mt-5">
+      <div>
         {/* The latest enrolment is not always THIS session's. A child the
             rollover left behind still shows last year's class, and the Fees and
             Attendance tabs then work on last year looking entirely normal, so
@@ -553,7 +547,7 @@ function Glance({
       <section className="rounded-2xl bg-white p-4 shadow-card ring-1 ring-slate-200/80">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-slate-900">Attendance, {enrollment.session_name}</h2>
-          <button onClick={() => onOpenTab('Attendance & Tests')} className="text-xs font-medium text-brand-700 hover:underline">
+          <button onClick={() => onOpenTab('Attendance & Tests')} className={buttonClass({ variant: 'soft', size: 'sm' })}>
             By month
           </button>
         </div>
@@ -599,7 +593,7 @@ function Glance({
         <section className="rounded-2xl bg-white p-4 shadow-card ring-1 ring-slate-200/80">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-slate-900">Fees</h2>
-            <button onClick={() => onOpenTab('Fees')} className="text-xs font-medium text-brand-700 hover:underline">
+            <button onClick={() => onOpenTab('Fees')} className={buttonClass({ variant: 'soft', size: 'sm' })}>
               Statement
             </button>
           </div>
@@ -756,7 +750,7 @@ function Overview({
       <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
         <div className="flex items-center justify-between">
           <div className="text-xs uppercase tracking-wide text-slate-500">Bio-data</div>
-          {canEdit && <button onClick={() => { setF(student); setEditing(true) }} className="text-sm text-brand-700 hover:underline">Edit</button>}
+          {canEdit && <button onClick={() => { setF(student); setEditing(true) }} className={buttonClass({ variant: 'soft', size: 'sm' })}>Edit</button>}
         </div>
         {/* The father, mother and phone numbers used to be listed here AND in
             the contact card beside it, so half of each card was the other card.
@@ -922,7 +916,7 @@ function AddSibling({ studentId }: { studentId: string }) {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="mt-3 text-sm font-medium text-brand-700 hover:underline"
+        className={buttonClass({ variant: 'soft', size: 'sm', className: 'mt-3' })}
       >
         + Link a sibling or relative
       </button>
@@ -1005,7 +999,7 @@ function AddSibling({ studentId }: { studentId: string }) {
               // an option that always errors is a bug the user has to discover.
               .filter((h) => h.id !== studentId)
               .map((h) => {
-                const label = [h.full_name, h.gr_no ? `GR ${h.gr_no}` : null,
+                const label = [h.full_name, h.gr_no ? grLabel(h.gr_no) : null,
                                h.class_name, h.father_name ? `s/o ${h.father_name}` : null]
                   .filter(Boolean).join(' · ')
                 return (
@@ -1567,7 +1561,7 @@ function FeesTab({
               is a button that always fails. */}
           {canApprove && (
             <div className="flex gap-3">
-              <button onClick={() => setShowDiscount(true)} className="text-sm text-brand-700 hover:underline">Give a discount</button>
+              <button onClick={() => setShowDiscount(true)} className={buttonClass({ variant: 'soft', size: 'sm' })}>Give a discount</button>
             </div>
           )}
         </div>
@@ -1748,10 +1742,32 @@ function FeesTab({
       <div className="rounded-2xl bg-white p-4 shadow-card ring-1 ring-slate-200/80">
         <button onClick={() => setShowActivity((v) => !v)} className="flex w-full items-center justify-between py-1 text-left">
           <span className="text-sm font-semibold text-slate-900">Receipts and payments</span>
-          <span className="text-xs font-medium text-brand-700">{showActivity ? 'Hide' : 'Show'}</span>
+          <span className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm' })}>{showActivity ? 'Hide' : 'Show'}</span>
         </button>
         {showActivity && (
-          <div className="mt-3 overflow-x-auto">
+          <>
+          {/* One line per payment on a phone. Six columns scrolled sideways. */}
+          <ul className="mt-3 divide-y divide-slate-100 sm:hidden">
+            {payments.data?.map((p) => (
+              <li key={p.id} className="flex items-start justify-between gap-3 py-2 text-sm">
+                <div className="min-w-0">
+                  <div className="font-medium text-slate-900">
+                    {p.receipt_no != null ? `#${p.receipt_no}` : 'No receipt'} · {fmtDate(p.created_at)}
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    {PAYMENT_METHODS.find((m) => m.value === p.method)?.label ?? p.method}
+                    {p.reversal_of ? ' · Reversal' : p.note ? ` · ${p.note}` : ''}
+                  </div>
+                </div>
+                <div className="shrink-0 text-right">
+                  <div className={`font-semibold tabular-nums ${p.amount < 0 ? 'text-danger-700' : 'text-slate-900'}`}>{fmtPKR(p.amount)}</div>
+                  <PaymentStatusPill status={p.status} />
+                </div>
+              </li>
+            ))}
+            {payments.data?.length === 0 && <li className="py-3 text-sm text-slate-400">No payments yet.</li>}
+          </ul>
+          <div className="mt-3 hidden overflow-x-auto sm:block">
           <table className="w-full min-w-[32rem] text-sm">
             <thead className="text-left text-xs text-slate-400"><tr><th className="py-1">Receipt</th><th>Date</th><th>Amount</th><th>Method</th><th>Status</th><th>Note</th></tr></thead>
             <tbody>
@@ -1769,6 +1785,7 @@ function FeesTab({
             </tbody>
           </table>
           </div>
+          </>
         )}
       </div>
 

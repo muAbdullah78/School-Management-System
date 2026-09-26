@@ -10,7 +10,7 @@ import { fmtDate, todayISO } from '@/lib/format'
 import { useAuth } from '@/auth/AuthProvider'
 import { isTeacher } from '@/auth/roles'
 import { TestsOverview } from './TestsOverview'
-import { LoadError } from '@/components/ui'
+import { LoadError, buttonClass } from '@/components/ui'
 import { AskDialog } from '@/components/AskDialog'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
@@ -78,7 +78,7 @@ export function TestsPage() {
   return (
     <div>
       {role === 'owner' && (
-        <button onClick={() => setSetting(false)} className="text-sm text-brand-700 hover:underline">
+        <button onClick={() => setSetting(false)} className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm', className: 'mb-3' })}>
           &larr; Back to the overview
         </button>
       )}

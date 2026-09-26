@@ -179,7 +179,36 @@ export function SubjectAttendance({ sessionId }: { sessionId: string }) {
             ))}
           </div>
 
-          <div className="mt-3 overflow-x-auto rounded-lg border border-slate-200 bg-white">
+          {/* One card per pupil on a phone, with status buttons a thumb can
+              hit. The table's buttons were twenty pixels tall. */}
+          <ul className="mt-3 space-y-2 sm:hidden">
+            {rows.map((r) => (
+              <li key={r.enrollment_id} className="rounded-xl border border-slate-200 bg-white p-3">
+                <div className="flex items-baseline justify-between gap-2">
+                  <div className="min-w-0 text-sm font-medium text-slate-900">
+                    {r.roll_no != null && <span className="mr-1.5 tabular-nums text-slate-400">{r.roll_no}</span>}{r.full_name}
+                  </div>
+                  <span className="shrink-0 text-[11px] text-slate-500">
+                    Day: {r.day_status ? (ATTENDANCE_STATUSES.find((s) => s.value === r.day_status)?.label ?? r.day_status) : 'not marked'}
+                  </span>
+                </div>
+                <div className="mt-2 grid grid-cols-5 gap-1.5">
+                  {ATTENDANCE_STATUSES.map((s) => {
+                    const on = marks[r.enrollment_id] === s.value
+                    return (
+                      <button key={s.value} type="button" aria-pressed={on} aria-label={`${r.full_name}: ${s.label}`}
+                        onClick={() => setMarks((m) => ({ ...m, [r.enrollment_id]: s.value }))}
+                        className={`h-10 rounded-lg text-sm font-semibold ring-1 transition ${on ? s.on : s.off}`}
+                        style={{ touchAction: 'manipulation' }}>
+                        {s.short}
+                      </button>
+                    )
+                  })}
+                </div>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-3 hidden overflow-x-auto rounded-lg border border-slate-200 bg-white sm:block">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
@@ -206,7 +235,8 @@ export function SubjectAttendance({ sessionId }: { sessionId: string }) {
                           return (
                             <button key={s.value} type="button"
                               onClick={() => setMarks((m) => ({ ...m, [r.enrollment_id]: s.value }))}
-                              className={`rounded px-2 py-0.5 text-xs font-medium ring-1 ${on ? s.on : s.off}`}>
+                              aria-pressed={on}
+                              className={`rounded-lg px-2.5 py-1 text-xs font-medium ring-1 ${on ? s.on : s.off}`}>
                               {s.short}
                             </button>
                           )
@@ -221,11 +251,11 @@ export function SubjectAttendance({ sessionId }: { sessionId: string }) {
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <button onClick={() => save.mutate()} disabled={save.isPending}
-              className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
+              className="w-full rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-medium text-white shadow-card hover:bg-brand-700 disabled:opacity-60 sm:w-auto">
               {save.isPending ? 'Saving…' : 'Save subject attendance'}
             </button>
-            {msg && <span className="text-sm text-emerald-700">{msg}</span>}
-            {save.isError && <span className="text-sm text-red-600">{(save.error as Error).message}</span>}
+            {msg && <span className="text-sm text-brand-700">{msg}</span>}
+            {save.isError && <span className="text-sm text-danger-700">{(save.error as Error).message}</span>}
           </div>
         </>
       )}

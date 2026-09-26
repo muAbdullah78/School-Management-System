@@ -10,7 +10,7 @@ import {
 } from '@/lib/db'
 import { GENDERS, RELATIONS } from '@/lib/constants'
 import { todayISO, fmtPKR, fmtDate } from '@/lib/format'
-import { PageHeader, inputClass } from '@/components/ui'
+import { PageHeader, inputClass, buttonClass } from '@/components/ui'
 import { IconAdmissions, IconAlert, IconCheck, IconChevron, IconFamily, IconX } from '@/components/icons'
 import { AdmissionSlip, type AdmissionSlipData } from './AdmissionSlip'
 import { Receipt, type ReceiptData } from '@/components/Receipt'
@@ -454,7 +454,7 @@ export function AdmissionsPage() {
                             className={field()} placeholder="03xx-xxxxxxx" inputMode="tel" autoComplete="off" />
                           {form.phone && !form.whatsapp && (
                             <button type="button" onClick={() => set('whatsapp', form.phone)}
-                              className="mt-1 text-xs font-medium text-brand-700 hover:underline">
+                              className={buttonClass({ variant: 'soft', size: 'sm', className: 'mt-1.5' })}>
                               Same as the phone number
                             </button>
                           )}
@@ -933,7 +933,7 @@ function Review({
           <section key={b.title} className="rounded-xl p-3.5 ring-1 ring-slate-200/80">
             <div className="mb-2 flex items-center justify-between">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{b.title}</h3>
-              <button type="button" onClick={() => onEdit(b.step)} className="text-xs font-medium text-brand-700 hover:underline">
+              <button type="button" onClick={() => onEdit(b.step)} className={buttonClass({ variant: 'soft', size: 'sm' })}>
                 Edit
               </button>
             </div>

@@ -13,6 +13,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getBirthdays, whatsappLink, type BirthdayRow } from '@/lib/db'
 import { useSchoolName } from '@/hooks/useSchoolName'
+import { buttonClass } from '@/components/ui'
 
 const RANGES = [
   { days: 0, label: 'Today' },
@@ -116,7 +117,7 @@ function Section({ title, rows, schoolName }: {
               <span className="text-slate-600">Turning {r.turning}</span>
               {wa ? (
                 <a href={wa} target="_blank" rel="noreferrer"
-                   className="text-money-700 hover:underline">
+                   className={buttonClass({ variant: 'soft', size: 'sm' })}>
                   Wish on WhatsApp
                 </a>
               ) : (
