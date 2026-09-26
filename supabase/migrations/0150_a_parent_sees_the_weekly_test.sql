@@ -34,6 +34,10 @@
 --      coming learns to ignore the line.
 --
 --   2. fn_portal_me, same signature, same keys, and three more per child:
+--      (It keeps 0106's licence check as its first statement. 0106 patched
+--      that line into the live function rather than the file, so a rewrite
+--      from 0033's text would quietly reopen an unpaid school's portal. The
+--      check at the foot of this file refuses to call it done without it.)
 --      date of birth (the portal wishes the child a happy birthday on the
 --      day), roll number, and the class teacher's name. Each child is also now
 --      read from ONE enrollment: the current year's, else the latest active
@@ -48,8 +52,11 @@
 -- ---------------------------------------------------------------------------
 -- 1. The weekly test, as the parent sees it
 -- ---------------------------------------------------------------------------
+-- On Karachi's clock, like every function that works out a date since 0148:
+-- a test "today" must mean today in Pakistan between midnight and 5am too.
 create or replace function public.fn_portal_child_tests(p_student_id uuid)
-returns jsonb language plpgsql stable security definer set search_path = public as $$
+returns jsonb language plpgsql stable security definer
+set search_path = public set timezone to 'Asia/Karachi' as $$
 declare
   v_today date := (now() at time zone 'Asia/Karachi')::date;
   v_done  jsonb;
@@ -162,6 +169,8 @@ create or replace function public.fn_portal_me()
 returns jsonb language plpgsql stable security definer set search_path = public as $$
 declare v_p record; v_school text; v_children jsonb; v_classes jsonb;
 begin
+  -- 0106: a school that has stopped paying closes its portal, before any read.
+  perform public.fn__require_live_licence();
   select p.*, s.name as school_name into v_p
   from public.profiles p
   left join public.schools s on s.id = p.school_id
@@ -246,6 +255,12 @@ begin
     where n.nspname = 'public' and p.proname = 'fn_portal_me'
       and p.prosrc like '%class_teacher%') then
     v_bad := v_bad || 'fn_portal_me does not return the class teacher';
+  end if;
+  if not exists (
+    select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'fn_portal_me'
+      and p.prosrc like '%fn__require_live_licence%') then
+    v_bad := v_bad || 'fn_portal_me lost the licence check 0106 gave it';
   end if;
 
   if array_length(v_bad, 1) is null then

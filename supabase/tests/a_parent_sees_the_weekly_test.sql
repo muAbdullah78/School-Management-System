@@ -358,5 +358,26 @@ begin
     '17. this year''s class, roll 12, class teacher Sidra Teacher, and the birthday');
 end $t$;
 
+-- =============================================================================
+-- 18. A SCHOOL THAT HAS STOPPED PAYING CLOSES ITS PORTAL (0106), STILL
+--
+-- 0106 patched that line into the live fn_portal_me, not into 0033's text, so
+-- a rewrite from the file would quietly reopen the portal. The first draft of
+-- 0150 did exactly that and CI's verify.sql caught it; this keeps it caught.
+-- =============================================================================
+do $t$
+declare v_kid uuid := pg_temp.kid('Hamna Masood'); m_me text; m_tests text;
+begin
+  update public.subscriptions set status = 'trialing', trial_ends_on = current_date - 14,
+         period_start = null, period_end = null
+   where school_id = pg_temp.school();
+  perform pg_temp.be('Humna Mahnoor');
+  begin perform public.fn_portal_me(); exception when others then m_me := sqlerrm; end;
+  begin perform public.fn_portal_child_tests(v_kid); exception when others then m_tests := sqlerrm; end;
+  perform pg_temp.ok(m_me like '%portal for this school is closed%'
+                     and m_tests like '%portal for this school is closed%',
+    '18. an unpaid school''s parent gets the closed notice from the entry point and from the tests');
+end $t$;
+
 select 'ALL WEEKLY TEST ASSERTIONS PASSED' as result;
 rollback;
