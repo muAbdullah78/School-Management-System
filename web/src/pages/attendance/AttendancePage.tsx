@@ -137,8 +137,21 @@ function TeacherAttendance({ sessionId }: { sessionId: string | null }) {
   const assigned = useQuery({ queryKey: ['myAssignments'], queryFn: getMyAssignments })
   const classTeacher = assigned.data ? assigned.data.length > 0 : true
   const urlTab = params.get('tab')
-  const tab: 'daily' | 'subject' = urlTab === 'daily' || urlTab === 'subject' ? urlTab : classTeacher ? 'daily' : 'subject'
+  /* THE CHOSEN TAB IS HELD HERE AS WELL AS IN THE ADDRESS. The register below
+     writes its class into the address when its lists finish loading, and that
+     write is built from the address as the register last saw it. Tapping
+     Subject attendance in that same moment had the register's write land
+     second and take ?tab=subject back out, so the teacher bounced back to the
+     daily register. A tap is kept here, where no stale write can reach it; an
+     address that names a tab (a link from the teacher's home) still wins. */
+  const [picked, setPicked] = useState<'daily' | 'subject' | null>(
+    urlTab === 'daily' || urlTab === 'subject' ? urlTab : null)
+  useEffect(() => {
+    if (urlTab === 'daily' || urlTab === 'subject') setPicked(urlTab)
+  }, [urlTab])
+  const tab: 'daily' | 'subject' = picked ?? (classTeacher ? 'daily' : 'subject')
   const setTab = (t: 'daily' | 'subject') => {
+    setPicked(t)
     const next = new URLSearchParams(params)
     next.set('tab', t)
     setParams(next, { replace: true })
