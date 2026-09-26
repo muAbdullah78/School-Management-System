@@ -30,8 +30,9 @@ import { Dashboard } from '../src/pages/Dashboard'
 import { Login } from '../src/pages/Login'
 import { ForgotPassword } from '../src/pages/ForgotPassword'
 import { writePage } from './harness'
+import { today as pkToday } from '../src/lib/dates'
 import {
-  DEMO_PORTAL_ME, DEMO_FEES, DEMO_ATTENDANCE, DEMO_RESULT, DEMO_CHILDREN,
+  DEMO_PORTAL_ME, DEMO_FEES, DEMO_RESULT, demoPortalMonth, demoPortalTests, DEMO_CHILDREN,
   DEMO_DASHBOARD_SUMMARY, DEMO_DASHBOARD_TRENDS, DEMO_PROFILE,
 } from './demo-data'
 
@@ -39,16 +40,17 @@ import {
  * The parent's own account, as the portal sees it.
  *
  * Seeded with the keys PortalPage actually uses, taken from the file rather than
- * guessed: ['portalMe'], ['portalFees', id], ['portalAtt', id], ['portalResults',
- * id]. A wrong key is not an error — the query simply stays empty and the page
- * renders its loading state, which is the failure mode this comment exists to
- * make obvious when a picture comes out blank.
+ * guessed: ['portalMe'], ['portalFees', id], ['portalAttMonth', id, month],
+ * ['portalTests', id], ['portalResults', id]. A wrong key is not an error: the
+ * query simply stays empty and the page renders its loading state, which is the
+ * failure mode this comment exists to make obvious when a picture comes out blank.
  */
 const child = DEMO_CHILDREN[0].student_id
 const portalSeeds = [
   [['portalMe'], DEMO_PORTAL_ME],
   [['portalFees', child], DEMO_FEES],
-  [['portalAtt', child], DEMO_ATTENDANCE],
+  [['portalAttMonth', child, pkToday().slice(0, 7)], demoPortalMonth(pkToday())],
+  [['portalTests', child], demoPortalTests(pkToday())],
   [['portalResults', child], [DEMO_RESULT]],
 ] as [readonly unknown[], unknown][]
 

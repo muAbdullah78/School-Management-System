@@ -4854,6 +4854,11 @@ export interface PortalChild {
   class_name: string | null
   section_name: string | null
   status: string
+  /** 0150. Optional, because a school that has not applied bundle 51 still
+   *  answers without them, and the portal must not break for that. */
+  dob?: string | null
+  roll_no?: string | null
+  class_teacher?: string | null
 }
 
 export interface PortalClass {
@@ -5091,6 +5096,72 @@ export async function getPortalChildAttendance(
   })
   if (error) throw new Error(error.message)
   return data as PortalAttendance
+}
+
+/** One locked class test, as the parent sees it (0150). */
+export interface PortalTest {
+  id: string
+  title: string
+  subject: string
+  date: string | null
+  max_marks: number
+  /** Null when the child was absent. */
+  marks: number | null
+  is_absent: boolean
+  /** How many pupils have a mark. The average and highest are null below five,
+   *  because in a smaller class they give away another child's mark. */
+  class_marked: number
+  class_average: number | null
+  class_highest: number | null
+  session: string | null
+}
+
+/** A test that is coming up, is today, or was sat and awaits marks. Never
+ *  carries a mark: none of these is finished. */
+export interface PortalUpcomingTest {
+  id: string
+  title: string
+  subject: string
+  date: string
+  max_marks: number
+  status: 'upcoming' | 'today' | 'awaiting'
+}
+
+export interface PortalTests {
+  today: string
+  tests: PortalTest[]
+  upcoming: PortalUpcomingTest[]
+  /** True when the school's database is older than bundle 51, so the portal
+   *  can say the tests will appear once the school updates, rather than
+   *  showing an error or, worse, "no tests" as if that were the truth. */
+  notInstalled?: boolean
+}
+
+export async function getPortalChildTests(studentId: string): Promise<PortalTests> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_portal_child_tests', { p_student_id: studentId })
+  if (error) {
+    if (isMissingFunction(error)) return { today: '', tests: [], upcoming: [], notInstalled: true }
+    throw new Error(error.message)
+  }
+  const d = data as any
+  if (!d || !Array.isArray(d.tests) || !Array.isArray(d.upcoming)) throw outOfDate('fn_portal_child_tests')
+  const num = (v: unknown) => (v == null ? null : Number(v))
+  return {
+    today: String(d.today ?? ''),
+    tests: d.tests.map((t: any) => ({
+      id: String(t.id), title: String(t.title ?? ''), subject: String(t.subject ?? 'General'),
+      date: t.date ?? null, max_marks: Number(t.max_marks ?? 0),
+      marks: num(t.marks), is_absent: !!t.is_absent,
+      class_marked: Number(t.class_marked ?? 0),
+      class_average: num(t.class_average), class_highest: num(t.class_highest),
+      session: t.session ?? null,
+    })),
+    upcoming: d.upcoming.map((t: any) => ({
+      id: String(t.id), title: String(t.title ?? ''), subject: String(t.subject ?? 'General'),
+      date: String(t.date), max_marks: Number(t.max_marks ?? 0), status: t.status,
+    })),
+  }
 }
 
 export async function getPortalChildResults(studentId: string): Promise<PortalResult[]> {

@@ -228,6 +228,31 @@ for (const k of ['setup', 'streams', 'marks']) {
 
 // The parent portal, which parents use on their phones and nothing else.
 import { PortalPage } from '@/pages/portal/PortalPage'
+function shift(d: string, n: number): string {
+  const t = new Date(`${d}T00:00:00Z`); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10)
+}
+// A month of registers up to today: school days only, one absence, one late, one leave.
+const PORTAL_DAYS = (() => {
+  const out: { date: string; status: string }[] = []
+  for (let d = `${today.slice(0, 7)}-01`; d <= today; d = shift(d, 1)) {
+    const wd = new Date(`${d}T00:00:00Z`).getUTCDay()
+    if (wd === 0) continue
+    const n = Number(d.slice(8, 10))
+    out.push({ date: d, status: n === 9 ? 'absent' : n === 15 ? 'late' : n === 18 ? 'leave' : 'present' })
+  }
+  return out.reverse()
+})()
+const PORTAL_MONTH = {
+  from: `${today.slice(0, 7)}-01`, to: today,
+  present: PORTAL_DAYS.filter((d) => d.status === 'present').length,
+  late: PORTAL_DAYS.filter((d) => d.status === 'late').length,
+  absent: PORTAL_DAYS.filter((d) => d.status === 'absent').length,
+  leave: PORTAL_DAYS.filter((d) => d.status === 'leave').length,
+  half_day: 0,
+  marked: PORTAL_DAYS.length,
+  percent: Math.round(((PORTAL_DAYS.filter((d) => d.status === 'present' || d.status === 'late').length) / Math.max(PORTAL_DAYS.length, 1)) * 100),
+  days: PORTAL_DAYS,
+}
 const PARENT: Profile = { ...DEMO_PROFILE, role: 'parent', full_name: 'Muhammad Aslam', staff_id: null }
 STEP4_SCENES['portal'] = {
   title: 'Parent portal', node: <PortalPage />, profile: PARENT, route: '/portal', seeds: [SEED_SESSION],
@@ -235,8 +260,10 @@ STEP4_SCENES['portal'] = {
     fn_portal_me: {
       profile_id: 'pp', full_name: 'Muhammad Aslam', role: 'parent', school_name: DEMO_SCHOOL.name,
       children: [
-        { student_id: 'k1', full_name: 'Ayesha Aslam', gr_no: 'GR 1204', class_name: 'Class 5', section_name: 'B', status: 'active' },
-        { student_id: 'k2', full_name: 'Bilal Aslam', gr_no: 'GR 1207', class_name: 'Class 8', section_name: 'A', status: 'active' },
+        { student_id: 'k1', full_name: 'Ayesha Aslam', gr_no: 'GR 1204', class_name: 'Class 5', section_name: 'B', status: 'active',
+          dob: `2016-${today.slice(5)}`, roll_no: '14', class_teacher: 'Sidra Batool' },
+        { student_id: 'k2', full_name: 'Bilal Aslam', gr_no: 'GR 1207', class_name: 'Class 8', section_name: 'A', status: 'active',
+          dob: '2013-02-11', roll_no: '3', class_teacher: 'Imran Qureshi' },
       ],
       classes: [],
     },
@@ -254,7 +281,49 @@ STEP4_SCENES['portal'] = {
       { seq: 2, entry_on: '2026-08-06', kind: 'payment', particulars: 'Receipt #20398, cash', reference: '#20398', debit: 0, credit: 4500, balance_after: 0 },
       { seq: 3, entry_on: '2026-09-01', kind: 'charge', particulars: 'Tuition, September', reference: 'CH-0901', debit: 4500, credit: 0, balance_after: 4500 },
     ],
-    fn_portal_child_attendance: { from: '2026-09-01', to: today, present: 19, marked: 20, percent: 95, absent: 1, late: 0, half_day: 0, leave: 0 },
+    fn_portal_child_attendance: PORTAL_MONTH,
     fn_portal_child_results: [],
+    fn_portal_child_tests: {
+      today,
+      tests: [
+        { id: 't1', title: 'Weekly test 4', subject: 'Maths', date: shift(today, -2), max_marks: 20, marks: 18, is_absent: false, class_marked: 31, class_average: 13.6, class_highest: 19, session: '2026-2027' },
+        { id: 't2', title: 'Spelling test', subject: 'English', date: shift(today, -5), max_marks: 10, marks: 9, is_absent: false, class_marked: 30, class_average: 7.1, class_highest: 9, session: '2026-2027' },
+        { id: 't3', title: 'Chapter 3 quiz', subject: 'Science', date: shift(today, -9), max_marks: 25, marks: null, is_absent: true, class_marked: 29, class_average: 17.2, class_highest: 24, session: '2026-2027' },
+        { id: 't4', title: 'Weekly test 3', subject: 'Maths', date: shift(today, -12), max_marks: 20, marks: 14, is_absent: false, class_marked: 31, class_average: 12.9, class_highest: 20, session: '2026-2027' },
+        { id: 't5', title: 'Imla', subject: 'Urdu', date: shift(today, -16), max_marks: 10, marks: 3, is_absent: false, class_marked: 4, class_average: null, class_highest: null, session: '2026-2027' },
+        { id: 't6', title: 'Weekly test 2', subject: 'Maths', date: shift(today, -19), max_marks: 20, marks: 16, is_absent: false, class_marked: 31, class_average: 14.2, class_highest: 20, session: '2026-2027' },
+      ],
+      upcoming: [
+        { id: 'u1', title: 'Weekly test 5', subject: 'Maths', date: shift(today, 3), max_marks: 20, status: 'upcoming' },
+        { id: 'u2', title: 'Dictation', subject: 'English', date: today, max_marks: 10, status: 'today' },
+        { id: 'u3', title: 'Map work', subject: 'Social Studies', date: shift(today, -1), max_marks: 15, status: 'awaiting' },
+      ],
+    },
+  },
+}
+
+// The school's own case: nothing billed this month, two days marked, one test.
+STEP4_SCENES['portal-quiet'] = {
+  title: 'Parent portal, first weeks', node: <PortalPage />, profile: PARENT, route: '/portal', seeds: [SEED_SESSION],
+  data: {
+    fn_portal_me: {
+      profile_id: 'pq', full_name: 'Humna Mahnoor', role: 'parent', school_name: 'The Pisces Science School (Ghauri Campus)',
+      children: [{ student_id: 'h1', full_name: 'Hamna Masood', gr_no: '0001', class_name: 'Class 4', section_name: null, status: 'active', dob: '2017-03-02', roll_no: null, class_teacher: null }],
+      classes: [],
+    },
+    fn_portal_child_fees: {
+      student_id: 'h1', balance: 0, family_outstanding: 0, family_credit: 0,
+      invoices: [{ period_month: '2026-09-01', due_date: '2026-09-10', charge: 0, paid: 0, outstanding: 0, status: 'paid' }],
+      receipts: [], adjustments: [], charges_not_on_a_challan: 0, deposit_held: 0,
+    },
+    fn_portal_child_ledger: [],
+    fn_portal_child_attendance: { from: '2026-09-01', to: today, present: 2, marked: 2, percent: 100, absent: 0, late: 0, half_day: 0, leave: 0,
+      days: [{ date: today, status: 'present' }, { date: shift(today, -2), status: 'present' }] },
+    fn_portal_child_results: [],
+    fn_portal_child_tests: {
+      today,
+      tests: [{ id: 'q1', title: 'Weekly test 1', subject: 'Maths', date: today, max_marks: 25, marks: 21, is_absent: false, class_marked: 3, class_average: null, class_highest: null, session: '2026-2027' }],
+      upcoming: [],
+    },
   },
 }

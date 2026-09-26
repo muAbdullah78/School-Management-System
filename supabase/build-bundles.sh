@@ -941,6 +941,19 @@ emit supabase/bundles/49_the_staff_room_the_reports_and_the_settings.sql \
 emit supabase/bundles/50_the_gate_the_phone_and_the_bill.sql \
      supabase/migrations/0149*.sql
 
+# --- 51 ----------------------------------------------------------------------
+# A parent sees the weekly test.
+#
+# A class teacher marked and locked a weekly test and the office saw it, while
+# the parent's Results tab said nothing had been published: the portal had no
+# read for a class test at all. This adds one, with the class average and
+# highest only where five or more pupils have a mark, and the tests coming up.
+# The portal's "who am I" read keeps its signature and gains the birthday, the
+# roll number and the class teacher, and lists each child once. Both are
+# create-or-replace, so re-pasting is a no-op.
+emit supabase/bundles/51_a_parent_sees_the_weekly_test.sql \
+     supabase/migrations/0150*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.
