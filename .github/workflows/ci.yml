@@ -2593,6 +2593,17 @@ jobs:
         # on the day in Karachi, and years and classes cannot be duplicated.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/the_staff_room_and_the_settings.sql
 
+      - name: The gate, the phone and the bill (0149), a check-in PIN and a roll that meets the plan
+        # A teacher could not type the check-in code, so a camera that would
+        # not scan meant no way in. Walked end to end as real logins: the gate
+        # screen's PIN checks a teacher in, a minute-old PIN does not, a double
+        # scan is not a check-out even with no late grace, a day the office
+        # corrected still takes the check-out, somebody who left cannot check
+        # in, and switching check-in off closes every PIN. Then a school over
+        # its plan cannot ask for less room than it has, and a login cannot
+        # write a pupil onto the roll directly.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/the_gate_the_phone_and_the_bill.sql
+
       - name: Student list — does the fast balance equal the real one?
         # fn_student_list recomputes each balance SET-BASED rather than calling
         # student_balance() per row, because per-row is 800 correlated

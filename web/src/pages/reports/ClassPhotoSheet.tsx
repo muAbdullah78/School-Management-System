@@ -23,11 +23,11 @@ import { PhotoUpload } from '@/components/PhotoUpload'
 import { SchoolMark } from '@/components/Avatar'
 import { useSchoolName } from '@/hooks/useSchoolName'
 import { useAuth } from '@/auth/AuthProvider'
-import { Button, inputClass } from '@/components/ui'
+import { Button, inputBase } from '@/components/ui'
 import { C, pctOf } from '@/components/viz'
 import { Empty, Failed, Loading } from './kit'
 
-const SELECT = `${inputClass} w-auto`
+const SELECT = `${inputBase} w-auto`
 
 export function ClassPhotoSheet() {
   const qc = useQueryClient()

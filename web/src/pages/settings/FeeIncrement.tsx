@@ -116,7 +116,7 @@ export function FeeIncrement() {
           written until you have seen the preview and pressed Apply.
         </p>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Session">
             <select
               value={chosenSession}
@@ -183,7 +183,7 @@ export function FeeIncrement() {
           </div>
         </div>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Picker
             label="Classes"
             allLabel="Every class in the session"
@@ -289,8 +289,24 @@ export function FeeIncrement() {
                 of children in it for that.
               </p>
 
-              <div className="mt-3 overflow-x-auto">
-                <table className="w-full min-w-[28rem] text-sm">
+              {/* A phone reads each change as one line: the class and charge,
+                  then the old amount and the new one. */}
+              <ul className="mt-3 divide-y divide-slate-100 rounded-xl border border-slate-200 sm:hidden">
+                {(preview ?? applied)!.rows.map((r, i) => (
+                  <li key={i} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                    <span className="min-w-0">
+                      <span className="block font-medium text-slate-900">{r.class}</span>
+                      <span className="block text-xs text-slate-500">{r.fee_head}</span>
+                    </span>
+                    <span className="shrink-0 text-right tabular-nums">
+                      <span className="block text-xs text-slate-400 line-through">{fmtPKR(r.from)}</span>
+                      <span className="block font-semibold text-slate-900">{fmtPKR(r.to)}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-3 hidden sm:block">
+                <table className="w-full text-sm">
                   <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                     <tr>
                       <th className="px-3 py-2 text-left font-medium">Class</th>

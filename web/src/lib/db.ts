@@ -1,4 +1,5 @@
 import { requireSupabase } from './supabase'
+import { isMissingFunction } from './notInstalled'
 
 // ---- Types (hand-written; kept in sync with supabase/migrations) ----
 export interface SessionRow {
@@ -2851,18 +2852,23 @@ export interface CheckinCode {
   /** A rotating code is shown on a screen and changes every 30 seconds; a static
    *  one is printed on a poster, and a photograph of that works for ever. */
   rotating: boolean
+  /** The six digit PIN a teacher types when the camera will not scan. A static
+   *  code keeps one; a rotating code's PIN changes with its QR, so it is only
+   *  ever read from the gate screen and this is null. Null too before bundle 50. */
+  pin: string | null
 }
 export async function generateCheckinCode(
   label: string, validFrom: string | null, validTo: string | null,
   deactivateOthers = true, rotating = false,
-): Promise<{ id: string; code: string; rotating: boolean }> {
+): Promise<{ id: string; code: string; rotating: boolean; pin: string | null }> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_generate_checkin_code', {
     p_label: label, p_valid_from: validFrom, p_valid_to: validTo,
     p_deactivate_others: deactivateOthers, p_rotating: rotating,
   })
   if (error) throw new Error(error.message)
-  return data as { id: string; code: string; rotating: boolean }
+  const d = data as { id: string; code: string; rotating: boolean; pin?: string | null }
+  return { ...d, pin: d.pin ?? null }
 }
 export async function listCheckinCodes(): Promise<CheckinCode[]> {
   const sb = requireSupabase()
@@ -2870,11 +2876,29 @@ export async function listCheckinCodes(): Promise<CheckinCode[]> {
   // through RLS, and a rotating code whose seed reaches a browser is not a
   // rotating code, so the seed must never be in a network response the school's
   // own screen renders.
-  return unwrap(
-    await sb.from('staff_checkin_codes')
-      .select('id, code, label, valid_from, valid_to, active, rotating')
-      .order('created_at', { ascending: false }),
-  )
+  const withPin = await sb.from('staff_checkin_codes')
+    .select('id, code, label, valid_from, valid_to, active, rotating, pin')
+    .order('created_at', { ascending: false })
+  // Before bundle 50 there is no pin column, and asking for it fails the whole
+  // read. Ask again without it rather than lose the screen.
+  if (withPin.error && /pin/i.test(withPin.error.message)) {
+    const rows = unwrap(
+      await sb.from('staff_checkin_codes')
+        .select('id, code, label, valid_from, valid_to, active, rotating')
+        .order('created_at', { ascending: false }),
+    ) as Omit<CheckinCode, 'pin'>[]
+    return rows.map((r) => ({ ...r, pin: null }))
+  }
+  return (unwrap(withPin) as CheckinCode[]).map((r) => ({ ...r, pin: r.pin ?? null }))
+}
+
+/** Switch self check-in off: every code stops working, and the office marks
+ *  everybody until a new code is made. */
+export async function switchOffCheckin(): Promise<number> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_switch_off_checkin')
+  if (error) throw new Error(error.message)
+  return Number(data ?? 0)
 }
 
 /** What the screen at the gate should render right now. Polled, because the token
@@ -2886,6 +2910,8 @@ export interface CheckinDisplay {
   label?: string | null
   rotating?: boolean
   token?: string
+  /** The six digit PIN under the QR. For a rotating code it changes with it. */
+  pin?: string | null
   period_seconds?: number
   /** Seconds this token still has. Refresh on it rather than on a fixed timer, so
    *  the screen never shows a token that has already stopped working. */
@@ -2908,6 +2934,10 @@ export interface CheckInResult {
   worked_minutes?: number | null
   reason?: string | null
   rotating?: boolean
+  /** How this check-in was made: the QR, or the six digit PIN. */
+  method?: 'qr' | 'pin'
+  /** When a check-out opens: a second scan before this is a double scan. */
+  out_opens_at?: string | null
 }
 
 /** Record a check-in (or, on the second scan of the day, a check-out).
@@ -2946,12 +2976,20 @@ export interface StaffDayRow {
   device: string | null
   reason: string | null
   marked_by_name: string | null
+  /** 'qr' for a scan, 'pin' for the six digit PIN, null for a day the office
+   *  typed. A PIN can be read out over the phone, so the office should know. */
+  method: 'qr' | 'pin' | null
 }
 
 /** The day's staff register: everybody, marked or not. */
 export async function getStaffAttendanceDay(date: string | null): Promise<StaffDayRow[]> {
   const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_staff_attendance_day', { p_date: date })
+  // fn_staff_register_day (bundle 50) adds how each day was recorded. Before it
+  // is applied the older read answers, without that column.
+  let { data, error } = await sb.rpc('fn_staff_register_day', { p_date: date })
+  if (error && isMissingFunction(error)) {
+    ({ data, error } = await sb.rpc('fn_staff_attendance_day', { p_date: date }))
+  }
   if (error) throw new Error(error.message)
   return ((data ?? []) as Record<string, any>[]).map((r) => ({
     staff_id: r.staff_id, full_name: r.full_name, designation: r.designation ?? null,
@@ -2964,6 +3002,7 @@ export async function getStaffAttendanceDay(date: string | null): Promise<StaffD
     code_window: r.code_window == null ? null : Number(r.code_window),
     device: r.device ?? null, reason: r.reason ?? null,
     marked_by_name: r.marked_by_name ?? null,
+    method: r.method === 'pin' ? 'pin' : r.method === 'qr' || r.code_label || r.scanned ? 'qr' : null,
   }))
 }
 
@@ -3018,19 +3057,97 @@ export async function getStaffMonthAttendance(
   )
 }
 
-/** Today's check-in row for the current teacher (null if not linked / not checked in). */
-export async function getMyTodayCheckin(): Promise<{ attendance_date: string; status: string; checked_at: string | null } | null> {
-  const sb = requireSupabase()
-  const staffId = (await sb.from('profiles').select('staff_id').eq('id', (await sb.auth.getUser()).data.user?.id ?? '').maybeSingle()).data?.staff_id
-  if (!staffId) return null
-  const { data } = await sb.from('staff_attendance')
-    .select('attendance_date, status, checked_at')
-    .eq('staff_id', staffId).eq('attendance_date', pkToday()).maybeSingle()
-  return data ?? null
+/** Where the signed-in teacher stands today, for their home screen. */
+export interface MyCheckin {
+  linked: boolean
+  /** False when their staff record is marked as left. */
+  active: boolean
+  today: string
+  /** How the school checks staff in: a screen at the gate, a poster, or not at
+   *  all (the office marks everybody). */
+  mode: 'rotating' | 'static' | null
+  geofence: boolean
+  day_starts_at: string | null
+  record: {
+    status: string
+    source: string
+    scanned: boolean
+    method: 'qr' | 'pin' | null
+    checked_at: string | null
+    checked_out_at: string | null
+    late_minutes: number | null
+    worked_minutes: number | null
+    reason: string | null
+  } | null
+  can_check_out: boolean
+  out_opens_at: string | null
+  /** False when this came from the pre-bundle-50 fallback, which cannot know
+   *  the school's mode or location check. */
+  full: boolean
 }
+
+async function myStaffId(): Promise<string | null> {
+  const sb = requireSupabase()
+  const uid = (await sb.auth.getUser()).data.user?.id
+  if (!uid) return null
+  const { data, error } = await sb.from('profiles').select('staff_id').eq('id', uid).maybeSingle()
+  if (error) throw new Error(error.message)
+  return (data?.staff_id as string | null) ?? null
+}
+
+export async function getMyCheckin(): Promise<MyCheckin> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_my_checkin')
+  if (!error) {
+    const d = (data ?? {}) as Record<string, any>
+    const r = d.record as Record<string, any> | null
+    return {
+      linked: !!d.linked, active: d.active !== false, today: d.today ?? pkToday(),
+      mode: d.mode === 'rotating' || d.mode === 'static' ? d.mode : null,
+      geofence: !!d.geofence, day_starts_at: d.day_starts_at ?? null,
+      record: r ? {
+        status: String(r.status), source: String(r.source ?? ''), scanned: !!r.scanned,
+        method: r.method === 'pin' ? 'pin' : r.method === 'qr' ? 'qr' : null,
+        checked_at: r.checked_at ?? null, checked_out_at: r.checked_out_at ?? null,
+        late_minutes: r.late_minutes == null ? null : Number(r.late_minutes),
+        worked_minutes: r.worked_minutes == null ? null : Number(r.worked_minutes),
+        reason: r.reason ?? null,
+      } : null,
+      can_check_out: !!d.can_check_out, out_opens_at: d.out_opens_at ?? null, full: true,
+    }
+  }
+  if (!isMissingFunction(error)) throw new Error(error.message)
+  // Bundle 50 not applied yet: today's row straight from the table, which the
+  // row policy lets a teacher read for themselves.
+  const staffId = await myStaffId()
+  const today = pkToday()
+  if (!staffId) {
+    return { linked: false, active: true, today, mode: null, geofence: false, day_starts_at: null,
+      record: null, can_check_out: false, out_opens_at: null, full: false }
+  }
+  const row = await sb.from('staff_attendance')
+    .select('status, source, code_id, checked_at, checked_out_at, late_minutes, worked_minutes, reason')
+    .eq('staff_id', staffId).eq('attendance_date', today).maybeSingle()
+  if (row.error) throw new Error(row.error.message)
+  const r = row.data as Record<string, any> | null
+  return {
+    linked: true, active: true, today, mode: null, geofence: false, day_starts_at: null,
+    record: r ? {
+      status: String(r.status), source: String(r.source ?? ''), scanned: !!r.code_id,
+      method: r.code_id ? 'qr' : null, checked_at: r.checked_at ?? null,
+      checked_out_at: r.checked_out_at ?? null,
+      late_minutes: r.late_minutes == null ? null : Number(r.late_minutes),
+      worked_minutes: r.worked_minutes == null ? null : Number(r.worked_minutes),
+      reason: r.reason ?? null,
+    } : null,
+    can_check_out: !!r && !!r.code_id && r.source !== 'manual',
+    out_opens_at: null, full: false,
+  }
+}
+
 /** "Today" in Pakistan time (matches the server's `now() at time zone 'Asia/Karachi'`
  *  used by fn_staff_check_in), so the check-in card doesn't disagree overnight. */
-function pkToday(): string {
+export function pkToday(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Karachi' })
 }
 
@@ -3039,33 +3156,40 @@ export interface MyAttendanceRow {
   status: string
   checked_at: string | null
   checked_out_at: string | null
+  late_minutes: number | null
   worked_minutes: number | null
+  source: string | null
+  method: 'qr' | 'pin' | null
+  reason: string | null
 }
 
-/** The signed-in teacher's own attendance for a month, newest first.
- *
- *  A DIRECT select, not an RPC: the staff_att_select policy (0025) already lets
- *  a teacher read exactly their own rows (`staff_id = my_staff_id()`), so a
- *  SECURITY DEFINER function would only restate a rule the row-level policy
- *  already enforces in one place. `month` is the first of the month; the range
- *  is [month, next month). */
-export async function getMyStaffAttendance(month: string): Promise<MyAttendanceRow[]> {
+/** The signed-in teacher's own days between two dates, newest first. One read
+ *  for a week that crosses a month end. Falls back to the table (the row policy
+ *  lets a teacher read their own rows) before bundle 50. */
+export async function getMyStaffDays(from: string, to: string): Promise<MyAttendanceRow[]> {
   const sb = requireSupabase()
-  const staffId = (await sb.from('profiles').select('staff_id')
-    .eq('id', (await sb.auth.getUser()).data.user?.id ?? '').maybeSingle()).data?.staff_id
+  const { data, error } = await sb.rpc('fn_my_staff_attendance', { p_from: from, p_to: to })
+  const norm = (r: Record<string, any>): MyAttendanceRow => ({
+    attendance_date: r.attendance_date, status: String(r.status),
+    checked_at: r.checked_at ?? null, checked_out_at: r.checked_out_at ?? null,
+    late_minutes: r.late_minutes == null ? null : Number(r.late_minutes),
+    worked_minutes: r.worked_minutes == null ? null : Number(r.worked_minutes),
+    source: r.source ?? null,
+    method: r.method === 'pin' ? 'pin' : r.method === 'qr' || r.code_id ? 'qr' : null,
+    reason: r.reason ?? null,
+  })
+  if (!error) return ((data ?? []) as Record<string, any>[]).map(norm)
+  if (!isMissingFunction(error)) throw new Error(error.message)
+  const staffId = await myStaffId()
   if (!staffId) return []
-  const start = month
-  const next = new Date(`${month}T00:00:00Z`)
-  next.setUTCMonth(next.getUTCMonth() + 1)
-  const end = next.toISOString().slice(0, 10)
-  const { data, error } = await sb.from('staff_attendance')
-    .select('attendance_date, status, checked_at, checked_out_at, worked_minutes')
+  const res = await sb.from('staff_attendance')
+    .select('attendance_date, status, checked_at, checked_out_at, late_minutes, worked_minutes, source, code_id, reason')
     .eq('staff_id', staffId)
-    .gte('attendance_date', start)
-    .lt('attendance_date', end)
+    .gte('attendance_date', from)
+    .lte('attendance_date', to)
     .order('attendance_date', { ascending: false })
-  if (error) throw new Error(error.message)
-  return (data ?? []) as MyAttendanceRow[]
+  if (res.error) throw new Error(res.error.message)
+  return ((res.data ?? []) as Record<string, any>[]).map(norm)
 }
 
 export interface LoginFunctionState {

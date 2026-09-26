@@ -248,8 +248,16 @@ export function Field({
   )
 }
 
-export const inputClass =
-  'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-100'
+/**
+ * The field's look WITHOUT a width. `${inputClass} w-auto` never worked: both
+ * are width utilities, Tailwind emits .w-full after .w-auto, and the later rule
+ * wins, so every date and select that asked to be narrow was full width. A
+ * field that needs its own width starts from this one instead.
+ */
+export const inputBase =
+  'rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-100'
+
+export const inputClass = `w-full ${inputBase}`
 
 /* ----------------------------------------------------------------- misc --- */
 

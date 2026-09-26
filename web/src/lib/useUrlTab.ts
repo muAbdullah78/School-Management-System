@@ -17,12 +17,27 @@ import { useSearchParams } from 'react-router-dom'
 export function useUrlTab<K extends string>(keys: readonly K[], fallback: K) {
   const [params, setParams] = useSearchParams()
   const raw = params.get('tab')
-  const value: K = raw != null && (keys as readonly string[]).includes(raw) ? (raw as K) : fallback
-  function set(next: K) {
+  const picked = raw != null && (keys as readonly string[]).includes(raw)
+  const value: K = picked ? (raw as K) : fallback
+  /** `explicit` writes the tab even when it is the first one. A phone shows the
+   *  list of screens when no tab is named, so choosing the first screen from
+   *  that list has to name it, or the list would simply come back. */
+  function set(next: K, opts?: { explicit?: boolean; push?: boolean }) {
     const p = new URLSearchParams(params)
-    if (next === fallback) p.delete('tab')
+    if (next === fallback && !opts?.explicit) p.delete('tab')
     else p.set('tab', next)
+    // `push` is the phone opening a screen from the list: a real history
+    // entry, so the phone's own Back button returns to the list instead of
+    // leaving Settings altogether. The state marks it for the in-page Back.
+    if (opts?.push) setParams(p, { state: { fromIndex: true } })
+    else setParams(p, { replace: true })
+  }
+  /** Back to no tab named: the list of screens on a phone, the first screen on
+   *  a wide one. */
+  function clear() {
+    const p = new URLSearchParams(params)
+    p.delete('tab')
     setParams(p, { replace: true })
   }
-  return [value, set] as const
+  return [value, set, { picked, clear }] as const
 }

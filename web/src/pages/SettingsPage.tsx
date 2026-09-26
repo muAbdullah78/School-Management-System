@@ -87,12 +87,19 @@ const KEYS = GROUPS.flatMap((g) => g.items.map((i) => i.key))
 export function SettingsPage() {
   // In the URL, so a warning elsewhere can link straight to the screen that
   // fixes it rather than telling the school which tab to go and find.
-  const [section, setSection] = useUrlTab<SectionKey>(KEYS, 'school')
+  const [section, setSection, nav] = useUrlTab<SectionKey>(KEYS, 'school')
   return (
     <div>
-      <h1 className="text-xl font-semibold text-slate-800">Settings</h1>
-      <p className="mt-0.5 text-sm text-slate-500">How the school is set up. Most of it is done once and left alone.</p>
-      <SectionLayout groups={GROUPS} value={section} onChange={setSection} label="Setting">
+      {/* On a phone inside one screen, "‹ All settings" and the screen's own
+          heading already say where you are, so this line would only push the
+          first field further down. */}
+      <div className={nav.picked ? 'hidden lg:block' : ''}>
+        <h1 className="text-xl font-semibold text-slate-800">Settings</h1>
+        <p className="mt-0.5 text-sm text-slate-500">How the school is set up. Most of it is done once and left alone.</p>
+      </div>
+      <SectionLayout groups={GROUPS} value={section} onChange={setSection} label="Setting"
+        picked={nav.picked} onPick={(k) => setSection(k, { explicit: true, push: true })}
+        onIndex={nav.clear} indexLabel="All settings">
         {section === 'school' && <SchoolProfile />}
         {section === 'sessions' && <Sessions />}
         {section === 'classes' && <ClassesSections />}

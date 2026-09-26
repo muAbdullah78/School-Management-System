@@ -925,6 +925,22 @@ emit supabase/bundles/48_the_screens_the_office_works_in.sql \
 emit supabase/bundles/49_the_staff_room_the_reports_and_the_settings.sql \
      supabase/migrations/0148*.sql
 
+# --- 50 ----------------------------------------------------------------------
+# The gate, the phone and the bill.
+#
+# A teacher could not type the check-in code: it was 32 characters, or a token
+# that changed every 30 seconds. Every code now has a six digit PIN, shown under
+# the QR on the gate screen. A double scan with no late grace checked somebody
+# out at once, a teacher whose day the office corrected could not check out,
+# and somebody marked as left could still check in. The register records
+# whether a day was scanned or typed from the PIN and updates itself. A school
+# over its plan could ask for less room than it has, and a login could write a
+# pupil onto the roll directly past the plan. Every changed function keeps its
+# signature, the register with the new column is a new function, and every
+# table change checks whether it is already done, so re-pasting is a no-op.
+emit supabase/bundles/50_the_gate_the_phone_and_the_bill.sql \
+     supabase/migrations/0149*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

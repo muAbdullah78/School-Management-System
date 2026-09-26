@@ -8,7 +8,7 @@
  */
 import type { ReactNode } from 'react'
 import { useSchoolName } from '@/hooks/useSchoolName'
-import { Button, inputClass } from '@/components/ui'
+import { Button, inputBase } from '@/components/ui'
 import { PAYMENT_METHODS } from '@/lib/constants'
 import { today, monthStart, monthsAgoStart, daysAgo } from '@/lib/dates'
 import { fmtDate, shiftDate } from '@/lib/format'
@@ -96,12 +96,12 @@ export function RangePicker({ value, onChange, blank = false, presets = rangePre
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-slate-500">From</span>
           <input type="date" value={value.from} max={value.to || t}
-            onChange={(e) => onChange({ ...value, from: e.target.value })} className={`${inputClass} w-auto`} />
+            onChange={(e) => onChange({ ...value, from: e.target.value })} className={`${inputBase} w-auto`} />
         </label>
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-slate-500">To</span>
           <input type="date" value={value.to} min={value.from || undefined} max={t}
-            onChange={(e) => onChange({ ...value, to: e.target.value })} className={`${inputClass} w-auto`} />
+            onChange={(e) => onChange({ ...value, to: e.target.value })} className={`${inputBase} w-auto`} />
         </label>
       </div>
     </div>

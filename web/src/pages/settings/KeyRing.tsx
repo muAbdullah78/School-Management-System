@@ -129,9 +129,11 @@ export function KeyRing() {
       )}
 
       {rows.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+        // On a phone each login is a stacked card (the table's own rows,
+        // displayed as blocks), rather than four columns scrolled sideways.
+        <div>
+          <table className="block w-full text-sm sm:table">
+            <thead className="hidden bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500 sm:table-header-group">
               <tr>
                 <th className="px-3 py-2 font-medium">Who</th>
                 <th className="px-3 py-2 font-medium">Signs in as</th>
@@ -139,11 +141,11 @@ export function KeyRing() {
                 <th className="px-3 py-2" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="block divide-y divide-slate-100 sm:table-row-group">
               {rows.map((r) => (
-                <tr key={r.profile_id} className={r.active ? '' : 'opacity-60'}>
-                  <td className="px-3 py-2 align-top">
-                    <div className="text-slate-800">
+                <tr key={r.profile_id} className={`block px-3 py-3 sm:table-row sm:p-0 ${r.active ? '' : 'opacity-60'}`}>
+                  <td className="block align-top sm:table-cell sm:px-3 sm:py-2">
+                    <div className="font-medium text-slate-800 sm:font-normal">
                       {r.full_name || <span className="text-slate-400">(unnamed)</span>}
                     </div>
                     <div className="text-xs text-slate-500">
@@ -151,12 +153,13 @@ export function KeyRing() {
                       {!r.active && ' · closed'}
                     </div>
                   </td>
-                  <td className="px-3 py-2 align-top">
+                  <td className="mt-1 block align-top sm:mt-0 sm:table-cell sm:px-3 sm:py-2">
+                    <span className="mr-1 text-xs text-slate-400 sm:hidden">Signs in as</span>
                     <span className="break-all font-mono text-xs text-slate-700">
                       {r.email ?? 'no address'}
                     </span>
                   </td>
-                  <td className="px-3 py-2 align-top">
+                  <td className="mt-1 block align-top sm:mt-0 sm:table-cell sm:px-3 sm:py-2">
                     {!r.has_password ? (
                       <span className="text-xs text-slate-500">
                         Not saved. Set one to be able to tell them again.
@@ -193,8 +196,8 @@ export function KeyRing() {
                       </div>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-right align-top">
-                    <div className="inline-flex flex-wrap justify-end gap-1.5">
+                  <td className="mt-2 block align-top sm:mt-0 sm:table-cell sm:px-3 sm:py-2 sm:text-right">
+                    <div className="inline-flex flex-wrap gap-1.5 sm:justify-end">
                       {r.has_password && !shown[r.profile_id] && (
                         <button
                           onClick={() => reveal.mutate(r.profile_id)}

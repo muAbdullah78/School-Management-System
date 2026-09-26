@@ -1313,7 +1313,20 @@ with sig(migration, object, present) as (values
          and to_regprocedure('public.fn_set_session_dates(uuid,date,date)') is not null
          and exists (select 1 from pg_trigger t
                       where t.tgrelid = 'public.profiles'::regclass
-                        and t.tgname = 'trg_profiles_link_guard' and not t.tgisinternal)))
+                        and t.tgname = 'trg_profiles_link_guard' and not t.tgisinternal))),
+  -- 0149's signature is the teacher's own reads and the roll guard. Without
+  -- them the screens fall back to what shipped, so MISSING rather than broken.
+  ('0149_the_gate_the_phone_and_the_bill',
+     'fn_my_checkin, fn_my_staff_attendance, fn_switch_off_checkin, staff_checkin_codes.pin, trg_enrollments_roll_guard',
+     (select to_regprocedure('public.fn_my_checkin()') is not null
+         and to_regprocedure('public.fn_my_staff_attendance(date,date)') is not null
+         and to_regprocedure('public.fn_switch_off_checkin()') is not null
+         and exists (select 1 from information_schema.columns
+                      where table_schema = 'public' and table_name = 'staff_checkin_codes'
+                        and column_name = 'pin')
+         and exists (select 1 from pg_trigger t
+                      where t.tgrelid = 'public.enrollments'::regclass
+                        and t.tgname = 'trg_enrollments_roll_guard' and not t.tgisinternal)))
 )
 select migration,
        object                                   as looked_for,
