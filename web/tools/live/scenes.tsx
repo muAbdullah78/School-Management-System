@@ -24,6 +24,7 @@ import { STEP2_SCENES } from './scenes2'
 import { STEP3_SCENES } from './scenes3'
 import { STEP4_SCENES } from './scenes4'
 import { EXAM_SCENES } from './scenes5'
+import { DUES_SCENES } from './scenes6'
 
 export interface Scene {
   title: string
@@ -35,6 +36,8 @@ export interface Scene {
   errors?: Record<string, string>
   /** RPC name -> what it answers, for a write the scene shows succeeding. */
   data?: Record<string, unknown>
+  /** localStorage keys written before the scene mounts: a sitting being resumed. */
+  storage?: Record<string, string>
 }
 
 const OWNER: Profile = { ...DEMO_PROFILE, role: 'owner' }
@@ -185,6 +188,7 @@ export const SCENES: Record<string, Scene> = {
   ...STEP3_SCENES,
   ...STEP4_SCENES,
   ...EXAM_SCENES,
+  ...DUES_SCENES,
   settings: {
     title: 'Settings, Year Rollover',
     node: <SettingsPage />,
@@ -370,5 +374,35 @@ export const SCENES: Record<string, Scene> = {
       [['dashboardSummary'], summary],
       [['draftStudentsSummary'], NO_DRAFTS],
     ],
+  },
+}
+
+/* The child's Fees tab with dues typed in from the school's paper: two months
+   from before this school year, an unpaid admission fee, and an opening
+   balance a CSV import brought in. Opened on the Fees tab, the way Rapid entry
+   links to it when a due did not go in. */
+SCENES['dues-profile'] = {
+  ...SCENES.profile,
+  title: 'A student profile, previous dues',
+  profile: OWNER,
+  route: `/students?student=${AYESHA.id}&tab=fees`,
+  data: {
+    fn_student_dues: {
+      outstanding: 13_500,
+      dues: [
+        { invoice_id: 'd1', kind: 'month', carried: true, label: null, period_month: '2026-02-01', due_date: '2026-02-28',
+          voucher_code: 'VQ7K2M', charge: 3000, paid: 0, outstanding: 3000, status: 'issued',
+          entered_on: '2026-10-02T06:10:00Z', entered_by: 'Rashid Ahmed' },
+        { invoice_id: 'd2', kind: 'month', carried: true, label: null, period_month: '2026-03-01', due_date: '2026-03-31',
+          voucher_code: 'VQ7K2N', charge: 3000, paid: 1500, outstanding: 1500, status: 'partial',
+          entered_on: '2026-10-02T06:10:00Z', entered_by: 'Rashid Ahmed' },
+        { invoice_id: 'd3', kind: 'admission', carried: true, label: 'Admission fee', period_month: null, due_date: '2026-10-02',
+          voucher_code: 'VQ7K2P', charge: 5000, paid: 0, outstanding: 5000, status: 'issued',
+          entered_on: '2026-10-02T06:10:00Z', entered_by: 'Rashid Ahmed' },
+        { invoice_id: 'd4', kind: 'opening', carried: false, label: 'Opening balance', period_month: null, due_date: null,
+          voucher_code: 'VQ7K2Q', charge: 4000, paid: 0, outstanding: 4000, status: 'issued',
+          entered_on: '2026-09-20T08:00:00Z', entered_by: 'Rashid Ahmed' },
+      ],
+    },
   },
 }

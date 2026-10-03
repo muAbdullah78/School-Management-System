@@ -13,9 +13,10 @@ import {
   getStudentFeeState, endDiscount, editDiscount,
   type StudentDiscount,
   recordPayment, billStudentMonth, deferInvoice, undoDefer, addAdjustment, voidInvoice,
-  getStudentLedger, getDepositHeld,
+  getStudentLedger, getDepositHeld, getStudentDues,
   getStudentMonthTests, getStudentMonthAttendance, getStudentMarksTrend, getCurrentSession,
   type StudentProfile as Student, type EnrollmentInfo, type InvoiceBalance, type MonthTestRow,
+  type PaymentApplied,
 } from '@/lib/db'
 import { C, MeterRing, StackBar, TrendLine, attendanceParts } from '@/components/viz'
 import { canAccess } from '@/navigation'
@@ -25,7 +26,7 @@ import {
   ATTENDANCE_STATUSES, ATTENDANCE_SHORT, DISCOUNT_TYPES, RELATIONS,
 } from '@/lib/constants'
 import { fmtPKR, fmtDate, fmtMonth, waLink, todayISO, grLabel } from '@/lib/format'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/auth/AuthProvider'
 import { APPROVER_ROLES, ADMIN_ROLES, canWrite, type Role } from '@/auth/roles'
 import { ObserverNotice } from '@/components/ObserverNotice'
@@ -39,6 +40,7 @@ import { LoginFunctionWarning } from '@/components/LoginFunctionWarning'
 import { DeleteRecord } from '@/components/DeleteRecord'
 import { FeeStatement, FeeStatementDoc } from '@/components/FeeStatement'
 import { missingFields } from './rdeShared'
+import { DuesCard } from './DuesCard'
 import { studentDeleteBlockers, deleteStudent } from '@/lib/db'
 import { ParentLink } from '@/components/ParentLink'
 import { buttonClass } from '@/components/ui'
@@ -106,7 +108,10 @@ export function StudentProfile({ studentId, onBack, onOpen }: { studentId: strin
   const guardians = useQuery({ queryKey: ['guardians', studentId], queryFn: () => getGuardians(studentId) })
   const session = useQuery({ queryKey: ['currentSession'], queryFn: getCurrentSession })
 
-  const [tab, setTab] = useState<Tab>('Overview')
+  // ?tab=fees opens straight on the money: Rapid entry links here when a
+  // child was saved but a due or a payment did not go in.
+  const [params] = useSearchParams()
+  const [tab, setTab] = useState<Tab>(() => (params.get('tab') === 'fees' ? 'Fees' : 'Overview'))
 
   if (student.isLoading) return <p className="text-sm text-slate-500">Loading…</p>
   if (student.isError) return <p className="text-sm text-red-600">{(student.error as Error).message}</p>
@@ -1284,6 +1289,10 @@ function FeesTab({
   // Deposits screen, on the balance sheet as a liability, and on neither the
   // child's page nor anything the family could open.
   const deposit = useQuery({ queryKey: ['depositHeld', studentId], queryFn: () => getDepositHeld(studentId) })
+  // The dues the month strip cannot show (0153). Read here as well as in the
+  // card below (one fetch, shared by key) so "Mark paid" can warn that the
+  // money will go to them first.
+  const dues = useQuery({ queryKey: ['studentDues', studentId], queryFn: () => getStudentDues(studentId) })
 
   const [receipt, setReceipt] = useState<ReceiptData | null>(null)
   const feeSchoolName = useSchoolName()
@@ -1332,6 +1341,7 @@ function FeesTab({
     qc.invalidateQueries({ queryKey: ['studentFeeState', studentId] })
     qc.invalidateQueries({ queryKey: ['ledger', studentId] })
     qc.invalidateQueries({ queryKey: ['depositHeld', studentId] })
+    qc.invalidateQueries({ queryKey: ['studentDues', studentId] })
     // The counter reads the same child through fn_family_sheet. Leaving it
     // stale is how a clerk takes a payment here and finds the family sheet
     // still asking for it.
@@ -1385,8 +1395,16 @@ function FeesTab({
   const bal = balance.data ?? 0
   const [owedOnly, setOwedOnly] = useState(false)
   const owedRows = rows.filter((r) => r.due > 0 && r.state !== 'paid' && r.state !== 'free')
+  /* A payment is allocated to the oldest charge first, and a charge with no
+     month before any month. So a due from before, whether or not the strip can
+     show it, takes the money ahead of the month the clerk pressed. */
+  const duesOwedFirst = (dues.data?.dues ?? []).some((d) =>
+    d.outstanding > 0
+    // rows run newest first, so the strip's first month is the last row.
+    && (d.period_month === null || ym(d.period_month) < (rows[rows.length - 1]?.key ?? '9999-99')))
   const hasOlderUnpaid = (fromKey: string) =>
-    rows.some((r) => r.key < fromKey && (r.state === 'unpaid' || r.state === 'partial' || r.state === 'unbilled' || r.state === 'deferred'))
+    duesOwedFirst
+    || rows.some((r) => r.key < fromKey && (r.state === 'unpaid' || r.state === 'partial' || r.state === 'unbilled' || r.state === 'deferred'))
 
   // Ended, never deleted: the months it did cover keep it, which is what makes
   // an old statement still add up.
@@ -1439,7 +1457,7 @@ function FeesTab({
             {balance.isLoading ? '…' : bal === 0 ? 'Paid up' : fmtPKR(Math.abs(bal))}
           </div>
           <p className="mt-0.5 text-sm text-slate-500">
-            {bal > 0 ? 'owed, every month together' : bal < 0 ? 'paid in advance, taken off the next challan' : 'Nothing is owed today.'}
+            {bal > 0 ? 'owed in all, months and other dues together' : bal < 0 ? 'paid in advance, taken off the next challan' : 'Nothing is owed today.'}
           </p>
           {(deposit.data ?? 0) > 0 && (
             <p className="mt-2 rounded-lg bg-money-50 px-2.5 py-1.5 text-xs text-money-800 ring-1 ring-money-100">
@@ -1500,6 +1518,12 @@ function FeesTab({
                     {' · '}{fmtPKR(fs.arrears_amount)}
                   </span>
                 )}
+                {(fs.other_dues_amount ?? 0) > 0 && (
+                  <span className="rounded-full bg-due-50 px-2.5 py-0.5 text-xs font-medium text-due-800 ring-1 ring-due-200">
+                    {fs.other_dues_count} other due{fs.other_dues_count === 1 ? '' : 's'}
+                    {' · '}{fmtPKR(fs.other_dues_amount)}
+                  </span>
+                )}
                 {fs.family_credit > 0 && (
                   <span className="rounded-full bg-info-50 px-2.5 py-0.5 text-xs font-medium text-info-800 ring-1 ring-info-200">
                     {fmtPKR(fs.family_credit)} held in advance for this family
@@ -1551,6 +1575,16 @@ function FeesTab({
       </section>
 
       <YearAtAGlance rows={rows} sessionName={enrollment.session_name} sessionEnds={enrollment.session_ends} />
+
+      <DuesCard
+        studentId={studentId} studentName={student.full_name}
+        sessionStart={enrollment.session_starts ?? null}
+        monthlyFee={net > 0 ? net : grossFee > 0 ? grossFee : null}
+        canRecord={canApprove && canCollect}
+        onChanged={refresh}
+        onPrint={(id) => { void printOne(id) }}
+        onCancel={(c) => setCancelCharge(c)}
+      />
 
       {/* Discount strip */}
       <div className="rounded-2xl bg-white p-4 shadow-card ring-1 ring-slate-200/80">
@@ -2029,7 +2063,9 @@ function MonthLine({
   const due = row.invoice?.due_date ?? null
   const late = (row.state === 'unpaid' || row.state === 'partial') && !!due && due < todayISO()
   const paidShare = row.charge > 0 ? Math.min(Math.max((row.charge - row.due) / row.charge, 0), 1) : 0
-  const pill = 'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ring-1'
+  // Wraps on a phone: "Overdue since 25 Sept 2026 · Rs 3,000" on one line
+  // was wider than a 320px screen and dragged the whole page sideways.
+  const pill = 'inline-flex max-w-full items-center gap-1.5 rounded-2xl px-2.5 py-0.5 text-xs font-medium ring-1 sm:whitespace-nowrap sm:rounded-full'
   // Buttons a thumb can hit on a phone (36px), the old compact size from sm up.
   const btn = 'rounded-lg px-3 py-2 text-xs sm:rounded sm:px-2.5 sm:py-1'
   /* On a phone a month with money on it gets two lines, the month and where it
@@ -2119,6 +2155,19 @@ function MonthLine({
   )
 }
 
+/**
+ * What a payment actually paid, for the receipt. Allocation goes to the oldest
+ * charge first, and a due with no month before any month, so "Fee · October"
+ * on the note is not always where the money went. The receipt says where.
+ */
+function coversOf(applied: PaymentApplied[] | undefined): { label: string; amount: number }[] | undefined {
+  if (!applied || applied.length === 0) return undefined
+  return applied.map((a) => ({
+    label: a.period_month ? fmtMonth(a.period_month) : (a.label || 'Other charge'),
+    amount: Number(a.amount),
+  }))
+}
+
 function PaymentModal({
   studentId, studentName, grNo, enrollmentId, billMonthISO, defaultAmount, defaultNote,
   olderUnpaidWarning, onClose, onDone,
@@ -2145,6 +2194,7 @@ function PaymentModal({
         receiptNo: res.receipt_no, studentName, grNo, amount: amt,
         method: PAYMENT_METHODS.find((x) => x.value === method)?.label ?? method,
         balanceAfter: bal, note: note || null,
+        covers: coversOf(res.applied),
       }
     },
     onSuccess: (r) => onDone(r),
@@ -2172,7 +2222,8 @@ function PaymentModal({
       </label>
       {olderUnpaidWarning && !pending && (
         <p className="mt-3 rounded bg-amber-50 p-2 text-xs text-amber-700">
-          Older months are still unpaid. This payment clears the oldest dues first (standard accounting).
+          Older months or previous dues are still unpaid. This payment clears those first, oldest
+          first, and the receipt lists exactly what it paid.
         </p>
       )}
       {m.isError && <p className="mt-2 text-sm text-red-600">{(m.error as Error).message}</p>}
@@ -2206,6 +2257,7 @@ function SettleModal({
           receiptNo: res.receipt_no, studentName, grNo, amount: balance,
           method: PAYMENT_METHODS.find((x) => x.value === method)?.label ?? method,
           balanceAfter: bal, note: 'Full settlement',
+          covers: coversOf(res.applied),
         }
       }
       await addAdjustment(studentId, -balance, reason.trim())

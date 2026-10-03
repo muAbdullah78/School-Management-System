@@ -15,8 +15,9 @@
  */
 import type { ReactNode } from 'react'
 
-export function monthLabel(m: string | null): string {
-  if (!m) return 'Other charges'
+/** The month, or for a charge with no month, what it is for. */
+export function monthLabel(m: string | null, label?: string | null): string {
+  if (!m) return label || 'Other charges'
   const d = new Date(m.length === 10 ? `${m}T00:00:00` : m)
   return isNaN(d.getTime())
     ? m

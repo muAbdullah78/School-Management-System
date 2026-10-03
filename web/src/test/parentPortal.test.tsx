@@ -140,7 +140,7 @@ describe('the fees tab', () => {
   it('a Rs 0 challan says No fee, not a green Paid', async () => {
     open({ rpc: RPC })
     expect(await screen.findByText('All paid up')).toBeTruthy()
-    const challans = screen.getByText('Monthly challans').closest('section')!
+    const challans = screen.getByText('Challans and dues').closest('section')!
     expect(within(challans).getByText('No fee')).toBeTruthy()
     expect(within(challans).queryByText('Paid')).toBeNull()
   })

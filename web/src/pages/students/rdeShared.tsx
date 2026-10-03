@@ -11,8 +11,16 @@
  */
 import { useRef, useState, useEffect } from 'react'
 
-export const FIELD =
-  'w-full rounded border border-slate-300 px-2.5 py-1.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
+/**
+ * A box WITHOUT a width, for the ones that need their own. `${FIELD} w-40`
+ * never worked: both are width utilities, Tailwind emits .w-full after .w-40,
+ * and the later rule wins, so the concession boxes and every month box were
+ * stretched across the card.
+ */
+export const FIELD_BOX =
+  'rounded border border-slate-300 bg-white px-2.5 py-1.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
+
+export const FIELD = `w-full ${FIELD_BOX}`
 
 /** "2026-09-16" from three parts, or null while any of them is still short. */
 export function partsToISO(d: string, m: string, y: string): string | null {

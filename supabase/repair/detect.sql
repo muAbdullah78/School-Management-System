@@ -1356,7 +1356,17 @@ with sig(migration, object, present) as (values
                       where t.tgrelid = 'public.mark_entries'::regclass
                         and t.tgname = 'trg_marks_released_hold' and not t.tgisinternal)
          and to_regprocedure('public.fn_save_exam_term(uuid,uuid,text,text,date,date,boolean)') is not null
-         and to_regprocedure('public.fn_exam_term_overview(uuid)') is not null))
+         and to_regprocedure('public.fn_exam_term_overview(uuid)') is not null)),
+  -- 0153's signature is the dues writer and reader and the column that marks a
+  -- typed-in due. Without them no previous due of any kind can be recorded.
+  ('0153_what_was_owed_before',
+     'fn_record_dues, fn_student_dues, invoices.carried_kind, rde_saves',
+     (select to_regprocedure('public.fn_record_dues(uuid,jsonb)') is not null
+         and to_regprocedure('public.fn_student_dues(uuid)') is not null
+         and to_regclass('public.rde_saves') is not null
+         and exists (select 1 from information_schema.columns
+                      where table_schema = 'public' and table_name = 'invoices'
+                        and column_name = 'carried_kind')))
 )
 select migration,
        object                                   as looked_for,

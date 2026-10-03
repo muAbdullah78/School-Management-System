@@ -75,7 +75,11 @@ describe('My attendance on a laptop', () => {
   it('is a centred card with a width cap, and each day is at most a 2.75rem square', async () => {
     open(createElement(MyClass), { rpc: { fn_my_checkin: ME_BASE, fn_my_staff_attendance: [], fn_my_assignments: [] } },
       as('class_teacher', 'st-1'))
-    const first = await screen.findByLabelText(`${todayISO().slice(0, 7)}-01: Not recorded`)
+    // The 1st can be on screen twice in the first week of a month (this week's
+    // strip and the month), so the month's own square is picked out.
+    const firsts = await screen.findAllByLabelText(`${todayISO().slice(0, 7)}-01: Not recorded`)
+    const first = firsts.find((e) => e.className.includes('aspect-square'))!
+    expect(first).toBeTruthy()
     expect(first.className).toContain('aspect-square')
     const grid = first.parentElement!
     expect(grid.className).toContain('grid-cols-[repeat(7,minmax(0,2.75rem))]')

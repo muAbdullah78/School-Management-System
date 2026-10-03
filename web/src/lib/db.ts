@@ -1,5 +1,6 @@
 import { requireSupabase } from './supabase'
 import { isMissingFunction } from './notInstalled'
+import type { DueInput, DueResult, RecordDuesResult, DueKind } from './dues'
 
 // ---- Types (hand-written; kept in sync with supabase/migrations) ----
 export interface SessionRow {
@@ -52,6 +53,8 @@ export interface PaymentApplied {
   student_name: string
   gr_no: string | null
   period_month: string | null
+  /** What a charge with no month is for (0153). */
+  label?: string | null
   amount: number
 }
 
@@ -551,7 +554,8 @@ export interface ArrearsRow {
   student_id: string; gr_no: string; full_name: string
   class_name: string; section_name: string | null; roll_no: string | null
   family_id: string | null; family_head: string | null; phone: string | null
-  months_owed: number; oldest_month: string; amount: number
+  /** Months only. A child owing only named dues (0153) has 0 and no oldest month. */
+  months_owed: number; oldest_month: string | null; amount: number
 }
 /** Owes for a month BEFORE this one. September is running, so nobody is chased
  *  for September; the old Defaulters screen meant "owes anything" and so fired
@@ -564,7 +568,7 @@ export async function listArrears(sessionId: string): Promise<ArrearsRow[]> {
     student_id: r.student_id, gr_no: r.gr_no, full_name: r.full_name,
     class_name: r.class_name, section_name: r.section_name ?? null, roll_no: r.roll_no ?? null,
     family_id: r.family_id ?? null, family_head: r.family_head ?? null, phone: r.phone ?? null,
-    months_owed: Number(r.months_owed), oldest_month: r.oldest_month, amount: Number(r.amount),
+    months_owed: Number(r.months_owed ?? 0), oldest_month: r.oldest_month ?? null, amount: Number(r.amount),
   }))
 }
 
@@ -573,6 +577,8 @@ export interface StudentFeeState {
   state: 'paid' | 'unpaid' | 'part_paid' | 'not_billed'
   charge: number; paid: number; due: number
   arrears_months: number; arrears_amount: number; arrears_oldest: string | null
+  /** Named dues and an imported opening balance still owed (0153). 0 before bundle 54. */
+  other_dues_count: number; other_dues_amount: number
   balance: number; family_credit: number
 }
 /**
@@ -596,6 +602,8 @@ export async function getStudentFeeState(studentId: string, month?: string | nul
     charge: Number(d.charge), paid: Number(d.paid), due: Number(d.due),
     arrears_months: Number(d.arrears_months), arrears_amount: Number(d.arrears_amount),
     arrears_oldest: d.arrears_oldest ?? null,
+    other_dues_count: Number(d.other_dues_count ?? 0),
+    other_dues_amount: Number(d.other_dues_amount ?? 0),
     balance: Number(d.balance), family_credit: Number(d.family_credit),
   }
 }
@@ -4545,9 +4553,13 @@ export interface RdeRow {
   bill_this_month?: boolean
   /** The money for this month is already in the drawer. */
   paid_this_month?: boolean
+  /** Part of this month's fee collected: this much, not the whole fee. */
+  paid_amount?: number | null
   discount?: { type: string; amount: number; is_percent: boolean; reason?: string | null } | null
-  /** Months that have already finished and are still owed, by name. */
+  /** 0142's shape, still read by the server: months owed as {month, amount}. */
   arrears?: { month: string; amount: number }[] | null
+  /** What the child already owed: months of fee and named dues (0153). */
+  dues?: DueInput[] | null
 }
 
 export interface RdeResultRow {
@@ -4559,6 +4571,13 @@ export interface RdeResultRow {
   full_name: string
   is_draft?: boolean
   arrears_months?: number
+  /** How many dues were recorded, and for how much (0153). */
+  dues_recorded?: number
+  dues_total?: number
+  /** Every due sent, with what happened to it. */
+  dues?: DueResult[]
+  /** What was recorded as already paid for this month. */
+  paid_amount?: number | null
   message?: string | null
 }
 
@@ -4567,6 +4586,8 @@ export interface RdeResult {
   failed: number
   drafts: number
   results: RdeResultRow[]
+  /** The server had already answered this request and sent that answer again. */
+  replayed?: boolean
 }
 
 /**
@@ -4581,6 +4602,12 @@ export interface RdeResult {
  */
 export async function rdeAddStudents(input: {
   sessionId: string; classId: string; sectionId?: string | null; rows: RdeRow[]
+  /**
+   * The same id for a retry of the same rows. If the first save reached the
+   * server and only its answer was lost, the second gets that answer instead of
+   * admitting everybody again (0153).
+   */
+  requestId?: string | null
 }): Promise<RdeResult> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_rde_add_students', {
@@ -4588,6 +4615,7 @@ export async function rdeAddStudents(input: {
       session_id: input.sessionId,
       class_id: input.classId,
       section_id: input.sectionId || null,
+      request_id: input.requestId || null,
       rows: input.rows,
     },
   })
@@ -4598,6 +4626,75 @@ export async function rdeAddStudents(input: {
     failed: Number(d.failed ?? 0),
     drafts: Number(d.drafts ?? 0),
     results: (d.results ?? []) as RdeResultRow[],
+    replayed: d.replayed === true,
+  }
+}
+
+/** A request id for a save, from the browser's own random source where it has one. */
+export function newRequestId(): string {
+  const c = (globalThis as { crypto?: Crypto }).crypto
+  if (c && typeof c.randomUUID === 'function') return c.randomUUID()
+  const b = new Uint8Array(16)
+  if (c && typeof c.getRandomValues === 'function') c.getRandomValues(b)
+  else for (let i = 0; i < 16; i++) b[i] = Math.floor(Math.random() * 256)
+  b[6] = (b[6] & 0x0f) | 0x40
+  b[8] = (b[8] & 0x3f) | 0x80
+  const h = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('')
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`
+}
+
+/**
+ * Dues for a child already on the software (0153): months of fee and named
+ * dues, each answered on its own. A school with bundle 54 not yet applied gets
+ * the database's "could not find the function", which the caller turns into a
+ * sentence with isMissingFunction.
+ */
+export async function recordDues(studentId: string, dues: DueInput[]): Promise<RecordDuesResult> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_record_dues', {
+    p_student_id: studentId, p_dues: dues,
+  })
+  if (error) throw new Error(error.message)
+  const d = (data ?? {}) as any
+  return {
+    recorded: Number(d.recorded ?? 0),
+    months: Number(d.months ?? 0),
+    total: Number(d.total ?? 0),
+    items: (d.items ?? []) as DueResult[],
+  }
+}
+
+/** One charge the month strip on a child's page cannot show. */
+export interface StudentDue {
+  invoice_id: string
+  /** carried_kind for a due typed in by hand; 'opening' for the CSV opening balance; else 'one_off'. */
+  kind: DueKind | 'opening' | 'one_off'
+  carried: boolean
+  label: string | null
+  period_month: string | null
+  due_date: string | null
+  voucher_code: string | null
+  charge: number
+  paid: number
+  outstanding: number
+  status: string
+  entered_on: string | null
+  entered_by: string | null
+}
+
+export async function getStudentDues(studentId: string): Promise<{ dues: StudentDue[]; outstanding: number }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_student_dues', { p_student_id: studentId })
+  if (error) throw new Error(error.message)
+  const d = (data ?? {}) as any
+  return {
+    dues: ((d.dues ?? []) as any[]).map((x) => ({
+      ...x,
+      charge: Number(x.charge ?? 0),
+      paid: Number(x.paid ?? 0),
+      outstanding: Number(x.outstanding ?? 0),
+    })) as StudentDue[],
+    outstanding: Number(d.outstanding ?? 0),
   }
 }
 
@@ -4960,6 +5057,10 @@ export interface FamilyInvoice {
   allocated: number
   outstanding: number
   status: string
+  /** What a charge with no month is for: "Admission fee", "Picnic" (0153). */
+  label?: string | null
+  /** Typed in from the school's earlier records rather than billed here. */
+  carried?: boolean
 }
 
 /** One line of a concession: what kind, at what rate, worth how much, and why. */
@@ -5006,6 +5107,9 @@ export interface FamilyChild {
   arrears_months: number
   arrears_amount: number
   arrears_oldest: string | null
+  /** Named dues and an opening balance still owed, which arrears does not count (0153). */
+  other_dues_count?: number
+  other_dues_amount?: number
 }
 
 export interface FamilySheet {
@@ -5115,6 +5219,10 @@ export interface PortalInvoice {
   paid: number
   outstanding: number
   status: string
+  /** What a charge with no month is for: "Admission fee", "Stationery" (0153). */
+  label?: string | null
+  /** Carried in from the school's earlier records. */
+  carried?: boolean
 }
 
 export interface PortalReceipt {
