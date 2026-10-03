@@ -15,6 +15,7 @@ import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest'
 import { createElement } from 'react'
 import { cleanup, render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MemoryRouter } from 'react-router-dom'
 import { fakeSupabase, type FakeOptions } from './fakeSupabase'
 import { BulkClassAdd, parseLooseDate } from '@/pages/students/BulkClassAdd'
 import { partsToISO, missingFields, finishedMonths } from '@/pages/students/rdeShared'
@@ -35,12 +36,14 @@ function mountGrid(opts: FakeOptions = {}) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
   })
+  // In a router because a saved child's name links to their page.
   return render(
-    createElement(QueryClientProvider, { client: qc },
-      createElement(BulkClassAdd, {
-        sessionId: 'sess-1', sessionStart: '2026-06-01', classId: 'cls-1', sectionId: 'sec-1',
-        className: 'Class 1', sectionName: 'A',
-      })),
+    createElement(MemoryRouter, null,
+      createElement(QueryClientProvider, { client: qc },
+        createElement(BulkClassAdd, {
+          sessionId: 'sess-1', sessionStart: '2026-06-01', classId: 'cls-1', sectionId: 'sec-1',
+          className: 'Class 1', sectionName: 'A',
+        }))),
   )
 }
 

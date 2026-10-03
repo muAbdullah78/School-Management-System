@@ -183,6 +183,36 @@ describe('admitting', () => {
     await waitFor(() => expect((document.querySelector('select[name=class_id]') as HTMLSelectElement).value).toBe('c5'))
   })
 
+  it('an admission fee owed is recorded as a due on the child, not left to paper', async () => {
+    const o = school()
+    o.rpc!.fn_record_dues = { recorded: 1, months: 0, total: 5000, items: [
+      { i: 1, kind: 'admission', month: null, label: 'Admission fee', amount: 5000, status: 'recorded', message: null, invoice_id: 'inv-1' },
+    ] }
+    open(o)
+    await waitFor(() => expect(name()).toBeTruthy())
+    fireEvent.change(name(), { target: { value: 'Zainab Aslam' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Go to Class & fee' }))
+    const cls = await waitFor(() => {
+      const el = document.querySelector('select[name=class_id]') as HTMLSelectElement
+      expect(el.options.length).toBeGreaterThan(1)
+      return el
+    })
+    fireEvent.change(cls, { target: { value: 'c5' } })
+    // Ticking "owed" switches "paying now" off: one fee, never both.
+    fireEvent.click(document.querySelector('input[name=admissionFeeOn]')!)
+    fireEvent.click(document.querySelector('input[name=admissionFeeOwed]')!)
+    expect((document.querySelector('input[name=admissionFeeOn]') as HTMLInputElement).checked).toBe(false)
+    fireEvent.change(document.querySelector('input[name=admissionFeeOwedAmount]')!, { target: { value: '5,000' } })
+    fireEvent.click(screen.getByRole('button', { name: /Review Check, then admit/ }))
+    expect(await screen.findByText(/Rs 5,000 owed, paid later/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /Admit student/ }))
+    await screen.findByText('1318')
+    const rec = (o.calls ?? []).find((c) => c.name === 'fn_record_dues')
+    expect(rec?.args).toEqual({ p_student_id: 'st-new', p_dues: [{ kind: 'admission', amount: 5000 }] })
+    expect(admits(o)[0].args.p).toMatchObject({ admission_fee: { charged: false } })
+    expect(screen.getByText(/admission fee owed/)).toBeTruthy()
+  })
+
   it('a refused admission says why and keeps everything typed', async () => {
     const o = school()
     o.rpcErrors = { fn_admit_student: 'GR number 1318 is already used by another student' }

@@ -28,7 +28,8 @@ import { fmtPKR } from '@/lib/format'
 import { Card, CardTitle, inputClass } from '@/components/ui'
 import { C, ChartCard, HBars, MiniTable, StackBar, type Segment } from '@/components/viz'
 
-function monthLabel(iso: string): string {
+function monthLabel(iso: string | null): string {
+  if (!iso) return '-'
   const [y, m] = iso.split('-').map(Number)
   return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-GB', {
     month: 'short', year: 'numeric', timeZone: 'UTC',
@@ -89,8 +90,9 @@ export function Arrears() {
       <Card>
         <CardTitle>Arrears</CardTitle>
         <p className="-mt-2 mb-1 text-sm text-slate-500">
-          Pupils who owe for a month that has already finished. Nobody is listed for the month
-          still in progress.
+          Pupils who owe for a month that has already finished, or owe a due brought in from
+          before (an admission fee, stationery, an opening balance). Nobody is listed for the
+          month still in progress.
         </p>
 
         {!session.data && !session.isLoading ? (
@@ -105,7 +107,7 @@ export function Arrears() {
           <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="rounded-2xl border border-due-200 bg-due-50 px-4 py-3 text-due-900">
               <div className="text-2xl font-semibold tabular-nums">{fmtPKR(total)}</div>
-              <div className="text-sm font-medium">Owed from past months</div>
+              <div className="text-sm font-medium">Owed from past months and earlier dues</div>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900">
               <div className="text-2xl font-semibold tabular-nums">{all.length}</div>
@@ -164,8 +166,9 @@ function ArrearLine({ r }: { r: ArrearsRow }) {
   const wa = whatsappLink(
     r.phone,
     `Assalam-o-Alaikum${r.family_head ? ' ' + r.family_head : ''}. A balance of `
-    + `Rs ${r.amount.toLocaleString('en-PK')} is outstanding for ${r.full_name}, `
-    + `from ${monthLabel(r.oldest_month)}. Kindly clear it at the school office.`,
+    + `Rs ${r.amount.toLocaleString('en-PK')} is outstanding for ${r.full_name}`
+    + (r.oldest_month ? `, from ${monthLabel(r.oldest_month)}` : '')
+    + '. Kindly clear it at the school office.',
   )
   const deep = r.months_owed >= 3
   return (
@@ -180,9 +183,9 @@ function ArrearLine({ r }: { r: ArrearsRow }) {
       </div>
       <div className="w-28 shrink-0 text-right text-xs text-slate-500">
         <span className={`inline-flex rounded-full px-2 py-0.5 font-medium ring-1 ${deep ? 'bg-danger-50 text-danger-700 ring-danger-100' : 'bg-due-50 text-due-800 ring-due-100'}`}>
-          {r.months_owed} month{r.months_owed === 1 ? '' : 's'}
+          {r.months_owed > 0 ? `${r.months_owed} month${r.months_owed === 1 ? '' : 's'}` : 'Other dues'}
         </span>
-        <div className="mt-0.5">since {monthLabel(r.oldest_month)}</div>
+        {r.oldest_month && <div className="mt-0.5">since {monthLabel(r.oldest_month)}</div>}
       </div>
       <span className="w-24 text-right text-sm font-semibold tabular-nums text-slate-900">{fmtPKR(r.amount)}</span>
       {wa ? (
@@ -224,7 +227,7 @@ function HowDeep({ rows }: { rows: ArrearsRow[] }) {
   const parts: Segment[] = [
     // A light-to-dark step through the app's own amber, then red for the depth
     // a school calls about. No new hue: orange would be a fifth status colour.
-    { key: '1', label: 'One month', value: one.length, color: '#fcd34d' },
+    { key: '1', label: 'One month, or other dues only', value: one.length, color: '#fcd34d' },
     { key: '2', label: 'Two months', value: two.length, color: '#d97706' },
     { key: '3', label: 'Three or more', value: three.length, color: C.bad },
   ]

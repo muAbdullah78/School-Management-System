@@ -143,7 +143,7 @@ export function PortalStatement({
             {fees.invoices.map((inv, i) => (
               <tr key={i}>
                 <td className="py-1.5 pr-2 align-top">
-                  {monthName(inv.period_month)}
+                  {monthName(inv.period_month, inv.label)}
                   {inv.due_date && (
                     <span className="block text-[11px] text-slate-500">
                       due {fmtDate(inv.due_date)}
@@ -344,8 +344,8 @@ function Box({ label, value, strong }: { label: string; value: string; strong?: 
 
 /** "Other charges" is the honest label for an invoice with no month. An
  *  admission fee or a one-off, which is not a monthly challan at all. */
-function monthName(m: string | null): string {
-  if (!m) return 'Other charges'
+function monthName(m: string | null, label?: string | null): string {
+  if (!m) return label || 'Other charges'
   const d = new Date(m.length === 10 ? `${m}T00:00:00` : m)
   return isNaN(d.getTime())
     ? '-'

@@ -5,9 +5,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/auth/AuthProvider'
 import { canAccess } from '@/navigation'
 import {
-  getCurrentSession, listClasses, listSections, admitStudent, searchStudentsForLink,
+  getCurrentSession, listClasses, listSections, admitStudent, searchStudentsForLink, recordDues,
   type AdmitInput, type AdmitResult, type LinkSearchRow,
 } from '@/lib/db'
+import { parseAmount } from '@/lib/dues'
 import { GENDERS, RELATIONS } from '@/lib/constants'
 import { todayISO, fmtPKR, fmtDate } from '@/lib/format'
 import { PageHeader, inputClass, buttonClass } from '@/components/ui'
@@ -64,8 +65,19 @@ const BLANK = {
   links: [] as LinkedRel[],
   admissionFeeOn: false,
   admissionFeeAmount: '',
+  /** 0153. Charged now and paid later: recorded as a due on the child's account. */
+  admissionFeeOwed: false,
+  admissionFeeOwedAmount: '',
 }
 type Form = typeof BLANK
+
+/** The admission, plus what happened to an admission fee left owing. */
+type AdmitDone = AdmitResult & { owed?: { amount: number; recorded: boolean; message: string | null } }
+
+const owedAmount = (f: Form): number => {
+  const n = parseAmount(f.admissionFeeOwedAmount)
+  return n && !Number.isNaN(n) ? n : 0
+}
 
 interface LinkedRel { id: string; label: string; relation: string }
 
@@ -86,6 +98,9 @@ function blockers(f: Form): { step: number; field: string; text: string }[] {
   if (!f.class_id) out.push({ step: 2, field: 'class_id', text: 'The class they are joining' })
   if (f.admissionFeeOn && !(Number(f.admissionFeeAmount) > 0)) {
     out.push({ step: 2, field: 'admissionFeeAmount', text: 'The admission fee received, or switch the fee off' })
+  }
+  if (f.admissionFeeOwed && !(owedAmount(f) > 0)) {
+    out.push({ step: 2, field: 'admissionFeeOwedAmount', text: 'The admission fee owed, or untick it' })
   }
   return out
 }
@@ -185,7 +200,7 @@ export function AdmissionsPage() {
   }, [step])
 
   const admit = useMutation({
-    mutationFn: (): Promise<AdmitResult> => {
+    mutationFn: async (): Promise<AdmitDone> => {
       const input: AdmitInput = {
         full_name: form.full_name.trim(),
         father_name: form.father_name || undefined,
@@ -211,7 +226,23 @@ export function AdmissionsPage() {
           ? { charged: true, amount: admissionFeeAmount.trim() === '' ? null : Number(admissionFeeAmount) }
           : { charged: false },
       }
-      return admitStudent(input)
+      const res: AdmitDone = await admitStudent(input)
+      /* AN ADMISSION FEE PAID LATER IS OWED, AND NOW RECORDED AS OWED. The old
+         advice was "leave this off and add the charge from Fees", and Fees had
+         no way to add a charge, so an unpaid admission fee lived only on paper.
+         The child is already admitted at this point, so a failure here is a
+         sentence on the next screen, never a lost admission. */
+      if (form.admissionFeeOwed && owedAmount(form) > 0) {
+        const amount = owedAmount(form)
+        try {
+          const r = await recordDues(res.student_id, [{ kind: 'admission', amount }])
+          const bad = r.items.find((x) => x.status !== 'recorded')
+          res.owed = { amount, recorded: r.recorded > 0, message: bad?.message ?? null }
+        } catch (e) {
+          res.owed = { amount, recorded: false, message: (e as Error).message }
+        }
+      }
+      return res
     },
     onSuccess: (res) => {
       setSlip({
@@ -591,12 +622,16 @@ export function AdmissionsPage() {
                       <div className={`rounded-xl p-4 ring-1 ${admissionFeeOn ? 'bg-money-50/60 ring-money-200' : 'bg-slate-50 ring-slate-200/70'}`}>
                         <label className="flex items-start gap-3 text-sm text-slate-800">
                           <input type="checkbox" name="admissionFeeOn" className="mt-0.5 h-4 w-4 accent-emerald-600"
-                            checked={admissionFeeOn} onChange={(e) => set('admissionFeeOn', e.target.checked)} />
+                            checked={admissionFeeOn} onChange={(e) => {
+                              set('admissionFeeOn', e.target.checked)
+                              // Paid now and owed are one fee: never both.
+                              if (e.target.checked) set('admissionFeeOwed', false)
+                            }} />
                           <span>
                             <span className="font-medium">The parent is paying an admission fee now</span>
                             <span className="mt-0.5 block text-xs text-slate-500">
                               Taken in cash: a receipt is printed and the money shows in today’s Day Book. If it
-                              will be paid later, leave this off and add the charge from Fees.
+                              will be paid later, tick the box below instead.
                             </span>
                           </span>
                         </label>
@@ -609,6 +644,36 @@ export function AdmissionsPage() {
                                 <input name="admissionFeeAmount" type="number" min="1" step="1" value={admissionFeeAmount}
                                   onChange={(e) => set('admissionFeeAmount', e.target.value)}
                                   className={`${field(err('admissionFeeAmount'))} pl-9`} placeholder="5000" />
+                              </div>
+                            </Labelled>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className={`rounded-xl p-4 ring-1 ${form.admissionFeeOwed ? 'bg-due-50/60 ring-due-200' : 'bg-slate-50 ring-slate-200/70'}`}>
+                        <label className="flex items-start gap-3 text-sm text-slate-800">
+                          <input type="checkbox" name="admissionFeeOwed" className="mt-0.5 h-4 w-4 accent-amber-600"
+                            checked={form.admissionFeeOwed} onChange={(e) => {
+                              set('admissionFeeOwed', e.target.checked)
+                              if (e.target.checked) set('admissionFeeOn', false)
+                            }} />
+                          <span>
+                            <span className="font-medium">The admission fee is owed, to be paid later</span>
+                            <span className="mt-0.5 block text-xs text-slate-500">
+                              Recorded as a due on the child&rsquo;s account: it is on Arrears, at the fee
+                              counter and on the parent&rsquo;s portal until it is paid. No cash is taken now.
+                            </span>
+                          </span>
+                        </label>
+                        {form.admissionFeeOwed && (
+                          <div className="mt-3 max-w-xs pl-7">
+                            <Labelled label="Amount owed" required
+                              error={err('admissionFeeOwedAmount') ? 'Type the admission fee the family owes.' : undefined}>
+                              <div className="relative">
+                                <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-slate-400">Rs</span>
+                                <input name="admissionFeeOwedAmount" inputMode="decimal" value={form.admissionFeeOwedAmount}
+                                  onChange={(e) => set('admissionFeeOwedAmount', e.target.value)}
+                                  className={`${field(err('admissionFeeOwedAmount'))} pl-9`} placeholder="5000" />
                               </div>
                             </Labelled>
                           </div>
@@ -811,6 +876,7 @@ function Summary({ form, className, sectionName }: { form: Form; className: stri
     ['Phone', form.phone || form.whatsapp || null],
     ['Family', form.father_cnic ? 'Joined by CNIC' : form.links.length ? `${form.links.length} sibling${form.links.length === 1 ? '' : 's'} picked` : null],
     ['Fee now', form.admissionFeeOn && Number(form.admissionFeeAmount) > 0 ? fmtPKR(Number(form.admissionFeeAmount)) : null],
+    ['Fee owed', form.admissionFeeOwed && owedAmount(form) > 0 ? fmtPKR(owedAmount(form)) : null],
   ]
   return (
     <div className="rounded-2xl bg-white p-4 shadow-card ring-1 ring-slate-200/80">
@@ -849,6 +915,8 @@ function WhatHappens({ form, className, sectionName }: { form: Form; className: 
     ...(sibling ? [`Joins ${sibling}’s family, so their fees collect together`]
       : form.father_cnic.trim() ? ['Joins any brother or sister with the same CNIC'] : []),
     ...(fee ? [`${fmtPKR(fee)} is received in cash, with a receipt`] : []),
+    ...(form.admissionFeeOwed && owedAmount(form) > 0
+      ? [`${fmtPKR(owedAmount(form))} admission fee is recorded as owed`] : []),
     'The admission slip is ready to print',
   ]
   return (
@@ -905,7 +973,9 @@ function Review({
         ['Admission date', fmtDate(admissionDate)],
         ['Admission fee', form.admissionFeeOn
           ? (Number(form.admissionFeeAmount) > 0 ? `${fmtPKR(Number(form.admissionFeeAmount))} received now` : 'Amount missing')
-          : 'None today'],
+          : form.admissionFeeOwed
+            ? (owedAmount(form) > 0 ? `${fmtPKR(owedAmount(form))} owed, paid later` : 'Amount missing')
+            : 'None today'],
         ['Notes', v(form.notes)],
       ],
     },
@@ -975,7 +1045,7 @@ function Review({
 function Admitted({
   result, slip, onSlip, onReceipt, onAnother,
 }: {
-  result: AdmitResult
+  result: AdmitDone
   slip: AdmissionSlipData | null
   onSlip: () => void
   onReceipt: () => void
@@ -1006,9 +1076,24 @@ function Admitted({
               {fmtPKR(result.admission_fee_amount)} received · receipt #{result.admission_receipt_no}
             </span>
           )}
+          {result.owed?.recorded && (
+            <span className="rounded-full bg-white/15 px-3 py-1 ring-1 ring-white/25">
+              {fmtPKR(result.owed.amount)} admission fee owed
+            </span>
+          )}
         </div>
       </div>
       <div className="px-6 py-5">
+        {result.owed && !result.owed.recorded && (
+          <p className="mb-3 flex items-start gap-1.5 rounded-lg bg-due-50 px-3 py-2 text-sm text-due-900">
+            <IconAlert className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              Admitted, but the {fmtPKR(result.owed.amount)} admission fee owed was not recorded
+              {result.owed.message ? `: ${result.owed.message}` : '.'} Add it from the child&rsquo;s Fees
+              tab, under Previous dues.
+            </span>
+          </p>
+        )}
         <p className="text-sm text-slate-600">
           Now on the {where || 'class'} register, and ready to be billed with the class under Fees.
         </p>

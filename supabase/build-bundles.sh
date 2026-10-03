@@ -981,6 +981,21 @@ emit supabase/bundles/52_the_teachers_own_day.sql \
 emit supabase/bundles/53_a_result_that_holds_still.sql \
      supabase/migrations/0152*.sql
 
+# --- 54 ----------------------------------------------------------------------
+# What was owed before.
+#
+# A school moving onto the software brings children who already owe, and
+# Rapid entry took only "owed for a month of this year". This takes every
+# kind: months up to three years back, an unpaid admission fee, stationery,
+# books, uniform and anything with a name of its own, for a new child or one
+# already entered. "Already collected this month" now pays this month and not
+# the oldest due, a retried save does not admit the class twice, discounts
+# leave a typed due as typed, and every screen that showed "opening_balance"
+# or "Other charges" names the charge. New columns and functions, replaced
+# functions and a guarded constraint, so re-pasting is a no-op.
+emit supabase/bundles/54_what_was_owed_before.sql \
+     supabase/migrations/0153*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

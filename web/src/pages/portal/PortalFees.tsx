@@ -24,10 +24,12 @@ export function PortalFees({ fees, ledger, today, childFirst, onPrint }: {
   childFirst: string
   onPrint: () => void
 }) {
-  // The oldest challan still owing decides the date on the headline card.
+  // The oldest challan still owing decides the date on the headline card. Only
+  // those that HAVE a date: an opening balance with no due date sorted first as
+  // '' and took the "Overdue since" line away from a September that was late.
   const owing = fees.invoices
-    .filter((i) => i.outstanding > 0)
-    .sort((a, b) => (a.due_date ?? a.period_month ?? '').localeCompare(b.due_date ?? b.period_month ?? ''))
+    .filter((i) => i.outstanding > 0 && !!i.due_date)
+    .sort((a, b) => (a.due_date ?? '').localeCompare(b.due_date ?? ''))
   const oldest = owing[0]
   const overdue = !!oldest?.due_date && oldest.due_date < today
   const otherChildren = fees.family_outstanding - Math.max(fees.balance, 0)
@@ -117,7 +119,7 @@ export function PortalFees({ fees, ledger, today, childFirst, onPrint }: {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start">
         {/* ------------------------------------------------ the challans -- */}
         <PCard>
-          <PTitle icon={<IconWallet />} tone="due">Monthly challans</PTitle>
+          <PTitle icon={<IconWallet />} tone="due">Challans and dues</PTitle>
           {fees.invoices.length === 0 ? (
             <p className="rounded-2xl bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">Nothing billed yet.</p>
           ) : (
@@ -142,7 +144,12 @@ export function PortalFees({ fees, ledger, today, childFirst, onPrint }: {
                       <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${icon.skin}`}>{icon.glyph}</span>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-2">
-                          <p className="min-w-0 text-sm font-semibold text-slate-900">{monthLabel(inv.period_month)}</p>
+                          <p className="min-w-0 text-sm font-semibold text-slate-900">
+                            {monthLabel(inv.period_month, inv.label)}
+                            {inv.carried && (
+                              <span className="ml-1.5 text-xs font-normal text-slate-500">from before</span>
+                            )}
+                          </p>
                           <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ${
                             nothing ? 'bg-white text-slate-600 ring-slate-200'
                               : inv.outstanding <= 0 ? 'bg-money-50 text-money-700 ring-money-200'

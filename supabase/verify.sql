@@ -3472,6 +3472,37 @@ select 'a blank box is not a zero, a released result is locked, a term can be co
        end
 
 union all
+-- 0153. What was owed before. A due the school types in from its paper, of any
+-- kind, for a new child or one already entered, and a payment for this month
+-- that lands on this month.
+select 'previous dues of every kind can be recorded and are left as typed (0153)',
+       case
+         when to_regprocedure('public.fn_save_exam_term(uuid,uuid,text,text,date,date,boolean)') is null
+           then 'note: bundle 53 has not been applied yet, so 0153 is not due'
+         when to_regprocedure('public.fn_record_dues(uuid,jsonb)') is null
+           or to_regprocedure('public.fn_student_dues(uuid)') is null
+           or not exists (select 1 from information_schema.columns
+                           where table_schema = 'public' and table_name = 'invoices'
+                             and column_name = 'carried_kind')
+           then 'FAIL: previous dues cannot be recorded for a child, only months of this year; apply '
+                || 'supabase/bundles/54_what_was_owed_before.sql'
+         when not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                           where n.nspname = 'public' and p.proname = 'fn_rde_add_students'
+                             and p.prosrc like '%fn__record_dues%')
+           then 'FAIL: "already collected this month" still pays the oldest due; apply '
+                || 'supabase/bundles/54_what_was_owed_before.sql'
+         when not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                           where n.nspname = 'public' and p.proname = 'fn_reprice_student'
+                             and p.prosrc like '%carried_kind is null%')
+           or not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                           where n.nspname = 'public' and p.proname = 'fn_bill_month'
+                             and p.prosrc like '%carried_kind is null%')
+           then 'FAIL: a discount can still cut a due typed in from the school''s paper; apply '
+                || 'supabase/bundles/54_what_was_owed_before.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS: no schools yet, as expected'

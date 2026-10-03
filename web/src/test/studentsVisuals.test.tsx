@@ -207,7 +207,12 @@ describe('the profile', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Fees' }))
     expect(await screen.findByText('2026-2027 at a glance')).toBeTruthy()
     expect(await screen.findByRole('button', { name: /^April 2026: Overdue, Rs 3,000/ })).toBeTruthy()
-    expect(screen.getByRole('button', { name: /^September 2026: Due, Rs 3,000/ })).toBeTruthy()
+    // This month, whatever month the suite runs in: it was written in
+    // September and said "September 2026" until October came.
+    const t = todayISO()
+    const thisMonth = new Date(Number(t.slice(0, 4)), Number(t.slice(5, 7)) - 1, 1)
+      .toLocaleDateString('en-PK', { month: 'long', year: 'numeric' })
+    expect(screen.getByRole('button', { name: new RegExp(`^${thisMonth}: Due, Rs 3,000`) })).toBeTruthy()
     // April to September have happened; October to March are still to come.
     expect(screen.getAllByLabelText(/: still to come$/)).toHaveLength(12 - Number(todayISO().slice(5, 7)) + 3)
   })

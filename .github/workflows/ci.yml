@@ -2634,6 +2634,18 @@ jobs:
         # term can be corrected and deleted only when empty.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/a_result_that_holds_still.sql
 
+      - name: What was owed before (0153), previous dues of every kind, this month paid first
+        # Rapid entry took only months of this year, "already collected" paid
+        # the oldest due, one bad month dropped them all and a discount cut a
+        # typed due. Walked as real logins: every kind of due is recorded, last
+        # year's month lands on last year's enrolment, this month is the one the
+        # payment clears, a bad line is refused on its own with a sentence, a
+        # retried save admits once, a misspelt key is refused, an observer and
+        # another school cannot write, Arrears and the fee state count named
+        # dues, a concession or a billing run leaves a typed due as typed, a
+        # holiday can still be skipped, and the labels read as words.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/what_was_owed_before.sql
+
       - name: Student list — does the fast balance equal the real one?
         # fn_student_list recomputes each balance SET-BASED rather than calling
         # student_balance() per row, because per-row is 800 correlated

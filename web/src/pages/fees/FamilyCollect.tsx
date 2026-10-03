@@ -156,8 +156,9 @@ function TodayAtCounter({ onPending }: { onPending: () => void }) {
   )
 }
 
-function monthLabel(m: string | null): string {
-  if (!m) return 'Other charges'
+/** The month, or for a charge with no month, what it is for. */
+function monthLabel(m: string | null, label?: string | null): string {
+  if (!m) return label || 'Other charges'
   const d = new Date(m + (m.length === 10 ? 'T00:00:00' : ''))
   return d.toLocaleDateString('en-PK', { month: 'short', year: 'numeric' })
 }
@@ -311,13 +312,23 @@ function ChildFeeCard({
           {c.arrears_oldest ? `, oldest ${monthLabel(c.arrears_oldest)}` : ''}
         </p>
       )}
+      {/* Named dues are not months, so the line above does not count them: an
+          unpaid admission fee or a stationery bill brought in from the paper
+          register is named here instead of hiding inside the balance. */}
+      {(c.other_dues_amount ?? 0) > 0 && (
+        <p className="mt-1 text-xs text-due-800">
+          {c.other_dues_count} other due{c.other_dues_count === 1 ? '' : 's'} owed
+          {' · '}{money(c.other_dues_amount ?? 0)}
+        </p>
+      )}
 
       {c.invoices.length > 0 && (
         <ul className="mt-2 space-y-1 border-t border-slate-200 pt-2">
           {c.invoices.map((inv) => (
             <li key={inv.invoice_id} className="flex items-center justify-between text-xs">
               <span className="text-slate-500">
-                {monthLabel(inv.period_month)}
+                {monthLabel(inv.period_month, inv.label)}
+                {inv.carried && <span className="ml-1 text-slate-400">(from before)</span>}
                 {inv.status === 'partial' ? (
                   <span className="ml-1.5 text-due-600">
                     part-paid, {money(inv.allocated)} received
@@ -876,7 +887,7 @@ export function FamilyCollect({ onOpenPending }: { onOpenPending?: () => void } 
                           <li key={i} className="flex justify-between gap-3">
                             <span className="min-w-0 truncate">
                               {a.student_name}
-                              {a.gr_no ? ` (${grLabel(a.gr_no)})` : ''} · {monthLabel(a.period_month)}
+                              {a.gr_no ? ` (${grLabel(a.gr_no)})` : ''} · {monthLabel(a.period_month, a.label)}
                             </span>
                             <span className="shrink-0 tabular-nums">{money(a.amount)}</span>
                           </li>
@@ -915,7 +926,7 @@ export function FamilyCollect({ onOpenPending }: { onOpenPending?: () => void } 
                               covers: (result.applied ?? []).map((a) => ({
                                 label:
                                   `${a.student_name}${a.gr_no ? ` (${grLabel(a.gr_no)})` : ''}` +
-                                  ` · ${monthLabel(a.period_month)}`,
+                                  ` · ${monthLabel(a.period_month, a.label)}`,
                                 amount: a.amount,
                               })),
                             })

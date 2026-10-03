@@ -35,6 +35,10 @@ const root = createRoot(document.getElementById('root')!)
 if (!scene) {
   root.render(<p style={{ padding: 24 }}>No scene called {name}. Try: {Object.keys(SCENES).join(', ')}</p>)
 } else {
+  // A sitting being resumed: what the screen would find in this browser.
+  try {
+    for (const [k, v] of Object.entries(scene.storage ?? {})) localStorage.setItem(k, v)
+  } catch { /* blocked storage: the scene opens empty */ }
   window.__liveErrors = scene.errors ?? {}
   window.__liveData = {
     'table:school_settings': { name: 'Al Qalam Public School' },

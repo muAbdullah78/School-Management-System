@@ -152,6 +152,13 @@ describe('money', () => {
     expect(screen.getByText(/75% of September’s challans paid so far/)).toBeTruthy()
   })
 
+  it('dues brought in from paper show before the month is billed, not "Not billed"', async () => {
+    open({ rpc: rpc({ fn_dashboard_summary: { ...SUMMARY, billed_students_month: 0 } }) })
+    await waitFor(() => expect(screen.getByText(/this month not billed yet/)).toBeTruthy())
+    expect(screen.getAllByText('Rs 12,000').length).toBeGreaterThan(0)
+    expect(screen.queryByText('No challans issued this month')).toBeNull()
+  })
+
   it('the dues bars add up to the Outstanding tile', async () => {
     open({ rpc: rpc() })
     await waitFor(() => expect(screen.getByText('Rs 12,000 owed by 3 students')).toBeTruthy())

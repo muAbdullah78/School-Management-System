@@ -70,6 +70,7 @@ export function StudentsPage() {
     const next = new URLSearchParams(params)
     if (m) next.set('add', m); else next.delete('add')
     next.delete('student')
+    next.delete('tab')
     setParams(next, { replace: !m })
   }
 
@@ -78,6 +79,8 @@ export function StudentsPage() {
     const next = new URLSearchParams(params)
     if (id) next.set('student', id)
     else next.delete('student')
+    // ?tab= belongs to the child it was opened with, not to the next one.
+    next.delete('tab')
     setParams(next, { replace: !id })
   }
 
