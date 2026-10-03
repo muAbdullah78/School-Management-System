@@ -274,7 +274,12 @@ export function Dashboard() {
                       This tile used to render the second as the first: Rs 0 in
                       green, so a school that had never generated a challan was
                       told it was fully paid up. */}
-                  {(d.billed_students_month ?? 0) === 0 ? (
+                  {/* And the reverse: dues brought in from a school's paper
+                      register are owed before this month is ever billed, which
+                      is exactly the week a school starts. "Not billed" over
+                      Rs 3 lakh of recorded dues hid the one figure that
+                      mattered, so the money wins whenever there is any. */}
+                  {(d.billed_students_month ?? 0) === 0 && (d.outstanding ?? 0) <= 0 ? (
                     <StatTile
                       tone="due"
                       icon={<IconAlert />}
@@ -288,7 +293,9 @@ export function Dashboard() {
                       icon={<IconAlert />}
                       label="Outstanding"
                       value={fmtPKR(d.outstanding)}
-                      sub={`${plural(d.defaulters ?? 0, 'student')} with dues`}
+                      sub={(d.billed_students_month ?? 0) === 0
+                        ? `${plural(d.defaulters ?? 0, 'student')} owe from before · this month not billed yet`
+                        : `${plural(d.defaulters ?? 0, 'student')} with dues`}
                     />
                   )}
                 </LinkTile>

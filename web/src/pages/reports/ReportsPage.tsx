@@ -568,7 +568,7 @@ function DefaultersReport() {
           <Note>
             {isMonth
               ? 'Who still owes on that one month’s challan. A child who owes for an earlier month but has paid this one is not listed.'
-              : 'Everyone who owes anything on this session’s challans, biggest balance first.'}
+              : 'Every child on this year’s roll who owes anything: any month, any year, and dues brought in from before. Biggest balance first.'}
           </Note>
         </ReportFrame>
       )}
