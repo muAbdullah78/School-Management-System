@@ -3503,6 +3503,20 @@ select 'previous dues of every kind can be recorded and are left as typed (0153)
        end
 
 union all
+-- 0154. A repeated named due is refused only as a retry, within ten minutes.
+select 'a second due of the same name and amount can be recorded later (0154)',
+       case
+         when to_regprocedure('public.fn_record_dues(uuid,jsonb)') is null
+           then 'note: bundle 54 has not been applied yet, so 0154 is not due'
+         when not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                           where n.nspname = 'public' and p.proname = 'fn__record_dues'
+                             and p.prosrc like '%10 minutes%')
+           then 'FAIL: a second picnic or next term''s books at the same price cannot be recorded; apply '
+                || 'supabase/bundles/55_a_due_entered_twice.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS: no schools yet, as expected'

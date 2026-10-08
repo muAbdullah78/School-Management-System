@@ -996,6 +996,16 @@ emit supabase/bundles/53_a_result_that_holds_still.sql \
 emit supabase/bundles/54_what_was_owed_before.sql \
      supabase/migrations/0153*.sql
 
+# --- 55 ----------------------------------------------------------------------
+# A due entered twice.
+#
+# 0153 refused a named due for ever once the child had one with the same name
+# and amount, so a second picnic or next term's books could not be recorded.
+# Only a repeat from an earlier save in the last ten minutes is now taken as a
+# retry. One function replaced, so re-pasting is a no-op.
+emit supabase/bundles/55_a_due_entered_twice.sql \
+     supabase/migrations/0154*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

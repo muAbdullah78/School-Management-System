@@ -4621,11 +4621,30 @@ export async function rdeAddStudents(input: {
   })
   if (error) throw new Error(error.message)
   const d = (data ?? {}) as any
+  const results = (d.results ?? []) as RdeResultRow[]
+  /* A DATABASE WITHOUT BUNDLE 54 ANSWERS AS IF ALL WENT WELL. Its
+     fn_rde_add_students reads neither `dues` nor `paid_amount`, so the dues
+     are dropped and a part payment is recorded as the whole month, with the
+     row still saying "created". Its answer has no dues_recorded, which is how
+     that is told apart here and said on the row instead. */
+  for (const r of results) {
+    const sent = input.rows[r.row - 1]
+    if (!sent || r.status === 'error' || r.dues_recorded !== undefined) continue
+    const lost: string[] = []
+    if ((sent.dues?.length ?? 0) > 0) lost.push('the previous dues were not recorded')
+    if ((sent.paid_amount ?? 0) > 0) lost.push('the part payment was recorded as the whole month')
+    if (lost.length === 0) continue
+    r.status = 'partial'
+    r.message = [r.message,
+      `This school's database has not been updated, so ${lost.join(' and ')}. `
+      + 'Paste supabase/bundles/54_what_was_owed_before.sql in the Supabase SQL Editor, then put it right on the child\'s Fees tab.',
+    ].filter(Boolean).join(' ')
+  }
   return {
     created: Number(d.created ?? 0),
     failed: Number(d.failed ?? 0),
     drafts: Number(d.drafts ?? 0),
-    results: (d.results ?? []) as RdeResultRow[],
+    results,
     replayed: d.replayed === true,
   }
 }

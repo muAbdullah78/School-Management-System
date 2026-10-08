@@ -2081,7 +2081,7 @@ begin
     -- A family payment has NO payments.student_id: the money came from the
     -- father, not from a child. Falling back to the allocations is what makes
     -- this column non-empty for exactly the payments the family feature
-    -- creates, and it names every child the receipt actually covered — which is
+    -- creates, and it names every child the receipt actually covered, which is
     -- what the clerk needs to say out loud at the window.
     coalesce(s.full_name, alloc.names, '-'),
     s.gr_no,
@@ -2275,7 +2275,7 @@ begin
   -- Backslash FIRST, then the wildcards, or the escapes get escaped. Getting
   -- this wrong in 0041 meant searching "%" returned the whole school.
   -- ONE backslash per escape, not two. standard_conforming_strings is ON in
-  -- Postgres, so '\\' in SQL source is TWO backslash characters — which turns
+  -- Postgres, so '\\' in SQL source is TWO backslash characters, which turns
   -- the pattern for "%" into "contains a literal backslash". That returns
   -- nothing, which LOOKS right, but it is right for the wrong reason: a name
   -- genuinely containing "%" is then unfindable, and a GR number like GR_001
@@ -2289,7 +2289,7 @@ begin
   -- Two characters is the floor for the FUZZY branches: a single character
   -- matches most of the school and makes the box feel broken rather than fast.
   --
-  -- Exact numeric lookups are exempt, and deliberately so — a receipt or
+  -- Exact numeric lookups are exempt, and deliberately so: a receipt or
   -- enquiry numbered 1 to 9 would otherwise be permanently unfindable, which is
   -- every receipt a school writes on its first day.
   v_fuzzy := length(v_term) >= 2;
@@ -2309,7 +2309,7 @@ begin
            as detail,
          '/students'::text as route,
          -- coalesce is load-bearing: b_form is often NULL, so `false or NULL`
-         -- is NULL, and `order by exact desc` puts NULLs FIRST in Postgres —
+         -- is NULL, and `order by exact desc` puts NULLs FIRST in Postgres,
          -- which would sort a real GR-number match BEHIND the fuzzy ones and
          -- defeat the whole point of the ordering.
          coalesce(s.gr_no = v_term or s.b_form = v_term, false) as exact

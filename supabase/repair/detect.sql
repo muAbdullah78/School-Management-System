@@ -1366,7 +1366,13 @@ with sig(migration, object, present) as (values
          and to_regclass('public.rde_saves') is not null
          and exists (select 1 from information_schema.columns
                       where table_schema = 'public' and table_name = 'invoices'
-                        and column_name = 'carried_kind')))
+                        and column_name = 'carried_kind'))),
+  -- 0154's signature is the ten-minute retry window in the dues writer.
+  ('0154_a_due_entered_twice',
+     'fn__record_dues retry window',
+     (select exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                      where n.nspname = 'public' and p.proname = 'fn__record_dues'
+                        and p.prosrc like '%10 minutes%')))
 )
 select migration,
        object                                   as looked_for,
