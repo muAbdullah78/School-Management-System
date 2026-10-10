@@ -145,19 +145,21 @@ export default function App() {
                 </ProtectedRoute>
               }
             />
-            {/* STEP TWO OF SIGNUP, and it sits outside the shell and outside
-                SetupGate on purpose. A school arrives here seconds after its
-                account exists, with no academic session yet, so SetupGate would
-                divert it into the first-run wizard before it had chosen a plan
-                and the two screens would fight over which comes first.
+            {/* YOUR PLAN: what the school is on, its price and how often it
+                pays. Outside the shell and outside SetupGate, so a school with
+                no academic session yet is not diverted into the first-run
+                wizard on the way to it.
 
-                Outside LicenceGate too: a school whose licence has lapsed is
-                exactly the school that needs to be able to pick a plan, and
-                locking it out of this screen would be the one lock with no key.
+                Outside LicenceGate too, on purpose: a locked school can still
+                see its plan and set its term, which changes what it is about
+                to be invoiced, and a lock with no way to see what it is about
+                would be the one lock with no key.
 
-                PortalRoute is not needed because a parent has no subscription
-                to change; fn_my_choose_plan refuses anybody who is not the
-                owner or the principal, and the database is the enforcement. */}
+                OWNER AND PRINCIPAL ONLY. ChoosePlan sends anybody else to the
+                dashboard, because a teacher has no business seeing what the
+                school is charged; the database refuses them the reads and the
+                term change whatever this screen does. PortalRoute is not needed
+                for the same reason: a parent is turned away by the page. */}
             <Route
               path="/plan"
               element={

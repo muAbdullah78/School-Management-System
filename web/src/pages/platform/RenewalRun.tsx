@@ -25,6 +25,15 @@ import { Chip } from './status'
  * two are easy to conflate and the difference matters: the bill is owed by
  * every school whose period has ended, whatever it pays with, and collection is
  * a separate step that does not exist yet.
+ *
+ * WHAT 0155 CHANGED. Access runs on what is paid, so an invoice the run raises
+ * gives nobody time; paying it does. And the run now leaves three kinds of
+ * school alone and says which, because each is a different phone call:
+ *   trial_ending   a trial is listed, never invoiced. Its first invoice comes
+ *                  when the school asks for one or pays.
+ *   needs_price    an Enterprise school we have not priced. Nothing to bill.
+ *   needs_decision among others, a roll over the limit for the period being
+ *                  invoiced: move the school, or invoice it on purpose.
  */
 export function RenewalRunStrip() {
   const qc = useQueryClient()
@@ -61,9 +70,15 @@ export function RenewalRunStrip() {
             Raise the bills that are due
           </div>
           <p className="mt-0.5 max-w-prose text-sm text-slate-600">
-            Every school whose paid period has ended gets its invoice. It raises
-            invoices, it does not take money: nothing is charged to anybody, and
-            running it twice bills nobody twice.
+            Every paying school whose paid period is ending gets its next invoice. It
+            raises invoices, it does not take money: nothing is charged to anybody, an
+            invoice gives no school any time until it is paid, and running it twice bills
+            nobody twice.
+          </p>
+          <p className="mt-1 max-w-prose text-xs text-slate-500">
+            It never invoices a trial: trials ending are listed so you can call them. A
+            school with no price agreed, or with more pupils than its plan covers, is left
+            for you to decide.
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
@@ -116,9 +131,9 @@ export function RenewalRunStrip() {
  * How many of the previewed schools would actually be billed.
  *
  * NOT `considered`. The preview counts every school it looked at, including the
- * trials that never said yes and the ones that have outgrown their plan, and a
- * button reading "Raise 7 invoices" that raises four is a button that has lied
- * about what it is going to do.
+ * trials it only lists, the schools with no price and the ones that have
+ * outgrown their plan, and a button reading "Raise 7 invoices" that raises four
+ * is a button that has lied about what it is going to do.
  */
 function countBillable(r: RenewalRun): number {
   return r.attempts.filter((a) => a.outcome === 'would_invoice').length
@@ -130,6 +145,10 @@ const TONE: Record<RenewalAttempt['outcome'], Parameters<typeof Chip>[0]['tone']
   already_invoiced: 'quiet',
   needs_decision: 'warn',
   trial_never_said_yes: 'quiet',
+  // Listed so somebody calls them, and never billed by the run.
+  trial_ending: 'trial',
+  // Our move: an Enterprise school with no price cannot be invoiced.
+  needs_price: 'stopped',
   failed: 'stopped',
 }
 
@@ -139,6 +158,8 @@ const LABEL: Record<RenewalAttempt['outcome'], string> = {
   already_invoiced: 'already billed',
   needs_decision: 'needs you',
   trial_never_said_yes: 'trial lapsed',
+  trial_ending: 'trial ending, not billed',
+  needs_price: 'no price agreed',
   failed: 'failed',
 }
 

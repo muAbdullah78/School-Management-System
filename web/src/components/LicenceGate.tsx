@@ -86,10 +86,16 @@ export function LicenceGate({ children }: { children: ReactNode }) {
     return <>{children}</>
   }
 
-  if (data.locked) {
-    // WHO IS LOOKING DECIDES WHICH SCREEN. SubscriptionLocked names the plan,
-    // the yearly and monthly price and the student count, and puts a button on
-    // the page that downloads the school's entire database. That is right for
+  // A CANCELLED SCHOOL IS STOPPED LIKE A LOCKED ONE. fn_my_licence sends
+  // locked = true for both since 0155; before that it sent it for 'locked'
+  // alone, so a cancelled school walked straight past this gate into an app
+  // whose every Save the database then refused. The status is read as well so
+  // an app ahead of its database still stops it here, with an explanation.
+  if (data.locked || data.status === 'locked' || data.status === 'cancelled') {
+    // WHO IS LOOKING DECIDES WHICH SCREEN. SubscriptionLocked says why the
+    // school is locked, what it owes, our bank account and an "I have paid"
+    // form, and puts a button on the page that downloads the school's entire
+    // database. That is right for
     // the person who pays the bill and wrong for everybody else: a class
     // teacher cannot pay it, has no business seeing what the school is charged,
     // and must not be handed every pupil, fee and mark in the building. Until

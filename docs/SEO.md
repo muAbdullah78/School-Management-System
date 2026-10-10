@@ -52,7 +52,10 @@ technical work is time, links and reputation, and those cannot be shipped.
   Pakistan than almost anywhere: WhatsApp is how a link travels between two
   school owners.
 - **Structured data**: `Organization`, `SoftwareApplication` with the real
-  prices as offers, `BreadcrumbList` on every page below the home page, and
+  prices as offers (Starter and Growth each with a monthly, three month and
+  yearly `UnitPriceSpecification`, and Enterprise as an offer with no price,
+  because its price is agreed with each school), `BreadcrumbList` on every
+  page below the home page, and
   `FAQPage` on `/faq` generated from the page's own visible text so the markup
   can never claim something the page does not say.
 - **A generated sitemap** that cannot list a page which does not exist or miss

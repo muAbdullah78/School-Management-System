@@ -4,6 +4,7 @@ import {
   limitRequests, grantStudentLimit, declineStudentLimit, type LimitRequest,
 } from '@/lib/platform'
 import { fmtDate, fmtDateTime } from '@/lib/format'
+import { ChangePlanDialog } from './SchoolDetail'
 
 const FIELD = 'w-full rounded border border-slate-300 px-2 py-1.5 text-sm'
 
@@ -26,6 +27,16 @@ const FIELD = 'w-full rounded border border-slate-300 px-2 py-1.5 text-sm'
  * that cannot move money until April, a group we are courting, a school we have
  * quoted a price to that is not on the price list.
  *
+ * WHAT 0155 CHANGED. The two answers are now two different acts, and each kind
+ * of request gets its own:
+ *   move_up    goes through Change plan, which moves them now and suggests a
+ *              pro-rata charge for the rest of their paid time that we accept,
+ *              change or drop. It answers the request in the same breath.
+ *   more_room  extra room on their plan, which ends at their next renewal (the
+ *              end of what covers them today) and ends at once if they change
+ *              plan. It used to be permanent, which is how a price list stops
+ *              meaning anything.
+ *
  * WHAT THE OPERATOR IS SHOWN, AND WHY EACH PIECE
  *
  * A request is decided days or weeks after it was written, and three numbers can
@@ -38,7 +49,7 @@ export function RoomRequests({ onOpenSchool }: { onOpenSchool?: (id: string) => 
   const [status, setStatus] =
     useState<'pending' | 'granted' | 'declined' | 'withdrawn' | 'all'>('pending')
   const [acting, setActing] =
-    useState<{ req: LimitRequest; mode: 'grant' | 'decline' } | null>(null)
+    useState<{ req: LimitRequest; mode: 'grant' | 'decline' | 'move' } | null>(null)
   const q = useQuery({
     queryKey: ['limitRequests', status], queryFn: () => limitRequests(status), retry: false,
   })
@@ -104,7 +115,14 @@ export function RoomRequests({ onOpenSchool }: { onOpenSchool?: (id: string) => 
         ))}
       </div>
 
-      {acting && (
+      {acting && acting.mode === 'move' && (
+        <ChangePlanDialog
+          schoolId={acting.req.school_id} schoolName={acting.req.school_name}
+          initialPlan={acting.req.suggested_plan}
+          initialReason={`They asked on ${fmtDate(acting.req.requested_at)} to move up: ${acting.req.reason}`}
+          onClose={() => setActing(null)} />
+      )}
+      {acting && acting.mode !== 'move' && (
         <ActDialog req={acting.req} mode={acting.mode} onClose={() => setActing(null)} />
       )}
     </div>
@@ -113,7 +131,7 @@ export function RoomRequests({ onOpenSchool }: { onOpenSchool?: (id: string) => 
 
 function RequestCard({ r, onAct, onOpenSchool }: {
   r: LimitRequest
-  onAct: (mode: 'grant' | 'decline') => void
+  onAct: (mode: 'grant' | 'decline' | 'move') => void
   onOpenSchool?: (id: string) => void
 }) {
   // Their plan already has an allowance on it. Worth flagging on the card,
@@ -189,18 +207,16 @@ function RequestCard({ r, onAct, onOpenSchool }: {
               </div>
             ) : r.wants === 'move_up' ? (
               /* They have already said they will pay more. This is a sale, not a
-                 favour, and the whole job is to raise the invoice: nothing on
-                 this screen does that, because moving a school up means pricing
-                 the rest of their term and issuing an invoice, which is the
-                 Activate dialog on their own page. So the card points there
-                 rather than pretending a button here could finish it. */
-              <div className="mt-1.5 rounded bg-emerald-50 px-2 py-1 text-xs text-emerald-900">
+                 favour. Move them up opens Change plan with the plan that fits
+                 already chosen: it moves them now, suggests what to charge for
+                 the rest of their paid time, and answers this request. */
+              <div className="mt-1.5 rounded bg-money-50 px-2 py-1 text-xs text-money-900">
                 They have asked to move up, so this is a sale rather than a
-                favour. Put them on <span className="font-medium">{r.suggested_plan}</span>{' '}
-                ({r.suggested_plan_covers} pupils) from their own page, Billing,
-                Activate, which prices the term and raises the invoice. Come back
-                and grant the allowance here only if they need room before the
-                invoice is settled.
+                favour. <span className="font-medium">{r.suggested_plan}</span>{' '}
+                ({r.suggested_plan_covers === null
+                  ? 'no pupil limit, priced with them'
+                  : `${r.suggested_plan_covers} pupils`}) fits. Move them up suggests
+                what to charge for the rest of their paid time; you decide.
               </div>
             ) : r.suggested_plan !== r.plan_code ? (
               <div className="mt-1.5 rounded bg-sky-50 px-2 py-1 text-xs text-sky-900">
@@ -237,10 +253,17 @@ function RequestCard({ r, onAct, onOpenSchool }: {
               </div>
             )}
             <div className="flex gap-2">
-              <button onClick={() => onAct('grant')}
-                className="rounded bg-emerald-600 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-700">
-                Give them room
-              </button>
+              {r.wants === 'move_up' ? (
+                <button onClick={() => onAct('move')}
+                  className="rounded bg-brand-600 px-2 py-1 text-xs font-medium text-white hover:bg-brand-700">
+                  Move them up
+                </button>
+              ) : r.plan_covers !== null && (
+                <button onClick={() => onAct('grant')}
+                  className="rounded bg-brand-600 px-2 py-1 text-xs font-medium text-white hover:bg-brand-700">
+                  Give them room
+                </button>
+              )}
               <button onClick={() => onAct('decline')}
                 className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50">
                 Answer no
@@ -266,50 +289,77 @@ function ActDialog({ req, mode, onClose }: {
     // a plan that does not exist.
     //
     // IT DOES NOT TELL THEM TO MOVE THEMSELVES UP. Nothing in this product lets
-    // a school change its own plan: activation is operator-only and every
-    // renewal is a bank transfer we confirm by hand. An earlier draft of this
-    // sentence said "move up to it from Settings, Subscription", which would
-    // have sent them looking for a button that is not there.
+    // a school change its own plan: plans move only by us. It tells them to ask,
+    // which they can do from Settings, Subscription.
     mode === 'decline' && req.suggested_plan && req.suggested_plan !== req.plan_code
-      ? `Our ${req.suggested_plan} plan covers ${req.suggested_plan_covers ?? ''} `
-        + `pupils and is the right fit for a school your size. Reply here or call `
-        + `us and we will price it for the rest of your term and move you up.`
+      ? `Our ${req.suggested_plan} plan `
+        + (req.suggested_plan_covers === null
+          ? 'has no pupil limit '
+          : `covers ${req.suggested_plan_covers} pupils `)
+        + `and is the right fit for a school your size. Ask us to move you up from `
+        + `Settings, Subscription, or call us, and we will tell you what it costs `
+        + `for the rest of your paid time.`
       : '',
   )
   const [err, setErr] = useState<string | null>(null)
+  const [granted, setGranted] = useState<{ limit: number; until: string } | null>(null)
 
   const asked = req.requested_limit
   const want = Number(limit)
-  const valid = Number.isInteger(want) && want >= 1
+  const covers = req.plan_covers
+  // Extra room is MORE than the plan covers; the database refuses anything at
+  // or below it, because holding a school to fewer is a plan move, not room.
+  const valid = Number.isInteger(want) && covers !== null && want > covers
   // Below what they asked is a PARTIAL grant, and the school reads the note as
-  // the answer to "why did we get 200 when we asked for 400". Below their plan's
-  // own limit is a REDUCTION, which the database refuses without a note, and is
-  // also exactly what a mistyped 15 for 150 looks like.
+  // the answer to "why did we get 200 when we asked for 400".
   const partial = valid && want < asked
-  const reduction = valid && req.plan_covers !== null && want < req.plan_covers
-  const noteNeeded = mode === 'decline' || partial || reduction
   const noteOk = note.trim().length >= 8
 
   const act = useMutation({
     mutationFn: async () => {
       if (mode === 'decline') {
         await declineStudentLimit(req.id, note.trim())
-        return
+        return null
       }
-      await grantStudentLimit(req.school_id, want, note.trim() || null)
+      const r = await grantStudentLimit(req.school_id, want, note.trim())
+      return { limit: r.limit, until: r.until }
     },
-    onSuccess: () => {
+    onSuccess: (r) => {
       void qc.invalidateQueries({ queryKey: ['limitRequests'] })
       void qc.invalidateQueries({ queryKey: ['platformSchools'] })
       void qc.invalidateQueries({ queryKey: ['schoolDetail'] })
-      onClose()
+      if (r) setGranted(r)
+      else onClose()
     },
     onError: (e) => setErr((e as Error).message),
   })
 
+  if (granted) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center">
+        <div role="dialog" aria-modal="true" aria-label="Room given"
+          className="w-full max-w-md rounded-lg bg-white p-4 shadow-lg">
+          <h3 className="text-sm font-semibold text-slate-800">{req.school_name} has room</h3>
+          <p className="mt-2 text-sm text-slate-700">
+            Room for <span className="font-medium">{granted.limit.toLocaleString()}</span> pupils
+            until <span className="font-medium">{fmtDate(granted.until)}</span>, then their{' '}
+            {req.plan_code} plan&rsquo;s limit of {covers?.toLocaleString()} applies again. Their
+            request is answered with your note.
+          </p>
+          <button onClick={onClose}
+            className="mt-4 w-full rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
+            Done
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center">
-      <div className="w-full max-w-md rounded-lg bg-white p-4 shadow-lg">
+      <div role="dialog" aria-modal="true"
+        aria-label={mode === 'grant' ? `Give ${req.school_name} room` : `Answer ${req.school_name} no`}
+        className="w-full max-w-md rounded-lg bg-white p-4 shadow-lg">
         <h3 className="text-sm font-semibold text-slate-800">
           {mode === 'grant' ? 'Give' : 'Answer'} {req.school_name}
           {mode === 'grant' ? ' room' : ' no'}
@@ -318,20 +368,12 @@ function ActDialog({ req, mode, onClose }: {
           They asked {req.wants === 'move_up'
             ? `to be moved up to a plan covering ${asked} pupils`
             : `for room for ${asked} pupils on ${req.plan_code}`}, have{' '}
-          {req.students_now} on the roll, and are {req.plan_covers === null
+          {req.students_now} on the roll, and are {covers === null
             ? 'on a plan with no limit'
-            : `allowed ${req.effective_limit ?? req.plan_covers}`}.
+            : `allowed ${req.effective_limit ?? covers}`}.
         </p>
-        {mode === 'grant' && req.wants === 'move_up' && (
-          <p className="mt-2 rounded bg-amber-50 px-2 py-1.5 text-xs text-amber-900">
-            They asked to be MOVED UP, not for an exception. An allowance gives
-            them the room and bills them nothing, so if you use it here, say in
-            the note that the plan change and its invoice are still coming.
-            Otherwise close this and activate the bigger plan from their own page.
-          </p>
-        )}
 
-        {err && <p className="mt-3 rounded bg-rose-50 px-3 py-2 text-sm text-rose-800">{err}</p>}
+        {err && <p className="mt-3 rounded bg-danger-50 px-3 py-2 text-sm text-danger-800">{err}</p>}
 
         {mode === 'grant' && (
           <div className="mt-3 space-y-3">
@@ -339,26 +381,25 @@ function ActDialog({ req, mode, onClose }: {
               <span className="text-xs font-medium text-slate-600">
                 Pupils they may have
               </span>
-              <input type="number" min={1} step={1} className={FIELD} value={limit}
+              <input type="number" min={(covers ?? 0) + 1} step={1} className={FIELD} value={limit}
                 onChange={(e) => setLimit(e.target.value)} />
               <span className="mt-0.5 block text-xs text-slate-400">
-                This replaces their plan&rsquo;s limit for as long as it is set, on
-                whatever plan they are on. It is not a one-off: it does not expire,
-                and taking it back is a separate deliberate act on their own page.
+                Until their next renewal, the end of what covers them today, then their{' '}
+                {req.plan_code} plan&rsquo;s limit of {covers?.toLocaleString()} applies again.
+                It bills them nothing, and moving them to another plan ends it at once.
               </span>
             </label>
 
-            {partial && (
-              <p className="rounded bg-amber-50 px-2 py-1.5 text-xs text-amber-900">
-                Less than the {asked} they asked for. They will see the note below as
-                the answer to why, so say what it would take to get the rest.
+            {!valid && limit.trim() !== '' && (
+              <p className="rounded bg-due-50 px-2 py-1.5 text-xs text-due-900">
+                Extra room is more than the {covers?.toLocaleString()} pupils their plan already
+                covers. To hold a school to fewer, move it to a smaller plan from its page.
               </p>
             )}
-            {reduction && (
-              <p className="rounded bg-rose-50 px-2 py-1.5 text-xs text-rose-800">
-                Their {req.plan_code} plan already covers {req.plan_covers} pupils, so{' '}
-                {want} is a REDUCTION and will stop them admitting anybody the moment
-                you save it. Check the number before you save.
+            {partial && (
+              <p className="rounded bg-due-50 px-2 py-1.5 text-xs text-due-900">
+                Less than the {asked} they asked for. They will see the note below as
+                the answer to why, so say what it would take to get the rest.
               </p>
             )}
           </div>
@@ -366,15 +407,15 @@ function ActDialog({ req, mode, onClose }: {
 
         <label className="mt-3 block">
           <span className="text-xs font-medium text-slate-600">
-            {mode === 'decline' ? 'Why, in a sentence they will read' : 'Note'}
-            {noteNeeded && <span className="text-rose-600"> *</span>}
+            {mode === 'decline' ? 'Why, in a sentence they will read' : 'Why they get it'}
+            <span className="text-danger-600"> *</span>
           </span>
           <textarea rows={3} className={FIELD} value={note}
             onChange={(e) => setNote(e.target.value)} />
           <span className="mt-0.5 block text-xs text-slate-400">
             {mode === 'decline'
               ? 'This is shown to the school on their subscription screen. A request that comes back with nothing on it produces a phone call.'
-              : 'Shown to the school, and kept on their audit trail with your name against it.'}
+              : 'Kept with the allowance and shown beside it on their page until it ends, with your name against it.'}
           </span>
         </label>
 
@@ -384,17 +425,16 @@ function ActDialog({ req, mode, onClose }: {
             Cancel
           </button>
           <button
-            disabled={act.isPending || (mode === 'grant' && !valid)
-              || (noteNeeded && !noteOk)}
+            disabled={act.isPending || (mode === 'grant' && !valid) || !noteOk}
             onClick={() => { setErr(null); act.mutate() }}
             className={`rounded px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50 ${
-              mode === 'grant' ? 'bg-emerald-600 hover:bg-emerald-700'
+              mode === 'grant' ? 'bg-brand-600 hover:bg-brand-700'
                 : 'bg-slate-700 hover:bg-slate-800'}`}>
             {act.isPending ? 'Saving…'
               : mode === 'grant' ? `Allow ${valid ? want : '…'} pupils` : 'Send this answer'}
           </button>
         </div>
-        {noteNeeded && !noteOk && (
+        {!noteOk && (
           <p className="mt-1 text-right text-xs text-slate-400">
             A reason is required here, and eight characters is the floor.
           </p>

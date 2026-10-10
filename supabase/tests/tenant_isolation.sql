@@ -404,6 +404,11 @@ declare
     -- other tenant table, which is the right split: what is on offer is ours,
     -- what a school was promised is theirs.
     'discount_codes',
+    -- 0155. The history of the price list: every change to plans, with who
+    -- and when. Like plans itself it belongs to no school, so it has no
+    -- school_id; unlike plans nobody but us may read it, so it has RLS on,
+    -- forced, with no policy at all and no grants to the app roles.
+    'plan_changes',
     -- The deployment record added by 0069. It has no school_id because it
     -- describes the database, and its only policy is a SELECT gated on
     -- is_platform_admin() — a schema history is not a tenant's business, and a

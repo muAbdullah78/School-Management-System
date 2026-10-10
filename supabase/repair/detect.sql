@@ -317,9 +317,12 @@ with sig(migration, object, present) as (values
   -- receivable. Without the second, "who owes me money" and "who expires soon"
   -- are the same screen — which was the defect.
   ('0064_operator_billing',     'granting time writes the charge',
+     -- 0155 moved the invoice into fn__raise_term_invoice, which the console's
+     -- entry point now calls.
      (select exists (select 1 from pg_proc where proname = 'fn_activate_subscription'
                       and pronamespace = 'public'::regnamespace
-                      and prosrc like '%platform_invoices%')
+                      and (prosrc like '%platform_invoices%'
+                           or prosrc like '%fn__raise_term_invoice%'))
          and exists (select 1 from pg_proc where proname = 'fn_platform_schools'
                       and pronamespace = 'public'::regnamespace
                       and pg_get_function_result(oid) like '%outstanding%')
@@ -385,9 +388,10 @@ with sig(migration, object, present) as (values
   -- Without it, 0067's live count means a principal is told they have outgrown
   -- their plan the same afternoon they admit the 101st child.
   ('0068_limit_notice_timing',  'the over-limit banner is timed, not immediate',
+     -- 0155 rebuilt the banner on fn__subscription_view.
      (select exists (select 1 from pg_proc where proname = 'fn_my_licence'
                       and pronamespace = 'public'::regnamespace
-                      and prosrc like '%v_tell%'))),
+                      and (prosrc like '%v_tell%' or prosrc like '%fn__subscription_view%')))),
   -- 0069 is the migration ledger — the thing whose absence is the reason this
   -- whole file exists. Its own header says it: "There is no migration ledger in
   -- this project, so nothing recorded what a given database had already
@@ -1095,10 +1099,12 @@ with sig(migration, object, present) as (values
      to_regclass('public.discount_codes') is not null
      and to_regclass('public.subscription_discounts') is not null
      and to_regprocedure('public.fn__discount_live(uuid,date)') is not null
+     -- 0155/0156: the discount is asked for by the quote every invoice uses.
      and (select count(*) from pg_proc p
             join pg_namespace n2 on n2.oid = p.pronamespace
-           where n2.nspname = 'public' and p.proname = 'fn_activate_subscription'
-             and p.prosrc like '%fn__discount_live%') = 1
+           where n2.nspname = 'public'
+             and ((p.proname = 'fn_activate_subscription' and p.prosrc like '%fn__discount_live%')
+                  or (p.proname = 'fn__discount_for_quote' and p.prosrc like '%fn__discount_live%'))) = 1
      and exists (select 1 from pg_indexes
                   where schemaname = 'public'
                     and indexname = 'uq_subscription_discount_live')),
@@ -1372,7 +1378,23 @@ with sig(migration, object, present) as (values
      'fn__record_dues retry window',
      (select exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
                       where n.nspname = 'public' and p.proname = 'fn__record_dues'
-                        and p.prosrc like '%10 minutes%')))
+                        and p.prosrc like '%10 minutes%'))),
+  -- 0155's signature is the allocation table, the licence recompute and the
+  -- signup that takes a number of pupils. Without them raising an invoice
+  -- opens the school and nobody can sign up a large school.
+  ('0155_three_plans_and_paying_first',
+     'platform_payment_allocations, fn__recompute_licence, fn_signup_school_for_students',
+     (select to_regclass('public.platform_payment_allocations') is not null
+         and to_regprocedure('public.fn__recompute_licence(uuid)') is not null
+         and to_regprocedure('public.fn_signup_school_for_students(text,text,text,text,text,text,integer,integer)') is not null)),
+  -- 0156's signature is the per-invoice record of a discount, the event log
+  -- and the redeem that can be told to replace. Without them a code takes its
+  -- percentage off a whole year and voiding an invoice keeps its discount.
+  ('0156_discount_codes_that_keep_their_word',
+     'discount_applications, discount_events, fn_my_redeem_code',
+     (select to_regclass('public.discount_applications') is not null
+         and to_regclass('public.discount_events') is not null
+         and to_regprocedure('public.fn_my_redeem_code(text,boolean)') is not null))
 )
 select migration,
        object                                   as looked_for,

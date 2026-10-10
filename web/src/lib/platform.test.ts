@@ -20,9 +20,11 @@ describe('actionNeeded', () => {
     // A locked school that owes NOTHING is a renewal to sell, not a debt to
     // chase. This used to read "chase payment or reactivate" either way, which
     // is advice to phone a principal about money they do not owe.
-    expect(actionNeeded(s({ status: 'locked' }))).toMatch(/renew them/i)
+    // Since 0155 a school opens when it PAYS, not when we invoice it, so the
+    // advice says both halves.
+    expect(actionNeeded(s({ status: 'locked' }))).toMatch(/invoice them; paying opens them/i)
     expect(actionNeeded(s({ status: 'grace', days_left: 3 }))).toMatch(/grace/i)
-    expect(actionNeeded(s({ status: 'active', days_left: 5 }))).toMatch(/renewal due/i)
+    expect(actionNeeded(s({ status: 'active', days_left: 5 }))).toMatch(/paid time ends in 5/i)
   })
 
   it('never tells the operator to chase a school we switched off ourselves', () => {
@@ -47,16 +49,30 @@ describe('actionNeeded', () => {
       .toBeNull()
   })
 
-  it('names the plan to move an over-limit school onto', () => {
+  it('names the plan to move an over-limit school onto, and how', () => {
     const msg = actionNeeded(s({ limit_state: 'over', needs_upgrade: true, suggested_plan: 'growth' }))
     expect(msg).toMatch(/growth/)
-    // Phrased as a renewal-time change, never as something to enforce now:
-    // the whole rule is that going over does not interrupt the school.
-    expect(msg).toMatch(/at renewal/i)
+    // 0155: the limit is the limit and nothing waits for a renewal. Only we
+    // move a school, and the line names the button that does it.
+    expect(msg).toMatch(/change plan/i)
+    expect(msg).not.toMatch(/at renewal/i)
   })
 
-  it('stays quiet about a school inside its margin', () => {
-    expect(actionNeeded(s({ limit_state: 'within_margin' }))).toBeNull()
+  it('stays quiet about a school within its limit: there is no margin any more', () => {
+    expect(actionNeeded(s({ limit_state: 'ok', student_count: 199, student_limit: 200 }))).toBeNull()
+  })
+
+  it('puts an Enterprise school with no price ahead of anything about money', () => {
+    // 0155. There is nothing to invoice until we agree a price, and it locks
+    // the day its trial ends with no grace, so the line is about our move.
+    const row = (p: Partial<PlatformSchool>) =>
+      ({ ...s(p), needs_price: true }) as PlatformSchool
+    expect(actionNeeded(row({ status: 'trialing', days_left: 5, plan_code: 'enterprise' })))
+      .toBe('No price agreed: set it before the trial ends in 5 day(s)')
+    expect(actionNeeded(row({ status: 'locked', plan_code: 'enterprise' })))
+      .toMatch(/locked: no price agreed yet/i)
+    // A cancelled one is not a to-do, priced or not.
+    expect(actionNeeded(row({ status: 'cancelled' }))).toBeNull()
   })
 
   it('names an unpaid invoice whatever the licence status is', () => {
@@ -116,6 +132,17 @@ describe('sortByAction', () => {
     ]
     expect(sortByAction(list).map((x) => x.school_name))
       .toEqual(['Owing', 'Trial', 'Suspended', 'Cancelled', 'Archived'])
+  })
+
+  it('ranks a school waiting for its price just below a locked debt', () => {
+    const list = [
+      s({ school_name: 'Grace', status: 'grace', days_left: 4 }),
+      { ...s({ school_name: 'Unpriced', status: 'trialing', days_left: 9,
+               plan_code: 'enterprise' }), needs_price: true } as PlatformSchool,
+      s({ school_name: 'LockedOwing', status: 'locked', outstanding: 38000 }),
+    ]
+    expect(sortByAction(list).map((x) => x.school_name))
+      .toEqual(['LockedOwing', 'Unpriced', 'Grace'])
   })
 
   it('ranks an unpaid invoice above an over-limit school', () => {

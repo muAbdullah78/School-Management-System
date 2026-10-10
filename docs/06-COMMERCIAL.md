@@ -14,6 +14,15 @@
 >
 > Kept for the reasoning, which is still worth reading. Do not build from the
 > architecture or the pricing.
+>
+> **The price list today** (migration 0155, `public.plans`): Starter for 1 to
+> 280 pupils at Rs 2,000 a month, Rs 5,400 for three months or Rs 20,000 a
+> year; Growth for 281 to 1,000 pupils at Rs 4,000, Rs 10,800 or Rs 40,000;
+> Enterprise for more than 1,000 pupils, no pupil limit, at a monthly price
+> agreed with each school (three months 10% off and a year two months free
+> unless agreed otherwise). Every plan has every module and a 14 day trial. The
+> tiers, licence figures and campus pricing below are the old model and are
+> not sold.
 
 > **Note:** [`09-DECISIONS-LOCKED.md`](09-DECISIONS-LOCKED.md) changes the cost structure: each school hosts its **own** Supabase/hosting, so the seller carries **no per-school running cost** and there is **no messaging-wallet economics**. Pricing can be a simpler **one-time license per school + a setup fee** (plus optional paid support), since there is no ongoing infrastructure for the seller to fund. The go-to-market advice below (pilot first, go deep in one city, referral engine) still holds.
 

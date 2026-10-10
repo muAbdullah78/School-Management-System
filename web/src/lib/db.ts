@@ -4183,9 +4183,16 @@ export interface MyStudentLimit {
    * bigger, which is the by-arrangement case and needs a conversation.
    */
   next_plan: {
-    code: string; name: string; covers: number
-    price: number; term_months: number
+    code: string; name: string
+    /** Null for Enterprise, which has no pupil limit. */
+    covers: number | null
+    /** Null for Enterprise, which is priced with each school. */
+    price: number | null
+    by_arrangement?: boolean
+    term_months: number
   } | null
+  /** 0155: the day extra room we granted ends, then the plan's limit applies. */
+  extra_until?: string | null
   request: {
     id: string
     status: 'pending' | 'granted' | 'declined' | 'withdrawn'
@@ -6738,6 +6745,7 @@ export async function listSupportVisits(limit = 50): Promise<SupportVisit[]> {
 }
 
 import type { InvoiceDocument } from './platform'
+import type { RaisedInvoice, SubscriptionView, TermOption } from './subscription'
 
 // ===========================================================================
 // The school's own subscription bill: migration 0078.
@@ -6763,8 +6771,17 @@ export interface MyBillingDocument {
   tax_amount: number
   total: number
   voided: boolean
-  /** Cash plus any tax withheld: what actually settled this document. */
+  /** Payments allocated to it plus credit notes against it (0155). */
   paid: number
+  /** Still owed on it; under one rupee counts as nothing. */
+  owed?: number
+  /** 'term' pays for a period of the licence; 'plan_change' is the difference
+   *  charged when we moved the school to another plan mid-period. */
+  purpose?: 'term' | 'plan_change'
+  /** The plan's name on the day the invoice was raised. */
+  plan_name?: string
+  discount_code?: string | null
+  discount_amount?: number
   note: string | null
 }
 
@@ -6774,6 +6791,8 @@ export interface MyBilling {
   /** Whatever fn_my_licence says, reused rather than restated so this screen and
    *  the licence banner cannot disagree about whether a licence is expiring. */
   licence: Record<string, unknown>
+  /** 0155: the one description of the subscription every screen reads. */
+  subscription?: SubscriptionView | null
   balance: { billed: number; paid: number; outstanding: number }
   documents: MyBillingDocument[]
   payments: {
@@ -6829,9 +6848,11 @@ export interface NextPayment {
    * change the quarterly rate and the label lies, silently, on the screen where
    * a school decides what to spend.
    */
-  terms?: Array<{ months: 1 | 3 | 12; amount: number; saving: number; chosen: boolean }>
+  terms?: TermOption[]
   /** The sentence, composed in the database so every surface says the same words. */
   sentence?: string
+  /** 0155: the full subscription view the sentence was written from. */
+  view?: SubscriptionView
 }
 
 /**
@@ -6867,13 +6888,28 @@ export async function setManualPaymentMethod(
 }
 
 /** Monthly, three months or a year. Applies to the NEXT payment, not this period. */
-export async function chooseTerm(
-  months: 1 | 3 | 12,
-): Promise<{ term_months: number; applies_from: string; next: NextPayment }> {
+/** What changing the term did to an invoice already raised (0155): a new one
+ *  in its place, or kept because money had been paid on it. */
+export interface TermChangeInvoice {
+  kept?: string
+  why?: string
+  voided?: string
+  raised?: (Partial<RaisedInvoice> & { not_raised?: string }) | null
+}
+
+export interface TermChange {
+  term_months: number
+  changed?: boolean
+  applies_from?: string
+  invoice?: TermChangeInvoice | null
+  next: NextPayment
+}
+
+export async function chooseTerm(months: 1 | 3 | 12): Promise<TermChange> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_choose_term', { p_months: months })
   if (error) throw new Error(error.message)
-  return data as { term_months: number; applies_from: string; next: NextPayment }
+  return data as TermChange
 }
 
 /**

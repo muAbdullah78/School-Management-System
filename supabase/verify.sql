@@ -688,12 +688,15 @@ select 'operator billing (0064)',
                  -- time WRITES THE CHARGE and that the console carries the
                  -- receivable — without those two the operator has an expiry
                  -- date where a debt should be.
+                 -- 0155 moved the invoice into fn__raise_term_invoice and took
+                 -- the margin away. Either shape is operator billing present.
                  and exists (select 1 from pg_proc p
                               join pg_namespace n on n.oid = p.pronamespace
                               where n.nspname='public'
                                 and p.proname='fn_activate_subscription'
-                                and p.prosrc like '%platform_invoices%'
-                                and p.prosrc like '%plan_margin_limit%')
+                                and ((p.prosrc like '%platform_invoices%'
+                                      and p.prosrc like '%plan_margin_limit%')
+                                     or p.prosrc like '%fn__raise_term_invoice%'))
                  -- The 3-argument form must be gone, not left as an overload:
                  -- it grants a year and records no money.
                  and not exists (select 1 from pg_proc p
@@ -797,7 +800,9 @@ select 'live student count (0067)',
 
 union all
 select 'price plans loaded',
-       case when (select count(*) from public.plans) = 4
+       -- The rows exist. Their prices are checked by the 0155 row, which
+       -- points at the bundle that sets them. Bundle 1 would set old ones.
+       case when (select count(*) from public.plans where code in ('starter', 'growth')) = 2
        then 'PASS' else 'FAIL: re-run bundle 1' end
 
 union all
@@ -908,9 +913,11 @@ union all
 -- The signature is the gate variable, because fn_my_licence has existed since
 -- 0026 and its presence proves nothing.
 select 'licence banner does not nag mid-term (0068)',
+       -- 0155 rebuilt the banner on fn__subscription_view, which says when the
+       -- school locks rather than nagging from thirty days out.
        case when exists (select 1 from pg_proc where proname = 'fn_my_licence'
                           and pronamespace = 'public'::regnamespace
-                          and prosrc like '%v_tell%')
+                          and (prosrc like '%v_tell%' or prosrc like '%fn__subscription_view%'))
        then 'PASS' else 'FAIL: re-run bundle 7' end
 
 union all
@@ -1938,7 +1945,11 @@ select 'a term has one price, and a longer one never costs less (0111)',
          when to_regprocedure('public.fn_plan_quote(text, integer)') is null
            then 'FAIL - the console has nothing to ask for a price and will fall '
                 || 'back to computing one; apply supabase/bundles/17_the_price_of_a_term.sql'
-         when exists (select 1 from public.plans
+         -- Once 0155 is in, the price list is checked by its own row, which
+         -- points at bundle 56. Pasting bundle 17 again would put the old
+         -- prices back, so this row must never send anybody there for that.
+         when to_regprocedure('public.fn__term_price(uuid,text,integer)') is null
+          and exists (select 1 from public.plans
                        where code = 'starter' and price_monthly <> 2000)
            then 'FAIL - the price list is not the agreed one; '
                 || 'apply supabase/bundles/17_the_price_of_a_term.sql'
@@ -2504,6 +2515,19 @@ select 'signup cannot reach a plan priced by arrangement (0127)',
          -- reached and throws on a database where the function does not exist
          -- yet, which brought the whole file down. to_regprocedure returns null
          -- instead, and pg_get_functiondef(null) is null.
+         -- 0155: a large school may now sign up on Enterprise, which has no
+         -- list price. What must hold instead: the old signup still cannot
+         -- name a by-arrangement plan, and such a school cannot be invoiced
+         -- until we agree its price (fn__raise_term_invoice refuses it).
+         when to_regprocedure('public.fn__raise_term_invoice(uuid,integer,numeric,text,text)') is not null
+           then case when position('not by_arrangement' in coalesce(pg_get_functiondef(
+                       to_regprocedure('public.fn_signup_school_on_plan_in_region'
+                         || '(text,text,text,text,text,text,integer,text)')::oid), '')) > 0
+                      and position('SB002' in coalesce(pg_get_functiondef(
+                       to_regprocedure('public.fn__raise_term_invoice(uuid,integer,numeric,text,text)')::oid), '')) > 0
+                     then 'PASS'
+                     else 'FAIL: a plan priced by arrangement can be reached or invoiced without '
+                          || 'a price; apply supabase/bundles/56_three_plans_and_paying_first.sql' end
          when position('price_monthly > 0' in coalesce(pg_get_functiondef(
                 to_regprocedure('public.fn_signup_plans()')::oid), '')) = 0
            or position('price_monthly > 0' in coalesce(pg_get_functiondef(
@@ -2762,10 +2786,17 @@ select 'a discount survives to the next invoice (0131)',
          -- THE ONE THAT GOES WRONG SILENTLY. Every invoice comes out of
          -- fn_activate_subscription, if a later change rewrites it from an older
          -- copy the discount stops applying and the invoice still looks normal.
+         -- 0155/0156: the discount is asked for by the one quote every
+         -- invoice is priced with.
          when coalesce((select p.prosrc from pg_proc p
                           join pg_namespace n on n.oid = p.pronamespace
                          where n.nspname = 'public'
                            and p.proname = 'fn_activate_subscription'), '')
+              not like '%fn__discount_live%'
+          and coalesce((select p.prosrc from pg_proc p
+                          join pg_namespace n on n.oid = p.pronamespace
+                         where n.nspname = 'public'
+                           and p.proname = 'fn__discount_for_quote'), '')
               not like '%fn__discount_live%'
            then 'FAIL: invoices are raised without asking whether the school has '
                 || 'a discount, so every discounted school is being charged full '
@@ -3269,12 +3300,15 @@ select 'the console sees the discount on the school (0144)',
                 || 'the operator opening one school in particular cannot tell whether '
                 || 'the promo the Discounts tab knows about is on this school; apply '
                 || 'supabase/bundles/45_the_admin_console_could_not_see_the_discount.sql'
+         -- 0156 moved the sentences into fn__discount_validate, which every
+         -- way of saving a code goes through.
          when regexp_replace((select prosrc from pg_proc p
                                 join pg_namespace n on n.oid = p.pronamespace
                               where n.nspname = 'public'
                                 and p.proname = 'fn_platform_save_discount'),
                              '--[^' || chr(10) || ']*', '', 'g')
               not like '%payment to the customer%'
+          and to_regprocedure('public.fn__discount_validate(public.discount_codes,public.discount_codes)') is null
            then 'FAIL: fn_platform_save_discount still leaves the refusal words to the '
                 || 'table constraints, so the operator sees "violates check constraint" '
                 || 'instead of a sentence; apply supabase/bundles/'
@@ -3513,6 +3547,55 @@ select 'a second due of the same name and amount can be recorded later (0154)',
                              and p.prosrc like '%10 minutes%')
            then 'FAIL: a second picnic or next term''s books at the same price cannot be recorded; apply '
                 || 'supabase/bundles/55_a_due_entered_twice.sql'
+         else 'PASS'
+       end
+
+union all
+-- 0155. Three plans, and access that runs on what is paid. The price list is
+-- data and older migrations set it again if they are pasted again, so this
+-- row checks every figure, not one.
+select 'three plans at the agreed prices, and access that runs on what is paid (0155)',
+       case
+         when to_regclass('public.platform_payment_allocations') is null
+           or to_regprocedure('public.fn__recompute_licence(uuid)') is null
+           or to_regprocedure('public.fn_signup_school_for_students(text,text,text,text,text,text,integer,integer)') is null
+           then 'FAIL: raising an invoice still opens the school and signup cannot take a number of '
+                || 'pupils; apply supabase/bundles/56_three_plans_and_paying_first.sql'
+         when (select count(*) from public.plans
+                where (code = 'starter' and active and student_limit = 280 and price_monthly = 2000
+                       and price_quarterly = 5400 and price_yearly = 20000 and min_students = 1)
+                   or (code = 'growth' and active and student_limit = 1000 and price_monthly = 4000
+                       and price_quarterly = 10800 and price_yearly = 40000 and min_students = 281)
+                   or (code = 'enterprise' and active and by_arrangement and student_limit is null
+                       and min_students = 1001)) <> 3
+           or exists (select 1 from public.plans where code in ('institution', 'custom') and active)
+           then 'FAIL: the price list is not Starter 280 at Rs 2,000 / 5,400 / 20,000, Growth 1,000 '
+                || 'at Rs 4,000 / 10,800 / 40,000 and Enterprise by arrangement. An older bundle '
+                || 'was probably pasted again; apply supabase/bundles/56_three_plans_and_paying_first.sql'
+         when public.plan_margin_limit(280) <> 280
+           then 'FAIL: the hidden 10% margin is back; apply supabase/bundles/56_three_plans_and_paying_first.sql'
+         when has_function_privilege('authenticated', 'public.fn_effective_status(uuid)', 'execute')
+           or has_function_privilege('authenticated', 'public.fn_count_students(uuid)', 'execute')
+           then 'FAIL: any signed-in user can ask about any school; apply '
+                || 'supabase/bundles/56_three_plans_and_paying_first.sql'
+         else 'PASS'
+       end
+
+union all
+-- 0156. Discount codes counted in billed months, checked on every invoice,
+-- seats taken under a lock, every event logged.
+select 'discount codes keep their word (0156)',
+       case
+         when to_regclass('public.discount_applications') is null
+           or to_regclass('public.discount_events') is null
+           or to_regprocedure('public.fn_my_redeem_code(text,boolean)') is null
+           then 'FAIL: a code still takes its percentage off a whole year and voiding an invoice '
+                || 'keeps the discount it used; apply supabase/bundles/56_three_plans_and_paying_first.sql'
+         when position('fn__discount_calc' in coalesce((select p.prosrc from pg_proc p
+                join pg_namespace n on n.oid = p.pronamespace
+               where n.nspname = 'public' and p.proname = 'fn__discount_for_quote'), '')) = 0
+           then 'FAIL: invoices are not asking the billed-month arithmetic for the discount; apply '
+                || 'supabase/bundles/56_three_plans_and_paying_first.sql'
          else 'PASS'
        end
 

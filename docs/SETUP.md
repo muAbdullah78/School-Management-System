@@ -507,31 +507,34 @@ needs a phone call. Everything below it is fine.
 
 ## Prices (already loaded)
 
-| Plan | Students | Monthly | Yearly |
-|---|---|---|---|
-| starter | up to 200 | Rs 3,500 | Rs 35,000 |
-| growth | 201–500 | Rs 5,500 | Rs 55,000 |
-| institution | 501–1,500 | Rs 7,500 | Rs 75,000 |
-| custom | 1,500+ | by agreement | — |
+Migration 0155 loads these into `public.plans`:
 
-Yearly is priced as ten months — "two months free" — because one payment a year
-is one collection instead of twelve chases.
+| Plan | Pupils | Monthly | 3 months (10% off) | A year (two months free) |
+|---|---|---|---|---|
+| starter (Starter) | 1 to 280 | Rs 2,000 | Rs 5,400 | Rs 20,000 |
+| growth (Growth) | 281 to 1,000 | Rs 4,000 | Rs 10,800 | Rs 40,000 |
+| enterprise (Enterprise) | more than 1,000, no limit | agreed with each school | 10% off 3 months, unless agreed | 10 months, unless agreed |
 
-To change a price later, run this in the SQL Editor:
+`institution` and `custom` are retired (`active = false`) and kept only because
+old invoices point at them. A school chooses no plan: it types its number of
+pupils at signup and the plan follows from that. The trial is 14 days.
 
-```sql
-update public.plans set price_yearly = 40000 where code = 'starter';
-```
+Prices change only by migration, never by hand in the SQL Editor. The website
+carries the same list in `scripts/build-site.py` (`PLANS`), and CI's
+`supabase/check-site-prices.sh` fails until the site is rebuilt to match. See
+`site/README.md`, "Prices".
 
-Existing subscriptions keep the price they were activated at until they renew.
+An Enterprise school has no price until you agree one with it and set it from
+the console. Until then it locks the day its trial ends.
 
 ---
 
 ## Things worth knowing
 
-**Going over the student limit never stops a school working.** They get a note,
-you get a flag in `/platform`, and you move them to the right plan at renewal.
-Admissions never block — that is deliberate.
+**The pupil limit is the limit.** A school sees a warning from 90% of its plan's
+limit, and at the limit new admissions stop. It asks from Settings, Subscription
+for more room or to move up, and you move it from the console. Enterprise has
+no limit.
 
 **A school that stops paying keeps its data.** After the period ends they get 14
 days of grace where everything still works (this covers a bank transfer that has

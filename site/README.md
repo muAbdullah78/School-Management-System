@@ -3,10 +3,43 @@
 Fifteen pages of plain HTML plus one stylesheet. No framework, no bundler, no
 runtime routing. Everything in this folder is uploaded as-is and served as-is.
 
-It makes two network requests of its own, both to Supabase and both optional:
-the live price list and the current installer. If either fails the pages fall
-back to the figures written into the HTML, which
-`supabase/check-site-prices.sh` keeps in step with the `plans` table.
+It reads three things from Supabase, all optional: the live price list
+(`plans`), the current installer (`app_releases`) and, on /reviews, the
+published reviews. If a read fails the page keeps what the build wrote into the
+HTML, which for prices `supabase/check-site-prices.sh` keeps in step with the
+`plans` table.
+
+## Prices
+
+Three plans, from `public.plans` (migration 0155): Starter for 1 to 280 pupils
+at Rs 2,000 a month, Rs 5,400 for three months (10% off) or Rs 20,000 a year
+(two months free); Growth for 281 to 1,000 pupils at Rs 4,000, Rs 10,800 or
+Rs 40,000; and Enterprise for more than 1,000 pupils, with no pupil limit and a
+monthly price agreed with each school. Enterprise has no figure anywhere on the
+site: its card says "Priced with you".
+
+The site's one hand copy of that list is `PLANS` in `scripts/build-site.py`.
+The build writes it into the pricing cards, every "from" price, the two meta
+descriptions that quote a price, and the JSON-LD offers, through placeholders
+such as `{{PLAN_starter_monthly}}` and `{{FROM_PRICE}}` in `site-src/`. Never
+type a price into a page; use a placeholder.
+
+When a price changes (only ever by migration):
+
+1. change `PLANS` and run `python3 scripts/build-site.py`;
+2. if the cheapest monthly price moved, change `FROM` in
+   `scripts/build-og.mjs` and run `node scripts/build-og.mjs`, then bump the
+   `?v=` on `og:image` in `site-src/layout.html` so WhatsApp fetches the new
+   card instead of its cached one;
+3. run `bash supabase/check-site-prices.sh` against a database with the
+   migration applied. It compares the cards, `PLANS`, the JSON-LD, every
+   "from" line, the meta descriptions and the text inside `og.png` with
+   `plans` in both directions, so a retired plan left on the site fails as
+   surely as a missing one.
+
+At page load `wire.js` writes the live names, bands of pupils, the three term
+prices and the two savings onto the Starter and Growth cards, and the cheapest
+monthly price into the home page hero. It leaves Enterprise's words alone.
 
 ## It is GENERATED. Do not edit site/*.html
 
@@ -61,9 +94,9 @@ inside the real pages, in real sentences.
 
 ## The one thing you edit: config.js
 
-`config.js` is committed BLANK on purpose, and `supabase/check-site-links.sh`
-fails the build if a real value is committed into it. Fill it in on the
-DEPLOYMENT, not in the repository:
+`config.js` holds the deployment's values and is committed with them. Every
+value in it is public by design; `supabase/check-site-links.sh` refuses any
+Supabase key in `site/` other than the anon key, judged by decoding the token:
 
 | Key | What goes in it |
 | --- | --- |
@@ -77,8 +110,8 @@ DEPLOYMENT, not in the repository:
 
 The ANON key belongs in a browser. The SERVICE ROLE key never does: not here,
 not in `wrangler.jsonc`, not in a build variable. Row Level Security is what
-protects the data, and `anon` can read exactly two things, the active price list
-and the current release.
+protects the data, and the site reads only the active price list, the current
+release and the published reviews.
 
 With `APP_URL` empty, a banner at the top of every page says the site is not yet
 pointed at the software, and with the contact keys empty the contact page says

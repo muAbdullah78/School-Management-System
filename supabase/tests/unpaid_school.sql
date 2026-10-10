@@ -25,6 +25,10 @@
 --
 -- and that trials cannot be extended, at all, by anybody.
 --
+-- Since 0155 a trial ends with the same fourteen days of grace as a paid
+-- period, so "unpaid" here means a trial that ended FIFTEEN days ago: past its
+-- grace, locked. A trial that ended fourteen days ago is still in grace.
+--
 -- Run: psql -v ON_ERROR_STOP=1 -f supabase/tests/unpaid_school.sql
 -- =============================================================================
 
@@ -48,11 +52,13 @@ begin
   insert into public.schools (id, name, city) values
     (paid, 'Paid School', 'Lahore'), (unpaid, 'Unpaid School', 'Karachi');
 
-  -- One paying, one whose trial ended a fortnight ago and who never paid.
+  -- One paying, one whose trial ended fifteen days ago and who never paid.
+  -- Fifteen, not fourteen: since 0155 a trial gets the same fourteen days of
+  -- grace as a paid period, and only the day after that is it locked.
   insert into public.subscriptions (school_id, plan_code, status, period_start, period_end)
     values (paid, 'starter', 'active', current_date - 30, current_date + 300);
   insert into public.subscriptions (school_id, plan_code, status, trial_ends_on)
-    values (unpaid, 'starter', 'trialing', current_date - 14);
+    values (unpaid, 'starter', 'trialing', current_date - 15);
 
   insert into auth.users (id, email) values
     (own_p, 'owner@paid.test'), (par_p, 'parent@paid.test'),
@@ -94,9 +100,9 @@ begin
     raise exception 'FAIL: the paying school reads as %, so this suite proves nothing', v_paid;
   end if;
   if v_unpaid <> 'locked' then
-    raise exception 'FAIL: a trial that ended 14 days ago reads as %, not locked. '
-      'A trial has no grace period (0026), so this is the fixture being wrong '
-      'or the status rule having changed.', v_unpaid;
+    raise exception 'FAIL: a trial that ended 15 days ago reads as %, not locked. '
+      'A trial gets fourteen days of grace (0155) and no more, so this is the '
+      'fixture being wrong or the status rule having changed.', v_unpaid;
   end if;
   raise notice '1. one school active, one locked - ok';
 end $t$;

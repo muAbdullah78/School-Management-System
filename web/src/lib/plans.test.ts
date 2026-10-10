@@ -1,19 +1,30 @@
 import { describe, expect, it } from 'vitest'
-import { TERM_LABEL, termSentence, planForRoll, type SignupPlan } from '@/lib/plans'
+import { TERM_LABEL, termSentence, planForStudents, type SignupPlan } from '@/lib/plans'
 
+/* The shape fn_signup_plans returns since 0155. The figures are fixtures: the
+   rule under test is which plan a roll belongs on, not what any plan costs. */
 const PLANS: SignupPlan[] = [
-  { code: 'starter', name: 'Starter (up to 150 students)', student_limit: 150, terms: [] },
-  { code: 'growth', name: 'Growth (151-350 students)', student_limit: 350, terms: [] },
-  { code: 'institution', name: 'Institution (351-600 students)', student_limit: 600, terms: [] },
+  { code: 'starter', name: 'Starter', student_limit: 280, min_students: 1, by_arrangement: false,
+    month_price: 2000, how_priced: null,
+    terms: [{ months: 1, amount: 2000, per_month: 2000, saving: 0 },
+            { months: 3, amount: 5400, per_month: 1800, saving: 600 },
+            { months: 12, amount: 20000, per_month: 1667, saving: 4000 }] },
+  { code: 'growth', name: 'Growth', student_limit: 1000, min_students: 281, by_arrangement: false,
+    month_price: 4000, how_priced: null,
+    terms: [{ months: 1, amount: 4000, per_month: 4000, saving: 0 },
+            { months: 3, amount: 10800, per_month: 3600, saving: 1200 },
+            { months: 12, amount: 40000, per_month: 3333, saving: 8000 }] },
+  { code: 'enterprise', name: 'Enterprise', student_limit: null, min_students: 1001, by_arrangement: true,
+    month_price: null, terms: [],
+    how_priced: 'We agree a monthly price with you. Three months is 10% off it and a year is two months free.' },
 ]
 
 /**
- * The three terms are sold; any number of months can be invoiced.
+ * One, three or twelve months, and nothing else.
  *
- * fn_choose_term sells 1, 3 and 12. fn_activate_subscription accepts 1 to 60
- * and, since migration 0127, records what it invoiced. So a school really can
- * be on a six-month term, and every surface that renders a term has to cope
- * with one rather than fall through to an empty string.
+ * Since 0155 those are the only terms sold OR invoiced: the operator's own
+ * invoice is refused for any other number, so a six-month term cannot exist
+ * any more and nothing has to be worded for one.
  */
 describe('how a billing term reads', () => {
   it('names the three that are sold', () => {
@@ -28,46 +39,54 @@ describe('how a billing term reads', () => {
     expect(termSentence(12)).toBe('once a year')
   })
 
-  it('copes with a term an operator invoiced that no button represents', () => {
-    expect(termSentence(6)).toBe('every 6 months')
-    expect(termSentence(24)).toBe('every 24 months')
-  })
-
   it('never renders an empty term', () => {
     // A school with no subscription, or one read before the query settles.
     // "Paid " with nothing after it is worse than a hedge.
-    for (const v of [null, undefined, 0, -1]) {
+    for (const v of [null, undefined, 0, -1, 6]) {
       expect(termSentence(v as number | null | undefined)).toBe('by arrangement')
     }
   })
 })
 
-describe('which plan a roll falls into', () => {
-  it('picks the smallest plan that covers the roll', () => {
-    expect(planForRoll(PLANS, 1)?.code).toBe('starter')
-    expect(planForRoll(PLANS, 150)?.code).toBe('starter')
-    // 151 is the first roll Starter does not cover, and the band in Growth's
-    // own name says so.
-    expect(planForRoll(PLANS, 151)?.code).toBe('growth')
-    expect(planForRoll(PLANS, 350)?.code).toBe('growth')
-    expect(planForRoll(PLANS, 351)?.code).toBe('institution')
-    expect(planForRoll(PLANS, 600)?.code).toBe('institution')
+/**
+ * The roll decides the plan: 1 to 280 Starter, 281 to 1,000 Growth, more than
+ * 1,000 Enterprise. The signup form shows this as the number is typed, so it
+ * has to agree with fn__plan_for_students at every edge.
+ */
+describe('which plan a roll belongs on', () => {
+  it('puts each roll on the plan whose range holds it, edges included', () => {
+    expect(planForStudents(PLANS, 1)?.code).toBe('starter')
+    expect(planForStudents(PLANS, 280)?.code).toBe('starter')
+    expect(planForStudents(PLANS, 281)?.code).toBe('growth')
+    expect(planForStudents(PLANS, 1000)?.code).toBe('growth')
+    expect(planForStudents(PLANS, 1001)?.code).toBe('enterprise')
+    expect(planForStudents(PLANS, 100000)?.code).toBe('enterprise')
   })
 
-  it('returns nothing when no plan on sale covers the roll', () => {
-    // 601 and up is priced in a conversation, and fn_signup_plans does not
-    // offer it: a plan with no price has no student limit either, so a school
-    // self-serving onto it would get unlimited pupils for nothing.
-    expect(planForRoll(PLANS, 601)).toBeNull()
+  it('gives Enterprise no price to show, only how it is priced', () => {
+    const e = planForStudents(PLANS, 2500)!
+    expect(e.by_arrangement).toBe(true)
+    expect(e.terms).toEqual([])
+    expect(e.month_price).toBeNull()
+    expect(e.how_priced).toMatch(/agree a monthly price/i)
   })
 
-  it('treats a plan with no limit as covering any roll', () => {
-    const withCustom = [...PLANS,
-      { code: 'custom', name: 'Custom', student_limit: null, terms: [] }]
-    expect(planForRoll(withCustom, 5000)?.code).toBe('custom')
+  it('returns nothing for a number that is not a roll', () => {
+    for (const n of [0, -5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(planForStudents(PLANS, n)).toBeNull()
+    }
   })
 
   it('returns nothing when there are no plans at all', () => {
-    expect(planForRoll([], 100)).toBeNull()
+    // The price list did not load. The form must still submit, and it can
+    // only do that if "no plan" is an answer rather than a crash.
+    expect(planForStudents([], 100)).toBeNull()
+  })
+
+  it('finds nothing in a price list from before the ranges existed', () => {
+    // An older database sends plans with no min_students. Guessing from a
+    // list like that would show a school a plan the database will not give it.
+    const old = PLANS.map(({ min_students: _m, ...p }) => p) as unknown as SignupPlan[]
+    expect(planForStudents(old, 100)).toBeNull()
   })
 })

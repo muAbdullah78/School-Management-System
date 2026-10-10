@@ -59,6 +59,19 @@
 
 export type DoorColumn = 'selling' | 'portal' | 'office' | 'none'
 
+/**
+ * The one line a buyer reads on a phone, where the support column is gone.
+ *
+ * NO FIGURE IN IT, ON PURPOSE. It quoted the cheapest monthly price, a copy of
+ * a number the database holds, and a price rise left it quoting a figure nobody
+ * would honour on the two pages where a school decides to buy. Since 0155 the
+ * plan follows the number of pupils, Enterprise has no list price at all, and
+ * the signup form shows the real figure for the school's own roll as it is
+ * typed, read from the database. So this line says what stays true whatever
+ * the price list says, and the price is said once, where it is read live.
+ */
+const FOOT_FOR_BUYERS = 'Priced by the size of your roll. 14 days free. All modules included.'
+
 export interface Door {
   id: 'office' | 'parents' | 'operator' | 'signup'
   /** Small caps label above the heading. Says which door this is. */
@@ -140,7 +153,7 @@ export const OFFICE_DOOR: Door = {
     caption: 'Or just sign in above. The same details work on both pages.',
   },
   column: 'office',
-  footNote: 'From Rs 2,000 a month. 14 days free. All modules included.',
+  footNote: FOOT_FOR_BUYERS,
   offerTrial: true,
   line: 'The register, the fee book and the attendance sheet, in one place.',
 }
@@ -223,7 +236,7 @@ export const SIGNUP_DOOR: Door = {
   ifUnknown: '',
   resetFirst: true,
   column: 'selling',
-  footNote: 'From Rs 2,000 a month. 14 days free. All modules included.',
+  footNote: FOOT_FOR_BUYERS,
   offerTrial: false,
   line: 'The register, the fee book and the attendance sheet, in one place.',
 }

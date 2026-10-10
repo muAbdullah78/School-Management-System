@@ -19,35 +19,40 @@
 import { it } from 'vitest'
 import { SchoolsTable } from '../src/pages/platform/SchoolsTable'
 import { SchoolDrawer } from '../src/pages/platform/SchoolDrawer'
-import type { PlatformSchool } from '../src/lib/platform'
+import type { PlatformSchool, SchoolDetail } from '../src/lib/platform'
+import type { SubscriptionView } from '../src/lib/subscription'
+import type { SchoolRow } from '../src/pages/platform/status'
 import { writePage } from './harness'
 
 const base: PlatformSchool = {
   school_id: 'x', school_name: '', city: null, contact_name: null, contact_phone: null,
   plan_code: 'starter', status: 'active', expires_on: '2027-06-30', days_left: 297,
-  student_count: 120, student_limit: 200, limit_state: 'ok',
+  student_count: 120, student_limit: 280, limit_state: 'ok',
   suggested_plan: 'starter', needs_upgrade: false,
   outstanding: 0, last_paid_on: '2026-07-01',
   suspended: false, suspend_reason: null, archived: false,
 }
-const s = (id: string, p: Partial<PlatformSchool>): PlatformSchool =>
+const s = (id: string, p: Partial<SchoolRow>): SchoolRow =>
   ({ ...base, school_id: id, ...p })
 
 const SCHOOLS: PlatformSchool[] = [
   s('1', { school_name: 'Al Qalam School', city: 'Lahore',
     contact_name: 'Basha Salamat', contact_phone: '0300-1234567',
-    student_count: 180, limit_state: 'within_margin' }),
+    student_count: 262 }),
   s('2', { school_name: 'Beaconhouse Multan', city: 'Multan', status: 'grace',
     expires_on: '2026-08-20', days_left: -17, outstanding: 38000,
-    plan_code: 'growth', student_count: 640, student_limit: 500, limit_state: 'over',
-    suggested_plan: 'scale', needs_upgrade: true, last_paid_on: '2025-08-19' }),
+    plan_code: 'growth', student_count: 1040, student_limit: 1000, limit_state: 'over',
+    suggested_plan: 'enterprise', needs_upgrade: true, last_paid_on: '2025-08-19' }),
   s('3', { school_name: 'The City School Gulberg', city: 'Lahore',
     contact_name: 'Farhan Iqbal', contact_phone: '0321-9876543',
     status: 'trialing', expires_on: '2026-09-19', days_left: 13,
-    student_count: 42, student_limit: 200, last_paid_on: null }),
+    student_count: 42, last_paid_on: null }),
+  // 0155. Enterprise, on trial, and nobody has agreed its price yet: it locks
+  // the day after the trial with no grace, so it should be the loudest row.
   s('4', { school_name: 'Roots Millennium F-7', city: 'Islamabad',
-    contact_name: 'Ayesha Tariq', plan_code: 'scale',
-    student_count: 1180, student_limit: 2000, expires_on: '2026-09-25', days_left: 19 }),
+    contact_name: 'Ayesha Tariq', plan_code: 'enterprise', status: 'trialing',
+    student_count: 1180, student_limit: null, expires_on: '2026-09-25', days_left: 6,
+    last_paid_on: null, needs_price: true, trial_ends_on: '2026-09-25' }),
   // No contact details at all, which is a real and common state and the row
   // must not collapse for it.
   s('5', { school_name: 'Sunrise Public School', city: null }),
@@ -58,27 +63,57 @@ const SCHOOLS: PlatformSchool[] = [
     suspended: true, status: 'locked', suspend_reason: 'Three months unpaid and not answering',
     outstanding: 57000, days_left: -140, expires_on: '2026-04-19' }),
   s('8', { school_name: 'Allied School Sargodha', city: 'Sargodha',
-    contact_name: 'Nadia Rehman', student_count: 310, student_limit: 500,
+    contact_name: 'Nadia Rehman', student_count: 310, student_limit: 1000,
     plan_code: 'growth' }),
   s('9', { school_name: 'Bloomfield Hall Cantt', city: 'Rawalpindi',
     status: 'trialing', expires_on: '2026-09-08', days_left: 2,
     student_count: 8, last_paid_on: null }),
   s('10', { school_name: 'Lahore Grammar Johar Town', city: 'Lahore',
-    plan_code: 'scale', student_count: 1960, student_limit: 2000,
-    limit_state: 'within_margin', contact_name: 'Imran Sheikh' }),
+    plan_code: 'growth', student_count: 960, student_limit: 1000,
+    contact_name: 'Imran Sheikh' }),
   s('11', { school_name: 'Fauji Foundation Model', city: 'Peshawar',
     status: 'cancelled', expires_on: '2026-06-30', days_left: -68,
     last_paid_on: '2025-07-02' }),
   s('12', { school_name: 'Green Hills Academy', city: 'Abbottabad',
     outstanding: 12500, contact_phone: '0345-1122334' }),
   s('13', { school_name: 'Siddeeq Public School', city: 'Karachi',
-    plan_code: 'growth', student_count: 480, student_limit: 500,
-    limit_state: 'within_margin', expires_on: '2026-09-30', days_left: 24 }),
+    student_count: 280, expires_on: '2026-09-30', days_left: 24 }),
   s('14', { school_name: 'Habib Girls School', city: 'Karachi',
     archived: true, status: 'cancelled', expires_on: '2025-12-31', days_left: -249 }),
 ]
 
 const noop = () => {}
+
+/** Beaconhouse Multan as fn__subscription_view describes it: Growth, in grace,
+ *  over its limit, with an unpaid invoice and some credit. */
+const VIEW: SubscriptionView = {
+  plan: { code: 'growth', name: 'Growth', by_arrangement: false, student_limit: 1000, min_students: 281 },
+  price: {
+    priced: true, month: 4000, quarter: 10800, year: 40000, agreed: false, agreed_at: null,
+    agreed_reason: null, quarter_set: false, year_set: false,
+  },
+  terms: [], term_months: 12, status: 'grace', stored_status: 'active', in_trial: false,
+  trial_ends_on: '2025-08-19', paid_from: '2025-08-20', paid_through: '2026-08-19',
+  covered_to: '2026-08-19', grace_days: 14, locks_on: '2026-09-03', days_to_lock: 3,
+  locked_because: null, needs_price: false, cancel_at_period_end: false, suspended: false,
+  suspend_reason: null,
+  students: {
+    count: 1040, limit: 1000, plan_limit: 1000, extra: null, extra_until: null,
+    extra_reason: null, extra_expired: false, declared: 900, room: 0,
+    warn: true, full: true, over: true,
+  },
+  open_invoice: {
+    id: 'c', doc_no: 'INV-2026-0044', months: 12, period_start: '2026-08-20',
+    period_end: '2027-08-19', amount: 40000, total: 40000, paid: 2000, owed: 38000,
+    due_on: '2026-08-20', discount_code: null, discount_amount: 0,
+  },
+  owed: 38000, credit: 0, next: null, pay_now: 38000, can_request_invoice: false,
+}
+
+const DETAIL = {
+  school: { id: '2', name: 'Beaconhouse Multan' }, subscription: VIEW,
+  licence: { plan_code: 'growth', suggested_plan: 'enterprise' },
+} as unknown as SchoolDetail
 
 it('renders the operator console directory', () => {
   writePage('../scratch/console.html', [
@@ -112,14 +147,14 @@ it('renders the operator console directory', () => {
 it('renders the school workspace, Billing', () => {
   writePage('../scratch/console-billing.html', [
     {
-      caption: 'The workspace, Billing tab. Activate, Record payment and Statement were '
-        + 'three separate dialogs opened from three separate links; the balance now '
-        + 'sits directly above the two buttons that move it.',
+      caption: 'The workspace, Billing tab. What is owed, how far what they paid reaches, '
+        + 'the open invoice, then Plan and price with Change plan, then the statement. '
+        + 'Raise invoice says what it does: since 0155 an invoice gives no time, paying does.',
       profile: null,
       node: (
         <div className="relative h-[820px] overflow-hidden bg-slate-100">
           <SchoolDrawer school={SCHOOLS[1]} tab="billing" onTab={noop} onClose={noop}
-            onPay={noop} onActivate={noop} onManage={noop} onVisit={noop} onOffboard={noop} />
+            onPay={noop} onRaiseInvoice={noop} onManage={noop} onVisit={noop} onOffboard={noop} />
         </div>
       ),
       seeds: [[['platformLedger', '2'], [
@@ -132,8 +167,13 @@ it('renders the school workspace, Billing', () => {
         { entry_id: 'c', entry_date: '2026-08-20', kind: 'invoice', doc_no: 'INV-2026-0044',
           description: 'growth · 12 months · 2026-08-20 to 2027-08-19',
           charged: 38000, paid: null, voided: false,
-          note: 'list 42000.00 — renewal discount agreed on the phone', reference: null },
-      ]], [['platformSettings'], { missing: [] }]],
+          note: 'list 42000.00: renewal discount agreed on the phone', reference: null },
+        { entry_id: 'd', entry_date: '2026-09-01', kind: 'invoice', doc_no: 'INV-2026-0051',
+          description: 'enterprise · 12 months · 2026-09-01 to 2027-08-19',
+          charged: 9000, paid: null, voided: false,
+          note: 'Moved from Growth to Enterprise for the rest of the period paid to 19 Aug 2027. Roll passed 1,000',
+          reference: null },
+      ]], [['platformSettings'], { missing: [] }], [['schoolDetail', '2'], DETAIL]],
     },
   ], { bodyStyle: 'background:#f1f5f9;margin:0' })
 })
@@ -148,7 +188,7 @@ it('renders the school workspace, Activity', () => {
       node: (
         <div className="relative h-[820px] overflow-hidden bg-slate-100">
           <SchoolDrawer school={SCHOOLS[1]} tab="activity" onTab={noop} onClose={noop}
-            onPay={noop} onActivate={noop} onManage={noop} onVisit={noop} onOffboard={noop} />
+            onPay={noop} onRaiseInvoice={noop} onManage={noop} onVisit={noop} onOffboard={noop} />
         </div>
       ),
       seeds: [[['schoolActions', '2', 100], [
@@ -164,7 +204,7 @@ it('renders the school workspace, Activity', () => {
             plan_code: 'growth', discount: 4000, note: 'renewal discount agreed on the phone' } },
         { at: '2026-08-11T10:20:00Z', actor_email: null, by_operator: false,
           action: 'login.deleted', detail: { name: 'Sana Khalid', role: 'accountant' } },
-      ]]],
+      ]], [['schoolDetail', '2'], DETAIL]],
     },
   ], { bodyStyle: 'background:#f1f5f9;margin:0' })
 })

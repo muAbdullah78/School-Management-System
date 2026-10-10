@@ -25,9 +25,15 @@ describe('the three doors', () => {
     // And the operator, who needs no persuading at all, gets no strip.
     expect(OPERATOR_DOOR.footNote).toBe('')
     expect(OPERATOR_DOOR.column).toBe('none')
-    // The buyer still gets it, on the two pages a buyer stands at.
-    expect(OFFICE_DOOR.footNote).toMatch(/Rs 2,000/)
-    expect(SIGNUP_DOOR.footNote).toMatch(/Rs 2,000/)
+    // The buyer still gets a line, on the two pages a buyer stands at, and it
+    // carries NO FIGURE: a price typed into copy is right only until the price
+    // list moves, and since 0155 the plan follows the roll and Enterprise has
+    // no list price. The signup form shows the real figure, read live.
+    for (const d of [OFFICE_DOOR, SIGNUP_DOOR]) {
+      expect(d.footNote).not.toMatch(/Rs\s?\d|\d,\d{3}/)
+      expect(d.footNote).toMatch(/14 days free/)
+      expect(d.footNote).toMatch(/roll/i)
+    }
   })
 
   it('offers the trial only where a school buyer might be standing', () => {

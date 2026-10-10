@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { actionNeeded, sortByAction, type PlatformSchool } from '@/lib/platform'
 import { formatPkr } from '@/lib/licence'
-import { StatusChip, LimitBar, ExpiryCell } from './status'
+import { StatusChip, LimitBar, ExpiryCell, NeedsPriceChip, type SchoolRow } from './status'
 
 /**
  * The school directory.
@@ -31,11 +31,14 @@ import { StatusChip, LimitBar, ExpiryCell } from './status'
  */
 
 type SortKey = 'action' | 'name' | 'expiry' | 'students' | 'owed'
-type Filter = 'all' | 'attention' | 'trial' | 'paying' | 'overdue' | 'archived'
+type Filter = 'all' | 'attention' | 'price' | 'trial' | 'paying' | 'overdue' | 'archived'
 
 const FILTERS: { key: Filter; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'attention', label: 'Needs attention' },
+  // 0155. Enterprise schools waiting for us to agree their price. Offered only
+  // when there are some, like every other filter here.
+  { key: 'price', label: 'Price not agreed' },
   { key: 'trial', label: 'On trial' },
   { key: 'paying', label: 'Paying' },
   { key: 'overdue', label: 'Overdue or locked' },
@@ -45,6 +48,7 @@ const FILTERS: { key: Filter; label: string }[] = [
 function matches(s: PlatformSchool, filter: Filter): boolean {
   switch (filter) {
     case 'attention': return actionNeeded(s) !== null
+    case 'price':     return !s.archived && (s as SchoolRow).needs_price === true
     case 'trial':     return s.status === 'trialing'
     case 'paying':    return s.status === 'active'
     case 'overdue':   return s.status === 'grace' || s.status === 'locked' || s.suspended
@@ -188,7 +192,7 @@ export function SchoolsTable({
               <tr>
                 {head('name', 'School')}
                 <th className="px-3 py-2 font-medium">Status</th>
-                {head('expiry', 'Licence')}
+                {head('expiry', 'Paid through')}
                 {head('students', 'Students')}
                 {head('owed', 'Owed', 'text-right')}
                 <th className="px-3 py-2 text-right font-medium">
@@ -218,6 +222,9 @@ export function SchoolsTable({
                     <td className="px-3 py-2">
                       <div className="flex flex-wrap gap-1">
                         <StatusChip s={s} />
+                        {(s as SchoolRow).needs_price && (
+                          <NeedsPriceChip trialEndsOn={(s as SchoolRow).trial_ends_on} />
+                        )}
                         {s.archived && (
                           <span className="rounded bg-slate-200 px-1.5 py-0.5 text-xs text-slate-600">
                             archived
@@ -264,29 +271,38 @@ export function SchoolsTable({
   )
 }
 
-export type QuickKind = 'pay' | 'renew'
+export type QuickKind = 'pay' | 'invoice' | 'price'
 
 const QUICK_LABEL: Record<QuickKind, string> = {
   pay: 'Record payment',
-  renew: 'Renew',
+  invoice: 'Raise invoice',
+  price: 'Set price',
 }
 
 /**
  * The one thing this school needs today, or nothing.
  *
  * A fixed button on every row is a button nobody reads. Deriving it means the
- * last column is a worklist: money owed is a payment to chase, and a licence
- * running out with nothing owed is a renewal to sell. A school that is paid up
- * and inside its dates needs neither, and gets an empty cell.
+ * last column is a worklist: money owed is a payment to chase, and paid time
+ * running out with nothing owed is an invoice to raise. A school that is paid
+ * up and inside its dates needs neither, and gets an empty cell.
  *
  * Money first when both are true, because an unpaid invoice on a school you are
- * about to renew is the conversation, not a footnote to it.
+ * about to invoice again is the conversation, not a footnote to it. Before
+ * either, an Enterprise school with no price: there is nothing to invoice until
+ * we set one, and it locks the day after its trial with no grace.
+ *
+ * "Raise invoice", not "Renew": since 0155 raising an invoice gives a school no
+ * time at all. Paying it does.
  */
-function quickAction(s: PlatformSchool): QuickKind | null {
+function quickAction(s: SchoolRow): QuickKind | null {
   if (s.archived) return null
+  if (s.needs_price && s.status !== 'cancelled') return 'price'
   if (s.outstanding > 0) return 'pay'
   if (s.status === 'cancelled') return null
-  if (s.days_left !== null && s.days_left <= 30) return 'renew'
-  if (s.status === 'locked' || s.status === 'grace') return 'renew'
+  // A suspended school cannot be invoiced until the suspension is lifted.
+  if (s.suspended) return null
+  if (s.days_left !== null && s.days_left <= 30) return 'invoice'
+  if (s.status === 'locked' || s.status === 'grace') return 'invoice'
   return null
 }
