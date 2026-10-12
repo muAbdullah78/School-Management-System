@@ -794,11 +794,16 @@ begin
     'Say how this price was agreed'),
     '59 a school created with a price needs to say how the price was agreed');
 
-  set local role service_role;
+  -- A role of the suite's own, made inside this transaction, so the check does
+  -- not depend on whether this database's service_role bypasses row security
+  -- (it does on Supabase, and not in CI).
+  create role pp_price_editor nologin bypassrls;
+  grant select, update on public.plans to pp_price_editor;
+  set local role pp_price_editor;
   update public.plans set name = name where code = 'starter';
   reset role;
-  perform pg_temp.ok((select changed_as from public.plan_changes order by id desc limit 1) = 'service_role',
-    '60 a change to the price list records the role that made it');
+  perform pg_temp.ok((select changed_as from public.plan_changes order by id desc limit 1) = 'pp_price_editor',
+    '60 a change to the price list records the role that made it, not the owner of the trigger');
   perform pg_temp.ok(pg_temp.raises(
     $q$delete from public.plan_changes where id = (select max(id) from public.plan_changes)$q$,
     'append-only'),
