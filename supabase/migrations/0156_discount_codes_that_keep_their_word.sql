@@ -854,6 +854,15 @@ begin
   -- An invoice already raised and not yet paid is reissued so the code is on it.
   if c.kind <> 'trial_days' and v_prev->>'applies_to' = 'open_invoice' then
     v_re := public.fn__reissue_open_invoice(v_school, format('Reissued with code %s', c.code), 'school');
+  -- A longer trial moves the first invoice to start after it. Left alone, an
+  -- invoice raised for the old end fell due inside the new trial and locked
+  -- the school as unpaid halfway through it.
+  elsif c.kind = 'trial_days'
+        and (select period_start from public.platform_invoices
+              where id = public.fn__open_term_invoice(v_school)) <= v_trial then
+    v_re := public.fn__reissue_open_invoice(v_school,
+      format('Reissued to start after the trial, which now runs to %s', to_char(v_trial, 'DD Mon YYYY')),
+      'school');
   end if;
 
   return jsonb_build_object(
@@ -1466,6 +1475,12 @@ begin
 
   if c.kind <> 'trial_days' then
     v_re := public.fn__reissue_open_invoice(p_school_id, format('Reissued with code %s', c.code), 'operator');
+  elsif v_trial is not null
+        and (select period_start from public.platform_invoices
+              where id = public.fn__open_term_invoice(p_school_id)) <= v_trial then
+    v_re := public.fn__reissue_open_invoice(p_school_id,
+      format('Reissued to start after the trial, which now runs to %s', to_char(v_trial, 'DD Mon YYYY')),
+      'operator');
   end if;
 
   return jsonb_build_object('school_id', p_school_id, 'code', c.code, 'redemption_id', v_id,

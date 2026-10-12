@@ -558,9 +558,15 @@ begin
   perform public._bact('ops');
 
   -- A fresh invoice with a tax line on it, so the document has something to show.
+  -- School a holds Rs 20,000 of credit since the credit notes above (0155: a
+  -- credit note on money already paid hands that money back as credit), so its
+  -- new invoice is paid the moment it is raised, and tax cannot be set on a
+  -- paid invoice (fn_platform_set_invoice_tax, tested in
+  -- three_plans_and_paying_first.sql). The tax line is written directly: this
+  -- block tests the printed document, not the setter.
   r := public.fn_activate_subscription(a, 'growth', 12, null, null, false);
   i_new := (r->>'invoice_id')::uuid;
-  perform public.fn_platform_set_invoice_tax(i_new, 16);
+  update public.platform_invoices set tax_pct = 16, tax_amount = 3200 where id = i_new;
   insert into _bdoc values ('i_tax', i_new::text);
 
   d := public.fn_platform_invoice(i_new);
@@ -597,10 +603,12 @@ begin
 
   -- The balance shown is THIS document's, not the school's. Putting the school
   -- balance here makes one invoice look unpaid because another one is.
+  -- BSH-0001 was paid and then credited in full, so (0155) the payment went back
+  -- to the school as credit: on this document it is credited, not paid twice.
   d := public.fn_platform_invoice(i_a);
-  perform pg_temp.ok(pg_temp.eq((d->'totals'->>'paid')::numeric, 20000)
+  perform pg_temp.ok(pg_temp.eq((d->'totals'->>'paid')::numeric, 0)
                  and pg_temp.eq((d->'totals'->>'credited')::numeric, 20000)
-                 and pg_temp.eq((d->'totals'->>'balance')::numeric, -20000),
+                 and pg_temp.eq((d->'totals'->>'balance')::numeric, 0),
     '57 the document shows its own payments and credits');
   perform pg_temp.ok(jsonb_array_length(d->'credit_notes') = 2,
     '57b and lists the credit notes raised against it');

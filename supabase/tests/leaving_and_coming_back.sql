@@ -187,23 +187,33 @@ end $t$;
 
 -- 6. BUT COMING BACK AFTER IT HAS ENDED IS A PURCHASE, NOT AN UNDO. A function
 --    that reinstated a lapsed school would hand the product to anybody who
---    cancelled and waited.
+--    cancelled and waited. Before 0155 the school was refused and told to
+--    choose a plan, which no screen lets a school do, so a school that left
+--    could never come back (its payments sat as credit). Now it may restart,
+--    and stays locked until its next payment: restarting opens nothing.
 do $t$
-declare v_msg text;
+declare j jsonb; v_school uuid;
 begin
   perform set_config('test.uid', (select v::text from ids where k='own_l'), false);
-  begin
-    perform public.fn_resume_my_subscription();
-    raise exception 'FAIL: a school whose period ended a week ago resumed itself '
-      'for free';
-  exception when others then
-    get stacked diagnostics v_msg = message_text;
-    if v_msg like 'FAIL:%' then raise exception '%', v_msg; end if;
-    if v_msg not like '%Choose a plan to start again%' then
-      raise exception 'FAIL: refused for the wrong reason: %', v_msg;
-    end if;
-  end;
-  raise notice '6. a lapsed school cannot resume itself for free - ok';
+  v_school := (select school_id from public.profiles where id = (select v from ids where k='own_l'));
+  j := public.fn_resume_my_subscription();
+  if (j->>'resumed')::boolean is not true then
+    raise exception 'FAIL: a school whose period ended could not restart at all';
+  end if;
+  -- A week past its end it had no access, so it used no grace: restarting
+  -- leaves it locked, and its next period starts the day it pays.
+  if public.fn_effective_status(v_school) <> 'locked' then
+    raise exception 'FAIL: a school whose period ended a week ago resumed itself for free (%)',
+      public.fn_effective_status(v_school);
+  end if;
+  if public.fn__next_period_start(v_school) <> current_date then
+    raise exception 'FAIL: restarting bills days the school was closed (next period %)',
+      public.fn__next_period_start(v_school);
+  end if;
+  if j->>'note' not like '%opens again when your next payment reaches us%' then
+    raise exception 'FAIL: restarting after the end does not say that paying opens it: %', j->>'note';
+  end if;
+  raise notice '6. a lapsed school can restart, stays locked until it pays, and is billed from then - ok';
 end $t$;
 
 -- 7. AND ONLY LEADERSHIP CAN DO ANY OF IT. Cancelling the software the whole

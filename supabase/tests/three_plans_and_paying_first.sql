@@ -257,8 +257,8 @@ begin
   -- It was invoiced from the end of its trial and never paid.
   r := public.fn_platform_raise_invoice(v_s, 3, null, null);
   v_inv := (r->>'invoice_id')::uuid;
-  perform pg_temp.ok((r->>'period_start')::date = current_date,
-    '36 a locked school is billed from today, not from when its trial ended');
+  perform pg_temp.ok((r->>'period_start')::date = current_date - 14,
+    '36 a school coming back on its first locked day is billed from the end of its trial: it used its fourteen days of grace');
   update public.platform_invoices set period_start = current_date - 14,
          period_end = current_date - 14 + 89, due_on = current_date - 14
    where id = v_inv;
@@ -271,10 +271,10 @@ begin
   perform pg_temp.ok((select voided_at is not null from public.platform_invoices where id = v_inv),
     '38 the invoice that lapsed unpaid is voided, with nothing on it');
   select * into s from public.subscriptions where school_id = v_s;
-  perform pg_temp.ok(s.period_start = current_date
-                     and s.period_end = (current_date + interval '3 months')::date - 1
+  perform pg_temp.ok(s.period_start = current_date - 14
+                     and s.period_end = public.fn__term_end(current_date - 14, 3)
                      and public.fn_effective_status(v_s) = 'active',
-    '39 and the payment opens a fresh three months from today');
+    '39 and the payment opens three months that include the grace days it used');
   perform pg_temp.ok((p->>'status') = 'active' and p->'raised' is not null,
     '40 the answer says the school is back and which invoice was raised');
 end $$;
@@ -299,7 +299,7 @@ begin
   perform pg_temp.ok(public.fn_effective_status(v_s) = 'active',
     '42 paying it opens the school again');
   perform pg_temp.ok((select period_end from public.subscriptions where school_id = v_s)
-                       = (current_date + interval '3 months')::date - 1,
+                       = public.fn__term_end(current_date - 14, 3),
     '43 and a charge for a plan change never extends the period');
 end $$;
 
@@ -348,8 +348,8 @@ begin
   perform pg_temp.as_op();
   v := public.fn_platform_confirm_claim((c->>'claim_id')::uuid, null, null, 0, null, null);
   perform pg_temp.ok(v->>'licence_status' = 'active'
-                     and (v->>'paid_through')::date = current_date + interval '1 month' - interval '1 day',
-    '49 confirming it raises the invoice, pays it and opens the school from today');
+                     and (v->>'paid_through')::date = public.fn__term_end(current_date - 14, 1),
+    '49 confirming it raises the invoice, pays it and opens the school: the month counts the fourteen grace days it used, not the five it was locked');
   perform pg_temp.ok(pg_temp.raises(
     format($q$select public.fn_platform_confirm_claim(%L)$q$, c->>'claim_id'), 'already confirmed'),
     '50 a report cannot be confirmed twice');

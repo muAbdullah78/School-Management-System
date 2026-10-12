@@ -446,9 +446,10 @@ select pg_temp.ok(
 
 select pg_temp.ok(
   (select period_start from public.platform_invoices
-    where school_id = pg_temp.sch('Iqbal Model School')) = current_date,
-  '25. a school whose period already expired renews from TODAY, not from the '
-  || 'date it lapsed, otherwise they pay for months they were locked out of');
+    where school_id = pg_temp.sch('Iqbal Model School')) = current_date - 14,
+  '25. a school whose period ended 35 days ago renews from fourteen days ago: it '
+  || 'is billed for the fourteen days of grace it used after its period, and never '
+  || 'for the twenty days it was locked out');
 
 -- =============================================================================
 -- 7. Rule 6: the audit trail

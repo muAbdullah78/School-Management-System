@@ -174,7 +174,8 @@ alter table public.subscriptions
   add column if not exists agreed_by uuid,
   add column if not exists agreed_at timestamptz,
   add column if not exists student_limit_override_until date,
-  add column if not exists oldest_unpaid_due_on date;
+  add column if not exists oldest_unpaid_due_on date,
+  add column if not exists closed_from date;
 
 comment on column public.subscriptions.declared_students is
   'The number of pupils the school said it has when it signed up. Its plan '
@@ -191,12 +192,72 @@ comment on column public.subscriptions.agreed_yearly is
 comment on column public.subscriptions.student_limit_override_until is
   'Extra room ends after this day: the end of the period that was running '
   'when it was granted. A plan change clears it.';
+comment on column public.subscriptions.closed_from is
+  'A school that asked to stop and came back after its period ended: it had '
+  'no access from this day, so it used no grace and is locked until it pays, '
+  'billed from the day it pays. Cleared once a paid period reaches it.';
 comment on column public.subscriptions.oldest_unpaid_due_on is
   'Kept by fn__recompute_licence: the due date of the oldest invoice with '
   'money still owed on it. Fourteen days after it, the school locks.';
 comment on column public.subscriptions.period_end is
   'PAID THROUGH. The last day covered by term invoices that have been paid in '
-  'full, in order. Raising an invoice does not move it; paying one does.';
+  'full, in order. Raising an invoice does not move it; paying one does. '
+  'Voiding the invoice that paid for it takes it back.';
+
+-- ACCESS GIVEN WITHOUT AN INVOICE. Paid-through comes from paid invoices, with
+-- one floor: dates that were GIVEN. Two things give dates:
+--   * the old rules. Before this migration raising an invoice moved period_end
+--     whether or not it was paid. Those schools keep what they were given: the
+--     dates are copied here ONCE, in the statement that adds the columns, so a
+--     second paste of this bundle (when period_end already comes from paid
+--     invoices) never copies a paid date that a later void should take away;
+--   * a person editing period_end in the table by hand, which is how an owner
+--     who knows the Supabase editor gives a school time. The trigger below
+--     records it here, so the next payment does not silently undo it.
+-- fn__recompute_licence never lets paid-through fall below these dates, and
+-- marks its own writes so the trigger leaves them alone. Voiding the invoice
+-- that opened a school under the old rules takes its dates away
+-- (fn__void_invoice); setting period_end to empty by hand does the same.
+do $given$
+begin
+  if not exists (select 1 from information_schema.columns
+                  where table_schema = 'public' and table_name = 'subscriptions'
+                    and column_name = 'given_through') then
+    alter table public.subscriptions
+      add column given_from date,
+      add column given_through date;
+    update public.subscriptions
+       set given_from = period_start, given_through = period_end
+     where period_end is not null;
+  end if;
+end $given$;
+comment on column public.subscriptions.given_through is
+  'Access given without a paid invoice: the paid-through date a school had '
+  'under the rules before 0155, or one set by hand in the table. Paid-through '
+  'never falls below it. Voiding the invoice that opened it clears it.';
+
+create or replace function public.fn__period_set_by_hand()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if coalesce(current_setting('app.licence_recompute', true), '') = 'on' then
+    return new;
+  end if;
+  if tg_op = 'INSERT' or new.period_end is distinct from old.period_end
+     or new.period_start is distinct from old.period_start then
+    new.given_from    := new.period_start;
+    new.given_through := new.period_end;
+  end if;
+  return new;
+end;
+$$;
+revoke all on function public.fn__period_set_by_hand() from public, anon, authenticated;
+drop trigger if exists trg_period_set_by_hand on public.subscriptions;
+create trigger trg_period_set_by_hand
+  before insert or update of period_start, period_end on public.subscriptions
+  for each row execute function public.fn__period_set_by_hand();
 
 -- Retired plans: nobody stays on them.
 update public.subscriptions set plan_code = 'growth'     where plan_code = 'institution';
@@ -392,29 +453,37 @@ alter table public.platform_payment_allocations force row level security;
 revoke all on public.platform_payment_allocations from public, anon, authenticated;
 
 -- What was paid against an invoice before this change: the invoice a payment
--- was recorded against, up to what that invoice still owed. The rest of every
--- payment is allocated by fn__apply_credit further down, oldest invoice first.
+-- was recorded against, up to what that invoice still owed. Payments naming
+-- the same invoice take their turn in the order they were paid, each taking
+-- only what the ones before it left, so two payments against one invoice never
+-- pay it twice: the excess stays unallocated and fn__apply_credit (section 18)
+-- carries it to the next invoice. A second paste counts what is already
+-- allocated to the invoice before giving anything more.
 insert into public.platform_payment_allocations (payment_id, invoice_id, school_id, amount, created_by)
-select pm.id, pm.invoice_id, pm.school_id,
-       least(pm.settled,
-             greatest(i.amount + i.tax_amount
-                      - coalesce((select sum(c.amount + c.tax_amount)
-                                    from public.platform_invoices c
-                                   where c.credits_invoice_id = i.id
-                                     and c.voided_at is null), 0), 0)),
-       pm.created_by
-  from public.platform_payments pm
-  join public.platform_invoices i on i.id = pm.invoice_id
- where i.voided_at is null
-   and i.kind = 'invoice'
-   and not exists (select 1 from public.platform_payment_allocations a
-                    where a.payment_id = pm.id)
-   and least(pm.settled,
-             greatest(i.amount + i.tax_amount
-                      - coalesce((select sum(c.amount + c.tax_amount)
-                                    from public.platform_invoices c
-                                   where c.credits_invoice_id = i.id
-                                     and c.voided_at is null), 0), 0)) > 0;
+select t.payment_id, t.invoice_id, t.school_id,
+       least(t.settled, greatest(t.room - t.before, 0)), t.created_by
+  from (
+    select pm.id as payment_id, pm.invoice_id, pm.school_id, pm.settled, pm.created_by,
+           greatest(i.amount + i.tax_amount
+                    - coalesce((select sum(c.amount + c.tax_amount)
+                                  from public.platform_invoices c
+                                 where c.credits_invoice_id = i.id
+                                   and c.voided_at is null), 0)
+                    - coalesce((select sum(a.amount)
+                                  from public.platform_payment_allocations a
+                                 where a.invoice_id = i.id), 0), 0) as room,
+           coalesce(sum(pm.settled) over (
+             partition by pm.invoice_id
+             order by pm.paid_on, pm.created_at, pm.id
+             rows between unbounded preceding and 1 preceding), 0) as before
+      from public.platform_payments pm
+      join public.platform_invoices i on i.id = pm.invoice_id
+     where i.voided_at is null
+       and i.kind = 'invoice'
+       and not exists (select 1 from public.platform_payment_allocations a
+                        where a.payment_id = pm.id)
+  ) t
+ where least(t.settled, greatest(t.room - t.before, 0)) > 0;
 
 
 -- -----------------------------------------------------------------------------
@@ -473,6 +542,29 @@ as $$
 $$;
 revoke all on function public.fn__unallocated(uuid) from public, anon, authenticated;
 
+-- ONE PAISA RULE FOR EVERY BALANCE. The licence counts less than a rupee owed
+-- on an invoice as nothing; the statement, the outstanding figure and the
+-- revenue report (all billed minus settled, through this function) went on
+-- listing the school as owing 61 paisa it would never be asked for. Billed is
+-- now net of those paisa, so every figure agrees with the licence.
+create or replace function public.fn__platform_billed(p_school_id uuid)
+returns numeric
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(sum(i.net_total), 0)
+       - coalesce(sum(case
+           when i.kind = 'invoice'
+            and (i.amount + i.tax_amount) - public.fn__invoice_settled(i.id) > 0
+            and (i.amount + i.tax_amount) - public.fn__invoice_settled(i.id) < 1
+           then (i.amount + i.tax_amount) - public.fn__invoice_settled(i.id) else 0 end), 0)
+    from public.platform_invoices i
+   where i.school_id = p_school_id and i.voided_at is null;
+$$;
+revoke all on function public.fn__platform_billed(uuid) from public, anon, authenticated;
+
 
 -- -----------------------------------------------------------------------------
 -- 5. THE LICENCE
@@ -503,27 +595,111 @@ as $$
                     where s.school_id = p_school_id), public.grace_days());
 $$;
 
--- Where the next period starts. Straight after the covered one while the
--- school is still inside its grace, because it used those days. Once it has
--- locked, from today: a school is not billed for the weeks it could not use.
-create or replace function public.fn__next_period_start(p_school_id uuid)
+-- The last day of a term of p_months starting p_start: the day before the same
+-- day of the month p_months later. When that day does not exist (a month that
+-- starts on the 31st, a year from 29 February) the term runs to the end of the
+-- shorter month and the next one starts on the 1st. Subtracting a day from
+-- Postgres's clamped date instead made a month from 31 January end on 27
+-- February: a full month's price for 28 days, and a billing day that crept.
+create or replace function public.fn__term_end(p_start date, p_months integer)
 returns date
+language sql
+immutable
+set search_path = public
+set "TimeZone" = 'Asia/Karachi'
+as $$
+  select case
+    when extract(day from (p_start + make_interval(months => p_months))::date)
+         < extract(day from p_start)
+      then (p_start + make_interval(months => p_months))::date
+    else (p_start + make_interval(months => p_months))::date - 1 end;
+$$;
+
+-- The first day the school is locked if nothing more is paid, leaving aside a
+-- suspension or a cancellation: the end of what covers it plus its grace
+-- (no grace for an Enterprise school with no price, which has nothing to pay
+-- yet), or fourteen days after the oldest money owed falls due, whichever is
+-- first. NULL when nothing covers the school at all.
+create or replace function public.fn__lock_day(p_school_id uuid)
+returns date
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select case when greatest(s.period_end, s.trial_ends_on) is null then null
+    else least(
+      case when p.by_arrangement and s.agreed_monthly is null
+           then greatest(s.period_end, s.trial_ends_on) + 1
+           else greatest(s.period_end, s.trial_ends_on)
+                + coalesce(s.grace_days_override, public.grace_days()) + 1 end,
+      s.oldest_unpaid_due_on + coalesce(s.grace_days_override, public.grace_days()),
+      case when s.closed_from is not null
+                and (s.period_end is null or s.period_end < s.closed_from)
+           then s.closed_from end)
+    end
+    from public.subscriptions s
+    join public.plans p on p.code = s.plan_code
+   where s.school_id = p_school_id;
+$$;
+
+-- An invoice is LAPSED when its own due date and grace have passed with money
+-- still owed on it: the school locked instead of paying it. A Rs 0 invoice
+-- owes nothing and so never lapses (a free month we gave stays given).
+create or replace function public.fn__invoice_lapsed(p_invoice_id uuid)
+returns boolean
 language sql
 stable
 security definer
 set search_path = public
 set "TimeZone" = 'Asia/Karachi'
 as $$
-  select case
-    when public.fn__coverage_end(p_school_id) is null then current_date
-    when current_date <= public.fn__coverage_end(p_school_id)
-                         + public.fn__grace_for(p_school_id)
-      then public.fn__coverage_end(p_school_id) + 1
-    else current_date end;
+  select coalesce((
+    select i.kind = 'invoice' and i.purpose = 'term' and i.voided_at is null
+           and i.due_on is not null
+           and current_date >= i.due_on + public.fn__grace_for(i.school_id)
+           and public.fn__invoice_owed(i.id) > 0
+      from public.platform_invoices i where i.id = p_invoice_id), false);
+$$;
+
+-- Where the next period starts.
+--   Not locked (covered, or inside its grace): straight after the covered
+--   period, because the school is using those days.
+--   Locked and coming back: the grace days it used after its covered period
+--   ARE billed, and the days it was locked out are not. So the period starts
+--   that many days before today. Starting it today instead made paying late
+--   cheaper than paying on time: every lapse turned fourteen days of grace
+--   into free days, about a month in four on a monthly term.
+-- The days used are worked out from today's lock day. A school locked first by
+-- an unpaid plan-change charge, which it paid only after its period ended, is
+-- counted as having used its grace; that costs it at most the grace days and
+-- needs a lock history to do better.
+create or replace function public.fn__next_period_start(p_school_id uuid)
+returns date
+language plpgsql
+stable
+security definer
+set search_path = public
+set "TimeZone" = 'Asia/Karachi'
+as $$
+declare v_cov date := public.fn__coverage_end(p_school_id); v_lock date;
+begin
+  if v_cov is null then
+    return current_date;
+  end if;
+  v_lock := public.fn__lock_day(p_school_id);
+  if v_lock is null or current_date < v_lock then
+    return v_cov + 1;
+  end if;
+  return greatest(v_cov + 1, current_date - greatest(0, v_lock - (v_cov + 1)));
+end;
 $$;
 
 revoke all on function public.fn__coverage_end(uuid) from public, anon, authenticated;
 revoke all on function public.fn__grace_for(uuid) from public, anon, authenticated;
+revoke all on function public.fn__term_end(date, integer) from public, anon, authenticated;
+revoke all on function public.fn__lock_day(uuid) from public, anon, authenticated;
+revoke all on function public.fn__invoice_lapsed(uuid) from public, anon, authenticated;
 revoke all on function public.fn__next_period_start(uuid) from public, anon, authenticated;
 
 -- THE ONE ANSWER TO "MAY THIS SCHOOL WORK TODAY". Read by the write gate on
@@ -556,6 +732,9 @@ as $$
       then 'cancelled'::public.subscription_status
     when greatest(s.period_end, s.trial_ends_on) is null
       then 'locked'::public.subscription_status
+    when s.closed_from is not null and current_date >= s.closed_from
+         and (s.period_end is null or s.period_end < s.closed_from)
+      then 'locked'::public.subscription_status
     when s.oldest_unpaid_due_on is not null
          and current_date >= s.oldest_unpaid_due_on
                              + coalesce(s.grace_days_override, public.grace_days())
@@ -579,8 +758,19 @@ $$;
 -- paid in full extends the covered block; the first one with money owed stops
 -- the walk, so paying a later invoice never skips an earlier unpaid one. A
 -- period that starts after a gap (a school that came back after locking)
--- starts a new block. Nothing paid at all leaves the dates alone: a trial is
--- covered by its trial date, and dates set by hand before this change stand.
+-- starts a new block.
+--
+-- PAID-THROUGH COMES ONLY FROM WHAT IS PAID. The first version left the dates
+-- alone when the walk found nothing paid, so voiding the only paid invoice
+-- (or the credit note that settled it) kept a year of access backed by
+-- nothing, and the school's next invoice then started after that year. Now
+-- nothing paid means no paid period: coverage falls back to the trial, and a
+-- school that had paid goes back to trialing. The one floor is access GIVEN
+-- without an invoice (given_through: the old rules, or a date set by hand).
+--
+-- A term invoice is not a debt while the school's trial still runs: a trial
+-- lengthened by a code after its first invoice was raised must not lock the
+-- school as unpaid in the middle of the trial.
 create or replace function public.fn__recompute_licence(p_school_id uuid)
 returns void
 language plpgsql
@@ -589,8 +779,15 @@ set search_path = public
 set "TimeZone" = 'Asia/Karachi'
 as $$
 declare
-  r record; v_start date; v_end date; v_paid_any boolean := false; v_due date;
+  s public.subscriptions; r record; v_start date; v_end date;
+  v_paid_any boolean := false; v_due date; v_closed date;
+  v_new_start date; v_new_end date; v_status public.subscription_status;
 begin
+  select * into s from public.subscriptions where school_id = p_school_id;
+  if not found then
+    return;
+  end if;
+
   for r in
     select i.id, i.period_start, i.period_end
       from public.platform_invoices i
@@ -608,25 +805,54 @@ begin
     end if;
   end loop;
 
-  select min(i.due_on) into v_due
+  if v_paid_any then
+    v_new_start := v_start;
+    v_new_end   := v_end;
+    if s.given_through is not null and s.given_through > v_end then
+      v_new_start := least(v_start, coalesce(s.given_from, v_start));
+      v_new_end   := s.given_through;
+    end if;
+  else
+    v_new_start := s.given_from;
+    v_new_end   := s.given_through;
+  end if;
+
+  select min(case when i.purpose = 'term' and s.trial_ends_on is not null
+                  then greatest(i.due_on, s.trial_ends_on + 1)
+                  else i.due_on end) into v_due
     from public.platform_invoices i
    where i.school_id = p_school_id and i.kind = 'invoice'
      and i.voided_at is null and i.due_on is not null
      and public.fn__invoice_owed(i.id) > 0;
 
-  update public.subscriptions s
-     set period_start = case when v_paid_any then v_start else s.period_start end,
-         period_end   = case when v_paid_any then v_end else s.period_end end,
-         cycle        = public.fn__cycle_for_months(s.term_months),
-         status       = case when v_paid_any and s.status = 'trialing'
-                             then 'active'::public.subscription_status
-                             else s.status end,
-         oldest_unpaid_due_on = v_due
-   where s.school_id = p_school_id
-     and (s.period_start is distinct from case when v_paid_any then v_start else s.period_start end
-          or s.period_end is distinct from case when v_paid_any then v_end else s.period_end end
-          or s.oldest_unpaid_due_on is distinct from v_due
-          or (v_paid_any and s.status = 'trialing'));
+  v_status := case
+    when v_paid_any and s.status = 'trialing' then 'active'::public.subscription_status
+    when not v_paid_any and v_new_end is null and s.status = 'active'
+      then 'trialing'::public.subscription_status
+    else s.status end;
+  -- A school that came back after leaving is no longer closed once a paid
+  -- period reaches the day it closed.
+  v_closed := case when s.closed_from is not null and v_new_end is not null
+                        and v_new_end >= s.closed_from then null
+                   else s.closed_from end;
+
+  -- Marked as ours, so trg_period_set_by_hand does not take it for a grant.
+  perform set_config('app.licence_recompute', 'on', true);
+  update public.subscriptions
+     set period_start = v_new_start,
+         period_end   = v_new_end,
+         cycle        = public.fn__cycle_for_months(term_months),
+         status       = v_status,
+         oldest_unpaid_due_on = v_due,
+         closed_from  = v_closed
+   where school_id = p_school_id
+     and (period_start is distinct from v_new_start
+          or period_end is distinct from v_new_end
+          or status is distinct from v_status
+          or oldest_unpaid_due_on is distinct from v_due
+          or closed_from is distinct from v_closed
+          or cycle is distinct from public.fn__cycle_for_months(term_months));
+  perform set_config('app.licence_recompute', '', true);
 end;
 $$;
 revoke all on function public.fn__recompute_licence(uuid) from public, anon, authenticated;
@@ -909,7 +1135,7 @@ begin
     'months',       p_months,
     'period_start', p_period_start,
     'period_end',   case when p_period_start is null then null
-                         else (p_period_start + make_interval(months => p_months))::date - 1 end,
+                         else public.fn__term_end(p_period_start, p_months) end,
     'month_price',  v_month,
     'list_amount',  v_month * p_months,
     'term_price',   v_term,
@@ -1003,6 +1229,16 @@ begin
 
   perform public.fn__discount_reverse(p_invoice_id, v_reason);
 
+  -- The invoice that opened a school under the old rules is what its
+  -- given_through date stands on. Voiding it takes the date away.
+  if v_inv.kind = 'invoice' and v_inv.purpose = 'term' and v_inv.school_id is not null then
+    update public.subscriptions
+       set given_from = null, given_through = null
+     where school_id = v_inv.school_id
+       and given_through is not null
+       and given_through = v_inv.period_end;
+  end if;
+
   perform public.fn__log_operator_action(
     case when v_inv.kind = 'credit_note' then 'credit_note_voided' else 'invoice_voided' end,
     v_inv.school_id,
@@ -1026,7 +1262,10 @@ end;
 $$;
 revoke all on function public.fn__void_invoice(uuid, text, text) from public, anon, authenticated;
 
--- The open term invoice: live, for a period of the licence, money still owed.
+-- The open term invoice: live, for a period of the licence, money still owed,
+-- and not lapsed. A lapsed invoice is for weeks the school was locked out of,
+-- so no screen offers it to be paid: what the school is asked for instead is
+-- the period it would be billed for on the day it comes back.
 create or replace function public.fn__open_term_invoice(p_school_id uuid)
 returns uuid
 language sql
@@ -1037,14 +1276,35 @@ as $$
   select i.id from public.platform_invoices i
    where i.school_id = p_school_id and i.kind = 'invoice' and i.purpose = 'term'
      and i.voided_at is null and public.fn__invoice_owed(i.id) > 0
+     and not public.fn__invoice_lapsed(i.id)
    order by i.period_start limit 1;
 $$;
 revoke all on function public.fn__open_term_invoice(uuid) from public, anon, authenticated;
 
--- An unpaid term invoice whose due date and grace have passed with nothing paid
--- on it is LAPSED: the school locked instead of paying. When the next invoice
--- is raised it is voided, so a school that comes back is billed from the day
--- it comes back, not for the weeks it was locked out.
+-- Money put on lapsed invoices: it comes back as credit when they are voided.
+create or replace function public.fn__on_lapsed(p_school_id uuid)
+returns numeric
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(sum(a.amount), 0)
+    from public.platform_payment_allocations a
+    join public.platform_invoices i on i.id = a.invoice_id
+   where i.school_id = p_school_id and public.fn__invoice_lapsed(i.id);
+$$;
+revoke all on function public.fn__on_lapsed(uuid) from public, anon, authenticated;
+
+-- LAPSED INVOICES ARE CLOSED when the school comes back (it pays, asks for its
+-- invoice, or we invoice it), so it is billed for the period starting the day
+-- it comes back less the grace days it used, and never for the weeks it was
+-- locked out. Whatever was paid on a lapsed invoice comes back as credit and
+-- goes on the new one; a credit note we raised against it lapses with it.
+-- The first version voided only invoices with nothing at all on them, so a
+-- school that had paid Rs 500 of a month and locked paid the rest for weeks it
+-- could not use and stayed locked; and it counted a Rs 0 invoice (a free month
+-- we gave) as unpaid, voided it and gave the code's month back, for ever.
 create or replace function public.fn__void_lapsed(p_school_id uuid, p_by text)
 returns integer
 language plpgsql
@@ -1052,19 +1312,40 @@ security definer
 set search_path = public
 set "TimeZone" = 'Asia/Karachi'
 as $$
-declare r record; v_n integer := 0; v_grace integer := public.fn__grace_for(p_school_id);
+declare r record; c record; v_n integer := 0; v_grace integer := public.fn__grace_for(p_school_id);
+        v_released numeric;
 begin
+  perform 1 from public.subscriptions where school_id = p_school_id for update;
   for r in
-    select i.id, i.due_on from public.platform_invoices i
-     where i.school_id = p_school_id and i.kind = 'invoice' and i.purpose = 'term'
-       and i.voided_at is null and i.due_on is not null
-       and current_date >= i.due_on + v_grace
-       and public.fn__invoice_settled(i.id) = 0
+    select i.id, i.doc_no, i.due_on from public.platform_invoices i
+     where i.school_id = p_school_id and public.fn__invoice_lapsed(i.id)
+     order by i.period_start
   loop
+    for c in
+      select id from public.platform_invoices
+       where credits_invoice_id = r.id and voided_at is null
+    loop
+      perform public.fn__void_invoice(c.id, format(
+        'The invoice it credits, %s, lapsed when the school locked.', r.doc_no), p_by);
+    end loop;
+
+    select coalesce(sum(amount), 0) into v_released
+      from public.platform_payment_allocations where invoice_id = r.id;
+    if v_released > 0 then
+      delete from public.platform_payment_allocations where invoice_id = r.id;
+      insert into public.audit_log(school_id, actor, action, entity, entity_id, after, reason)
+      values (p_school_id, auth.uid(), 'platform_payment_released', 'platform_invoices',
+              r.id::text, jsonb_build_object('doc_no', r.doc_no, 'released', v_released, 'by', p_by),
+              'The invoice lapsed; what was paid on it goes on the next one.');
+    end if;
+
     perform public.fn__void_invoice(r.id, format(
-      'Lapsed: unpaid by %s, when the school locked. The next period is billed '
-      'from the day the school comes back.',
-      to_char(r.due_on + v_grace, 'DD Mon YYYY')), p_by);
+      'Lapsed: unpaid by %s, when the school locked.%s The next period is billed '
+      'from the day the school comes back, less the grace days it used.',
+      to_char(r.due_on + v_grace, 'DD Mon YYYY'),
+      case when v_released > 0
+           then format(' Rs %s paid on it is kept as credit.', to_char(v_released, 'FM999,999,999'))
+           else '' end), p_by);
     v_n := v_n + 1;
   end loop;
   return v_n;
@@ -1128,7 +1409,7 @@ declare
   q jsonb; v_amount numeric; v_reason text := nullif(btrim(coalesce(p_reason, '')), '');
   v_note text; v_inv uuid; v_doc text; v_open uuid; v_lapsed integer;
   v_code text; v_code_off numeric := 0; v_overridden boolean := false;
-  v_over text;
+  v_over text; v_due date;
 begin
   select * into s from public.subscriptions where school_id = p_school_id for update;
   if not found then
@@ -1148,7 +1429,7 @@ begin
       using errcode = 'SB003';
   end if;
   if s.cancel_at_period_end then
-    raise exception '% asked to stop at the end of its period, so nothing more is invoiced.',
+    raise exception '% asked to stop at the end of its period, so nothing more is invoiced. If it is staying after all, it restarts from its Subscription page, or we reinstate it.',
       v_school.name using errcode = 'SB003';
   end if;
 
@@ -1171,7 +1452,13 @@ begin
   end if;
 
   v_start := public.fn__next_period_start(p_school_id);
-  v_end   := (v_start + make_interval(months => v_months))::date - 1;
+  v_end   := public.fn__term_end(v_start, v_months);
+  -- Due on the first day of the period it pays for. A school already locked
+  -- that is coming back is billed from before today (the grace days it used),
+  -- and is given today as the day it is due.
+  v_due   := case when v_start < current_date
+                    and current_date >= coalesce(public.fn__lock_day(p_school_id), current_date)
+                   then current_date else v_start end;
 
   if exists (select 1 from public.platform_invoices i
               where i.school_id = p_school_id and i.kind = 'invoice'
@@ -1240,7 +1527,7 @@ begin
   values
     (p_school_id, v_school.name, s.plan_code, q->>'plan_name',
      public.fn__cycle_for_months(v_months), v_months, v_start, v_end,
-     v_amount, (q->>'term_price')::numeric, greatest(v_start, current_date),
+     v_amount, (q->>'term_price')::numeric, v_due,
      nullif(v_note, ''), auth.uid(), 'term', v_code, v_code_off)
   returning id, doc_no into v_inv, v_doc;
 
@@ -1271,7 +1558,7 @@ begin
     'invoice_id', v_inv, 'doc_no', v_doc, 'school_id', p_school_id,
     'plan_code', s.plan_code, 'plan_name', q->>'plan_name',
     'months', v_months, 'period_start', v_start, 'period_end', v_end,
-    'due_on', greatest(v_start, current_date),
+    'due_on', v_due,
     'amount', v_amount, 'list_amount', (q->>'term_price')::numeric,
     'term_price', (q->>'term_price')::numeric, 'term_saving', q->'term_saving',
     'discount_code', v_code, 'discount_amount', v_code_off,
@@ -1408,13 +1695,66 @@ $$;
 -- 9. MONEY IN
 -- -----------------------------------------------------------------------------
 
+-- MONEY PAID AHEAD REACHES THE LICENCE. Credit (money paid in and on no
+-- invoice) raises and pays the next term invoice whenever there is nothing
+-- open and either the covered period ends within thirty days (or has ended),
+-- or, with p_ahead, the credit pays the whole term. It repeats while the
+-- credit lasts, up to three years of terms. p_ahead is for money the school
+-- SENT (a payment, or a price set while it waited): it meant to pay ahead.
+-- Credit we released with a credit note is not that (it is often a refund for
+-- a school that is leaving), so it waits for the usual thirty days. The first version raised the next invoice only when a
+-- payment arrived within thirty days of the end, so a school that paid two
+-- months at once, or paid while its Enterprise price was being agreed, kept
+-- the money as credit and locked anyway, told it owed Rs 0.
+-- Called when money arrives, when an Enterprise price is set, and when a
+-- school is reinstated or restarts. Returns the invoices it raised, and why it
+-- stopped if it stopped on a refusal.
+create or replace function public.fn__spend_credit(p_school_id uuid, p_by text, p_ahead boolean default true)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+set "TimeZone" = 'Asia/Karachi'
+as $$
+declare
+  s public.subscriptions; v_raised jsonb := '[]'::jsonb; v_note text; v_cov date;
+  v_start date; q jsonb; j jsonb; i integer;
+begin
+  for i in 1..36 loop
+    exit when public.fn__unallocated(p_school_id) < 1;
+    exit when public.fn__open_term_invoice(p_school_id) is not null;
+    select * into s from public.subscriptions where school_id = p_school_id;
+    exit when not found or s.status = 'cancelled' or s.suspended_at is not null
+              or s.cancel_at_period_end;
+    v_cov   := public.fn__coverage_end(p_school_id);
+    v_start := public.fn__next_period_start(p_school_id);
+    q := public.fn__quote(p_school_id, s.plan_code, s.term_months, v_start);
+    exit when not coalesce((q->>'priced')::boolean, false);
+    exit when not (v_cov is null or v_cov - current_date <= 30
+                   or (coalesce(p_ahead, true)
+                       and public.fn__unallocated(p_school_id) >= (q->>'amount')::numeric));
+    begin
+      j := public.fn__raise_term_invoice(p_school_id, null, null, null, p_by);
+      v_raised := v_raised || jsonb_build_array(j);
+    exception when sqlstate 'SB001' or sqlstate 'SB002' or sqlstate 'SB003' or sqlstate 'SB004' then
+      v_note := sqlerrm;
+      exit;
+    end;
+    -- A term the credit did not pay in full stays open for the rest; stop.
+    exit when public.fn__invoice_owed((j->>'invoice_id')::uuid) > 0;
+  end loop;
+  return jsonb_build_object('raised', v_raised, 'not_raised_because', v_note);
+end;
+$$;
+revoke all on function public.fn__spend_credit(uuid, text, boolean) from public, anon, authenticated;
+
 -- Where a payment goes, in order:
---   1. the invoice it was recorded against, if one was named;
+--   0. lapsed invoices are closed first (what was paid on them comes back);
+--   1. the invoice it was recorded against, if one was named and is still live;
 --   2. invoices with money owed, oldest due first;
---   3. if money is left, nothing is open and the school's covered period ends
---      within thirty days (or has ended), the next term invoice is raised and
---      the rest goes on it. A school that pays what its screen asked for is
---      back in the moment we confirm it.
+--   3. what is left raises and pays the next term invoices (fn__spend_credit).
+--      A school that pays what its screen asked for is back in the moment we
+--      confirm it.
 -- Anything still left is credit, used on the next invoice when it is raised.
 create or replace function public.fn__settle_payment(p_school_id uuid, p_invoice_id uuid)
 returns jsonb
@@ -1424,31 +1764,26 @@ set search_path = public
 set "TimeZone" = 'Asia/Karachi'
 as $$
 declare
-  v_alloc numeric; v_raised jsonb; v_note text; v_cov date; v_lapsed integer := 0;
+  v_alloc numeric; v_spent jsonb; v_lapsed integer := 0; v_prefer uuid := p_invoice_id;
 begin
-  -- A school past its grace that pays without naming an invoice is starting
-  -- again: what lapsed is voided and the new period starts today.
-  if p_invoice_id is null then
-    v_lapsed := public.fn__void_lapsed(p_school_id, 'payment');
+  -- A school past its grace is starting again, whether or not its payment
+  -- named the invoice that lapsed: money put on a lapsed invoice would buy
+  -- only weeks already gone.
+  v_lapsed := public.fn__void_lapsed(p_school_id, 'payment');
+  if v_prefer is not null and exists (select 1 from public.platform_invoices
+                                       where id = v_prefer and voided_at is not null) then
+    v_prefer := null;
   end if;
 
-  v_alloc := public.fn__apply_credit(p_school_id, p_invoice_id);
-
-  v_cov := public.fn__coverage_end(p_school_id);
-  if public.fn__unallocated(p_school_id) >= 1
-     and public.fn__open_term_invoice(p_school_id) is null
-     and (v_cov is null or v_cov - current_date <= 30) then
-    begin
-      v_raised := public.fn__raise_term_invoice(p_school_id, null, null, null, 'payment');
-    exception when sqlstate 'SB001' or sqlstate 'SB002' or sqlstate 'SB003' or sqlstate 'SB004' then
-      v_note := sqlerrm;
-    end;
-  end if;
+  v_alloc := public.fn__apply_credit(p_school_id, v_prefer);
+  v_spent := public.fn__spend_credit(p_school_id, 'payment');
 
   return jsonb_build_object(
     'allocated', v_alloc,
-    'raised', v_raised,
-    'not_raised_because', v_note,
+    -- The first invoice raised, as before; all of them in raised_all.
+    'raised', v_spent->'raised'->0,
+    'raised_all', v_spent->'raised',
+    'not_raised_because', v_spent->'not_raised_because',
     'lapsed_voided', v_lapsed,
     'credit', public.fn__unallocated(p_school_id),
     'status', public.fn_effective_status(p_school_id),
@@ -1603,7 +1938,18 @@ begin
 end;
 $$;
 
--- A credit note now counts towards paying the invoice it is raised against.
+-- A credit note counts towards paying the invoice it is raised against.
+--
+-- UNDER THE SCHOOL'S LOCK, AND NEVER MORE THAN THE INVOICE. The first version
+-- read what was already credited without a lock, so two credit notes at the
+-- same moment credited Rs 3,000 against a Rs 2,000 invoice; and it ignored
+-- what had been PAID, so a credit note on a paid invoice simply vanished: the
+-- statement showed the school in credit while the next invoice asked for the
+-- full price, and a school that paid what its statement said locked. Now a
+-- credit note on money already paid releases that much of the payment back
+-- to the school as credit, which goes on its next invoice. A credit note that
+-- rounds to nothing is refused (it would only block voiding the invoice), and
+-- sales tax is credited only up to the tax the invoice charged.
 CREATE OR REPLACE FUNCTION public.fn_platform_credit_note(p_invoice_id uuid, p_amount numeric, p_reason text, p_tax_amount numeric DEFAULT NULL::numeric)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -1612,8 +1958,10 @@ CREATE OR REPLACE FUNCTION public.fn_platform_credit_note(p_invoice_id uuid, p_a
  SET "TimeZone" TO 'Asia/Karachi'
 AS $function$
 declare
-  v_inv record; v_credited numeric; v_room numeric;
-  v_tax numeric; v_id uuid; v_doc text;
+  v_inv record; v_credited numeric; v_tax_credited numeric; v_room numeric;
+  v_amount numeric := round(coalesce(p_amount, 0), 2);
+  v_tax numeric; v_id uuid; v_doc text; v_school uuid; v_excess numeric;
+  a record; v_take numeric; v_released numeric := 0;
   v_reason text := nullif(btrim(coalesce(p_reason, '')), '');
 begin
   if not public.is_platform_admin() then
@@ -1622,11 +1970,15 @@ begin
   if v_reason is null then
     raise exception 'A credit note needs a reason: it is printed on it';
   end if;
-  if p_amount is null or p_amount <= 0 then
+  if v_amount <= 0 then
     raise exception 'A credit note must be more than zero';
   end if;
 
-  select * into v_inv from public.platform_invoices where id = p_invoice_id;
+  select school_id into v_school from public.platform_invoices where id = p_invoice_id;
+  if v_school is not null then
+    perform 1 from public.subscriptions where school_id = v_school for update;
+  end if;
+  select * into v_inv from public.platform_invoices where id = p_invoice_id for update;
   if not found then
     raise exception 'No such invoice';
   end if;
@@ -1637,24 +1989,31 @@ begin
     raise exception 'That invoice is voided: there is nothing to credit';
   end if;
 
+  select coalesce(sum(amount + tax_amount), 0), coalesce(sum(tax_amount), 0)
+    into v_credited, v_tax_credited
+    from public.platform_invoices
+   where credits_invoice_id = p_invoice_id and voided_at is null;
+
   v_tax := case
     when p_tax_amount is not null then round(p_tax_amount, 2)
-    when v_inv.amount > 0 then round(v_inv.tax_amount * (p_amount / v_inv.amount), 2)
+    when v_inv.amount > 0 then round(v_inv.tax_amount * (v_amount / v_inv.amount), 2)
     else 0 end;
   if v_tax < 0 then
     raise exception 'A tax credit cannot be negative';
   end if;
-
-  select coalesce(sum(amount + tax_amount), 0) into v_credited
-    from public.platform_invoices
-   where credits_invoice_id = p_invoice_id and voided_at is null;
+  if v_tax > v_inv.tax_amount - v_tax_credited then
+    raise exception
+      'That would credit Rs % of sales tax on %, which charged Rs % and has Rs % of it credited already.',
+      to_char(v_tax, 'FM999999999.00'), v_inv.doc_no,
+      to_char(v_inv.tax_amount, 'FM999999999.00'), to_char(v_tax_credited, 'FM999999999.00');
+  end if;
 
   v_room := (v_inv.amount + v_inv.tax_amount) - v_credited;
-  if round(p_amount + v_tax, 2) > v_room then
+  if v_amount + v_tax > v_room then
     raise exception
       'That would credit % against %, which is % and already has % credited. '
       'At most % remains.',
-      to_char(p_amount + v_tax, 'FM999999999.00'), v_inv.doc_no,
+      to_char(v_amount + v_tax, 'FM999999999.00'), v_inv.doc_no,
       to_char(v_inv.amount + v_inv.tax_amount, 'FM999999999.00'),
       to_char(v_credited, 'FM999999999.00'), to_char(v_room, 'FM999999999.00');
   end if;
@@ -1666,37 +2025,132 @@ begin
   values
     (v_inv.school_id, 'credit_note', p_invoice_id, v_inv.plan_code, v_inv.cycle,
      v_inv.months, v_inv.period_start, v_inv.period_end,
-     round(p_amount, 2),
+     v_amount,
      -- list_amount equals amount on a credit note, so fn_platform_revenue's
-     -- discount figure — sum(list_amount - amount) — is untouched by credits. A
+     -- discount figure, sum(list_amount - amount), is untouched by credits. A
      -- refund is not a discount and must not appear as one.
-     round(p_amount, 2),
+     v_amount,
      v_inv.tax_pct, v_tax,
      current_date, null,
      format('Credit against %s: %s', v_inv.doc_no, v_reason),
      auth.uid())
   returning id, doc_no into v_id, v_doc;
 
+  -- Paid and credited together may not exceed the invoice. What over-covers it
+  -- goes back to the payments, newest first, as credit.
+  v_excess := public.fn__invoice_settled(p_invoice_id) - (v_inv.amount + v_inv.tax_amount);
+  for a in
+    select al.id, al.amount from public.platform_payment_allocations al
+     where al.invoice_id = p_invoice_id
+     order by al.created_at desc, al.id desc
+  loop
+    exit when v_excess <= 0;
+    v_take := least(a.amount, v_excess);
+    if v_take >= a.amount then
+      delete from public.platform_payment_allocations where id = a.id;
+    else
+      update public.platform_payment_allocations set amount = amount - v_take where id = a.id;
+    end if;
+    v_excess   := v_excess - v_take;
+    v_released := v_released + v_take;
+  end loop;
+
   insert into public.audit_log(school_id, actor, action, entity, entity_id, after, reason)
   values (v_inv.school_id, auth.uid(), 'platform_credit_note', 'platform_invoices',
           v_id::text,
           jsonb_build_object('doc_no', v_doc, 'credits', v_inv.doc_no,
-                             'amount', round(p_amount, 2), 'tax_amount', v_tax),
+                             'amount', v_amount, 'tax_amount', v_tax,
+                             'released_to_credit', v_released),
           v_reason);
 
-  -- A credit note settles the invoice it is raised against as a payment would,
-  -- so the licence is worked out again.
+  -- The licence is worked out again, and money released goes on what is owed
+  -- or on the next term.
   perform public.fn__apply_credit(v_inv.school_id, null);
+  if v_released > 0 then
+    perform public.fn__spend_credit(v_inv.school_id, 'operator', false);
+  end if;
 
   return jsonb_build_object(
     'licence_status', public.fn_effective_status(v_inv.school_id),
     'credit_note_id', v_id, 'doc_no', v_doc,
     'credits_doc_no', v_inv.doc_no,
-    'amount', round(p_amount, 2), 'tax_amount', v_tax,
-    'total', round(p_amount, 2) + v_tax,
+    'amount', v_amount, 'tax_amount', v_tax,
+    'total', v_amount + v_tax,
+    'released_to_credit', v_released,
+    'credit', public.fn__unallocated(v_inv.school_id),
     'outstanding', public.fn_platform_outstanding(v_inv.school_id));
 end;
 $function$;
+
+-- Sales tax on an invoice, set before anything is paid on it. The guard read
+-- platform_payments.invoice_id, which this migration stopped using to decide
+-- anything, so an invoice paid by an unnamed payment could have tax added
+-- (reopening it silently, with no debt date) or taken off after the tax was
+-- paid (leaving the money on no invoice and not as credit). It now reads what
+-- is settled on the invoice, and the licence follows any change.
+create or replace function public.fn_platform_set_invoice_tax(
+  p_invoice_id uuid, p_tax_pct numeric, p_tax_amount numeric default null)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+set "TimeZone" = 'Asia/Karachi'
+as $$
+declare v_inv record; v_pct numeric; v_amt numeric; v_settled numeric;
+begin
+  if not public.is_platform_admin() then
+    raise exception 'Not permitted' using errcode = '42501';
+  end if;
+  select * into v_inv from public.platform_invoices where id = p_invoice_id;
+  if not found then
+    raise exception 'No such invoice';
+  end if;
+  if v_inv.school_id is not null then
+    perform 1 from public.subscriptions where school_id = v_inv.school_id for update;
+  end if;
+  select * into v_inv from public.platform_invoices where id = p_invoice_id for update;
+  if v_inv.voided_at is not null then
+    raise exception 'That invoice is voided';
+  end if;
+  if v_inv.kind <> 'invoice' then
+    raise exception 'Tax is set on the invoice, not on the credit note';
+  end if;
+
+  v_settled := public.fn__invoice_settled(p_invoice_id);
+  if v_settled > 0 then
+    raise exception
+      'Cannot change the tax on %: % has been paid or credited against it. Raise a credit '
+      'note and a fresh invoice.', v_inv.doc_no, to_char(v_settled, 'FM999999999.00');
+  end if;
+
+  v_pct := round(coalesce(p_tax_pct, 0), 2);
+  if v_pct < 0 or v_pct > 100 then
+    raise exception 'A tax rate must be between 0 and 100';
+  end if;
+  v_amt := round(coalesce(p_tax_amount, v_inv.amount * v_pct / 100), 2);
+  if v_amt < 0 then
+    raise exception 'A tax amount cannot be negative';
+  end if;
+
+  update public.platform_invoices
+     set tax_pct = v_pct, tax_amount = v_amt where id = p_invoice_id;
+
+  perform public.fn__log_operator_action('invoice_tax_set', v_inv.school_id,
+    jsonb_build_object('invoice_id', p_invoice_id, 'doc_no', v_inv.doc_no,
+                       'tax_pct', v_pct, 'tax_amount', v_amt,
+                       'was_tax_amount', v_inv.tax_amount));
+
+  if v_inv.school_id is not null then
+    perform public.fn__apply_credit(v_inv.school_id, null);
+  end if;
+
+  return jsonb_build_object('invoice_id', p_invoice_id, 'doc_no', v_inv.doc_no,
+    'tax_pct', v_pct, 'tax_amount', v_amt, 'total', v_inv.amount + v_amt,
+    'outstanding', public.fn_platform_outstanding(v_inv.school_id));
+end;
+$$;
+revoke all on function public.fn_platform_set_invoice_tax(uuid, numeric, numeric) from public, anon;
+grant execute on function public.fn_platform_set_invoice_tax(uuid, numeric, numeric) to authenticated;
 
 
 -- The reply no longer promises that nothing stops: an unpaid school locks.
@@ -1892,8 +2346,11 @@ begin
       'paid', v_paid,
       -- On this document only. The school's overall balance is a different
       -- number and putting it here would make one invoice look unpaid because
-      -- another one is.
-      'balance', v_total - v_credits - v_paid),
+      -- another one is. Less than a rupee is nothing, as it is for the licence
+      -- (fn__invoice_owed): paisa from tax are never shown as owing.
+      'balance', case when v_total - v_credits - v_paid < 1
+                       and v_total - v_credits - v_paid > -1
+                      then 0 else v_total - v_credits - v_paid end),
 
     'amount_in_words', public.fn__amount_in_words(v_total),
 
@@ -1921,15 +2378,23 @@ begin
     'note', v_inv.note,
     'footer', v_set.invoice_footer,
 
+    -- Each payment's share of THIS invoice. A payment split over two invoices
+    -- printed its whole withheld tax on both, so the documents claimed twice
+    -- the deduction the certificate shows. The withheld part is now prorated:
+    -- cash plus withheld equals what this invoice received from the payment.
     'payments', coalesce((
       select jsonb_agg(jsonb_build_object(
-               'paid_on', p.paid_on, 'amount', a.amount, 'method', p.method,
-               'reference', p.reference, 'tax_withheld', p.tax_withheld,
-               'tax_certificate', p.tax_certificate, 'settled', a.amount)
-             order by p.paid_on, p.created_at)
-        from public.platform_payment_allocations a
-        join public.platform_payments p on p.id = a.payment_id
-       where a.invoice_id = p_invoice_id), '[]'::jsonb),
+               'paid_on', x.paid_on, 'amount', x.share - x.wht, 'method', x.method,
+               'reference', x.reference, 'tax_withheld', x.wht,
+               'tax_certificate', x.tax_certificate, 'settled', x.share)
+             order by x.paid_on, x.created_at)
+        from (select p.paid_on, p.created_at, p.method, p.reference, p.tax_certificate,
+                     a.amount as share,
+                     case when p.settled > 0
+                          then round(p.tax_withheld * a.amount / p.settled, 2) else 0 end as wht
+                from public.platform_payment_allocations a
+                join public.platform_payments p on p.id = a.payment_id
+               where a.invoice_id = p_invoice_id) x), '[]'::jsonb),
 
     'credit_notes', coalesce((
       select jsonb_agg(jsonb_build_object(
@@ -1993,7 +2458,7 @@ set "TimeZone" = 'Asia/Karachi'
 as $$
 declare
   s public.subscriptions; v_plan record;
-  v_reason text := nullif(btrim(coalesce(p_reason, '')), ''); v_re jsonb;
+  v_reason text := nullif(btrim(coalesce(p_reason, '')), ''); v_re jsonb; v_spent jsonb;
 begin
   if not public.is_platform_admin() then
     raise exception 'Not permitted' using errcode = '42501';
@@ -2031,10 +2496,13 @@ begin
          agreed_by = auth.uid(), agreed_at = now()
    where school_id = p_school_id;
 
-  -- An Enterprise school that locked waiting for its price is treated as if
+  -- An Enterprise school that locked WAITING FOR ITS PRICE is treated as if
   -- its trial ended yesterday: it gets the same fourteen days to pay as any
   -- school whose trial ends, rather than staying locked until money arrives.
-  if s.status = 'trialing' and s.period_end is null
+  -- Only then: correcting the price of a school that is locked because it has
+  -- not paid must not reopen it for another fourteen days each time.
+  if s.agreed_monthly is null
+     and s.status = 'trialing' and s.period_end is null
      and s.trial_ends_on is not null and s.trial_ends_on < current_date - 1 then
     update public.subscriptions set trial_ends_on = current_date - 1
      where school_id = p_school_id;
@@ -2056,6 +2524,9 @@ begin
             format('Reissued at the agreed price of Rs %s a month', to_char(p_monthly, 'FM999,999,999')),
             'operator');
   perform public.fn__recompute_licence(p_school_id);
+  -- Money the school paid while its price was being agreed goes on its first
+  -- invoice now that there is one to raise.
+  v_spent := public.fn__spend_credit(p_school_id, 'operator');
 
   return jsonb_build_object(
     'school_id', p_school_id, 'plan_code', s.plan_code,
@@ -2065,6 +2536,7 @@ begin
     'quarterly_is_derived', p_quarterly is null,
     'yearly_is_derived', p_yearly is null,
     'invoice', v_re,
+    'from_credit', v_spent->'raised',
     'status', public.fn_effective_status(p_school_id));
 end;
 $$;
@@ -3043,6 +3515,7 @@ as $$
 declare
   v_sub record; v_reason text := nullif(btrim(coalesce(p_reason, '')), '');
   v_new public.subscription_status; v_archived timestamptz; v_effective public.subscription_status;
+  v_spent jsonb;
 begin
   if not public.is_platform_admin() then
     raise exception 'Not permitted' using errcode = '42501';
@@ -3051,7 +3524,10 @@ begin
   if not found then
     raise exception 'Unknown school %', p_school_id;
   end if;
-  if v_sub.status <> 'cancelled' then
+  -- A school we cancelled, or one that asked to stop at the end of its period
+  -- (before or after that end). The second could never come back before:
+  -- invoicing refused it, this refused it, and its money sat as credit.
+  if v_sub.status <> 'cancelled' and not v_sub.cancel_at_period_end then
     raise exception 'That subscription is not cancelled - there is nothing to reinstate';
   end if;
   select archived_at into v_archived from public.schools where id = p_school_id;
@@ -3060,21 +3536,32 @@ begin
       'then reinstate the subscription.';
   end if;
 
-  -- Paid at some point (period_end is only ever set by paid invoices, or by
-  -- hand before 0155) means active; never paid means back on the trial.
-  v_new := case when v_sub.period_end is not null
-                then 'active'::public.subscription_status
+  -- Paid at some point means active; never paid means back on the trial. The
+  -- recompute below corrects either from what is actually paid.
+  v_new := case when v_sub.status <> 'cancelled' then v_sub.status
+                when v_sub.period_end is not null then 'active'::public.subscription_status
                 else 'trialing'::public.subscription_status end;
 
-  update public.subscriptions set status = v_new where school_id = p_school_id;
+  -- A school that comes back after its period ended had no access since, so
+  -- it is closed from the day after that period until it pays, and billed
+  -- from the day it pays: it used no grace.
+  update public.subscriptions
+     set status = v_new, cancel_at_period_end = false,
+         closed_from = case when greatest(period_end, trial_ends_on) < current_date
+                            then greatest(period_end, trial_ends_on) + 1 else closed_from end
+   where school_id = p_school_id;
   perform public.fn__recompute_licence(p_school_id);
+  -- Money it paid while it was away goes on its next term.
+  v_spent := public.fn__spend_credit(p_school_id, 'operator');
   v_effective := public.fn_effective_status(p_school_id);
 
   perform public.fn__log_operator_action('subscription_reinstated', p_school_id,
     jsonb_build_object('reason', v_reason, 'status', v_new,
+                       'was_cancel_at_period_end', v_sub.cancel_at_period_end,
                        'effective_status', v_effective,
                        'period_end', v_sub.period_end,
-                       'trial_ends_on', v_sub.trial_ends_on));
+                       'trial_ends_on', v_sub.trial_ends_on,
+                       'from_credit', v_spent->'raised'));
   insert into public.audit_log(school_id, actor, action, entity, entity_id, reason)
   values (p_school_id, auth.uid(), 'subscription_reinstated', 'subscriptions',
           p_school_id::text, v_reason);
@@ -3096,9 +3583,155 @@ begin
       else format('Reinstated. They are back in, paid to %s.',
                   to_char((select period_end from public.subscriptions where school_id = p_school_id),
                           'DD Mon YYYY')) end,
-    'invoiced', false);
+    'invoiced', jsonb_array_length(coalesce(v_spent->'raised', '[]'::jsonb)) > 0,
+    'from_credit', v_spent->'raised');
 end;
 $$;
+
+-- ASKING TO STOP, AND CHANGING YOUR MIND. Stopping at the end of the period
+-- voids the invoice already raised for the period after it, when nothing is
+-- paid on it: a school that is leaving was otherwise told it owed a month it
+-- will never have, and carried it as debt. Restarting works before and after
+-- that end; after it, the school is locked until its next payment, like any
+-- school whose period has ended. The old sentence sent it to choose a plan,
+-- which no screen lets a school do.
+create or replace function public.fn_cancel_my_subscription(p_reason text default null)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+set "TimeZone" = 'Asia/Karachi'
+as $$
+declare
+  v_school uuid := public.current_school_id();
+  v_reason text := nullif(btrim(coalesce(p_reason, '')), '');
+  v_sub record; v_cov date; r record; v_voided text[] := '{}';
+begin
+  if v_school is null or not public.has_role('owner', 'principal') then
+    raise exception 'Only the owner or principal can cancel the subscription'
+      using errcode = '42501';
+  end if;
+  select * into v_sub from public.subscriptions where school_id = v_school for update;
+  if not found then
+    raise exception 'There is no subscription to cancel';
+  end if;
+  if v_sub.status = 'cancelled' then
+    raise exception 'This subscription is already cancelled';
+  end if;
+  if v_sub.cancel_at_period_end then
+    raise exception 'This subscription is already set to end. Nothing further is due.';
+  end if;
+  v_cov := public.fn__coverage_end(v_school);
+
+  update public.subscriptions
+     set cancel_at_period_end = true,
+         -- Auto-renewal off in the same statement. Leaving it on would mean the
+         -- renewal runner and this flag disagreeing about whether the school is
+         -- a customer, and the schema's own constraint would still be satisfied.
+         auto_renew = false
+   where school_id = v_school;
+
+  -- Invoices for the time after the end, with nothing paid or credited on them.
+  for r in
+    select i.id, i.doc_no from public.platform_invoices i
+     where i.school_id = v_school and i.kind = 'invoice' and i.purpose = 'term'
+       and i.voided_at is null and v_cov is not null and i.period_start > v_cov
+       and public.fn__invoice_settled(i.id) = 0
+  loop
+    perform public.fn__void_invoice(r.id,
+      format('The school asked to stop at the end of its period on %s.',
+             to_char(v_cov, 'DD Mon YYYY')), 'school');
+    v_voided := array_append(v_voided, r.doc_no);
+  end loop;
+
+  -- Recorded on BOTH sides. The audit_log entry is the school's own record of
+  -- who ended it, and the operator action is the churn data.
+  insert into public.audit_log(school_id, actor, action, entity, entity_id, reason)
+  values (v_school, auth.uid(), 'subscription_cancel_requested', 'subscriptions',
+          v_school::text, v_reason);
+  perform public.fn__log_operator_action('cancel_requested_by_school', v_school,
+    jsonb_build_object('reason', v_reason, 'runs_until', v_cov, 'voided', to_jsonb(v_voided)));
+
+  return jsonb_build_object(
+    'cancelled', true,
+    'runs_until', v_cov,
+    'voided', to_jsonb(v_voided),
+    -- What they keep, said plainly, because the fear that stops people
+    -- cancelling is not knowing whether their records go with it.
+    'keeps', 'Nothing is deleted. You keep everything until the date above, and '
+      || 'you can download all of your records at any time, including afterwards.',
+    'reversible', 'You can start again from this screen at any time. Before that date '
+      || 'nothing will have changed; after it, the software opens again when your next '
+      || 'payment reaches us.',
+    'next', public.fn_my_next_payment());
+end;
+$$;
+revoke all on function public.fn_cancel_my_subscription(text) from public, anon;
+grant execute on function public.fn_cancel_my_subscription(text) to authenticated;
+
+create or replace function public.fn_resume_my_subscription()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+set "TimeZone" = 'Asia/Karachi'
+as $$
+declare v_school uuid := public.current_school_id(); v_sub record; v_cov date;
+        v_spent jsonb; v_status public.subscription_status;
+begin
+  if v_school is null or not public.has_role('owner', 'principal') then
+    raise exception 'Only the owner or principal can restart the subscription'
+      using errcode = '42501';
+  end if;
+  select * into v_sub from public.subscriptions where school_id = v_school for update;
+  if not found or not v_sub.cancel_at_period_end then
+    raise exception 'This subscription is not set to end, so there is nothing to restart';
+  end if;
+  v_cov := public.fn__coverage_end(v_school);
+
+  -- After its end the school had no access, so it used no grace: it is closed
+  -- from the day after its period until it pays, and billed from that day.
+  update public.subscriptions
+     set cancel_at_period_end = false,
+         closed_from = case when v_cov is not null and v_cov < current_date
+                            then v_cov + 1 else closed_from end
+   where school_id = v_school;
+  perform public.fn__recompute_licence(v_school);
+  v_spent := public.fn__spend_credit(v_school, 'school');
+  v_status := public.fn_effective_status(v_school);
+
+  insert into public.audit_log(school_id, actor, action, entity, entity_id)
+  values (v_school, auth.uid(), 'subscription_cancel_withdrawn', 'subscriptions',
+          v_school::text);
+  perform public.fn__log_operator_action('cancel_withdrawn_by_school', v_school,
+    jsonb_build_object('after_the_end', v_cov is not null and current_date > v_cov,
+                       'status', v_status, 'from_credit', v_spent->'raised'));
+
+  return jsonb_build_object(
+    'resumed', true,
+    'status', v_status,
+    -- Deliberately NOT turning auto_renew back on. It was switched off by the
+    -- cancellation and it depends on a payment method the school may since have
+    -- removed; the schema would refuse the combination anyway. Saying so beats
+    -- a school assuming renewal is automatic again when it is not.
+    'note', case
+      when v_status in ('locked', 'cancelled')
+        then 'Welcome back. Your period has ended, so the software opens again when your '
+          || 'next payment reaches us. What to pay is shown below; automatic renewal was '
+          || 'switched off when you cancelled.'
+      when v_cov is not null and v_cov < current_date
+        then format('Welcome back. Your period ended on %s, so your next payment is due '
+          || 'now, and the software keeps working until %s while it arrives. Automatic '
+          || 'renewal was switched off when you cancelled.',
+          to_char(v_cov, 'FMDD Mon YYYY'),
+          to_char(public.fn__lock_day(v_school) - 1, 'FMDD Mon YYYY'))
+      else 'Your subscription will carry on as before. Check how you pay below: '
+        || 'automatic renewal was switched off when you cancelled.' end,
+    'next', public.fn_my_next_payment());
+end;
+$$;
+revoke all on function public.fn_resume_my_subscription() from public, anon;
+grant execute on function public.fn_resume_my_subscription() to authenticated;
 
 
 -- -----------------------------------------------------------------------------
@@ -3139,20 +3772,26 @@ begin
   v_month  := public.fn__term_price(p_school_id, s.plan_code, 1);
   v_priced := v_month is not null and v_month > 0;
 
+  -- Owed on live invoices, leaving out lapsed ones: they are closed the moment
+  -- the school pays, and what was paid on them comes back as credit. So a
+  -- locked school is asked for what will actually open it again.
   select coalesce(sum(public.fn__invoice_owed(i.id)), 0) into v_owed
     from public.platform_invoices i
-   where i.school_id = p_school_id and i.kind = 'invoice' and i.voided_at is null;
+   where i.school_id = p_school_id and i.kind = 'invoice' and i.voided_at is null
+     and not public.fn__invoice_lapsed(i.id);
+  v_credit := v_credit + public.fn__on_lapsed(p_school_id);
 
   if v_open is null and v_priced then
     v_q := public.fn__quote(p_school_id, s.plan_code, s.term_months, v_next);
   end if;
 
-  -- The first day the school is locked if nothing more is paid.
-  v_lock := least(
-    case when v_cov is null then current_date
-         when p.by_arrangement and s.agreed_monthly is null then v_cov + 1
-         else v_cov + v_grace + 1 end,
-    s.oldest_unpaid_due_on + v_grace);
+  -- The first day the school is locked if nothing more is paid. A school that
+  -- asked to stop is closed the day after its period, with no grace; one that
+  -- is already closed has no day to count down to.
+  v_lock := case
+    when v_status in ('locked', 'cancelled') or s.suspended_at is not null then null
+    when s.cancel_at_period_end then least(v_cov + 1, public.fn__lock_day(p_school_id))
+    else coalesce(public.fn__lock_day(p_school_id), current_date) end;
 
   v_why := case
     when s.suspended_at is not null then 'suspended'
@@ -3163,15 +3802,18 @@ begin
          and current_date >= s.oldest_unpaid_due_on + v_grace then 'unpaid'
     else 'expired' end;
 
-  -- What to pay now: what is owed, or, with nothing raised yet, the next term
-  -- once it is within thirty days or the school has run out. Credit comes off.
-  v_pay := case
-    when v_owed > 0 then v_owed
-    when v_q is not null and coalesce((v_q->>'priced')::boolean, false)
-         and (v_cov is null or v_cov - current_date <= 30
-              or v_status in ('grace', 'locked'))
-      then (v_q->>'amount')::numeric
-    else 0 end;
+  -- What to pay now: what is owed, plus, with no term invoice raised yet, the
+  -- next term once it is within thirty days or the school has run out. Credit
+  -- comes off. A locked school with a plan-change charge outstanding is asked
+  -- for both at once, because paying only the charge would leave it locked.
+  v_pay := v_owed
+         + case when v_open is null and v_q is not null
+                     and coalesce((v_q->>'priced')::boolean, false)
+                     and s.status <> 'cancelled' and s.suspended_at is null
+                     and not s.cancel_at_period_end
+                     and (v_cov is null or v_cov - current_date <= 30
+                          or v_status in ('grace', 'locked'))
+                then (v_q->>'amount')::numeric else 0 end;
   v_pay := greatest(v_pay - v_credit, 0);
 
   select i.* into v_inv from public.platform_invoices i where i.id = v_open;
@@ -3218,7 +3860,7 @@ begin
     'covered_to', v_cov,
     'grace_days', v_grace,
     'locks_on', v_lock,
-    'days_to_lock', v_lock - current_date,
+    'days_to_lock', case when v_lock is null then 0 else v_lock - current_date end,
     'locked_because', v_why,
     'needs_price', p.by_arrangement and s.agreed_monthly is null,
     'cancel_at_period_end', s.cancel_at_period_end,
@@ -3365,7 +4007,7 @@ set "TimeZone" = 'Asia/Karachi'
 as $$
 declare
   v_school uuid := public.current_school_id(); v jsonb; v_due date; v_amount numeric;
-  v_status text;
+  v_status text; v_credit numeric;
 begin
   if v_school is null then
     raise exception 'Not permitted' using errcode = '42501';
@@ -3379,10 +4021,16 @@ begin
     return jsonb_build_object('has_subscription', false);
   end if;
   v_status := v->>'status';
+  v_credit := coalesce((v->>'credit')::numeric, 0);
 
+  -- When and how much, from the same view the screens read. A locked school is
+  -- due now, and asked for the amount that opens it again (pay_now). Credit
+  -- comes off every amount. The trial sentence is for a school whose trial is
+  -- actually running, not one whose stored status still says trialing.
   v_due := case
     when (v->>'cancel_at_period_end')::boolean or v_status = 'cancelled'
          or (v->>'suspended')::boolean then null
+    when v_status = 'locked' then current_date
     when v->'open_invoice' is not null and v->'open_invoice' <> 'null'::jsonb
       then (v->'open_invoice'->>'due_on')::date
     when v->'next' is not null and v->'next' <> 'null'::jsonb
@@ -3390,9 +4038,10 @@ begin
     else null end;
   v_amount := case
     when v_due is null then null
+    when v_status = 'locked' then (v->>'pay_now')::numeric
     when v->'open_invoice' is not null and v->'open_invoice' <> 'null'::jsonb
-      then (v->'open_invoice'->>'owed')::numeric
-    else (v->'next'->'quote'->>'amount')::numeric end;
+      then greatest((v->'open_invoice'->>'owed')::numeric - v_credit, 0)
+    else greatest((v->'next'->'quote'->>'amount')::numeric - v_credit, 0) end;
 
   return jsonb_build_object(
     'has_subscription', true,
@@ -3422,11 +4071,22 @@ begin
     'sentence', case
       when (v->>'needs_price')::boolean
         then 'We are agreeing your price with you. Your invoice follows once it is set.'
+      when (v->>'cancel_at_period_end')::boolean and v_status = 'cancelled'
+        then format('Your subscription ended on %s. You can restart it from this screen; '
+                    || 'the software opens again when your next payment reaches us.',
+                    to_char((v->>'covered_to')::date, 'FMDD Mon YYYY'))
       when (v->>'cancel_at_period_end')::boolean
         then format('Your subscription ends on %s. Nothing further will be charged.',
                     to_char((v->>'covered_to')::date, 'FMDD Mon YYYY'))
       when v_due is null then 'Nothing is due at the moment.'
-      when (v->>'in_trial')::boolean
+      when v_status = 'locked'
+        then format('New entries are paused until Rs %s reaches us. Pay it to the account '
+                    || 'shown here and tell us with I have paid: the software opens the moment '
+                    || 'we confirm it.', to_char(v_amount, 'FM999,999,999'))
+      when v_amount = 0
+        then format('Your credit of Rs %s covers your next term. It goes on your invoice '
+                    || 'when that is raised.', to_char(v_credit, 'FM999,999,999'))
+      when v_status = 'trialing'
         then format('Your free trial ends on %s. To keep going, Rs %s is due on %s, '
                     || 'and the software keeps working for %s days after that while it arrives. '
                     || 'You are charged nothing today.',
@@ -3542,6 +4202,9 @@ $$;
 -- period and the next period starts by then. The amount is the quote the
 -- invoice will carry. Trials are listed (was_trialing) but the run does not
 -- invoice them: a trial school's first invoice comes when it asks or pays.
+-- A school already locked after its period ended is not renewing: it is
+-- invoiced when it comes back (pays or asks), from that day. Listing it made
+-- every run void its lapsed invoice and raise another.
 create or replace function public.fn__renewals_due(p_as_at date)
 returns table(school_id uuid, school_name text, plan_code text, term_months integer,
               due_on date, amount numeric, was_trialing boolean, has_method boolean)
@@ -3549,6 +4212,7 @@ language sql
 stable
 security definer
 set search_path = public
+set "TimeZone" = 'Asia/Karachi'
 as $$
   select s.id, s.name, sub.plan_code, sub.term_months,
          public.fn__next_period_start(s.id),
@@ -3563,6 +4227,8 @@ as $$
      and sub.suspended_at is null
      and sub.status <> 'cancelled'
      and not sub.cancel_at_period_end
+     and not (public.fn_effective_status(s.id) = 'locked'
+              and coalesce(public.fn__coverage_end(s.id), current_date - 1) < current_date)
      and public.fn__open_term_invoice(s.id) is null
      and public.fn__next_period_start(s.id) <= p_as_at
    order by public.fn__next_period_start(s.id), s.name;
@@ -4487,6 +5153,22 @@ begin
                    'for each row execute function public.fn__licence_delete_gate()', r.relname);
   end loop;
 end $delgate$;
+
+-- TRUNCATE skips row security and every row trigger, the gate above included,
+-- and Supabase grants it to anon and authenticated on every table by default.
+-- PostgREST never issues it, but a signed-in user with SQL could empty the
+-- subscriptions table, after which the write gate sees no subscription and
+-- (by design: a bug in the gate must never become a lock) lets every write
+-- through. Nothing in this project truncates as a signed-in user, so it is
+-- taken away on every table, and from tables created later.
+revoke truncate on all tables in schema public from anon, authenticated;
+alter default privileges in schema public revoke truncate on tables from anon, authenticated;
+
+-- LOGINS ARE THE ONE EXEMPTION. profiles is not behind the gate on purpose:
+-- taking someone's access away (a teacher who has left) must never wait on a
+-- payment, so the owner of a locked school can still change or remove a login.
+-- A login it adds while locked can read and export, like every other login,
+-- and write nothing: every school table is behind the gate.
 
 
 -- -----------------------------------------------------------------------------
@@ -5415,6 +6097,15 @@ begin
   -- An invoice already raised and not yet paid is reissued so the code is on it.
   if c.kind <> 'trial_days' and v_prev->>'applies_to' = 'open_invoice' then
     v_re := public.fn__reissue_open_invoice(v_school, format('Reissued with code %s', c.code), 'school');
+  -- A longer trial moves the first invoice to start after it. Left alone, an
+  -- invoice raised for the old end fell due inside the new trial and locked
+  -- the school as unpaid halfway through it.
+  elsif c.kind = 'trial_days'
+        and (select period_start from public.platform_invoices
+              where id = public.fn__open_term_invoice(v_school)) <= v_trial then
+    v_re := public.fn__reissue_open_invoice(v_school,
+      format('Reissued to start after the trial, which now runs to %s', to_char(v_trial, 'DD Mon YYYY')),
+      'school');
   end if;
 
   return jsonb_build_object(
@@ -6027,6 +6718,12 @@ begin
 
   if c.kind <> 'trial_days' then
     v_re := public.fn__reissue_open_invoice(p_school_id, format('Reissued with code %s', c.code), 'operator');
+  elsif v_trial is not null
+        and (select period_start from public.platform_invoices
+              where id = public.fn__open_term_invoice(p_school_id)) <= v_trial then
+    v_re := public.fn__reissue_open_invoice(p_school_id,
+      format('Reissued to start after the trial, which now runs to %s', to_char(v_trial, 'DD Mon YYYY')),
+      'operator');
   end if;
 
   return jsonb_build_object('school_id', p_school_id, 'code', c.code, 'redemption_id', v_id,

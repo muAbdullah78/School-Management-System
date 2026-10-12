@@ -518,10 +518,12 @@ begin
     raise exception 'FAIL: raising an invoice reopened the school before it paid (%)',
       public.fn_effective_status(v_school);
   end if;
-  -- A school past its grace is billed from the day it comes back, not for the
-  -- weeks it was locked out.
-  if (v_inv->>'period_start')::date <> current_date then
-    raise exception 'FAIL: a locked school was billed from %, not from today',
+  -- A school past its grace is billed for the grace days it used and not for
+  -- any day it was locked out. This one comes back on its first locked day,
+  -- so its new period starts the day after the old one ended (fourteen days
+  -- ago): it used all fourteen days of grace.
+  if (v_inv->>'period_start')::date <> current_date - 14 then
+    raise exception 'FAIL: a locked school was billed from %, not from the day after its period',
       v_inv->>'period_start';
   end if;
 

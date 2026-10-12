@@ -2654,7 +2654,8 @@ jobs:
         # the plan, the trial is fourteen days, raising an invoice moves nothing
         # and paying it does, a part payment does not, an unpaid invoice locks a
         # school fourteen days after it is due, a school that comes back is
-        # billed from today, a claim cannot be confirmed twice, credit carries,
+        # billed for the grace it used and not the weeks it was locked, a claim
+        # cannot be confirmed twice, credit carries,
         # Enterprise is priced by us and locks unpriced, plans move only by us
         # with a pro-rata suggestion, extra room ends, terms reissue an unpaid
         # invoice, renewals never invoice a trial, and a locked school can
@@ -2673,6 +2674,15 @@ jobs:
         # are ours, one refusal sentence, a throttle, an append-only log, edits
         # need their version and a used code's terms are locked.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/discount_codes_keep_their_word.sql
+
+      - name: Paid means paid (0155/0156 after review), no access without payment and no money lost
+        # What an adversarial review of the rebuild found, each reproduced and
+        # held: a free month recycled for ever, a voided year kept, a credit note
+        # that vanished, tax changed on a paid invoice, a part-paid lapsed month
+        # that kept a school locked, money paid ahead that never reached the
+        # licence, a school that left and could never come back, a trial code
+        # that locked a school mid-trial, month-end terms, and TRUNCATE.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/paid_means_paid.sql
 
       - name: Student list — does the fast balance equal the real one?
         # fn_student_list recomputes each balance SET-BASED rather than calling
