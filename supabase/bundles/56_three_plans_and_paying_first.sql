@@ -90,6 +90,10 @@ alter table public.plan_changes enable row level security;
 alter table public.plan_changes force row level security;
 revoke all on public.plan_changes from public, anon, authenticated;
 
+-- WHO, said truthfully. This trigger runs as its owner, so current_user (the
+-- column default) always read 'postgres' and every change looked like a
+-- migration. The role a request runs as is the 'role' setting (service_role,
+-- authenticated) and otherwise the login itself.
 create or replace function public.fn__log_plan_change()
 returns trigger
 language plpgsql
@@ -97,11 +101,12 @@ security definer
 set search_path = public
 as $$
 begin
-  insert into public.plan_changes (code, op, before, after, changed_by)
+  insert into public.plan_changes (code, op, before, after, changed_by, changed_as)
   values (coalesce(new.code, old.code), tg_op,
           case when tg_op <> 'INSERT' then to_jsonb(old) end,
           case when tg_op <> 'DELETE' then to_jsonb(new) end,
-          auth.uid());
+          auth.uid(),
+          coalesce(nullif(current_setting('role', true), 'none'), session_user));
   return coalesce(new, old);
 end;
 $$;
@@ -111,6 +116,29 @@ drop trigger if exists trg_log_plan_change on public.plans;
 create trigger trg_log_plan_change
   after insert or update or delete on public.plans
   for each row execute function public.fn__log_plan_change();
+
+-- The log is append-only for everyone the API can be: the service role
+-- bypasses row security and could otherwise rewrite or erase a price change.
+create or replace function public.fn__plan_changes_append_only()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  raise exception 'The price list log is append-only' using errcode = '42501';
+end;
+$$;
+revoke all on function public.fn__plan_changes_append_only() from public, anon, authenticated;
+drop trigger if exists trg_plan_changes_append_only on public.plan_changes;
+create trigger trg_plan_changes_append_only
+  before update or delete on public.plan_changes
+  for each row execute function public.fn__plan_changes_append_only();
+do $svc$
+begin
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    execute 'revoke update, delete, truncate on public.plan_changes from service_role';
+  end if;
+end $svc$;
 
 insert into public.plans
   (code, name, student_limit, price_monthly, price_quarterly, price_yearly,
@@ -315,7 +343,13 @@ as $$
 begin
   if new.student_limit_override is null then
     new.student_limit_override_until := null;
-  elsif new.student_limit_override_until is null then
+  elsif new.student_limit_override_until is null
+        -- New room with the old end date left in place (set by hand, or by an
+        -- older grant that sets only the number) would be dead on arrival.
+        or (tg_op = 'UPDATE'
+            and new.student_limit_override is distinct from old.student_limit_override
+            and new.student_limit_override_until is not distinct from old.student_limit_override_until
+            and new.student_limit_override_until < current_date) then
     new.student_limit_override_until :=
       greatest(coalesce(greatest(new.period_end, new.trial_ends_on), current_date), current_date);
   end if;
@@ -382,7 +416,17 @@ alter table public.platform_invoices
   add column if not exists purpose text not null default 'term',
   add column if not exists plan_name text,
   add column if not exists discount_code text,
-  add column if not exists discount_amount numeric(12,2) not null default 0;
+  add column if not exists discount_amount numeric(12,2) not null default 0,
+  add column if not exists set_by_hand boolean not null default false,
+  add column if not exists hand_reason text;
+
+comment on column public.platform_invoices.set_by_hand is
+  'We raised this invoice with a decision of our own: an amount typed by hand, '
+  'a reason, or invoicing a school over its limit on purpose. Nothing the '
+  'school does (changing its term, using a code) voids it.';
+comment on column public.platform_invoices.hand_reason is
+  'The reason we gave when we raised it, carried to its replacement if we '
+  'reissue it, so a decision such as invoicing over the limit survives.';
 
 comment on column public.platform_invoices.purpose is
   'term: pays for a period of the licence and extends it once paid. '
@@ -1355,13 +1399,16 @@ revoke all on function public.fn__void_lapsed(uuid, text) from public, anon, aut
 
 -- Is the roll over the limit that will apply in a period starting p_start?
 -- Extra room ends with the period it was given in, so it counts only if it
--- reaches that day. NULL when the roll fits; otherwise the sentence to show.
+-- reaches that day, and only if it lasts beyond today: room given during grace
+-- (or while locked) ends today, and used to let a whole new year through on
+-- the old plan. NULL when the roll fits; otherwise the sentence to show.
 create or replace function public.fn__over_limit_for_period(p_school_id uuid, p_start date)
 returns text
 language plpgsql
 stable
 security definer
 set search_path = public
+set "TimeZone" = 'Asia/Karachi'
 as $$
 declare s public.subscriptions; v_plan record; v_count integer; v_cap integer;
 begin
@@ -1369,6 +1416,7 @@ begin
   select * into v_plan from public.plans where code = s.plan_code;
   v_cap := case when s.student_limit_override is not null
                      and s.student_limit_override_until >= p_start
+                     and s.student_limit_override_until > current_date
                 then s.student_limit_override
                 else v_plan.student_limit end;
   if v_cap is null then
@@ -1409,7 +1457,7 @@ declare
   q jsonb; v_amount numeric; v_reason text := nullif(btrim(coalesce(p_reason, '')), '');
   v_note text; v_inv uuid; v_doc text; v_open uuid; v_lapsed integer;
   v_code text; v_code_off numeric := 0; v_overridden boolean := false;
-  v_over text; v_due date;
+  v_over text; v_due date; v_hand_reason text;
 begin
   select * into s from public.subscriptions where school_id = p_school_id for update;
   if not found then
@@ -1474,6 +1522,7 @@ begin
   -- whose roll has outgrown its plan is a decision for us (move it, or invoice
   -- it on its plan on purpose, with a reason), never an automatic renewal and
   -- never something a school can buy for itself.
+  v_hand_reason := case when p_by = 'operator' then v_reason end;
   v_over := public.fn__over_limit_for_period(p_school_id, v_start);
   if v_over is not null then
     if p_by <> 'operator' or v_reason is null then
@@ -1523,12 +1572,14 @@ begin
 
   insert into public.platform_invoices
     (school_id, school_name, plan_code, plan_name, cycle, months, period_start, period_end,
-     amount, list_amount, due_on, note, created_by, purpose, discount_code, discount_amount)
+     amount, list_amount, due_on, note, created_by, purpose, discount_code, discount_amount,
+     set_by_hand, hand_reason)
   values
     (p_school_id, v_school.name, s.plan_code, q->>'plan_name',
      public.fn__cycle_for_months(v_months), v_months, v_start, v_end,
      v_amount, (q->>'term_price')::numeric, v_due,
-     nullif(v_note, ''), auth.uid(), 'term', v_code, v_code_off)
+     nullif(v_note, ''), auth.uid(), 'term', v_code, v_code_off,
+     p_by = 'operator' and (p_amount is not null or v_hand_reason is not null), v_hand_reason)
   returning id, doc_no into v_inv, v_doc;
 
   if v_code is not null then
@@ -1823,6 +1874,11 @@ begin
   if p_paid_on is not null and p_paid_on > current_date then
     raise exception 'That payment date is in the future';
   end if;
+  -- The school's lock first, then the invoice checks: a term change or a move
+  -- that reissues the invoice at the same moment is either seen here or waits.
+  -- Checked before the lock, a month's money could land as part payment of the
+  -- year that had just replaced it.
+  perform 1 from public.subscriptions where school_id = p_school_id for update;
   if p_invoice_id is not null
      and not exists (select 1 from public.platform_invoices
                       where id = p_invoice_id and school_id = p_school_id) then
@@ -1836,8 +1892,6 @@ begin
   if v_tax = 0 and nullif(btrim(coalesce(p_tax_certificate, '')), '') is not null then
     raise exception 'A tax certificate was given but no withheld amount';
   end if;
-
-  perform 1 from public.subscriptions where school_id = p_school_id for update;
 
   insert into public.platform_payments
     (school_id, invoice_id, amount, paid_on, method, reference, note, created_by,
@@ -2414,33 +2468,72 @@ $function$;
 -- 10. PLANS MOVE ONLY BY US
 -- -----------------------------------------------------------------------------
 
--- If an open term invoice has nothing paid on it, it is reissued so the next
--- period is billed at the new plan, price or term. One with money on it stays:
--- the change then applies from the invoice after it.
+-- REISSUE THE OPEN TERM INVOICE so the next period is billed at a new plan,
+-- price, term or code. The rules, because the first version broke each one:
+--   * A change the SCHOOL makes (its term, a code) never undoes a decision we
+--     made on the invoice: one we priced by hand, gave a reason for, or raised
+--     over the limit on purpose is kept, and the change applies from the
+--     invoice after it. Two term changes used to price a hand-made invoice
+--     back to list.
+--   * The school's change also keeps an invoice with money on it.
+--   * A change WE make (plan, price, a code we give) moves money already paid
+--     on an open invoice onto its replacement, so a token payment cannot hold
+--     a whole year at the old plan's price. An invoice with a credit note
+--     against it is kept: that is a decision too.
+--   * The void and the new invoice happen together or not at all. When the
+--     replacement cannot be raised (over the limit, no price, cannot be
+--     invoiced) the original stays, so a school is never left with no invoice
+--     and no way to get one. The school is told in its own words.
 create or replace function public.fn__reissue_open_invoice(p_school_id uuid, p_reason text, p_by text)
 returns jsonb
 language plpgsql
 security definer
 set search_path = public
 as $$
-declare v_open uuid; v_doc text; v_new jsonb;
+declare v_open uuid; v_inv record; v_new jsonb; v_settled numeric; v_released numeric := 0;
 begin
   v_open := public.fn__open_term_invoice(p_school_id);
   if v_open is null then
     return null;
   end if;
-  if public.fn__invoice_settled(v_open) > 0 then
-    return jsonb_build_object('kept', (select doc_no from public.platform_invoices where id = v_open),
+  select * into v_inv from public.platform_invoices where id = v_open;
+
+  if p_by = 'school' and v_inv.set_by_hand then
+    return jsonb_build_object('kept', v_inv.doc_no,
+      'why', 'We set this invoice with you, so it stays as it is. Your change applies from the invoice after it.');
+  end if;
+  v_settled := public.fn__invoice_settled(v_open);
+  if v_settled > 0 and (p_by = 'school'
+       or exists (select 1 from public.platform_invoices c
+                   where c.credits_invoice_id = v_open and c.voided_at is null)) then
+    return jsonb_build_object('kept', v_inv.doc_no,
       'why', 'money has been paid against it, so the change applies from the next invoice');
   end if;
-  select doc_no into v_doc from public.platform_invoices where id = v_open;
-  perform public.fn__void_invoice(v_open, p_reason, p_by);
+
   begin
-    v_new := public.fn__raise_term_invoice(p_school_id, null, null, null, p_by);
+    if v_settled > 0 then
+      select coalesce(sum(amount), 0) into v_released
+        from public.platform_payment_allocations where invoice_id = v_open;
+      delete from public.platform_payment_allocations where invoice_id = v_open;
+      insert into public.audit_log(school_id, actor, action, entity, entity_id, after, reason)
+      values (p_school_id, auth.uid(), 'platform_payment_released', 'platform_invoices',
+              v_open::text, jsonb_build_object('doc_no', v_inv.doc_no, 'released', v_released,
+                                               'by', p_by), p_reason);
+    end if;
+    perform public.fn__void_invoice(v_open, p_reason, p_by);
+    v_new := public.fn__raise_term_invoice(p_school_id, null, null,
+               case when p_by = 'operator' then v_inv.hand_reason end, p_by);
   exception when sqlstate 'SB001' or sqlstate 'SB002' or sqlstate 'SB003' or sqlstate 'SB004' then
-    v_new := jsonb_build_object('not_raised', sqlerrm);
+    -- Everything in this block is undone: the original invoice stands.
+    return jsonb_build_object('kept', v_inv.doc_no,
+      'why', case
+        when p_by <> 'school' then sqlerrm
+        when sqlstate = 'SB004' then 'Your roll is bigger than your plan covers, so we need to move you to the right plan first. Your invoice stays as it is until then.'
+        when sqlstate = 'SB002' then 'Your price is still being agreed, so your invoice stays as it is.'
+        else 'Your invoice stays as it is. Please call us if it needs to change.' end);
   end;
-  return jsonb_build_object('voided', v_doc, 'raised', v_new);
+  return jsonb_build_object('voided', v_inv.doc_no, 'raised', v_new,
+                            'carried_over', nullif(v_released, 0));
 end;
 $$;
 revoke all on function public.fn__reissue_open_invoice(uuid, text, text) from public, anon, authenticated;
@@ -2459,6 +2552,7 @@ as $$
 declare
   s public.subscriptions; v_plan record;
   v_reason text := nullif(btrim(coalesce(p_reason, '')), ''); v_re jsonb; v_spent jsonb;
+  v_before jsonb;
 begin
   if not public.is_platform_admin() then
     raise exception 'Not permitted' using errcode = '42501';
@@ -2490,6 +2584,15 @@ begin
       using errcode = '22023';
   end if;
 
+  -- The price as it stood, every term, before it changes: the audit row's
+  -- 'before' was read after the update and so recorded the new figures.
+  v_before := jsonb_build_object(
+    'monthly', public.fn__term_price(p_school_id, s.plan_code, 1),
+    'quarterly', public.fn__term_price(p_school_id, s.plan_code, 3),
+    'yearly', public.fn__term_price(p_school_id, s.plan_code, 12),
+    'quarterly_set', s.agreed_quarterly is not null,
+    'yearly_set', s.agreed_yearly is not null);
+
   update public.subscriptions
      set agreed_monthly = p_monthly, agreed_quarterly = p_quarterly,
          agreed_yearly = p_yearly, agreed_reason = v_reason,
@@ -2514,11 +2617,15 @@ begin
                                    'yearly', s.agreed_yearly, 'reason', s.agreed_reason),
       'after', jsonb_build_object('monthly', p_monthly, 'quarterly', p_quarterly,
                                   'yearly', p_yearly, 'reason', v_reason)));
-  insert into public.audit_log(school_id, actor, action, entity, entity_id, before, after)
+  insert into public.audit_log(school_id, actor, action, entity, entity_id, before, after, reason)
   values (p_school_id, auth.uid(), 'subscription_price_set', 'subscriptions', p_school_id::text,
-          jsonb_build_object('monthly', s.agreed_monthly,
-                             'quarterly', public.fn__term_price(p_school_id, s.plan_code, 3)),
-          jsonb_build_object('monthly', p_monthly, 'quarterly', p_quarterly, 'yearly', p_yearly));
+          v_before,
+          jsonb_build_object(
+            'monthly', public.fn__term_price(p_school_id, s.plan_code, 1),
+            'quarterly', public.fn__term_price(p_school_id, s.plan_code, 3),
+            'yearly', public.fn__term_price(p_school_id, s.plan_code, 12),
+            'quarterly_set', p_quarterly is not null, 'yearly_set', p_yearly is not null),
+          v_reason);
 
   v_re := public.fn__reissue_open_invoice(p_school_id,
             format('Reissued at the agreed price of Rs %s a month', to_char(p_monthly, 'FM999,999,999')),
@@ -2543,9 +2650,15 @@ $$;
 revoke all on function public.fn_platform_set_price(uuid, numeric, numeric, numeric, text) from public, anon;
 grant execute on function public.fn_platform_set_price(uuid, numeric, numeric, numeric, text) to authenticated;
 
--- WHAT A MOVE WOULD COST. The difference between the two plans' prices for the
--- school's term, for the share of the paid period that is left. A suggestion:
--- we decide what to charge.
+-- WHAT A MOVE WOULD COST. A suggestion: we decide what to charge.
+-- For each paid term invoice whose period has not ended: the difference
+-- between the new plan's price and the price on that invoice, for that
+-- invoice's own term, times the share of ITS period that is left (all of it
+-- for a period paid ahead). The first version priced the whole paid block as
+-- one period at the term the school chose for the FUTURE, so after a year of
+-- monthly payments it suggested a twelfth of the right charge, and a school
+-- switching to yearly was told ten times too much. Periods given without an
+-- invoice (before 0155, or by hand) are priced at the school's term.
 create or replace function public.fn_platform_plan_change_quote(
   p_school_id uuid, p_plan_code text, p_agreed_monthly numeric default null)
 returns jsonb
@@ -2557,7 +2670,9 @@ set "TimeZone" = 'Asia/Karachi'
 as $$
 declare
   s public.subscriptions; v_from record; v_to record; v_old numeric; v_new numeric;
-  v_days_total integer; v_days_left integer; v_suggest numeric; v_count integer;
+  v_days_total integer := 0; v_days_left integer := 0; v_suggest numeric := 0; v_count integer;
+  r record; v_lines jsonb := '[]'::jsonb; v_line numeric; v_total integer; v_left integer;
+  v_paid_to date; v_no_price boolean := false;
 begin
   if not public.is_platform_admin() then
     raise exception 'Not permitted' using errcode = '42501';
@@ -2573,56 +2688,102 @@ begin
   end if;
   v_count := public.fn_count_students(p_school_id);
 
-  v_old := public.fn__term_price(p_school_id, s.plan_code, s.term_months);
-  v_new := case
-    when not v_to.by_arrangement then public.fn__plan_price(v_to.code, s.term_months)
-    when p_agreed_monthly is not null then case s.term_months
-           when 1 then p_agreed_monthly
-           when 3 then round(p_agreed_monthly * 3 * 0.9)
-           else p_agreed_monthly * 10 end
-    when v_to.code = s.plan_code then v_old
-    else null end;
+  for r in
+    select i.id, i.doc_no, i.months, i.period_start, i.period_end, i.list_amount, i.amount
+      from public.platform_invoices i
+     where i.school_id = p_school_id and i.kind = 'invoice' and i.purpose = 'term'
+       and i.voided_at is null and i.period_end >= current_date
+       and public.fn__invoice_owed(i.id) = 0
+     order by i.period_start
+  loop
+    v_old := r.list_amount;
+    v_new := case
+      when not v_to.by_arrangement then public.fn__plan_price(v_to.code, r.months)
+      when p_agreed_monthly is not null then case r.months
+             when 1 then p_agreed_monthly
+             when 3 then round(p_agreed_monthly * 3 * 0.9)
+             else p_agreed_monthly * 10 end
+      else public.fn__term_price(p_school_id, v_to.code, r.months) end;
+    if v_new is null then
+      v_no_price := true;
+      continue;
+    end if;
+    v_total := r.period_end - r.period_start + 1;
+    v_left  := least(r.period_end - greatest(current_date, r.period_start) + 1, v_total);
+    v_line  := greatest(round((v_new - v_old) * v_left / v_total), 0);
+    v_suggest := v_suggest + v_line;
+    if v_days_total = 0 then
+      v_days_total := v_total;
+      v_days_left  := v_left;
+    end if;
+    v_paid_to := r.period_end;
+    v_lines := v_lines || jsonb_build_array(jsonb_build_object(
+      'doc_no', r.doc_no, 'months', r.months, 'period_start', r.period_start,
+      'period_end', r.period_end, 'old_price', v_old, 'new_price', v_new,
+      'days_left', v_left, 'days_in_period', v_total, 'charge', v_line));
+  end loop;
 
-  if s.period_end is not null and s.period_end >= current_date
-     and s.period_start is not null then
-    v_days_total := s.period_end - s.period_start + 1;
-    -- A period paid during the trial has not started yet: all of it is left.
-    v_days_left  := least(s.period_end - current_date + 1, v_days_total);
-  else
-    v_days_total := 0;
-    v_days_left  := 0;
+  -- Given dates with no paid invoice behind them: priced at the school's term.
+  if jsonb_array_length(v_lines) = 0 and s.period_end is not null
+     and s.period_end >= current_date and s.period_start is not null then
+    v_old := public.fn__term_price(p_school_id, s.plan_code, s.term_months);
+    v_new := case
+      when not v_to.by_arrangement then public.fn__plan_price(v_to.code, s.term_months)
+      when p_agreed_monthly is not null then case s.term_months
+             when 1 then p_agreed_monthly
+             when 3 then round(p_agreed_monthly * 3 * 0.9)
+             else p_agreed_monthly * 10 end
+      else public.fn__term_price(p_school_id, v_to.code, s.term_months) end;
+    if v_old is not null and v_new is not null then
+      v_total := least(s.period_end - s.period_start + 1,
+                       public.fn__term_end(s.period_start, s.term_months) - s.period_start + 1);
+      v_left  := least(s.period_end - current_date + 1, v_total);
+      v_suggest := greatest(round((v_new - v_old) * v_left / v_total), 0);
+      v_days_total := v_total;
+      v_days_left := v_left;
+      v_paid_to := s.period_end;
+    else
+      v_no_price := v_new is null;
+    end if;
   end if;
-
-  v_suggest := case
-    when v_old is null or v_new is null or v_days_total = 0 then 0
-    else greatest(round((v_new - v_old) * v_days_left / v_days_total), 0) end;
 
   return jsonb_build_object(
     'school_id', p_school_id,
     'from', jsonb_build_object('code', v_from.code, 'name', v_from.name,
-                               'limit', v_from.student_limit, 'term_price', v_old),
+                               'limit', v_from.student_limit,
+                               'term_price', public.fn__term_price(p_school_id, s.plan_code, s.term_months)),
     'to', jsonb_build_object('code', v_to.code, 'name', v_to.name,
-                             'limit', v_to.student_limit, 'term_price', v_new,
+                             'limit', v_to.student_limit,
+                             'term_price', case
+                               when not v_to.by_arrangement then public.fn__plan_price(v_to.code, s.term_months)
+                               when p_agreed_monthly is not null then case s.term_months
+                                      when 1 then p_agreed_monthly
+                                      when 3 then round(p_agreed_monthly * 3 * 0.9)
+                                      else p_agreed_monthly * 10 end
+                               else public.fn__term_price(p_school_id, v_to.code, s.term_months) end,
                              'by_arrangement', v_to.by_arrangement),
     'term_months', s.term_months,
     'students', v_count,
     'fits', v_to.student_limit is null or v_count <= v_to.student_limit,
     'in_trial', s.status = 'trialing',
-    'paid_from', s.period_start, 'paid_to', s.period_end,
+    'paid_from', s.period_start, 'paid_to', coalesce(v_paid_to, s.period_end),
     'days_left', v_days_left, 'days_in_period', v_days_total,
+    'lines', v_lines,
     'suggested_charge', v_suggest,
     'explain', case
-      when s.status = 'trialing' or v_days_total = 0
-        then 'Nothing has been paid for a running period, so there is nothing to top up. The new plan''s price applies from the first invoice.'
-      when v_new is null
+      when v_no_price
         then 'Agree a monthly price for Enterprise to see the difference.'
+      when v_days_total = 0
+        then 'Nothing has been paid for a running period, so there is nothing to top up. The new plan''s price applies from the first invoice.'
       when v_suggest = 0
-        then 'The new plan costs the same or less for the rest of this period. Nothing to charge; the new price applies from the next invoice.'
-      else format('Rs %s for the %s day(s) left of the period paid to %s: the difference between Rs %s and Rs %s for a %s-month term, pro rata.',
+        then 'The new plan costs the same or less for what is already paid. Nothing to charge; the new price applies from the next invoice.'
+      when jsonb_array_length(v_lines) > 1
+        then format('Rs %s: the difference between the plans for the rest of the running period and in full for the %s period(s) already paid after it, each at its own term.',
+                    to_char(v_suggest, 'FM999,999,999'), jsonb_array_length(v_lines) - 1)
+      else format('Rs %s for the %s day(s) left of the period paid to %s: the difference between the two plans for that %s-month period, pro rata.',
                   to_char(v_suggest, 'FM999,999,999'), v_days_left,
-                  to_char(s.period_end, 'DD Mon YYYY'),
-                  to_char(v_new, 'FM999,999,999'), to_char(v_old, 'FM999,999,999'),
-                  s.term_months) end);
+                  to_char(coalesce(v_paid_to, s.period_end), 'DD Mon YYYY'),
+                  coalesce((v_lines->0->>'months')::integer, s.term_months)) end);
 end;
 $$;
 revoke all on function public.fn_platform_plan_change_quote(uuid, text, numeric) from public, anon;
@@ -2645,7 +2806,8 @@ declare
   s public.subscriptions; v_from record; v_to record; v_count integer;
   v_reason text := nullif(btrim(coalesce(p_reason, '')), '');
   v_charge numeric := coalesce(p_charge, 0); v_inv uuid; v_doc text; v_q jsonb;
-  v_re jsonb; v_months integer; v_name text;
+  v_re jsonb; v_months integer; v_name text; r record;
+  v_withdrawn text[] := '{}'; v_still_open text[] := '{}';
 begin
   if not public.is_platform_admin() then
     raise exception 'Not permitted' using errcode = '42501';
@@ -2724,10 +2886,40 @@ begin
   v_re := public.fn__reissue_open_invoice(p_school_id,
             format('Reissued on %s after the move from %s', v_to.name, v_from.name), 'operator');
 
+  -- A charge for moving ONTO the plan being left, still unpaid, is withdrawn:
+  -- a school must not be locked for a plan it no longer has. One with money
+  -- on it stays, and the reply says so.
+  for r in
+    select i.id, i.doc_no from public.platform_invoices i
+     where i.school_id = p_school_id and i.kind = 'invoice' and i.purpose = 'plan_change'
+       and i.voided_at is null and i.plan_code = v_from.code
+       and (v_inv is null or i.id <> v_inv)
+  loop
+    if public.fn__invoice_settled(r.id) = 0 then
+      perform public.fn__void_invoice(r.id,
+        format('The school moved off %s, so the charge for moving onto it is withdrawn.', v_from.name),
+        'operator');
+      v_withdrawn := array_append(v_withdrawn, r.doc_no);
+    elsif public.fn__invoice_owed(r.id) > 0 then
+      v_still_open := array_append(v_still_open, r.doc_no);
+    end if;
+  end loop;
+
+  -- A request for room is answered with what the move actually gives.
   update public.student_limit_requests
-     set status = 'granted', granted_limit = greatest(requested_limit, coalesce(v_to.student_limit, requested_limit)),
+     set status = case when v_to.student_limit is null or v_to.student_limit >= requested_limit
+                       then 'granted' else 'declined' end,
+         granted_limit = case when v_to.student_limit is not null
+                                   and v_to.student_limit >= requested_limit
+                              then v_to.student_limit end,
          decided_by = auth.uid(), decided_at = now(),
-         decision_note = format('Moved to %s', v_to.name)
+         decision_note = case
+           when v_to.student_limit is null
+             then format('Moved to %s, which has no pupil limit.', v_to.name)
+           when v_to.student_limit >= requested_limit
+             then format('Moved to %s, which covers %s pupils.', v_to.name, v_to.student_limit)
+           else format('Moved to %s, which covers %s pupils, fewer than the %s asked for. Ask again if you need more.',
+                       v_to.name, v_to.student_limit, requested_limit) end
    where school_id = p_school_id and status = 'pending';
 
   perform public.fn__log_operator_action('plan_changed', p_school_id,
@@ -2736,7 +2928,8 @@ begin
                        'suggested', v_q->'suggested_charge', 'invoice_id', v_inv,
                        'agreed_monthly', p_agreed_monthly,
                        'extra_room_ended', s.student_limit_override,
-                       'reissued', v_re));
+                       'reissued', v_re, 'charges_withdrawn', to_jsonb(v_withdrawn),
+                       'charges_still_open', to_jsonb(v_still_open)));
   insert into public.audit_log(school_id, actor, action, entity, entity_id, before, after, reason)
   values (p_school_id, auth.uid(), 'plan_changed', 'subscriptions', p_school_id::text,
           jsonb_build_object('plan_code', s.plan_code, 'extra_room', s.student_limit_override),
@@ -2752,6 +2945,8 @@ begin
     'charge', v_charge, 'invoice_id', v_inv, 'doc_no', v_doc,
     'suggested_charge', v_q->'suggested_charge',
     'reissued', v_re,
+    'charges_withdrawn', to_jsonb(v_withdrawn),
+    'charges_still_open', to_jsonb(v_still_open),
     'status', public.fn_effective_status(p_school_id));
 end;
 $$;
@@ -2802,8 +2997,9 @@ begin
     'invoice', v_re,
     'applies_from', case
       when v_re is null then 'your next invoice'
-      when v_re ? 'kept' then 'the invoice after the one you have started paying'
+      when v_re ? 'kept' then 'the invoice after the one you already have'
       else 'the invoice we have just reissued' end,
+    'why', v_re->>'why',
     'next', public.fn_my_next_payment());
 end;
 $$;
@@ -2815,13 +3011,13 @@ language plpgsql
 security definer
 set search_path = public
 as $$
-declare v_school uuid := public.current_school_id(); v_plan text;
+declare v_school uuid := public.current_school_id(); v_plan text; v_term integer;
 begin
   if v_school is null or not public.has_role('owner', 'principal') then
     raise exception 'Only the owner or the principal can change the subscription.'
       using errcode = '42501';
   end if;
-  select plan_code into v_plan from public.subscriptions where school_id = v_school;
+  select plan_code, term_months into v_plan, v_term from public.subscriptions where school_id = v_school;
   if v_plan is null then
     raise exception 'This school has no subscription.';
   end if;
@@ -2832,7 +3028,9 @@ begin
       'and tell you what, if anything, it costs.'
       using errcode = '22023';
   end if;
-  return public.fn_choose_term(coalesce(p_term_months, 1));
+  -- No term given means the term stands. Defaulting to a month quietly turned
+  -- a yearly school monthly and reissued its year as one month.
+  return public.fn_choose_term(coalesce(p_term_months, v_term));
 end;
 $$;
 
@@ -3464,11 +3662,14 @@ begin
     coalesce(nullif(p->>'trial_days', '')::integer, 14),
     v_students);
 
+  -- A price set here needs the same who, when and for how many as any other
+  -- price we agree: fn_platform_set_price refuses it without one. A reason
+  -- written for the operator ('Agreed when the school was created') would be a
+  -- record nobody made.
   v_monthly := nullif(p->>'agreed_monthly', '')::numeric;
   if v_monthly is not null then
     perform public.fn_platform_set_price((v_res->>'school_id')::uuid, v_monthly, null, null,
-      coalesce(nullif(btrim(coalesce(p->>'agreed_reason', '')), ''),
-               'Agreed when the school was created'));
+      p->>'agreed_reason');
   end if;
 
   perform public.fn__log_operator_action('school_created', (v_res->>'school_id')::uuid,
@@ -4271,9 +4472,13 @@ begin
 
     if r.was_trialing then
       v_outcome := 'trial_ending';
-      v_note := format('Trial ends %s. Trials are not invoiced by the run: the first '
+      v_note := format('Trial %s %s. Trials are not invoiced by the run: the first '
                        || 'invoice is raised when the school asks for it or pays.',
-                       to_char(r.due_on - 1, 'DD Mon YYYY'));
+                       case when (select trial_ends_on from public.subscriptions
+                                   where school_id = r.school_id) < current_date
+                            then 'ended' else 'ends' end,
+                       to_char((select trial_ends_on from public.subscriptions
+                                 where school_id = r.school_id), 'DD Mon YYYY'));
       v_skipped := v_skipped + 1;
     elsif r.amount is null then
       v_outcome := 'needs_price';

@@ -32,6 +32,17 @@
 --  17. Nobody signed in can TRUNCATE a table.
 --  18. A paid-through date set by hand in the table stands.
 --  19. A school created with no trial days is billed from the day it starts.
+--  20. A plan move suggests the difference on each paid period at its own
+--      term, not the whole paid block at the term chosen for the future.
+--  21. Extra room that ends today does not let a new period through.
+--  22. A change the school makes never undoes an invoice we set by hand, and a
+--      reissue that cannot raise its replacement keeps the original.
+--  23. Moving back off a plan withdraws the unpaid charge for moving onto it;
+--      money on an open renewal moves with a plan change.
+--  24. A room request is answered with what the move actually gives.
+--  25. The old plan screen keeps the school's term; room set by hand lives.
+--  26. Price changes are recorded truthfully: before, after and who.
+--  27. The renewal run leaves a school that locked long ago alone.
 --
 -- Run: psql -v ON_ERROR_STOP=1 -f supabase/tests/paid_means_paid.sql
 -- =============================================================================
@@ -127,6 +138,34 @@ begin
   perform pg_temp.as_op();
   return public.fn_platform_record_payment(p_school, p_amount, current_date, 'bank', p_ref,
                                            p_invoice, null, p_wht, null);
+end;
+$$;
+
+-- n enrolled pupils (fn_count_students counts enrolments, not bare student rows).
+create or replace function pg_temp.roll(p_school uuid, p_n integer) returns void
+language plpgsql as $$
+declare v_sess uuid; v_class uuid;
+begin
+  perform pg_temp.as_nobody();
+  select id into v_sess from public.academic_sessions where school_id = p_school and is_current;
+  if v_sess is null then
+    insert into public.academic_sessions (school_id, name, starts_on, ends_on, is_current)
+      values (p_school, '2026', current_date - 60, current_date + 300, true) returning id into v_sess;
+  end if;
+  select id into v_class from public.classes where school_id = p_school limit 1;
+  if v_class is null then
+    insert into public.classes (school_id, name, level_order) values (p_school, 'One', 1)
+      returning id into v_class;
+  end if;
+  with ins as (
+    insert into public.students (school_id, full_name, father_name, status)
+    select p_school, 'PP Child ' || g || '-' || md5(random()::text), 'F', 'active'
+      from generate_series(1, p_n) g
+    returning id, full_name
+  )
+  insert into public.enrollments (school_id, student_id, session_id, class_id, roll_no, status)
+  select p_school, ins.id, v_sess, v_class, ins.full_name, 'active' from ins;
+  perform public.fn_refresh_student_count(p_school);
 end;
 $$;
 
@@ -585,6 +624,201 @@ begin
   perform pg_temp.age(v_s, 30);
   perform pg_temp.ok(public.fn__next_period_start(v_s) = current_date - 14,
     '48 if it never pays and comes back later, the fourteen days it used are billed');
+end $$;
+
+-- =============================================================================
+-- 20. THE SUGGESTED CHARGE FOR A MOVE
+-- =============================================================================
+do $$
+declare v_s uuid; q jsonb; r record; v_expect numeric := 0;
+begin
+  v_s := pg_temp.school('PP Pro Rata', 100, 1);
+  perform pg_temp.pay(v_s, 4000, 'PP-PR-1');            -- two months, paid
+  perform pg_temp.age(v_s, 30);                          -- into the first of them
+  -- The school then chooses to pay yearly from its next invoice.
+  update public.subscriptions set term_months = 12, cycle = 'yearly' where school_id = v_s;
+  perform pg_temp.as_op();
+  q := public.fn_platform_plan_change_quote(v_s, 'growth', null);
+  for r in select period_start, period_end from public.platform_invoices
+            where school_id = v_s and kind = 'invoice' and voided_at is null
+              and period_end >= current_date order by period_start loop
+    v_expect := v_expect + round(2000.0 * (r.period_end - greatest(current_date, r.period_start) + 1)
+                                       / (r.period_end - r.period_start + 1));
+  end loop;
+  perform pg_temp.ok((q->>'suggested_charge')::numeric = v_expect
+                     and jsonb_array_length(q->'lines') = 2
+                     and (q->'lines'->0->>'months')::int = 1,
+    '49 the move is priced on each paid month at the monthly prices (Rs 2,000 more a month), not the whole block at the yearly price chosen for later');
+end $$;
+
+-- =============================================================================
+-- 21. ROOM THAT ENDS TODAY DOES NOT COVER THE NEXT PERIOD
+-- =============================================================================
+do $$
+declare v_s uuid;
+begin
+  v_s := pg_temp.school('PP Room Today', 100, 1);
+  perform pg_temp.roll(v_s, 290);
+  perform pg_temp.age(v_s, 20);                          -- in grace
+  update public.subscriptions
+     set student_limit_override = 400, student_limit_override_reason = 'suite',
+         student_limit_override_until = current_date
+   where school_id = v_s;
+  perform pg_temp.ok(public.fn__over_limit_for_period(v_s, public.fn__next_period_start(v_s)) is not null,
+    '50 room given during grace ends today, so the next period is held to the plan''s own 280');
+end $$;
+
+-- =============================================================================
+-- 22. A SCHOOL'S CHANGE NEVER UNDOES OUR INVOICE
+-- =============================================================================
+do $$
+declare v_s uuid; v_own uuid; v_inv uuid; r jsonb;
+begin
+  v_s := pg_temp.school('PP Hand Kept', 100, 1);
+  v_own := pg_temp.owner_of(v_s, 'pphandkept');
+  perform pg_temp.as_op();
+  v_inv := (public.fn_platform_raise_invoice(v_s, 1, 3000,
+              'suite: the month plus a records fee, agreed with the owner')->>'invoice_id')::uuid;
+  perform set_config('test.uid', v_own::text, false);
+  r := public.fn_choose_term(3);
+  perform pg_temp.ok((select voided_at is null and amount = 3000 from public.platform_invoices where id = v_inv)
+                     and r->'invoice'->>'kept' is not null
+                     and r->>'why' like 'We set this invoice with you%',
+    '51 a term change keeps the invoice we priced by hand, and says the change applies after it');
+
+  v_s := pg_temp.school('PP Reissue Kept', 100, 1);
+  v_own := pg_temp.owner_of(v_s, 'ppreissue');
+  perform pg_temp.as_op();
+  v_inv := (public.fn_platform_raise_invoice(v_s, 1, null, null)->>'invoice_id')::uuid;
+  perform pg_temp.roll(v_s, 290);                        -- the roll outgrows Starter
+  perform set_config('test.uid', v_own::text, false);
+  r := public.fn_choose_term(12);
+  perform pg_temp.ok((select voided_at is null from public.platform_invoices where id = v_inv)
+                     and public.fn__open_term_invoice(v_s) = v_inv
+                     and r->>'why' like 'Your roll is bigger%'
+                     and r->>'why' not like '%Change plan%',
+    '52 a reissue that cannot raise its replacement keeps the original, and the school is told why in its own words');
+end $$;
+
+-- =============================================================================
+-- 23. MOVES AND THE INVOICES AROUND THEM
+-- =============================================================================
+do $$
+declare v_s uuid; r jsonb; v_charge uuid; v_open uuid; v_new uuid;
+begin
+  v_s := pg_temp.school('PP Up And Down', 100, 1);
+  perform pg_temp.pay(v_s, 2000, 'PP-UD-1');
+  perform pg_temp.age(v_s, 20);
+  perform pg_temp.as_op();
+  r := public.fn_platform_change_plan(v_s, 'growth', 'suite: they asked to move up', 1000);
+  v_charge := (r->>'invoice_id')::uuid;
+  r := public.fn_platform_change_plan(v_s, 'starter', 'suite: they changed their mind');
+  perform pg_temp.ok((select voided_at is not null from public.platform_invoices where id = v_charge)
+                     and r->'charges_withdrawn' ? (select doc_no from public.platform_invoices where id = v_charge)
+                     and (select oldest_unpaid_due_on from public.subscriptions where school_id = v_s) is null,
+    '53 moving back off Growth withdraws the unpaid charge for moving onto it');
+
+  v_s := pg_temp.school('PP Token Payment', 100, 12);
+  perform pg_temp.as_op();
+  v_open := (public.fn_platform_raise_invoice(v_s, 12, null, null)->>'invoice_id')::uuid;
+  perform pg_temp.pay(v_s, 100, 'PP-TOKEN-1', v_open);
+  perform pg_temp.as_op();
+  r := public.fn_platform_change_plan(v_s, 'growth', 'suite: their roll has grown');
+  v_new := (r->'reissued'->'raised'->>'invoice_id')::uuid;
+  perform pg_temp.ok((select voided_at is not null from public.platform_invoices where id = v_open)
+                     and (select amount = 40000 from public.platform_invoices where id = v_new)
+                     and public.fn__invoice_owed(v_new) = 39900,
+    '54 Rs 100 on a Starter year does not hold the year at Starter: it is reissued on Growth with the Rs 100 on it');
+end $$;
+
+-- =============================================================================
+-- 24. A ROOM REQUEST IS ANSWERED WITH WHAT THE MOVE GIVES
+-- =============================================================================
+do $$
+declare v_s uuid; v_own uuid; v_req record;
+begin
+  v_s := pg_temp.school('PP Asked For More', 500, 1);    -- Growth
+  v_own := pg_temp.owner_of(v_s, 'ppasked');
+  perform set_config('test.uid', v_own::text, false);
+  perform public.fn_request_student_limit(1500, 'suite: a second campus joins in spring', 'move_up');
+  perform pg_temp.as_op();
+  perform public.fn_platform_change_plan(v_s, 'starter', 'suite: the campus fell through, they shrank');
+  select * into v_req from public.student_limit_requests where school_id = v_s;
+  perform pg_temp.ok(v_req.status = 'declined' and v_req.granted_limit is null
+                     and v_req.decision_note like '%covers 280 pupils, fewer than the 1500 asked for%',
+    '55 a move to a plan that gives less than was asked is not recorded as granted');
+end $$;
+
+-- =============================================================================
+-- 25. THE OLD PLAN SCREEN, AND ROOM SET BY HAND
+-- =============================================================================
+do $$
+declare v_s uuid; v_own uuid;
+begin
+  v_s := pg_temp.school('PP Old Screen', 100, 12);
+  v_own := pg_temp.owner_of(v_s, 'ppoldscreen');
+  perform set_config('test.uid', v_own::text, false);
+  perform public.fn_my_choose_plan('starter', null);
+  perform pg_temp.ok((select term_months from public.subscriptions where school_id = v_s) = 12,
+    '56 saving the plan with no term on the old screen keeps the school yearly');
+
+  update public.subscriptions
+     set student_limit_override = 300, student_limit_override_reason = 'suite',
+         student_limit_override_until = current_date - 5
+   where school_id = v_s;
+  update public.subscriptions set student_limit_override = 350 where school_id = v_s;
+  perform pg_temp.ok((select student_limit_override_until >= current_date
+                        from public.subscriptions where school_id = v_s)
+                     and public.fn__student_limit(v_s) = 350,
+    '57 new room set by hand over an old end date gets a live end date, not the expired one');
+end $$;
+
+-- =============================================================================
+-- 26. PRICE CHANGES, RECORDED TRUTHFULLY
+-- =============================================================================
+do $$
+declare v_s uuid; v_a record;
+begin
+  v_s := pg_temp.school('PP Price Audit', 1500, 1);
+  perform pg_temp.as_op();
+  perform public.fn_platform_set_price(v_s, 10000, null, 90000, 'suite: agreed on a visit, 1,500 pupils');
+  perform public.fn_platform_set_price(v_s, 12000, null, null, 'suite: revised after the second campus');
+  select * into v_a from public.audit_log
+   where school_id = v_s and action = 'subscription_price_set' order by created_at desc, id desc limit 1;
+  perform pg_temp.ok((v_a.before->>'monthly')::numeric = 10000
+                     and (v_a.before->>'yearly')::numeric = 90000
+                     and (v_a.after->>'yearly')::numeric = 120000,
+    '58 the audit row records the price as it was, every term, and the price as it is');
+  perform pg_temp.ok(pg_temp.raises(
+    $q$select public.fn_platform_create_school('{"name":"PP Priced No Reason","students":1500,"agreed_monthly":9000}')$q$,
+    'Say how this price was agreed'),
+    '59 a school created with a price needs to say how the price was agreed');
+
+  set local role service_role;
+  update public.plans set name = name where code = 'starter';
+  reset role;
+  perform pg_temp.ok((select changed_as from public.plan_changes order by id desc limit 1) = 'service_role',
+    '60 a change to the price list records the role that made it');
+  perform pg_temp.ok(pg_temp.raises(
+    $q$delete from public.plan_changes where id = (select max(id) from public.plan_changes)$q$,
+    'append-only'),
+    '61 and the record cannot be deleted');
+end $$;
+
+-- =============================================================================
+-- 27. THE RENEWAL RUN LEAVES A SCHOOL THAT LOCKED LONG AGO ALONE
+-- =============================================================================
+do $$
+declare v_s uuid; r jsonb;
+begin
+  v_s := pg_temp.school('PP Long Gone', 100, 1);
+  perform pg_temp.age(v_s, 90);
+  perform pg_temp.as_op();
+  r := public.fn_platform_run_renewals(false, current_date);
+  perform pg_temp.ok(not exists (select 1 from jsonb_array_elements(r->'attempts') a
+                                  where a->>'school_id' = v_s::text)
+                     and not exists (select 1 from public.platform_invoices where school_id = v_s),
+    '62 a school locked for months is not invoiced by the run: it is billed when it comes back');
 end $$;
 
 rollback;

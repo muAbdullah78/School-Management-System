@@ -3578,6 +3578,25 @@ select 'three plans at the agreed prices, and access that runs on what is paid (
            or has_function_privilege('authenticated', 'public.fn_count_students(uuid)', 'execute')
            then 'FAIL: any signed-in user can ask about any school; apply '
                 || 'supabase/bundles/56_three_plans_and_paying_first.sql'
+         -- An older bundle pasted after 56 (34, say) puts back extra room that
+         -- never ends, even when its own check then refuses the rest of it.
+         when position('student_limit_override_until' in coalesce((select p.prosrc from pg_proc p
+                join pg_namespace n on n.oid = p.pronamespace
+               where n.nspname = 'public' and p.proname = 'fn__student_limit'), '')) = 0
+           or position('student_limit_override_until' in coalesce((select p.prosrc from pg_proc p
+                join pg_namespace n on n.oid = p.pronamespace
+               where n.nspname = 'public' and p.proname = 'fn_platform_grant_student_limit'), '')) = 0
+           then 'FAIL: extra room for pupils never ends (an older bundle was pasted after 56); '
+                || 'apply supabase/bundles/56_three_plans_and_paying_first.sql'
+         when exists (select 1 from public.platform_invoices i
+                       where i.kind = 'invoice' and i.voided_at is null
+                         and (select coalesce(sum(a.amount), 0) from public.platform_payment_allocations a
+                               where a.invoice_id = i.id)
+                             + (select coalesce(sum(c.amount + c.tax_amount), 0) from public.platform_invoices c
+                                 where c.credits_invoice_id = i.id and c.voided_at is null)
+                             > i.amount + i.tax_amount + 0.01)
+           then 'FAIL: an invoice has more paid and credited against it than it is for, so '
+                || 'money is missing from a school''s credit. Tell us before changing anything.'
          else 'PASS'
        end
 
