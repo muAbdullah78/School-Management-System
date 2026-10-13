@@ -143,7 +143,7 @@ export function LedgerBody({ schoolId }: { schoolId: string }) {
                 const isDoc = e.kind !== 'payment'
                 return (
                   <tr key={e.entry_id} className={e.voided ? 'text-slate-400' : ''}>
-                    <td className="whitespace-nowrap px-2 py-2 text-slate-500">{e.entry_date}</td>
+                    <td className="whitespace-nowrap px-2 py-2 text-slate-500">{fmtDate(e.entry_date)}</td>
                     <td className="whitespace-nowrap px-2 py-2">
                       <span className={e.voided ? 'line-through' : 'font-medium text-slate-700'}>
                         {e.doc_no ?? ''}

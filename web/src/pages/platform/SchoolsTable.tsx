@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { actionNeeded, sortByAction, type PlatformSchool } from '@/lib/platform'
 import { formatPkr } from '@/lib/licence'
+import { fmtDate } from '@/lib/format'
 import { StatusChip, LimitBar, ExpiryCell, NeedsPriceChip, type SchoolRow } from './status'
 
 /**
@@ -244,8 +245,8 @@ export function SchoolsTable({
                         ? <span className="font-medium text-due-800">{formatPkr(s.outstanding)}</span>
                         : <span className="text-slate-300">·</span>}
                       {s.last_paid_on && (
-                        <div className="text-[11px] font-normal text-slate-400">
-                          paid {s.last_paid_on}
+                        <div className="whitespace-nowrap text-[11px] font-normal text-slate-400">
+                          paid {fmtDate(s.last_paid_on)}
                         </div>
                       )}
                     </td>

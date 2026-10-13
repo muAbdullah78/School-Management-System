@@ -43,6 +43,9 @@
 --  25. The old plan screen keeps the school's term; room set by hand lives.
 --  26. Price changes are recorded truthfully: before, after and who.
 --  27. The renewal run leaves a school that locked long ago alone.
+--  28. A second review: stopping during grace, old months owed again, a roll
+--      over the limit, free codes and credit, debt locks, leaving with money
+--      on next month, suspension, credit notes in parts, and who sees prices.
 --
 -- Run: psql -v ON_ERROR_STOP=1 -f supabase/tests/paid_means_paid.sql
 -- =============================================================================
@@ -121,6 +124,7 @@ begin
          period_start = period_start - p_days, period_end = period_end - p_days,
          given_from = given_from - p_days, given_through = given_through - p_days,
          oldest_unpaid_due_on = oldest_unpaid_due_on - p_days,
+         closed_from = closed_from - p_days,
          student_limit_override_until = student_limit_override_until - p_days
    where school_id = p_school;
   perform set_config('app.licence_recompute', '', true);
@@ -824,6 +828,143 @@ begin
                                   where a->>'school_id' = v_s::text)
                      and not exists (select 1 from public.platform_invoices where school_id = v_s),
     '62 a school locked for months is not invoiced by the run: it is billed when it comes back');
+end $$;
+
+-- =============================================================================
+-- 28. THE SECOND REVIEW
+-- =============================================================================
+do $$
+declare v_s uuid; v_own uuid; v_cov date; v_inv uuid; v_cn uuid; r jsonb; v jsonb;
+begin
+  -- Stopping after the period ended does not wipe the grace days used.
+  v_s := pg_temp.school('PP Stop In Grace', 100, 1);
+  v_own := pg_temp.owner_of(v_s, 'ppstopgrace');
+  perform pg_temp.pay(v_s, 2000, 'PP-SG-1');
+  v_cov := public.fn__coverage_end(v_s);
+  perform pg_temp.age(v_s, (v_cov - current_date) + 12);   -- 11 days into grace
+  v_cov := public.fn__coverage_end(v_s);
+  perform set_config('test.uid', v_own::text, false);
+  perform public.fn_cancel_my_subscription('suite');
+  perform public.fn_resume_my_subscription();
+  perform pg_temp.ok(public.fn__next_period_start(v_s) = v_cov + 1,
+    '63 a school that stops and restarts after working its grace is still billed for those days');
+
+  -- An old month cannot be made owed again under months paid after it.
+  v_s := pg_temp.school('PP Old Month', 100, 1);
+  perform pg_temp.as_op();
+  v_inv := (public.fn_platform_raise_invoice(v_s, 1, null, null)->>'invoice_id')::uuid;
+  v_cn := (public.fn_platform_credit_note(v_inv, 2000, 'suite: goodwill')->>'credit_note_id')::uuid;
+  perform pg_temp.pay(v_s, 2000, 'PP-OM-1');
+  perform pg_temp.as_op();
+  perform pg_temp.ok(pg_temp.raises(format($q$select public.fn_platform_void_invoice(%L, 'suite')$q$, v_cn),
+                                    'followed by periods already paid'),
+    '64 a credit note cannot be voided under a month paid after it');
+  v_inv := (public.fn_platform_raise_invoice(v_s, 1, 0, 'suite: a free month')->>'invoice_id')::uuid;
+  perform pg_temp.ok(pg_temp.raises(format($q$select public.fn_platform_set_invoice_tax(%L, 16)$q$, v_inv),
+                                    'has been paid'),
+    '65 nor can tax be put on a Rs 0 month that already counts as paid');
+
+  -- Over the limit: the next term is not asked for until we move the school.
+  v_s := pg_temp.school('PP Over Limit', 100, 1);
+  v_own := pg_temp.owner_of(v_s, 'ppoverlimit');
+  perform pg_temp.pay(v_s, 2000, 'PP-OL-1');
+  perform pg_temp.roll(v_s, 300);
+  perform pg_temp.age(v_s, (public.fn__coverage_end(v_s) - current_date) + 2);
+  perform set_config('test.uid', v_own::text, false);
+  v := public.fn_my_next_payment();
+  perform pg_temp.ok((v->'view'->>'pay_now')::numeric = 0 and v->'view'->>'next_blocked' = 'over_limit'
+                     and v->>'sentence' like 'Your roll is bigger than your plan covers%',
+    '66 a school over its limit is told it needs moving, not asked for money that buys nothing');
+
+  -- A free code and a rupee of credit raise one term, not decades.
+  v_s := pg_temp.school('PP Free Forever', 100, 12);
+  perform pg_temp.as_op();
+  perform public.fn_platform_create_discount(jsonb_build_object(
+    'code', 'PPFREEFOREVER', 'label', 'Free', 'description', 'suite', 'kind', 'percent',
+    'value', 100, 'duration', 'forever', 'private', true, 'school_id', v_s));
+  perform public.fn_platform_grant_discount(v_s, 'PPFREEFOREVER', 'suite: a partner school', false);
+  perform pg_temp.pay(v_s, 1, 'PP-FF-1');
+  perform pg_temp.ok((select count(*) from public.platform_invoices where school_id = v_s and voided_at is null) <= 1,
+    '67 credit never raises Rs 0 terms ahead');
+
+  -- Locked only by a charge in the middle of a paid year: asked for the charge.
+  v_s := pg_temp.school('PP Charge Lock', 100, 12);
+  perform pg_temp.pay(v_s, 20000, 'PP-CL-1');
+  perform pg_temp.age(v_s, 30);
+  perform pg_temp.as_op();
+  r := public.fn_platform_change_plan(v_s, 'growth', 'suite: their roll grew', 15000);
+  perform pg_temp.age(v_s, 15);
+  v := public.fn__subscription_view(v_s, false);
+  perform pg_temp.ok(public.fn_effective_status(v_s) = 'locked' and (v->>'pay_now')::numeric = 15000,
+    '68 a school locked by an unpaid move charge mid-year is asked for the charge, not next year as well');
+
+  -- Leaving with money on next month: it comes back as credit; our invoice stays.
+  v_s := pg_temp.school('PP Leave Part Paid', 100, 1);
+  v_own := pg_temp.owner_of(v_s, 'ppleavepart');
+  perform pg_temp.pay(v_s, 2000, 'PP-LP-1');
+  perform pg_temp.as_op();
+  v_inv := (public.fn_platform_raise_invoice(v_s, 1, null, null)->>'invoice_id')::uuid;
+  perform pg_temp.pay(v_s, 500, 'PP-LP-2', v_inv);
+  perform set_config('test.uid', v_own::text, false);
+  r := public.fn_cancel_my_subscription('suite');
+  perform pg_temp.ok((select voided_at is not null from public.platform_invoices where id = v_inv)
+                     and (r->>'released_to_credit')::numeric = 500 and public.fn__unallocated(v_s) = 500,
+    '69 stopping closes next month and the Rs 500 paid on it comes back as credit');
+
+  v_s := pg_temp.school('PP Leave Hand', 100, 12);
+  v_own := pg_temp.owner_of(v_s, 'ppleavehand');
+  perform pg_temp.pay(v_s, 20000, 'PP-LH-1');
+  perform pg_temp.as_op();
+  v_inv := (public.fn_platform_raise_invoice(v_s, 12, 24000, 'suite: year plus a training day')->>'invoice_id')::uuid;
+  perform set_config('test.uid', v_own::text, false);
+  r := public.fn_cancel_my_subscription('suite');
+  perform pg_temp.ok((select voided_at is null from public.platform_invoices where id = v_inv)
+                     and (public.fn__subscription_view(v_s, false)->>'owed')::numeric = 0,
+    '70 an invoice we set by hand survives a stop, and a leaving school does not owe it');
+  perform public.fn_resume_my_subscription();
+  perform pg_temp.ok((select voided_at is null and amount = 24000 from public.platform_invoices where id = v_inv),
+    '71 and it is still there when the school restarts');
+
+  -- Money paid while suspended is spent when the suspension is lifted.
+  v_s := pg_temp.school('PP Suspended Paid', 100, 1);
+  update public.subscriptions set suspended_at = now(), suspend_reason = 'suite' where school_id = v_s;
+  perform pg_temp.pay(v_s, 2000, 'PP-SP-1');
+  perform pg_temp.as_op();
+  r := public.fn_platform_unsuspend_school(v_s, 'suite');
+  perform pg_temp.ok(public.fn__unallocated(v_s) = 0 and jsonb_array_length(r->'from_credit') = 1,
+    '72 lifting a suspension puts the money paid meanwhile on the next month');
+
+  -- A taxed invoice credited in three parts reaches zero.
+  v_s := pg_temp.school('PP Credit Parts', 100, 1);
+  perform pg_temp.as_op();
+  v_inv := (public.fn_platform_raise_invoice(v_s, 1, null, null)->>'invoice_id')::uuid;
+  perform public.fn_platform_set_invoice_tax(v_inv, 16.5);
+  perform public.fn_platform_credit_note(v_inv, 667, 'suite: part one');
+  perform public.fn_platform_credit_note(v_inv, 667, 'suite: part two');
+  perform public.fn_platform_credit_note(v_inv, 666, 'suite: part three');
+  perform pg_temp.ok(public.fn__invoice_owed(v_inv) = 0,
+    '73 an invoice credited in parts can be credited to nothing without typing the tax');
+
+  -- Who sees the price.
+  v_s := pg_temp.school('PP Who Sees', 1500, 1);
+  perform pg_temp.as_op();
+  perform public.fn_platform_set_price(v_s, 50000, null, null, 'suite: we matched a rival quote, do not go lower');
+  insert into auth.users (id, email) values ('00000000-0000-0000-0000-00000000c7a1', 'pp-teacher@paidmeanspaid.test')
+    on conflict do nothing;
+  alter table public.profiles disable trigger user;
+  insert into public.profiles (id, full_name, role, school_id, active)
+  values ('00000000-0000-0000-0000-00000000c7a1', 'PP Teacher', 'class_teacher', v_s, true)
+  on conflict (id) do nothing;
+  alter table public.profiles enable trigger user;
+  perform set_config('test.uid', '00000000-0000-0000-0000-00000000c7a1', false);
+  v := public.fn_my_licence();
+  perform pg_temp.ok(v->'price_monthly' = 'null'::jsonb and v->'pay_now' = 'null'::jsonb
+                     and v->>'status' is not null,
+    '74 a teacher''s banner has the status and dates, not the price or what is owed');
+  perform pg_temp.as_nobody();
+  perform pg_temp.ok(not has_column_privilege('authenticated', 'public.subscriptions', 'agreed_reason', 'select')
+                     and has_column_privilege('authenticated', 'public.subscriptions', 'period_end', 'select'),
+    '75 how a price was agreed is not readable by a signed-in user');
 end $$;
 
 rollback;

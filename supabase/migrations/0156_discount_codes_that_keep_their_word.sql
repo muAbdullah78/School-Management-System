@@ -909,6 +909,9 @@ begin
   end if;
   -- Every refused try is logged, including one made while the school waits,
   -- so a school that keeps on guessing does not look as if it stopped at ten.
+  -- One try at a time per school, so ten tries an hour means ten whatever the
+  -- timing: counted without a lock, a burst of simultaneous guesses all got in.
+  perform pg_advisory_xact_lock(hashtextextended('discount-try:' || v_school::text, 0));
   if public.fn__discount_throttled(v_school) then
     v_refusal := 'Too many codes have been tried in the last hour. Please try again later, or ask us.';
     perform public.fn__discount_event('refused', left(v_code, 40), v_school, null, null,
@@ -967,6 +970,9 @@ begin
       using errcode = '42501';
   end if;
   -- Logged and marked paused: visible to us, not counted towards the pause.
+  -- One try at a time per school, so ten tries an hour means ten whatever the
+  -- timing: counted without a lock, a burst of simultaneous guesses all got in.
+  perform pg_advisory_xact_lock(hashtextextended('discount-try:' || v_school::text, 0));
   if public.fn__discount_throttled(v_school) then
     v_refusal := 'Too many codes have been tried in the last hour. Please try again later, or ask us.';
     perform public.fn__discount_event('refused', left(v_code, 40), v_school, null, null,

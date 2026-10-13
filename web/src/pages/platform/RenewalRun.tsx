@@ -88,7 +88,9 @@ export function RenewalRunStrip() {
           </button>
           {/* ONLY AFTER THE PREVIEW. There is no way to reach this button
               without having first seen the list it is about to bill. */}
-          {preview && preview.considered > 0 && (
+          {/* And only when there is something to raise: "Raise 0 invoice(s)"
+              was offered when every school due was one left for us. */}
+          {preview && countBillable(preview) > 0 && (
             <button onClick={() => go.mutate(false)} disabled={go.isPending}
               className="rounded bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
               {go.isPending ? 'Raising…' : `Raise ${countBillable(preview)} invoice(s)`}

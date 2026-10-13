@@ -992,8 +992,14 @@ export function actionNeeded(s: PlatformSchool): string | null {
       // line that repeats the status trains the operator to stop reading the
       // to-do line.
       return null
-    case 'grace':
-      return `In grace: ${s.days_left ?? 0} day(s) before it locks`
+    case 'grace': {
+      // days_left counts to the end of what covers the school, so in grace it
+      // is NEGATIVE: this used to print "In grace: -4 day(s) before it locks".
+      const ago = s.days_left !== null && s.days_left < 0 ? ` ${-s.days_left} day(s) ago` : ''
+      const over = s.needs_upgrade && s.limit_state === 'over'
+        ? `; over its limit, so move it to ${s.suggested_plan} with Change plan before invoicing` : ''
+      return `In grace: paid time ran out${ago}, locks unless they pay${over}`
+    }
     case 'trialing':
       if ((s.days_left ?? 0) <= 3) return `Trial ends in ${s.days_left} day(s): call them`
       return null
@@ -1443,7 +1449,13 @@ export interface PlanChangeQuote {
   paid_to: string | null
   days_left: number
   days_in_period: number
-  /** The difference for the rest of the paid period, pro rata. We decide. */
+  /** One per paid term invoice still running or ahead: the running one pro
+   *  rata, any paid after it in full. Absent from a database before the fix. */
+  lines?: Array<{
+    doc_no: string | null; months: number; period_start: string; period_end: string
+    old_price: number; new_price: number; days_left: number; days_in_period: number; charge: number
+  }>
+  /** The difference for what is paid and not yet used, the sum of `lines`. We decide. */
   suggested_charge: number
   explain: string
 }

@@ -371,7 +371,9 @@ describe('the billing term', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Every 3 months/ }))
     expect(screen.getByText(/You have started paying INV-2026-0142, so it stays as it is/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Switch' }))
-    expect(await screen.findByText(/pay every three months from the invoice after it/)).toBeTruthy()
+    expect(await screen.findByText(
+      /pay every three months from the invoice after INV-2026-0142, which stays as it is: money has been paid against it\./,
+    )).toBeTruthy()
   })
 })
 
@@ -426,7 +428,11 @@ describe('the subscription summary says where the school stands', () => {
     expect(meter.getAttribute('aria-valuenow')).toBe('255')
     expect(meter.getAttribute('aria-valuemax')).toBe('280')
     expect(screen.getByText(/25 places left\. Ask us for room/)).toBeTruthy()
-    expect(screen.getByText('To pay now')).toBeTruthy()
+    // Paid for twenty more days: the figure is the NEXT payment, with its day,
+    // not something to pay now.
+    expect(screen.getByText('Next payment', { selector: 'div' })).toBeTruthy()
+    expect(screen.getByText(/^Due on .*, for a month\. Not invoiced yet\.$/)).toBeTruthy()
+    expect(screen.queryByText('To pay now')).toBeNull()
   })
 
   it('says when extra room ends and which limit follows it', async () => {
@@ -628,5 +634,108 @@ describe('the roll notice', () => {
     } } })
     await new Promise((r) => setTimeout(r, 20))
     expect(screen.queryByText(/roll is full/)).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// What the screenshots of 13 Oct 2026 found (tools/live, scenes7.tsx).
+// ---------------------------------------------------------------------------
+const { payNowWords } = await import('@/pages/settings/Subscription')
+const { termChangeSentence } = await import('@/pages/settings/NextPayment')
+const { SubscriptionLocked, paysFor } = await import('@/pages/SubscriptionLocked')
+const { lockedSentence } = await import('@/lib/subscription')
+
+describe('the figure at the top of Subscription', () => {
+  const on = '2026-10-13'
+  const next = (start: string, months = 1) => ({ ...view().next!, period_start: start, months })
+  it('is the next payment, with its day, while that period has not started', () => {
+    // It read "To pay now Rs 1,800 / Your next a month from 1 Nov 2026" on 10 Oct.
+    expect(payNowWords(view({ next: next('2026-11-01'), pay_now: 1800 }), on))
+      .toEqual({ head: 'Next payment', line: 'Due on 1 Nov 2026, for a month. Not invoiced yet.' })
+    expect(payNowWords(view({ next: next('2026-11-01', 3), pay_now: 5400 }), on).line)
+      .toBe('Due on 1 Nov 2026, for 3 months. Not invoiced yet.')
+  })
+  it('is to pay now once the period has begun, or when an invoice is owed', () => {
+    expect(payNowWords(view({ next: next('2026-10-10'), pay_now: 2000 }), on))
+      .toEqual({ head: 'To pay now', line: 'For a month from 10 Oct 2026. Not invoiced yet.' })
+    expect(payNowWords(view({ owed: 10800, pay_now: 10800 }), on))
+      .toEqual({ head: 'To pay now', line: 'Owed on your invoices: Rs 10,800' })
+    expect(payNowWords(view({ pay_now: 0, next: null }), on)).toEqual({ head: 'To pay now', line: null })
+  })
+})
+
+describe('what Subscription offers to a school that cannot pay or will not be invoiced', () => {
+  it('has no "I have paid" for an Enterprise school with no price', async () => {
+    const v = view({
+      plan: { code: 'enterprise', name: 'Enterprise', by_arrangement: true, student_limit: null, min_students: 1001 },
+      price: { ...view().price, priced: false, month: null, quarter: null, year: null },
+      terms: [], status: 'trialing', in_trial: true, needs_price: true, next: null, pay_now: 0,
+      can_request_invoice: false, paid_through: null,
+      students: { ...view().students, count: 1460, limit: null, plan_limit: null, room: null },
+    })
+    open(createElement(Subscription), { rpc: { fn_my_billing: billing(v) } })
+    expect(await screen.findByText('Enterprise, price to be agreed with you')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'I have paid' })).toBeNull()
+  })
+
+  it('does not price "your next invoice" for a school that asked to stop', async () => {
+    const v = view({ cancel_at_period_end: true, pay_now: 0, can_request_invoice: false, locks_on: addDays(today, 21) })
+    open(createElement(function Panel() { return NextPaymentPanel({ view: v }) }), { rpc: {} })
+    const panel = (await screen.findByRole('heading', { name: 'Next payment' })).closest('section')!
+    expect(within(panel).queryByText(/Your next invoice covers/)).toBeNull()
+    expect(within(panel).getByText(/as you asked\. Nothing further will be invoiced\./)).toBeTruthy()
+  })
+
+  it('gives the database\'s own reason when a term change leaves the open invoice alone', () => {
+    const why = 'We set this invoice with you, so it stays as it is. Your change applies from the invoice after it.'
+    const r = { term_months: 3, changed: true, invoice: { kept: 'INV-0009', why } } as never
+    // It used to say "You have started paying INV-0009", which this school had not.
+    expect(termChangeSentence(r, 3)).toBe(`Done. You pay every three months from the invoice after INV-0009. ${why}`)
+    expect(termChangeSentence(r, 3)).not.toMatch(/started paying/)
+  })
+})
+
+describe('the locked screen', () => {
+  const LIC = { ok: true, status: 'locked', locked: true, plan_name: 'Starter', locked_because: 'unpaid' }
+  const PENDING = { id: 'r1', amount: 2000, paid_on: '2026-10-10', method: 'bank', reference: 'FT1', claimed_at: '2026-10-10T05:00:00Z', status: 'pending', decided_at: null, decision_note: null }
+
+  it('says why the month it sells starts in the past', () => {
+    const v = view({ status: 'locked', locked_because: 'unpaid', next: { ...view().next!, period_start: '2026-09-29' } })
+    expect(paysFor(v, '2026-10-13')).toBe('This pays for one month from 29 Sept 2026. That counts the 14 days of grace '
+      + 'you used after the payment was due; the days new entries were paused are not charged.')
+    expect(paysFor(view({ next: { ...view().next!, period_start: '2026-10-13' } }), '2026-10-13'))
+      .toBe('This pays for one month from 13 Oct 2026.')
+  })
+
+  it('warns before the same transfer is reported twice', async () => {
+    const v = view({ status: 'locked', locked_because: 'unpaid', locks_on: null, days_to_lock: 0, pay_now: 2000,
+      next: { ...view().next!, period_start: addDays(today, -14) } })
+    open(createElement(SubscriptionLocked, { licence: LIC as never }),
+      { rpc: { fn_my_billing: billing(v, { reports: [PENDING] }), fn_my_licence: LIC } })
+    expect(await screen.findByText(/A payment of Rs 2,000 on .* is already being checked/)).toBeTruthy()
+  })
+
+  it('lets a school that asked to stop start again itself, instead of telling it to call', async () => {
+    const calls: FakeOptions['calls'] = []
+    const v = view({ status: 'cancelled', stored_status: 'active', cancel_at_period_end: true, locked_because: 'cancelled',
+      covered_to: '2026-08-31', paid_through: '2026-08-31', pay_now: 0, locks_on: null, days_to_lock: 0, can_request_invoice: false })
+    const lic = { ...LIC, status: 'cancelled', locked_because: 'cancelled' }
+    open(createElement(SubscriptionLocked, { licence: lic as never }), { calls, rpc: {
+      fn_my_billing: billing(v), fn_my_licence: lic,
+      fn_resume_my_subscription: { resumed: true, status: 'locked', note: 'Welcome back. Your period has ended.' },
+    } })
+    expect(await screen.findByText('Your subscription has ended')).toBeTruthy()
+    expect(screen.getByText('Your subscription ended on 31 Aug 2026, as you asked.')).toBeTruthy()
+    expect(screen.queryByText(/To start again, call us/)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Start again' }))
+    expect(await screen.findByText('Welcome back. Your period has ended.')).toBeTruthy()
+    expect(calls!.some((c) => c.name === 'fn_resume_my_subscription')).toBe(true)
+  })
+
+  it('still sends a school we cancelled to the phone, and does not say it twice', () => {
+    const ours = view({ status: 'cancelled', stored_status: 'cancelled', cancel_at_period_end: false, locked_because: 'cancelled' })
+    expect(lockedSentence(ours)).toBe('This subscription has been cancelled.')
+    const asked = view({ status: 'cancelled', stored_status: 'active', cancel_at_period_end: true, locked_because: 'cancelled', covered_to: '2026-08-31' })
+    expect(lockedSentence(asked)).toBe('Your subscription ended on 31 Aug 2026, as you asked.')
   })
 })

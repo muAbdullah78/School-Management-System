@@ -76,16 +76,20 @@ export function Subscription() {
   const suggested = view
     ? (view.pay_now > 0 ? view.pay_now : null)
     : (Number(b.balance?.outstanding ?? 0) > 0 ? Number(b.balance.outstanding) : null)
+  // An Enterprise school with no price agreed has nothing it could have paid,
+  // so "I have paid" would be a button for something that cannot have happened.
+  const canPay = !(view?.needs_price && view.owed <= 0)
 
   return (
     <div className="space-y-4">
       {view
-        ? <Summary v={view} code={code.data ?? null} phone={b.pay_to?.support_phone ?? null} onPay={() => setReporting(true)} />
+        ? <Summary v={view} code={code.data ?? null} phone={b.pay_to?.support_phone ?? null}
+            onPay={canPay ? () => setReporting(true) : null} />
         : <PlainSummary b={b} onPay={() => setReporting(true)} />}
       <RoomForPupils />
       {view && <NextPaymentPanel view={view} onPrint={setPrinting} />}
       <CodePanel view={view} current={code.data ?? null} />
-      <PayUs b={b} pending={pending} onPay={() => setReporting(true)} />
+      <PayUs b={b} pending={pending} onPay={canPay ? () => setReporting(true) : null} />
       <Reports reports={reports} />
       <Documents docs={b.documents ?? []} onPrint={setPrinting} />
       <Payments payments={b.payments ?? []} />
@@ -137,7 +141,7 @@ export function statusSentence(v: SubscriptionView, on: string = pkToday()): str
 }
 
 function Summary({ v, code, phone, onPay }: {
-  v: SubscriptionView; code: MyCode | null; phone: string | null; onPay: () => void
+  v: SubscriptionView; code: MyCode | null; phone: string | null; onPay: (() => void) | null
 }) {
   const st = STATUS[v.status]
   const stopped = v.status === 'locked' || v.status === 'cancelled'
@@ -184,28 +188,46 @@ function Summary({ v, code, phone, onPay }: {
         </div>
       )}
 
-      <div className="mt-4 grid gap-2 sm:flex">
-        <Button onClick={onPay} className="w-full sm:w-auto">I have paid</Button>
-      </div>
+      {onPay && (
+        <div className="mt-4 grid gap-2 sm:flex">
+          <Button onClick={onPay} className="w-full sm:w-auto">I have paid</Button>
+        </div>
+      )}
     </section>
   )
+}
+
+/**
+ * The heading and the line under the figure in the top right of the summary.
+ *
+ * `pay_now` is the next term as soon as it is within thirty days, so a school
+ * paid to 31 Oct read "To pay now Rs 1,800" on 10 Oct, for a payment nobody
+ * asks for until 1 Nov, and the line under it said "Your next a month from 1
+ * Nov". Nothing owed and a period that has not started yet is the NEXT
+ * payment, with the day it falls due. Exported for its test.
+ */
+export function payNowWords(v: SubscriptionView, on: string = pkToday()): { head: string; line: string | null } {
+  if (v.owed > 0) return { head: 'To pay now', line: `Owed on your invoices: ${formatPkr(v.owed)}` }
+  if (v.pay_now > 0 && v.next) {
+    const from = fmtDate(v.next.period_start)
+    return v.next.period_start > on
+      ? { head: 'Next payment', line: `Due on ${from}, for ${termWords(v.next.months)}. Not invoiced yet.` }
+      : { head: 'To pay now', line: `For ${termWords(v.next.months)} from ${from}. Not invoiced yet.` }
+  }
+  return { head: 'To pay now', line: null }
 }
 
 /** What to pay now: owed on invoices, or the next term once it is near, less credit. */
 function PayNow({ v }: { v: SubscriptionView }) {
   const pay = v.pay_now
+  const words = payNowWords(v)
   return (
-    <div className="rounded-xl bg-slate-50 p-3 sm:min-w-[13rem] sm:text-right">
-      <div className={HEAD}>To pay now</div>
+    <div className="rounded-xl bg-slate-50 p-3 sm:min-w-[13rem] sm:max-w-[18rem] sm:text-right">
+      <div className={HEAD}>{words.head}</div>
       <div className={`text-2xl font-semibold tabular-nums ${pay > 0 ? 'text-due-800' : 'text-slate-900'}`}>
         {pay > 0 ? formatPkr(pay) : 'Nothing'}
       </div>
-      {v.owed > 0 && <div className="text-xs text-slate-500">Owed on your invoices: {formatPkr(v.owed)}</div>}
-      {v.owed <= 0 && pay > 0 && v.next && (
-        <div className="text-xs text-slate-500">
-          Your next {termWords(v.next.months)} from {fmtDate(v.next.period_start)}, not invoiced yet
-        </div>
-      )}
+      {words.line && <div className="text-xs text-slate-500">{words.line}</div>}
       {v.credit > 0 && (
         <div className="text-xs text-money-700">{formatPkr(v.credit)} you paid ahead comes off</div>
       )}
@@ -244,7 +266,7 @@ function PlainSummary({ b, onPay }: { b: MyBilling; onPay: () => void }) {
 }
 
 /** Our account, then the school's own, clearly apart. */
-function PayUs({ b, pending, onPay }: { b: MyBilling; pending: MyBilling['reports']; onPay: () => void }) {
+function PayUs({ b, pending, onPay }: { b: MyBilling; pending: MyBilling['reports']; onPay: (() => void) | null }) {
   const p = b.pay_to ?? ({} as MyBilling['pay_to'])
   return (
     <section className={CARD} aria-labelledby="pay-head">
@@ -271,7 +293,7 @@ function PayUs({ b, pending, onPay }: { b: MyBilling; pending: MyBilling['report
         </p>
       )}
       <div className="mt-3 grid gap-2 sm:flex sm:items-center">
-        <Button onClick={onPay} className="w-full sm:w-auto">I have paid</Button>
+        {onPay && <Button onClick={onPay} className="w-full sm:w-auto">I have paid</Button>}
         {(p.support_phone || p.support_email) && (
           <span className="text-xs text-slate-500">
             Any question: {[p.support_phone, p.support_email].filter(Boolean).join(' · ')}
@@ -633,24 +655,24 @@ function PaymentContextStrip({ v }: { v: SubscriptionView }) {
       <dl className="mt-1 space-y-0.5 text-slate-700">
         {open && open.owed > 0 && (
           <div className="flex justify-between gap-3">
-            <dt>Invoice {open.doc_no}, {fmtDate(open.period_start)} to {fmtDate(open.period_end)}</dt>
-            <dd className="tabular-nums">{formatPkr(open.owed)}</dd>
+            <dt className="min-w-0">Invoice {open.doc_no}, {fmtDate(open.period_start)} to {fmtDate(open.period_end)}</dt>
+            <dd className="shrink-0 whitespace-nowrap tabular-nums">{formatPkr(open.owed)}</dd>
           </div>
         )}
         {otherOwed > 0 && (
-          <div className="flex justify-between gap-3"><dt>Other invoices</dt><dd className="tabular-nums">{formatPkr(otherOwed)}</dd></div>
+          <div className="flex justify-between gap-3"><dt className="min-w-0">Other invoices</dt><dd className="shrink-0 whitespace-nowrap tabular-nums">{formatPkr(otherOwed)}</dd></div>
         )}
         {quote && v.next && (
           <div className="flex justify-between gap-3">
-            <dt>{quote.plan_name}, {termWords(quote.months)} from {fmtDate(v.next.period_start)}</dt>
-            <dd className="tabular-nums">{formatPkr(quote.amount)}</dd>
+            <dt className="min-w-0">{quote.plan_name}, {termWords(quote.months)} from {fmtDate(v.next.period_start)}</dt>
+            <dd className="shrink-0 whitespace-nowrap tabular-nums">{formatPkr(quote.amount)}</dd>
           </div>
         )}
         {v.credit > 0 && (
-          <div className="flex justify-between gap-3 text-money-800"><dt>Paid ahead</dt><dd className="tabular-nums">- {formatPkr(v.credit)}</dd></div>
+          <div className="flex justify-between gap-3 text-money-800"><dt className="min-w-0">Paid ahead</dt><dd className="shrink-0 whitespace-nowrap tabular-nums">- {formatPkr(v.credit)}</dd></div>
         )}
         <div className="flex justify-between gap-3 border-t border-slate-200 pt-1 font-semibold">
-          <dt>Total to send</dt><dd className="tabular-nums">{formatPkr(v.pay_now)}</dd>
+          <dt className="min-w-0">Total to send</dt><dd className="shrink-0 whitespace-nowrap tabular-nums">{formatPkr(v.pay_now)}</dd>
         </div>
       </dl>
     </div>
@@ -847,7 +869,7 @@ function CodePanel({ view, current }: { view: SubscriptionView | null; current: 
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void check() } }}
           placeholder={current?.code ? 'A different code' : 'Type the code you were given'}
           autoCapitalize="characters" autoComplete="off" spellCheck={false}
-          className={`${inputClass} uppercase tracking-wide sm:flex-1`} />
+          className={`${inputClass} uppercase tracking-wide placeholder:normal-case placeholder:tracking-normal sm:flex-1`} />
         <div className="grid grid-cols-2 gap-2 sm:flex">
           <Button variant="soft" tone="neutral" onClick={() => void check()} disabled={!typed || busy}
             className={preview && usable(preview) && !confirm ? '' : 'col-span-2'}>

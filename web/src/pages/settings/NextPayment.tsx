@@ -103,7 +103,11 @@ function Body({ v, onPrint }: { v: SubscriptionView; onPrint?: (invoiceId: strin
     onError: (e) => { setRaised(null); setAskErr((e as Error).message) },
   })
   const open = v.open_invoice
-  const quote = v.next?.quote?.priced ? v.next.quote : null
+  // A school that asked to stop is not invoiced again, though the view still
+  // prices the period after the end (it is what restarting would cost). Shown
+  // as "Your next invoice" it sat directly above "Nothing further will be
+  // invoiced".
+  const quote = v.next?.quote?.priced && !v.cancel_at_period_end ? v.next.quote : null
   const lock = lockSentence(v)
 
   return (
@@ -249,7 +253,7 @@ type TermChange = Awaited<ReturnType<typeof chooseTerm>> & {
   } | null
 }
 
-function termChangeSentence(r: TermChange, months: Term): string {
+export function termChangeSentence(r: TermChange, months: Term): string {
   if (r.changed === false) return `You already pay ${termSentence(months)}.`
   const inv = r.invoice
   if (inv?.voided && inv.raised?.doc_no) {
@@ -260,9 +264,12 @@ function termChangeSentence(r: TermChange, months: Term): string {
   if (inv?.voided) {
     return `Done. Invoice ${inv.voided} is cancelled. Use "Get my invoice" when you need the new one.`
   }
+  // Kept for the database's own reason, which is not always money paid on it:
+  // an invoice we set by hand, or a roll bigger than the plan, keeps it too.
   if (inv?.kept) {
-    return `Done. You have started paying ${inv.kept}, so it stays as it is, and you pay ${termSentence(months)} `
-      + 'from the invoice after it.'
+    const base = `Done. You pay ${termSentence(months)} from the invoice after ${inv.kept}`
+    if (!inv.why) return `${base}, which stays as it is.`
+    return /^[A-Z]/.test(inv.why) ? `${base}. ${inv.why}` : `${base}, which stays as it is: ${inv.why}.`
   }
   return `Done. You now pay ${termSentence(months)}, from ${r.applies_from ?? 'your next invoice'}.`
 }
@@ -536,17 +543,18 @@ export function LeaveOrStayPanel() {
     return (
       <div className="px-1">
         {err && <p className="mb-1 text-xs text-danger-700">{err}</p>}
-        {stillRunning ? (
-          <p className="text-sm text-slate-600">
-            Your subscription is set to end on {fmtDate(endsOn)}.{' '}
-            <button type="button" onClick={() => stay.mutate()} disabled={stay.isPending}
-              className={buttonClass({ variant: 'soft', size: 'sm', className: 'ml-1' })}>
-              {stay.isPending ? 'Restarting…' : 'Carry on instead'}
-            </button>
-          </p>
-        ) : (
-          <p className="text-sm text-slate-600">Your subscription has ended. Call us to start again: everything is where you left it.</p>
-        )}
+        {/* Restarting works after the end as well (the software then opens
+            again when the next payment reaches us), so the button is offered
+            either side of the date rather than a phone number after it. */}
+        <p className="text-sm text-slate-600">
+          {stillRunning
+            ? <>Your subscription is set to end on {fmtDate(endsOn)}.{' '}</>
+            : <>Your subscription has ended. Everything is where you left it, and the software opens again when your next payment reaches us.{' '}</>}
+          <button type="button" onClick={() => stay.mutate()} disabled={stay.isPending}
+            className={buttonClass({ variant: 'soft', size: 'sm', className: 'ml-1' })}>
+            {stay.isPending ? 'Restarting…' : stillRunning ? 'Carry on instead' : 'Start again'}
+          </button>
+        </p>
       </div>
     )
   }
@@ -566,6 +574,7 @@ export function LeaveOrStayPanel() {
       <p className="text-sm font-medium text-slate-800">Stop at the end of what you have already paid for?</p>
       <ul className="mt-1.5 list-disc space-y-0.5 pl-5 text-xs text-slate-600">
         <li>The software keeps working until {endsOn ? <span className="font-medium">{fmtDate(endsOn)}</span> : 'the end of your paid period'}. Nothing stops today.</li>
+        <li>An invoice for time after that date, with nothing paid on it, is cancelled.</li>
         <li>Nothing is deleted. Every pupil, payment and result stays exactly as it is.</li>
         <li>You can download all of your records at any time, including afterwards.</li>
         <li>You can carry on instead, from this screen, before that date.</li>

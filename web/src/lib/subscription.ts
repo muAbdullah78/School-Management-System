@@ -20,6 +20,7 @@
  *   - the pupil limit is the limit, and extra room ends on `extra_until`.
  */
 import { requireSupabase } from './supabase'
+import { fmtDate } from './format'
 import type { SubscriptionStatus } from './licence'
 
 export type Term = 1 | 3 | 12
@@ -281,8 +282,21 @@ export function lockedSentence(v: SubscriptionView): string | null {
     case 'suspended':
       return 'This school has been paused by us. Please call us.'
     case 'cancelled':
-      return 'This subscription has been cancelled.'
+      // The school asked to stop and its period has run out. That is its own
+      // decision, and it can undo it (fn_resume_my_subscription works after the
+      // end), so it is told when it ended rather than that we cancelled it.
+      return endedAsAsked(v)
+        ? `Your subscription ended on ${fmtDate(v.covered_to)}, as you asked.`
+        : 'This subscription has been cancelled.'
     default:
       return null
   }
+}
+
+/**
+ * Ended because the school asked to stop at the end of its period, rather than
+ * cancelled by us. Only the first can be restarted by the school itself.
+ */
+export function endedAsAsked(v: SubscriptionView): boolean {
+  return v.status === 'cancelled' && v.cancel_at_period_end && v.stored_status !== 'cancelled'
 }

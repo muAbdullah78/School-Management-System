@@ -5,9 +5,11 @@ import { useLicence } from '@/hooks/useLicence'
 import { formatPkr, type Licence } from '@/lib/licence'
 import {
   exportAllData, getSchoolSettings, myBilling, myPlatformInvoice, reportSubscriptionPayment,
-  type MyBilling,
+  resumeMySubscription, type MyBilling,
 } from '@/lib/db'
-import { lockedSentence, requestMyInvoice, type LockedBecause, type SubscriptionView } from '@/lib/subscription'
+import {
+  endedAsAsked, lockedSentence, requestMyInvoice, type LockedBecause, type SubscriptionView,
+} from '@/lib/subscription'
 import { downloadJSON } from '@/lib/csv'
 import { today } from '@/lib/dates'
 import { fmtDate, fmtDateTime } from '@/lib/format'
@@ -89,9 +91,12 @@ export function SubscriptionLocked({ licence }: { licence: Licence }) {
         <section className={CARD}>
           <div className={HEAD}>{licence.plan_name}</div>
           <h1 className="mt-1 text-xl font-semibold tracking-[-0.01em] text-slate-900">
-            {title(reason, inTrial, licence.status)}
+            {view && endedAsAsked(view) ? 'Your subscription has ended' : title(reason, inTrial, licence.status)}
           </h1>
-          {sentence && <p className="mt-2 text-sm text-slate-700">{sentence}</p>}
+          {/* Not when it only repeats the heading word for word. */}
+          {sentence && sentence !== title(reason, inTrial, licence.status) + '.' && (
+            <p className="mt-2 text-sm text-slate-700">{sentence}</p>
+          )}
           <p className="mt-2 text-sm text-slate-600">
             Entering new information is paused for now: attendance, fees, admissions and results.
           </p>
@@ -160,6 +165,28 @@ function months(n: number): string {
   return n === 1 ? 'one month' : n === 12 ? 'a year' : `${n} months`
 }
 
+function daysBetween(from: string, to: string): number {
+  const at = (d: string) => Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10))
+  return Math.round((at(to) - at(from)) / 86_400_000)
+}
+
+/**
+ * What the amount on this screen pays for.
+ *
+ * Since the review fixes a locked school is billed from TODAY LESS THE GRACE IT
+ * USED, so the period it pays for can start two weeks back ("one month from 29
+ * Sept", read on 13 Oct). Said bare, that looks like a mistake or a charge for
+ * the days it was shut out, so the reason goes with it. Exported for its test.
+ */
+export function paysFor(v: SubscriptionView, on: string = today()): string | null {
+  if (!v.next) return null
+  const line = `This pays for ${months(v.next.months)} from ${fmtDate(v.next.period_start)}.`
+  const used = daysBetween(v.next.period_start, on)
+  if (used <= 0) return line
+  return `${line} That counts the ${used} day${used === 1 ? '' : 's'} of grace you used after the `
+    + 'payment was due; the days new entries were paused are not charged.'
+}
+
 /** How much, the invoice, where to send it, and the form to say it was sent. */
 function Money({ b, view, reason, licence, onPrint }: {
   b: MyBilling; view: SubscriptionView | null; reason: LockedBecause | null
@@ -194,13 +221,17 @@ function Money({ b, view, reason, licence, onPrint }: {
             <div className="mt-1 text-2xl font-semibold text-slate-900">
               {reason === 'cancelled' ? 'Nothing to pay here' : 'Nothing to pay yet'}
             </div>
-            <p className="mt-1 text-sm text-slate-600">
-              {reason === 'cancelled'
-                ? `To start again, ${callUs}.`
-                : reason === 'suspended'
-                  ? `Please ${callUs}.`
-                  : `We agree a monthly price with you first. We will call you, or you can ${callUs}.`}
-            </p>
+            {view && endedAsAsked(view) ? (
+              <StartAgain />
+            ) : (
+              <p className="mt-1 text-sm text-slate-600">
+                {reason === 'cancelled'
+                  ? `To start again, ${callUs}.`
+                  : reason === 'suspended'
+                    ? `Please ${callUs}.`
+                    : `We agree a monthly price with you first. We will call you, or you can ${callUs}.`}
+              </p>
+            )}
           </>
         ) : payNow === null ? (
           <p className="mt-1 text-sm text-slate-600">
@@ -212,9 +243,7 @@ function Money({ b, view, reason, licence, onPrint }: {
               {payNow > 0 ? formatPkr(payNow) : 'Nothing'}
             </div>
             {payNow > 0 && !inv && view?.next && (
-              <p className="mt-1 text-sm text-slate-600">
-                This pays for {months(view.next.months)} from {fmtDate(view.next.period_start)}.
-              </p>
+              <p className="mt-1 text-sm text-slate-600">{paysFor(view)}</p>
             )}
             {view && view.credit > 0 && (
               <p className="mt-1 text-xs text-slate-500">
@@ -262,11 +291,42 @@ function Money({ b, view, reason, licence, onPrint }: {
       {!callOnly && (
         <>
           <PayTo b={b} />
-          <IHavePaid suggested={payNow && payNow > 0 ? payNow : null} />
+          <IHavePaid suggested={payNow && payNow > 0 ? payNow : null}
+            pending={b.reports.filter((r) => r.status === 'pending')} />
         </>
       )}
       <Reports reports={b.reports} />
     </>
+  )
+}
+
+/**
+ * A school that asked to stop can start again by itself, after the end too
+ * (fn_resume_my_subscription). This used to say "call us", while the reply to
+ * its own cancellation had promised it could restart from this screen. Once it
+ * has restarted it is locked for money in the ordinary way, so the screen
+ * redraws with the amount, our bank account and the "I have paid" form.
+ */
+function StartAgain() {
+  const qc = useQueryClient()
+  const go = useMutation({
+    mutationFn: resumeMySubscription,
+    onSuccess: () => {
+      for (const k of ['myBilling', 'licence', 'myNextPayment']) void qc.invalidateQueries({ queryKey: [k] })
+    },
+  })
+  return (
+    <div className="mt-1 text-sm text-slate-600">
+      <p>
+        Nothing is owed. To start again, press Start again: we then show here what to pay, and the
+        software opens again as soon as that payment reaches us.
+      </p>
+      <Button size="sm" className="mt-2" onClick={() => go.mutate()} disabled={go.isPending || go.isSuccess}>
+        {go.isPending ? 'Starting again…' : 'Start again'}
+      </Button>
+      {go.data?.note && <p role="status" className="mt-2 rounded-xl bg-money-50 px-3 py-2 text-money-900">{go.data.note}</p>}
+      {go.error && <p role="alert" className="mt-2 text-danger-700">{(go.error as Error).message}</p>}
+    </div>
   )
 }
 
@@ -333,7 +393,7 @@ function PayRow({ k, v, mono, copy }: { k: string; v: string; mono?: boolean; co
  * in the box. Derived rather than copied in by an effect, so the figure is there
  * on the first paint once the bill has loaded.
  */
-function IHavePaid({ suggested }: { suggested: number | null }) {
+function IHavePaid({ suggested, pending }: { suggested: number | null; pending: MyBilling['reports'] }) {
   const qc = useQueryClient()
   const [typed, setTyped] = useState<string | null>(null)
   const [paidOn, setPaidOn] = useState(today())
@@ -351,6 +411,11 @@ function IHavePaid({ suggested }: { suggested: number | null }) {
       : n > 10_000_000 ? 'That is more than any invoice. Check the amount.'
         : null
   const dateProblem = !paidOn ? 'Enter the date you sent it.' : paidOn > today() ? 'That date is in the future.' : null
+  // The same amount already waiting to be checked, which is the commonest
+  // duplicate: the principal and the owner each reporting one transfer. The
+  // Settings dialog has said so for a while; this form, prefilled with the
+  // same figure, did not.
+  const twin = pending.find((r) => Math.abs(Number(r.amount) - n) < 0.5)
 
   const send = useMutation({
     mutationFn: () => reportSubscriptionPayment({
@@ -397,6 +462,12 @@ function IHavePaid({ suggested }: { suggested: number | null }) {
               value={amount} onChange={(e) => setTyped(e.target.value)}
               aria-invalid={tried && !!amountProblem} />
             {tried && amountProblem && <span className="mt-1 block text-xs text-danger-700">{amountProblem}</span>}
+            {twin && !amountProblem && (
+              <span className="mt-1 block rounded-lg bg-due-50 px-2 py-1.5 text-xs text-due-900">
+                A payment of {formatPkr(Number(twin.amount))} on {fmtDate(twin.paid_on)} is already being
+                checked. Only send this if it is a second, separate transfer.
+              </span>
+            )}
           </label>
           <label className="block">
             <span className="text-xs font-medium text-slate-600">On what date</span>

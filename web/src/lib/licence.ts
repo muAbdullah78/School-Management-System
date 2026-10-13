@@ -263,9 +263,15 @@ export function limitBanner(
   if (leader && lic.extra_until) {
     const ends = `The extra room we gave you ends on ${fmtDate(lic.extra_until)}.`
     const plan = lic.plan_student_limit
-    if (text) {
+    // Leaning on the room: the date alone hid the consequence, that the roll
+    // will then be over the plan and admissions stop. Said with the numbers.
+    const leaning = plan != null && lic.student_count > plan
+    if (text && leaning) {
+      text = `${text} ${ends} After that your plan covers ${plan.toLocaleString('en-PK')}, fewer than the `
+        + `${lic.student_count.toLocaleString('en-PK')} on your roll, so ask us before then.`
+    } else if (text) {
       text = `${text} ${ends}`
-    } else if (plan != null && lic.student_count > plan) {
+    } else if (leaning) {
       text = `You have ${lic.student_count.toLocaleString('en-PK')} pupils and your plan covers `
         + `${plan.toLocaleString('en-PK')}. ${ends} If you still need the room after that, `
         + 'ask us from Settings then Subscription before then.'

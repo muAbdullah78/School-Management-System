@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   changeSchoolPlan, clearStudentLimit, grantStudentLimit, planChangeQuote, schoolDetail,
   setSchoolPrice,
-  type ReadinessItem, type SchoolDetail as Detail,
+  type PlanChangeQuote, type ReadinessItem, type SchoolDetail as Detail,
 } from '@/lib/platform'
 import { listSignupPlans, termSentence } from '@/lib/plans'
 import type { SubscriptionView } from '@/lib/subscription'
@@ -846,6 +846,24 @@ function useSettled<T>(value: T, ms = 350): T {
 type ChargeMode = 'suggested' | 'other' | 'none'
 
 /**
+ * Each paid period a move would top up, one line each.
+ *
+ * A school that has paid ahead has more than one. The dialog printed the
+ * first period's days against the last period's end ("Paid from 1 Oct to 30
+ * Nov: 19 of 31 days left") beside a charge that covered both. Exported for
+ * its test.
+ */
+export function paidPeriodLines(q: PlanChangeQuote): string[] {
+  return (q.lines ?? []).map((l) => {
+    const days = l.days_left >= l.days_in_period
+      ? `all ${l.days_in_period} days`
+      : `${l.days_left} of ${l.days_in_period} days left`
+    return `${l.doc_no ? `${l.doc_no}, ` : ''}${fmtDate(l.period_start)} to ${fmtDate(l.period_end)}: `
+      + `${days}, ${formatPkr(l.charge)}`
+  })
+}
+
+/**
  * Move a school to another plan, now.
  *
  * PLANS MOVE ONLY BY US (0155). A school asks from Settings, Subscription; we
@@ -1025,7 +1043,14 @@ export function ChangePlanDialog({ schoolId, schoolName, initialPlan, initialRea
           {qd && qd.fits && (
             <>
               <div className="text-slate-700">
-                {qd.days_in_period > 0 && !qd.in_trial ? (
+                {qd.days_in_period > 0 && !qd.in_trial && (qd.lines?.length ?? 0) > 1 ? (
+                  <>
+                    Paid for {qd.lines!.length} periods that are not used up yet:
+                    <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs">
+                      {paidPeriodLines(qd).map((l) => <li key={l}>{l}</li>)}
+                    </ul>
+                  </>
+                ) : qd.days_in_period > 0 && !qd.in_trial ? (
                   <>
                     Paid from {fmtDate(qd.paid_from)} to {fmtDate(qd.paid_to)}:{' '}
                     <span className="font-medium">{qd.days_left} of {qd.days_in_period} days left</span>.

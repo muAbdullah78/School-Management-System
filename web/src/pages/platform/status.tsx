@@ -1,6 +1,7 @@
 import type { PlatformSchool } from '@/lib/platform'
 import { formatPkr } from '@/lib/licence'
 import { fmtDate } from '@/lib/format'
+import { today } from '@/lib/dates'
 
 /**
  * One vocabulary for what a school's row is telling you.
@@ -136,10 +137,12 @@ export type SchoolRow = PlatformSchool & {
  * is nothing to invoice, and the school locks the day its trial ends with no
  * grace at all. The date is the deadline for a phone call.
  */
-export function NeedsPriceChip({ trialEndsOn }: { trialEndsOn?: string | null }) {
+export function NeedsPriceChip({ trialEndsOn, on = today() }: { trialEndsOn?: string | null; on?: string }) {
+  // "trial ends 3 Oct" read on 13 Oct was a deadline already missed.
+  const ended = !!trialEndsOn && trialEndsOn < on
   return (
     <Chip tone="stopped" title="Enterprise, and no price has been agreed with this school yet">
-      price not agreed{trialEndsOn ? ` · trial ends ${fmtDate(trialEndsOn)}` : ''}
+      price not agreed{trialEndsOn ? ` · trial ${ended ? 'ended' : 'ends'} ${fmtDate(trialEndsOn)}` : ''}
     </Chip>
   )
 }
@@ -195,7 +198,11 @@ export function LimitBar({ s }: { s: PlatformSchool }) {
  */
 export function ExpiryCell({ s }: { s: SchoolRow }) {
   if (!s.expires_on) return <span className="text-slate-400">nothing paid, no trial</span>
-  const trial = s.status === 'trialing'
+  // A school that never paid is still a trial after its trial has run out and
+  // it has locked: "paid through 20 Sept" was printed for schools that had
+  // paid nothing at all. The billing states say which it is; the status is
+  // the fallback for a database without them.
+  const trial = s.in_trial ?? s.status === 'trialing'
   const d = s.days_left
   const lead = trial ? 'trial to' : 'paid through'
   if (d === null) return <span className="text-slate-600">{lead} {fmtDate(s.expires_on)}</span>

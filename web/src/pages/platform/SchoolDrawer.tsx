@@ -120,7 +120,7 @@ export function SchoolDrawer({
                   : school.days_left < 0 ? 'stopped'
                   : school.days_left <= 14 ? 'warn' : 'quiet'
               }>
-                {school.status === 'trialing' ? 'trial to ' : 'paid through '}
+                {(school.in_trial ?? school.status === 'trialing') ? 'trial to ' : 'paid through '}
                 {fmtDate(school.expires_on)}
                 {school.days_left !== null && (school.days_left < 0
                   ? ` · ${Math.abs(school.days_left)}d ago`
@@ -274,10 +274,14 @@ function BillingTab({ school, onPay, onRaiseInvoice }: {
               className="rounded border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-medium text-brand-800 hover:bg-brand-100">
               Record payment
             </button>
-            <button onClick={onRaiseInvoice}
-              className="rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
-              Raise invoice
-            </button>
+            {/* Not while one is open (the database refuses a second) or while
+                there is no price to invoice at (Enterprise before Set price). */}
+            {!(v?.open_invoice || v?.needs_price) && (
+              <button onClick={onRaiseInvoice}
+                className="rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
+                Raise invoice
+              </button>
+            )}
           </div>
         </div>
 

@@ -226,6 +226,19 @@ describe('limitBanner', () => {
     expect(limitBanner({ ...l, limit_notice_staff: 'Ask the owner.' }, 'admin_clerk')?.text).toBe('Ask the owner.')
   })
 
+  it('says what follows the extra room when the roll only fits because of it', () => {
+    // The dashboard read "300 of the 320 pupils your plan covers ... The extra
+    // room we gave you ends on 31 Oct 2026" and stopped there, as if nothing
+    // followed. What follows is a roll over its plan and admissions refused.
+    const l = lic({
+      student_count: 300, student_limit: 320, plan_student_limit: 280,
+      limit_notice: '300 of the 320 pupils your plan covers.', warn_limit: true, at_limit: false,
+      extra_until: '2026-10-31',
+    })
+    expect(limitBanner(l, 'owner')?.text).toBe('300 of the 320 pupils your plan covers. The extra room we gave '
+      + 'you ends on 31 Oct 2026. After that your plan covers 280, fewer than the 300 on your roll, so ask us before then.')
+  })
+
   it('speaks up for a school that only fits because of extra room, even with no notice', () => {
     const l = lic({
       student_count: 300, student_limit: 400, plan_student_limit: 280,

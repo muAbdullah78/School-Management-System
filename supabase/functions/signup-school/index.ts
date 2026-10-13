@@ -131,9 +131,14 @@ Deno.serve(async (req) => {
     // created. A smaller school gets the smallest priced plan that holds its
     // roll, read from that database's own plans, and the operator can move it.
     let provisioned: unknown = null
-    let provErr: { message?: string } | null = null
-    const missing = (e: { message?: string } | null) =>
-      !!e && /does not exist|could not find|schema cache/i.test(e.message ?? '')
+    let provErr: { message?: string; code?: string } | null = null
+    // A function missing from an older database, told apart by its code and
+    // never by the wording: an error that quotes what the caller typed (a
+    // region "that does not exist") must come back to the caller, not send it
+    // down the older signup path.
+    const missing = (e: { message?: string; code?: string } | null) =>
+      !!e && (e.code === 'PGRST202' || e.code === '42883'
+              || (!e.code && /could not find the function/i.test(e.message ?? '')))
     {
       const r = await admin.rpc('fn_signup_school_for_students', {
         ...base,
