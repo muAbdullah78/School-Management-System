@@ -36,7 +36,11 @@
 --      the owner or principal may send it.
 --  11. The operator sees the roll as it is NOW, not as it was when they asked.
 --  12. Granting sets the allowance AND answers the request in one go, and the
---      school can then admit.
+--      school can then admit. Since 0155 the allowance must be MORE than the
+--      plan covers, needs a reason, and lasts until the next renewal.
+--
+-- 0155 also took the 10% margin away (the gate stops at exactly the limit),
+-- retired institution and custom, and made Enterprise the plan with no limit.
 --  13. A school cannot grant itself room, and cannot see another school's
 --      request.
 --
@@ -53,11 +57,18 @@ create or replace function auth.uid() returns uuid language sql stable as
 -- THIS SUITE OWNS ITS LIMITS, for the reason operator_billing.sql gives at
 -- length: every figure below is arithmetic about a threshold, not a statement
 -- about where the commercial bands sit, and 0111 moved those once already.
--- Three pupils rather than 150 so the suite is cheap and readable.
-update public.plans set student_limit = 3  where code = 'starter';
-update public.plans set student_limit = 8  where code = 'growth';
-update public.plans set student_limit = 20 where code = 'institution';
--- `custom` keeps its NULL limit, which is the point of school C below.
+-- Three pupils rather than 280 so the suite is cheap and readable.
+--
+-- 0155 retired institution (it is no longer on sale) and gave every plan a
+-- min_students, the bottom of its band, which is how a number of pupils finds
+-- its plan. A suite that pins the tops of the bands has to pin the bottoms to
+-- match, or growth would still start at 281 and no number below that could
+-- ever be suggested anything but starter. So: starter 1 to 3, growth 4 to 8,
+-- enterprise from 9 with no limit.
+update public.plans set student_limit = 3                    where code = 'starter';
+update public.plans set student_limit = 8, min_students = 4  where code = 'growth';
+update public.plans set min_students = 9                     where code = 'enterprise';
+-- `enterprise` keeps its NULL limit, which is the point of school C below.
 
 create or replace function pg_temp.ok(p_cond boolean, p_label text)
 returns void language plpgsql as $$
@@ -126,10 +137,24 @@ begin
   insert into public.schools (name) values ('Limit B') returning id into v_b;
   insert into public.subscriptions (school_id, plan_code, status, trial_ends_on)
     values (v_b, 'starter', 'active', current_date - 1);
+  -- A paid period like A's. Without one, B is covered only by a trial that
+  -- ended yesterday, which since 0155 is grace rather than active: still
+  -- open, but counting down, and that is not what this fixture is for.
+  update public.subscriptions set period_start = current_date - 30,
+         period_end = current_date + 300 where school_id = v_b;
   -- The by-arrangement plan: student_limit is NULL, which means no limit.
+  -- Since 0155 that plan is Enterprise. custom is retired, and a school on a
+  -- by-arrangement plan with no agreed price locks the day after its trial
+  -- (nothing can be invoiced, so there is no payment to wait for). C is here
+  -- to be "a plan with no pupil limit", not "a school with no price", so it
+  -- gets an agreed price and a paid period, like A.
   insert into public.schools (name) values ('Limit C') returning id into v_c;
   insert into public.subscriptions (school_id, plan_code, status, trial_ends_on)
-    values (v_c, 'custom', 'active', current_date - 1);
+    values (v_c, 'enterprise', 'active', current_date - 1);
+  update public.subscriptions
+     set agreed_monthly = 9000, agreed_reason = 'test: agreed by phone',
+         period_start = current_date - 30, period_end = current_date + 300
+   where school_id = v_c;
 
   alter table public.profiles disable trigger user;
   insert into auth.users (id, email) values
@@ -428,8 +453,16 @@ begin
   r := public.fn_request_student_limit(10, 'we are opening a second campus in April');
   perform pg_temp.ok(r->>'status' = 'pending' and (r->>'requested_limit')::int = 10,
     '31 a real request goes in');
-  perform pg_temp.ok(r->>'what_next' like '%Nothing changes in the meantime%',
-    '32 and the answer says what happens next, so no screen has to invent it');
+  -- 0155 rewrote this sentence. It used to end "Nothing changes in the
+  -- meantime, nothing you have already entered is affected"; it now says the
+  -- room it buys ends at the next renewal, because extra room has an end date
+  -- now (student_limit_override_until). What it must still do is say what
+  -- happens next and when the room runs out, so no screen has to invent it.
+  perform pg_temp.ok(r->>'what_next' like '%come back to you%'
+                 and r->>'what_next' like '%until your next renewal%'
+                 and r->>'what_next' like '%appear on this screen%',
+    '32 and the answer says what happens next, and that extra room lasts until '
+    || 'the next renewal, so no screen has to invent it');
 
   perform pg_temp.ok(pg_temp.raises(
     $q$select public.fn_request_student_limit(20, 'and another thing entirely')$q$,
@@ -485,25 +518,45 @@ begin
     || 'request is decided days or weeks later and the school carries on');
   -- THE CHEAPEST PLAN THAT WOULD COVER THE REQUEST, because most of these are
   -- a school that has simply outgrown its plan and the right answer is "move
-  -- up" rather than an exception. Ten pupils is past Growth's eight, so the
-  -- answer is Institution's twenty and not Growth.
-  perform pg_temp.ok(r.suggested_plan = 'institution'
-                 and r.suggested_plan_covers = 20,
+  -- up" rather than an exception. Ten pupils is past Growth's eight. Before
+  -- 0155 the answer was Institution's twenty; Institution is retired, so the
+  -- answer is Enterprise, which has no limit, and NOT a plan that is no longer
+  -- on sale (institution still has a row and a limit that would fit).
+  perform pg_temp.ok(r.suggested_plan = 'enterprise'
+                 and r.suggested_plan_covers is null,
     '40 with the cheapest plan on sale that would cover it, because "move up" '
-    || 'is often the right answer rather than an exception');
+    || 'is often the right answer rather than an exception, and never a '
+    || 'retired one');
   v_req := r.id;
 
-  -- A reduction needs saying out loud.
+  -- Before 0155 an allowance below the plan's own limit was allowed with a
+  -- reason ("a reduction needs saying out loud"). Extra room is now only ever
+  -- MORE than the plan covers, so a reduction is refused whatever the reason:
+  -- it was the way to cut a school off by mistake, and nothing needs it.
   perform pg_temp.ok(pg_temp.raises(
-    format($q$select public.fn_platform_grant_student_limit(%L, 2, null)$q$, v_school),
-    'which is a reduction'),
-    '41 an allowance BELOW the plan''s own limit is refused without a reason: '
-    || 'it is legitimate, and it is also how you cut a school off by mistake');
+    format($q$select public.fn_platform_grant_student_limit(%L, 2,
+      'they asked us to hold them at two')$q$, v_school),
+    'Extra room is more than the 3 pupils'),
+    '41 an allowance BELOW the plan''s own limit is refused, even with a reason: '
+    || 'it is how you cut a school off by mistake');
+  -- And every grant needs a reason now, not only a reduction: the reason is
+  -- shown with the allowance until it ends.
+  perform pg_temp.ok(pg_temp.raises(
+    format($q$select public.fn_platform_grant_student_limit(%L, 10, null)$q$, v_school),
+    'Say why this school gets extra room'),
+    '41b and room above the limit is refused without a reason');
 
   g := public.fn_platform_grant_student_limit(v_school, 10,
         'Second campus opening in April, confirmed on the phone');
   perform pg_temp.ok((g->>'limit')::int = 10 and (g->>'partial')::boolean is false,
     '42 granting sets the allowance');
+  -- Since 0155 extra room has an end: the end of the period that covers the
+  -- school today, which is its next renewal. After that the plan's own limit
+  -- applies again, so a favour granted in April is not a price cut for ever.
+  perform pg_temp.ok((g->>'until')::date = current_date + 300
+                 and (select student_limit_override_until from public.subscriptions
+                       where school_id = v_school) = current_date + 300,
+    '42b and it lasts until the next renewal, not for ever');
   perform pg_temp.ok(
     (select status = 'granted' and granted_limit = 10
        from public.student_limit_requests where id = v_req),
@@ -565,14 +618,21 @@ begin
    where school_id = v_b and status = 'pending';
 
   perform set_config('test.uid', v_op::text, false);
-  -- FIFTY IS PAST EVERY PLAN ON SALE, so there is nothing to suggest. That is
-  -- the case that genuinely needs a conversation, and a null here is what
-  -- tells the operator so rather than proposing a plan that does not fit.
+  -- FIFTY IS PAST EVERY PLAN WITH A LIMIT. Before 0155 that meant nothing was
+  -- on sale to suggest, and a null told the operator a conversation was
+  -- needed. Since 0155 Enterprise is on sale, has no limit and is priced by
+  -- arrangement, so it covers fifty and is what is suggested. The
+  -- conversation is still the point: what tells the operator so is that the
+  -- suggestion is a by-arrangement plan with no price of its own, rather than
+  -- a plan with a limit that does not fit.
   perform pg_temp.ok(
-    (select suggested_plan is null from public.fn_platform_limit_requests('pending')
-      where school_id = v_b),
-    '48 a request past every plan on sale suggests nothing, which is how the '
-    || 'operator knows it needs a conversation');
+    (select l.suggested_plan = 'enterprise' and l.suggested_plan_covers is null
+            and p.by_arrangement
+       from public.fn_platform_limit_requests('pending') l
+       join public.plans p on p.code = l.suggested_plan
+      where l.school_id = v_b),
+    '48 a request past every plan with a limit suggests Enterprise, priced by '
+    || 'arrangement, which is how the operator knows it needs a conversation');
   perform pg_temp.ok(pg_temp.raises(
     format($q$select public.fn_platform_decline_student_limit(%L, 'no')$q$, v_req),
     'say why'),

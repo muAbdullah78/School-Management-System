@@ -1,301 +1,542 @@
 #!/usr/bin/env bash
 # =============================================================================
-# The website's prices must match what the console actually charges.
+# The website's prices must match what the console actually charges, in BOTH
+# directions.
 #
 # WHY THIS EXISTS
 #
-# The site carries the prices as literal text — Rs 950, Rs 9,500 a year,
-# "up to 100 students" — and `plans` carries them as data. 0082 made the site read
-# `plans` at page load, so the live page is correct. But the literals are the
-# FALLBACK, shown when Supabase is unreachable or before the fetch lands, and a
-# fallback that is out of date is worse than no fallback: the visitor reads a
-# price nobody will honour, and the first thing they say on the phone is "your
-# website says Rs 950".
+# The site prints the price list as literal text, and `plans` holds it as data.
+# site/wire.js rewrites the cards from `plans` at page load, but the literals
+# are what a visitor reads when Supabase is slow or unreachable, what a crawler
+# indexes, what the JSON-LD offers say and what the WhatsApp share card shows.
+# A stale literal is a price you will be held to.
 #
-# So this asserts the two agree. A price rise then fails CI until the HTML is
-# updated too, which is exactly the reminder that would otherwise be forgotten
-# for a year.
+# The literals come from ONE hand copy, PLANS in scripts/build-site.py, which
+# the build writes into the cards, the "from" lines, the two meta descriptions
+# that quote a price and the JSON-LD. This compares that copy and everything
+# built from it against public.plans.
 #
-# It also checks the student limits, because "up to 100 students" is a price: a
-# school reading 300 and being told 100 has been quoted the wrong plan.
+# WHAT THE OLD VERSION MISSED, each of which is now a check below:
+#
+#   - It looped over the database's plans only. A card or JSON-LD offer for a
+#     plan the database had retired was never looked at, so the site could go
+#     on selling Institution at Rs 5,500 and this printed success. Every card,
+#     offer and PLANS entry is now matched to an ACTIVE plan, and the other way
+#     round.
+#   - It skipped the three month figure when the database's was zero, so a
+#     quarterly price nobody sold could stay on the cards.
+#   - It required at least three priced plans and named an unset $HTML in the
+#     refusal, so with the two priced plans of migration 0155 it crashed under
+#     `set -u` even when the site was right.
+#   - Its JSON-LD check read five fields into four variables, so the yearly
+#     comparison compared nothing.
+#   - A "from" price only had to equal SOME plan's price, so "From Rs 4,000" on
+#     a page would have passed. It must now be the cheapest.
+#   - It read build-og.mjs but not og.png, and the PNG said Rs 950 for weeks
+#     after the source said Rs 2,000. The PNG now carries its own words in a
+#     text chunk and that is what is read.
+#   - web/src/auth/doors.ts quoted the price and was not in its list.
+#
+# ENTERPRISE (by_arrangement) has no list price: its row holds zeros and no
+# pupil limit. Its card must exist, say "Priced with you", and show no rupee
+# figure at all; its JSON-LD offer must carry no price.
 #
 # Usage:  bash supabase/check-site-prices.sh
-#         (needs PG* env vars pointing at a database with the migrations applied)
+#         (needs PG* env vars pointing at a database with the migrations
+#         applied, python3, and the built site in site/)
 # =============================================================================
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-# THE SITE IS NO LONGER ONE PAGE, and this check assumed it was.
-#
-# The plan cards moved to site/pricing.html when the site was split up for
-# search. The hero's "From Rs 950" stayed on the home page. The JSON-LD offers
-# are emitted by scripts/build-site.py into every page that asks for the
-# software schema, which is currently seven of them.
-#
-# Pointed at site/index.html alone this check would have found no cards at all
-# and hit its own "matched fewer than 3 plans" floor, which is the right
-# failure but the wrong reason. Each figure is now checked where it actually
-# lives, and PAGES lists everything that may carry a price so a stale figure
-# cannot hide on a page nobody thought to look at.
-CARDS=site/pricing.html
-HERO=site/index.html
-PAGES=$(ls site/*.html site/guides/*.html 2>/dev/null | grep -v '^site/guide\.html$')
-fail=0
-checked=0
-
-for f in "$CARDS" "$HERO"; do
+for f in site/pricing.html site/index.html scripts/build-site.py scripts/build-og.mjs site/og.png; do
   if [ ! -f "$f" ]; then
-    echo "REFUSING TO REPORT SUCCESS: $f does not exist. Run python3 scripts/build-site.py"
+    echo "REFUSING TO REPORT SUCCESS: $f does not exist. Run python3 scripts/build-site.py" >&2
     exit 1
   fi
 done
-
-# Every active, priced plan from the database. `custom` has no price and its card
-# says "Let's talk", so it is skipped by the price filter rather than by name —
-# a future free tier would be skipped for the same real reason.
-rows=$(psql -tA -F'|' -v ON_ERROR_STOP=1 -c \
-  "select code, student_limit, price_monthly::bigint, price_quarterly::bigint,
-          price_yearly::bigint
-     from public.plans
-    where active and price_monthly > 0
-    order by sort_order") || {
-  echo "could not read plans — are PG* env vars set?" >&2
-  exit 1
-}
-
-if [ -z "$rows" ]; then
-  echo "REFUSING TO REPORT SUCCESS: no priced plans in the database" >&2
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "REFUSING TO REPORT SUCCESS: python3 is needed to read the pages and the JSON-LD" >&2
   exit 1
 fi
 
-# The block of HTML for one plan, from its data-plan attribute to the closing
-# </div>. Extracted per plan so a figure in the WRONG card is caught: the
-# failure a whole-file grep would miss, and the one that quotes Growth's price
-# for Starter's limit.
-#
-# THIS DID NOT WORK, AND IT IS WORTH SAYING WHY IN FULL.
-#
-# The closing condition used to be:
-#
-#     inside && /<\/div>[[:space:]]*$/ && /btn/ { inside = 0 }
-#
-# which requires ONE line to both end in </div> and contain "btn". No line in
-# the markup ever did: the button and the closing tag are on separate lines, as
-# any formatter would leave them. So `inside` was never cleared, every card
-# extraction ran to end of file, and each plan's "card" contained every other
-# plan's prices. Measured before rewriting: the starter extraction returned 240
-# lines and matched Growth's "Rs 2,000".
-#
-# So the check passed, and it passed for a reason that had nothing to do with
-# what it claimed. The whole-card assertion it advertises was a whole-file grep
-# wearing a per-card costume, and the one failure the comment above promises to
-# catch was the exact failure it could not see.
-#
-# Two changes, and the second is the one that matters:
-#
-#   1. Close on an EXPLICIT marker, <!-- /plan -->, rather than on a guessed
-#      combination of tag and class. Markup gets reformatted; a marker does not
-#      move on its own.
-#   2. REFUSE if the marker is missing, rather than falling back to end of file.
-#      A checker that degrades quietly into a weaker check when its assumption
-#      breaks is worse than one that stops, because the weaker check still
-#      prints success. That is precisely how this one hid for so long.
-card() {
-  awk -v want="$1" '
-    $0 ~ ("data-plan=\"" want "\"") { inside = 1 }
-    inside { print }
-    inside && /<!-- \/plan -->/ { exit }
-  ' "$CARDS"
+# Every plan, active or not: the retired ones are needed to prove they are gone.
+plans=$(psql -tA -v ON_ERROR_STOP=1 -c "
+  select coalesce(json_agg(json_build_object(
+           'code', code, 'name', name, 'active', active,
+           'by_arrangement', by_arrangement,
+           'min', min_students, 'limit', student_limit,
+           'monthly', price_monthly::bigint,
+           'quarterly', price_quarterly::bigint,
+           'yearly', price_yearly::bigint)
+         order by sort_order, code), '[]')
+    from public.plans") || {
+  echo "could not read plans: are the PG* env vars set, and is 0155 applied?" >&2
+  exit 1
 }
 
-# True when the plan block is properly terminated. Kept separate from card() so
-# the refusal below is explicit rather than inferred from a line count.
-card_is_closed() {
-  awk -v want="$1" '
-    $0 ~ ("data-plan=\"" want "\"") { inside = 1 }
-    inside && /<!-- \/plan -->/ { found = 1; exit }
-    END { exit(found ? 0 : 1) }
-  ' "$CARDS"
-}
+PLANS_JSON="$plans" python3 - <<'PY'
+import importlib.util
+import json
+import os
+import re
+import sys
 
-commas() {   # 9500 -> 9,500  (the grouping the page prints)
-  # NOT printf "%'d": that only groups when the locale says to, and CI runs in
-  # the C locale where it prints 9500 — so the first version of this check
-  # reported six false failures. sed does it the same way everywhere.
-  echo "$1" | sed -E ':a; s/([0-9])([0-9]{3})($|,)/\1,\2\3/; ta'
-}
+# Loading scripts/build-site.py below would otherwise leave a __pycache__ in
+# scripts/ on every run.
+sys.dont_write_bytecode = True
+from html.parser import HTMLParser
+from pathlib import Path
 
-while IFS='|' read -r code limit monthly quarterly yearly; do
-  [ -z "${code:-}" ] && continue
-  block=$(card "$code")
-  if [ -z "$block" ]; then
-    echo "  $code: $CARDS has no card for this plan (data-plan=\"$code\")"
-    fail=1
-    continue
-  fi
-  # Unterminated means the block below is every remaining line of the file, so
-  # every assertion against it would pass on any other plan's figures. Refuse
-  # rather than check something weaker than advertised.
-  if ! card_is_closed "$code"; then
-    echo "REFUSING TO REPORT SUCCESS: the $code card in $CARDS has no <!-- /plan --> marker," >&2
-    echo "so its block runs to end of file and would match any plan's price." >&2
-    exit 1
-  fi
-  checked=$((checked + 1))
+fails: list[str] = []
 
-  m=$(commas "$monthly")
-  q=$(commas "$quarterly")
-  y=$(commas "$yearly")
-  l=$(commas "$limit")
 
-  printf '%s' "$block" | grep -qF "Rs $m" \
-    || { echo "  $code: monthly price is Rs $monthly in the database; \"Rs $m\" is not in its card"; fail=1; }
-  printf '%s' "$block" | grep -qF "Rs $y" \
-    || { echo "  $code: yearly price is Rs $yearly in the database; \"Rs $y\" is not in its card"; fail=1; }
-  # 0111 added a THIRD term. A guard that checks two of three figures is a guard
-  # for two thirds of the price list, and the third is the one nobody would
-  # think to re-read.
-  if [ "${quarterly:-0}" -gt 0 ]; then
-    printf '%s' "$block" | grep -qF "Rs $q" \
-      || { echo "  $code: three-month price is Rs $quarterly in the database; \"Rs $q\" is not in its card"; fail=1; }
-  fi
-  if [ -n "${limit:-}" ]; then
-    printf '%s' "$block" | grep -qF "$l students" \
-      || { echo "  $code: limit is $limit students in the database; \"$l students\" is not in its card"; fail=1; }
-  fi
-done <<< "$rows"
+def fail(msg: str) -> None:
+    fails.append(msg)
 
-# The hero also quotes the cheapest monthly price. It is a separate literal and
-# it drifted in exactly the way this whole check exists to stop.
-# By PRICE, not by sort_order. This ordered by sort_order and took the first
-# row, which is the same defect wire.js had: with growth ahead of starter, the
-# guard would have demanded the hero quote Rs 2,000 as its "From" figure while
-# a Rs 950 plan sat in the table below it. "From" is a claim about the minimum.
-cheapest=$(psql -tA -v ON_ERROR_STOP=1 -c \
-  "select price_monthly::bigint from public.plans
-    where active and price_monthly > 0 order by price_monthly limit 1")
-grep -qF "Rs $(commas "$cheapest")" <(grep 'id="lead-price"' "$HERO") \
-  || { echo "  the headline price in the hero of $HERO is not Rs $cheapest"; fail=1; }
 
-# --- the copies of the price that live OUTSIDE the cards -------------------
-#
-# The cards and the hero were guarded; four other places quoting the same figure
-# were not, and a stale price in any of them is a price you will be held to.
-# Measured with plans stubbed to 1400/2900/4900: the cards and the hero all
-# updated correctly while the meta description, the Open Graph description and
-# the JSON-LD offers still read 950, and the JSON-LD is the copy Google puts in
-# a rich result.
-cheap=$(commas "$cheapest")
+def refuse(msg: str) -> None:
+    # Whatever was already found is printed too, so a refusal never hides it.
+    for f in fails:
+        print('  ' + f)
+    print(f'REFUSING TO REPORT SUCCESS: {msg}', file=sys.stderr)
+    sys.exit(1)
 
-# Two pages quote the price in their own meta description and Open Graph
-# description: the home page and the pricing page. Checked by page rather than
-# demanding every page quote a price, because most of them should not.
-for f in "$HERO" "$CARDS"; do
-  for label in 'meta name="description"' 'meta property="og:description"'; do
-    line=$(grep "$label" "$f" || true)
-    if [ -z "$line" ]; then
-      echo "  $f has no <$label>, which the price check expects to find"
-      fail=1
-    elif ! printf '%s' "$line" | grep -qF "Rs $cheap"; then
-      echo "  <$label> in $f does not quote the cheapest price, Rs $cheapest"
-      fail=1
-    fi
-  done
-done
 
-# And no OTHER page may quote a price that is not the current cheapest. A stale
-# "Rs 800" in the middle of a guide is a price you will be held to just as much
-# as one in a card.
-for f in $PAGES; do
-  while read -r stale; do
-    [ -z "$stale" ] && continue
-    case "$stale" in
-      "Rs $cheap"|"Rs $(commas "$(psql -tA -c "select price_monthly::bigint from public.plans where active and price_monthly>0 order by price_monthly desc limit 1")")") continue ;;
-    esac
-    known=0
-    while IFS='|' read -r c l m y; do
-      [ -z "${c:-}" ] && continue
-      [ "$stale" = "Rs $(commas "$m")" ] && known=1
-      [ "$stale" = "Rs $(commas "$y")" ] && known=1
-    done <<< "$rows"
-    if [ "$known" = 0 ]; then
-      echo "  $f quotes \"$stale\" a month, which is not any active plan's price"
-      fail=1
-    fi
-  done <<< "$(grep -oE 'Rs [0-9][0-9,]*(\.[0-9]+)? a month' "$f" | sed -E 's/ a month$//' | sort -u)"
-done
+def rupees(n: int) -> str:
+    return f'Rs {n:,}'
 
-# The JSON-LD offers, which are structured data and get scraped verbatim.
-# The JSON-LD offers, which are structured data and get scraped verbatim.
-# scripts/build-site.py emits them from one PLANS list into every page that
-# declares the software schema, so any such page is a valid place to check and
-# every one of them must agree.
-ld_pages=$(grep -l '"@type": "SoftwareApplication"' $PAGES || true)
-if [ -z "$ld_pages" ]; then
-  echo "REFUSING TO REPORT SUCCESS: no page carries the SoftwareApplication schema," >&2
-  echo "so the offer prices Google reads are not being checked at all." >&2
-  exit 1
-fi
-for f in $ld_pages; do
-  while IFS='|' read -r code limit monthly yearly; do
-    [ -z "${code:-}" ] && continue
-    grep -qE "\"price\": ?\"$monthly\"" "$f" \
-      || { echo "  $f: JSON-LD has no offer priced \"$monthly\" for $code"; fail=1; }
-    if [ -n "${limit:-}" ]; then
-      grep -qF "Up to $(commas "$limit") students" "$f" \
-        || { echo "  $f: JSON-LD has no \"Up to $(commas "$limit") students\" for $code"; fail=1; }
-    fi
-  done <<< "$rows"
-done
 
-# The AUTH SCREENS quote it too, and they are in the app rather than the site.
-#
-# THIS LIST WAS ONE FILE LONG AND THE HOLE COST A PRICE RISE.
-#
-# It named AuthLayout.tsx alone and reported "the signup panel" as checked. Two
-# other files quote the same figure and neither was looked at:
-#
-#   web/src/pages/Signup.tsx   "Fourteen days free, then from Rs 950 a month."
-#                              which is the sentence directly above the form a
-#                              school fills in, and the most-read price in the
-#                              entire product.
-#   scripts/build-og.mjs       the Open Graph card, so the figure that appears
-#                              when the site is pasted into WhatsApp - which is
-#                              how a Pakistani school actually shares a link.
-#
-# Both still said Rs 950 after the price list moved to Rs 2,000, and this check
-# printed success. A guard with a hole in it is worse than no guard, because the
-# clean line at the end is read as a promise that every copy was found.
-for f in web/src/components/AuthLayout.tsx web/src/pages/Signup.tsx scripts/build-og.mjs; do
-  [ -f "$f" ] || continue
-  grep -qF "Rs $cheap" "$f" \
-    || { echo "  $f quotes a price that is not Rs $cheapest"; fail=1; }
-  # And no OTHER plan's monthly price masquerading as the "from" figure. A file
-  # saying "from Rs 3,500" would pass the test above if it also said Rs 2,000
-  # somewhere, which is exactly how a stale figure survives a careless edit.
-  while IFS='|' read -r c _l _m _q _y; do
-    [ -z "${c:-}" ] && continue
-    [ "$_m" = "$cheapest" ] && continue
-    grep -qF "from Rs $(commas "$_m")" "$f" \
-      && { echo "  $f says \"from Rs $(commas "$_m")\", which is the $c price, not the lowest one"; fail=1; }
-  done <<< "$rows"
-done
+def figure(s: str) -> int:
+    return int(s.replace(',', ''))
 
-# The floor. A card-matching function that silently matched nothing would report
-# a clean run over an empty check — the failure mode two of this project's other
-# guards have already had.
-if [ "$checked" -lt 3 ]; then
-  echo "REFUSING TO REPORT SUCCESS: only matched $checked plan card(s) in $HTML; expected at least 3." >&2
-  exit 1
-fi
 
-if [ "$fail" = 1 ]; then
-  echo
-  echo "::error::the site quotes prices the console does not charge"
-  echo "The page reads \`plans\` at load, so the LIVE site is right — but these"
-  echo "literals are what a visitor sees when Supabase is slow or unreachable,"
-  echo "and a stale fallback is a price you will be held to. Update them."
-  exit 1
-fi
+rows = json.loads(os.environ['PLANS_JSON'])
+active = [r for r in rows if r['active']]
+priced = [r for r in active if not r['by_arrangement']]
+arranged = [r for r in active if r['by_arrangement']]
+retired = [r for r in rows if not r['active']]
+active_codes = {r['code'] for r in active}
+by_code = {r['code']: r for r in rows}
 
-echo "the site and public.plans agree on $checked plan(s), the hero figure, the meta and Open Graph descriptions on both money pages, the JSON-LD offers on $(printf '%s\n' $ld_pages | wc -l | tr -d ' ') page(s), the three app files that quote it, and no page quotes a price that is not a real one"
+if not priced:
+    refuse('the database has no active priced plan, so there is nothing to compare')
+for r in priced:
+    if not (r['monthly'] > 0 and r['quarterly'] > 0 and r['yearly'] > 0):
+        fail(f'{r["code"]}: active and not by arrangement, but a term price is zero '
+             f'({r["monthly"]}/{r["quarterly"]}/{r["yearly"]}); the site cannot show a price '
+             'the console would refuse to charge')
+    if r['limit'] is None:
+        fail(f'{r["code"]}: a priced plan with no pupil limit; the cards print a band of pupils')
+    # The pricing page and the JSON-LD say these in words. If the database
+    # stops making them true, the words are a promise nobody keeps.
+    if r['quarterly'] * 10 != r['monthly'] * 27:
+        fail(f'{r["code"]}: three months is {rupees(r["quarterly"])}, not 10% off '
+             f'3 x {rupees(r["monthly"])}, and the pricing page says 10% off')
+    if r['yearly'] != r['monthly'] * 10:
+        fail(f'{r["code"]}: a year is {rupees(r["yearly"])}, not two months free on '
+             f'{rupees(r["monthly"])} a month, and the pricing page says two months free')
+if fails:
+    for f in fails:
+        print('  ' + f)
+    sys.exit(1)
+
+cheapest = min(r['monthly'] for r in priced)
+CHEAP = rupees(cheapest)
+monthlies = {r['monthly'] for r in priced}
+quarterlies = {r['quarterly'] for r in priced}
+yearlies = {r['yearly'] for r in priced}
+
+
+def band(r: dict) -> str:
+    if r['limit'] is None:
+        return f'More than {r["min"] - 1:,} pupils'
+    return f'{r["min"]:,} to {r["limit"]:,} pupils'
+
+
+# --- 1. PLANS, the hand copy in scripts/build-site.py -----------------------
+spec = importlib.util.spec_from_file_location('build_site', 'scripts/build-site.py')
+build = importlib.util.module_from_spec(spec)
+try:
+    spec.loader.exec_module(build)
+except SystemExit as e:
+    refuse(f'scripts/build-site.py refused its own PLANS: {e}')
+hand = {p['code']: p for p in build.PLANS}
+for code in sorted(set(hand) - active_codes):
+    state = 'retired' if code in by_code else 'not in the database'
+    fail(f'PLANS in scripts/build-site.py lists {code}, which is {state}')
+for r in active:
+    p = hand.get(r['code'])
+    if p is None:
+        fail(f'PLANS in scripts/build-site.py has no entry for the active plan {r["code"]}')
+        continue
+    want = {'name': r['name'], 'min': r['min'], 'limit': r['limit'],
+            'by_arrangement': bool(r['by_arrangement'])}
+    got = {'name': p['name'], 'min': p['min'], 'limit': p['limit'],
+           'by_arrangement': bool(p.get('by_arrangement'))}
+    if not r['by_arrangement']:
+        for k in ('monthly', 'quarterly', 'yearly'):
+            want[k] = r[k]
+            got[k] = p.get(k)
+    for k in want:
+        if want[k] != got[k]:
+            fail(f'PLANS {r["code"]}.{k} is {got[k]!r}; the database says {want[k]!r}')
+
+
+# --- the pages ---------------------------------------------------------------
+VOID = {'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta',
+        'source', 'track', 'wbr', 'path', 'circle', 'rect', 'line', 'polyline',
+        'polygon', 'stop', 'use'}
+# Text in two different cells must never read as one phrase: "you save Rs 600"
+# followed by the next row's "A year" is not a yearly price of Rs 600.
+BLOCK = {'p', 'div', 'li', 'ul', 'ol', 'td', 'th', 'tr', 'table', 'caption', 'h1',
+         'h2', 'h3', 'h4', 'section', 'header', 'footer', 'nav', 'br', 'dd', 'dt'}
+FIELDS = ('data-plan-name', 'data-price-monthly', 'data-price-quarterly',
+          'data-price-yearly', 'data-save-quarterly', 'data-save-yearly',
+          'data-price-cap')
+
+
+class Page(HTMLParser):
+    """Visible text, every plan card's fields, and whether the tags balance.
+
+    The card is the element carrying data-plan and everything nested in it,
+    found by nesting rather than by a marker comment. That only holds if the
+    markup is balanced, so an unbalanced page is refused rather than read.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.stack: list[tuple[str, int, dict]] = []
+        self.text: list[str] = []
+        self.cards: list[dict] = []
+        self.open_cards: list[dict] = []
+        self.capture: list[tuple[dict, str, int]] = []
+        self.skip = 0
+        self.unbalanced: list[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if tag in ('script', 'style'):
+            self.skip += 1
+        if tag in BLOCK:
+            self.split()
+        if tag in VOID:
+            return
+        depth = len(self.stack)
+        self.stack.append((tag, self.getpos()[0], a))
+        if 'data-plan' in a:
+            card = {'code': a['data-plan'], 'text': [], 'fields': {}, 'depth': depth}
+            self.cards.append(card)
+            self.open_cards.append(card)
+        for f in FIELDS:
+            if f in a and self.open_cards:
+                card = self.open_cards[-1]
+                card['fields'].setdefault(f, [])
+                self.capture.append((card, f, depth))
+
+    def split(self) -> None:
+        self.text.append(' | ')
+        for card in self.open_cards:
+            card['text'].append(' | ')
+
+    def handle_endtag(self, tag):
+        if tag in ('script', 'style'):
+            self.skip = max(0, self.skip - 1)
+        if tag in BLOCK:
+            self.split()
+        if tag in VOID:
+            return
+        if not self.stack or self.stack[-1][0] != tag:
+            open_tag = f'<{self.stack[-1][0]}> from line {self.stack[-1][1]}' if self.stack else 'nothing'
+            self.unbalanced.append(f'line {self.getpos()[0]}: </{tag}> closes {open_tag}')
+            for i in range(len(self.stack) - 1, -1, -1):
+                if self.stack[i][0] == tag:
+                    del self.stack[i:]
+                    break
+        else:
+            self.stack.pop()
+        depth = len(self.stack)
+        self.capture = [c for c in self.capture if c[2] < depth]
+        self.open_cards = [c for c in self.open_cards if c['depth'] < depth]
+
+    def handle_data(self, data):
+        if self.skip:
+            return
+        self.text.append(data)
+        for card in self.open_cards:
+            card['text'].append(data)
+        for card, f, _ in self.capture:
+            card['fields'][f].append(data)
+
+
+def squash(parts) -> str:
+    return re.sub(r'\s+', ' ', ''.join(parts)).strip()
+
+
+def read(path: Path) -> tuple[str, Page]:
+    html = path.read_text(encoding='utf-8')
+    p = Page()
+    p.feed(html)
+    p.close()
+    return html, p
+
+
+PAGES = sorted([*Path('site').glob('*.html'), *Path('site/guides').glob('*.html')])
+PAGES = [p for p in PAGES if p.name != 'guide.html' or p.parent.name != 'site']
+if len(PAGES) < 10:
+    refuse(f'found only {len(PAGES)} built pages in site/; run python3 scripts/build-site.py')
+
+# --- 2. the cards on /pricing ------------------------------------------------
+CARDS = Path('site/pricing.html')
+html, page = read(CARDS)
+if page.unbalanced:
+    refuse(f'{CARDS} has unbalanced markup, so a card cannot be told from its '
+           f'neighbour: {page.unbalanced[0]}')
+if not page.cards:
+    refuse(f'{CARDS} has no element with data-plan, so no card was checked')
+
+seen: dict[str, int] = {}
+for card in page.cards:
+    code = card['code']
+    seen[code] = seen.get(code, 0) + 1
+    if code not in active_codes:
+        state = 'retired in the database' if code in by_code else 'not in the database'
+        fail(f'{CARDS}: a card for "{code}", which is {state}')
+for code, n in seen.items():
+    if n > 1:
+        fail(f'{CARDS}: {n} cards for "{code}"')
+
+checked_cards = 0
+for r in active:
+    cards = [c for c in page.cards if c['code'] == r['code']]
+    if not cards:
+        fail(f'{CARDS}: no card for the active plan {r["code"]} (data-plan="{r["code"]}")')
+        continue
+    card = cards[0]
+    checked_cards += 1
+    text = squash(card['text'])
+    fields = {k: squash(v) for k, v in card['fields'].items()}
+    name = r['code']
+
+    def expect(field: str, want: str) -> None:
+        got = fields.get(field)
+        if got is None:
+            fail(f'{CARDS} {name}: the card has no [{field}]')
+        elif got != want:
+            fail(f'{CARDS} {name}: [{field}] says "{got}"; the database says "{want}"')
+
+    expect('data-plan-name', r['name'])
+    expect('data-price-cap', band(r))
+    figures = {figure(x) for x in re.findall(r'Rs\.?\s?(\d[\d,]*)', text)}
+
+    if r['by_arrangement']:
+        for f in FIELDS[1:6]:
+            if f in fields:
+                fail(f'{CARDS} {name}: priced by arrangement, but the card has a [{f}] slot '
+                     'that wire.js or a later edit could fill with a figure')
+        if figures:
+            fail(f'{CARDS} {name}: priced by arrangement, but the card shows '
+                 + ', '.join(rupees(n) for n in sorted(figures)))
+        if 'Priced with you' not in text:
+            fail(f'{CARDS} {name}: priced by arrangement, but the card does not say "Priced with you"')
+        if r['limit'] is None and 'no pupil limit' not in text.lower():
+            fail(f'{CARDS} {name}: the plan has no pupil limit and the card does not say so')
+        continue
+
+    m, q, y = r['monthly'], r['quarterly'], r['yearly']
+    expect('data-price-monthly', rupees(m))
+    expect('data-price-quarterly', rupees(q))
+    expect('data-price-yearly', rupees(y))
+    expect('data-save-quarterly', rupees(3 * m - q))
+    expect('data-save-yearly', rupees(12 * m - y))
+    stray = figures - {m, q, y, 3 * m - q, 12 * m - y}
+    if stray:
+        fail(f'{CARDS} {name}: the card also shows '
+             + ', '.join(rupees(n) for n in sorted(stray))
+             + ', which is none of its prices or savings')
+
+# The floor. Every active plan without a card is already a failure above; this
+# catches the case where the extraction itself matched nothing, which would
+# otherwise be a clean run over an empty check.
+if checked_cards == 0:
+    refuse(f'matched no card in {CARDS} for {len(active)} active plan(s)')
+
+# --- 3. price phrases on every page, the hero, and the two meta descriptions -
+PHRASES = [
+    (re.compile(r'\bfrom\s+Rs\.?\s?(\d[\d,]*)', re.I), {cheapest},
+     f'a "from" price, and the only true one is the cheapest monthly price, {CHEAP}'),
+    (re.compile(r'Rs\.?\s?(\d[\d,]*)\s*(?:a month|/\s*month|per month|monthly)', re.I), monthlies,
+     'a monthly price that no active plan charges'),
+    (re.compile(r'Rs\.?\s?(\d[\d,]*)\s*(?:for (?:3|three) months|a quarter|per quarter)', re.I), quarterlies,
+     'a three month price that no active plan charges'),
+    (re.compile(r'Rs\.?\s?(\d[\d,]*)\s*(?:a year|/\s*year|per year|yearly|annually)', re.I), yearlies,
+     'a yearly price that no active plan charges'),
+]
+BOUNDS = {r['limit'] for r in priced} | {r['min'] - 1 for r in arranged}
+phrases = 0
+for path in PAGES:
+    html, page = read(path)
+    text = squash(page.text)
+    for rx, allowed, what in PHRASES:
+        for m_ in rx.finditer(text):
+            phrases += 1
+            if figure(m_.group(1)) not in allowed:
+                fail(f'{path}: "{m_.group(0)}" is {what}')
+
+for path in (Path('site/index.html'), CARDS):
+    html = path.read_text(encoding='utf-8')
+    metas = {}
+    for label in ('name="description"', 'property="og:description"'):
+        m_ = re.search(r'<meta ' + re.escape(label) + r' content="([^"]*)"', html)
+        if not m_:
+            fail(f'{path} has no <meta {label}>, which this check expects')
+            continue
+        metas[label] = m_.group(1)
+        content = m_.group(1)
+        found = [figure(x) for x in re.findall(r'Rs\.?\s?(\d[\d,]*)', content)]
+        if cheapest not in found:
+            fail(f'<meta {label}> in {path} does not quote the cheapest price, {CHEAP}')
+        for n in found:
+            if n != cheapest:
+                fail(f'<meta {label}> in {path} quotes {rupees(n)}; the only price it may '
+                     f'quote is the cheapest, {CHEAP}')
+        for x in re.findall(r'(?:up to|more than|over)\s+(\d[\d,]*)', content, re.I):
+            if figure(x) not in BOUNDS:
+                fail(f'<meta {label}> in {path} names {x} pupils, which is no plan\'s limit')
+    if len(metas) == 2 and len(set(metas.values())) != 1:
+        fail(f'{path}: the meta description and og:description say different things')
+
+hero = re.search(r'id="lead-price"[^>]*>([^<]*)<', Path('site/index.html').read_text(encoding='utf-8'))
+if not hero:
+    fail('site/index.html has no id="lead-price", the hero\'s "from" figure')
+elif hero.group(1).strip() != CHEAP:
+    fail(f'site/index.html: the hero\'s "from" figure is "{hero.group(1).strip()}", not {CHEAP}')
+
+# --- 4. the JSON-LD offers, which a crawler takes verbatim -------------------
+DURATION = {'P1M': 'monthly', 'P3M': 'quarterly', 'P1Y': 'yearly'}
+ld_pages = 0
+for path in PAGES:
+    html = path.read_text(encoding='utf-8')
+    for block in re.findall(r'<script type="application/ld\+json">(.*?)</script>', html, re.S):
+        try:
+            doc = json.loads(block)
+        except json.JSONDecodeError as e:
+            fail(f'{path}: a JSON-LD block does not parse ({e})')
+            continue
+        for node in doc.get('@graph', [doc]):
+            if node.get('@type') != 'SoftwareApplication':
+                continue
+            ld_pages += 1
+            offers = node.get('offers') or []
+            names = [o.get('name') for o in offers]
+            for n in sorted({x for x in names if names.count(x) > 1}):
+                fail(f'{path}: JSON-LD has {names.count(n)} offers named {n}')
+            active_names = {r['name']: r for r in active}
+            for o in offers:
+                r = active_names.get(o.get('name'))
+                if r is None:
+                    fail(f'{path}: JSON-LD offers "{o.get("name")}", which is not an active plan')
+                    continue
+                if r['by_arrangement']:
+                    specs = o.get('priceSpecification') or []
+                    if 'price' in o or any('price' in s for s in (specs if isinstance(specs, list) else [specs])):
+                        fail(f'{path}: JSON-LD gives {r["name"]} a price, and it is priced by arrangement')
+                    if f'more than {r["min"] - 1:,} pupils' not in (o.get('description') or '').lower():
+                        fail(f'{path}: JSON-LD {r["name"]} does not say "more than {r["min"] - 1:,} pupils"')
+                    continue
+                if o.get('price') != str(r['monthly']) or o.get('priceCurrency') != 'PKR':
+                    fail(f'{path}: JSON-LD {r["name"]} is priced {o.get("price")!r} '
+                         f'{o.get("priceCurrency")!r}; the database says "{r["monthly"]}" PKR a month')
+                if band(r) not in (o.get('description') or ''):
+                    fail(f'{path}: JSON-LD {r["name"]} does not say "{band(r)}"')
+                specs = o.get('priceSpecification')
+                if not isinstance(specs, list):
+                    fail(f'{path}: JSON-LD {r["name"]} has no list of UnitPriceSpecification')
+                    continue
+                durations = [s.get('billingDuration') for s in specs]
+                if sorted(durations) != sorted(DURATION):
+                    fail(f'{path}: JSON-LD {r["name"]} has terms {durations}; expected P1M, P3M and P1Y once each')
+                for s in specs:
+                    term = DURATION.get(s.get('billingDuration'))
+                    if not term:
+                        continue
+                    if s.get('@type') != 'UnitPriceSpecification' or s.get('priceCurrency') != 'PKR':
+                        fail(f'{path}: JSON-LD {r["name"]} {s.get("billingDuration")} is not a PKR UnitPriceSpecification')
+                    if s.get('price') != str(r[term]):
+                        fail(f'{path}: JSON-LD {r["name"]} {s.get("billingDuration")} is {s.get("price")!r}; '
+                             f'the database says "{r[term]}"')
+                    if term == 'monthly' and s.get('unitText') != 'MONTH':
+                        fail(f'{path}: JSON-LD {r["name"]} P1M has unitText {s.get("unitText")!r}, not MONTH')
+            for r in active:
+                if r['name'] not in names:
+                    fail(f'{path}: JSON-LD has no offer for the active plan {r["name"]}')
+if ld_pages == 0:
+    refuse('no page carries the SoftwareApplication schema, so the offers Google '
+           'reads are not being checked at all')
+
+# --- 5. the share card ---------------------------------------------------------
+og_src = Path('scripts/build-og.mjs').read_text(encoding='utf-8')
+if f"const FROM = '{CHEAP} a month'" not in og_src:
+    fail(f'scripts/build-og.mjs: FROM is not \'{CHEAP} a month\'')
+og = Path('site/og.png').read_bytes()
+said = re.search(rb'From (Rs [0-9,]+ a month)\.', og)
+if not said:
+    fail('site/og.png carries no price sentence, so what it shows cannot be checked. '
+         'Run node scripts/build-og.mjs')
+elif said.group(1).decode('latin1') != f'{CHEAP} a month':
+    fail(f'site/og.png says "From {said.group(1).decode("latin1")}", not {CHEAP} a month. '
+         'Run node scripts/build-og.mjs')
+
+# --- 6. the app's own doors ----------------------------------------------------
+# The app must read its prices from the database (fn_signup_plans and the
+# subscription view), so a plan figure typed into these files is a defect even
+# when it happens to be right today. Any rupee figure that equals a plan price
+# (current or retired) fails, and so does any rupee figure on a line that talks
+# about months, years, plans or prices. The demo dashboard's "Rs 84,500
+# collected" is neither, and passes.
+APP = ['web/src/auth/doors.ts', 'web/src/components/AuthLayout.tsx', 'web/src/pages/Signup.tsx']
+plan_figures = {r[k] for r in rows for k in ('monthly', 'quarterly', 'yearly') if r[k] > 0}
+price_words = re.compile(r'month|year|quarter|from|plan|price|trial|/mo\b', re.I)
+app_checked = 0
+app_fails: list[str] = []
+for name in APP:
+    path = Path(name)
+    if not path.exists():
+        continue
+    app_checked += 1
+    # Comments may quote history or an example ("Save Rs 4,000" is a number a
+    # school can weigh); only code reaches a screen. Block comments, JSX
+    # comments included, are blanked with their newlines kept so the line
+    # numbers still point at the file, and a // comment is dropped when it
+    # starts a line or follows a space (so the // in https:// is not one).
+    source = re.sub(r'/\*.*?\*/', lambda c: '\n' * c.group(0).count('\n'),
+                    path.read_text(encoding='utf-8'), flags=re.S)
+    for i, line in enumerate(source.splitlines(), 1):
+        line = re.sub(r'(^|\s)//.*$', '', line)
+        for x in re.findall(r'(?:Rs\.?|PKR)\s?(\d[\d,]*)', line):
+            n = figure(x)
+            if n in plan_figures or price_words.search(line):
+                app_fails.append(f'{name}:{i} hard-codes {rupees(n)}: "{line.strip()[:110]}"')
+
+if fails:
+    for f in fails:
+        print('  ' + f)
+    print()
+    print('::error::the site quotes prices or plans the console does not charge')
+    print('Change scripts/build-site.py PLANS to match public.plans, rebuild with')
+    print('python3 scripts/build-site.py, and regenerate the share card with')
+    print('node scripts/build-og.mjs if the cheapest price moved.')
+if app_fails:
+    for f in app_fails:
+        print('  ' + f)
+    print()
+    print('::error::an app screen types a plan price instead of reading it')
+    print('Show the figure from fn_signup_plans() or the subscription view, or drop it.')
+if fails or app_fails:
+    sys.exit(1)
+
+print(f'the site and public.plans agree: {len(priced)} priced plan(s) and {len(arranged)} '
+      f'by arrangement, each with a card and no card for the {len(retired)} retired; '
+      f'PLANS in build-site.py; the JSON-LD offers on {ld_pages} page(s); {phrases} price '
+      f'phrase(s) across {len(PAGES)} pages, the hero and both meta descriptions at {CHEAP}; '
+      f'og.png; and no plan figure typed into {app_checked} app file(s)')
+PY

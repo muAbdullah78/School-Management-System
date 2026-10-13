@@ -22,6 +22,10 @@ export function PortalLicenceGate({ children }: { children: ReactNode }) {
   if (isLoading) return <div className="p-8 text-slate-500">Loading…</div>
   if (isError || !data) return <>{children}</>
   if (!data.ok) return <>{children}</>
-  if (data.locked) return <SchoolClosed licence={data} audience="parent" />
+  // Cancelled closes the portal too, read from the status as well as the flag
+  // because a database before 0155 set `locked` for 'locked' alone.
+  if (data.locked || data.status === 'locked' || data.status === 'cancelled') {
+    return <SchoolClosed licence={data} audience="parent" />
+  }
   return <>{children}</>
 }

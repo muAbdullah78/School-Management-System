@@ -455,7 +455,22 @@ begin
       -- is worth the line: that one returns per-school rows, so it names
       -- school_id and passes this check on its own terms.
       'fn_platform_discounts',
-      'fn_platform_delete_discount'
+      'fn_platform_delete_discount',
+      -- 0155. What has been paid against ONE invoice and what is still owed on
+      -- it. They take an invoice id their callers have already scoped (every
+      -- caller is a definer that found the invoice through school_id, or is
+      -- operator-only), return one number, and are revoked from every app
+      -- role. three_plans_and_paying_first.sql asserts the revokes.
+      'fn__invoice_owed',
+      'fn__invoice_settled',
+      -- 0155. The price list for the operator, with how many schools are on
+      -- each plan. Opens with is_platform_admin() and returns counts, not rows.
+      'fn_platform_price_list',
+      -- 0156. Kept for an old console: opens with is_platform_admin() and hands
+      -- a new code to fn_platform_create_discount, which holds the rules. It
+      -- reads discount_codes (which now has a school_id for private codes)
+      -- only to refuse a code that already exists.
+      'fn_platform_save_discount'
     );
 
   if v_bad is not null then

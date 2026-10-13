@@ -374,10 +374,18 @@ function AppMockup({ name }: { name?: string }) {
   )
 }
 
-/** Three facts, flat on the tint. Tabular figures, no card, no dark fill. */
+/**
+ * Three facts, flat on the tint. Tabular figures, no card, no dark fill.
+ *
+ * THE FIRST ONE USED TO BE THE CHEAPEST MONTHLY PRICE, typed here, and that is
+ * a copy of a number the database holds, so it was right only until the price
+ * list moved. Since 0155 the plan follows the roll and Enterprise has no
+ * list price, so the fact is how the price is set, and the figure itself is
+ * shown on the form beside it, read live for the school's own number of pupils.
+ */
 function Facts() {
   const cells: Array<[string, string]> = [
-    ['From', 'Rs 2,000'],
+    ['Priced by', 'Your roll'],
     ['Trial', '14 days'],
     ['Modules', 'All included'],
   ]
@@ -388,9 +396,6 @@ function Facts() {
           <dt className="text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-500">{k}</dt>
           <dd className="mt-1 whitespace-nowrap text-[15px] font-bold leading-tight tabular-nums lining-nums text-slate-800">
             {v}
-            {k === 'From' ? (
-              <small className="ml-1 text-[13px] font-medium text-slate-500">a month</small>
-            ) : null}
           </dd>
         </div>
       ))}
@@ -593,11 +598,11 @@ export function AuthLayout({ door, schoolName, children }: AuthLayoutProps) {
               {door.line}
             </p>
 
-            {/* THE MOCKUP AND THE PRICE TABLE ARE FOR A BUYER, so they appear
+            {/* THE MOCKUP AND THE FACTS TABLE ARE FOR A BUYER, so they appear
                 on the signup page and nowhere else now. The mockup is a fee
                 dashboard for an office; showing it to a parent sells them
-                software they are not buying, and the price table answers a
-                question they never asked. */}
+                software they are not buying, and the facts answer a question
+                they never asked. */}
             {door.column === 'selling' && (
               <>
                 <div className="mt-7">

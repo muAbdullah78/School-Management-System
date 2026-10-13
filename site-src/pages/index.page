@@ -1,6 +1,6 @@
 path: /
 title: The School Manager: school management software for Pakistan
-description: School management software for Pakistani private schools. One parent pays once for all their children, and you see what was owed. From Rs 2,000 a month.
+description: School management software for Pakistani private schools. One parent pays once for all their children, and you see what was owed. From {{FROM_PRICE}} a month.
 schema: org software
 priority: 1.0
 changefreq: weekly
@@ -72,7 +72,7 @@ changefreq: weekly
   <div class="wrap trust__in">
     <div class="trust__cell">
       <span class="trust__k">From</span>
-      <span class="trust__v"><b id="lead-price">Rs 2,000</b> <small>a month</small></span>
+      <span class="trust__v"><b id="lead-price">{{FROM_PRICE}}</b> <small>a month</small></span>
     </div>
     <div class="trust__cell">
       <span class="trust__k">Trial</span>
@@ -201,24 +201,10 @@ changefreq: weekly
 </section>
 
 
-<section class="section">
-  <div class="wrap">
-    <div class="testimonial-band reveal">
-      <p class="testimonial-quote">
-        "It cut our month-end fee reconciliation from three days of paperwork and arguments down to a fifteen-minute coffee break. It just works."
-      </p>
-      <div class="testimonial-author">
-        Ahmad R.
-        <span>Principal, Private School</span>
-      </div>
-    </div>
-  </div>
-</section>
-
 <!-- ==================================================================== cta ===-->
 <section class="section">
   <div class="wrap">
-    <div class="cta reveal"> S
+    <div class="cta reveal">
       <h2>Try it with one class first</h2>
       <p>
         Fourteen days, no card, no commitment. Put one class in, run a month's

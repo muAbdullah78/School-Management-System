@@ -26,8 +26,10 @@ import { RenewalRunStrip } from './RenewalRun'
  *   `unbilled_days`  the licence runs further than any invoice covers. That is
  *                    time given away, and until this screen existed nothing in
  *                    the product could see it.
- *   `needs_upgrade`  they have outgrown the plan. The renewal must be quoted at
- *                    the plan the count fits, or the conversation happens twice.
+ *   `needs_upgrade`  they have outgrown the plan. Since 0155 the limit is the
+ *                    limit and only we move a school, so the next invoice is
+ *                    held until we move them (Change plan) or invoice them on
+ *                    purpose with a reason.
  */
 const BUCKETS: { key: RenewalBucket; label: string; tone: string }[] = [
   // 'grace' and 'overdue' were both border-danger-200 bg-danger-50 text-danger-800:
@@ -112,9 +114,9 @@ export function Renewals({ onOpenSchool, onTakePayment }: {
         <div className="grid gap-3 sm:grid-cols-3">
           <Tile label="Owed by these schools" value={formatPkr(owed)}
             tone={owed > 0 ? 'warn' : undefined} />
-          <Tile label="Need a bigger plan"
+          <Tile label="Over their plan's limit"
             value={String(rows.filter((r) => r.needs_upgrade).length)}
-            hint="quoted at the right plan below" />
+            hint="move them with Change plan before invoicing" />
           <Tile label="Running on unbilled time" value={String(unbilled.length)}
             hint="licence reaches further than any invoice"
             tone={unbilled.length > 0 ? 'warn' : undefined} />
@@ -204,7 +206,8 @@ function Row({ r, tone, method, onOpen, onTake, onRemind }: {
           {/* The two facts that change what you say on the phone. */}
           {r.needs_upgrade && r.suggested_plan && (
             <div className="mt-1 text-xs font-medium">
-              Outgrown {r.plan_code}: renew on {r.suggested_plan}
+              Over the {r.plan_code} limit: move them to {r.suggested_plan} with Change plan
+              before their next invoice
             </div>
           )}
           {(r.unbilled_days ?? 0) > 0 && (
@@ -215,7 +218,9 @@ function Row({ r, tone, method, onOpen, onTake, onRemind }: {
           )}
           {r.never_invoiced && (
             <div className="mt-1 text-xs font-medium">
-              Never invoiced at all. A trial, or a year given away
+              {r.status === 'trialing'
+                ? 'On trial and never invoiced. The run lists trials and never bills them: call them'
+                : 'Never invoiced at all'}
             </div>
           )}
           {r.outstanding > 0 && (
@@ -226,10 +231,13 @@ function Row({ r, tone, method, onOpen, onTake, onRemind }: {
         </div>
 
         <div className="shrink-0 text-right">
-          {r.renewal_amount !== null && (
-            <div className="text-sm font-semibold">{formatPkr(r.renewal_amount)}</div>
-          )}
-          <div className="text-xs opacity-70">to renew</div>
+          {/* Priced by the same quote the invoice will use, on their own plan
+              and price, code included. Null means there is no price to quote:
+              an Enterprise school we have not priced. */}
+          {r.renewal_amount !== null
+            ? <div className="text-sm font-semibold">{formatPkr(r.renewal_amount)}</div>
+            : <div className="text-sm font-semibold">no price agreed</div>}
+          <div className="text-xs opacity-70">next invoice</div>
           <div className="mt-1 flex flex-wrap justify-end gap-1">
             {/* The two things that happen after the call, in the order they
                 happen: they say yes and pay, or they need chasing again. */}
@@ -237,9 +245,12 @@ function Row({ r, tone, method, onOpen, onTake, onRemind }: {
               className="rounded bg-brand-600 px-2 py-1 text-xs font-medium text-white hover:bg-brand-700">
               Record payment
             </button>
+            {/* To their Billing tab, where the invoice is raised: a raised
+                invoice gives no time until it is paid, so it is not called
+                renewing. */}
             <button onClick={onOpen}
               className="rounded border border-current px-2 py-1 text-xs font-medium hover:opacity-80">
-              Renew
+              Invoice
             </button>
             <button onClick={onRemind}
               className="rounded border border-current px-2 py-1 text-xs font-medium hover:opacity-80">

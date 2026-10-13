@@ -6,10 +6,91 @@ import {
 } from '@/lib/db'
 import { formatPkr } from '@/lib/licence'
 import { termSentence } from '@/lib/plans'
+import type { SubscriptionView } from '@/lib/subscription'
 import { fmtDate } from '@/lib/format'
 import { buttonClass } from '@/components/ui'
 
 const FIELD = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100'
+
+/**
+ * What fn_my_student_limit actually returns since 0155, which is a little more
+ * than MyStudentLimit in lib/db.ts says: when extra room ends, and a next plan
+ * that may be Enterprise, with no pupil count and no list price. Read through
+ * this wider shape so an Enterprise next plan cannot print "Rs 0" or crash on
+ * a missing number.
+ */
+type NextPlan = {
+  code: string; name: string; covers: number | null
+  price: number | null; term_months: number; by_arrangement?: boolean
+}
+type Limit = Omit<MyStudentLimit, 'next_plan'> & {
+  extra_until?: string | null
+  next_plan: NextPlan | null
+}
+
+/**
+ * The roll against the limit, as a bar, for the top of Subscription.
+ *
+ * THE COLOURS ARE THE DATABASE'S LINES, not this file's. `warn` (90%), `full`
+ * (100%) and `over` come from fn__subscription_view, the same flags that
+ * decide when an admission is refused, so the bar turns amber and red on
+ * exactly the days the school's experience changes. The limit printed here
+ * is the number at which Admit stops, nothing hidden beyond it.
+ */
+export function PupilMeter({ students, planName }: {
+  students: SubscriptionView['students']; planName: string
+}) {
+  const { count, limit, plan_limit: planLimit } = students
+  if (limit === null) {
+    return (
+      <div>
+        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Pupils</div>
+        <p className="mt-0.5 text-sm text-slate-800">
+          <span className="font-semibold tabular-nums">{count.toLocaleString()}</span> on the roll.{' '}
+          <span className="text-slate-600">No pupil limit on {planName}.</span>
+        </p>
+      </div>
+    )
+  }
+  const pct = limit > 0 ? Math.min(100, Math.round((100 * count) / limit)) : 100
+  const tone = students.full || students.over ? 'danger' : students.warn ? 'due' : 'brand'
+  const bar = { danger: 'bg-danger-500', due: 'bg-due-500', brand: 'bg-brand-500' }[tone]
+  const over = Math.max(count - limit, 0)
+  // Extra room is ours, it ends on a date, and the school is told both, so a
+  // roll that fits today is not a surprise at the next renewal.
+  const extra = students.extra_until && planLimit !== null && limit > planLimit ? limit - planLimit : null
+  return (
+    <div>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Pupils</div>
+        <div className="text-sm text-slate-800">
+          <span className="font-semibold tabular-nums">{count.toLocaleString()}</span>
+          <span className="text-slate-600"> of {limit.toLocaleString()}</span>
+        </div>
+      </div>
+      <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100" role="meter"
+        aria-label="Pupils on the roll against your limit" aria-valuemin={0} aria-valuemax={limit}
+        aria-valuenow={Math.min(count, limit)} aria-valuetext={`${count} of ${limit} pupils`}>
+        <div className={`h-full rounded-full ${bar}`} style={{ width: `${count > 0 ? Math.max(pct, 2) : 0}%` }} />
+      </div>
+      <p className={`mt-1 text-xs ${tone === 'danger' ? 'text-danger-800' : tone === 'due' ? 'text-due-800' : 'text-slate-500'}`}>
+        {over > 0
+          ? `${over.toLocaleString()} more than your limit. New admissions are paused until there is room.`
+          : students.full
+            ? 'Your roll is full. New admissions are paused until there is room.'
+            : students.warn
+              ? `${(students.room ?? 0).toLocaleString()} places left. Ask us for room before the last one goes.`
+              : `${(students.room ?? 0).toLocaleString()} places left.`}
+      </p>
+      {extra !== null && (
+        <p className="mt-1 text-xs text-slate-600">
+          Extra room for {extra.toLocaleString()} pupils until {fmtDate(students.extra_until)} ({limit.toLocaleString()} in
+          all), then your plan&apos;s limit of {planLimit!.toLocaleString()} applies.
+        </p>
+      )}
+    </div>
+  )
+}
 
 /**
  * How many pupils the school may have, and how to ask for more.
@@ -33,16 +114,15 @@ const FIELD = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2
  *
  * "We need room for 200 pupils" can mean let us past our limit on the plan we
  * pay for, or put us on the plan that covers 200. The school does not much care
- * which; it cares what the next child costs. We care a great deal: one is a
- * permanent hole in the price list and the other is a school agreeing to pay
+ * which; it cares what the next child costs. We care a great deal: one is room
+ * that ends at the next renewal and the other is a school agreeing to pay
  * more. Reading which one out of a sentence is a guess, and a guess here is a
  * phone call on every request. So the box asks, prices the answer, and sends
  * the choice through as a value.
  *
- * AND IT NEVER OFFERS A BUTTON THAT DOES NOT EXIST. Nothing in this product
- * lets a school change its own plan: activation is operator-only and every
- * renewal is a bank transfer confirmed by hand. "Move us up" is therefore a
- * REQUEST, and the wording says so.
+ * AND IT NEVER OFFERS A BUTTON THAT DOES NOT EXIST. Since 0155 only we move a
+ * school between plans, from the console. "Move us up" is therefore a REQUEST,
+ * and the wording says so and says what happens next.
  */
 export function RoomForPupils() {
   const q = useQuery({ queryKey: ['myStudentLimit'], queryFn: myStudentLimit, retry: false })
@@ -53,18 +133,16 @@ export function RoomForPupils() {
   return <Body d={q.data} />
 }
 
-function Body({ d }: { d: MyStudentLimit }) {
+function Body({ d }: { d: Limit }) {
   const [open, setOpen] = useState(false)
 
-  // A plan with no limit at all, which is the by-arrangement one. There is
-  // nothing to say and nothing to ask for.
+  // Enterprise has no limit at all. There is nothing to ask for, so there is
+  // no form: a box that can only be refused is worse than no box.
   if (d.limit === null) {
     return (
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-card">
-        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Your roll</div>
-        <p className="mt-1 text-sm text-slate-700">
-          {d.students.toLocaleString()} pupils. Your plan has no limit on how many
-          you may have.
+      <section className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-card">
+        <p className="text-sm text-slate-700">
+          {d.students.toLocaleString()} pupils. Your plan has no pupil limit, so there is nothing to ask for here.
         </p>
       </section>
     )
@@ -78,6 +156,7 @@ function Body({ d }: { d: MyStudentLimit }) {
   const answered = req && (req.status === 'granted' || req.status === 'declined')
   // The quiet form: nothing is close, nothing is in flight, nothing to read.
   const quiet = !d.warn && !waiting && !answered && !open
+  const extra = d.granted_extra && d.plan_covers !== null ? d.limit - d.plan_covers : null
 
   if (quiet) {
     return (
@@ -88,14 +167,14 @@ function Body({ d }: { d: MyStudentLimit }) {
               {d.students.toLocaleString()}
             </span>{' '}
             of the {d.limit.toLocaleString()} pupils your plan covers
-            {d.granted_extra && d.plan_covers !== null && (
+            {extra !== null && extra > 0 && (
               <span className="text-slate-500">
-                {' '}({d.plan_covers.toLocaleString()} on the plan plus{' '}
-                {(d.limit - d.plan_covers).toLocaleString()} we granted you)
+                {' '}({d.plan_covers!.toLocaleString()} on the plan and {extra.toLocaleString()} extra
+                {d.extra_until ? ` until ${fmtDate(d.extra_until)}` : ''})
               </span>
             )}
           </span>
-          <button onClick={() => setOpen(true)}
+          <button type="button" onClick={() => setOpen(true)}
             className={buttonClass({ variant: 'soft', size: 'sm' })}>
             Need room for more?
           </button>
@@ -104,19 +183,19 @@ function Body({ d }: { d: MyStudentLimit }) {
     )
   }
 
-  // OVER, not just full. A school can be above its plan (a plan changed under
-  // it, a roll from before the limit was enforced), and "238 of 150 places
-  // used" read as a typo. It says how far over, because that is the number
-  // the request has to cover.
+  // OVER, not just full. A school can be above its limit (a plan changed under
+  // it, extra room that ended at a renewal), and "238 of 150 places used" read
+  // as a typo. It says how far over, because that is the number the request
+  // has to cover.
   const over = Math.max(d.students - d.limit, 0)
   return (
     <section className={`rounded-2xl border p-4 shadow-card ${
       over > 0 ? 'border-danger-200 bg-danger-50/60'
         : d.at_limit ? 'border-due-300 bg-due-50'
           : d.warn ? 'border-due-200 bg-white' : 'border-slate-200 bg-white'}`}>
-      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-        {over > 0 ? 'Your roll is over your plan' : d.at_limit ? 'Your roll is full' : 'Room on your roll'}
-      </div>
+      <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        {over > 0 ? 'Your roll is over your limit' : d.at_limit ? 'Your roll is full' : 'Room on your roll'}
+      </h2>
 
       <p className="mt-1 text-sm text-slate-800">
         <span className="text-lg font-semibold tabular-nums">{d.students.toLocaleString()}</span>{' '}
@@ -130,13 +209,13 @@ function Body({ d }: { d: MyStudentLimit }) {
             , {d.room.toLocaleString()} left
           </span>
         )}
-        {d.granted_extra && d.plan_covers !== null && (
-          <span className="text-slate-500">
-            {' '}· {d.plan_covers.toLocaleString()} covered by your plan and{' '}
-            {(d.limit - d.plan_covers).toLocaleString()} we granted you on top
-          </span>
-        )}
       </p>
+      {extra !== null && extra > 0 && (
+        <p className="mt-0.5 text-xs text-slate-600">
+          Extra room for {extra.toLocaleString()} pupils{d.extra_until ? ` until ${fmtDate(d.extra_until)}` : ''},
+          then your plan&apos;s limit of {d.plan_covers!.toLocaleString()} applies.
+        </p>
+      )}
 
       {/* WHAT HAS STOPPED AND WHAT HAS NOT, in that order, because a school
           reading this arrived from a refused admission and will not take in
@@ -205,15 +284,21 @@ function Waiting({ req }: { req: NonNullable<MyStudentLimit['request']> }) {
     <div className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
       <p className="font-medium text-slate-800">
         {req.wants === 'move_up'
-          ? `You asked us to move you up to a plan covering ${req.requested_limit.toLocaleString()} pupils`
+          ? `You asked us to move you up to a plan with room for ${req.requested_limit.toLocaleString()} pupils`
           : `You asked for room for ${req.requested_limit.toLocaleString()} pupils`}
       </p>
       <p className="mt-0.5 text-slate-600">
-        Sent {fmtDate(req.requested_at)}. We will answer here.
+        Sent {fmtDate(req.requested_at)}. We will answer here, usually the same working day.
+      </p>
+      {/* What happens next, so a school waiting knows what it is waiting for. */}
+      <p className="mt-0.5 text-slate-600">
+        {req.wants === 'move_up'
+          ? 'We will work out what the bigger plan costs for the rest of the period you have paid for and tell you before anything changes.'
+          : 'If we give you extra room, it lasts until your next renewal. After that your plan’s limit applies again.'}
       </p>
       <p className="mt-1 text-xs text-slate-500">You told us: “{req.reason}”</p>
       {err && <p className="mt-1 text-xs text-danger-700">{err}</p>}
-      <button onClick={() => { setErr(null); drop.mutate() }} disabled={drop.isPending}
+      <button type="button" onClick={() => { setErr(null); drop.mutate() }} disabled={drop.isPending}
         className={buttonClass({ variant: 'soft', tone: 'neutral', size: 'sm', className: 'mt-2' })}>
         {drop.isPending ? 'Taking it back…' : 'Take this request back'}
       </button>
@@ -221,9 +306,12 @@ function Waiting({ req }: { req: NonNullable<MyStudentLimit['request']> }) {
   )
 }
 
-function AskForm({ d }: { d: MyStudentLimit }) {
+function AskForm({ d }: { d: Limit }) {
   const qc = useQueryClient()
   const next = d.next_plan
+  // Enterprise has no pupil count to move up TO, so the school still says how
+  // many it expects, and that number is what we read when we price it.
+  const nextCovers = next && !next.by_arrangement ? next.covers : null
   const [wants, setWants] = useState<LimitWants>('more_room')
   // A round number above what they have, not a blank box. A school that has to
   // invent a figure invents the smallest one that solves today, and is back
@@ -237,11 +325,12 @@ function AskForm({ d }: { d: MyStudentLimit }) {
   const [err, setErr] = useState<string | null>(null)
   const [done, setDone] = useState<string | null>(null)
 
-  // For an upgrade there is no number to type: the plan decides it. Deriving it
-  // rather than syncing it into the input on a radio change, because a field
-  // that rewrites itself when you press something else is a field people stop
-  // trusting.
-  const asking = wants === 'move_up' && next ? next.covers : Number(howMany)
+  // For a move up to a plan with a limit there is no number to type: the plan
+  // decides it. Deriving it rather than syncing it into the input on a radio
+  // change, because a field that rewrites itself when you press something
+  // else is a field people stop trusting.
+  const typed = wants === 'more_room' || nextCovers === null
+  const asking = typed || nextCovers === null ? Number(howMany) : nextCovers
   const validNumber = Number.isInteger(asking) && asking > floor
   const reasonOk = reason.trim().length >= 8
 
@@ -257,7 +346,7 @@ function AskForm({ d }: { d: MyStudentLimit }) {
 
   if (done) {
     return (
-      <div className="mt-3 rounded-xl border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-brand-900">
+      <div className="mt-3 rounded-xl border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-brand-900" role="status">
         <p className="font-medium">Sent. Thank you.</p>
         <p className="mt-0.5">{done}</p>
       </div>
@@ -267,15 +356,19 @@ function AskForm({ d }: { d: MyStudentLimit }) {
   return (
     <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
       <p className="text-sm font-medium text-slate-800">Ask us for more room</p>
+      <p className="mt-0.5 text-xs text-slate-600">
+        Plans are changed by us, not from this screen. Tell us what you need and we answer here, usually the same
+        working day. Nothing changes, and nothing you have entered is touched, until we do.
+      </p>
 
       {err && <p className="mt-2 rounded-lg bg-danger-50 px-2 py-1.5 text-sm text-danger-800">{err}</p>}
 
-      <div className="mt-2 space-y-2">
+      <div className="mt-2 space-y-2" role="radiogroup" aria-label="What you are asking for">
         <Choice
           on={wants === 'more_room'} onPick={() => setWants('more_room')}
           title="Give us room on the plan we have"
-          detail={`Keep paying what you pay now, with room for more pupils than ${
-            (d.plan_covers ?? d.limit ?? 0).toLocaleString()}. We do this for a school growing mid-term, and we will ask why.`}
+          detail={`Keep paying what you pay now, with room for more than ${
+            (d.plan_covers ?? d.limit ?? 0).toLocaleString()} pupils until your next renewal. We do this for a school growing mid-term, and we will ask why.`}
         />
         {/* Only offered when there IS a bigger plan. A school already on the
             largest has nothing to move up to, and an option that leads nowhere
@@ -284,14 +377,12 @@ function AskForm({ d }: { d: MyStudentLimit }) {
           <Choice
             on={wants === 'move_up'} onPick={() => setWants('move_up')}
             title={`Move us up to ${next.name}`}
-            detail={`Covers ${next.covers.toLocaleString()} pupils, at ${
-              formatPkr(next.price)} ${termSentence(next.term_months)
-              } instead of what you pay now. We will send you the price for the rest of your term first, and nothing changes until you are happy with it.`}
+            detail={moveUpDetail(next)}
           />
         )}
       </div>
 
-      {wants === 'more_room' && (
+      {typed && (
         <label className="mt-3 block">
           <span className="text-xs font-medium text-slate-600">
             How many pupils you need room for
@@ -311,28 +402,28 @@ function AskForm({ d }: { d: MyStudentLimit }) {
         <textarea rows={3} className={FIELD} value={reason}
           onChange={(e) => setReason(e.target.value)}
           placeholder="e.g. we are opening a second campus in April and expect 60 more children" />
-        <span className="mt-0.5 block text-xs text-slate-400">
+        <span className="mt-0.5 block text-xs text-slate-500">
           This is what we read when we decide. We cannot see inside your school,
           so a line about what is happening is the whole difference between a yes
           and a phone call.
         </span>
       </label>
 
-      <button
+      <button type="button"
         onClick={() => { setErr(null); send.mutate() }}
         disabled={send.isPending || !validNumber || !reasonOk}
-        className="mt-3 w-full rounded-lg bg-brand-600 px-3 py-2.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60 sm:w-auto">
+        className={buttonClass({ className: 'mt-3 w-full sm:w-auto' })}>
         {send.isPending ? 'Sending…'
           : wants === 'move_up' && next ? `Ask to move up to ${next.name}`
           : 'Send this request'}
       </button>
-      {!validNumber && wants === 'more_room' && (
-        <p className="mt-1 text-xs text-slate-400">
+      {!validNumber && typed && (
+        <p className="mt-1 text-xs text-slate-500">
           Ask for more than {floor.toLocaleString()}.
         </p>
       )}
       {validNumber && !reasonOk && (
-        <p className="mt-1 text-xs text-slate-400">
+        <p className="mt-1 text-xs text-slate-500">
           A line about why, please. Eight characters is the floor.
         </p>
       )}
@@ -340,15 +431,27 @@ function AskForm({ d }: { d: MyStudentLimit }) {
   )
 }
 
+/** What moving up means, priced only from what the database sent. */
+function moveUpDetail(next: NextPlan): string {
+  if (next.by_arrangement || next.covers === null) {
+    return `No pupil limit. ${next.name} is priced with each school, so we will call you to agree yours, `
+      + 'and nothing changes until you are happy with it.'
+  }
+  const price = next.price !== null && next.price > 0
+    ? `, at ${formatPkr(next.price)} ${termSentence(next.term_months)} instead of what you pay now` : ''
+  return `Covers up to ${next.covers.toLocaleString()} pupils${price}. We will work out what the move costs for the rest `
+    + 'of the period you have paid for and tell you first. Nothing changes until you are happy with it.'
+}
+
 function Choice({ on, onPick, title, detail }: {
   on: boolean; onPick: () => void; title: string; detail: string
 }) {
   return (
-    <button type="button" onClick={onPick}
-      className={`block w-full rounded border p-2.5 text-left ${
+    <button type="button" onClick={onPick} role="radio" aria-checked={on}
+      className={`block w-full rounded-xl border p-2.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
         on ? 'border-brand-500 bg-brand-50' : 'border-slate-200 hover:bg-slate-50'}`}>
       <div className="flex items-start gap-2">
-        <span className={`mt-0.5 h-3.5 w-3.5 shrink-0 rounded-full border-2 ${
+        <span aria-hidden="true" className={`mt-0.5 h-3.5 w-3.5 shrink-0 rounded-full border-2 ${
           on ? 'border-brand-600 bg-brand-600' : 'border-slate-300'}`} />
         <span className="min-w-0">
           <span className="block text-sm font-medium text-slate-800">{title}</span>

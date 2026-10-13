@@ -26,14 +26,19 @@
 -- The rules this file defends:
 --
 --   1. Signup records the plan and the term it was given, and echoes them back.
---   2. Given neither, it still does what it did before: Starter, a year.
+--   2. Given neither, it is Starter, paid monthly. Before 0155 the database
+--      defaulted to a year while the Edge Function sent a month, so the same
+--      empty form gave two different terms; 0155 made it a month everywhere.
 --   3. A plan that does not exist, or is no longer sold, is refused BY NAME,
 --      and the refusal lists what is on sale.
---   4. A term that is not sold is refused.
---   5. The trial is fourteen days on every plan and every term.
+--   4. A term that is not sold is refused. Since 0155 only 1, 3 and 12
+--      months are sold anywhere.
+--   5. The trial is fourteen days on every plan and every term: fourteen days
+--      OF ACCESS since 0155, so it ends on the signup day + 13.
 --   6. The first amount quoted is the chosen term's price, not the yearly one.
 --   7. A three month term is recorded as quarterly, everywhere.
---   8. Activating a subscription records the term it invoiced.
+--   8. Activating a subscription records the term it invoiced. Since 0155 it
+--      only raises the invoice; paying it is what moves the paid period.
 --   9. The renewals worklist and the renewal message quote the figure the
 --      invoice will actually say, whatever the cycle says.
 --  10. fn_signup_school is reachable by the service role only.
@@ -57,8 +62,9 @@ update public.plans set student_limit =  150, price_monthly = 2000,
        price_quarterly =  5700, price_yearly = 20000 where code = 'starter';
 update public.plans set student_limit =  350, price_monthly = 3500,
        price_quarterly = 10000, price_yearly = 35000 where code = 'growth';
-update public.plans set student_limit =  600, price_monthly = 5500,
-       price_quarterly = 15700, price_yearly = 55000 where code = 'institution';
+-- Institution is not pinned any more: 0155 retired it (active = false), and
+-- nothing here should lean on a plan that is no longer sold. Starter and
+-- Growth carry every figure this file needs.
 
 create or replace function pg_temp.ok(p_cond boolean, p_label text)
 returns void language plpgsql as $$
@@ -109,7 +115,9 @@ begin
     '5  the subscription row holds them too');
   perform pg_temp.ok(s.cycle::text = 'monthly',
     '6  and the cycle is set from the term rather than left at the default');
-  perform pg_temp.ok(s.status = 'trialing' and s.trial_ends_on = current_date + 14,
+  -- Fourteen days OF ACCESS since 0155: the signup day and the thirteen after
+  -- it, so the last day of the trial is today + 13.
+  perform pg_temp.ok(s.status = 'trialing' and s.trial_ends_on = current_date + 13,
     '7  a fourteen day trial, on a monthly plan');
 end $$;
 
@@ -127,10 +135,12 @@ begin
     '8  a three month term is recorded as quarterly, not as monthly');
   perform pg_temp.ok((r->>'first_amount')::numeric = 5700,
     '9  and priced at the quarterly rate');
-  perform pg_temp.ok(s.trial_ends_on = current_date + 14,
+  perform pg_temp.ok(s.trial_ends_on = current_date + 13,
     '10 fourteen days here too: the trial is the software, not the price');
 
-  -- The rule itself, at every boundary an operator can invoice.
+  -- The rule itself. Since 0155 only 1, 3 and 12 months are sold or
+  -- invoiced; the other lengths are kept here because rows written before
+  -- that still carry them, and they must keep a sensible name.
   perform pg_temp.ok(public.fn__cycle_for_months(1)::text  = 'monthly'
                  and public.fn__cycle_for_months(2)::text  = 'monthly'
                  and public.fn__cycle_for_months(3)::text  = 'quarterly'
@@ -138,7 +148,7 @@ begin
                  and public.fn__cycle_for_months(11)::text = 'quarterly'
                  and public.fn__cycle_for_months(12)::text = 'yearly'
                  and public.fn__cycle_for_months(24)::text = 'yearly',
-    '11 and one function decides the name, at every term an operator can bill');
+    '11 and one function decides the name, for the three terms on sale and any older length');
 end $$;
 
 -- =============================================================================
@@ -161,12 +171,12 @@ begin
   perform public.fn_signup_school('Term C', null, 'Owner C', null, 'c@term.test');
   select sub.* into s from public.subscriptions sub
     join public.schools sc on sc.id = sub.school_id where sc.name = 'Term C';
-  perform pg_temp.ok(s.plan_code = 'starter' and s.term_months = 12
-                 and s.cycle::text = 'yearly',
-    '12 the five-argument name still means Starter on a yearly term');
-  perform pg_temp.ok(s.trial_ends_on = current_date + 14,
+  perform pg_temp.ok(s.plan_code = 'starter' and s.term_months = 1
+                 and s.cycle::text = 'monthly',
+    '12 the five-argument name still means Starter, now paid monthly like every other way in');
+  perform pg_temp.ok(s.trial_ends_on = current_date + 13,
     '12b and a fourteen day trial, so an Edge Function deployment that '
-    || 'predates this migration behaves exactly as it did');
+    || 'predates this migration still creates a working school');
 end $$;
 
 -- =============================================================================
@@ -186,14 +196,14 @@ begin
     '14 and the refusal lists the plans that ARE on sale');
 
   -- A plan withdrawn from sale stays in the table because old invoices point
-  -- at it. A new school must not be able to land on one.
-  update public.plans set active = false where code = 'institution';
+  -- at it. A new school must not be able to land on one. Institution is the
+  -- real case since 0155 retired it, so it is asked for as it stands, and not
+  -- switched back on afterwards: nothing in this file may lean on it being sold.
   perform pg_temp.ok(pg_temp.raises(
     $q$select public.fn_signup_school_on_plan('Term D', null, null, null,
                                               'd@term.test', 'institution', 12)$q$,
     'there is no plan called'),
     '15 a plan no longer sold is refused as well');
-  update public.plans set active = true where code = 'institution';
 
   perform pg_temp.ok(pg_temp.raises(
     $q$select public.fn_signup_school_on_plan('Term D', null, null, null,
@@ -290,9 +300,21 @@ begin
   select id into v_school from public.schools where name = 'Term C';
 
   perform set_config('test.uid', v_op::text, false);
+  -- Since 0155 activating only RAISES the yearly invoice; access is bought by
+  -- paying it. Unpaid, it would still be open, and an open invoice is not a
+  -- renewal (the worklist only lists schools with nothing invoiced for their
+  -- next period). So the school pays its year, as a real one does.
   perform public.fn_activate_subscription(v_school, 'starter', 12);
-  -- Bring the period end inside the worklist's window.
-  update public.subscriptions set period_end = current_date + 5,
+  perform public.fn_platform_record_payment(v_school, 20000, null, 'bank', 'TERM-C-YEAR',
+    (select id from public.platform_invoices
+      where school_id = v_school and kind = 'invoice' and voided_at is null
+      order by created_at desc limit 1));
+  -- Bring the paid year's end inside the worklist's window. The trial date is
+  -- moved back with it: coverage is the later of the two, so leaving the trial
+  -- at today + 13 would decide the window instead of the paid period.
+  update public.subscriptions set period_start = current_date + 5 - 364,
+         period_end = current_date + 5,
+         trial_ends_on = current_date + 5 - 365,
          grace_ends_on = current_date + 5 + public.grace_days()
    where school_id = v_school;
 

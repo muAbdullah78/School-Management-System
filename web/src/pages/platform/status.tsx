@@ -1,5 +1,7 @@
 import type { PlatformSchool } from '@/lib/platform'
 import { formatPkr } from '@/lib/licence'
+import { fmtDate } from '@/lib/format'
+import { today } from '@/lib/dates'
 
 /**
  * One vocabulary for what a school's row is telling you.
@@ -65,6 +67,14 @@ const STATUS_LABEL: Record<PlatformSchool['status'], string> = {
   locked: 'Locked out', cancelled: 'Cancelled',
 }
 
+/** The same words for a status string the database hands back after an act
+ *  (a payment, a plan move), so a result reads like the chip on the row. */
+export function statusWords(status: string | null | undefined): string {
+  return status && status in STATUS_LABEL
+    ? STATUS_LABEL[status as PlatformSchool['status']]
+    : (status ?? 'unknown')
+}
+
 export function StatusChip({ s }: { s: PlatformSchool }) {
   // Suspended FIRST, and as its own word. fn_effective_status returns 'locked'
   // for a suspension and for an expiry alike, so without this the operator
@@ -75,6 +85,30 @@ export function StatusChip({ s }: { s: PlatformSchool }) {
   return <Chip tone={STATUS_TONE[s.status]}>{STATUS_LABEL[s.status]}</Chip>
 }
 
+/**
+ * A figure a person typed, as a number.
+ *
+ * `Number('38,000')` is NaN and `Number('Rs 38,000')` is NaN, and both are how a
+ * Pakistani bank statement writes a figure. The old code fed the raw string
+ * straight to Number and then disabled the Record button when the result was
+ * not finite, so pasting the amount out of the statement produced a screen with
+ * no error and a button that did nothing. Commas, spaces and a leading Rs are
+ * stripped; anything else still fails, and now says so.
+ *
+ * Here rather than in PlatformPage so the plan, price and invoice dialogs on
+ * the school's page can read a typed price the same way without importing the
+ * page that imports them.
+ */
+export function money(v: string): number {
+  const cleaned = v.replace(/[\s,]/g, '').replace(/^rs\.?/i, '')
+  return cleaned === '' ? NaN : Number(cleaned)
+}
+
+/** True for a whole number of rupees, zero or more: the only kind 0155 invoices. */
+export function wholeRupees(n: number): boolean {
+  return Number.isInteger(n) && n >= 0
+}
+
 /** What they owe, or nothing at all. Never a zero: a zero is not news. */
 export function OwedChip({ amount }: { amount: number }) {
   if (!(amount > 0)) return null
@@ -82,61 +116,191 @@ export function OwedChip({ amount }: { amount: number }) {
 }
 
 /**
- * Students against the tier, as a figure and a bar.
+ * A school's row with what 0155 says about it beyond the old list.
  *
- * The bar is the point. "180 / 200" is a number the eye has to do arithmetic on;
- * a bar nine tenths full is read without thinking, and an upgrade conversation
- * is exactly the thing worth spotting before the school does.
+ * OPTIONAL ON PURPOSE. fn_platform_schools does not return these yet (see the
+ * note in the report that shipped this): until it does, every one of them is
+ * undefined and the row reads exactly as it did. The moment the list carries
+ * them, the chip and the dates appear without another change here.
+ */
+export type SchoolRow = PlatformSchool & {
+  /** Enterprise with no price agreed. It locks the day its trial ends. */
+  needs_price?: boolean
+  paid_through?: string | null
+  trial_ends_on?: string | null
+}
+
+/**
+ * The flag for an Enterprise school we have not priced.
+ *
+ * Louder than "owes", because it is our move, not theirs: with no price there
+ * is nothing to invoice, and the school locks the day its trial ends with no
+ * grace at all. The date is the deadline for a phone call.
+ */
+export function NeedsPriceChip({ trialEndsOn, on = today() }: { trialEndsOn?: string | null; on?: string }) {
+  // "trial ends 3 Oct" read on 13 Oct was a deadline already missed.
+  const ended = !!trialEndsOn && trialEndsOn < on
+  return (
+    <Chip tone="stopped" title="Enterprise, and no price has been agreed with this school yet">
+      price not agreed{trialEndsOn ? ` · trial ${ended ? 'ended' : 'ends'} ${fmtDate(trialEndsOn)}` : ''}
+    </Chip>
+  )
+}
+
+/**
+ * Pupils against the limit, as a figure and a bar.
+ *
+ * The bar is the point. "252 / 280" is a number the eye has to do arithmetic
+ * on; a bar nine tenths full is read without thinking.
+ *
+ * NO MARGIN. Until 0155 a school could sit 10% over its plan in a state called
+ * "within margin", which the bar drew in amber. That margin is gone: the limit
+ * is the limit. The school is warned from 90% and stopped at 100%, and the bar
+ * says exactly those two things, in that order.
  */
 export function LimitBar({ s }: { s: PlatformSchool }) {
   const limit = s.student_limit
   const pct = limit && limit > 0 ? Math.min(100, (s.student_count / limit) * 100) : null
-  const tone = s.limit_state === 'over' ? 'bg-danger-500'
-    : s.limit_state === 'within_margin' ? 'bg-due-500'
-    : 'bg-money-500'
+  const full = limit !== null && s.student_count >= limit
+  const warn = limit !== null && !full && s.student_count >= Math.ceil(limit * 0.9)
+  const tone = full ? 'bg-danger-500' : warn ? 'bg-due-500' : 'bg-money-500'
   return (
     <div className="min-w-[5.5rem]">
       <div className="whitespace-nowrap tabular-nums text-slate-700">
         {s.student_count.toLocaleString()}
-        {limit !== null && <span className="text-slate-400"> / {limit.toLocaleString()}</span>}
+        {limit !== null
+          ? <span className="text-slate-400"> / {limit.toLocaleString()}</span>
+          : <span className="text-slate-400"> · no limit</span>}
       </div>
       {pct !== null && (
         <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-slate-200">
           <div className={`h-full rounded-full ${tone}`} style={{ width: `${Math.max(2, pct)}%` }} />
         </div>
       )}
-      {s.limit_state === 'over' && (
-        <div className="mt-0.5 text-[11px] font-medium text-danger-700">over the tier</div>
-      )}
-      {s.limit_state === 'within_margin' && (
-        <div className="mt-0.5 text-[11px] text-due-700">near the tier</div>
-      )}
+      {s.limit_state === 'over' ? (
+        <div className="mt-0.5 text-[11px] font-medium text-danger-700">over the limit</div>
+      ) : full ? (
+        <div className="mt-0.5 text-[11px] font-medium text-danger-700">full: admissions stop</div>
+      ) : warn ? (
+        <div className="mt-0.5 text-[11px] text-due-700">nearly full</div>
+      ) : null}
     </div>
   )
 }
 
 /**
- * When their licence runs out, said the way a person would say it.
+ * How far what they have paid for reaches, said the way a person would say it.
  *
- * "297d left" is fine on a row you are scanning. "expired 12d ago" is the one
- * that has to be unmissable, so it carries the colour rather than the label.
+ * `expires_on` is the end of what covers the school today: the paid-through
+ * date once anything is paid, the trial's end before that. The two are worded
+ * differently because they are different conversations: one is a renewal, the
+ * other is a first sale.
  */
-export function ExpiryCell({ s }: { s: PlatformSchool }) {
-  if (!s.expires_on) return <span className="text-slate-400">no end date</span>
+export function ExpiryCell({ s }: { s: SchoolRow }) {
+  if (!s.expires_on) return <span className="text-slate-400">nothing paid, no trial</span>
+  // A school that never paid is still a trial after its trial has run out and
+  // it has locked: "paid through 20 Sept" was printed for schools that had
+  // paid nothing at all. The billing states say which it is; the status is
+  // the fallback for a database without them.
+  const trial = s.in_trial ?? s.status === 'trialing'
   const d = s.days_left
-  if (d === null) return <span className="text-slate-600">{s.expires_on}</span>
+  const lead = trial ? 'trial to' : 'paid through'
+  if (d === null) return <span className="text-slate-600">{lead} {fmtDate(s.expires_on)}</span>
   if (d < 0) {
     return (
       <span className="font-medium text-danger-700">
-        expired {Math.abs(d)}d ago
-        <span className="block text-[11px] font-normal text-slate-400">{s.expires_on}</span>
+        {trial ? 'trial ended' : 'ran out'} {Math.abs(d)}d ago
+        <span className="block text-[11px] font-normal text-slate-400">
+          {lead} {fmtDate(s.expires_on)}
+        </span>
       </span>
     )
   }
   return (
     <span className={d <= 14 ? 'font-medium text-due-700' : 'text-slate-600'}>
       {d}d left
-      <span className="block text-[11px] font-normal text-slate-400">{s.expires_on}</span>
+      <span className="block text-[11px] font-normal text-slate-400">
+        {lead} {fmtDate(s.expires_on)}
+      </span>
     </span>
+  )
+}
+
+/**
+ * What recording money actually did, from the database's own answer.
+ *
+ * WHY THIS IS SHOWN AND NOT JUST "SAVED". Since 0155 a payment does several
+ * things in one breath: it goes against what is owed, oldest first; money left
+ * over raises the next term invoice and pays it; anything still left is credit;
+ * and the school's paid-through date moves only as far as invoices are paid in
+ * full. "Rs 30,000 recorded" says none of that, and the next question on the
+ * phone is always "so are we open now, and until when?".
+ */
+export interface Settled {
+  /** Rupees this payment put against invoices. Absent from a confirmed report. */
+  allocated?: number | null
+  raised?: {
+    doc_no: string | null; months: number; amount: number
+    period_start: string; period_end: string; owed?: number | null
+  } | null
+  not_raised_because?: string | null
+  lapsed_voided?: number | null
+  credit?: number | null
+  status?: string | null
+  paid_through?: string | null
+  outstanding?: number | null
+}
+
+export function PaymentOutcome({ r }: { r: Settled }) {
+  const lines: React.ReactNode[] = []
+  if (r.allocated != null) {
+    lines.push(Number(r.allocated) > 0
+      ? <>{formatPkr(Number(r.allocated))} went against what they owed.</>
+      : <>Nothing was owed, so none of it went against an invoice.</>)
+  }
+  if (Number(r.lapsed_voided ?? 0) > 0) {
+    lines.push(<>
+      {r.lapsed_voided} unpaid invoice(s) from the time they were locked were voided:
+      they start again from today rather than paying for weeks they could not use.
+    </>)
+  }
+  if (r.raised) {
+    lines.push(<>
+      Their next invoice{r.raised.doc_no ? `, ${r.raised.doc_no},` : ''} was raised for{' '}
+      {r.raised.months} month(s), {fmtDate(r.raised.period_start)} to{' '}
+      {fmtDate(r.raised.period_end)}, at {formatPkr(Number(r.raised.amount))}, and paid from
+      this money
+      {Number(r.raised.owed ?? 0) > 0 && <>, with {formatPkr(Number(r.raised.owed))} still owed on it</>}.
+    </>)
+  } else if (r.not_raised_because) {
+    lines.push(<>No new invoice was raised: {r.not_raised_because}</>)
+  }
+  if (Number(r.credit ?? 0) > 0) {
+    lines.push(<>{formatPkr(Number(r.credit))} is left over as credit. It comes off their next invoice.</>)
+  }
+  return (
+    <div className="space-y-2">
+      <dl className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1 rounded border border-money-200 bg-money-50 p-3 text-sm">
+        <dt className="text-money-800">They are now</dt>
+        <dd className="font-medium text-money-900">{statusWords(r.status)}</dd>
+        <dt className="text-money-800">Paid through</dt>
+        <dd className="font-medium text-money-900">
+          {r.paid_through ? fmtDate(r.paid_through) : 'nothing paid in full yet'}
+        </dd>
+        {r.outstanding != null && (
+          <>
+            <dt className="text-money-800">Still owed</dt>
+            <dd className={Number(r.outstanding) > 0 ? 'font-medium text-due-800' : 'text-money-900'}>
+              {formatPkr(Number(r.outstanding))}
+            </dd>
+          </>
+        )}
+      </dl>
+      {lines.length > 0 && (
+        <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">
+          {lines.map((l, i) => <li key={i}>{l}</li>)}
+        </ul>
+      )}
+    </div>
   )
 }

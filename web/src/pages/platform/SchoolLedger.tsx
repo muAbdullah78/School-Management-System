@@ -67,6 +67,7 @@ export function LedgerBody({ schoolId }: { schoolId: string }) {
   })
   const [printing, setPrinting] = useState<string | null>(null)
   const [acting, setActing] = useState<{ e: LedgerEntry; mode: Mode } | null>(null)
+  const open = detail.data?.subscription?.open_invoice ?? null
 
   // A running balance, computed here rather than stored, so it can never
   // disagree with the rows above it. The order it depends on comes from
@@ -94,7 +95,8 @@ export function LedgerBody({ schoolId }: { schoolId: string }) {
 
       {q.data && q.data.length === 0 && (
         <p className="mt-3 text-sm text-slate-500">
-          Nothing invoiced yet. A charge is written when you activate or renew them.
+          Nothing invoiced yet. An invoice is written when you raise one, when the renewal
+          run raises it, or when a payment arrives with nothing open to pay.
         </p>
       )}
 
@@ -141,15 +143,21 @@ export function LedgerBody({ schoolId }: { schoolId: string }) {
                 const isDoc = e.kind !== 'payment'
                 return (
                   <tr key={e.entry_id} className={e.voided ? 'text-slate-400' : ''}>
-                    <td className="whitespace-nowrap px-2 py-2 text-slate-500">{e.entry_date}</td>
+                    <td className="whitespace-nowrap px-2 py-2 text-slate-500">{fmtDate(e.entry_date)}</td>
                     <td className="whitespace-nowrap px-2 py-2">
                       <span className={e.voided ? 'line-through' : 'font-medium text-slate-700'}>
                         {e.doc_no ?? ''}
                       </span>
                     </td>
                     <td className="px-2 py-2 text-slate-700">
+                      {isPlanChange(e) && (
+                        <span className="mr-1.5 rounded bg-due-100 px-1.5 py-0.5 text-[11px] font-medium text-due-800">
+                          plan change
+                        </span>
+                      )}
                       {e.description}
                       {e.reference && <span className="text-slate-400"> · {e.reference}</span>}
+                      <OwedOn e={e} open={open} />
                       {e.note && <div className="text-xs text-slate-500">{e.note}</div>}
                     </td>
                     <td className={`whitespace-nowrap px-2 py-2 text-right tabular-nums ${
@@ -202,6 +210,43 @@ export function LedgerBody({ schoolId }: { schoolId: string }) {
 }
 
 type Mode = 'void' | 'credit' | 'tax'
+
+/**
+ * A statement line with what 0155 knows about it.
+ *
+ * OPTIONAL BECAUSE fn_platform_ledger DOES NOT RETURN THEM YET. Its columns
+ * were fixed in 0077 and every bundle since has left them alone; when it
+ * carries `purpose` and `owed` these read them, and until then the fallbacks
+ * below say what can honestly be said from what it does return.
+ */
+type LedgerRow = LedgerEntry & { purpose?: 'term' | 'plan_change' | null; owed?: number | null }
+
+/**
+ * An invoice raised by Change plan, for the rest of a paid period, rather than
+ * a term. Marked because it covers no new time: a school that pays it keeps the
+ * same paid-through date on a bigger plan, which is the first thing asked about
+ * it. Until the statement carries `purpose`, the note fn_platform_change_plan
+ * writes on every such invoice is the mark.
+ */
+function isPlanChange(e: LedgerRow): boolean {
+  if (e.kind !== 'invoice') return false
+  if (e.purpose) return e.purpose === 'plan_change'
+  return /Moved from .+ to .+ for the rest of the period paid to/.test(e.note ?? '')
+}
+
+/** What is still owed on one invoice: from the statement when it says, or for
+ *  the open term invoice from the subscription, which always does. */
+function OwedOn({ e, open }: {
+  e: LedgerRow
+  open: { id: string; owed: number } | null
+}) {
+  if (e.kind !== 'invoice' || e.voided) return null
+  const owed = e.owed ?? (open && open.id === e.entry_id ? open.owed : null)
+  if (owed === null || owed === undefined) return null
+  return owed > 0
+    ? <div className="text-xs font-medium text-due-800">{formatPkr(owed)} still owed on it</div>
+    : <div className="text-xs text-money-700">paid in full</div>
+}
 
 function PrintDialog({ invoiceId, onClose }: { invoiceId: string; onClose: () => void }) {
   const q = useQuery({
@@ -434,6 +479,10 @@ function Shell({ title, onClose, children }: {
  * this one exists because an operator opening a statement to work out why a
  * bill looks small has to see the code on that page, not on another tab. The
  * two are the same shape and same source, so they cannot disagree.
+ *
+ * Since 0156 a code counts BILLED MONTHS rather than uses, and the school sees
+ * its label, never our description. Who put it there is said too: a code we
+ * gave can only be changed by us.
  */
 function LedgerDiscountBanner({ d }: { d: NonNullable<SchoolDetail['discount']> }) {
   const pct = d.kind === 'percent'
@@ -443,20 +492,26 @@ function LedgerDiscountBanner({ d }: { d: NonNullable<SchoolDetail['discount']> 
     <div className="mt-2 rounded-lg bg-money-50 px-3 py-2 text-sm text-money-900 ring-1 ring-money-100">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <span className="font-semibold">
-          Discount attached: {d.code}
+          Discount: {d.label || d.code}
+          {d.label && d.label !== d.code && <span className="font-normal"> ({d.code})</span>}
         </span>
         <span className="text-xs tabular-nums text-money-800">
           {pct && `${d.value}% off`}
-          {flat && `Rs ${d.value.toLocaleString()} off`}
+          {flat && `${formatPkr(d.value)} off a month`}
           {trial && `${d.value} trial day(s)`}
           {d.ends_on && ` · until ${fmtDate(d.ends_on)}`}
         </span>
       </div>
       <div className="mt-0.5 text-money-800">{d.summary}</div>
       <div className="mt-0.5 text-xs text-money-700">
-        Applied {d.times_applied} time(s), saved {' '}
-        <span className="font-medium">Rs {d.total_saved.toLocaleString()}</span>
-        {d.uses_left !== null && ` · ${d.uses_left} use(s) left`}.
+        {d.granted_by_kind === 'platform'
+          ? <>Given by us{d.grant_reason ? <>: &ldquo;{d.grant_reason}&rdquo;</> : ''}. </>
+          : <>Used by the school itself. </>}
+        On {d.times_applied} invoice(s), saved{' '}
+        <span className="font-medium">{formatPkr(d.total_saved)}</span>
+        {d.months_left !== null && (
+          <> · {d.months_left} billed month(s) left{d.months_total !== null && <> of {d.months_total}</>}</>
+        )}.
       </div>
     </div>
   )

@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
-  describeAction, schoolActions, type PlatformSchool,
+  describeAction, schoolActions, schoolDetail, type PlatformSchool,
 } from '@/lib/platform'
 import { formatPkr } from '@/lib/licence'
-import { fmtDateTime } from '@/lib/format'
-import { OverviewTab } from './SchoolDetail'
+import { fmtDate, fmtDateTime } from '@/lib/format'
+import { OverviewTab, PlanPanel } from './SchoolDetail'
 import { LedgerBody } from './SchoolLedger'
-import { StatusChip, OwedChip, Chip } from './status'
+import { StatusChip, OwedChip, Chip, NeedsPriceChip } from './status'
 
 /**
  * One school, one workspace.
@@ -37,19 +37,27 @@ export type DrawerTab = 'overview' | 'billing' | 'activity'
 
 export function SchoolDrawer({
   school, tab, onTab, onClose,
-  onPay, onActivate, onManage, onVisit, onOffboard,
+  onPay, onRaiseInvoice, onManage, onVisit, onOffboard,
 }: {
   school: PlatformSchool
   tab: DrawerTab
   onTab: (t: DrawerTab) => void
   onClose: () => void
   onPay: () => void
-  onActivate: () => void
+  /** Raise the next term invoice. It does not give the school time: paying does. */
+  onRaiseInvoice: () => void
   onManage: () => void
   onVisit: () => void
   onOffboard: () => void
 }) {
   const [menu, setMenu] = useState(false)
+  // The one description of the subscription (0155). Shared with the Overview
+  // and Billing tabs by query key, so opening the drawer reads it once.
+  const detail = useQuery({
+    queryKey: ['schoolDetail', school.school_id],
+    queryFn: () => schoolDetail(school.school_id),
+  })
+  const v = detail.data?.subscription ?? null
   // Escape closes it. A sheet with no keyboard exit is a modal that lies about
   // being lighter than one.
   useEffect(() => {
@@ -101,16 +109,22 @@ export function SchoolDrawer({
 
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
             <StatusChip s={school} />
-            <Chip tone="quiet">{school.plan_code}</Chip>
+            <Chip tone="quiet">{v?.plan.name ?? school.plan_code}</Chip>
+            {/* Our move, not theirs: an Enterprise school with no price locks
+                the day after its trial with no grace. In the header so it is
+                seen from every tab. */}
+            {v?.needs_price && <NeedsPriceChip trialEndsOn={v.trial_ends_on} />}
             {school.expires_on && (
               <Chip tone={
                 school.days_left === null ? 'quiet'
                   : school.days_left < 0 ? 'stopped'
                   : school.days_left <= 14 ? 'warn' : 'quiet'
               }>
-                {school.days_left === null ? school.expires_on
-                  : school.days_left < 0 ? `expired ${Math.abs(school.days_left)}d ago`
-                  : `${school.days_left}d left`}
+                {(school.in_trial ?? school.status === 'trialing') ? 'trial to ' : 'paid through '}
+                {fmtDate(school.expires_on)}
+                {school.days_left !== null && (school.days_left < 0
+                  ? ` · ${Math.abs(school.days_left)}d ago`
+                  : ` · ${school.days_left}d left`)}
               </Chip>
             )}
             <OwedChip amount={school.outstanding} />
@@ -127,7 +141,7 @@ export function SchoolDrawer({
         <div className="min-h-0 flex-1 overflow-y-auto p-5">
           {tab === 'overview' && <OverviewTab schoolId={school.school_id} />}
           {tab === 'billing' && (
-            <BillingTab school={school} onPay={onPay} onActivate={onActivate} />
+            <BillingTab school={school} onPay={onPay} onRaiseInvoice={onRaiseInvoice} />
           )}
           {tab === 'activity' && <ActivityTab school={school} />}
         </div>
@@ -220,26 +234,38 @@ function MenuItem({ title, body, onClick, tone }: {
  * Activate, Record payment and Statement were three separate dialogs opened from
  * three separate links, so deciding what to charge meant closing the statement,
  * remembering the balance and opening the activation form. They are one screen
- * now, and the two figures that decide everything sit at the top of it.
+ * now, and the figures that decide everything sit at the top of it.
+ *
+ * WHAT 0155 CHANGED HERE. "Activate" and "Renew" used to grant time and write
+ * the charge in one press. Now access runs on what is PAID: raising an invoice
+ * moves nothing, and the school's paid-through date moves when money is
+ * recorded against it. So the button says what it does (Raise invoice), and the
+ * date beside it is "paid through", which only a payment changes.
  */
-function BillingTab({ school, onPay, onActivate }: {
-  school: PlatformSchool; onPay: () => void; onActivate: () => void
+function BillingTab({ school, onPay, onRaiseInvoice }: {
+  school: PlatformSchool; onPay: () => void; onRaiseInvoice: () => void
 }) {
+  const detail = useQuery({
+    queryKey: ['schoolDetail', school.school_id],
+    queryFn: () => schoolDetail(school.school_id),
+  })
+  const v = detail.data?.subscription ?? null
+  const owed = v ? v.owed : school.outstanding
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-slate-200 bg-white p-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Outstanding
+              Owed
             </div>
             <div className={`text-2xl font-semibold ${
-              school.outstanding > 0 ? 'text-due-800' : 'text-slate-800'}`}>
-              {formatPkr(school.outstanding)}
+              owed > 0 ? 'text-due-800' : 'text-slate-800'}`}>
+              {formatPkr(owed)}
             </div>
             <div className="text-xs text-slate-400">
               {school.last_paid_on
-                ? `Last payment ${school.last_paid_on}`
+                ? `Last payment ${fmtDate(school.last_paid_on)}`
                 : 'No payment has ever been recorded'}
             </div>
           </div>
@@ -248,17 +274,70 @@ function BillingTab({ school, onPay, onActivate }: {
               className="rounded border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-medium text-brand-800 hover:bg-brand-100">
               Record payment
             </button>
-            <button onClick={onActivate}
-              className="rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
-              {/* A school in grace, or locked because its licence ran out, has
-                  bought this before. Calling that "Activate" reads as a new
-                  sale and is the wrong word on the phone. Only a school that
-                  has never had a paid period is being activated. */}
-              {school.last_paid_on || school.status === 'active' ? 'Renew' : 'Activate'}
-            </button>
+            {/* Not while one is open (the database refuses a second) or while
+                there is no price to invoice at (Enterprise before Set price). */}
+            {!(v?.open_invoice || v?.needs_price) && (
+              <button onClick={onRaiseInvoice}
+                className="rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
+                Raise invoice
+              </button>
+            )}
           </div>
         </div>
+
+        {v && (
+          <dl className="mt-3 grid gap-x-4 gap-y-1 border-t border-slate-100 pt-3 text-sm sm:grid-cols-[auto,1fr]">
+            <dt className="text-slate-500">Paid through</dt>
+            <dd className="text-slate-800">
+              {v.paid_through
+                ? <span className="font-medium">{fmtDate(v.paid_through)}</span>
+                : v.in_trial && v.trial_ends_on
+                  ? <>nothing yet · on trial to {fmtDate(v.trial_ends_on)}</>
+                  : 'nothing yet'}
+              {v.locks_on && v.status !== 'locked' && v.status !== 'cancelled' && !v.suspended && (
+                <span className="text-slate-500"> · locks on {fmtDate(v.locks_on)} if nothing more is paid</span>
+              )}
+            </dd>
+            {v.open_invoice && (
+              <>
+                <dt className="text-slate-500">Open invoice</dt>
+                <dd className="text-slate-800">
+                  {v.open_invoice.doc_no ?? 'Not numbered'} · {v.open_invoice.months} month(s) from{' '}
+                  {fmtDate(v.open_invoice.period_start)} · {formatPkr(v.open_invoice.total)}
+                  {v.open_invoice.paid > 0 && <>, {formatPkr(v.open_invoice.paid)} paid</>}
+                  {' · '}<span className="font-medium">{formatPkr(v.open_invoice.owed)} owed</span>
+                  {v.open_invoice.due_on && <>, due {fmtDate(v.open_invoice.due_on)}</>}
+                </dd>
+              </>
+            )}
+            {v.credit > 0 && (
+              <>
+                <dt className="text-slate-500">Credit</dt>
+                <dd className="text-money-700">
+                  {formatPkr(v.credit)}: comes off the next invoice when it is raised
+                </dd>
+              </>
+            )}
+            {!v.open_invoice && v.next && v.next.quote.priced && (
+              <>
+                <dt className="text-slate-500">Next invoice</dt>
+                <dd className="text-slate-800">
+                  {formatPkr(v.next.quote.amount)} for {v.next.months} month(s) from{' '}
+                  {fmtDate(v.next.period_start)}
+                  {v.next.quote.discount && (
+                    <span className="text-money-700">
+                      {' '}· {formatPkr(v.next.quote.discount_amount)} off with {v.next.quote.discount.code}
+                    </span>
+                  )}
+                </dd>
+              </>
+            )}
+          </dl>
+        )}
       </div>
+
+      {/* Plan, price, and the two acts that change them. 0155. */}
+      <PlanPanel schoolId={school.school_id} schoolName={school.school_name} />
 
       {/* The full statement, inline. It was a dialog on top of a dialog. */}
       <LedgerBody schoolId={school.school_id} />
@@ -313,7 +392,7 @@ function ActivityTab({ school }: { school: PlatformSchool }) {
         <p className="mt-3 text-sm text-slate-500">
           {onlyUs
             ? 'We have not done anything to this school yet.'
-            : 'Nothing recorded yet. Activating them, taking a payment or opening their account all appear here.'}
+            : 'Nothing recorded yet. Raising an invoice, taking a payment or opening their account all appear here.'}
         </p>
       )}
 
@@ -395,6 +474,12 @@ const TONE: Record<string, string> = {
   invoice_voided: 'bg-due-50 text-due-900',
   credit_note_voided: 'bg-due-50 text-due-900',
   licence_changed: 'bg-due-50 text-due-900',
+  // 0155: plans move and prices are set only by us, and each is a decision
+  // about money somebody will ask about later.
+  plan_changed: 'bg-due-50 text-due-900',
+  price_agreed: 'bg-due-50 text-due-900',
+  student_limit_granted: 'bg-due-50 text-due-900',
+  student_limit_cleared: 'bg-due-50 text-due-900',
   grace_changed: 'bg-due-50 text-due-900',
   school_exported: 'bg-due-50 text-due-900',
   // Routine.

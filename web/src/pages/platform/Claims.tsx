@@ -5,6 +5,7 @@ import {
 } from '@/lib/platform'
 import { formatPkr } from '@/lib/licence'
 import { fmtDate, fmtDateTime } from '@/lib/format'
+import { PaymentOutcome, type Settled } from './status'
 
 const FIELD = 'w-full rounded border border-slate-300 px-2 py-1.5 text-sm'
 
@@ -133,6 +134,23 @@ export function Claims() {
   )
 }
 
+/**
+ * What fn_platform_confirm_claim answers since 0155, beyond the three fields
+ * lib/platform.ts types for it. Read here through a cast until the library's
+ * return type carries them: the claim goes through the ordinary receipt path,
+ * so the answer is the same story a recorded payment tells.
+ */
+interface ClaimSettled {
+  claim_id: string
+  payment_id: string
+  amount: number
+  outstanding?: number | null
+  licence_status?: string | null
+  paid_through?: string | null
+  raised?: Settled['raised']
+  credit?: number | null
+}
+
 function ActDialog({ claim, mode, onClose }: {
   claim: PaymentClaim; mode: 'confirm' | 'reject'; onClose: () => void
 }) {
@@ -142,30 +160,61 @@ function ActDialog({ claim, mode, onClose }: {
   const [cert, setCert] = useState('')
   const [note, setNote] = useState('')
   const [err, setErr] = useState<string | null>(null)
+  const [done, setDone] = useState<ClaimSettled | null>(null)
 
   const act = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (): Promise<ClaimSettled | null> => {
       if (mode === 'reject') {
         await rejectClaim(claim.id, note)
-        return
+        return null
       }
-      await confirmClaim({
+      const r = await confirmClaim({
         claimId: claim.id,
         amount: Number(amount),
         taxWithheld: Number(wht) || 0,
         taxCertificate: cert.trim() || null,
         note: note.trim() || null,
       })
+      return r as unknown as ClaimSettled
     },
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['paymentClaims'] })
-      void qc.invalidateQueries({ queryKey: ['platformSchools'] })
-      void qc.invalidateQueries({ queryKey: ['platformRevenue'] })
-      void qc.invalidateQueries({ queryKey: ['dueSoon'] })
-      onClose()
+    onSuccess: (r) => {
+      for (const key of ['paymentClaims', 'platformSchools', 'platformRevenue', 'dueSoon',
+        'schoolDetail', 'platformLedger']) {
+        void qc.invalidateQueries({ queryKey: [key] })
+      }
+      // A confirmed report stays open on what it did: the school is usually
+      // waiting to hear whether they are open again, and until when.
+      if (r) setDone(r)
+      else onClose()
     },
     onError: (e) => setErr((e as Error).message),
   })
+
+  if (done) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center">
+        <div role="dialog" aria-modal="true" aria-label="Payment confirmed"
+          className="w-full max-w-md rounded-lg bg-white p-4 shadow-lg">
+          <h3 className="text-sm font-semibold text-slate-800">
+            {formatPkr(Number(done.amount))} from {claim.school_name} confirmed
+          </h3>
+          <div className="mt-3">
+            <PaymentOutcome r={{
+              raised: done.raised ?? null,
+              credit: done.credit ?? null,
+              status: done.licence_status ?? null,
+              paid_through: done.paid_through ?? null,
+              outstanding: done.outstanding ?? null,
+            }} />
+          </div>
+          <button onClick={onClose}
+            className="mt-4 w-full rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
+            Done
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   const said = Number(claim.amount)
   const gets = Number(amount) + (Number(wht) || 0)

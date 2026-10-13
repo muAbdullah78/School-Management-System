@@ -12,7 +12,8 @@
  *   3. Download         -> the current release from app_releases (0082), and the
  *                          whole section HIDES ITSELF when there is no release
  *   4. Prices           -> read from `plans`, so the site cannot quote a figure
- *                          the console does not charge
+ *                          the console does not charge (Enterprise stays
+ *                          "Priced with you": it has no list price)
  *   5. The mobile menu  -> closing behaviour for the <details> disclosure
  *
  * NO FRAMEWORK, NO BUILD. The site is static HTML served from a CDN and it stays
@@ -151,47 +152,78 @@
     return 'Rs ' + Number(n).toLocaleString('en-PK', { maximumFractionDigits: 0 })
   }
 
+  function whole(n) {
+    return Number(n).toLocaleString('en-PK', { maximumFractionDigits: 0 })
+  }
+
+  function setText(card, selector, text) {
+    var node = card.querySelector(selector)
+    if (node) node.textContent = text
+  }
+
+  /*
+   * The cards are built with the figures from scripts/build-site.py PLANS, and
+   * supabase/check-site-prices.sh holds those to `plans` in CI. This writes
+   * the same figures from the live table on top, so a visitor never reads a
+   * price the console does not charge even between a migration and a rebuild.
+   *
+   * WHAT IS WRITTEN: the name, the band of pupils, and for a priced plan the
+   * monthly, three month and yearly figures with the two savings in rupees.
+   *
+   * WHAT IS NOT. A by_arrangement plan (Enterprise) has no list price: its row
+   * carries zeros and a NULL limit, and "Rs 0" or "Up to null" on its card
+   * would be worse than the words already there. Only its name and its lower
+   * bound are written. A retired plan is not returned at all (anon reads
+   * active rows only, and the query asks for them explicitly).
+   *
+   * EACH FIGURE ONLY WHEN ALL THREE ARE REAL. A priced row with a zero term
+   * would have the card show the HTML's three month figure beside the live
+   * monthly one, two price lists on one card. So a row that is not whole is
+   * skipped and the build's figures, which CI checked, stay.
+   */
   function wirePrices() {
-    return rest('plans?select=code,name,student_limit,price_monthly,price_quarterly,price_yearly&active=eq.true&order=sort_order')
+    return rest('plans?select=code,name,min_students,student_limit,by_arrangement,price_monthly,price_quarterly,price_yearly&active=eq.true&order=sort_order')
       .then(function (plans) {
         if (!plans || !plans.length) return
+        var priced = []
         plans.forEach(function (p) {
           // The code goes into a selector, so it is validated rather than
           // trusted. A row with a code of "] , *" would otherwise either throw
           // or match every card on the page.
           if (typeof p.code !== 'string' || !/^[a-z0-9_-]+$/i.test(p.code)) return
+          var m = Number(p.price_monthly)
+          var q = Number(p.price_quarterly)
+          var y = Number(p.price_yearly)
+          var isPriced = !p.by_arrangement && m > 0 && q > 0 && y > 0
+          if (isPriced) priced.push(m)
+
           var card = document.querySelector('[data-plan="' + p.code + '"]')
           if (!card) return
-          var monthly = card.querySelector('[data-price-monthly]')
-          var yearly = card.querySelector('[data-price-yearly]')
-          var quarterly = card.querySelector('[data-price-quarterly]')
-          var cap = card.querySelector('[data-price-cap]')
-          // A plan priced at zero is the "contact us" tier. Writing "Rs 0" on it
-          // would be worse than leaving the words that are already there.
-          if (monthly && Number(p.price_monthly) > 0) {
-            monthly.textContent = money(p.price_monthly)
+          if (typeof p.name === 'string' && p.name) setText(card, '[data-plan-name]', p.name)
+          var min = Number(p.min_students)
+
+          if (p.by_arrangement) {
+            if (min > 1) setText(card, '[data-price-cap]', 'More than ' + whole(min - 1) + ' pupils')
+            return
           }
-          if (quarterly && Number(p.price_quarterly) > 0) {
-            quarterly.textContent = money(p.price_quarterly) + ' for 3 months'
-          }
-          if (yearly && Number(p.price_yearly) > 0) {
-            yearly.textContent = money(p.price_yearly) + ' a year'
-          }
-          if (cap && p.student_limit) {
-            cap.textContent = 'Up to ' + Number(p.student_limit).toLocaleString('en-PK') + ' students'
+          if (!isPriced) return
+          setText(card, '[data-price-monthly]', money(m))
+          setText(card, '[data-price-quarterly]', money(q))
+          setText(card, '[data-price-yearly]', money(y))
+          setText(card, '[data-save-quarterly]', money(3 * m - q))
+          setText(card, '[data-save-yearly]', money(12 * m - y))
+          if (min >= 1 && Number(p.student_limit) > 0) {
+            setText(card, '[data-price-cap]', whole(min) + ' to ' + whole(p.student_limit) + ' pupils')
           }
         })
         // The headline price in the hero, kept in step with the cheapest plan
         // rather than typed twice.
         // By PRICE, not by position. This took plans[0] of a list ordered by
         // sort_order, so with growth ahead of starter the hero read "From
-        // Rs 2,000" above a Rs 950 card. "From" is a promise about the minimum.
-        var cheapest = plans.filter(function (p) { return Number(p.price_monthly) > 0 })
-          .reduce(function (a, b) {
-            return Number(b.price_monthly) < Number(a.price_monthly) ? b : a
-          }, null)
+        // Rs 2,000" above a Rs 950 card. "From" is a promise about the minimum,
+        // and a plan priced by arrangement has no figure to be the minimum.
         var lead = document.getElementById('lead-price')
-        if (lead && cheapest) lead.textContent = money(cheapest.price_monthly)
+        if (lead && priced.length) lead.textContent = money(Math.min.apply(null, priced))
       })
       // The only network consumer here that had no catch. A throwing row in the
       // middle of the loop left the cards half rewritten: some plans updated,

@@ -996,6 +996,34 @@ emit supabase/bundles/53_a_result_that_holds_still.sql \
 emit supabase/bundles/54_what_was_owed_before.sql \
      supabase/migrations/0153*.sql
 
+# --- 55 ----------------------------------------------------------------------
+# A due entered twice.
+#
+# 0153 refused a named due for ever once the child had one with the same name
+# and amount, so a second picnic or next term's books could not be recorded.
+# Only a repeat from an earlier save in the last ten minutes is now taken as a
+# retry. One function replaced, so re-pasting is a no-op.
+emit supabase/bundles/55_a_due_entered_twice.sql \
+     supabase/migrations/0154*.sql
+
+# --- 56 ----------------------------------------------------------------------
+# Three plans, and access that runs on what is paid; discount codes that keep
+# their word.
+#
+# Starter (up to 280 pupils, Rs 2,000 a month), Growth (up to 1,000, Rs 4,000)
+# and Enterprise (priced with each school). Three months is 10% off, a year is
+# two months free. Signup asks how many pupils and the plan follows. Raising an
+# invoice no longer opens a school: paying it does, and an invoice unpaid
+# fourteen days after it is due locks the school. Plans move only by us, extra
+# room ends at the next renewal, and there is no hidden margin. Discount codes
+# count billed months, are checked again on every invoice, take seats under a
+# lock, give their months back when an invoice is voided, and log every event.
+# New tables, columns and functions, replaced functions and guarded triggers
+# and constraints, so re-pasting is a no-op.
+emit supabase/bundles/56_three_plans_and_paying_first.sql \
+     supabase/migrations/0155*.sql \
+     supabase/migrations/0156*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

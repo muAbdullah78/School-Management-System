@@ -13,7 +13,7 @@
 -- Defect 4 is the one to read first if this file ever starts failing. A school
 -- invoiced Rs 38,000 that deducts 8% tax at source pays Rs 34,960 and sends a
 -- CPR. Before 0077 the software reported Rs 3,040 outstanding forever, and the
--- operator would chase a school for money it had already paid — to the FBR, in
+-- operator would chase a school for money it had already paid: to the FBR, in
 -- our name. Assertion 42 is that number being zero.
 --
 -- The other rule this file defends, and it is the important one:
@@ -26,41 +26,53 @@
 -- money: insert a payment, update a claim to confirmed, call the operator's
 -- confirm function, forge an invoice, read another school's books.
 --
+-- SINCE 0155 an invoice is a demand for money and nothing more. Raising one
+-- never moves the licence; paying a term invoice in full does. A school cannot
+-- hold two term invoices with money owed at once, so the second invoice in
+-- this file is raised after the first is paid (assertion 13). Voiding an
+-- unpaid invoice therefore has no licence to warn about (23), and a renewal is
+-- quoted on the plan the school is on, because that is the only plan it can be
+-- invoiced on (63, 67b).
+--
 -- Run: psql -v ON_ERROR_STOP=1 -f supabase/tests/platform_billing.sql
 -- =============================================================================
 
 \set ON_ERROR_STOP on
 
 begin;
+-- The billing functions work in Karachi time since 0155 (they SET TimeZone),
+-- so this suite's own current_date must be Karachi's too. On a UTC database
+-- the two disagree from 19:00 UTC, and "renews from TODAY" would compare
+-- tomorrow with today.
+set local timezone = 'Asia/Karachi';
 
 create or replace function auth.uid() returns uuid language sql stable as
   $$ select nullif(current_setting('test.uid', true), '')::uuid $$;
 -- --- THIS SUITE OWNS ITS OWN PRICES -----------------------------------------
 --
--- Every figure below is invoice ARITHMETIC: a part payment of 20,000 against
--- 35,000 leaves 15,000, a discount of 9,500 shows up in the revenue roll-up,
--- six months of Starter at the monthly rate is 5,700. None of it is a test of
--- what the business charges, and it should never have depended on that.
+-- Every figure below is invoice ARITHMETIC: a year of Growth is 20,000, a
+-- month of it is 2,000, a year of Starter is 9,500 and 8% of it is withheld at
+-- source. None of it is a test of what the business charges, and it should
+-- never have depended on that.
 --
 -- It did. 0111 moved the price list - new bands, new prices and a third term -
 -- and this suite failed on eleven assertions at once, none of which had
 -- anything wrong with them. Pinning the rates the arithmetic was written
 -- against inside the suite's own transaction fixes that permanently: the
--- commercial price list is asserted by supabase/tests/the_price_of_a_term.sql,
--- which is where it belongs, and a price change can no longer break a test of
--- addition.
+-- commercial price list is asserted by supabase/tests/the_price_of_a_term.sql
+-- and three_plans_and_paying_first.sql, which is where it belongs, and a price
+-- change can no longer break a test of addition.
 --
--- price_quarterly is pinned to ZERO deliberately, so fn__plan_price falls back
--- to the monthly rate for a three-to-eleven month term exactly as it did before
--- the third rate existed.
+-- Only Starter and Growth are pinned. 0155 retired Institution (nothing can be
+-- invoiced on it) and Enterprise has no list price. Terms are one, three or
+-- twelve months and nothing else (0155), so the three-month price is pinned to
+-- a real figure rather than to zero.
 --
--- The student LIMITS are pinned for the same reason. One assertion checks that
--- an over-limit invoice states the breach in words - "300 students against a
--- limit of 100" - which is a test of whether the sentence is written at all,
--- not of where the band happens to sit this quarter.
-update public.plans set student_limit =  100, price_monthly =  950, price_quarterly = 0, price_yearly =  9500 where code = 'starter';
-update public.plans set student_limit =  300, price_monthly = 2000, price_quarterly = 0, price_yearly = 20000 where code = 'growth';
-update public.plans set student_limit = 1000, price_monthly = 3500, price_quarterly = 0, price_yearly = 35000 where code = 'institution';
+-- The student LIMITS are pinned for the same reason, with min_students beside
+-- them so the bands have no gap: fn__plan_for_students names the plan whose
+-- band holds a count, and Gamma's 420 has to land in one.
+update public.plans set student_limit =  100, min_students =   1, price_monthly =  950, price_quarterly = 2565, price_yearly =  9500 where code = 'starter';
+update public.plans set student_limit = 1000, min_students = 101, price_monthly = 2000, price_quarterly = 5400, price_yearly = 20000 where code = 'growth';
 
 
 create or replace function pg_temp.ok(p_cond boolean, p_label text)
@@ -114,9 +126,10 @@ begin
     values ('Billing Beta', 'Karachi', 'Nadia Sahiba', '0333-2223334')
     returning id into b_school;
   -- Gamma exists to be LEFT ALONE. Beta gets renewed in the numbering block
-  -- below, which pushes its expiry a year out — the first version of this suite
-  -- asserted on Beta being overdue after renewing it, and the worklist
-  -- assertions passed for the wrong reason until Gamma was added.
+  -- below and pays for it, which pushes its expiry a year out. The first
+  -- version of this suite asserted on Beta being overdue after renewing it,
+  -- and the worklist assertions passed for the wrong reason until Gamma was
+  -- added.
   insert into public.schools (name, city, contact_name, contact_phone)
     values ('Billing Gamma', 'Multan', 'Iqbal Sahib', '+92 321 4445556')
     returning id into g_school;
@@ -131,9 +144,11 @@ begin
      current_date - 345, current_date + 20, current_date + 20 + 14, 140),
     (b_school, 'starter', 'active', 'yearly',
      current_date - 370, current_date - 5, current_date - 5 + 14, 60),
-    -- 420 students on `starter` (limit 100): the renewal quote must follow the
-    -- COUNT, not the plan they are sitting on. Quoting Rs 9,500 to a school that
-    -- needs Rs 35,000 of licence is how a renewal becomes an argument.
+    -- 420 students on `starter` (limit 100). Since 0155 the renewal is quoted on
+    -- the plan the school is ON, because that is the only plan an invoice can
+    -- be raised on; the worklist names the plan the COUNT fits beside it, so
+    -- the operator moves the school (Change plan) before the renewal and not
+    -- after an argument about it.
     (g_school, 'starter', 'active', 'yearly',
      current_date - 370, current_date - 5, current_date - 5 + 14, 420);
 
@@ -174,7 +189,7 @@ create temp table _bdoc (k text primary key, v text);
 
 -- The blocks below read these while acting as `authenticated`, and a temp table
 -- is not readable by another role by default. `pg_temp` is a per-session ALIAS,
--- not a schema name, so it cannot be granted on directly — the real name has to
+-- not a schema name, so it cannot be granted on directly; the real name has to
 -- be looked up. operator_support.sql learned this the same way.
 do $grant_bill$
 declare v_ns text;
@@ -277,7 +292,7 @@ do $numbers$
 declare
   a uuid := (select v from _bill where k='a');
   b uuid := (select v from _bill where k='b');
-  r jsonb; i1 uuid; i2 uuid; n1 text; n2 text;
+  r jsonb; i1 uuid; i2 uuid; n1 text; n2 text; v_msg text;
 begin
   perform public._bact('ops');
 
@@ -300,11 +315,19 @@ begin
     (select doc_no from public.platform_invoices where id = i1) = 'BSH-0001',
     '12 changing the prefix does not renumber what is already issued');
 
+  -- Since 0155 a school cannot hold two term invoices with money owed: the
+  -- next one waits until BSH-0001 is paid. So Alpha pays its year first (the
+  -- full 20,000 against BSH-0001), and the next invoice is the month after it.
+  v_msg := pg_temp.why('select public.fn_activate_subscription('
+                       || quote_literal(a) || ', ''growth'', 1)');
+  perform public.fn_platform_record_payment(a, 20000, current_date, 'bank', 'TR-1', i1);
   r := public.fn_activate_subscription(a, 'growth', 1, 2000, 'monthly top-up');
   perform pg_temp.ok(
-    (select doc_no from public.platform_invoices where id = (r->>'invoice_id')::uuid)
+    v_msg like '%BSH-0001%paid first%'
+    and (select doc_no from public.platform_invoices where id = (r->>'invoice_id')::uuid)
       = 'INV-0003',
-    '13 the serial keeps counting across a prefix change, so the series is unbroken');
+    '13 a second invoice waits until BSH-0001 is paid (0155), and then the serial '
+    || 'keeps counting across a prefix change, so the series is unbroken');
   insert into _bdoc values ('i_a2', (r->>'invoice_id'));
 
   -- The unique index is a backstop, but the trigger is what must be right.
@@ -328,24 +351,34 @@ declare
 begin
   perform public._bact('ops');
   before_owed := public.fn_platform_outstanding(a);
-  perform pg_temp.ok(pg_temp.eq(before_owed, 22000),
-    '20 Alpha owes the yearly 20,000 plus the 2,000 top-up');
+  -- Alpha paid its year in the block above (0155: the next invoice waits for
+  -- that), so what it owes is the top-up alone.
+  perform pg_temp.ok(pg_temp.eq(before_owed, 2000),
+    '20 Alpha has paid the yearly 20,000 and owes the 2,000 top-up');
 
   perform pg_temp.ok(pg_temp.refused(
     format('select public.fn_platform_void_invoice(%L, ''  '')', i_a2)),
     '21 voiding without a reason is refused');
 
-  r := public.fn_platform_void_invoice(i_a2, 'raised twice by mistake');
+  r := public.fn_platform_void_invoice(i_a2, 'top-up raised by mistake');
   after_owed := public.fn_platform_outstanding(a);
-  perform pg_temp.ok(pg_temp.eq(after_owed, 20000),
+  perform pg_temp.ok(pg_temp.eq(after_owed, 0),
     '22 a voided invoice leaves the balance');
-  -- The reproduction of defect 2 in 0077's header: before this, a double-click
-  -- renewal was permanent.
+  -- The reproduction of defect 2 in 0077's header: before this, a renewal
+  -- raised by mistake was permanent.
   perform pg_temp.ok(pg_temp.eq(before_owed - after_owed, 2000),
     '22b and takes exactly its own amount out of it');
 
-  perform pg_temp.ok(r->>'warning' is not null,
-    '23 voiding the invoice for the live period warns that the licence stands');
+  -- Before 0155 raising an invoice granted the licence, so voiding one had to
+  -- warn that the time it granted still stood. Now an invoice grants nothing
+  -- and only a paid one moves the licence, so there is nothing to warn about
+  -- and the paid-through date is exactly where the paid year put it.
+  perform pg_temp.ok(r->>'warning' is null
+                 and (select period_end from public.subscriptions where school_id = a)
+                       = (select period_end from public.platform_invoices
+                           where id = (select v::uuid from _bdoc where k='i_a'))
+                 and public.fn_effective_status(a)::text = 'active',
+    '23 voiding an unpaid invoice leaves the licence exactly where the paid year put it');
 
   perform pg_temp.ok(pg_temp.refused(
     format('select public.fn_platform_void_invoice(%L, ''again'')', i_a2)),
@@ -370,14 +403,17 @@ begin
     '26 a payment cannot be allocated to a voided invoice');
 
   -- And the reverse: an invoice with money against it must be credited, not
-  -- voided. This is the distinction the whole design turns on.
-  perform public.fn_platform_record_payment(a, 5000, current_date, 'bank', 'TR-1', i_a);
+  -- voided. This is the distinction the whole design turns on. BSH-0001 has
+  -- Alpha's 20,000 against it, paid in the numbering block.
   msg := pg_temp.why(format(
     'select public.fn_platform_void_invoice(%L, ''changed my mind'')', i_a));
   perform pg_temp.ok(msg like '%credit note%',
     '27 an invoice with a payment against it cannot be voided, and says to credit it');
-  perform pg_temp.ok(pg_temp.eq(public.fn_platform_outstanding(a), 15000),
-    '28 the payment moved the balance');
+  perform pg_temp.ok(pg_temp.eq(public.fn_platform_outstanding(a), 0)
+                 and (select period_end from public.subscriptions where school_id = a)
+                       = (select period_end from public.platform_invoices where id = i_a),
+    '28 the payment moved the balance, and since 0155 it is the payment, not the '
+    || 'invoice, that moved the licence to the end of the paid year');
 
   perform pg_temp.ok(exists (select 1 from public.operator_actions
                               where action = 'invoice_voided' and school_id = a),
@@ -412,8 +448,9 @@ begin
   cn := (r->>'credit_note_id')::uuid;
   perform pg_temp.ok(r->>'doc_no' = 'CN-0001',
     '32 a credit note takes its own series, not an invoice number');
-  perform pg_temp.ok(pg_temp.eq((r->>'outstanding')::numeric, 11000),
-    '33 the credit reduces what the school owes');
+  -- BSH-0001 was paid in full, so the credit is money the school is now owed.
+  perform pg_temp.ok(pg_temp.eq((r->>'outstanding')::numeric, -4000),
+    '33 the credit reduces what the school owes, here below zero');
   perform pg_temp.ok(
     (select credits_invoice_id from public.platform_invoices where id = cn) = i_a,
     '34 and points at the invoice it credits');
@@ -423,8 +460,8 @@ begin
 
   -- Its remaining room shrinks, and the second credit fits exactly.
   perform public.fn_platform_credit_note(i_a, 16000, 'balance of the year');
-  perform pg_temp.ok(pg_temp.eq(public.fn_platform_outstanding(a), -5000),
-    '35 fully credited, the 5,000 already paid is now a credit to the school');
+  perform pg_temp.ok(pg_temp.eq(public.fn_platform_outstanding(a), -20000),
+    '35 fully credited, the 20,000 already paid is now a credit to the school');
   perform pg_temp.ok(pg_temp.refused(
     format('select public.fn_platform_credit_note(%L, 1, ''one rupee more'')', i_a)),
     '36 nothing remains to credit');
@@ -451,7 +488,7 @@ begin
 end $credit$;
 
 -- =============================================================================
--- 40-49  WITHHOLDING TAX — the reproduction of defect 4
+-- 40-49  WITHHOLDING TAX: the reproduction of defect 4
 -- =============================================================================
 do $wht$
 declare
@@ -472,7 +509,7 @@ begin
   -- THE DEFECT. Before 0077 this was 760, forever, and the operator would chase
   -- a school for money it had already paid to the government in our name.
   perform pg_temp.ok(pg_temp.eq(owed, 0),
-    '42 nothing is outstanding — the withheld tax was paid, not lost');
+    '42 nothing is outstanding: the withheld tax was paid, not lost');
   perform pg_temp.ok((r->>'awaiting_certificate')::boolean,
     '43 the payment is flagged as waiting for the CPR');
 
@@ -521,9 +558,15 @@ begin
   perform public._bact('ops');
 
   -- A fresh invoice with a tax line on it, so the document has something to show.
+  -- School a holds Rs 20,000 of credit since the credit notes above (0155: a
+  -- credit note on money already paid hands that money back as credit), so its
+  -- new invoice is paid the moment it is raised, and tax cannot be set on a
+  -- paid invoice (fn_platform_set_invoice_tax, tested in
+  -- three_plans_and_paying_first.sql). The tax line is written directly: this
+  -- block tests the printed document, not the setter.
   r := public.fn_activate_subscription(a, 'growth', 12, null, null, false);
   i_new := (r->>'invoice_id')::uuid;
-  perform public.fn_platform_set_invoice_tax(i_new, 16);
+  update public.platform_invoices set tax_pct = 16, tax_amount = 3200 where id = i_new;
   insert into _bdoc values ('i_tax', i_new::text);
 
   d := public.fn_platform_invoice(i_new);
@@ -548,7 +591,7 @@ begin
     '55 it tells the school what to withhold and asks for the CPR');
   -- The RAW dates, not a formatted string. The first version returned
   -- 'period' as "2026-09-01 to 2027-08-31" and the rendered document put ISO
-  -- dates on a page whose every other date read "26 Aug 2026" — a customer's
+  -- dates on a page whose every other date read "26 Aug 2026", and a customer's
   -- accountant notices that before they notice the total. Formatting is the
   -- document component's job, in one place.
   perform pg_temp.ok(d->'lines'->0->>'period_start' is not null
@@ -560,10 +603,12 @@ begin
 
   -- The balance shown is THIS document's, not the school's. Putting the school
   -- balance here makes one invoice look unpaid because another one is.
+  -- BSH-0001 was paid and then credited in full, so (0155) the payment went back
+  -- to the school as credit: on this document it is credited, not paid twice.
   d := public.fn_platform_invoice(i_a);
-  perform pg_temp.ok(pg_temp.eq((d->'totals'->>'paid')::numeric, 5000)
+  perform pg_temp.ok(pg_temp.eq((d->'totals'->>'paid')::numeric, 0)
                  and pg_temp.eq((d->'totals'->>'credited')::numeric, 20000)
-                 and pg_temp.eq((d->'totals'->>'balance')::numeric, -5000),
+                 and pg_temp.eq((d->'totals'->>'balance')::numeric, 0),
     '57 the document shows its own payments and credits');
   perform pg_temp.ok(jsonb_array_length(d->'credit_notes') = 2,
     '57b and lists the credit notes raised against it');
@@ -571,7 +616,7 @@ begin
   -- A voided document says so on its face.
   d := public.fn_platform_invoice((select v::uuid from _bdoc where k='i_a2'));
   perform pg_temp.ok((d->>'voided')::boolean
-                 and d->>'void_reason' = 'raised twice by mistake',
+                 and d->>'void_reason' = 'top-up raised by mistake',
     '58 a voided invoice prints as voided, with the reason');
 
   -- A credit note is titled as one and has no bank block: nobody pays it.
@@ -606,8 +651,8 @@ begin
     '62 a school with licence time and no invoice is flagged');
 
   -- Beta was invoiced for exactly the year it holds. `unbilled_days` is the
-  -- comparison that replaced a flag which could never be true — see 0078's
-  -- header. Beta rather than Alpha because Alpha has been renewed three times
+  -- comparison that replaced a flag which could never be true (see 0078's
+  -- header). Beta rather than Alpha because Alpha has been renewed three times
   -- above and its licence now runs past the 365-day cap on this window.
   perform pg_temp.ok(
     (select not never_invoiced and unbilled_days = 0
@@ -628,11 +673,15 @@ begin
       where school_id = g),
     '62c a licence that outruns its invoices shows up as unbilled days');
 
-  -- Priced on the plan the count fits. Gamma has 420 students on `starter`.
+  -- Gamma has 420 students on `starter`. Since 0155 an invoice is raised only
+  -- on the plan the school is on (a move is Change plan), so the renewal is
+  -- quoted at the price its invoice would actually carry, a year of starter,
+  -- and the plan the COUNT fits is named beside it rather than priced into it.
   perform pg_temp.ok(
-    (select pg_temp.eq(renewal_amount, 35000) from public.fn_platform_due_soon(45)
-      where school_id = g),
-    '63 the renewal is quoted at the plan the student count fits, not the plan they are on');
+    (select pg_temp.eq(renewal_amount, 9500) and suggested_plan = 'growth' and needs_upgrade
+       from public.fn_platform_due_soon(45) where school_id = g),
+    '63 the renewal is quoted on the plan they are on, and the plan the student count '
+    || 'fits is named beside it');
 
   -- THE DOUBLE-RENEWAL GUARD. Two operators, or one double click: the second
   -- transaction has not seen the first, computes the identical period, and would
@@ -661,15 +710,24 @@ begin
   perform pg_temp.ok(m->>'phone_intl' = '923214445556',
     '66 the phone is normalised for WhatsApp');
 
-  -- Gamma rather than Alpha: fn_activate_subscription recounts students from
-  -- enrollments, and Alpha has none in this fixture, so every renewal above
-  -- reset its stored count to zero. Gamma was never activated, so its 420 is
-  -- intact and the quote has something to be right about.
+  -- Gamma rather than Alpha: Gamma is the school whose count and plan
+  -- disagree. Since 0155 the reminder quotes what the school will actually be
+  -- asked for, its open invoice or else its next term on its own plan, so
+  -- the figure is a year of starter (the invoice inserted at 62c is that
+  -- figure too). Naming growth's price would quote an invoice nobody can raise.
+  -- The tone is checked by what the text leaves OUT. 0155 rewrote every
+  -- reminder (section 13, so each quotes what the school will actually be
+  -- asked for) and the words "No rush" went with the old copy; the claim
+  -- worth keeping is that a month out nothing is called due and nothing
+  -- threatens a lock, which is the language of the later stages.
   m := public.fn_platform_renewal_message(g, 'ahead');
-  perform pg_temp.ok(m->>'text' like '%No rush%',
+  perform pg_temp.ok(m->>'text' like '%runs to%'
+                 and m->>'text' not like '%is due%'
+                 and m->>'text' not like '%lock%'
+                 and m->>'text' not like '%until%',
     '67 a month out, the tone is a reminder and not a demand');
-  perform pg_temp.ok(m->>'text' like '%35,000%',
-    '67b and it names the amount for the plan they actually need');
+  perform pg_temp.ok(m->>'text' like '%9,500%',
+    '67b and it names the amount the school will actually be asked for');
   perform pg_temp.ok(pg_temp.refused(format(
     'select public.fn_platform_renewal_message(%L, ''threaten'')', a)),
     '68 an unknown stage is refused rather than silently defaulted');
@@ -803,7 +861,7 @@ begin
 
   perform pg_temp.ok(pg_temp.refused(
     format('select public.fn_platform_reject_claim(%L, '' '')', claim)),
-    '81 rejecting needs a reason — the school is shown it');
+    '81 rejecting needs a reason: the school is shown it');
 
   -- Confirm it as a smaller amount than reported: the bank statement is the
   -- authority, and a school that transfers net of tax reports the gross.
@@ -833,7 +891,7 @@ begin
   reset role;
   perform public._bact('ops');
   perform public.fn_platform_reject_claim(claim2,
-    'No transfer of Rs 1,000 on our statement — please check the reference');
+    'No transfer of Rs 1,000 on our statement, please check the reference');
   perform public._bact('b_owner');
   set local role authenticated;
   perform pg_temp.ok(
@@ -850,7 +908,7 @@ begin
                        where school_id = b) = 0,
     '87 a school cannot read another school''s payment reports');
   perform pg_temp.ok((select count(*) from public.platform_invoices) = 0,
-    '87b nor any invoice through RLS — the school-facing view is a function');
+    '87b nor any invoice through RLS: the school-facing view is a function');
   perform pg_temp.ok((select count(*) from public.platform_payments) = 0,
     '87c nor any payment');
   perform pg_temp.ok(pg_temp.refused(format(
@@ -880,8 +938,8 @@ end $queue$;
 -- 90-99  WHAT THE BUSINESS IS WORTH (0081)
 --
 -- The figure to watch is MRR. Computed from the price LIST it would have been
--- flattering nonsense — Alpha is on a discount and Gamma was never invoiced at
--- all — so it is computed from what each school was actually charged, and these
+-- flattering nonsense (Alpha is on a discount and Gamma was never invoiced at
+-- all), so it is computed from what each school was actually charged, and these
 -- assertions are what stop it drifting back.
 -- =============================================================================
 do $metrics$
@@ -949,7 +1007,7 @@ begin
     '93b and not inside any plan''s school count');
   perform public.fn_platform_unarchive_school(g);
 
-  -- The two rates. Both must be able to say "we do not know" — a confident zero
+  -- The two rates. Both must be able to say "we do not know": a confident zero
   -- churn on a database with no history is the most misleading number the
   -- console could show.
   perform pg_temp.ok((m->'churn'->>'measurable') in ('true', 'false'),
@@ -963,6 +1021,15 @@ begin
     '95 and whichever it is, it says what it measured or why it could not');
 
   -- The snapshots table, read for the first time since 0026 wrote it.
+  --
+  -- Snapshots are written when a school's roll is counted. Until 0155 every
+  -- activation above recounted as a side effect, so this suite never had to
+  -- ask; since 0155 raising an invoice does nothing but raise the invoice, so
+  -- the count is taken here the way the nightly job takes it, as the database
+  -- owner (fn_refresh_student_count is no longer callable by a signed-in user).
+  perform public.fn_refresh_student_count(a);
+  perform public.fn_refresh_student_count(b);
+  perform public.fn_refresh_student_count(g);
   select count(*) into n from public.fn_platform_growth(12);
   perform pg_temp.ok(n >= 1,
     '96 the growth chart reads student_count_snapshots');

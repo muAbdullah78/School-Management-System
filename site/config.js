@@ -8,9 +8,10 @@
  * they were already on.
  *
  * WHAT GOES IN HERE IS PUBLIC. The anon key belongs in a browser bundle by
- * design. Row Level Security is what protects the data, and 0082 gives `anon`
- * SELECT on exactly two tables: the active price list, and the current release.
- * Never put the service_role key here, or anywhere a browser can see.
+ * design. Row Level Security is what protects the data. The site reads three
+ * things as `anon`: the active price list, the current release and the
+ * published reviews. Never put the service_role key here, or anywhere a
+ * browser can see.
  *
  * If APP_URL is left empty every link that needs it says so on the page rather
  * than going nowhere. A dead button is worse than an honest one.
@@ -23,10 +24,10 @@ window.SITE_CONFIG = {
   APP_URL: 'https://app.theschoolmanager.site',
 
   /* Supabase project URL and anon key, the same two values as the app's
-     VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY. Used for two reads only:
-     prices, and the current installer. Leave blank and the page falls back to
-     the prices written into the HTML, which a CI check keeps in step with the
-     database. */
+     VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY. Used for reads only:
+     prices, the current installer and the reviews. Leave blank and the page
+     falls back to the prices written into the HTML, which a CI check keeps in
+     step with the database. */
   SUPABASE_URL: 'https://gtknkvcbjiuuwgndkztc.supabase.co',
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd0a25rdmNiaml1dXdnbmRrenRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY5NjMxMzMsImV4cCI6MjEwMjUzOTEzM30.cLmkd48CtX9gXiHCvr1dXf2BAI72_0MKp-oVhJreCGA',
 

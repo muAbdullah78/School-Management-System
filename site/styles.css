@@ -630,7 +630,10 @@ a.card--link:hover .card__more::after { transform: translateX(2px); }
   display: grid; 
   gap: 32px; /* More breathing room between tiers */
   grid-template-columns: repeat(auto-fit, minmax(min(252px, 100%), 1fr)); 
-  align-items: center; /* Crucial: allows the hot card to be taller */
+  /* Equal heights, so the three trial buttons line up. This was "center" to
+     let a highlighted card stand taller, and no plan is highlighted: there
+     are no customers yet to say which one most schools choose. */
+  align-items: stretch;
 }
 .price {
   position: relative; display: flex; flex-direction: column;
@@ -689,6 +692,30 @@ a.card--link:hover .card__more::after { transform: translateX(2px); }
 /* Upgrading the button on the hot card to pop against the dark background */
 .price--hot .btn { background: var(--brand); color: #fff; border-color: var(--brand); box-shadow: var(--sh); }
 .price--hot .btn:hover { background: var(--brand-300); color: var(--ink); }
+
+/* Enterprise has words where the figure goes. At the figure's size "Priced
+   with you" wraps into a block taller than the other cards' prices. */
+.price__amt--words {
+  font-size: 2rem; line-height: 1.15;
+  /* The height of the figure's line box (2.75rem at line-height 1.6), so the
+     band of pupils sits on the same line in all three cards. */
+  min-height: 4.4rem; display: flex; align-items: center;
+}
+
+/* The other two terms, under the monthly figure. A real table so a screen
+   reader hears "3 months, Rs 5,400" as a pair. */
+.price__terms { width: 100%; border-collapse: collapse; margin: 0 0 24px; font-size: 14.5px; }
+.price__terms caption {
+  text-align: left; padding-bottom: 6px;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3);
+}
+.price__terms th, .price__terms td { padding: 9px 0; border-top: 1px solid var(--line); vertical-align: top; }
+.price__terms th { text-align: left; font-weight: 600; color: var(--ink-2); padding-right: 12px; }
+.price__terms th small { display: block; font-size: 12.5px; font-weight: 400; color: var(--ink-3); margin-top: 2px; }
+.price__terms td { text-align: right; }
+.price__terms td b { display: block; color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums lining-nums; }
+.price__terms td small { display: block; font-size: 12.5px; color: var(--money-700); margin-top: 2px; white-space: nowrap; }
+.price__note { font-size: 13.5px; color: var(--ink-3); margin: -12px 0 24px; }
 
 /* ------------------------------------------------------------------- faq ---*/
 details.q { 

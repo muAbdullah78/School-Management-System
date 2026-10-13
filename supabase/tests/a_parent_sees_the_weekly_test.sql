@@ -364,11 +364,15 @@ end $t$;
 -- 0106 patched that line into the live fn_portal_me, not into 0033's text, so
 -- a rewrite from the file would quietly reopen the portal. The first draft of
 -- 0150 did exactly that and CI's verify.sql caught it; this keeps it caught.
+--
+-- "Stopped paying" is a trial that ended fifteen days ago. Since 0155 a trial
+-- ends with the same fourteen days of grace as a paid period, so a trial that
+-- ended fourteen days ago is still open; the day after, it is locked.
 -- =============================================================================
 do $t$
 declare v_kid uuid := pg_temp.kid('Hamna Masood'); m_me text; m_tests text;
 begin
-  update public.subscriptions set status = 'trialing', trial_ends_on = current_date - 14,
+  update public.subscriptions set status = 'trialing', trial_ends_on = current_date - 15,
          period_start = null, period_end = null
    where school_id = pg_temp.school();
   perform pg_temp.be('Humna Mahnoor');

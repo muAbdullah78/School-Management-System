@@ -356,7 +356,11 @@ begin
     '20. a month of last year goes on last year''s enrolment, so last year''s reports have it');
 
   -- The same month again, through the other enrolment, is refused: the unique
-  -- index is per enrolment and would not have seen it.
+  -- index is per enrolment and would not have seen it. The admission fee is
+  -- moved a minute into the past first: this file is ONE transaction, so
+  -- without it the earlier save would have the same now() as this one.
+  update public.invoices set created_at = created_at - interval '1 minute'
+   where student_id = v_kid and carried_kind = 'admission';
   j := public.fn_record_dues(v_kid, jsonb_build_array(
          jsonb_build_object('kind', 'month', 'month', pg_temp.mon(5), 'amount', 999),
          jsonb_build_object('kind', 'admission', 'amount', 5000)));
@@ -364,7 +368,22 @@ begin
                      and j->'items'->0->>'message' like '%already has a charge of Rs 2,500%'
                      and j->'items'->1->>'status' = 'skipped',
     '21. a month already charged on any enrolment is left alone, and the same named due '
-    || 'twice is a retry, not a second debt');
+    || 'again within minutes is a retry, not a second debt');
+
+  -- 0154. Older than ten minutes it is a new due, and two identical lines in
+  -- one save are what the clerk typed.
+  update public.invoices set created_at = created_at - interval '11 minutes'
+   where student_id = v_kid and carried_kind = 'admission';
+  j := public.fn_record_dues(v_kid, jsonb_build_array(
+         jsonb_build_object('kind', 'admission', 'amount', 5000),
+         jsonb_build_object('kind', 'other', 'label', 'Picnic', 'amount', 400),
+         jsonb_build_object('kind', 'other', 'label', 'Picnic', 'amount', 400)));
+  perform pg_temp.ok((j->>'recorded')::int = 3
+                     and (select count(*) from public.invoices
+                           where student_id = v_kid and carried_kind = 'admission'
+                             and status <> 'void') = 2,
+    '21b. the same due a term later is a new debt, and two identical lines in one save '
+    || 'both go in: ' || j::text);
 
   -- This month's regular bill blocks a typed due for a month that has one.
   perform public.fn_bill_student_month(

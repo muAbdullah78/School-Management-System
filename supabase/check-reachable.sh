@@ -61,6 +61,15 @@ declare -A ALLOWED=(
   # faithful storage.objects stub and installs the same policies against it.
   [fn_may_read_school_file]="referenced by the storage.objects policies; tested in tests/photos.sql"
   [fn_may_write_school_file]="referenced by the storage.objects policies; tested in tests/photos.sql"
+  # The old names 0155 and 0156 replaced. A browser tab opened before the web
+  # app was redeployed still calls them until it reloads, so each is kept as a
+  # thin door onto the new path, behind the same gate, and refuses what the
+  # new rules refuse. Tested in tests/three_plans_and_paying_first.sql,
+  # tests/plan_choice.sql and tests/discounts.sql.
+  [fn_activate_subscription]="old console name; raises the next term invoice via fn__raise_term_invoice"
+  [fn_my_choose_plan]="old Settings name; moves the term only, refuses a plan change"
+  [fn_platform_save_discount]="old console name; delegates to fn_platform_create_discount / fn_platform_edit_discount"
+  [fn_platform_give_discount]="old console name; delegates to fn_platform_grant_discount"
 )
 
 # The redirect and the heredoc marker must be the LAST thing on this line:

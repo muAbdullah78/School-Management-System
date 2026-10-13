@@ -170,11 +170,10 @@ const SCREENS: [string, () => Promise<Record<string, unknown>>, string][] = [
   // is the opposite of the truth and sends the office off to set new ones.
   ['Settings/KeyRing', () => import('@/pages/settings/KeyRing'), 'KeyRing'],
   ['Feedback', () => import('@/pages/FeedbackPage'), 'FeedbackPage'],
-  // 0131/0132. Step two of signup and the screen Settings links to for a plan
-  // change. It reads the price list, the licence and a discount preview, and
-  // its whole job is arithmetic, so "does it open with no data" is exactly the
-  // question: an empty price list is what a new school sees when the network
-  // hiccups on the one screen where it decides to buy.
+  // /plan, Your plan (0155): the plan the school is on and its term, read from
+  // fn_my_next_payment. A price that did not load must say so rather than
+  // draw "Rs 0", and a brand new school with no subscription row must still
+  // get a sentence, so both questions below are the right ones to ask of it.
   ['ChoosePlan', () => import('@/pages/ChoosePlan'), 'ChoosePlan'],
   // 0135. The head's Tests screen. AttendancePage above already covers the
   // head's Attendance screen, because an owner now lands on the oversight
@@ -351,7 +350,8 @@ describe('the operator console', () => {
         school_id: 'sch-1', school_name: 'Al Qalam School', city: 'Lahore',
         contact_name: 'Basha Salamat', contact_phone: '0300-1234567',
         plan_code: 'starter', status: 'active', expires_on: '2027-06-30',
-        days_left: 297, student_count: 180, student_limit: 200, limit_state: 'within_margin',
+        // 0155: no margin. A roll is within its limit ('ok') or over it.
+        days_left: 297, student_count: 262, student_limit: 280, limit_state: 'ok',
         suggested_plan: 'starter', needs_upgrade: false,
         outstanding: 0, last_paid_on: '2026-07-01',
         suspended: false, suspend_reason: null, archived: false,
@@ -360,8 +360,8 @@ describe('the operator console', () => {
         school_id: 'sch-2', school_name: 'Beaconhouse Multan', city: 'Multan',
         contact_name: null, contact_phone: null,
         plan_code: 'growth', status: 'grace', expires_on: '2026-08-20',
-        days_left: -17, student_count: 640, student_limit: 500, limit_state: 'over',
-        suggested_plan: 'scale', needs_upgrade: true,
+        days_left: -17, student_count: 1040, student_limit: 1000, limit_state: 'over',
+        suggested_plan: 'enterprise', needs_upgrade: true,
         outstanding: 38000, last_paid_on: '2025-08-19',
         suspended: false, suspend_reason: null, archived: false,
       },
@@ -449,40 +449,56 @@ describe('the operator console', () => {
     current.opts = {
       rpc: {
         ...ADMIN_RPCS,
+        // 0156's shape: a label the school sees, our description, places and
+        // the lock. The log and the price list are stubbed empty so the panels
+        // show their empty state rather than an error.
         fn_platform_discounts: [{
-          code: 'SPRING20', description: 'Spring campaign', kind: 'percent',
-          value: 20, duration: 'forever', duration_months: null,
+          code: 'SPRING20', label: 'Spring offer', description: 'Spring campaign',
+          kind: 'percent', value: 20, duration: 'forever', duration_months: null,
           duration_until: null, redeem_from: null, redeem_until: '2026-12-31',
           max_redemptions: 50, plan_codes: null, min_term_months: 12,
-          active: true, created_at: '2026-09-01T00:00:00Z',
-          summary: '20% off, on every invoice from now on',
-          redeemed: 3, live: 2, total_saved: 12000, deletable: false,
+          active: true, private: false, school_id: null, school_name: null,
+          created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z',
+          summary: '20% off, for as long as you subscribe',
+          seats_taken: 3, redeemed: 3, live: 2, invoices: 2, total_saved: 12000,
+          deletable: false, terms_locked: true,
         }],
         fn_platform_discount_usage: [{
-          school_id: 'sch-1', school_name: 'Al Qalam School', code: 'SPRING20',
-          kind: 'percent', value: 20, duration: 'forever', ends_on: null,
-          uses_left: null, times_applied: 2, total_saved: 8000,
-          trial_days_added: null, redeemed_at: '2026-09-02T09:00:00Z',
-          removed_at: null, removed_reason: null,
-          plan_code: 'starter', status: 'active', state: 'active',
+          redemption_id: 'red-1', school_id: 'sch-1', school_name: 'Al Qalam School',
+          code: 'SPRING20', label: 'Spring offer', kind: 'percent', value: 20,
+          duration: 'forever', ends_on: null, months_left: null, months_total: null,
+          times_applied: 2, total_saved: 8000, trial_days_added: null,
+          granted_by_kind: 'school', grant_reason: null,
+          redeemed_at: '2026-09-02T09:00:00Z', redeemed_by: 'Basha Salamat',
+          removed_at: null, removed_reason: null, removed_by: null,
+          plan_code: 'starter', summary: '20% off, for as long as you subscribe', state: 'active',
         }],
+        fn_platform_discount_events: [],
+        fn_platform_price_list: { plans: [], changes: [] },
       },
     }
     const { PlatformPage } = await import('@/pages/platform/PlatformPage')
     const { queryByText, queryAllByText, getByText } = await mount(PlatformPage)
-    // The tab's two queries only start when it is opened, so mount()'s wait
-    // for a quiet query client happened before either of them existed.
+    // The tab's queries only start when it is opened, so mount()'s wait for a
+    // quiet query client happened before any of them existed.
     fireEvent.click(getByText('Discounts'))
     // TWICE, and that is the assertion rather than an inconvenience: the code
     // appears in the offer list AND against the school in the roster, which is
     // the whole point of having two panels.
     await waitFor(() => expect(queryAllByText('SPRING20').length).toBe(2))
+    // Our description is marked as ours; the label is what schools see.
     expect(queryByText(/Spring campaign/)).not.toBeNull()
+    expect(queryByText(/Only we see this/)).not.toBeNull()
+    expect(queryAllByText('Spring offer').length).toBeGreaterThan(0)
+    expect(queryByText('3 of 50 places taken')).not.toBeNull()
+    expect(queryByText('Locked')).not.toBeNull()
     // The roster names the school, which is the answer the tab exists for.
     expect(queryByText('Al Qalam School')).not.toBeNull()
+    expect(queryByText('Typed in by the school')).not.toBeNull()
     // Redeemed by somebody, so the delete button must not be offered: from
     // then on it is part of a billing record and can only be retired.
     expect(queryByText('Delete')).toBeNull()
+    expect(queryByText('Retire')).not.toBeNull()
   })
 
   it('says what a status means instead of printing the database enum', async () => {
@@ -537,8 +553,8 @@ describe('the operator console', () => {
           contact_name: null, contact_phone: null,
           plan_code: 'growth', status: 'grace', expires_on: '2026-08-20',
           days_left: -17, bucket: 'grace',
-          student_count: 640, student_limit: 500,
-          suggested_plan: 'scale', needs_upgrade: true,
+          student_count: 1040, student_limit: 1000,
+          suggested_plan: 'enterprise', needs_upgrade: true,
           renewal_amount: 35000, outstanding: 38000,
           invoiced_to: null, unbilled_days: 0, never_invoiced: false,
           last_reminded_at: null, last_reminded_stage: null,
@@ -692,7 +708,8 @@ describe('signup survives a read that fails', () => {
     expect(queryByText('Region')).toBeNull()
     // And the rest of the form is still there and still usable.
     expect(queryByText('School name')).not.toBeNull()
-    expect(queryByText('Next step')).not.toBeNull()
+    expect(queryByText('Start my free trial')).not.toBeNull()
+    expect(queryByText('How many pupils are on your roll?')).not.toBeNull()
   })
 
   it('leaves nothing required that cannot be satisfied', async () => {
@@ -710,6 +727,387 @@ describe('signup survives a read that fails', () => {
       }
       cleanup()
     }
+  })
+})
+
+/**
+ * THE PLAN AND ITS PRICE, BEFORE THE ACCOUNT EXISTS (0155).
+ *
+ * A school says how many pupils it has and the plan follows. The form has to
+ * show that plan and its price as the number is typed, and send the number and
+ * the term it shows, because the database decides the plan again from them.
+ * These hold both halves: the words on the screen, and the body that leaves it.
+ */
+describe('signup shows the plan and its price first', () => {
+  afterEach(cleanup)
+
+  const PLANS = [
+    { code: 'starter', name: 'Starter', student_limit: 280, min_students: 1, by_arrangement: false,
+      month_price: 2000, how_priced: null,
+      terms: [{ months: 1, amount: 2000, per_month: 2000, saving: 0 },
+              { months: 3, amount: 5400, per_month: 1800, saving: 600 },
+              { months: 12, amount: 20000, per_month: 1667, saving: 4000 }] },
+    { code: 'growth', name: 'Growth', student_limit: 1000, min_students: 281, by_arrangement: false,
+      month_price: 4000, how_priced: null,
+      terms: [{ months: 1, amount: 4000, per_month: 4000, saving: 0 },
+              { months: 3, amount: 10800, per_month: 3600, saving: 1200 },
+              { months: 12, amount: 40000, per_month: 3333, saving: 8000 }] },
+    { code: 'enterprise', name: 'Enterprise', student_limit: null, min_students: 1001,
+      by_arrangement: true, month_price: null, terms: [],
+      how_priced: 'We agree a monthly price with you.' },
+  ]
+
+  async function open(opts: FakeOptions) {
+    current.opts = opts
+    const { Signup } = await import('@/pages/Signup')
+    return mount(Signup, '/signup', {}, null)
+  }
+
+  function fill(u: Awaited<ReturnType<typeof open>>, pupils: string) {
+    const set = (label: string, value: string) =>
+      fireEvent.change(u.getByLabelText(label), { target: { value } })
+    set('School name', 'Al Qalam School')
+    set('Your name', 'Nasreen Akhtar')
+    set('Email', 'owner@alqalam.test')
+    set('Choose a password', 'a-long-password')
+    set('How many pupils are on your roll?', pupils)
+  }
+
+  it('puts a roll of 250 on Starter, shows the three terms and sends the one chosen', async () => {
+    const bodies: unknown[] = []
+    const u = await open({
+      rpc: { fn_signup_plans: PLANS },
+      fn: { 'signup-school': { data: { ok: true } } },
+      onInvoke: (_n, b) => bodies.push(b),
+    })
+    fill(u, '250')
+    expect(u.getByText('Starter')).toBeTruthy()
+    expect(u.getByText('Rs 5,400')).toBeTruthy()
+    expect(u.getByText('save Rs 600')).toBeTruthy()
+    expect(u.getByText('save Rs 4,000')).toBeTruthy()
+    // Monthly until the school says otherwise.
+    expect(u.getByText(/your first invoice is/).textContent).toMatch(/Rs 2,000 for one month/)
+    fireEvent.click(u.getByLabelText(/Yearly/))
+    expect(u.getByText(/your first invoice is/).textContent).toMatch(/Rs 20,000 for a year/)
+
+    fireEvent.submit(u.container.querySelector('form')!)
+    await waitFor(() => expect(bodies.length).toBe(1))
+    expect(bodies[0]).toMatchObject({ students: 250, term_months: 12, school_name: 'Al Qalam School' })
+  })
+
+  it('moves to Growth past 280', async () => {
+    const u = await open({ rpc: { fn_signup_plans: PLANS } })
+    fill(u, '281')
+    expect(u.getByText('Growth')).toBeTruthy()
+    expect(u.getByText('Rs 10,800')).toBeTruthy()
+  })
+
+  it('tells an Enterprise school it is priced with us and locks at the trial end', async () => {
+    const bodies: unknown[] = []
+    const u = await open({
+      rpc: { fn_signup_plans: PLANS },
+      fn: { 'signup-school': { data: { ok: true } } },
+      onInvoke: (_n, b) => bodies.push(b),
+    })
+    fill(u, '1500')
+    expect(u.getByText('Enterprise')).toBeTruthy()
+    expect(u.getByText(/Priced with you:/)).toBeTruthy()
+    expect(u.getByText(/three months is 10% off and a year is two months free/)).toBeTruthy()
+    expect(u.getByText(/locks at the end of the trial until the price is agreed/)).toBeTruthy()
+    // No figure at all: there is none until we agree one. (The panel only:
+    // the selling column's mockup draws a made-up fee dashboard.)
+    expect(u.getByText(/Priced with you:/).closest('div')?.textContent ?? '').not.toMatch(/Rs\s?\d/)
+    fireEvent.submit(u.container.querySelector('form')!)
+    await waitFor(() => expect(bodies.length).toBe(1))
+    expect(bodies[0]).toMatchObject({ students: 1500, term_months: 1 })
+  })
+
+  it('refuses a number that is not a roll, and sends nothing', async () => {
+    const bodies: unknown[] = []
+    const u = await open({ rpc: { fn_signup_plans: PLANS }, onInvoke: (_n, b) => bodies.push(b) })
+    for (const bad of ['0', '100001', '12.5']) {
+      fill(u, bad)
+      expect(u.container.querySelector('#pupils-hint')?.textContent).toMatch(/whole number from 1 to 100,000/)
+      fireEvent.submit(u.container.querySelector('form')!)
+    }
+    await new Promise((r) => setTimeout(r, 0))
+    expect(bodies).toEqual([])
+  })
+
+  it('still signs a school up when the price list cannot be read', async () => {
+    const bodies: unknown[] = []
+    const u = await open({
+      rpcErrors: { fn_signup_plans: 'Could not find the function public.fn_signup_plans' },
+      fn: { 'signup-school': { data: { ok: true } } },
+      onInvoke: (_n, b) => bodies.push(b),
+    })
+    fill(u, '120')
+    expect(u.getByText(/You can still start your trial/)).toBeTruthy()
+    fireEvent.submit(u.container.querySelector('form')!)
+    await waitFor(() => expect(bodies.length).toBe(1))
+    expect(bodies[0]).toMatchObject({ students: 120, term_months: 1 })
+  })
+
+  it('shows the function\'s own refusal, not the client\'s status line', async () => {
+    const u = await open({
+      rpc: { fn_signup_plans: PLANS },
+      fn: { 'signup-school': { error: { name: 'FunctionsHttpError', message: 'Edge Function returned a non-2xx status code',
+        body: { error: 'That email address already has an account. Try signing in instead.' } } } },
+    })
+    fill(u, '100')
+    fireEvent.submit(u.container.querySelector('form')!)
+    expect(await u.findByText(/already has an account/)).toBeTruthy()
+  })
+})
+
+/**
+ * THE LOCKED SCREEN (0155): why, how much, where to send it, and "I have paid".
+ * A cancelled school is stopped like a locked one, and only the owner or the
+ * principal is shown the money.
+ */
+describe('a locked school', () => {
+  afterEach(cleanup)
+
+  const CHILD = () => createElement('div', null, 'THE SCHOOL APP')
+
+  const VIEW = {
+    plan: { code: 'starter', name: 'Starter', by_arrangement: false, student_limit: 280, min_students: 1 },
+    price: { priced: true, month: 2000, quarter: 5400, year: 20000, agreed: false, agreed_at: null,
+             agreed_reason: null, quarter_set: false, year_set: false },
+    terms: [], term_months: 1, status: 'locked', stored_status: 'active', in_trial: false,
+    trial_ends_on: '2026-08-01', paid_from: '2026-08-15', paid_through: '2026-09-14',
+    covered_to: '2026-09-14', grace_days: 14, locks_on: '2026-09-29', days_to_lock: -11,
+    locked_because: 'unpaid', needs_price: false, cancel_at_period_end: false, suspended: false,
+    suspend_reason: null,
+    students: { count: 200, limit: 280, plan_limit: 280, extra: null, extra_until: null, extra_reason: null,
+                extra_expired: false, declared: 200, room: 80, warn: false, full: false, over: false },
+    open_invoice: { id: 'inv-1', doc_no: 'TSM-0042', months: 1, period_start: '2026-09-15',
+                    period_end: '2026-10-14', amount: 2000, total: 2000, paid: 0, owed: 2000,
+                    due_on: '2026-09-15', discount_code: null, discount_amount: 0 },
+    owed: 2000, credit: 0, next: null, pay_now: 2000, can_request_invoice: false,
+  }
+  const BILLING = {
+    ok: true, licence: {}, subscription: VIEW,
+    balance: { billed: 2000, paid: 0, outstanding: 2000 }, documents: [], payments: [], reports: [],
+    pay_to: { business_name: 'The School Manager', bank_name: 'Meezan Bank', title: 'The School Manager',
+              account: '0110-22334455', iban: null, support_phone: '0300 1234567', support_email: null,
+              online_available: false },
+    how_to_pay: 'Transfer to the account above from any bank or app, then use "I have paid" below.',
+  }
+  const LICENCE = {
+    ok: true, school_id: OWNER.school_id, status: 'locked', locked: true, locked_because: 'unpaid',
+    can_read: true, can_export: true, can_operate: false, plan_code: 'starter', plan_name: 'Starter',
+    cycle: 'monthly', price_monthly: 2000, price_yearly: 20000, expires_on: null, days_left: null,
+    student_count: 200, student_limit: 280, margin_limit: 280, limit_state: 'ok', limit_notice: null,
+    paid_through: '2026-09-14', pay_now: 2000,
+  }
+
+  async function gate(rpc: Record<string, unknown>, profile: Profile = OWNER, calls?: FakeOptions['calls']) {
+    current.opts = { rpc: { is_platform_admin: false, fn_operator_current: null, ...rpc }, calls }
+    const { LicenceGate } = await import('@/components/LicenceGate')
+    return mount(() => createElement(LicenceGate, null, createElement(CHILD)), '/', {}, profile)
+  }
+
+  it('says why, how much, which invoice and where to pay', async () => {
+    const u = await gate({ fn_my_licence: LICENCE, fn_my_billing: BILLING })
+    expect(u.queryByText('THE SCHOOL APP')).toBeNull()
+    expect(u.getByText('A payment is overdue')).toBeTruthy()
+    expect(u.getByText(/more than fourteen days overdue/)).toBeTruthy()
+    expect(u.getAllByText('Rs 2,000').length).toBeGreaterThan(0)
+    expect(u.getByText(/Invoice TSM-0042/)).toBeTruthy()
+    expect(u.getByRole('button', { name: 'Print invoice' })).toBeTruthy()
+    expect(u.getByText('0110-22334455')).toBeTruthy()
+    expect(u.getByText(/Nothing has been deleted/)).toBeTruthy()
+    expect(u.getByRole('button', { name: 'Download all my data' })).toBeTruthy()
+  })
+
+  it('sends "I have paid" with the amount due already in it, then shows the reply', async () => {
+    const calls: NonNullable<FakeOptions['calls']> = []
+    const u = await gate({
+      fn_my_licence: LICENCE, fn_my_billing: BILLING,
+      fn_my_report_payment: { claim_id: 'c1', amount: 2000, paid_on: '2026-10-10', status: 'pending',
+                              message: 'Thank you. We will check reference TRX-9 against our statement.' },
+    }, OWNER, calls)
+    expect((u.getByLabelText('How much you sent (Rs)') as HTMLInputElement).value).toBe('2000')
+    fireEvent.change(u.getByLabelText('Transaction reference'), { target: { value: 'TRX-9' } })
+    fireEvent.click(u.getByRole('button', { name: 'Tell us about this payment' }))
+    expect(await u.findByText(/We will check reference TRX-9/)).toBeTruthy()
+    const sent = calls.find((c) => c.name === 'fn_my_report_payment')
+    expect(sent?.args).toMatchObject({ p_amount: 2000, p_method: 'bank', p_reference: 'TRX-9' })
+  })
+
+  it('stops a cancelled school even when the flag says otherwise', async () => {
+    // A database before 0155 set `locked` for 'locked' alone.
+    const u = await gate({
+      fn_my_licence: { ...LICENCE, status: 'cancelled', locked: false, locked_because: null },
+      fn_my_billing: { ...BILLING, subscription: { ...VIEW, status: 'cancelled', locked_because: 'cancelled' } },
+    })
+    expect(u.queryByText('THE SCHOOL APP')).toBeNull()
+    expect(u.getAllByText(/has been cancelled/).length).toBeGreaterThan(0)
+    // Nothing a school can pay would open it, so no form asks for a transfer.
+    expect(u.queryByRole('button', { name: 'Tell us about this payment' })).toBeNull()
+    expect(u.getByText(/To start again, call us on 0300 1234567/)).toBeTruthy()
+  })
+
+  it('tells an Enterprise school with no price that there is nothing to pay yet', async () => {
+    const u = await gate({
+      fn_my_licence: { ...LICENCE, locked_because: 'needs_price', pay_now: 0, needs_price: true },
+      fn_my_billing: { ...BILLING, balance: { billed: 0, paid: 0, outstanding: 0 }, subscription: {
+        ...VIEW, plan: { ...VIEW.plan, code: 'enterprise', name: 'Enterprise', by_arrangement: true, student_limit: null },
+        price: { ...VIEW.price, priced: false, month: null, quarter: null, year: null },
+        in_trial: true, paid_through: null, locked_because: 'needs_price', needs_price: true,
+        open_invoice: null, owed: 0, pay_now: 0 } },
+    })
+    expect(u.getByText('Your price is not agreed yet')).toBeTruthy()
+    expect(u.getByText('Nothing to pay yet')).toBeTruthy()
+    expect(u.queryByRole('button', { name: 'Tell us about this payment' })).toBeNull()
+  })
+
+  it('shows a teacher who to tell, and nothing about money', async () => {
+    const calls: NonNullable<FakeOptions['calls']> = []
+    const u = await gate({ fn_my_licence: LICENCE, fn_my_billing: BILLING },
+      { ...OWNER, role: 'class_teacher' }, calls)
+    expect(u.getByText(/Please tell the owner or principal/)).toBeTruthy()
+    expect(u.container.textContent ?? '').not.toMatch(/Rs\s?\d/)
+    expect(calls.some((c) => c.name === 'fn_my_billing')).toBe(false)
+  })
+})
+
+/**
+ * /plan (0155): the plan the school is on, never a plan to pick. Owner and
+ * principal only; the term is the one thing it changes.
+ */
+describe('your plan', () => {
+  afterEach(cleanup)
+
+  const TERMS = [
+    { months: 1, term_price: 2000, amount: 2000, per_month: 2000, saving: 0, discount_amount: 0, discount_note: null, chosen: true },
+    { months: 3, term_price: 5400, amount: 5400, per_month: 1800, saving: 600, discount_amount: 0, discount_note: null, chosen: false },
+    { months: 12, term_price: 20000, amount: 18000, per_month: 1500, saving: 6000, discount_amount: 2000, discount_note: null, chosen: false },
+  ]
+  const VIEW = {
+    plan: { code: 'starter', name: 'Starter', by_arrangement: false, student_limit: 280, min_students: 1 },
+    price: { priced: true, month: 2000, quarter: 5400, year: 20000, agreed: false, agreed_at: null,
+             agreed_reason: null, quarter_set: false, year_set: false },
+    terms: TERMS, term_months: 1, status: 'trialing', stored_status: 'trialing', in_trial: true,
+    trial_ends_on: '2026-10-22', paid_from: null, paid_through: null, covered_to: '2026-10-22',
+    grace_days: 14, locks_on: '2026-11-06', days_to_lock: 27, locked_because: null, needs_price: false,
+    cancel_at_period_end: false, suspended: false, suspend_reason: null,
+    students: { count: 212, limit: 280, plan_limit: 280, extra: null, extra_until: null, extra_reason: null,
+                extra_expired: false, declared: 220, room: 68, warn: false, full: false, over: false },
+    open_invoice: null, owed: 0, credit: 0, next: null, pay_now: 2000, can_request_invoice: true,
+  }
+
+  async function plan(rpc: Record<string, unknown>, profile: Profile = OWNER, calls?: FakeOptions['calls']) {
+    current.opts = { rpc, calls }
+    const { ChoosePlan } = await import('@/pages/ChoosePlan')
+    return mount(ChoosePlan, '/plan', {}, profile)
+  }
+
+  it('shows the plan and the three terms, code included, and changes only the term', async () => {
+    const calls: NonNullable<FakeOptions['calls']> = []
+    const u = await plan({
+      fn_my_next_payment: { has_subscription: true, view: VIEW },
+      fn_choose_term: { term_months: 3, changed: true, applies_from: 'your next invoice' },
+    }, OWNER, calls)
+    expect(u.getByText('Starter')).toBeTruthy()
+    expect(u.getByText(/Free trial until/)).toBeTruthy()
+    expect(u.getByText('Rs 5,400')).toBeTruthy()
+    expect(u.getByText('Rs 18,000')).toBeTruthy()
+    expect(u.getByText(/includes Rs 2,000 off with your code/)).toBeTruthy()
+    // No plan to pick: nothing names Growth or offers to switch.
+    expect(u.queryByText(/Growth/)).toBeNull()
+    expect(u.container.querySelector('a[href="/settings?tab=subscription"]')).not.toBeNull()
+
+    fireEvent.click(u.getByLabelText(/Every 3 months/))
+    fireEvent.click(u.getByRole('button', { name: /Pay every three months/ }))
+    expect(await u.findByText(/Saved\. You now pay every three months, from your next invoice/)).toBeTruthy()
+    expect(calls.find((c) => c.name === 'fn_choose_term')?.args).toEqual({ p_months: 3 })
+  })
+
+  it('shows an Enterprise school with no price that it is waiting for one', async () => {
+    const u = await plan({ fn_my_next_payment: { has_subscription: true, view: {
+      ...VIEW, plan: { ...VIEW.plan, code: 'enterprise', name: 'Enterprise', by_arrangement: true, student_limit: null },
+      price: { ...VIEW.price, priced: false, month: null, quarter: null, year: null },
+      terms: [], needs_price: true, pay_now: 0 } } })
+    expect(u.getByText('Waiting for your price')).toBeTruthy()
+    expect(u.getByText(/new entries are paused until it is/)).toBeTruthy()
+    expect(u.container.textContent ?? '').not.toMatch(/Rs\s?\d/)
+  })
+
+  it('works for a locked school and points it at what to pay', async () => {
+    const u = await plan({ fn_my_next_payment: { has_subscription: true, view: {
+      ...VIEW, status: 'locked', in_trial: false, paid_through: '2026-09-14', locked_because: 'unpaid' } } })
+    expect(u.getByText(/more than fourteen days overdue/)).toBeTruthy()
+    expect(u.getByText('See what to pay and where')).toBeTruthy()
+  })
+
+  it('sends anybody but the owner or principal away without reading anything', async () => {
+    const calls: NonNullable<FakeOptions['calls']> = []
+    const u = await plan({ fn_my_next_payment: { has_subscription: true, view: VIEW } },
+      { ...OWNER, role: 'admin_clerk' }, calls)
+    expect(u.queryByText('Your plan')).toBeNull()
+    expect(calls.some((c) => c.name === 'fn_my_next_payment')).toBe(false)
+  })
+})
+
+/**
+ * The strip above every page and the roll notice, under the 0155 rules.
+ */
+describe('the subscription strip and the roll notice', () => {
+  afterEach(cleanup)
+
+  const BASE = {
+    ok: true, school_id: OWNER.school_id, status: 'active', locked: false, can_read: true,
+    can_export: true, can_operate: true, plan_code: 'starter', plan_name: 'Starter', cycle: 'monthly',
+    price_monthly: 2000, price_yearly: 20000, expires_on: null, days_left: 100, student_count: 100,
+    student_limit: 280, margin_limit: 280, limit_state: 'ok', limit_notice: null,
+  }
+
+  async function strip(lic: Record<string, unknown>, profile: Profile = OWNER) {
+    current.opts = { rpc: { fn_my_licence: { ...BASE, ...lic } } }
+    const { LicenceBanner } = await import('@/components/LicenceBanner')
+    return mount(LicenceBanner, '/', {}, profile)
+  }
+
+  it('gives the owner in grace the days left to pay and the way to pay', async () => {
+    const { daysFromNow } = await import('@/lib/dates')
+    const u = await strip({ status: 'grace', paid_through: '2026-09-30', locks_on: daysFromNow(5), pay_now: 2000 })
+    expect(u.getByText(/Your paid period has ended\. 5 days left to pay before new entries are paused\./)).toBeTruthy()
+    expect(u.container.querySelector('a[href="/settings?tab=subscription"]')).not.toBeNull()
+    expect(u.container.textContent ?? '').not.toMatch(/switch you back on/)
+  })
+
+  it('tells a teacher in grace who to tell, with no link they cannot use', async () => {
+    const { daysFromNow } = await import('@/lib/dates')
+    const u = await strip({ status: 'grace', locks_on: daysFromNow(5) }, { ...OWNER, role: 'class_teacher' })
+    expect(u.getByText(/Please tell the owner or principal/)).toBeTruthy()
+    expect(u.container.querySelector('a')).toBeNull()
+  })
+
+  it('keeps a payment coming due between the people who pay', async () => {
+    const owner = await strip({ status: 'active', days_left: 4, pay_now: 2000 })
+    expect(owner.getByText('Your next payment is due in 5 days.')).toBeTruthy()
+    cleanup()
+    const teacher = await strip({ status: 'active', days_left: 4, pay_now: 2000 }, { ...OWNER, role: 'class_teacher' })
+    expect(teacher.container.textContent).toBe('')
+  })
+
+  it('tells an Enterprise trial with no price what happens at its end', async () => {
+    const u = await strip({ status: 'trialing', days_left: 6, needs_price: true, by_arrangement: true })
+    expect(u.getByText(/7 days left in your free trial\. We have not agreed your price yet/)).toBeTruthy()
+    expect(u.getByText(/We will call you to agree it/)).toBeTruthy()
+  })
+
+  it('says when extra room ends on the roll notice', async () => {
+    current.opts = { rpc: { fn_my_licence: { ...BASE, student_count: 300, student_limit: 320,
+      plan_student_limit: 280, warn_limit: true, at_limit: false, extra_until: '2026-11-30',
+      limit_notice: '300 of the 320 pupils your plan covers.' } } }
+    try { localStorage.clear() } catch { /* no storage */ }
+    const { RollLimitNotice } = await import('@/components/RollLimitNotice')
+    const u = await mount(RollLimitNotice)
+    expect(u.getByText(/The extra room we gave you ends on 30 Nov 2026\./)).toBeTruthy()
+    expect(u.container.textContent ?? '').not.toMatch(/margin/i)
   })
 })
 
@@ -1273,24 +1671,26 @@ describe('the plan limit, both ends of it', () => {
     expect(queryByText('Requests for more room')).toBeNull()
   })
 
+  // The school side reads fn_my_student_limit for the request box and the
+  // subscription view (fn_my_billing's `subscription`) for everything else.
+  // These fixtures carry no view on purpose: a database that has not sent one
+  // must still give a full school its way out.
+  const BILLING = {
+    ok: true, licence: { plan_code: 'starter', plan_name: 'Starter', status: 'active', term_months: 1 },
+    balance: { billed: 0, paid: 0, outstanding: 0 },
+    documents: [], payments: [], reports: [], how_to_pay: 'Bank transfer.',
+    pay_to: { account: null, support_phone: null, support_email: null },
+  }
+  const STARTER_FULL = {
+    students: 280, limit: 280, room: 0, at_limit: true, warn: true,
+    granted_extra: false, plan_code: 'starter', plan_covers: 280,
+    term_months: 1, extra_until: null,
+    next_plan: { code: 'growth', name: 'Growth', covers: 1000, by_arrangement: false, price: 4000, term_months: 1 },
+    request: null,
+  }
+
   it('gives a full school the box the refusal told it to look for', async () => {
-    current.opts = {
-      rpc: {
-        fn_my_billing: {
-          ok: true, licence: { plan_code: 'starter', plan_name: 'Starter', status: 'active', term_months: 12 },
-          balance: { billed: 0, paid: 0, outstanding: 0 },
-          documents: [], reports: [], how_to_pay: 'Bank transfer.',
-          pay_to: { account: null, support_phone: null, support_email: null },
-        },
-        fn_my_student_limit: {
-          students: 200, limit: 200, room: 0, at_limit: true, warn: true,
-          granted_extra: false, plan_code: 'starter', plan_covers: 200,
-          term_months: 12,
-          next_plan: { code: 'growth', name: 'Growth', covers: 350, price: 96000, term_months: 12 },
-          request: null,
-        },
-      },
-    }
+    current.opts = { rpc: { fn_my_billing: BILLING, fn_my_student_limit: STARTER_FULL } }
     const { Subscription } = await import('@/pages/settings/Subscription')
     const { queryByText, container } = await mount(Subscription)
     await waitFor(() => expect(queryByText(/Your roll is full/i)).not.toBeNull())
@@ -1298,26 +1698,23 @@ describe('the plan limit, both ends of it', () => {
     // arrived from a refused admission.
     expect(queryByText(/New admissions are paused/i)).not.toBeNull()
     expect(container.textContent).toMatch(/nothing has been deleted/i)
-    // Both ways out, and the upgrade one carries a price, because a school
-    // choosing between them is choosing about money.
+    // Both ways out, and the upgrade one carries the price the database sent,
+    // because a school choosing between them is choosing about money.
     expect(queryByText(/Give us room on the plan we have/i)).not.toBeNull()
     expect(queryByText(/Move us up to Growth/i)).not.toBeNull()
-    expect(container.textContent).toMatch(/96,000/)
+    expect(container.textContent).toMatch(/Rs 4,000 every month/)
+    // Plans are ours since 0155, and the box says so and what happens next.
+    expect(container.textContent).toMatch(/Plans are changed by us/)
+    // No margin: the limit printed is the limit.
+    expect(container.textContent).not.toMatch(/margin/i)
   })
 
   it('stays out of the way for a school nowhere near its limit', async () => {
     current.opts = {
       rpc: {
-        fn_my_billing: {
-          ok: true, licence: { plan_code: 'starter', plan_name: 'Starter', status: 'active', term_months: 12 },
-          balance: { billed: 0, paid: 0, outstanding: 0 },
-          documents: [], reports: [], how_to_pay: 'Bank transfer.',
-          pay_to: { account: null, support_phone: null, support_email: null },
-        },
+        fn_my_billing: BILLING,
         fn_my_student_limit: {
-          students: 60, limit: 200, room: 140, at_limit: false, warn: false,
-          granted_extra: false, plan_code: 'starter', plan_covers: 200,
-          term_months: 12, next_plan: null, request: null,
+          ...STARTER_FULL, students: 60, room: 220, at_limit: false, warn: false,
         },
       },
     }
@@ -1325,27 +1722,41 @@ describe('the plan limit, both ends of it', () => {
     const { queryByText, container } = await mount(Subscription)
     await waitFor(() => expect(queryByText(/Need room for more\?/i)).not.toBeNull())
     // One line and a link. No form, no warning, nothing to read every day.
-    expect(container.textContent).toMatch(/60\s*of the 200 pupils your plan covers/)
+    expect(container.textContent).toMatch(/60\s*of the 280 pupils your plan covers/)
     expect(queryByText(/Why you need it/i)).toBeNull()
   })
 
-  it('offers no upgrade to a school already on the biggest plan', async () => {
-    // next_plan null is the by-arrangement case. An option that leads nowhere
-    // is worse than no option: the school picks it and waits for an answer we
-    // have no plan to give.
+  it('offers a Growth school Enterprise, priced with us, never at Rs 0', async () => {
+    // Growth is the largest plan with a limit, so the next one up is
+    // Enterprise: no pupil count and no list price. It used to print the
+    // missing price as "Rs 0" and the missing count as a crash.
     current.opts = {
       rpc: {
-        fn_my_billing: {
-          ok: true, licence: { plan_code: 'custom', plan_name: 'Custom', status: 'active', term_months: 12 },
-          balance: { billed: 0, paid: 0, outstanding: 0 },
-          documents: [], reports: [], how_to_pay: 'Bank transfer.',
-          pay_to: { account: null, support_phone: null, support_email: null },
-        },
+        fn_my_billing: BILLING,
         fn_my_student_limit: {
-          students: 640, limit: 640, room: 0, at_limit: true, warn: true,
-          granted_extra: false, plan_code: 'institution', plan_covers: 640,
-          term_months: 12, next_plan: null, request: null,
+          ...STARTER_FULL, students: 1000, limit: 1000, plan_code: 'growth', plan_covers: 1000,
+          next_plan: { code: 'enterprise', name: 'Enterprise', covers: null, by_arrangement: true, price: null, term_months: 1 },
         },
+      },
+    }
+    const { Subscription } = await import('@/pages/settings/Subscription')
+    const { queryByText, getByText, container } = await mount(Subscription)
+    await waitFor(() => expect(queryByText(/Your roll is full/i)).not.toBeNull())
+    expect(queryByText(/Move us up to Enterprise/i)).not.toBeNull()
+    expect(container.textContent).toMatch(/priced with each school/)
+    expect(container.textContent).not.toMatch(/Rs 0\b/)
+    // With no plan size to move to, the school still says how many it expects.
+    fireEvent.click(getByText(/Move us up to Enterprise/i))
+    expect(queryByText(/How many pupils you need room for/i)).not.toBeNull()
+  })
+
+  it('offers no upgrade when the database names no bigger plan', async () => {
+    // An option that leads nowhere is worse than no option: the school picks
+    // it and waits for an answer we have no plan to give.
+    current.opts = {
+      rpc: {
+        fn_my_billing: BILLING,
+        fn_my_student_limit: { ...STARTER_FULL, next_plan: null },
       },
     }
     const { Subscription } = await import('@/pages/settings/Subscription')
@@ -1355,24 +1766,33 @@ describe('the plan limit, both ends of it', () => {
     expect(queryByText(/Give us room on the plan we have/i)).not.toBeNull()
   })
 
-  it('shows a waiting request instead of a second form', async () => {
+  it('gives an Enterprise school no request form, because it has no limit', async () => {
+    current.opts = {
+      rpc: {
+        fn_my_billing: BILLING,
+        fn_my_student_limit: {
+          ...STARTER_FULL, students: 1460, limit: null, room: null, at_limit: false, warn: false,
+          plan_code: 'enterprise', plan_covers: null, next_plan: null,
+        },
+      },
+    }
+    const { Subscription } = await import('@/pages/settings/Subscription')
+    const { queryByText } = await mount(Subscription)
+    await waitFor(() => expect(queryByText(/no pupil limit/i)).not.toBeNull())
+    expect(queryByText(/Why you need it/i)).toBeNull()
+    expect(queryByText(/Need room for more\?/i)).toBeNull()
+  })
+
+  it('shows a waiting request instead of a second form, and what happens next', async () => {
     // Two requests from one school is a queue the operator has to disambiguate,
     // and the database refuses the second. So the screen must not offer one.
     current.opts = {
       rpc: {
-        fn_my_billing: {
-          ok: true, licence: { plan_code: 'starter', plan_name: 'Starter', status: 'active', term_months: 12 },
-          balance: { billed: 0, paid: 0, outstanding: 0 },
-          documents: [], reports: [], how_to_pay: 'Bank transfer.',
-          pay_to: { account: null, support_phone: null, support_email: null },
-        },
+        fn_my_billing: BILLING,
         fn_my_student_limit: {
-          students: 200, limit: 200, room: 0, at_limit: true, warn: true,
-          granted_extra: false, plan_code: 'starter', plan_covers: 200,
-          term_months: 12,
-          next_plan: { code: 'growth', name: 'Growth', covers: 350, price: 96000, term_months: 12 },
+          ...STARTER_FULL,
           request: {
-            id: 'r1', status: 'pending', requested_limit: 300,
+            id: 'r1', status: 'pending', requested_limit: 400,
             requested_at: '2026-09-01T09:00:00Z',
             reason: 'second campus in April', wants: 'more_room',
             granted_limit: null, decision_note: null, decided_at: null,
@@ -1382,8 +1802,9 @@ describe('the plan limit, both ends of it', () => {
     }
     const { Subscription } = await import('@/pages/settings/Subscription')
     const { queryByText } = await mount(Subscription)
-    await waitFor(() => expect(queryByText(/You asked for room for 300 pupils/i)).not.toBeNull())
+    await waitFor(() => expect(queryByText(/You asked for room for 400 pupils/i)).not.toBeNull())
     expect(queryByText(/Take this request back/i)).not.toBeNull()
+    expect(queryByText(/lasts until your next renewal/i)).not.toBeNull()
     expect(queryByText(/Why you need it/i)).toBeNull()
   })
 
@@ -1392,22 +1813,15 @@ describe('the plan limit, both ends of it', () => {
     // this screen is where the school was told the answer would appear.
     current.opts = {
       rpc: {
-        fn_my_billing: {
-          ok: true, licence: { plan_code: 'starter', plan_name: 'Starter', status: 'active', term_months: 12 },
-          balance: { billed: 0, paid: 0, outstanding: 0 },
-          documents: [], reports: [], how_to_pay: 'Bank transfer.',
-          pay_to: { account: null, support_phone: null, support_email: null },
-        },
+        fn_my_billing: BILLING,
         fn_my_student_limit: {
-          students: 200, limit: 200, room: 0, at_limit: true, warn: true,
-          granted_extra: false, plan_code: 'starter', plan_covers: 200,
-          term_months: 12, next_plan: null,
+          ...STARTER_FULL, next_plan: null,
           request: {
-            id: 'r1', status: 'declined', requested_limit: 300,
+            id: 'r1', status: 'declined', requested_limit: 400,
             requested_at: '2026-09-01T09:00:00Z',
             reason: 'second campus', wants: 'more_room',
             granted_limit: null,
-            decision_note: 'Three hundred is the Growth band; happy to move you across.',
+            decision_note: 'Four hundred is the Growth band; happy to move you across.',
             decided_at: '2026-09-03T09:00:00Z',
           },
         },

@@ -17,7 +17,11 @@ import { buttonClass } from '@/components/ui'
  * own flow, scrolls away with it, and can be put away until tomorrow.
  *
  * Who is told what is still lib/licence.ts's limitBanner: the owner and
- * principal get the way to fix it, the office gets who to ask.
+ * principal get the way to fix it, the office gets who to ask. The limit is the
+ * limit since 0155, warned from 90% and stopped at 100%, so nothing here talks
+ * about a margin. When we have given the school extra room, the owner's wording
+ * says the date it ends, because on that date the plan's own limit is back and
+ * a school relying on the room would otherwise find out at the admission desk.
  */
 export function RollLimitNotice() {
   const { profile } = useAuth()

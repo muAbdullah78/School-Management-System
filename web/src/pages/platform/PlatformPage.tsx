@@ -2,13 +2,18 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/auth/AuthProvider'
 import {
-  activateSubscription, actionNeeded, amPlatformAdmin,
-  listPlans, listPlatformSchools, operatorEnter, planQuote, platformRevenue,
-  platformSchemaState, recordPlatformPayment, refreshAllCounts,
-  type PlatformSchool, type SchemaState,
+  actionNeeded, amPlatformAdmin,
+  listPlatformSchools, operatorEnter, platformRevenue,
+  platformSchemaState, raisePlatformInvoice, recordPlatformPayment, refreshAllCounts,
+  schoolDetail,
+  type ActivationResult, type PaymentSettled, type PlatformSchool, type SchemaState,
 } from '@/lib/platform'
+import type { Term } from '@/lib/subscription'
+import { TERM_LABEL } from '@/lib/plans'
 import { formatPkr } from '@/lib/licence'
+import { fmtDate } from '@/lib/format'
 import { monthStart, today } from '@/lib/dates'
+import { money, PaymentOutcome, statusWords, wholeRupees } from './status'
 import { SchoolsTable, type QuickKind } from './SchoolsTable'
 import { SchoolDrawer, type DrawerTab } from './SchoolDrawer'
 import { Renewals } from './Renewals'
@@ -90,7 +95,7 @@ export function PlatformPage() {
   const [creating, setCreating] = useState(false)
   const [lifecycleFor, setLifecycleFor] = useState<PlatformSchool | null>(null)
   const [offboarding, setOffboarding] = useState<PlatformSchool | null>(null)
-  const [activating, setActivating] = useState<PlatformSchool | null>(null)
+  const [invoicing, setInvoicing] = useState<PlatformSchool | null>(null)
   // ONE WORKSPACE INSTEAD OF SIX DIALOG FLAGS. The console used to carry a piece
   // of state per popup - ledgerFor, historyFor, openSchool - and the school
   // being worked on could be in three of them at once, each holding a snapshot
@@ -163,7 +168,6 @@ export function PlatformPage() {
     queryFn: () => listPlatformSchools(true),
     enabled: isAdmin.data === true,
   })
-  const plans = useQuery({ queryKey: ['plans'], queryFn: listPlans, enabled: isAdmin.data === true })
   const revenue = useQuery({
     queryKey: ['platformRevenue', from, to],
     queryFn: () => platformRevenue(from, to),
@@ -428,13 +432,6 @@ export function PlatformPage() {
         {msg && <div className="rounded border border-money-200 bg-money-50 p-2 text-sm text-money-800">{msg}</div>}
         {err && <div className="rounded border border-danger-200 bg-danger-50 p-2 text-sm text-danger-700">{err}</div>}
 
-        {msg && (
-          <div className="rounded border border-money-200 bg-money-50 p-2 text-sm text-money-800">{msg}</div>
-        )}
-        {err && (
-          <div className="rounded border border-danger-200 bg-danger-50 p-2 text-sm text-danger-700">{err}</div>
-        )}
-
         <SchoolsTable
           schools={rows}
           loading={schools.isLoading}
@@ -444,7 +441,10 @@ export function PlatformPage() {
           onQuickAction={(s, kind: QuickKind) => {
             setErr(null); setMsg(null)
             if (kind === 'pay') setPaying(s)
-            else setActivating(s)
+            else if (kind === 'invoice') setInvoicing(s)
+            // An Enterprise school with no price: the price is set on its page,
+            // beside the plan, so the quick action opens it there.
+            else { setDrawerTab('billing'); setOpenId(s.school_id) }
           }}
         />
 
@@ -462,7 +462,7 @@ export function PlatformPage() {
           onTab={setDrawerTab}
           onClose={() => setOpenId(null)}
           onPay={() => { setErr(null); setMsg(null); setPaying(openSchool) }}
-          onActivate={() => { setErr(null); setMsg(null); setActivating(openSchool) }}
+          onRaiseInvoice={() => { setErr(null); setMsg(null); setInvoicing(openSchool) }}
           onManage={() => { setErr(null); setMsg(null); setLifecycleFor(openSchool) }}
           onVisit={() => { setErr(null); setMsg(null); setVisiting(openSchool) }}
           onOffboard={() => { setErr(null); setMsg(null); setOffboarding(openSchool) }}
@@ -470,31 +470,11 @@ export function PlatformPage() {
       )}
 
       {paying && (
-        <PaymentDialog
-          school={paying}
-          busy={act.isPending}
-          onClose={() => setPaying(null)}
-          onSave={(v) => {
-            run(`${formatPkr(v.amount)} recorded for ${paying.school_name}.`,
-              () => recordPlatformPayment({ schoolId: paying.school_id, ...v }))
-            setPaying(null)
-          }}
-        />
+        <PaymentDialog school={paying} onClose={() => setPaying(null)} />
       )}
 
-      {activating && (
-        <ActivationDialog
-          school={activating}
-          plans={plans.data ?? []}
-          onCancel={() => setActivating(null)}
-          onGo={(plan, months, amount, note, over) => {
-            const s = activating
-            setActivating(null)
-            run(`${s.school_name} activated on ${plan} for ${months} month(s).`,
-              () => activateSubscription(s.school_id, plan, months,
-                { amount, note, allowOverLimit: over }))
-          }}
-        />
+      {invoicing && (
+        <RaiseInvoiceDialog school={invoicing} onClose={() => setInvoicing(null)} />
       )}
 
       {creating && (
@@ -619,205 +599,302 @@ function Tile({ label, value, hint, tone }: {
 }
 
 /**
- * Where a licence is actually sold, and the last thing between a mis-click and
- * an invoice.
+ * Raise the next term invoice, and say plainly what that does and does not do.
  *
- * WHY THE CHOICES MOVED HERE. Plan, length and price used to be three controls
- * on the school's row, competing with five text links and up to six badges.
- * Choosing was done in a strip narrower than a phone, and pressing Activate
- * committed immediately: an invoice raised against a real customer, no undo, one
- * click, next to a link that opens a read-only statement.
+ * WHAT THIS REPLACED. The Activate dialog picked a plan, a length and a price,
+ * and pressing it raised the invoice AND started the paid period. Since 0155
+ * access runs on what is PAID: an invoice opens nothing, paying it does. So
+ * this dialog raises an invoice and says so, in a box nobody can miss, because
+ * "I invoiced them, why are they still locked?" is the question it exists to
+ * prevent.
  *
- * WHAT IT SHOWS IS THE POINT. Not "are you sure", which nobody reads, but the
- * four facts being decided, in the words the invoice will use: who, what plan,
- * what period, and how much. The discount and the over-limit breach are called
- * out because those are the two that get argued about a month later.
+ * NO PLAN PICKER. An invoice is raised on the plan the school is on. Moving a
+ * school between plans is Change plan, on its page, which prices the rest of
+ * the paid period; doing both from one box is how the old dialog quietly moved
+ * schools while invoicing them.
+ *
+ * THE PRICE IS THE DATABASE'S. Each term is offered at what the next invoice
+ * would say for it, the school's live code already taken off. The amount box
+ * starts empty, which means exactly that figure. Typing anything else needs a
+ * reason, printed on the invoice, and uses a live code up on this invoice: the
+ * screen says so before the press, not after.
+ *
+ * REFUSALS ARE SENTENCES. An invoice already open, no price agreed, a school
+ * suspended or cancelled: each is said in plain words before anything is
+ * pressed, and anything the database refuses anyway is shown as it says it.
+ *
+ * OVER THE LIMIT (SB004). A school whose roll is bigger than the limit that
+ * will apply in the period being invoiced is a decision for us: move it with
+ * Change plan, or invoice it on its plan on purpose, with a reason. Extra room
+ * ends with the period it was given in, so it only counts here if it reaches
+ * into the new period.
  */
-function ActivationDialog({ school, plans, onCancel, onGo }: {
+export function RaiseInvoiceDialog({ school, onClose }: {
   school: PlatformSchool
-  plans: { code: string; name: string; price_yearly: number; price_monthly: number; student_limit: number | null }[]
-  onCancel: () => void
-  onGo: (plan: string, months: number, amount: number | null, note: string | null, over: boolean) => void
+  onClose: () => void
 }) {
-  // Default to the plan their real headcount says they should be on, so the
-  // common case is one press and the size question is already answered.
-  const [plan, setPlan] = useState(school.suggested_plan || school.plan_code)
-  const [months, setMonths] = useState(12)
-  const [amount, setAmount] = useState('')
-  const [note, setNote] = useState('')
-
-  const chosen = plans.find((p) => p.code === plan)
-  // THE PRICE IS ASKED FOR, NOT WORKED OUT HERE.
-  //
-  // This line used to be
-  //
-  //     months >= 12 ? chosen.price_yearly * (months / 12) : chosen.price_monthly * months
-  //
-  // which is fn__plan_price's ladder retyped in TypeScript. It agreed with the
-  // database for as long as there were two rates. 0111 sells a third - three
-  // months at about five percent off - so the copy would have quoted Rs 6,000
-  // for a quarter while the invoice charged Rs 5,700, and it would not have
-  // known about the cap that stops eleven months costing more than twelve.
-  // Neither side would have been wrong about its own rule, which is why no test
-  // could have found it.
-  const quote = useQuery({
-    queryKey: ['planQuote', plan, months],
-    queryFn: () => planQuote(plan, months),
-    enabled: !!plan && months > 0,
-    staleTime: 5 * 60_000,
+  const qc = useQueryClient()
+  const detail = useQuery({
+    queryKey: ['schoolDetail', school.school_id],
+    queryFn: () => schoolDetail(school.school_id),
   })
-  const list = quote.data?.sold_at_list ? quote.data.amount : null
-  const saving = quote.data?.saving ?? 0
-  const typed = amount.trim() === '' ? null : Number(amount)
-  const charge = typed ?? list
-  const discount = list !== null && typed !== null ? list - typed : 0
-  // The database refuses a non-list amount with no reason. Refusing here too
-  // means the operator is told before pressing, not after.
-  const needsNote = typed !== null && list !== null && typed !== list && !note.trim()
-  // The database also refuses a plan the school has outgrown. Showing it up
-  // front turns a red error into a decision.
-  const overLimit = chosen?.student_limit != null
-    && school.student_count > Math.ceil(chosen.student_limit * 1.1)
-  const renewing = school.status === 'active'
-  // Renewing early extends from the existing end date rather than today, which
-  // is fn_activate_subscription's own rule. Saying so stops the operator
-  // wondering whether a school paying a week early loses that week.
-  const from = renewing && school.expires_on && school.expires_on >= today()
-    ? school.expires_on : null
+  const v = detail.data?.subscription ?? null
+  const [months, setMonths] = useState<Term | null>(null)
+  const [amount, setAmount] = useState('')
+  const [reason, setReason] = useState('')
+  const [err, setErr] = useState<string | null>(null)
+  const [done, setDone] = useState<ActivationResult | null>(null)
 
-  return (
+  const chosen: Term | null = months ?? v?.term_months ?? null
+  const term = v?.terms.find((t) => t.months === chosen) ?? null
+  const typed = amount.trim() === '' ? null : money(amount)
+  const differs = typed !== null && term !== null && typed !== term.amount
+  const usesUpCode = differs && (term?.discount_amount ?? 0) > 0
+  const codeName = v?.next?.quote.discount?.code ?? null
+
+  // The limit that will apply in the period being invoiced: extra room only if
+  // it reaches into it, otherwise the plan's own. The same rule the database
+  // applies, read here so the decision is offered before the press.
+  const start = v?.next?.period_start ?? null
+  const cap = !v ? null
+    : v.students.extra != null && v.students.extra_until && start && v.students.extra_until >= start
+      ? v.students.extra
+      : v.students.plan_limit
+  const over = v !== null && cap !== null && v.students.count > cap
+  const needsReason = differs || over
+
+  const refusal = !v ? null
+    : school.archived ? `${school.school_name} is archived. Bring it back before invoicing it.`
+    : v.suspended ? `${school.school_name} is suspended. Lift the suspension before invoicing it.`
+    : v.status === 'cancelled' ? `${school.school_name} has cancelled. Reinstate it before invoicing it.`
+    : v.cancel_at_period_end ? `${school.school_name} asked to stop at the end of its period, so nothing more is invoiced.`
+    : v.open_invoice
+      ? `${school.school_name} already has ${v.open_invoice.doc_no ?? 'an invoice'} open for `
+        + `${fmtDate(v.open_invoice.period_start)} to ${fmtDate(v.open_invoice.period_end)}, with `
+        + `${formatPkr(v.open_invoice.owed)} still owed. That one is paid first.`
+    : !v.price.priced
+      ? `${school.school_name} is on ${v.plan.name}, and no price has been agreed with it yet. `
+        + 'Set its price first, from Billing, Plan and price.'
+    : null
+
+  const problem = refusal ? null
+    : !term ? 'Choose how many months this invoice is for.'
+    : typed !== null && !wholeRupees(typed) ? 'An invoice is a whole number of rupees, nothing below zero.'
+    : needsReason && reason.trim().length < 8
+      ? over && !differs
+        ? 'Their roll is over the limit for this period. Give a reason to invoice them on their plan anyway, or move them with Change plan.'
+        : `Charging ${typed !== null && Number.isFinite(typed) ? formatPkr(typed) : 'that'} where the price is ${formatPkr(term.amount)} needs a reason: it is printed on the invoice.`
+    : null
+
+  const raise = useMutation({
+    mutationFn: () => raisePlatformInvoice(school.school_id, {
+      months: chosen, amount: typed, reason: reason.trim() || null,
+    }),
+    onSuccess: (r) => {
+      setErr(null); setDone(r)
+      for (const key of ['platformSchools', 'platformLedger', 'schoolDetail', 'platformRevenue', 'dueSoon']) {
+        void qc.invalidateQueries({ queryKey: [key] })
+      }
+    },
+    onError: (e) => setErr((e as Error).message),
+  })
+
+  const shell = (title: string, body: React.ReactNode) => (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center">
-      <div className="w-full max-w-md rounded-lg bg-white p-5 text-left shadow-lg">
-        <h2 className="text-base font-semibold text-slate-800">
-          {renewing ? 'Renew' : 'Activate'} {school.school_name}
-        </h2>
-        <p className="mt-1 text-sm text-slate-600">
-          {school.student_count.toLocaleString()} students
-          {school.outstanding > 0 && <> · owes {formatPkr(school.outstanding)}</>}
-        </p>
-
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <label className="block">
-            <span className="text-sm text-slate-600">Plan</span>
-            <select value={plan} onChange={(e) => setPlan(e.target.value)}
-              className={`${FIELD} mt-1 w-full`}>
-              {plans.map((p) => <option key={p.code} value={p.code}>{p.code}</option>)}
-            </select>
-          </label>
-          <label className="block">
-            <span className="text-sm text-slate-600">For how long</span>
-            <select value={months} onChange={(e) => setMonths(Number(e.target.value))}
-              className={`${FIELD} mt-1 w-full`}>
-              <option value={1}>1 month</option>
-              <option value={3}>3 months</option>
-              <option value={6}>6 months</option>
-              <option value={12}>1 year</option>
-            </select>
-          </label>
-          <label className="block">
-            <span className="text-sm text-slate-600">
-              They pay <span className="text-slate-400">(blank = list price)</span>
-            </span>
-            <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal"
-              placeholder={list !== null ? String(list) : 'amount'}
-              className={`${FIELD} mt-1 w-full`} />
-          </label>
-          <label className="block">
-            <span className="text-sm text-slate-600">Reason for the price</span>
-            <input value={note} onChange={(e) => setNote(e.target.value)}
-              placeholder="goes on the invoice" className={`${FIELD} mt-1 w-full`} />
-          </label>
-        </div>
-
-        <dl className="mt-3 grid grid-cols-[auto,1fr] gap-x-4 gap-y-1 rounded border border-slate-200 bg-slate-50 p-3 text-sm">
-          <dt className="text-slate-500">Period</dt>
-          <dd className="text-slate-800">
-            {months === 12 ? '1 year' : `${months} month${months === 1 ? '' : 's'}`}
-            {from && <span className="text-slate-500"> · starts {from}, after the current one</span>}
-          </dd>
-          <dt className="text-slate-500">Invoice</dt>
-          <dd className="font-medium text-slate-800">
-            {quote.isLoading ? <span className="text-slate-400">working it out…</span>
-              : quote.error ? <span className="text-danger-700">{(quote.error as Error).message}</span>
-              : charge === null ? 'priced in a conversation'
-              : formatPkr(charge)}
-            {discount > 0 && (
-              <span className="ml-1 text-due-700">
-                ({formatPkr(discount)} off {formatPkr(list ?? 0)})
-              </span>
-            )}
-          </dd>
-          {/* WHAT THE LONGER TERM SAVES, which the operator is about to say on
-              the phone. The figure comes from the same call that prices the
-              invoice, so the sentence and the charge cannot disagree. */}
-          {saving > 0 && typed === null && (
-            <>
-              <dt className="text-slate-500">They save</dt>
-              <dd className="text-money-700">
-                {formatPkr(saving)} against {formatPkr(quote.data?.list_amount ?? 0)} at
-                the monthly rate
-                {quote.data && (
-                  <span className="text-slate-500">
-                    {' '}· works out at {formatPkr(quote.data.per_month)} a month
-                  </span>
-                )}
-              </dd>
-            </>
-          )}
-        </dl>
-
-        {needsNote && (
-          <p className="mt-2 text-sm text-due-700">
-            A price that is not the list price needs a reason, including zero.
-          </p>
-        )}
-
-        {overLimit && (
-          <p className="mt-3 rounded border border-due-300 bg-due-50 px-3 py-2 text-sm text-due-900">
-            {school.student_count.toLocaleString()} students against {plan}&rsquo;s limit
-            of {chosen?.student_limit?.toLocaleString()}.
-            {school.suggested_plan !== plan
-              ? <> Pick <span className="font-semibold">{school.suggested_plan}</span>, or go ahead on {plan}: the breach is recorded on the invoice.</>
-              : <> Going ahead records the breach on the invoice.</>}
-          </p>
-        )}
-
-        <p className="mt-3 text-xs text-slate-500">
-          This raises an invoice and starts the paid period. It cannot be undone
-          from here.
-        </p>
-
-        <div className="mt-3 flex gap-2">
-          <button
-            onClick={() => onGo(plan, months, typed, note.trim() || null, overLimit)}
-            disabled={needsNote}
-            className="flex-1 rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
-            {renewing ? 'Renew and invoice' : 'Activate and invoice'}
-          </button>
-          <button onClick={onCancel}
-            className="flex-1 rounded border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">
-            Cancel
-          </button>
-        </div>
+      <div role="dialog" aria-modal="true" aria-label={title}
+        className="w-full max-w-lg rounded-lg bg-white p-5 text-left shadow-lg">
+        <h2 className="text-base font-semibold text-slate-800">{title}</h2>
+        {body}
       </div>
     </div>
   )
+
+  if (done) {
+    return shell(`${done.doc_no ?? 'Invoice'} raised for ${school.school_name}`, (
+      <>
+        <dl className="mt-3 grid grid-cols-[auto,1fr] gap-x-4 gap-y-1 rounded border border-slate-200 bg-slate-50 p-3 text-sm">
+          <dt className="text-slate-500">Amount</dt>
+          <dd className="font-medium text-slate-800">{formatPkr(done.amount)}</dd>
+          <dt className="text-slate-500">Covers</dt>
+          <dd className="text-slate-800">
+            {done.months} month(s), {fmtDate(done.period_start)} to {fmtDate(done.period_end)}
+          </dd>
+          <dt className="text-slate-500">Due</dt>
+          <dd className="text-slate-800">{fmtDate(done.due_on)}</dd>
+          <dt className="text-slate-500">Owed on it</dt>
+          <dd className="text-slate-800">
+            {formatPkr(done.owed)}
+            {done.owed < done.amount && (
+              <span className="text-money-700"> · {formatPkr(done.amount - done.owed)} of their credit went on it</span>
+            )}
+          </dd>
+        </dl>
+        {done.discount_code && !done.overridden && done.discount_amount > 0 && (
+          <p className="mt-2 text-sm text-money-700">
+            {formatPkr(done.discount_amount)} off with their code {done.discount_code}.
+          </p>
+        )}
+        {done.overridden && (
+          <p className="mt-2 text-sm text-due-800">
+            Price set by hand: their code {done.discount_code} is used up on this invoice.
+          </p>
+        )}
+        <p className="mt-3 rounded border border-info-200 bg-info-50 px-3 py-2 text-sm text-info-900">
+          Nothing changes for {school.school_name} until it is paid. They are{' '}
+          {statusWords(done.status).toLowerCase()}, and their paid-through date moves when
+          the money is recorded.
+        </p>
+        <button onClick={onClose}
+          className="mt-4 w-full rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
+          Done
+        </button>
+      </>
+    ))
+  }
+
+  return shell(`Raise an invoice for ${school.school_name}`, (
+    <>
+      {detail.isLoading && <p className="mt-2 text-sm text-slate-500">Loading…</p>}
+      {detail.error && <p className="mt-2 text-sm text-danger-700">{(detail.error as Error).message}</p>}
+      {detail.data && !v && (
+        <p className="mt-2 text-sm text-danger-700">
+          This database does not describe the subscription yet, so there is nothing to price
+          an invoice from.
+        </p>
+      )}
+
+      {v && (
+        <>
+          <p className="mt-1 text-sm text-slate-600">
+            On <span className="font-medium">{v.plan.name}</span>
+            {' · '}{v.students.count.toLocaleString()} pupils
+            {v.owed > 0 && <> · owes {formatPkr(v.owed)}</>}
+            {v.credit > 0 && <> · {formatPkr(v.credit)} in credit</>}
+          </p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            An invoice is raised on the plan they are on. To move them, use Change plan on
+            their page first.
+          </p>
+
+          {/* THE ONE SENTENCE THIS DIALOG EXISTS TO SAY. */}
+          <p className="mt-3 rounded border border-info-200 bg-info-50 px-3 py-2 text-sm text-info-900">
+            Raising an invoice does not give {school.school_name} any time. Paying it does:
+            their paid-through date moves only when the money is recorded against it.
+          </p>
+
+          {refusal ? (
+            <p className="mt-3 text-sm text-slate-800">{refusal}</p>
+          ) : (
+            <>
+              <fieldset className="mt-3">
+                <legend className="text-sm text-slate-600">How many months</legend>
+                <div className="mt-1 space-y-1.5">
+                  {v.terms.map((t) => (
+                    <label key={t.months}
+                      className={`flex cursor-pointer items-start gap-2 rounded border px-3 py-2 text-sm focus-within:ring-2 focus-within:ring-brand-500 ${
+                        t.months === chosen ? 'border-brand-500 bg-brand-50' : 'border-slate-200 hover:bg-slate-50'}`}>
+                      <input type="radio" name="term" className="mt-0.5" checked={t.months === chosen}
+                        onChange={() => setMonths(t.months)} />
+                      <span className="flex-1">
+                        <span className="flex flex-wrap items-baseline justify-between gap-2">
+                          <span className="font-medium text-slate-800">
+                            {TERM_LABEL[t.months] ?? `${t.months} months`}
+                            {t.chosen && <span className="ml-1 font-normal text-slate-400">their term now</span>}
+                          </span>
+                          <span className="font-semibold tabular-nums text-slate-800">{formatPkr(t.amount)}</span>
+                        </span>
+                        <span className="block text-xs text-slate-500">
+                          {formatPkr(t.per_month)} a month
+                          {t.saving > 0 && <> · saves {formatPkr(t.saving)} against paying monthly</>}
+                          {t.discount_amount > 0 && (
+                            <span className="text-money-700"> · {formatPkr(t.discount_amount)} off with their code</span>
+                          )}
+                        </span>
+                        {t.discount_note && <span className="block text-xs text-due-800">{t.discount_note}</span>}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                {chosen !== null && chosen !== v.term_months && (
+                  <p className="mt-1 text-xs text-slate-500">
+                    A different term also changes how often they pay from now on.
+                  </p>
+                )}
+              </fieldset>
+
+              {start && (
+                <p className="mt-2 text-xs text-slate-500">
+                  Covers from {fmtDate(start)}, and it is due that day
+                  {start < today() && <> (today, as their paid time has already run out)</>}.
+                </p>
+              )}
+
+              {over && (
+                <p className="mt-3 rounded border border-due-300 bg-due-50 px-3 py-2 text-sm text-due-900">
+                  {school.school_name} has {v.students.count.toLocaleString()} pupils and{' '}
+                  {v.plan.name} covers {cap?.toLocaleString()} in the period being invoiced. Move
+                  them with Change plan on their page, or give a reason below to invoice them on{' '}
+                  {v.plan.name} anyway.
+                </p>
+              )}
+
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <span className="text-sm text-slate-600">
+                    Amount <span className="text-slate-400">(empty = {term ? formatPkr(term.amount) : 'the price'})</span>
+                  </span>
+                  <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="numeric"
+                    placeholder={term ? String(term.amount) : ''} className={`${FIELD} mt-1 w-full`} />
+                </label>
+                <label className="block">
+                  <span className="text-sm text-slate-600">
+                    Reason{needsReason && <span className="text-danger-600"> *</span>}
+                  </span>
+                  <input value={reason} onChange={(e) => setReason(e.target.value)}
+                    placeholder="printed on the invoice" className={`${FIELD} mt-1 w-full`} />
+                </label>
+              </div>
+
+              {usesUpCode && (
+                <p className="mt-2 rounded border border-due-200 bg-due-50 px-3 py-2 text-xs text-due-900">
+                  A typed amount replaces the price with their code taken off, and their code
+                  {codeName ? ` ${codeName}` : ''} is used up on this invoice: it will not come
+                  off again for these months.
+                </p>
+              )}
+            </>
+          )}
+        </>
+      )}
+
+      {err && <p className="mt-3 text-sm text-danger-700">{err}</p>}
+      {problem && (
+        <p className="mt-3 rounded border border-due-200 bg-due-50 px-3 py-2 text-xs text-due-900">
+          {problem}
+        </p>
+      )}
+
+      <div className="mt-4 flex gap-2">
+        {v && !refusal && (
+          <button onClick={() => { setErr(null); raise.mutate() }}
+            disabled={raise.isPending || problem !== null}
+            className="flex-1 rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
+            {raise.isPending ? 'Raising…'
+              : `Raise the invoice${term ? ` for ${formatPkr(typed !== null && Number.isFinite(typed) ? typed : term.amount)}` : ''}`}
+          </button>
+        )}
+        <button onClick={onClose}
+          className="flex-1 rounded border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">
+          {v && !refusal ? 'Cancel' : 'Close'}
+        </button>
+      </div>
+    </>
+  ))
 }
 
-/**
- * A figure a person typed, as a number.
- *
- * `Number('38,000')` is NaN and `Number('Rs 38,000')` is NaN, and both are how a
- * Pakistani bank statement writes a figure. The old code fed the raw string
- * straight to Number and then disabled the Record button when the result was
- * not finite, so pasting the amount out of the statement produced a screen with
- * no error and a button that did nothing. Commas, spaces and a leading Rs are
- * stripped; anything else still fails, and now says so.
- */
-export function money(v: string): number {
-  const cleaned = v.replace(/[\s,]/g, '').replace(/^rs\.?/i, '')
-  return cleaned === '' ? NaN : Number(cleaned)
-}
+// The parser lives in status.tsx so the dialogs on the school's page share it;
+// re-exported because payment.test.ts holds it to its promises from here.
+export { money }
 
 /** Why Record is disabled, in a sentence, or null when it is not. */
 export function whyNot(rawAmount: string, n: number, rawTax: string, t: number, paidOn: string): string | null {
@@ -836,16 +913,21 @@ export function whyNot(rawAmount: string, n: number, rawTax: string, t: number, 
   return null
 }
 
-function PaymentDialog({ school, busy, onClose, onSave }: {
+/**
+ * Record money a school sent us, then say what it did.
+ *
+ * WHY THE DIALOG STAYS OPEN AFTER SAVING. Since 0155 a payment goes against
+ * what is owed, oldest first; money left over raises the next term invoice and
+ * pays it; anything still left is credit; and the school's paid-through date
+ * moves only as far as invoices are paid in full. The database answers with all
+ * of that, and the operator is usually on the phone with the school asking
+ * "so are we open, and until when?". A green "recorded" line answered none of it.
+ */
+export function PaymentDialog({ school, onClose }: {
   school: PlatformSchool
-  busy: boolean
   onClose: () => void
-  onSave: (v: {
-    amount: number; paidOn: string; method: string
-    reference: string | null; note: string | null
-    taxWithheld: number; taxCertificate: string | null
-  }) => void
 }) {
+  const qc = useQueryClient()
   // Pre-filled with what they owe, which is the amount in almost every case.
   const [amount, setAmount] = useState(school.outstanding > 0 ? String(school.outstanding) : '')
   const [paidOn, setPaidOn] = useState(today())
@@ -854,6 +936,8 @@ function PaymentDialog({ school, busy, onClose, onSave }: {
   const [note, setNote] = useState('')
   const [wht, setWht] = useState('')
   const [cert, setCert] = useState('')
+  const [err, setErr] = useState<string | null>(null)
+  const [done, setDone] = useState<PaymentSettled | null>(null)
   const n = money(amount)
   const t = wht.trim() === '' ? 0 : money(wht)
   // THE CERTIFICATE FIELD IS CLEARED, NOT JUST GREYED OUT.
@@ -869,15 +953,57 @@ function PaymentDialog({ school, busy, onClose, onSave }: {
   // outstanding figure is what the operator is deciding about.
   const settles = n + t
 
+  const save = useMutation({
+    mutationFn: () => recordPlatformPayment({
+      schoolId: school.school_id, amount: n, paidOn, method,
+      reference: reference.trim() || null, note: note.trim() || null,
+      taxWithheld: t, taxCertificate: sendCert,
+    }),
+    onSuccess: (r) => {
+      setErr(null); setDone(r)
+      for (const key of ['platformSchools', 'platformRevenue', 'platformLedger', 'schoolDetail', 'dueSoon']) {
+        void qc.invalidateQueries({ queryKey: [key] })
+      }
+    },
+    onError: (e) => setErr((e as Error).message),
+  })
+
+  if (done) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center">
+        <div role="dialog" aria-modal="true" aria-label="Payment recorded"
+          className="w-full max-w-md rounded-lg bg-white p-5 shadow-lg">
+          <h2 className="text-base font-semibold text-slate-800">
+            {formatPkr(done.settled)} recorded for {school.school_name}
+          </h2>
+          {done.awaiting_certificate && (
+            <p className="mt-1 text-xs text-slate-500">
+              {formatPkr(done.tax_withheld)} of it is tax they withheld. Attach the CPR from the
+              statement when it arrives.
+            </p>
+          )}
+          <div className="mt-3">
+            <PaymentOutcome r={done} />
+          </div>
+          <button onClick={onClose}
+            className="mt-4 w-full rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
+            Done
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center">
-      <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-lg">
+      <div role="dialog" aria-modal="true" aria-label="Record a payment"
+        className="w-full max-w-md rounded-lg bg-white p-5 shadow-lg">
         <h2 className="text-base font-semibold text-slate-800">Record a payment</h2>
         <p className="mt-1 text-sm text-slate-600">
           {school.school_name}
           {school.outstanding > 0
             ? <> · owes {formatPkr(school.outstanding)}</>
-            : <> · nothing outstanding. This will show as credit</>}
+            : <> · nothing outstanding. What is not needed for their next invoice stays as credit</>}
         </p>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <label className="block">
@@ -938,6 +1064,10 @@ function PaymentDialog({ school, busy, onClose, onSave }: {
             {cert.trim() === '' && ' The CPR can be attached from the statement when it arrives.'}
           </p>
         )}
+        <p className="mt-2 text-xs text-slate-500">
+          It goes against what they owe, oldest first. If money is left and nothing is open,
+          their next invoice is raised and paid from it; anything still left is credit.
+        </p>
         {/* A DISABLED BUTTON THAT DOES NOT SAY WHY IS A BROKEN SCREEN.
             `Number('38,000')` is NaN, and Pakistani figures are written with
             those commas, so typing the amount the way it appears on the bank
@@ -948,16 +1078,13 @@ function PaymentDialog({ school, busy, onClose, onSave }: {
             {problem}
           </p>
         )}
+        {err && <p className="mt-3 text-sm text-danger-700">{err}</p>}
         <div className="mt-4 flex gap-2">
           <button
-            onClick={() => onSave({
-              amount: n, paidOn, method,
-              reference: reference.trim() || null, note: note.trim() || null,
-              taxWithheld: t, taxCertificate: sendCert,
-            })}
-            disabled={busy || problem !== null}
+            onClick={() => { setErr(null); save.mutate() }}
+            disabled={save.isPending || problem !== null}
             className="flex-1 rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
-            Record
+            {save.isPending ? 'Recording…' : 'Record'}
           </button>
           <button onClick={onClose} className="flex-1 rounded border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">
             Cancel

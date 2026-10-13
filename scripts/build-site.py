@@ -57,14 +57,176 @@ SRC = ROOT / 'site-src'
 OUT = ROOT / 'site'
 SITE = 'https://theschoolmanager.site'
 
-# Prices appear in JSON-LD and are checked against the database by
-# supabase/check-site-prices.sh, so they live in one place here rather than
-# being retyped into every schema block.
+# THE PRICE LIST, typed once. public.plans is the truth (migration 0155 sets
+# it); this is the site's one hand copy of it. The pricing cards, every "from"
+# price, the two meta descriptions that quote a price and the JSON-LD offers are
+# all filled from here at build time through {{PLAN_<code>_<field>}} and
+# {{FROM_PRICE}} placeholders (see plan_tokens below), so a price rise is one
+# edit here and a rebuild.
+#
+# supabase/check-site-prices.sh compares this list, the built cards and the
+# JSON-LD against the database in BOTH directions: an active plan missing here
+# fails, and so does an entry for a plan the database has retired.
+#
+# Not read from the database at build time on purpose: the build is standard
+# library only and runs with no credentials, and CI holds the two together.
+#
+# by_arrangement: Enterprise has no list price. We agree a monthly price with
+# each school, so it carries no figures and the page says "Priced with you".
 PLANS = [
-    ('Starter', '2000', 'Up to 150 students'),
-    ('Growth', '3500', 'Up to 350 students'),
-    ('Institution', '5500', 'Up to 600 students'),
+    {'code': 'starter', 'name': 'Starter', 'min': 1, 'limit': 280,
+     'monthly': 2000, 'quarterly': 5400, 'yearly': 20000},
+    {'code': 'growth', 'name': 'Growth', 'min': 281, 'limit': 1000,
+     'monthly': 4000, 'quarterly': 10800, 'yearly': 40000},
+    {'code': 'enterprise', 'name': 'Enterprise', 'min': 1001, 'limit': None,
+     'by_arrangement': True},
 ]
+
+
+def rupees(n: int) -> str:
+    """2000 -> 'Rs 2,000', the way every page prints money."""
+    return f'Rs {n:,}'
+
+
+def check_plans() -> None:
+    """Refuse a price list the page copy would describe wrongly.
+
+    The pricing page says, in words, that three months is 10% off and a year is
+    two months free, and it prints the saving in rupees. Those sentences are
+    not filled in from here, so a list where they stop being true has to stop
+    the build rather than publish a page that contradicts its own figures.
+    """
+    codes = [p['code'] for p in PLANS]
+    if len(set(codes)) != len(codes):
+        sys.exit('PLANS: a plan code is listed twice')
+    previous_limit = 0
+    for p in PLANS:
+        if previous_limit is None:
+            sys.exit(f'PLANS: {p["code"]} comes after the plan with no limit, so no '
+                     'school could ever be on it')
+        if not re.fullmatch(r'[a-z0-9]+', p['code']):
+            sys.exit(f'PLANS: code {p["code"]!r} must be lower case letters and digits')
+        # The bands must meet with no gap and no overlap, or a school of some
+        # size has no plan on the page (601 to 1,000 pupils once had none).
+        if p['min'] != previous_limit + 1:
+            sys.exit(f'PLANS: {p["code"]} starts at {p["min"]} pupils, but the plan '
+                     f'before it stops at {previous_limit}')
+        if p.get('by_arrangement'):
+            if p['limit'] is not None or any(k in p for k in ('monthly', 'quarterly', 'yearly')):
+                sys.exit(f'PLANS: {p["code"]} is by arrangement, so it has no limit and no prices')
+            previous_limit = None
+            continue
+        m, q, y = p['monthly'], p['quarterly'], p['yearly']
+        if q * 10 != m * 3 * 9:
+            sys.exit(f'PLANS: {p["code"]} three months is {rupees(q)}, which is not 10% off '
+                     f'3 x {rupees(m)}, and the pricing page says it is')
+        if y != m * 10:
+            sys.exit(f'PLANS: {p["code"]} a year is {rupees(y)}, which is not two months free '
+                     f'on {rupees(m)} a month, and the pricing page says it is')
+        previous_limit = p['limit']
+    if not any(not p.get('by_arrangement') for p in PLANS):
+        sys.exit('PLANS: no priced plan, so there is no "from" price to print')
+
+
+check_plans()
+
+
+def band(p: dict) -> str:
+    """The pupils a plan is for, in the words the cards print."""
+    if p['limit'] is None:
+        return f'More than {p["min"] - 1:,} pupils'
+    return f'{p["min"]:,} to {p["limit"]:,} pupils'
+
+
+def plan_tokens() -> dict[str, str]:
+    """Every {{...}} a page may use to print a price, name or band."""
+    tokens: dict[str, str] = {}
+    priced = [p for p in PLANS if not p.get('by_arrangement')]
+    # "From" is a claim about the minimum, so it is the cheapest monthly price
+    # and never simply the first plan in the list.
+    tokens['FROM_PRICE'] = rupees(min(p['monthly'] for p in priced))
+    for p in PLANS:
+        k = f'PLAN_{p["code"]}_'
+        tokens[k + 'name'] = p['name']
+        tokens[k + 'band'] = band(p)
+        tokens[k + 'min'] = f'{p["min"]:,}'
+        if p['limit'] is not None:
+            tokens[k + 'limit'] = f'{p["limit"]:,}'
+        if p.get('by_arrangement'):
+            continue
+        m, q, y = p['monthly'], p['quarterly'], p['yearly']
+        tokens[k + 'monthly'] = rupees(m)
+        tokens[k + 'quarterly'] = rupees(q)
+        tokens[k + 'yearly'] = rupees(y)
+        tokens[k + 'save3'] = rupees(3 * m - q)
+        tokens[k + 'save12'] = rupees(12 * m - y)
+    return tokens
+
+
+TOKENS = plan_tokens()
+
+
+def fill_plans(text: str, where: str) -> str:
+    """Replace the price placeholders, refusing one that names nothing.
+
+    A typo such as {{PLAN_growht_monthly}} must stop the build. Left alone it
+    would be caught as an unreplaced placeholder anyway, but this names the
+    plans and fields that do exist, which is the message worth reading.
+    """
+    def one(m: re.Match) -> str:
+        key = m.group(1)
+        if key not in TOKENS:
+            sys.exit(f'{where}: {{{{{key}}}}} is not a plan figure. Known: '
+                     + ', '.join(sorted(TOKENS)))
+        return TOKENS[key]
+    return re.sub(r'\{\{((?:PLAN_|FROM_)\w+)\}\}', one, text)
+
+
+def offer(p: dict) -> dict:
+    """One JSON-LD Offer.
+
+    A priced plan carries its monthly price as the Offer price and all three
+    terms as UnitPriceSpecifications, so a crawler reads "Rs 2,000 a month"
+    rather than a one-off Rs 2,000. Enterprise has no list price, so its Offer
+    has a description and no price: inventing a figure for it would be a price
+    nobody will honour.
+    """
+    if p.get('by_arrangement'):
+        return {
+            '@type': 'Offer',
+            'name': p['name'],
+            'description': (f'For schools with more than {p["min"] - 1:,} pupils. No pupil '
+                            'limit. We agree a monthly price with each school; three '
+                            'months is 10% off it and a year is two months free, unless we '
+                            'agree those too.'),
+            'priceCurrency': 'PKR',
+            'availability': 'https://schema.org/InStock',
+        }
+    m, q, y = p['monthly'], p['quarterly'], p['yearly']
+
+    def spec(name: str, price: int, duration: str, unit: str) -> dict:
+        return {
+            '@type': 'UnitPriceSpecification',
+            'name': name,
+            'price': str(price),
+            'priceCurrency': 'PKR',
+            'billingDuration': duration,
+            'unitText': unit,
+        }
+
+    return {
+        '@type': 'Offer',
+        'name': p['name'],
+        'description': f'For schools with {band(p)}.',
+        'price': str(m),
+        'priceCurrency': 'PKR',
+        'availability': 'https://schema.org/InStock',
+        'priceSpecification': [
+            spec('Monthly', m, 'P1M', 'MONTH'),
+            spec('Three months, 10% off', q, 'P3M', 'THREE MONTHS'),
+            spec('A year, two months free', y, 'P1Y', 'YEAR'),
+        ],
+    }
 
 def load_profiles() -> dict:
     """site-src/data/profiles.json: where this business exists elsewhere.
@@ -135,17 +297,7 @@ SOFTWARE = {
     'url': f'{SITE}/',
     'publisher': {'@id': f'{SITE}/#org'},
     'inLanguage': 'en-PK',
-    'offers': [
-        {
-            '@type': 'Offer',
-            'name': name,
-            'price': price,
-            'priceCurrency': 'PKR',
-            'description': cap,
-            'availability': 'https://schema.org/InStock',
-        }
-        for name, price, cap in PLANS
-    ],
+    'offers': [offer(p) for p in PLANS],
     'featureList': [
         'Family fee collection: one payment across all siblings',
         'Expected versus collected reconciliation',
@@ -352,8 +504,11 @@ def main() -> int:
 
     for name, meta, body in parsed:
         path = meta['path']
-        title = meta['title']
-        desc = meta['description']
+        # Prices may appear in the title and description as well as the body,
+        # and the pricing page's description quotes them.
+        title = fill_plans(meta['title'], name)
+        desc = fill_plans(meta['description'], name)
+        body = fill_plans(body, name)
 
         # Duplicate titles and descriptions are the commonest defect a template
         # introduces, and the one Search Console complains about first.

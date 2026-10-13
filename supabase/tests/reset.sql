@@ -117,9 +117,16 @@ end $paying$;
 do $sweep$
 declare
   r jsonb; v_t text; v_n bigint; v_left text[] := array[]::text[];
+  -- 0156 adds what the school owes and was given: the money paid against each
+  -- invoice, the discount codes and what they saved, our renewal records and
+  -- a way to pay. "Start again" clears the school's records, never its
+  -- account with us, so a trial code cannot be redeemed twice.
   v_keep text[] := array['subscriptions','school_settings','profiles','audit_log','reviews',
                          'operator_actions','operator_sessions','platform_invoices',
-                         'platform_payments','platform_payment_claims','platform_exports'];
+                         'platform_payments','platform_payment_claims','platform_exports',
+                         'platform_payment_allocations','discount_codes','subscription_discounts',
+                         'discount_applications','discount_events','billing_attempts',
+                         'payment_methods','payment_method_tokens'];
 begin
   perform set_config('test.uid', (select v::text from ids where k='own'), false);
   r := public.fn_reset_school_data('  Al Qalam Public School  ');

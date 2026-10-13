@@ -3,7 +3,8 @@
 //
 // The one public, unauthenticated entry point in the product. A school owner
 // fills in the signup form and this creates, in order:
-//   1. the school + a 14-day trial subscription  (fn_signup_school, service role)
+//   1. the school + a 14-day trial subscription, on the plan its number of
+//      pupils puts it on (fn_signup_school_for_students, service role)
 //   2. their auth login, carrying school_id in APP metadata
 //   3. their profile as the school's owner, if step 2 did not already produce it
 //
@@ -63,33 +64,48 @@ Deno.serve(async (req) => {
     // hands the form, so there is no second copy of seven province names here
     // to drift out of step with the check constraint.
     const region = String(body.region ?? '').trim()
-    // THE PLAN AND THE TERM THE SCHOOL PICKED ON THE FORM.
+    // THE NUMBER OF PUPILS, AND THE TERM (0155).
     //
-    // Both optional, and both defaulted BY THE DATABASE rather than here.
-    // fn_signup_school's two new parameters carry defaults of 'starter' and 12,
-    // which is exactly what this function used to produce, so a deployment of
-    // this file that predates migration 0127 and a database that predates this
-    // file both keep working. That is what makes the two deployable in either
-    // order.
+    // A school no longer names a plan: it says how many pupils are on its roll
+    // and the database puts it on the plan whose range holds that number (up
+    // to 280 Starter, up to 1,000 Growth, more than that Enterprise). The form
+    // has already shown the school that plan and its price; this sends the
+    // number so the database decides again, from the same rule, and a body
+    // posted straight at this endpoint cannot pick its own plan.
     //
-    // NOT VALIDATED HERE beyond the type. The database refuses a plan that does
-    // not exist, one that is no longer sold, one priced by arrangement (which
-    // has no student limit, so it would be unlimited pupils for nothing), and
-    // any term that is not one of the three on the price list. This is the one
-    // public unauthenticated entry point in the product: a body posted straight
-    // at it has to meet the same wall as the form, and a second copy of the
-    // rules here would be a second thing to keep in step.
-    const planCode = body.plan_code == null ? undefined : String(body.plan_code).trim()
-    const termMonths = body.term_months == null ? undefined : Number(body.term_months)
+    // VALIDATED HERE AS WELL AS THERE, because this is the one public
+    // unauthenticated entry point in the product. A whole number from 1 to
+    // 100,000, and nothing else: "250.5", "-3" and "lots" are refused before
+    // any database work is done, in the words the database would use.
+    const rawStudents = body.students
+    const students = typeof rawStudents === 'number' ? rawStudents
+      : typeof rawStudents === 'string' && /^\s*\d+\s*$/.test(rawStudents) ? Number(rawStudents)
+        : NaN
+    // One, three or twelve months, defaulting to one: the smallest commitment
+    // and the honest default for a choice nobody has made.
+    const termMonths = body.term_months == null || body.term_months === '' ? 1 : Number(body.term_months)
 
     if (schoolName.length < 2) return json({ error: 'Please enter your school name.' }, 400)
     if (!fullName) return json({ error: 'Please enter your name.' }, 400)
     if (!email || !/^\S+@\S+\.\S+$/.test(email)) return json({ error: 'Please enter a valid email address.' }, 400)
     if (password.length < 8) return json({ error: 'Password must be at least 8 characters.' }, 400)
+    if (rawStudents == null || rawStudents === '') {
+      // An open tab from before the form asked the question. Saying "reload"
+      // gets them the field; saying "enter a number" sends them looking for
+      // a box that is not on their screen.
+      return json({ error: 'Please reload this page: the signup form now asks how many pupils '
+        + 'are on your roll, so we can show you your plan and its price.' }, 400)
+    }
+    if (!Number.isInteger(students) || students < 1 || students > 100000) {
+      return json({ error: 'Enter the number of pupils on your roll, between 1 and 100,000.' }, 400)
+    }
+    if (![1, 3, 12].includes(termMonths)) {
+      return json({ error: 'Choose one month, three months or a year.' }, 400)
+    }
 
-    // 1) School + trial. fn_signup_school is the unguarded twin of
-    //    fn_provision_school: reachable by service role only, never granted to
-    //    any client role, so signup cannot be used to mint schools from the app.
+    // 1) School + trial. The signup functions are the unguarded twins of the
+    //    operator's own: reachable by service role only, never granted to any
+    //    client role, so signup cannot be used to mint schools from the app.
     const base = {
       p_name: schoolName,
       p_city: city || null,
@@ -97,52 +113,73 @@ Deno.serve(async (req) => {
       p_contact_phone: phone || null,
       p_contact_email: email,
     }
-    // fn_signup_school_on_plan IS THE ONE THAT ASKS. The five-argument
-    // fn_signup_school is still there as a delegate that passes Starter and a
-    // yearly term, which is exactly what this function used to get.
+    // fn_signup_school_for_students IS THE ONE THAT ASKS (bundle 56). It takes
+    // the number of pupils and the term, chooses the plan by the same rule the
+    // form showed, and refuses a number outside 1 to 100,000 itself.
     //
-    // WHY TWO NAMES AND NOT TWO OVERLOADS: the existing five parameters carry
-    // defaults, Postgres requires any added parameter to carry one too, and a
-    // five-argument call then matches both candidates and is refused as not
-    // unique. Migration 0127's header has it in full, with the error text.
+    // THE OLDER NAMES ARE A FALLBACK, AND ONLY WHEN THE NEW ONE IS MISSING, so
+    // this file and the database can be deployed in either order. Eight
+    // arguments with a region needs bundle 37, seven needs bundle 33, and the
+    // five-argument legacy name has been there since 0025. Each fallback loses
+    // one thing and keeps the school.
     //
-    // THE FALLBACK IS WHAT MAKES THIS DEPLOYABLE IN EITHER ORDER. Redeployed
-    // before bundle 33 is pasted, the first call fails with "does not exist"
-    // and the second does what today's deployment does: the school is still
-    // created, on Starter, and can change the plan from Settings afterwards.
-    // Without it, redeploying first would break signup outright until the
-    // bundle landed.
-    //
-    // THE DEFAULT TERM IS ONE MONTH AND NOT TWELVE, and that changed with the
-    // two-step form. The form no longer sends a plan or a term at all: step one
-    // creates the school and step two writes what the school actually chooses.
-    // Leaving the old `?? 12` here would put every new school on a yearly term
-    // between the two screens, which is the exact defect 0127 was written to
-    // fix ("every school in the console was on Starter paying annually
-    // whatever had actually been agreed"), reintroduced through a default.
-    // One month is the smallest commitment and the honest placeholder for a
-    // choice nobody has made yet.
-    //
-    // THREE ATTEMPTS, NEWEST FIRST, so this file and the database can be
-    // deployed in either order. Eight arguments needs bundle 37; seven needs
-    // bundle 33; the five-argument legacy name has been there since 0025. Each
-    // fallback loses one thing and keeps the school: without 37 the region is
-    // not recorded, without 33 the plan and term are not either, and in both
-    // cases the school exists, the trial is real, and the plan screen fixes it.
+    // NOT FOR A SCHOOL OF MORE THAN 1,000. The old functions name a plan, and
+    // the only plans they can name have a list price and a pupil limit, so an
+    // Enterprise-sized school sent through them lands on a plan that refuses
+    // its second thousand admissions on the first morning. On a database that
+    // old, that school is set up by us, and it is told so before anything is
+    // created. A smaller school gets the smallest priced plan that holds its
+    // roll, read from that database's own plans, and the operator can move it.
     let provisioned: unknown = null
-    let provErr: { message?: string } | null = null
-    const missing = (e: { message?: string } | null) =>
-      !!e && /does not exist|could not find|schema cache/i.test(e.message ?? '')
+    let provErr: { message?: string; code?: string } | null = null
+    // A function missing from an older database, told apart by its code and
+    // never by the wording: an error that quotes what the caller typed (a
+    // region "that does not exist") must come back to the caller, not send it
+    // down the older signup path.
+    const missing = (e: { message?: string; code?: string } | null) =>
+      !!e && (e.code === 'PGRST202' || e.code === '42883'
+              || (!e.code && /could not find the function/i.test(e.message ?? '')))
     {
+      const r = await admin.rpc('fn_signup_school_for_students', {
+        ...base,
+        p_region: region || null,
+        p_students: students,
+        p_term_months: termMonths,
+      })
+      provisioned = r.data
+      provErr = r.error
+    }
+    if (missing(provErr)) {
+      if (students > 1000) {
+        return json({
+          error: 'A school with more than 1,000 pupils is priced with us, and we set it up '
+            + 'ourselves. Please call us and we will have your school ready for you.',
+        }, 400)
+      }
+      // The smallest priced plan whose limit holds the roll. A read that fails
+      // leaves the database's own default, which is what this function sent
+      // before it knew the number at all.
+      const { data: rows } = await admin.from('plans')
+        .select('code, student_limit, price_monthly').eq('active', true)
+      const fits = ((rows ?? []) as { code: string; student_limit: number | null; price_monthly: number | null }[])
+        .filter((p) => p.student_limit != null && p.student_limit >= students && Number(p.price_monthly ?? 0) > 0)
+        .sort((x, y) => (x.student_limit ?? 0) - (y.student_limit ?? 0))
+      if (rows && fits.length === 0) {
+        return json({
+          error: 'None of our plans on this system covers that many pupils yet. Please call us '
+            + 'and we will set your school up ourselves.',
+        }, 400)
+      }
+      const planCode = fits[0]?.code
       const withPlan = {
         ...base,
-        p_plan_code: planCode ?? 'starter',
-        p_term_months: Number.isFinite(termMonths) ? termMonths : 1,
+        ...(planCode ? { p_plan_code: planCode } : {}),
+        p_term_months: termMonths,
       }
-      // THE NEWEST NAME, NOT AN EIGHTH ARGUMENT TO THE OLD ONE. 0132 adds the
-      // region under its own name for the reason 0127 gave for adding
-      // fn_signup_school_on_plan beside fn_signup_school: an overload makes
-      // every call ambiguous and takes public signup down.
+      // THE REGION'S OWN NAME, NOT AN EIGHTH ARGUMENT TO THE OLD ONE. 0132
+      // added it beside fn_signup_school_on_plan because an overload makes
+      // every call ambiguous and takes public signup down (0127's header has
+      // the error text in full).
       const r = await admin.rpc('fn_signup_school_on_plan_in_region',
         { ...withPlan, p_region: region || null })
       provisioned = r.data
@@ -270,16 +307,31 @@ Deno.serve(async (req) => {
         // The LOGIN goes first and the school only if that succeeded. The other
         // order can leave a working login pointing at a school that is gone,
         // which is worse than either half.
+        //
+        // AND THE SCHOOL GOES THROUGH fn_signup_rollback, like the failure
+        // path above. This used to be `from('schools').delete()`, the very
+        // statement the comment on that path explains can never work (the
+        // school_settings row created by a trigger holds the school by a
+        // foreign key), and its result was not read, so this path told the
+        // school "nothing was saved" while leaving an ownerless school in the
+        // console. The rollback's answer is read now and the school is told
+        // the truth either way.
         const { error: delUserErr } = await admin.auth.admin.deleteUser(created.user.id)
-        if (!delUserErr) await admin.from('schools').delete().eq('id', schoolId)
-        return json({
-          error: delUserErr
-            ? 'Something went wrong setting up your school and we could not tidy '
+        const rbErr = delUserErr
+          ? null
+          : (await admin.rpc('fn_signup_rollback', { p_school_id: schoolId })).error
+        if (delUserErr || rbErr) {
+          return json({
+            error: 'Something went wrong setting up your school and we could not tidy '
               + `it away either: ${fixErr.message}. Please contact us with this `
-              + `reference: ${schoolId}`
-            : 'Something went wrong setting up your school, so nothing was saved '
-              + `and your email address is free to use: ${fixErr.message}. `
-              + 'Please try again.',
+              + `reference and do not sign up again: ${schoolId}`,
+            school_id: schoolId,
+          }, 500)
+        }
+        return json({
+          error: 'Something went wrong setting up your school, so nothing was saved '
+            + `and your email address is free to use: ${fixErr.message}. `
+            + 'Please try again.',
         }, 500)
       }
       const again = await readProfile()
@@ -298,6 +350,12 @@ Deno.serve(async (req) => {
       ok: true,
       school_id: schoolId,
       trial_ends_on: (provisioned as { trial_ends_on: string }).trial_ends_on,
+      // What the school was put on, so the app can say it without a second
+      // read. Absent from a database older than bundle 33.
+      plan_code: (provisioned as { plan_code?: string }).plan_code ?? null,
+      plan_name: (provisioned as { plan_name?: string }).plan_name ?? null,
+      by_arrangement: (provisioned as { by_arrangement?: boolean }).by_arrangement ?? false,
+      term_months: (provisioned as { term_months?: number }).term_months ?? termMonths,
       // Travels back so the signup page can say, in one line, that the database
       // trigger did not do its half. It matters beyond this screen: the same
       // trigger attaches every teacher and parent login, so a school that sees

@@ -1,6 +1,6 @@
 path: /pricing
 title: School management software price in Pakistan
-description: Three plans by school size, from Rs 2,000 a month for up to 150 students. Every module in every plan, and payment by bank transfer with no card on file.
+description: Three plans by school size: {{PLAN_starter_name}} at {{PLAN_starter_monthly}} a month for up to {{PLAN_starter_limit}} pupils, {{PLAN_growth_name}} for up to {{PLAN_growth_limit}}, and {{PLAN_enterprise_name}} priced with you. Every module in every plan.
 nav: Pricing
 nav_order: 6
 breadcrumb: Pricing
@@ -14,8 +14,10 @@ changefreq: weekly
     <span class="eyebrow">Pricing</span>
     <h1>Priced for a real Pakistani school</h1>
     <p class="lede" style="max-width:64ch">
-      Every plan includes every feature. You pay for size, not for modules. Take
-      three months and save about five percent; pay yearly and get two months free.
+      Every plan includes every feature. You pay for the size of your school,
+      not for modules. When you sign up you tell us how many pupils you have,
+      and the plan follows from that. Pay for three months and save 10%; pay
+      for a year and get two months free.
     </p>
   </div>
 </header>
@@ -24,73 +26,94 @@ changefreq: weekly
   <div class="wrap">
     <div class="prices">
       <div class="price" data-plan="starter">
-        <h3>Starter</h3>
-        <div class="price__amt"><span data-price-monthly>Rs 2,000</span><small>/month</small></div>
-        <p class="price__cap" data-price-cap>Up to 150 students</p>
+        <h3 data-plan-name>{{PLAN_starter_name}}</h3>
+        <div class="price__amt"><span data-price-monthly>{{PLAN_starter_monthly}}</span><small>/month</small></div>
+        <p class="price__cap" data-price-cap>{{PLAN_starter_band}}</p>
+        <table class="price__terms">
+          <caption>Or pay ahead</caption>
+          <tr>
+            <th scope="row">3 months <small>10% off</small></th>
+            <td><b data-price-quarterly>{{PLAN_starter_quarterly}}</b> <small>You save <span data-save-quarterly>{{PLAN_starter_save3}}</span></small></td>
+          </tr>
+          <tr>
+            <th scope="row">A year <small>Two months free</small></th>
+            <td><b data-price-yearly>{{PLAN_starter_yearly}}</b> <small>You save <span data-save-yearly>{{PLAN_starter_save12}}</span></small></td>
+          </tr>
+        </table>
         <ul>
           <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Every module included</li>
           <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Unlimited staff logins</li>
           <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Parent portal</li>
-          <li data-price-quarterly>Rs 5,700 for 3 months</li>
-          <li data-price-yearly>Rs 20,000 a year</li>
         </ul>
         <a class="btn btn--ghost" href="/contact" data-app="signup"
-           aria-label="Start a free trial on the Starter plan">Start free trial</a>
+           aria-label="Start free trial. Signup asks how many pupils you have, and the plan follows from that">Start free trial</a>
       </div>
-      <!-- /plan -->
 
-      <div class="price price--hot" data-plan="growth">
-        <span class="price__tag">Most schools</span>
-        <h3>Growth</h3>
-        <div class="price__amt"><span data-price-monthly>Rs 3,500</span><small>/month</small></div>
-        <p class="price__cap" data-price-cap>Up to 350 students</p>
+      <div class="price" data-plan="growth">
+        <h3 data-plan-name>{{PLAN_growth_name}}</h3>
+        <div class="price__amt"><span data-price-monthly>{{PLAN_growth_monthly}}</span><small>/month</small></div>
+        <p class="price__cap" data-price-cap>{{PLAN_growth_band}}</p>
+        <table class="price__terms">
+          <caption>Or pay ahead</caption>
+          <tr>
+            <th scope="row">3 months <small>10% off</small></th>
+            <td><b data-price-quarterly>{{PLAN_growth_quarterly}}</b> <small>You save <span data-save-quarterly>{{PLAN_growth_save3}}</span></small></td>
+          </tr>
+          <tr>
+            <th scope="row">A year <small>Two months free</small></th>
+            <td><b data-price-yearly>{{PLAN_growth_yearly}}</b> <small>You save <span data-save-yearly>{{PLAN_growth_save12}}</span></small></td>
+          </tr>
+        </table>
         <ul>
           <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Every module included</li>
           <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Unlimited staff logins</li>
           <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Parent portal</li>
-          <li data-price-quarterly>Rs 10,000 for 3 months</li>
-          <li data-price-yearly>Rs 35,000 a year</li>
-        </ul>
-        <a class="btn btn--primary" href="/contact" data-app="signup"
-           aria-label="Start a free trial on the Growth plan">Start free trial</a>
-      </div>
-      <!-- /plan -->
-
-      <div class="price" data-plan="institution">
-        <h3>Institution</h3>
-        <div class="price__amt"><span data-price-monthly>Rs 5,500</span><small>/month</small></div>
-        <p class="price__cap" data-price-cap>Up to 600 students</p>
-        <ul>
-          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Every module included</li>
-          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Unlimited staff logins</li>
-          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Parent portal</li>
-          <li data-price-quarterly>Rs 15,700 for 3 months</li>
-          <li data-price-yearly>Rs 55,000 a year</li>
         </ul>
         <a class="btn btn--ghost" href="/contact" data-app="signup"
-           aria-label="Start a free trial on the Institution plan">Start free trial</a>
+           aria-label="Start free trial. Signup asks how many pupils you have, and the plan follows from that">Start free trial</a>
       </div>
-      <!-- /plan -->
 
-      <div class="price price--full" data-plan="custom">
-        <div class="price__info">
-          <h3>Larger institutions</h3>
-          <div class="price__amt">Let's talk</div>
-          <p class="price__cap" style="margin-bottom: 0;">More than 1,000 students</p>
-        </div>
+      <div class="price" data-plan="enterprise">
+        <h3 data-plan-name>{{PLAN_enterprise_name}}</h3>
+        <div class="price__amt price__amt--words">Priced with you</div>
+        <p class="price__cap" data-price-cap>{{PLAN_enterprise_band}}</p>
+        <table class="price__terms">
+          <caption>How we price it</caption>
+          <tr>
+            <th scope="row">Monthly</th>
+            <td><b>Agreed with you</b></td>
+          </tr>
+          <tr>
+            <th scope="row">3 months <small>10% off</small></th>
+            <td><b>3 x your price, less 10%</b></td>
+          </tr>
+          <tr>
+            <th scope="row">A year <small>Two months free</small></th>
+            <td><b>10 x your price</b></td>
+          </tr>
+        </table>
         <ul>
-          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Multiple campuses</li>
-          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Migration from your current system</li>
-          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>A direct line for support</li>
+          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>No pupil limit</li>
+          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>Every module included</li>
+          <li><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>The same 14 day trial</li>
         </ul>
-        <a class="btn btn--ghost" href="/contact">Contact us</a>
+        <p class="price__note">
+          The three month and yearly prices follow from the monthly one unless we
+          agree those with you too. At the end of the trial the software locks
+          until your price is agreed, so talk to us before then.
+        </p>
+        <a class="btn btn--ghost" href="/contact" data-app="signup"
+           aria-label="Start free trial. Signup asks how many pupils you have, and the plan follows from that">Start free trial</a>
       </div>
 
-    <p class="small muted" style="margin-top:20px;max-width:70ch">
-      Grow past your plan mid year and nothing stops working. Admissions are never
-      blocked by a billing limit. We will call you about moving up at a sensible
-      moment, not in the middle of admission season. Payment is by bank transfer:
-      there is no card on file and no automatic renewal.
+    </div>
+
+    <p class="small muted" style="margin-top:28px;max-width:70ch">
+      The number of pupils on your plan is a real limit. When the school reaches
+      it, new admissions pause until you move up; the software warns you from
+      90%, so it never arrives as a surprise. Ask from Settings and we move you
+      to the next plan. Payment is by bank transfer: there is no card on file
+      and nothing is taken from your account.
     </p>
   </div>
 </section>
@@ -132,11 +155,15 @@ changefreq: weekly
     <ul class="checklist" style="margin-top:22px">
       <li>
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>
-        <span><b>Bank transfer.</b> There is no card on file and no automatic renewal. An invoice carries our business name, NTN and bank account, so your accounts can file it and withhold what they must.</span>
+        <span><b>Bank transfer.</b> There is no card on file and nothing is taken from your account. An invoice carries our business name, NTN and bank account, so your accounts can file it and withhold what they must.</span>
       </li>
       <li>
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>
-        <span><b>Growing past your plan does not stop anything.</b> Admissions are never blocked by a billing limit. We call you about moving up at a sensible moment, not in the middle of admission season.</span>
+        <span><b>You pay for the time ahead.</b> Each invoice is due on the first day of the period it pays for. If it is not paid, everything keeps working for 14 more days, and then the software locks until it is.</span>
+      </li>
+      <li>
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>
+        <span><b>The limit is the limit.</b> New admissions pause when you reach your plan's number of pupils. A warning shows from 90%, and when you ask from Settings we move you up.</span>
       </li>
       <li>
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke-linecap="round"/></svg>

@@ -280,19 +280,25 @@ begin
 end $t$;
 
 -- 9. THE SENTENCE THE SCHOOL READS, in a trial with no card.
+--
+--    Since 0155 the trial date is the LAST day of access, so the first paid
+--    day, and the next charge, is the day after it: trial_ends_on + 1.
 do $t$
-declare j jsonb;
+declare j jsonb; v_trial date;
 begin
+  select trial_ends_on into v_trial from public.subscriptions
+   where school_id = (select v from ids where k='sch');
   perform set_config('test.uid', (select v::text from ids where k='own'), false);
   j := public.fn_my_next_payment();
   if (j->>'in_trial')::boolean is not true then
     raise exception 'FAIL: a trialing school does not report itself in a trial';
   end if;
-  if (j->>'next_charge_on')::date <> current_date + 14 then
-    raise exception 'FAIL: the next charge is on % and the trial ends on %',
-      j->>'next_charge_on', current_date + 14;
+  if (j->>'next_charge_on')::date is distinct from v_trial + 1 then
+    raise exception 'FAIL: the next charge is on % and the trial ends on %, so it '
+      'should be on %, the first day after the trial',
+      j->>'next_charge_on', v_trial, v_trial + 1;
   end if;
-  -- Starter, twelve months, at the 0111 price list.
+  -- Starter, twelve months, at whatever the price list says (0155 set it).
   if (j->>'next_charge_amount')::numeric <> public.fn__plan_price('starter', 12) then
     raise exception 'FAIL: the amount quoted to the school is Rs % and the price '
       'list says Rs %', j->>'next_charge_amount', public.fn__plan_price('starter', 12);

@@ -1,180 +1,175 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  deleteDiscount, listDiscountUsage, listDiscounts, listPlans, revokeDiscount,
-  saveDiscount, type DiscountCode, type DiscountDuration, type DiscountKind,
-  type SaveDiscountInput,
+  deleteDiscount, discountEvents, listDiscountUsage, listDiscounts, listPlatformSchools,
+  priceList, retireDiscount, revokeDiscount, type DiscountCode, type DiscountUse,
 } from '@/lib/platform'
 import { formatPkr } from '@/lib/licence'
 import { fmtDate, fmtDateTime } from '@/lib/format'
 import { AskDialog } from '@/components/AskDialog'
+import { EditCodeForm, LOCKED_SENTENCE, NewCodeForm } from './discounts/CodeForm'
+import { GiveDialog } from './discounts/GiveDialog'
+import { Roster } from './discounts/Roster'
+import { LOG_FILTERS, Log, type LogCtx, type LogFilter } from './discounts/Log'
+import { planNames, type PricedPlan } from './discounts/rules'
 
-const FIELD = 'w-full rounded border border-slate-300 px-2 py-1.5 text-sm'
-const LABEL = 'block text-xs font-medium text-slate-600'
+const BTN = 'rounded border px-2 py-1 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-brand-500'
+const BTN_PLAIN = `${BTN} border-slate-300 text-slate-700 hover:bg-slate-50`
+const BTN_DANGER = `${BTN} border-danger-200 text-danger-700 hover:bg-danger-50`
+
+type Dialog =
+  | { kind: 'new' }
+  | { kind: 'edit'; code: DiscountCode }
+  | { kind: 'give'; code: DiscountCode }
+  | { kind: 'retire'; code: DiscountCode }
+  | { kind: 'delete'; code: DiscountCode }
+  | { kind: 'takeoff'; use: DiscountUse }
 
 /**
- * The discount engine, from the vendor's side.
+ * The discount codes, from our side.
  *
- * TWO PANELS AND THEY ANSWER DIFFERENT QUESTIONS. The codes are what is on
- * offer; the roster is who actually took one and whether it is still doing
- * anything. Before this existed the only record of a discount was prose in an
- * invoice note, so "which schools are on a discount" had no answer at all.
+ * A code is the only way a Starter or Growth school pays less than the price
+ * list, so this tab is where every such promise is made, changed, given and
+ * taken back, and where the record of each one lives.
  *
- * THE ROSTER IS NOT A LIST OF CODES WITH SCHOOLS UNDER THEM. It is a list of
- * schools, newest first, because the question an operator is actually asking is
- * about a school: "is this one still on the twenty percent we gave them in
- * April". A code-first tree makes that a search.
+ * THREE PANELS, THREE QUESTIONS. The codes are what is on offer. The roster is
+ * which schools have one and what it is still doing for them. The log is what
+ * happened and who did it: made, changed, given, refused, invoiced, voided.
+ * Each code opens onto its own roster and log, because "who is on SPRING26"
+ * and "who changed SPRING26" are asked about one code at a time.
  *
- * FOUR STATES, AND THE DATABASE DECIDES WHICH. Active, spent, expired, removed.
- * They are computed in fn_platform_discount_usage rather than here, because
- * "expired" is a comparison against today and a browser in a different timezone
- * would draw a different conclusion from the same row.
- *
- * EDITING A CODE NEVER REACHES A SCHOOL ALREADY ON IT, and the form says so
- * when it matters. The terms are copied onto the redemption, which is the whole
- * design: a promise a school was given cannot be edited underneath them.
+ * A CODE COUNTS BILLED MONTHS and is checked again on every invoice; the
+ * database works that out (0156) and the forms only mirror it. Once a school
+ * has a code, what it gives is locked: a promise a school was given is not
+ * edited underneath them.
  */
 export function Discounts() {
   const qc = useQueryClient()
   const codes = useQuery({ queryKey: ['discounts'], queryFn: listDiscounts })
-  const usage = useQuery({ queryKey: ['discountUsage'], queryFn: () => listDiscountUsage() })
-  const plans = useQuery({ queryKey: ['plans'], queryFn: listPlans })
-  const [editing, setEditing] = useState<DiscountCode | null | 'new'>(null)
-  const [taking, setTaking] = useState<{ id: string; name: string } | null>(null)
+  const usage = useQuery({ queryKey: ['discountUsage', 'all'], queryFn: () => listDiscountUsage() })
+  const prices = useQuery({ queryKey: ['priceList'], queryFn: priceList })
+  const schools = useQuery({
+    queryKey: ['platformSchools', 'all'], queryFn: () => listPlatformSchools(true),
+  })
+  const [logFilter, setLogFilter] = useState<LogFilter>('all')
+  const [logLimit, setLogLimit] = useState(100)
+  const events = useQuery({
+    queryKey: ['discountEvents', 'all', logLimit],
+    queryFn: () => discountEvents({ limit: logLimit }),
+  })
+
+  const [dialog, setDialog] = useState<Dialog | null>(null)
+  const [open, setOpen] = useState<string | null>(null)
+  const [notice, setNotice] = useState<{ text: string; giveCode?: string } | null>(null)
   const [err, setErr] = useState<string | null>(null)
 
+  const plans: PricedPlan[] = useMemo(() => prices.data?.plans ?? [], [prices.data])
+  const schoolList = schools.data ?? []
+  const ctx: LogCtx = useMemo(() => ({
+    plans,
+    schoolName: (id: string) => schoolList.find((s) => s.school_id === id)?.school_name ?? null,
+  }), [plans, schoolList])
+
   const refresh = () => {
-    void qc.invalidateQueries({ queryKey: ['discounts'] })
-    void qc.invalidateQueries({ queryKey: ['discountUsage'] })
+    for (const k of ['discounts', 'discountUsage', 'discountEvents', 'schoolDetail', 'platformSchools']) {
+      void qc.invalidateQueries({ queryKey: [k] })
+    }
+  }
+  const done = (text: string, giveCode?: string) => {
+    setDialog(null); setErr(null); setNotice({ text, giveCode }); refresh()
   }
 
+  const retire = useMutation({
+    mutationFn: (v: { code: string; reason: string }) => retireDiscount(v.code, v.reason),
+    onSuccess: (_r, v) => done(`${v.code} is retired. No school can take it up from now on; schools that already have it keep it.`),
+    onError: (e: Error) => setErr(e.message),
+  })
   const del = useMutation({
-    mutationFn: deleteDiscount,
-    onSuccess: () => { setErr(null); refresh() },
+    mutationFn: (code: string) => deleteDiscount(code),
+    onSuccess: (_r, code) => done(`${code} is deleted.`),
     onError: (e: Error) => setErr(e.message),
   })
-
   const revoke = useMutation({
-    mutationFn: (v: { id: string; reason: string }) => revokeDiscount(v.id, v.reason),
-    onSuccess: () => { setErr(null); refresh() },
+    mutationFn: (v: { use: DiscountUse; reason: string }) => revokeDiscount(v.use.school_id ?? '', v.reason),
+    onSuccess: (_r, v) => done(`${v.use.code} is off ${v.use.school_name}. It stops coming off from their next invoice.`),
     onError: (e: Error) => setErr(e.message),
   })
 
-  const live = useMemo(
-    () => (usage.data ?? []).filter((u) => u.state === 'active'),
-    [usage.data])
+  const ask = (d: Dialog) => { setErr(null); setNotice(null); setDialog(d) }
+  const close = () => { setErr(null); setDialog(null) }
+  const live = (usage.data ?? []).filter((u) => u.state === 'active')
+  const shown = (events.data ?? []).filter((e) => {
+    const only = LOG_FILTERS[logFilter].events
+    return !only || only.includes(e.event)
+  })
+  const giveTarget = notice?.giveCode ? codes.data?.find((c) => c.code === notice.giveCode) : undefined
 
   return (
     <div className="space-y-6">
-      {err && (
-        <p className="rounded border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
-          {err}
-        </p>
+      {notice && (
+        <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded border border-money-200 bg-money-50 px-3 py-2 text-sm text-money-800">
+          <span>{notice.text}</span>
+          <span className="flex gap-2">
+            {giveTarget && (
+              <button type="button" onClick={() => ask({ kind: 'give', code: giveTarget })}
+                className={`${BTN} border-money-300 bg-white text-money-800 hover:bg-money-100`}>
+                Give it to {giveTarget.school_name ?? 'them'} now
+              </button>
+            )}
+            <button type="button" onClick={() => setNotice(null)}
+              className={`${BTN} border-transparent text-money-800 hover:bg-money-100`}>
+              Dismiss
+            </button>
+          </span>
+        </div>
+      )}
+      {err && !dialog && (
+        <p role="alert" className="rounded border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">{err}</p>
       )}
 
       {/* ------------------------------------------------------- the codes -- */}
-      <section className="rounded-lg border border-slate-200 bg-white">
+      <section className="rounded-lg border border-slate-200 bg-white" aria-labelledby="dc-codes">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
           <div>
-            <h2 className="text-sm font-semibold text-slate-800">Discount codes</h2>
+            <h2 id="dc-codes" className="text-sm font-semibold text-slate-800">Discount codes</h2>
             <p className="text-xs text-slate-500">
-              What is on offer. Editing one never changes what a school already on
-              it was promised.
+              What is on offer. A code counts billed months and is checked on every invoice.
+              Once a school has one, what it gives is locked.
             </p>
           </div>
-          <button
-            onClick={() => { setErr(null); setEditing('new') }}
-            className="rounded bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700"
-          >
+          <button type="button" onClick={() => ask({ kind: 'new' })}
+            className="rounded bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-1">
             New code
           </button>
         </header>
 
         {codes.isLoading && <p className="p-4 text-sm text-slate-400">Loading…</p>}
-        {codes.isError && (
-          <p className="p-4 text-sm text-danger-600">{(codes.error as Error).message}</p>
-        )}
+        {codes.isError && <p className="p-4 text-sm text-danger-600">{(codes.error as Error).message}</p>}
         {codes.data?.length === 0 && (
           <p className="p-4 text-sm text-slate-500">
-            No codes yet. Every deal is currently a figure typed into one invoice,
-            which nothing carries to the next one.
+            No codes yet. A code is the only way to lower a school&rsquo;s price from the list.
           </p>
         )}
 
         {!!codes.data?.length && (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[46rem] text-sm">
+            <table className="w-full min-w-[60rem] text-sm">
               <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
-                  <th className="px-3 py-2 font-medium">Code</th>
-                  <th className="px-3 py-2 font-medium">What it does</th>
-                  <th className="px-3 py-2 font-medium">Can be used</th>
-                  <th className="px-3 py-2 text-right font-medium">Taken up</th>
-                  <th className="px-3 py-2 text-right font-medium">Given away</th>
-                  <th className="px-3 py-2" />
+                  <th scope="col" className="px-3 py-2 font-medium">Code</th>
+                  <th scope="col" className="px-3 py-2 font-medium">What schools see</th>
+                  <th scope="col" className="px-3 py-2 font-medium">When, and places</th>
+                  <th scope="col" className="px-3 py-2 text-right font-medium">Came off</th>
+                  <th scope="col" className="px-3 py-2"><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
               <tbody>
                 {codes.data.map((c) => (
-                  <tr key={c.code} className="border-b border-slate-100 last:border-0">
-                    <td className="px-3 py-2.5">
-                      <span className="font-mono font-medium text-slate-900">{c.code}</span>
-                      {!c.active && (
-                        <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">
-                          off
-                        </span>
-                      )}
-                      <span className="block text-xs text-slate-500">{c.description}</span>
-                    </td>
-                    <td className="px-3 py-2.5 text-slate-700">
-                      {c.summary}
-                      {(c.plan_codes || c.min_term_months) && (
-                        <span className="block text-xs text-slate-500">
-                          {c.plan_codes ? `${c.plan_codes.join(' or ')} only` : ''}
-                          {c.plan_codes && c.min_term_months ? ', ' : ''}
-                          {c.min_term_months ? `${c.min_term_months}+ month term` : ''}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5 text-xs text-slate-600">
-                      {c.redeem_from || c.redeem_until
-                        ? `${c.redeem_from ? fmtDate(c.redeem_from) : 'any time'} to ${
-                            c.redeem_until ? fmtDate(c.redeem_until) : 'no end'}`
-                        : 'any time'}
-                      {c.max_redemptions != null && (
-                        <span className="block">
-                          {c.redeemed} of {c.max_redemptions} seats used
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">
-                      {c.redeemed}
-                      <span className="block text-xs text-slate-500">{c.live} live</span>
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">
-                      {formatPkr(c.total_saved)}
-                    </td>
-                    <td className="px-3 py-2.5 text-right">
-                      <button
-                        onClick={() => { setErr(null); setEditing(c) }}
-                        className="rounded border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                      >
-                        Edit
-                      </button>
-                      {/* DELETE ONLY WHILE NOBODY HAS USED IT. Once a school
-                          has redeemed a code it is part of their billing record,
-                          so the button is not offered rather than offered and
-                          refused. The database refuses it too. */}
-                      {c.deletable && (
-                        <button
-                          onClick={() => del.mutate(c.code)}
-                          className="ml-1.5 rounded border border-danger-200 px-2 py-1 text-xs font-medium text-danger-700 hover:bg-danger-50"
-                        >
-                          Delete
-                        </button>
-                      )}
-                    </td>
-                  </tr>
+                  <CodeRow key={c.code} c={c} plans={plans} ctx={ctx}
+                    open={open === c.code}
+                    onToggle={() => setOpen(open === c.code ? null : c.code)}
+                    onAct={(kind) => ask({ kind, code: c })}
+                    onTakeOff={(use) => ask({ kind: 'takeoff', use })} />
                 ))}
               </tbody>
             </table>
@@ -183,10 +178,10 @@ export function Discounts() {
       </section>
 
       {/* ------------------------------------------------------ the roster -- */}
-      <section className="rounded-lg border border-slate-200 bg-white">
+      <section className="rounded-lg border border-slate-200 bg-white" aria-labelledby="dc-roster">
         <header className="border-b border-slate-200 px-4 py-3">
-          <h2 className="text-sm font-semibold text-slate-800">
-            Who is on a discount
+          <h2 id="dc-roster" className="text-sm font-semibold text-slate-800">
+            Who has a discount
             {live.length > 0 && (
               <span className="ml-2 rounded-full bg-money-100 px-2 py-0.5 text-xs font-medium text-money-800">
                 {live.length} live
@@ -194,469 +189,243 @@ export function Discounts() {
             )}
           </h2>
           <p className="text-xs text-slate-500">
-            Every school that has ever redeemed a code, newest first, and whether
-            it is still getting anything from it.
+            Every school that has ever had a code, newest first, how it got it and what it is
+            still doing for them.
           </p>
         </header>
-
         {usage.isLoading && <p className="p-4 text-sm text-slate-400">Loading…</p>}
-        {usage.data?.length === 0 && (
-          <p className="p-4 text-sm text-slate-500">Nobody has used a code yet.</p>
-        )}
-
+        {usage.isError && <p className="p-4 text-sm text-danger-600">{(usage.error as Error).message}</p>}
+        {usage.data?.length === 0 && <p className="p-4 text-sm text-slate-500">No school has a code yet.</p>}
         {!!usage.data?.length && (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[44rem] text-sm">
-              <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-3 py-2 font-medium">School</th>
-                  <th className="px-3 py-2 font-medium">Code</th>
-                  <th className="px-3 py-2 font-medium">State</th>
-                  <th className="px-3 py-2 font-medium">Since</th>
-                  <th className="px-3 py-2 text-right font-medium">Used</th>
-                  <th className="px-3 py-2 text-right font-medium">Worth</th>
-                  <th className="px-3 py-2" />
-                </tr>
-              </thead>
-              <tbody>
-                {usage.data.map((u) => (
-                  <tr key={`${u.school_id}-${u.code}`} className="border-b border-slate-100 last:border-0">
-                    <td className="px-3 py-2.5">
-                      <span className="font-medium text-slate-800">{u.school_name}</span>
-                      <span className="block text-xs text-slate-500">
-                        {u.plan_code ?? '-'} {u.status ? `/ ${u.status}` : ''}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2.5 font-mono text-xs text-slate-700">{u.code}</td>
-                    <td className="px-3 py-2.5">
-                      <StateChip state={u.state} />
-                      {u.ends_on && u.state === 'active' && (
-                        <span className="block text-xs text-slate-500">
-                          to {fmtDate(u.ends_on)}
-                        </span>
-                      )}
-                      {u.removed_reason && (
-                        <span className="block text-xs text-slate-500">{u.removed_reason}</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5 text-xs text-slate-600">
-                      {fmtDateTime(u.redeemed_at)}
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">
-                      {u.trial_days_added
-                        ? `${u.trial_days_added} days`
-                        : `${u.times_applied}x`}
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">
-                      {u.trial_days_added ? '-' : formatPkr(u.total_saved)}
-                    </td>
-                    <td className="px-3 py-2.5 text-right">
-                      {u.state === 'active' && (
-                        <button
-                          onClick={() => {
-                            setErr(null)
-                            setTaking({ id: u.school_id, name: u.school_name })
-                          }}
-                          className="rounded border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                        >
-                          Take off
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <Roster rows={usage.data} showCode onTakeOff={(use) => ask({ kind: 'takeoff', use })} />
+        )}
+      </section>
+
+      {/* --------------------------------------------------------- the log -- */}
+      <section className="rounded-lg border border-slate-200 bg-white" aria-labelledby="dc-log">
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+          <div>
+            <h2 id="dc-log" className="text-sm font-semibold text-slate-800">Discount log</h2>
+            <p className="text-xs text-slate-500">
+              Everything that happened to every code, newest first. Nothing in it can be changed.
+            </p>
+          </div>
+          <label className="flex items-center gap-2 text-xs text-slate-600">
+            Show
+            <select value={logFilter} onChange={(e) => setLogFilter(e.target.value as LogFilter)}
+              className="rounded border border-slate-300 bg-white px-2 py-1 text-xs focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500">
+              {(Object.keys(LOG_FILTERS) as LogFilter[]).map((k) => (
+                <option key={k} value={k}>{LOG_FILTERS[k].word}</option>
+              ))}
+            </select>
+          </label>
+        </header>
+        {events.isLoading && <p className="p-4 text-sm text-slate-400">Loading…</p>}
+        {events.isError && <p className="p-4 text-sm text-danger-600">{(events.error as Error).message}</p>}
+        {events.data && <Log events={shown} ctx={ctx} />}
+        {events.data && events.data.length >= logLimit && logLimit < 1000 && (
+          <div className="border-t border-slate-100 px-4 py-2">
+            <button type="button" onClick={() => setLogLimit((n) => Math.min(n + 200, 1000))} className={BTN_PLAIN}>
+              Show older
+            </button>
           </div>
         )}
       </section>
 
-      {/* THE REASON IS REQUIRED, and the database requires it too. Taking a
-          discount off a school changes what they will be charged, and "why is
-          this school suddenly paying more" has to have an answer that is a row
-          rather than somebody's memory. AskDialog rather than window.prompt:
-          once a browser has been told to stop showing dialogs from a page,
-          prompt() returns null for ever and the button silently does nothing. */}
-      {taking && (
-        <AskDialog
-          title={`Take the discount off ${taking.name}`}
-          intro="They will be charged the full price at their next renewal. The record of what they had stays."
-          reason={{
-            label: 'Why',
-            hint: 'Recorded against the school and shown in this list.',
-            required: true,
-            minLength: 4,
-            placeholder: 'Campaign ended; moved to an annual contract',
-          }}
-          confirmLabel="Take it off"
-          tone="danger"
-          busy={revoke.isPending}
-          error={err}
-          onCancel={() => setTaking(null)}
-          onSubmit={({ reason }) => {
-            revoke.mutate({ id: taking.id, reason },
-              { onSuccess: () => setTaking(null) })
-          }}
-        />
+      {dialog?.kind === 'new' && (
+        <NewCodeForm plans={plans} schools={schoolList} onClose={close}
+          onCreated={(m) => done(
+            m.private
+              ? `Made ${m.code}: ${m.summary}. It is private, so it does nothing until we give it to the school.`
+              : `Made ${m.code}: ${m.summary}.`,
+            m.private ? m.code : undefined)} />
       )}
-
-      {editing && (
-        <DiscountForm
-          code={editing === 'new' ? null : editing}
-          planCodes={(plans.data ?? []).map((p) => p.code)}
-          onClose={() => setEditing(null)}
-          onSaved={() => { setEditing(null); refresh() }}
-        />
+      {dialog?.kind === 'edit' && (
+        <EditCodeForm code={dialog.code} plans={plans} schools={schoolList}
+          onClose={close}
+          onSaved={(note) => done(note ?? `Saved ${dialog.code.code}.`)} />
+      )}
+      {dialog?.kind === 'give' && (
+        <GiveDialog code={dialog.code} schools={schoolList} usage={usage.data ?? []}
+          onClose={close} onGiven={(text) => done(text)} />
+      )}
+      {dialog?.kind === 'retire' && (
+        <AskDialog
+          title={`Retire ${dialog.code.code}`}
+          intro="No school can take it up from now on. Schools that already have it keep it, exactly as they were given it."
+          reason={{
+            label: 'Why', hint: 'Kept in the log against the code.', required: true, minLength: 4,
+            placeholder: 'The spring campaign has ended',
+          }}
+          confirmLabel="Retire it" tone="danger" busy={retire.isPending} error={err}
+          onCancel={close}
+          onSubmit={({ reason }) => retire.mutate({ code: dialog.code.code, reason })} />
+      )}
+      {dialog?.kind === 'delete' && (
+        <AskDialog
+          title={`Delete ${dialog.code.code}`}
+          intro="No school has ever had it, so it can go completely. The log keeps a line saying it existed."
+          confirmLabel="Delete it" tone="danger" busy={del.isPending} error={err}
+          onCancel={close}
+          onSubmit={() => del.mutate(dialog.code.code)} />
+      )}
+      {/* THE REASON IS REQUIRED, by the database too. Taking a discount off
+          changes what a school is charged, and "why is this school suddenly
+          paying more" has to have an answer that is a row, not a memory. */}
+      {dialog?.kind === 'takeoff' && (
+        <AskDialog
+          title={`Take ${dialog.use.code} off ${dialog.use.school_name}`}
+          intro="It stops coming off from their next invoice. The record of what they had stays, and only we can give it back."
+          reason={{
+            label: 'Why', hint: 'The school is told, and it is kept in the log.', required: true,
+            minLength: 4, placeholder: 'Moved to a yearly contract at a new price',
+          }}
+          confirmLabel="Take it off" tone="danger" busy={revoke.isPending} error={err}
+          onCancel={close}
+          onSubmit={({ reason }) => revoke.mutate({ use: dialog.use, reason })} />
       )}
     </div>
   )
 }
 
-function StateChip({ state }: { state: 'active' | 'spent' | 'expired' | 'removed' }) {
-  const tone = state === 'active' ? 'bg-money-100 text-money-800'
-    : state === 'removed' ? 'bg-danger-100 text-danger-700'
-    : 'bg-slate-100 text-slate-600'
+function Badge({ tone, title, children }: { tone: string; title?: string; children: ReactNode }) {
   return (
-    <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${tone}`}>{state}</span>
+    <span title={title} className={`whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-medium ${tone}`}>
+      {children}
+    </span>
   )
 }
 
-/**
- * Create or edit a code.
- *
- * THE FORM CHANGES SHAPE WITH THE KIND, rather than showing eleven fields and
- * letting the database refuse nine combinations of them. A trial extension has
- * no duration to choose (it moves a date once, by definition) and is measured
- * in days rather than in rupees, so those controls are not rendered at all
- * instead of being rendered and rejected.
- */
-function DiscountForm({
-  code, planCodes, onClose, onSaved,
-}: {
-  code: DiscountCode | null
-  planCodes: string[]
-  onClose: () => void
-  onSaved: () => void
+/** One code, and, when opened, its schools and its log. */
+function CodeRow({ c, plans, ctx, open, onToggle, onAct, onTakeOff }: {
+  c: DiscountCode
+  plans: PricedPlan[]
+  ctx: LogCtx
+  open: boolean
+  onToggle: () => void
+  onAct: (kind: 'edit' | 'give' | 'retire' | 'delete') => void
+  onTakeOff: (u: DiscountUse) => void
 }) {
-  const [f, setF] = useState<SaveDiscountInput>(() => ({
-    code: code?.code ?? '',
-    description: code?.description ?? '',
-    kind: code?.kind ?? 'percent',
-    value: code?.value ?? 10,
-    duration: code?.duration ?? 'once',
-    durationMonths: code?.duration_months ?? null,
-    durationUntil: code?.duration_until ?? null,
-    redeemFrom: code?.redeem_from ?? null,
-    redeemUntil: code?.redeem_until ?? null,
-    maxRedemptions: code?.max_redemptions ?? null,
-    planCodes: code?.plan_codes ?? null,
-    minTermMonths: code?.min_term_months ?? null,
-    active: code?.active ?? true,
-  }))
-  const [err, setErr] = useState<string | null>(null)
-  const [note, setNote] = useState<string | null>(null)
-
-  const save = useMutation({
-    mutationFn: () => saveDiscount({
-      ...f,
-      // A trial extension moves a date once. The database refuses any other
-      // duration for it; sending the right one from here means the operator
-      // never sees that refusal.
-      duration: f.kind === 'trial_days' ? 'once' : f.duration,
-      code: f.code.trim().toUpperCase(),
-    }),
-    onSuccess: (r) => {
-      if (r.note) { setNote(r.note); setTimeout(onSaved, 2500) } else onSaved()
-    },
-    onError: (e: Error) => setErr(e.message),
-  })
-
-  const set = <K extends keyof SaveDiscountInput>(k: K, v: SaveDiscountInput[K]) =>
-    setF((p) => ({ ...p, [k]: v }))
-
-  // KIND SWITCH SCRUBS THE ROW. Percent ↔ flat ↔ trial_days each need a
-  // fresh value (20 percent is nothing like Rs 20 off), and trial_days demands
-  // duration=once with no plan-list restriction. Kept in one function so the
-  // form cannot leave a row in a shape 0144 will refuse.
-  const setKind = (kind: DiscountKind) => setF((p) => {
-    if (kind === p.kind) return p
-    const value = kind === 'percent' ? 10 : kind === 'flat' ? 500 : 14
-    const duration: DiscountDuration = kind === 'trial_days' ? 'once' : (p.duration ?? 'once')
-    return {
-      ...p, kind, value, duration,
-      durationMonths: null, durationUntil: null,
-      minTermMonths: kind === 'trial_days' ? null : p.minTermMonths,
-    }
-  })
-
-  const setDuration = (duration: DiscountDuration) => setF((p) => ({
-    ...p, duration,
-    durationMonths: duration === 'months' ? (p.durationMonths ?? 12) : null,
-    durationUntil:  duration === 'until'  ? (p.durationUntil ?? null) : null,
-  }))
-
-  // Client-side pre-check. Every message here matches a raise in
-  // fn_platform_save_discount so the operator sees the same words whether or
-  // not the round trip runs. Returns the first failure, or null.
-  function localCheck(): string | null {
-    const code = f.code.trim().toUpperCase()
-    if (!/^[A-Z0-9][A-Z0-9_-]{2,31}$/.test(code)) {
-      return 'A code has to be 3 to 32 characters of letters, digits, hyphen or underscore.'
-    }
-    if (!f.description.trim()) {
-      return 'A code needs a description so we can tell them apart later.'
-    }
-    if (!f.value || f.value <= 0) {
-      return 'Amount has to be more than zero.'
-    }
-    if (f.kind === 'percent' && f.value > 100) {
-      return 'A percentage over 100 is not a discount, it is a payment to the customer.'
-    }
-    if (f.kind === 'percent' && f.value < 1) {
-      return 'A percentage under 1% is unusual. If you meant flat rupees, choose Flat.'
-    }
-    if (f.kind === 'trial_days') {
-      if (!Number.isInteger(f.value) || f.value < 1 || f.value > 365) {
-        return 'Trial days have to be a whole number between 1 and 365.'
-      }
-    }
-    if (f.kind !== 'trial_days') {
-      if (f.duration === 'months' && (!f.durationMonths || f.durationMonths < 1 || f.durationMonths > 120)) {
-        return 'For a months-long discount, choose 1 to 120 months.'
-      }
-      if (f.duration === 'until') {
-        if (!f.durationUntil) return 'A "runs until" discount needs an end date.'
-        if (new Date(f.durationUntil) < new Date(new Date().toDateString())) {
-          return 'The end date is in the past. Pick today or later.'
-        }
-      }
-    }
-    if (f.redeemFrom && f.redeemUntil && f.redeemUntil < f.redeemFrom) {
-      return 'The redemption window ends before it starts. Swap the dates.'
-    }
-    if (f.redeemUntil && new Date(f.redeemUntil) < new Date(new Date().toDateString())) {
-      return 'The redemption window closed already. Nobody could type this code today.'
-    }
-    if (f.maxRedemptions !== null && f.maxRedemptions !== undefined && f.maxRedemptions < 1) {
-      return 'A maximum of zero redemptions is a switched-off code. Leave the box blank for unlimited.'
-    }
-    return null
-  }
-
-  // A worked example. Shows what this code would take off a Rs 4,500 monthly
-  // invoice (the Starter month), so the operator can eyeball the arithmetic
-  // before they hand the code out. FLOORED AT ZERO in the same way fn__discount_off
-  // does it -- a flat Rs 10,000 on a Rs 4,500 invoice is Rs 4,500 off, not Rs 10,000.
-  const sample = 4500
-  const off = f.kind === 'percent'
-    ? Math.min(Math.round(sample * (Number(f.value) || 0) / 100), sample)
-    : f.kind === 'flat'
-      ? Math.min(Number(f.value) || 0, sample)
-      : 0
-  const example = f.kind === 'trial_days'
-    ? `Extends the trial by ${f.value} day(s) once. Nothing comes off an invoice.`
-    : `On a Rs ${sample.toLocaleString()} monthly invoice, that is Rs ${off.toLocaleString()} off (final Rs ${(sample - off).toLocaleString()}).`
+  const detailId = `dc-detail-${c.code}`
+  const when = c.redeem_from || c.redeem_until
+    ? `Can be taken up ${c.redeem_from ? `from ${fmtDate(c.redeem_from)}` : 'now'}${
+        c.redeem_until ? ` until ${fmtDate(c.redeem_until)}` : ', no end'}`
+    : 'Can be taken up any time'
+  const limits = [
+    c.kind !== 'trial_days' && c.plan_codes ? `${planNames(c.plan_codes, plans)} only` : null,
+    c.kind !== 'trial_days' && c.min_term_months ? `${c.min_term_months} months or more at a time` : null,
+  ].filter(Boolean)
+  // A private code whose school is gone can be given to nobody.
+  const givable = !c.private || !!c.school_id
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center">
-      <div className="w-full max-w-lg rounded-lg bg-white p-5 shadow-pop">
-        <h3 className="text-base font-semibold text-slate-900">
-          {code ? `Edit ${code.code}` : 'New discount code'}
+    <>
+      <tr className="border-b border-slate-100 align-top last:border-0">
+        <td className="px-3 py-2.5">
+          <span className="font-mono font-medium text-slate-900">{c.code}</span>
+          <span className="mt-1 flex flex-wrap gap-1">
+            {c.active
+              ? <Badge tone="bg-money-100 text-money-800">On offer</Badge>
+              : <Badge tone="bg-slate-100 text-slate-600">Retired</Badge>}
+            {c.private && (
+              <Badge tone="bg-info-100 text-info-800">
+                Private: {c.school_name ?? 'school no longer listed'}
+              </Badge>
+            )}
+            {c.terms_locked && (
+              <Badge tone="bg-due-100 text-due-800" title={LOCKED_SENTENCE}>
+                Locked<span className="sr-only">: {LOCKED_SENTENCE}</span>
+              </Badge>
+            )}
+          </span>
+          <span className="mt-1 block max-w-[16rem] text-xs text-slate-500">
+            <span className="font-medium text-slate-600">Only we see this:</span> {c.description}
+          </span>
+        </td>
+        <td className="px-3 py-2.5">
+          <span className="font-medium text-slate-800">{c.label}</span>
+          <span className="block text-xs text-slate-600">{c.summary}</span>
+          {limits.length > 0 && <span className="block text-xs text-slate-500">{limits.join(', ')}</span>}
+        </td>
+        <td className="px-3 py-2.5 text-xs text-slate-600">
+          {when}
+          <span className="block">
+            {c.max_redemptions != null
+              ? `${c.seats_taken} of ${c.max_redemptions} place${c.max_redemptions === 1 ? '' : 's'} taken`
+              : `${c.seats_taken} place${c.seats_taken === 1 ? '' : 's'} taken, no limit`}
+          </span>
+          {c.live > 0 && <span className="block">{c.live} school(s) on it now</span>}
+        </td>
+        <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">
+          {c.invoices} invoice{c.invoices === 1 ? '' : 's'}
+          <span className="block text-xs text-slate-500">{formatPkr(Number(c.total_saved) || 0)} saved</span>
+        </td>
+        <td className="px-3 py-2.5">
+          <div className="flex flex-wrap justify-end gap-1.5">
+            <button type="button" onClick={() => onAct('edit')} className={BTN_PLAIN}
+              aria-label={`Edit ${c.code}`}>Edit</button>
+            {givable && (
+              <button type="button" onClick={() => onAct('give')} className={BTN_PLAIN}>
+                Give to a school
+              </button>
+            )}
+            {c.active && (
+              <button type="button" onClick={() => onAct('retire')} className={BTN_PLAIN}>Retire</button>
+            )}
+            {/* Only while nobody has ever had it. After that it is part of a
+                school's billing record: it can be retired, never deleted, and
+                the database refuses it too. */}
+            {c.deletable && (
+              <button type="button" onClick={() => onAct('delete')} className={BTN_DANGER}>Delete</button>
+            )}
+            <button type="button" onClick={onToggle} className={BTN_PLAIN}
+              aria-expanded={open} aria-controls={detailId}>
+              {open ? 'Hide schools and log' : 'Schools and log'}
+            </button>
+          </div>
+        </td>
+      </tr>
+      {open && (
+        <tr id={detailId} className="border-b border-slate-200 bg-slate-50/60">
+          <td colSpan={5} className="px-3 py-3">
+            <CodeDetail c={c} ctx={ctx} onTakeOff={onTakeOff} />
+          </td>
+        </tr>
+      )}
+    </>
+  )
+}
+
+/** One code's schools and its own log. */
+function CodeDetail({ c, ctx, onTakeOff }: {
+  c: DiscountCode; ctx: LogCtx; onTakeOff: (u: DiscountUse) => void
+}) {
+  const usage = useQuery({ queryKey: ['discountUsage', c.code], queryFn: () => listDiscountUsage(c.code) })
+  const events = useQuery({
+    queryKey: ['discountEvents', c.code], queryFn: () => discountEvents({ code: c.code }),
+  })
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-slate-500">
+        Made {fmtDateTime(c.created_at)}. Last changed {fmtDateTime(c.updated_at)}.
+        {' '}{c.redeemed} school(s) have ever had it.
+      </p>
+      <div className="rounded border border-slate-200 bg-white">
+        <h3 className="border-b border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700">
+          Schools with {c.code}
         </h3>
-
-        <div className="mt-4 space-y-3">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block">
-              <span className={LABEL}>Code</span>
-              <input
-                value={f.code}
-                disabled={!!code}
-                onChange={(e) => set('code', e.target.value.toUpperCase())}
-                placeholder="SPRING20"
-                className={`${FIELD} font-mono uppercase disabled:bg-slate-100`}
-              />
-            </label>
-            <label className="block">
-              <span className={LABEL}>On offer</span>
-              <select
-                value={f.active ? 'yes' : 'no'}
-                onChange={(e) => set('active', e.target.value === 'yes')}
-                className={FIELD}
-              >
-                <option value="yes">Yes, schools can use it</option>
-                <option value="no">No, retired</option>
-              </select>
-            </label>
-          </div>
-
-          <label className="block">
-            <span className={LABEL}>What it is for, in our own words</span>
-            <input
-              value={f.description}
-              onChange={(e) => set('description', e.target.value)}
-              placeholder="Spring campaign, first 50 schools"
-              className={FIELD}
-            />
-          </label>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block">
-              <span className={LABEL}>Takes off</span>
-              <select
-                value={f.kind}
-                onChange={(e) => setKind(e.target.value as DiscountKind)}
-                className={FIELD}
-              >
-                <option value="percent">A percentage</option>
-                <option value="flat">A flat amount in rupees</option>
-                <option value="trial_days">Extra free trial days</option>
-              </select>
-            </label>
-            <label className="block">
-              <span className={LABEL}>
-                {f.kind === 'percent' ? 'Percent' : f.kind === 'flat' ? 'Rupees' : 'Days'}
-              </span>
-              <input
-                type="number" min={1} step={f.kind === 'percent' ? 0.5 : 1}
-                max={f.kind === 'percent' ? 100 : f.kind === 'trial_days' ? 365 : undefined}
-                value={f.value}
-                onChange={(e) => set('value', Number(e.target.value))}
-                className={FIELD}
-              />
-            </label>
-          </div>
-
-          {f.kind !== 'trial_days' && (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="block">
-                <span className={LABEL}>For how long</span>
-                <select
-                  value={f.duration}
-                  onChange={(e) => setDuration(e.target.value as DiscountDuration)}
-                  className={FIELD}
-                >
-                  <option value="once">The next invoice only</option>
-                  <option value="forever">Every invoice, for ever</option>
-                  <option value="months">Every invoice, for some months</option>
-                  <option value="until">Every invoice, up to a date</option>
-                </select>
-              </label>
-              {f.duration === 'months' && (
-                <label className="block">
-                  <span className={LABEL}>Months</span>
-                  <input type="number" min={1} max={120}
-                    value={f.durationMonths ?? 12}
-                    onChange={(e) => set('durationMonths', Number(e.target.value))}
-                    className={FIELD} />
-                </label>
-              )}
-              {f.duration === 'until' && (
-                <label className="block">
-                  <span className={LABEL}>Up to</span>
-                  <input type="date" value={f.durationUntil ?? ''}
-                    onChange={(e) => set('durationUntil', e.target.value || null)}
-                    className={FIELD} />
-                </label>
-              )}
-            </div>
-          )}
-
-          <fieldset className="rounded border border-slate-200 p-3">
-            <legend className="px-1 text-xs font-medium text-slate-500">
-              Who can use it, and when
-            </legend>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="block">
-                <span className={LABEL}>Usable from</span>
-                <input type="date" value={f.redeemFrom ?? ''}
-                  onChange={(e) => set('redeemFrom', e.target.value || null)}
-                  className={FIELD} />
-              </label>
-              <label className="block">
-                <span className={LABEL}>Usable until</span>
-                <input type="date" value={f.redeemUntil ?? ''}
-                  onChange={(e) => set('redeemUntil', e.target.value || null)}
-                  className={FIELD} />
-              </label>
-              <label className="block">
-                <span className={LABEL}>How many schools (blank for no limit)</span>
-                <input type="number" min={1} value={f.maxRedemptions ?? ''}
-                  onChange={(e) => set('maxRedemptions',
-                    e.target.value === '' ? null : Number(e.target.value))}
-                  className={FIELD} />
-              </label>
-              <label className="block">
-                <span className={LABEL}>Shortest term it applies to</span>
-                <select
-                  value={f.minTermMonths ?? ''}
-                  onChange={(e) => set('minTermMonths',
-                    e.target.value === '' ? null : Number(e.target.value))}
-                  className={FIELD}
-                >
-                  <option value="">Any term</option>
-                  <option value="3">3 months or longer</option>
-                  <option value="12">A year</option>
-                </select>
-              </label>
-            </div>
-            <div className="mt-3">
-              <span className={LABEL}>Plans (none ticked means every plan)</span>
-              <div className="mt-1 flex flex-wrap gap-2">
-                {planCodes.map((p) => {
-                  const on = (f.planCodes ?? []).includes(p)
-                  return (
-                    <label key={p}
-                      className={`cursor-pointer rounded border px-2 py-1 text-xs font-medium ${
-                        on ? 'border-brand-600 bg-brand-600 text-white'
-                           : 'border-slate-300 bg-white text-slate-700'}`}>
-                      <input type="checkbox" className="sr-only" checked={on}
-                        onChange={() => {
-                          const next = on
-                            ? (f.planCodes ?? []).filter((x) => x !== p)
-                            : [...(f.planCodes ?? []), p]
-                          set('planCodes', next.length ? next : null)
-                        }} />
-                      {p}
-                    </label>
-                  )
-                })}
-              </div>
-            </div>
-          </fieldset>
-
-          <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-            <span className="font-medium">Worked example: </span>{example}
-          </p>
-
-          {note && (
-            <p className="rounded border border-info-200 bg-info-50 px-3 py-2 text-sm text-info-800">
-              {note}
-            </p>
-          )}
-          {err && (
-            <p className="rounded border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
-              {err}
-            </p>
-          )}
-        </div>
-
-        <div className="mt-5 flex justify-end gap-2">
-          <button onClick={onClose}
-            className="rounded border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
-            Cancel
-          </button>
-          <button
-            onClick={() => {
-              const bad = localCheck()
-              if (bad) { setErr(bad); return }
-              setErr(null); save.mutate()
-            }}
-            disabled={save.isPending || !f.code.trim() || !f.description.trim()}
-            className="rounded bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60"
-          >
-            {save.isPending ? 'Saving…' : code ? 'Save changes' : 'Create code'}
-          </button>
-        </div>
+        {usage.isLoading && <p className="p-3 text-sm text-slate-400">Loading…</p>}
+        {usage.isError && <p className="p-3 text-sm text-danger-600">{(usage.error as Error).message}</p>}
+        {usage.data?.length === 0 && <p className="p-3 text-sm text-slate-500">No school has had it yet.</p>}
+        {!!usage.data?.length && <Roster rows={usage.data} showCode={false} onTakeOff={onTakeOff} />}
+      </div>
+      <div className="rounded border border-slate-200 bg-white">
+        <h3 className="border-b border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700">
+          What happened to {c.code}
+        </h3>
+        {events.isLoading && <p className="p-3 text-sm text-slate-400">Loading…</p>}
+        {events.isError && <p className="p-3 text-sm text-danger-600">{(events.error as Error).message}</p>}
+        {events.data && <Log events={events.data} ctx={ctx} />}
       </div>
     </div>
   )

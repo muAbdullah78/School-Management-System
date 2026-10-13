@@ -1,23 +1,29 @@
 /**
- * The three screens a new school sees, in order, at both widths.
+ * The screens a new school sees, in order, at both widths.
  *
  * NOT A UNIT TEST -- a rendering harness. The behaviour is asserted in
- * src/test/pages.smoke.test.tsx; this exists because the second screen is an
- * INVOICE, and whether an invoice reads correctly is a question about looking
- * at it. A panel headed "Upcoming invoice" with the wrong emphasis, or a total
- * that does not visibly follow from the lines above it, is confidently wrong in
- * a way no assertion about markup would catch.
+ * src/test/pages.smoke.test.tsx; this exists because whether a price reads
+ * correctly beside the number that produced it is a question about looking at
+ * it. A plan panel with the wrong emphasis, or a first invoice that does not
+ * visibly follow from the term picked above it, is confidently wrong in a way
+ * no assertion about markup would catch.
  *
- * Output: ../scratch/signup/{step1,step2,step2-discount,step3}.html against the
- * real compiled stylesheet.
+ * Since 0155 signup is one screen: the number of pupils sets the plan, and the
+ * plan and its price are shown before the account exists. A static render
+ * cannot type that number, so each state of the plan panel is rendered on its
+ * own beside the empty form.
+ *
+ * Output: ../scratch/signup/{step1,step1-noregions,step1-plans,plan,step3}.html
+ * against the real compiled stylesheet.
  *
  * Excluded from `npm test` by vitest's test.include; run with `npm run harness`.
  */
 import { it } from 'vitest'
 import { createElement } from 'react'
-import { Signup } from '../src/pages/Signup'
+import { Signup, YourPlan } from '../src/pages/Signup'
 import { ChoosePlan } from '../src/pages/ChoosePlan'
 import { SetupWizard } from '../src/pages/SetupWizard'
+import { planForStudents, type SignupPlan } from '../src/lib/plans'
 import { writePage } from './harness'
 import type { Profile } from '../src/auth/AuthProvider'
 
@@ -32,36 +38,58 @@ const REGIONS = [
   'Islamabad Capital Territory', 'Azad Jammu and Kashmir', 'Gilgit-Baltistan',
 ]
 
-/* The real price list shape, with the savings fn_signup_plans computes. */
-const PLANS = [
-  { code: 'starter', name: 'Starter (up to 150 students)', student_limit: 150,
-    terms: [{ months: 1, amount: 2000, saving: 0 },
-            { months: 3, amount: 5700, saving: 300 },
-            { months: 12, amount: 20000, saving: 4000 }] },
-  { code: 'growth', name: 'Growth (up to 350 students)', student_limit: 350,
-    terms: [{ months: 1, amount: 3500, saving: 0 },
-            { months: 3, amount: 9975, saving: 525 },
-            { months: 12, amount: 35000, saving: 7000 }] },
-  { code: 'institution', name: 'Institution (up to 600 students)', student_limit: 600,
-    terms: [{ months: 1, amount: 5500, saving: 0 },
-            { months: 3, amount: 15675, saving: 825 },
-            { months: 12, amount: 55000, saving: 11000 }] },
+/* The shape fn_signup_plans returns since 0155, with the savings it computes.
+   Fixtures: the live figures are whatever the database holds. */
+const PLANS: SignupPlan[] = [
+  { code: 'starter', name: 'Starter', student_limit: 280, min_students: 1, by_arrangement: false,
+    month_price: 2000, how_priced: null,
+    terms: [{ months: 1, amount: 2000, per_month: 2000, saving: 0 },
+            { months: 3, amount: 5400, per_month: 1800, saving: 600 },
+            { months: 12, amount: 20000, per_month: 1667, saving: 4000 }] },
+  { code: 'growth', name: 'Growth', student_limit: 1000, min_students: 281, by_arrangement: false,
+    month_price: 4000, how_priced: null,
+    terms: [{ months: 1, amount: 4000, per_month: 4000, saving: 0 },
+            { months: 3, amount: 10800, per_month: 3600, saving: 1200 },
+            { months: 12, amount: 40000, per_month: 3333, saving: 8000 }] },
+  { code: 'enterprise', name: 'Enterprise', student_limit: null, min_students: 1001, by_arrangement: true,
+    month_price: null, terms: [],
+    how_priced: 'We agree a monthly price with you. Three months is 10% off it and a year is two months free.' },
 ]
+
+const TERMS = [
+  { months: 1 as const, term_price: 2000, amount: 2000, per_month: 2000, saving: 0, discount_amount: 0, discount_note: null, chosen: true },
+  { months: 3 as const, term_price: 5400, amount: 5400, per_month: 1800, saving: 600, discount_amount: 0, discount_note: null, chosen: false },
+  { months: 12 as const, term_price: 20000, amount: 20000, per_month: 1667, saving: 4000, discount_amount: 0, discount_note: null, chosen: false },
+]
+
+const VIEW = {
+  plan: { code: 'starter', name: 'Starter', by_arrangement: false, student_limit: 280, min_students: 1 },
+  price: { priced: true, month: 2000, quarter: 5400, year: 20000, agreed: false, agreed_at: null,
+           agreed_reason: null, quarter_set: false, year_set: false },
+  terms: TERMS, term_months: 1, status: 'trialing', stored_status: 'trialing', in_trial: true,
+  trial_ends_on: '2026-10-23', paid_from: null, paid_through: null, covered_to: '2026-10-23',
+  grace_days: 14, locks_on: '2026-11-07', days_to_lock: 28, locked_because: null, needs_price: false,
+  cancel_at_period_end: false, suspended: false, suspend_reason: null,
+  students: { count: 212, limit: 280, plan_limit: 280, extra: null, extra_until: null, extra_reason: null,
+              extra_expired: false, declared: 220, room: 68, warn: false, full: false, over: false },
+  open_invoice: null, owed: 0, credit: 0, next: null, pay_now: 2000, can_request_invoice: true,
+}
 
 const LICENCE = {
   ok: true, school_id: OWNER.school_id, status: 'trialing', locked: false,
   can_read: true, can_export: true, can_operate: true,
-  plan_code: 'starter', plan_name: 'Starter (up to 150 students)',
+  plan_code: 'starter', plan_name: 'Starter',
   cycle: 'monthly', price_monthly: 2000, price_yearly: 20000,
-  expires_on: '2026-09-27', days_left: 14,
-  student_count: 0, student_limit: 150, term_months: 1,
-  margin_limit: 165, limit_state: 'ok', limit_notice: null,
+  expires_on: '2026-10-23', days_left: 13,
+  student_count: 0, student_limit: 280, term_months: 1,
+  margin_limit: 280, limit_state: 'ok', limit_notice: null,
 }
 
 const seeds = [
   [['signupRegions'], REGIONS],
   [['signupPlans'], PLANS],
   [['licence'], LICENCE],
+  [['myNextPayment'], { has_subscription: true, view: VIEW }],
 ] as [readonly unknown[], unknown][]
 
 it('renders step 1, the details', () => {
@@ -80,8 +108,28 @@ it('renders step 1 with no region list to offer', () => {
        profile: null, route: '/signup' }])
 })
 
-it('renders step 2, the plan and its invoice', () => {
-  writePage('../scratch/signup/step2.html',
+/* What the number puts the school on, in every state the panel has. */
+it('renders the plan panel for each roll', () => {
+  const panel = (pupils: number | null, term: 1 | 3 | 12, list = PLANS, failed = false) =>
+    createElement('div', { style: { maxWidth: '26rem', margin: '0 auto', background: '#fff', padding: '1rem' } },
+      createElement(YourPlan, {
+        plans: list, loading: false, failed, pupils,
+        plan: pupils === null ? null : planForStudents(list, pupils),
+        term, onTerm: () => {},
+      }))
+  writePage('../scratch/signup/step1-plans.html', [
+    { caption: 'NOTHING TYPED YET: the three plans and who each is for.', node: panel(null, 1) },
+    { caption: '250 PUPILS: Starter, monthly, the default.', node: panel(250, 1) },
+    { caption: '650 PUPILS: Growth, yearly chosen.', node: panel(650, 12) },
+    { caption: '1,500 PUPILS: Enterprise, priced with us, and the lock at the trial end said up front.',
+      node: panel(1500, 1) },
+    { caption: 'THE PRICE LIST DID NOT LOAD: the school can still sign up.',
+      node: panel(120, 1, [], true) },
+  ])
+})
+
+it('renders your plan, after signup', () => {
+  writePage('../scratch/signup/plan.html',
     [{ node: createElement(ChoosePlan), seeds, profile: OWNER, route: '/plan' }])
 })
 

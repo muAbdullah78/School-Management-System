@@ -205,6 +205,25 @@ describe('Quick Add takes the dues in with the child', () => {
     expect((screen.getByLabelText(/already collected/) as HTMLInputElement).disabled).toBe(true)
   })
 
+  it('6c. a database without bundle 54 is not allowed to look as if the dues went in', async () => {
+    mount(quick(), {
+      rpc: {
+        fn_section_roll_state: ROLL, fn_fee_structure: FEE, fn_portal_targets: [],
+        // 0142's answer: no dues_recorded, because it never read the dues.
+        fn_rde_add_students: { created: 1, failed: 0, drafts: 0, results: [
+          { row: 1, status: 'created', student_id: 'stu-1', full_name: 'Old Server', arrears_months: 0 },
+        ] },
+      },
+    })
+    fireEvent.change(await screen.findByPlaceholderText(/As written in the register/i), { target: { value: 'Old Server' } })
+    fireEvent.click(screen.getByRole('checkbox', { name: /Owes for earlier months/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Stationery/ }))
+    fireEvent.change(screen.getByLabelText('Amount owed for Stationery'), { target: { value: '800' } })
+    fireEvent.click(screen.getByRole('button', { name: /Save and add the next/ }))
+    expect(await screen.findByText(/was saved, but not all of it went in/)).toBeTruthy()
+    expect(screen.getAllByText(/previous dues were not recorded/).length).toBeGreaterThan(0)
+  })
+
   it('6b. a half-typed child survives the page closing', async () => {
     const first = mount(quick(), { rpc: { fn_section_roll_state: ROLL, fn_fee_structure: FEE } })
     fireEvent.change(await screen.findByPlaceholderText(/As written in the register/i), { target: { value: 'Half Typed' } })

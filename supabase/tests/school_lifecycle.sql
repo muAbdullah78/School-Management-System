@@ -11,7 +11,7 @@
 --
 --   2. THE PURGE ACTUALLY WORKS, AND IS HARD TO REACH.
 --      37 tables reference public.schools with ON DELETE NO ACTION, so before
---      0080 a school could not be deleted at all — the delete failed on the
+--      0080 a school could not be deleted at all: the delete failed on the
 --      first foreign key. This suite builds a school with rows in the awkward
 --      tables (payments before allocations, invoices before lines) and purges
 --      it, then asserts the count of remaining rows is zero across EVERY table
@@ -231,7 +231,7 @@ begin
 end $grace$;
 
 -- =============================================================================
--- 20-29  SUSPEND — and the school is told why
+-- 20-29  SUSPEND, and the school is told why
 -- =============================================================================
 do $suspend$
 declare
@@ -259,7 +259,7 @@ begin
     '23 the school is told it is suspended, and why, by the software');
   perform pg_temp.ok((lic->>'can_read')::boolean and (lic->>'can_export')::boolean
                  and not (lic->>'can_operate')::boolean,
-    '24 reading and exporting are never withdrawn — only new entries stop');
+    '24 reading and exporting are never withdrawn, only new entries stop');
 
   -- Reads really do still work while suspended.
   perform public._lact('owner');
@@ -354,7 +354,7 @@ begin
 end $arch$;
 
 -- =============================================================================
--- 40-49  EXPORT — and the boundary it must not cross
+-- 40-49  EXPORT, and the boundary it must not cross
 -- =============================================================================
 do $exp$
 declare
@@ -398,7 +398,7 @@ begin
     '44b nor is anything outside the list');
 
   -- The export must not reach the other school's rows in a table they BOTH have
-  -- rows in — which is the only version of this check that means anything. The
+  -- rows in, which is the only version of this check that means anything. The
   -- generated statement scopes on school_id; `students` is where a missing scope
   -- would hand one customer another customer's children.
   perform pg_temp.ok(
@@ -417,7 +417,7 @@ begin
 end $exp$;
 
 -- =============================================================================
--- 50-59  PURGE — five refusals, then it actually works
+-- 50-59  PURGE: five refusals, then it actually works
 -- =============================================================================
 do $purge$
 declare
@@ -479,7 +479,7 @@ begin
   res := public.fn_platform_purge_school(s, 'Purge Test School', true);
   -- AT LEAST what was counted, not exactly. The audit triggers this product has
   -- carried since 0001 fire on the deletes and write their own rows into
-  -- audit_log, which later passes then delete as well — so the purge legitimately
+  -- audit_log, which later passes then delete as well, so the purge legitimately
   -- removes MORE rows than were there when it started. An `=` here failed at 60
   -- against 71, and the right reading of that is "the audit trail recorded its own
   -- erasure", not a bug. What must be exact is assertion 56: nothing left.
@@ -518,7 +518,7 @@ begin
      where action = 'school_purged'
        and detail->>'school_name' = 'Purge Test School'
        and school_id is null),
-    '59 and the purge is on record — school_id null, so it survives the delete');
+    '59 and the purge is on record: school_id null, so it survives the delete');
   perform pg_temp.ok((select (detail->>'exported_rows')::int > 0
                         from public.operator_actions where action = 'school_purged'
                         order by at desc limit 1),
@@ -598,7 +598,9 @@ begin
   perform pg_temp.ok((select contact_email from public.schools where id = v_new)
                        = 'asif@example.test',
     '71b and the email folded, so it matches the login they will be given');
-  perform pg_temp.ok(r->>'trial_ends_on' = (current_date + 30)::text,
+  -- trial_days counts days OF ACCESS since 0155: today and the next 29, so
+  -- thirty days asked for ends on today + 29.
+  perform pg_temp.ok(r->>'trial_ends_on' = (current_date + 29)::text,
     '72 the trial length is what was asked for, not a fixed 14 days');
   -- The thing a console must not hide: a school row with no owner login looks
   -- like an ordinary trialing customer and nobody can sign in to it.
@@ -607,7 +609,7 @@ begin
 
   perform pg_temp.ok(pg_temp.refused(
     'select public.fn_platform_create_school(''{"name":"New Console School"}''::jsonb)'),
-    '74 the same name twice is refused — it is almost always a duplicate');
+    '74 the same name twice is refused: it is almost always a duplicate');
   perform pg_temp.ok(pg_temp.refused(
     'select public.fn_platform_create_school(''{"name":"Y","trial_days":900}''::jsonb)'),
     '74b and an absurd trial is refused');

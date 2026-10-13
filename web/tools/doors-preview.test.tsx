@@ -10,10 +10,10 @@
  * door, that the trial link is absent, and that the office door still points a
  * parent at theirs.
  *
- * The old page is rendered first, deliberately, because the critique is a
- * comparison. It showed every visitor a dashboard mockup, three selling points
- * and "From Rs 2,000 a month", and on a phone the price was the one thing that
- * survived the collapse. See web/src/auth/doors.ts.
+ * The critique is a comparison with the old page, which showed every visitor a
+ * dashboard mockup, three selling points and the cheapest monthly price, and on
+ * a phone the price was the one thing that survived the collapse. See
+ * web/src/auth/doors.ts.
  *
  * Run with `npm run harness -- doors`.
  */
@@ -69,37 +69,39 @@ it('renders each door, at desktop and at phone width', () => {
       // cannot produce is worse than no preview: it is what somebody judges the
       // design by.
       caption: 'AND THE ONE PAGE THE SELLING COLUMN BELONGS ON: /signup, where a '
-        + 'school buyer really is standing at the keyboard. The mockup, the three '
-        + 'selling lines and the price table are unchanged here. That is the '
-        + 'comparison the critique rests on: the same column, on the same layout, '
-        + 'addressed for the first time to the person it was written for.',
+        + 'school buyer really is standing at the keyboard. The mockup and the three '
+        + 'selling lines are unchanged here; the facts under them say how the price '
+        + 'is set rather than quoting a figure, because since 0155 the plan follows '
+        + 'the roll and the form shows the real price for it, read live, as the '
+        + 'number of pupils is typed.',
       profile: null,
       node: <Signup />,
-      // THE PRICE LIST, SEEDED, because the plan chooser is the thing this
-      // page gained in 0127 and an unseeded query renders its "we could not
-      // load the plans" fallback. Both states matter and both are worth
-      // looking at, so the case below renders the same page without it.
+      // THE PRICE LIST, SEEDED, in the shape fn_signup_plans returns since
+      // 0155. The panel under the number is drawn from it; a static render
+      // cannot type the number, so tools/signup-flow-preview.test.tsx renders
+      // each state of that panel on its own.
       seeds: [[['signupPlans'], [
-        { code: 'starter', name: 'Starter (up to 150 students)', student_limit: 150,
-          terms: [{ months: 1, amount: 2000, saving: 0 },
-                  { months: 3, amount: 5700, saving: 300 },
-                  { months: 12, amount: 20000, saving: 4000 }] },
-        { code: 'growth', name: 'Growth (151-350 students)', student_limit: 350,
-          terms: [{ months: 1, amount: 3500, saving: 0 },
-                  { months: 3, amount: 10000, saving: 500 },
-                  { months: 12, amount: 35000, saving: 7000 }] },
-        { code: 'institution', name: 'Institution (351-600 students)', student_limit: 600,
-          terms: [{ months: 1, amount: 5500, saving: 0 },
-                  { months: 3, amount: 15700, saving: 800 },
-                  { months: 12, amount: 55000, saving: 11000 }] },
+        { code: 'starter', name: 'Starter', student_limit: 280, min_students: 1, by_arrangement: false,
+          month_price: 2000, how_priced: null,
+          terms: [{ months: 1, amount: 2000, per_month: 2000, saving: 0 },
+                  { months: 3, amount: 5400, per_month: 1800, saving: 600 },
+                  { months: 12, amount: 20000, per_month: 1667, saving: 4000 }] },
+        { code: 'growth', name: 'Growth', student_limit: 1000, min_students: 281, by_arrangement: false,
+          month_price: 4000, how_priced: null,
+          terms: [{ months: 1, amount: 4000, per_month: 4000, saving: 0 },
+                  { months: 3, amount: 10800, per_month: 3600, saving: 1200 },
+                  { months: 12, amount: 40000, per_month: 3333, saving: 8000 }] },
+        { code: 'enterprise', name: 'Enterprise', student_limit: null, min_students: 1001,
+          by_arrangement: true, month_price: null, terms: [],
+          how_priced: 'We agree a monthly price with you.' },
       ]]],
     },
     {
       caption: 'THE SAME PAGE WHEN THE PRICE LIST WILL NOT LOAD. A signup form '
         + 'that refuses to submit because a price could not be fetched loses a '
-        + 'customer over a network blip, so it says what it can and gets out of '
-        + 'the way: the school is created on a 14-day trial either way and can '
-        + 'pick the plan from Settings.',
+        + 'customer over a network blip, so it still asks the number of pupils and '
+        + 'still submits: the database puts the school on its plan from that '
+        + 'number, and the school sees the plan and its price inside.',
       profile: null,
       node: <Signup />,
     },

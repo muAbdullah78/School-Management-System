@@ -7,8 +7,11 @@
  * which requires minting an auth user and therefore an Edge Function.
  */
 import { requireSupabase } from './supabase'
+import { isMissingFunction } from './notInstalled'
+import type { RaisedInvoice, SubscriptionView, Term } from './subscription'
 
-export type LimitState = 'ok' | 'within_margin' | 'over'
+/** 0155 removed the hidden 10% margin: a roll is within its limit or over it. */
+export type LimitState = 'ok' | 'over'
 
 export interface PlatformSchool {
   school_id: string
@@ -37,6 +40,28 @@ export interface PlatformSchool {
   suspended: boolean
   suspend_reason: string | null
   archived: boolean
+  // ---- 0155, from fn_platform_school_billing_states, merged by school ----
+  /** Enterprise with no price agreed: it locks the day its trial ends. */
+  needs_price?: boolean
+  /** The last day covered by invoices paid in full. */
+  paid_through?: string | null
+  trial_ends_on?: string | null
+  in_trial?: boolean
+  /** Money paid in and not yet against any invoice. */
+  credit?: number
+  /** When extra room we granted ends, while it runs. */
+  extra_until?: string | null
+}
+
+/** What fn_platform_school_billing_states says about one school. */
+interface SchoolBillingState {
+  school_id: string
+  needs_price: boolean
+  trial_ends_on: string | null
+  paid_through: string | null
+  in_trial: boolean
+  credit: number
+  extra_until: string | null
 }
 
 export interface LedgerEntry {
@@ -55,6 +80,10 @@ export interface LedgerEntry {
   /** Cash plus any tax the school withheld and paid to the FBR in our name. */
   paid: number | null
   voided: boolean
+  /** 0155, from fn_platform_invoice_states: what the invoice was for. */
+  purpose?: 'term' | 'plan_change' | null
+  /** 0155: still owed on it; under one rupee counts as nothing. */
+  owed?: number | null
   note: string | null
   reference: string | null
 }
@@ -107,15 +136,39 @@ export async function amPlatformAdmin(): Promise<boolean> {
   return Boolean(data)
 }
 
+/**
+ * Every school, with what 0155 knows about its subscription merged in.
+ *
+ * fn_platform_schools returns a fixed set of columns that an older bundle
+ * pasted again would expect, so the newer facts (no price agreed, paid through,
+ * credit) come from fn_platform_school_billing_states beside it and are joined
+ * here by school. On a database without 0155 the second call does not exist
+ * and the list reads exactly as it did.
+ */
 export async function listPlatformSchools(
   includeArchived = false,
 ): Promise<PlatformSchool[]> {
   const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_platform_schools', {
-    p_include_archived: includeArchived,
+  const [list, states] = await Promise.all([
+    sb.rpc('fn_platform_schools', { p_include_archived: includeArchived }),
+    sb.rpc('fn_platform_school_billing_states'),
+  ])
+  if (list.error) throw new Error(list.error.message)
+  const rows = (list.data ?? []) as PlatformSchool[]
+  if (states.error) {
+    if (isMissingFunction(states.error)) return rows
+    throw new Error(states.error.message)
+  }
+  const bySchool = new Map(
+    ((states.data ?? []) as SchoolBillingState[]).map((x) => [x.school_id, x]))
+  return rows.map((r) => {
+    const x = bySchool.get(r.school_id)
+    return x
+      ? { ...r, needs_price: x.needs_price, paid_through: x.paid_through,
+          trial_ends_on: x.trial_ends_on, in_trial: x.in_trial,
+          credit: x.credit, extra_until: x.extra_until }
+      : r
   })
-  if (error) throw new Error(error.message)
-  return (data ?? []) as PlatformSchool[]
 }
 
 export async function listPlans(): Promise<Plan[]> {
@@ -127,40 +180,62 @@ export async function listPlans(): Promise<Plan[]> {
 
 export interface ActivationResult {
   invoice_id: string
+  doc_no: string | null
   amount: number
+  /** What the term costs before any code (the 3-month or yearly saving taken). */
   list_amount: number
-  outstanding: number
+  term_price: number
+  discount_code: string | null
+  discount_amount: number
+  /** True when a typed price replaced the code's: the code is used up on it. */
+  overridden: boolean
+  owed: number
+  months: number
   period_start: string
   period_end: string
+  due_on: string
+  status: string
 }
 
 /**
- * Grant a school time, and write the charge for it in the same transaction.
- *
- * `amount` null means "charge the plan's list price". An amount that differs
- * from list REQUIRES a note: including zero, because a free year that leaves no
- * trace is how a business loses track of what it has given away.
- *
- * The call REFUSES a school whose student count has outgrown the target plan,
- * naming the count, the limit and the plan that fits. `allowOverLimit` is the
- * deliberate override, and the breach then goes on the invoice.
+ * RAISE THE NEXT TERM INVOICE. Priced by the same quote the school sees: the
+ * plan's price (or the agreed Enterprise price) for the term, the school's
+ * live code taken off. `amount` replaces that price and then needs a reason,
+ * which is printed on the invoice; a typed price uses the school's code up so
+ * it cannot come off again. Raising never opens the school: paying does.
  */
-export async function activateSubscription(
-  schoolId: string, planCode: string, months: number,
-  opts: { amount?: number | null; note?: string | null; allowOverLimit?: boolean } = {},
+export async function raisePlatformInvoice(
+  schoolId: string, opts: { months?: Term | null; amount?: number | null; reason?: string | null } = {},
 ): Promise<ActivationResult> {
   const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_activate_subscription', {
-    p_school_id: schoolId, p_plan_code: planCode, p_months: months,
-    p_amount: opts.amount ?? null,
-    p_note: opts.note ?? null,
-    p_allow_over_limit: opts.allowOverLimit ?? false,
+  const { data, error } = await sb.rpc('fn_platform_raise_invoice', {
+    p_school_id: schoolId, p_months: opts.months ?? null,
+    p_amount: opts.amount ?? null, p_reason: opts.reason?.trim() || null,
   })
   if (error) throw new Error(error.message)
   return data as ActivationResult
 }
 
-/** Record money a school actually sent us. */
+/** What recording a payment did: where the money went and what it opened. */
+export interface PaymentSettled {
+  payment_id: string
+  outstanding: number
+  tax_withheld: number
+  settled: number
+  awaiting_certificate: boolean
+  /** Rupees allocated to invoices by this payment. */
+  allocated: number
+  /** The next term invoice, raised because money was left over and nothing was open. */
+  raised: ActivationResult | null
+  not_raised_because: string | null
+  /** Invoices voided because they lapsed unpaid and the school is starting again. */
+  lapsed_voided: number
+  /** Money paid in and not yet against any invoice. */
+  credit: number
+  status: string
+  paid_through: string | null
+}
+
 /**
  * Record what a school paid us, and what it withheld.
  *
@@ -174,10 +249,7 @@ export async function recordPlatformPayment(input: {
   schoolId: string; amount: number; paidOn?: string | null
   method?: string; reference?: string | null; invoiceId?: string | null; note?: string | null
   taxWithheld?: number | null; taxCertificate?: string | null
-}): Promise<{
-  payment_id: string; outstanding: number
-  tax_withheld: number; settled: number; awaiting_certificate: boolean
-}> {
+}): Promise<PaymentSettled> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_platform_record_payment', {
     p_school_id: input.schoolId, p_amount: input.amount,
@@ -188,10 +260,7 @@ export async function recordPlatformPayment(input: {
     p_tax_certificate: input.taxCertificate ?? null,
   })
   if (error) throw new Error(error.message)
-  return data as {
-    payment_id: string; outstanding: number
-    tax_withheld: number; settled: number; awaiting_certificate: boolean
-  }
+  return data as PaymentSettled
 }
 
 /** The CPR usually arrives weeks after the transfer, so it can be attached later. */
@@ -206,11 +275,32 @@ export async function attachTaxCertificate(
 }
 
 /** One school's invoices and payments, interleaved, oldest first. */
+/**
+ * The statement, with each invoice's purpose and what is still owed on it.
+ *
+ * fn_platform_ledger's columns are fixed (0077), so fn_platform_invoice_states
+ * (0155) sits beside it and is joined here by invoice. Without 0155 the second
+ * call does not exist and the statement reads as it did.
+ */
 export async function platformLedger(schoolId: string): Promise<LedgerEntry[]> {
   const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_platform_ledger', { p_school_id: schoolId })
-  if (error) throw new Error(error.message)
-  return (data ?? []) as LedgerEntry[]
+  const [ledger, states] = await Promise.all([
+    sb.rpc('fn_platform_ledger', { p_school_id: schoolId }),
+    sb.rpc('fn_platform_invoice_states', { p_school_id: schoolId }),
+  ])
+  if (ledger.error) throw new Error(ledger.error.message)
+  const rows = (ledger.data ?? []) as LedgerEntry[]
+  if (states.error) {
+    if (isMissingFunction(states.error)) return rows
+    throw new Error(states.error.message)
+  }
+  const byInvoice = new Map(
+    ((states.data ?? []) as Array<{ invoice_id: string; purpose: 'term' | 'plan_change'; owed: number }>)
+      .map((x) => [x.invoice_id, x]))
+  return rows.map((r) => {
+    const x = r.kind === 'payment' ? undefined : byInvoice.get(r.entry_id)
+    return x ? { ...r, purpose: x.purpose, owed: x.owed } : r
+  })
 }
 
 /** What we invoiced and collected over a period, and who owes us. */
@@ -391,6 +481,10 @@ export interface RenewalAttempt {
   amount: number | null
   outcome: 'would_invoice' | 'invoiced' | 'already_invoiced' | 'needs_decision'
          | 'trial_never_said_yes' | 'failed'
+         /** 0155: a trial is listed, never invoiced by the run. */
+         | 'trial_ending'
+         /** 0155: an Enterprise school with no price agreed. */
+         | 'needs_price'
   message: string | null
 }
 
@@ -522,8 +616,36 @@ export function describeAction(a: OperatorAction): string {
       if (to.status && to.status !== from.status) bits.push(`status ${String(to.status)}`)
       if (to.period_end && to.period_end !== from.period_end) bits.push(`paid until ${String(to.period_end)}`)
       if (to.trial_ends_on && to.trial_ends_on !== from.trial_ends_on) bits.push(`trial until ${String(to.trial_ends_on)}`)
+      // 0155 logs more of the row: the term, extra room and an agreed price.
+      if (to.term_months && to.term_months !== from.term_months) bits.push(`pays every ${String(to.term_months)} month(s)`)
+      if (to.extra_room !== from.extra_room) {
+        bits.push(to.extra_room
+          ? `extra room for ${String(to.extra_room)} pupils until ${String(to.extra_until ?? '?')}`
+          : 'extra room ended')
+      }
+      if (to.agreed_monthly && to.agreed_monthly !== from.agreed_monthly) bits.push(`price ${pkr(to.agreed_monthly)} a month`)
+      if (to.oldest_unpaid_due_on !== from.oldest_unpaid_due_on) {
+        bits.push(to.oldest_unpaid_due_on ? `owing since ${String(to.oldest_unpaid_due_on)}` : 'nothing owed')
+      }
       return `Licence changed: ${bits.length ? bits.join(', ') : 'no visible change'}`
     }
+    // --- 0155: prices and plans are ours to move ---------------------------
+    case 'price_agreed': {
+      const after = (d.after ?? {}) as Record<string, unknown>
+      const before = (d.before ?? {}) as Record<string, unknown>
+      return `Price agreed: ${pkr(after.monthly)} a month`
+        + (before.monthly ? ` (was ${pkr(before.monthly)})` : '')
+        + (after.reason ? `: ${String(after.reason)}` : '')
+    }
+    case 'plan_changed':
+      return `Moved from ${String(d.from ?? '?')} to ${String(d.to ?? '?')}`
+        + (Number(d.charge ?? 0) > 0 ? `, charged ${pkr(d.charge)} for the rest of the period` : ', nothing charged')
+        + (d.reason ? `: ${String(d.reason)}` : '')
+    case 'student_limit_granted':
+      return `Extra room for ${String(d.limit ?? '?')} pupils until ${String(d.until ?? '?')}`
+        + (d.reason ? `: ${String(d.reason)}` : '')
+    case 'student_limit_cleared':
+      return 'Extra room taken back' + (d.reason ? `: ${String(d.reason)}` : '')
     case 'invoice_raised': {
       const disc = Number(d.discount ?? 0)
       // The discount is the figure worth surfacing: it is the one thing an
@@ -708,6 +830,8 @@ export interface SchoolDetail {
     /** The name of whoever granted it. "Who agreed to this?" is the first
      *  question asked about an exception six months later. */
     limit_override_by?: string | null
+    /** 0155: extra room ends after this day. */
+    limit_override_until?: string | null
     limit_request?: {
       id: string; requested_limit: number; reason: string
       wants: 'more_room' | 'move_up'; requested_at: string
@@ -732,19 +856,23 @@ export interface SchoolDetail {
     last_certificate: string | null; last_till_close: string | null
     last_message: string | null
   }
-  /** The school's live discount, or null. Populated by 0144. Optional so the
-   *  console still renders against a database without the migration. */
+  /** 0155: the one description of the subscription, with what only we see. */
+  subscription?: SubscriptionView | null
+  /** The school's live discount, or null. From the frozen redemption (0156). */
   discount?: {
     code: string
+    label: string
     description: string
     kind: DiscountKind
     value: number
     duration: DiscountDuration
     ends_on: string | null
-    uses_left: number | null
+    months_left: number | null
+    months_total: number | null
     times_applied: number
     total_saved: number
-    trial_days_added: number | null
+    granted_by_kind: 'school' | 'platform'
+    grant_reason: string | null
     redeemed_at: string
     summary: string
   } | null
@@ -789,9 +917,14 @@ export function actionRank(s: PlatformSchool): number {
   // Locked WITH money owed is the first call of the day: the software has
   // stopped and there is an invoice to point at.
   if (s.status === 'locked' && s.outstanding > 0) return 0
+  // AN ENTERPRISE SCHOOL WITH NO PRICE IS OUR MOVE, NOT THEIRS (0155). There
+  // is nothing to invoice until we agree a price, and it locks the day its
+  // trial ends with no grace. Read through a cast because the school list does
+  // not carry the flag yet; until it does this line simply never fires.
+  if ((s as PlatformSchool & { needs_price?: boolean }).needs_price) return 0.5
   if (s.status === 'grace') return 1
   if (s.days_left !== null && s.days_left <= 7) return 2
-  // Locked with nothing owed is a renewal to sell rather than a debt to chase,
+  // Locked with nothing owed is a sale to make rather than a debt to chase,
   // so it sits below the deadlines and above the rest.
   if (s.status === 'locked') return 3
   // Money already invoiced and not paid outranks an over-limit school: one is a
@@ -829,6 +962,16 @@ export function actionNeeded(s: PlatformSchool): string | null {
   if (s.suspended) {
     return `We suspended them${s.suspend_reason ? `: ${s.suspend_reason}` : ''}`
   }
+  // NO PRICE AGREED (0155). Before anything about money, because there is no
+  // money to ask for: an Enterprise school is priced by us, one school at a
+  // time, and without that price it cannot be invoiced and it locks the day its
+  // trial ends, with no grace. Optional on the row until the list carries it.
+  if ((s as PlatformSchool & { needs_price?: boolean }).needs_price && s.status !== 'cancelled') {
+    return s.status === 'locked'
+      ? 'Locked: no price agreed yet. Set their price'
+      : `No price agreed: set it${s.days_left !== null && s.days_left >= 0
+          ? ` before the trial ends in ${s.days_left} day(s)` : ''}`
+  }
   // An unpaid invoice is worth saying whatever the licence status is: a school
   // can be comfortably active and still owe for the year it is halfway through.
   if (s.outstanding > 0 && s.status !== 'locked' && s.status !== 'cancelled') {
@@ -837,25 +980,36 @@ export function actionNeeded(s: PlatformSchool): string | null {
   switch (s.status) {
     case 'locked':
       // Named with the money on it, because "locked" alone does not say whether
-      // this is a phone call about an invoice or a renewal to sell.
+      // this is a phone call about an invoice or a sale to make. Since 0155 a
+      // school opens when it PAYS, not when we invoice it, so the advice for a
+      // school owing nothing is to invoice them and take the money.
       return s.outstanding > 0
         ? `Locked and owes ${s.outstanding.toLocaleString('en-PK')}: chase the payment`
-        : 'Locked: their licence ran out. Renew them'
+        : 'Locked: nothing paid covers today. Invoice them; paying opens them'
     case 'cancelled':
       // NOT A TO-DO. It used to return the bare word "Cancelled", which the
       // status column already says, in colour, one cell to the right. A to-do
       // line that repeats the status trains the operator to stop reading the
       // to-do line.
       return null
-    case 'grace':
-      return `In grace: ${s.days_left ?? 0} day(s) before it locks`
+    case 'grace': {
+      // days_left counts to the end of what covers the school, so in grace it
+      // is NEGATIVE: this used to print "In grace: -4 day(s) before it locks".
+      const ago = s.days_left !== null && s.days_left < 0 ? ` ${-s.days_left} day(s) ago` : ''
+      const over = s.needs_upgrade && s.limit_state === 'over'
+        ? `; over its limit, so move it to ${s.suggested_plan} with Change plan before invoicing` : ''
+      return `In grace: paid time ran out${ago}, locks unless they pay${over}`
+    }
     case 'trialing':
       if ((s.days_left ?? 0) <= 3) return `Trial ends in ${s.days_left} day(s): call them`
       return null
     case 'active':
-      if ((s.days_left ?? 999) <= 7) return `Renewal due in ${s.days_left} day(s)`
+      if ((s.days_left ?? 999) <= 7) return `Paid time ends in ${s.days_left} day(s)`
+      // THE LIMIT IS THE LIMIT (0155): no margin, and nothing waits for a
+      // renewal. A school over it is refusing admissions today, and only we can
+      // move it, with Change plan on its page.
       if (s.needs_upgrade && s.limit_state === 'over') {
-        return `Over limit: move to ${s.suggested_plan} at renewal`
+        return `Over its limit: move it to ${s.suggested_plan} with Change plan`
       }
       return null
     default:
@@ -1243,14 +1397,129 @@ export async function limitRequests(
  * by mistyping.
  */
 export async function grantStudentLimit(
-  schoolId: string, limit: number, note?: string | null,
-): Promise<{ limit: number; was: number | null; partial: boolean }> {
+  schoolId: string, limit: number, note: string,
+): Promise<{ limit: number; until: string; was: number | null; partial: boolean }> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_platform_grant_student_limit', {
-    p_school_id: schoolId, p_limit: limit, p_note: note?.trim() || null,
+    p_school_id: schoolId, p_limit: limit, p_note: note.trim() || null,
   })
   if (error) throw new Error(error.message)
-  return data as { limit: number; was: number | null; partial: boolean }
+  return data as { limit: number; until: string; was: number | null; partial: boolean }
+}
+
+/* ------------------------------------------------- plans move only by us --
+   0155. A school asks; we move it. Enterprise is priced here, one school at a
+   time. Every call needs a reason and is logged with before and after. */
+
+/** Set (or change) the price agreed with an Enterprise school. Quarterly and
+ *  yearly left empty follow from the monthly figure: three months less 10%,
+ *  a year as ten months. */
+export async function setSchoolPrice(input: {
+  schoolId: string; monthly: number; quarterly?: number | null; yearly?: number | null; reason: string
+}): Promise<{
+  monthly: number; quarterly: number; yearly: number
+  quarterly_is_derived: boolean; yearly_is_derived: boolean
+  invoice: { voided?: string; raised?: ActivationResult; kept?: string; why?: string } | null
+  status: string
+}> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_set_price', {
+    p_school_id: input.schoolId, p_monthly: input.monthly,
+    p_quarterly: input.quarterly ?? null, p_yearly: input.yearly ?? null,
+    p_reason: input.reason.trim() || null,
+  })
+  if (error) throw new Error(error.message)
+  return data as {
+    monthly: number; quarterly: number; yearly: number
+    quarterly_is_derived: boolean; yearly_is_derived: boolean
+    invoice: { voided?: string; raised?: ActivationResult; kept?: string; why?: string } | null
+    status: string
+  }
+}
+
+export interface PlanChangeQuote {
+  from: { code: string; name: string; limit: number | null; term_price: number | null }
+  to: { code: string; name: string; limit: number | null; term_price: number | null; by_arrangement: boolean }
+  term_months: number
+  students: number
+  /** False when the roll is over the new plan's limit: the move is refused. */
+  fits: boolean
+  in_trial: boolean
+  paid_from: string | null
+  paid_to: string | null
+  days_left: number
+  days_in_period: number
+  /** One per paid term invoice still running or ahead: the running one pro
+   *  rata, any paid after it in full. Absent from a database before the fix. */
+  lines?: Array<{
+    doc_no: string | null; months: number; period_start: string; period_end: string
+    old_price: number; new_price: number; days_left: number; days_in_period: number; charge: number
+  }>
+  /** The difference for what is paid and not yet used, the sum of `lines`. We decide. */
+  suggested_charge: number
+  explain: string
+}
+
+export async function planChangeQuote(
+  schoolId: string, planCode: string, agreedMonthly?: number | null,
+): Promise<PlanChangeQuote> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_plan_change_quote', {
+    p_school_id: schoolId, p_plan_code: planCode, p_agreed_monthly: agreedMonthly ?? null,
+  })
+  if (error) throw new Error(error.message)
+  return data as PlanChangeQuote
+}
+
+export interface PlanChanged {
+  from: string
+  to: string
+  student_limit: number | null
+  charge: number
+  invoice_id: string | null
+  doc_no: string | null
+  suggested_charge: number
+  status: string
+  /** An open invoice with nothing paid on it, reissued on the new plan; or
+   *  kept, with why, when money had been paid on it. */
+  reissued: { voided?: string; raised?: RaisedInvoice | { not_raised: string }; kept?: string; why?: string } | null
+}
+
+/** Move a school to another plan now. A charge we choose is invoiced for the
+ *  rest of the paid period, due today. Extra room on the old plan ends. */
+export async function changeSchoolPlan(input: {
+  schoolId: string; planCode: string; reason: string
+  charge?: number | null; agreedMonthly?: number | null
+}): Promise<PlanChanged> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_change_plan', {
+    p_school_id: input.schoolId, p_plan_code: input.planCode,
+    p_reason: input.reason.trim() || null,
+    p_charge: input.charge ?? null, p_agreed_monthly: input.agreedMonthly ?? null,
+  })
+  if (error) throw new Error(error.message)
+  return data as PlanChanged
+}
+
+export interface PriceList {
+  plans: Array<{
+    code: string; name: string; active: boolean; student_limit: number | null
+    min_students: number; by_arrangement: boolean
+    month: number; quarter: number; year: number; schools: number
+  }>
+  changes: Array<{
+    code: string; op: 'INSERT' | 'UPDATE' | 'DELETE'
+    before: Record<string, unknown> | null; after: Record<string, unknown> | null
+    by: string | null; as: string; at: string
+  }>
+}
+
+/** The price list and every change made to it. Prices move only by migration. */
+export async function priceList(): Promise<PriceList> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_price_list')
+  if (error) throw new Error(error.message)
+  return data as PriceList
 }
 
 /** Decline one. The reason is mandatory: it is what the school reads. */
@@ -1299,10 +1568,25 @@ export async function paymentClaims(
  * disagrees, which happens when a school transfers net of withholding tax and
  * reports the gross.
  */
+/** What confirming a school's report did: the payment, and what it opened. */
+export interface ClaimConfirmed {
+  claim_id: string
+  status: 'confirmed'
+  payment_id: string
+  amount: number
+  outstanding: number
+  /** The school's licence status after the money was applied. */
+  licence_status: string
+  paid_through: string | null
+  /** The next term invoice, raised because the money arrived before it. */
+  raised: ActivationResult | null
+  credit: number
+}
+
 export async function confirmClaim(input: {
   claimId: string; amount?: number | null; invoiceId?: string | null
   taxWithheld?: number | null; taxCertificate?: string | null; note?: string | null
-}): Promise<{ claim_id: string; payment_id: string; amount: number }> {
+}): Promise<ClaimConfirmed> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('fn_platform_confirm_claim', {
     p_claim_id: input.claimId, p_amount: input.amount ?? null,
@@ -1312,7 +1596,7 @@ export async function confirmClaim(input: {
     p_note: input.note ?? null,
   })
   if (error) throw new Error(error.message)
-  return data as { claim_id: string; payment_id: string; amount: number }
+  return data as ClaimConfirmed
 }
 
 /** The reason is shown to the school. "Rejected" with nothing else is how a
@@ -1449,7 +1733,11 @@ export async function unarchiveSchool(
 export async function createSchool(input: {
   name: string; city?: string | null; contactName?: string | null
   contactPhone?: string | null; contactEmail?: string | null
-  planCode?: string; trialDays?: number; notes?: string | null
+  /** Leave empty to let the number of pupils pick the plan. */
+  planCode?: string | null; students?: number | null; termMonths?: Term
+  trialDays?: number; notes?: string | null
+  /** Enterprise only: the monthly price, if already agreed. */
+  agreedMonthly?: number | null; agreedReason?: string | null
 }): Promise<{
   school_id: string; name: string; plan_code: string
   trial_ends_on: string; trial_days: number; still_needed: string
@@ -1461,9 +1749,13 @@ export async function createSchool(input: {
       contact_name: input.contactName ?? null,
       contact_phone: input.contactPhone ?? null,
       contact_email: input.contactEmail ?? null,
-      plan_code: input.planCode ?? 'starter',
+      plan_code: input.planCode ?? null,
+      students: input.students ?? null,
+      term_months: input.termMonths ?? 1,
       trial_days: input.trialDays ?? 14,
       notes: input.notes ?? null,
+      agreed_monthly: input.agreedMonthly ?? null,
+      agreed_reason: input.agreedReason ?? null,
     },
   })
   if (error) throw new Error(error.message)
@@ -1918,10 +2210,15 @@ export async function purgeOrphanData(schoolId: string): Promise<{
    typed client for functions that refuse anybody else. */
 
 export type DiscountKind = 'percent' | 'flat' | 'trial_days'
+/** 0156: a money code lasts some billed months, until a date, or for as long as
+ *  the school subscribes. 'once' is kept for trial-day codes only. */
 export type DiscountDuration = 'once' | 'forever' | 'months' | 'until'
 
 export interface DiscountCode {
   code: string
+  /** What the school sees. */
+  label: string
+  /** Ours. Never shown to a school. */
   description: string
   kind: DiscountKind
   value: number
@@ -1934,37 +2231,72 @@ export interface DiscountCode {
   plan_codes: string[] | null
   min_term_months: number | null
   active: boolean
+  /** Made for one school; only we can give it. */
+  private: boolean
+  school_id: string | null
+  school_name: string | null
+  /** The version an edit must be made from. */
+  updated_at: string
   created_at: string
   /** The offer as one sentence, written by the database so both sides agree. */
   summary: string
+  /** Places taken: live redemptions, and any that have saved money. */
+  seats_taken: number
   /** How many schools have ever taken it up. */
   redeemed: number
   /** How many of those are still getting something from it. */
   live: number
+  /** Invoices it has come off (voided ones given back). */
+  invoices: number
   total_saved: number
   /** False once anybody has redeemed it: from then on it can only be retired. */
   deletable: boolean
+  /** True once redeemed: what it gives and to whom can no longer change. */
+  terms_locked: boolean
 }
 
 export interface DiscountUse {
-  school_id: string
+  redemption_id: string
+  school_id: string | null
   school_name: string
   code: string
+  label: string | null
   kind: DiscountKind
   value: number
   duration: DiscountDuration
   ends_on: string | null
-  uses_left: number | null
+  months_left: number | null
+  months_total: number | null
   times_applied: number
   total_saved: number
   trial_days_added: number | null
+  granted_by_kind: 'school' | 'platform'
+  grant_reason: string | null
   redeemed_at: string
+  redeemed_by: string | null
   removed_at: string | null
   removed_reason: string | null
+  removed_by: string | null
   plan_code: string | null
-  status: string | null
-  /** The four ways it can have stopped, decided by the database. */
-  state: 'active' | 'spent' | 'expired' | 'removed'
+  summary: string
+  /** Decided by the database. 'spent' includes a code closed because it ran its course. */
+  state: 'active' | 'spent' | 'expired' | 'removed' | 'trial'
+}
+
+export interface DiscountEvent {
+  at: string
+  event: 'created' | 'edited' | 'retired' | 'deleted' | 'applied' | 'given' | 'restored'
+       | 'replaced' | 'removed' | 'refused' | 'invoiced' | 'reversed' | 'trial_extended'
+  code: string | null
+  school_id: string | null
+  school_name: string | null
+  invoice_id: string | null
+  doc_no: string | null
+  actor_kind: 'platform' | 'school' | 'system'
+  actor: string | null
+  before: Record<string, unknown> | null
+  after: Record<string, unknown> | null
+  reason: string | null
 }
 
 export async function listDiscounts(): Promise<DiscountCode[]> {
@@ -1982,43 +2314,71 @@ export async function listDiscountUsage(code?: string): Promise<DiscountUse[]> {
   return (data ?? []) as DiscountUse[]
 }
 
-export interface SaveDiscountInput {
-  code: string
+/** Every event on a code or a school, newest first: made, edited, used, refused. */
+export async function discountEvents(
+  opts: { code?: string | null; schoolId?: string | null; limit?: number } = {},
+): Promise<DiscountEvent[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_discount_events', {
+    p_code: opts.code ?? null, p_school_id: opts.schoolId ?? null, p_limit: opts.limit ?? 200,
+  })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as DiscountEvent[]
+}
+
+/** The terms of a code, as the database reads them (snake_case keys). */
+export interface DiscountTerms {
+  label: string
   description: string
   kind: DiscountKind
   value: number
   duration: DiscountDuration
-  durationMonths?: number | null
-  durationUntil?: string | null
-  redeemFrom?: string | null
-  redeemUntil?: string | null
-  maxRedemptions?: number | null
-  planCodes?: string[] | null
-  minTermMonths?: number | null
+  duration_months?: number | null
+  duration_until?: string | null
+  redeem_from?: string | null
+  redeem_until?: string | null
+  max_redemptions?: number | null
+  plan_codes?: string[] | null
+  min_term_months?: 3 | 12 | null
   active?: boolean
+  private?: boolean
+  school_id?: string | null
 }
 
-export async function saveDiscount(input: SaveDiscountInput): Promise<{
-  code: string; created: boolean; summary: string; note: string | null
-}> {
+/** Make a code. Refused if the code exists: a new code never overwrites one.
+ *  A private code with no code typed gets a random ten-character one. */
+export async function createDiscount(
+  input: DiscountTerms & { code?: string | null },
+): Promise<DiscountCode> {
   const sb = requireSupabase()
-  const { data, error } = await sb.rpc('fn_platform_save_discount', {
-    p_code: input.code,
-    p_description: input.description,
-    p_kind: input.kind,
-    p_value: input.value,
-    p_duration: input.duration,
-    p_duration_months: input.durationMonths ?? null,
-    p_duration_until: input.durationUntil ?? null,
-    p_redeem_from: input.redeemFrom ?? null,
-    p_redeem_until: input.redeemUntil ?? null,
-    p_max_redemptions: input.maxRedemptions ?? null,
-    p_plan_codes: input.planCodes ?? null,
-    p_min_term_months: input.minTermMonths ?? null,
-    p_active: input.active ?? true,
+  const { data, error } = await sb.rpc('fn_platform_create_discount', { p: input })
+  if (error) throw new Error(error.message)
+  return data as DiscountCode
+}
+
+/** Change a code. `expectedUpdatedAt` is the version the edit was made from;
+ *  once a code is redeemed only its label, description, window, limit and
+ *  switch can change. */
+export async function editDiscount(
+  code: string, changes: Partial<DiscountTerms>, expectedUpdatedAt: string,
+): Promise<DiscountCode & { note: string | null }> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('fn_platform_edit_discount', {
+    p_code: code, p: changes, p_expected_updated_at: expectedUpdatedAt,
+  })
+  // The SQLSTATE travels with the sentence: 40001 is an edit made from an old
+  // copy, which the form answers with "Reload it", not with an error banner.
+  if (error) throw Object.assign(new Error(error.message), { code: error.code })
+  return data as DiscountCode & { note: string | null }
+}
+
+/** Switch a code off for good. Schools that have it keep it. */
+export async function retireDiscount(code: string, reason: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.rpc('fn_platform_retire_discount', {
+    p_code: code, p_reason: reason.trim() || null,
   })
   if (error) throw new Error(error.message)
-  return data as { code: string; created: boolean; summary: string; note: string | null }
 }
 
 export async function deleteDiscount(code: string): Promise<void> {
@@ -2027,13 +2387,19 @@ export async function deleteDiscount(code: string): Promise<void> {
   if (error) throw new Error(error.message)
 }
 
-/** Put a code on a school directly: how a deal agreed on the telephone is recorded. */
-export async function giveDiscount(schoolId: string, code: string): Promise<void> {
+/** Give a school a code (a deal agreed on the telephone, or a private code made
+ *  for it). A reason is kept; replacing its live discount needs `replace`; a code
+ *  it had before and lost is restored. Only we can take off what we gave. */
+export async function grantDiscount(input: {
+  schoolId: string; code: string; reason: string; replace?: boolean
+}): Promise<{ code: string; restored: boolean; trial_ends_on: string | null; summary: string }> {
   const sb = requireSupabase()
-  const { error } = await sb.rpc('fn_platform_give_discount', {
-    p_school_id: schoolId, p_code: code,
+  const { data, error } = await sb.rpc('fn_platform_grant_discount', {
+    p_school_id: input.schoolId, p_code: input.code,
+    p_reason: input.reason.trim() || null, p_replace: input.replace ?? false,
   })
   if (error) throw new Error(error.message)
+  return data as { code: string; restored: boolean; trial_ends_on: string | null; summary: string }
 }
 
 export async function revokeDiscount(schoolId: string, reason: string): Promise<void> {
