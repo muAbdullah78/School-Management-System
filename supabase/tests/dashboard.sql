@@ -467,9 +467,9 @@ begin
       -- each plan. Opens with is_platform_admin() and returns counts, not rows.
       'fn_platform_price_list',
       -- 0156. Kept for an old console: opens with is_platform_admin() and hands
-      -- every case to fn_platform_create_discount or fn_platform_edit_discount,
-      -- which hold the rules. It reads discount_codes (which now has a
-      -- school_id for private codes) only to decide which of the two to call.
+      -- a new code to fn_platform_create_discount, which holds the rules. It
+      -- reads discount_codes (which now has a school_id for private codes)
+      -- only to refuse a code that already exists.
       'fn_platform_save_discount'
     );
 

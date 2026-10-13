@@ -20,6 +20,15 @@
 --      be changed.
 --   7. Create never overwrites, edit needs the version it started from, and a
 --      used code's money terms are locked.
+--   8. What an adversarial review found (61 onwards): an old "months" code
+--      whose window closed stays spent; a flat code takes no more than its
+--      months cost; a price we typed stays used whatever the school does;
+--      taking a code off takes it off the unpaid invoice; a discount whose
+--      months sit on that invoice is still live; the school is never told an
+--      invoice was reissued when it was not; the old console never edits; a
+--      restore counts seats; every refused try is logged; a purged school's
+--      log is history, not debris; a code free for years is private; a typed
+--      price is not booked as the code's saving.
 --
 -- Run: psql -v ON_ERROR_STOP=1 -f supabase/tests/discount_codes_keep_their_word.sql
 -- =============================================================================
@@ -465,6 +474,312 @@ begin
     '59 the arithmetic is not callable from a browser');
   perform pg_temp.ok(not has_function_privilege('authenticated', 'public.fn_my_apply_discount(text)', 'execute'),
     '60 nor is the old redeem, whose raised refusal would roll back the log of the guess');
+end $$;
+
+-- =============================================================================
+-- 10. WHAT AN ADVERSARIAL REVIEW FOUND
+-- =============================================================================
+
+-- An old "months" code was a calendar window (0131). Written that way, with no
+-- months_left, then counted the 0156 way.
+do $$
+declare v_never uuid; v_year uuid; v_run uuid;
+begin
+  perform pg_temp.code('{"code":"WINTER50X","label":"Winter","description":"3 months at half price","kind":"percent","value":50,"duration":"months","duration_months":3}');
+  v_never := pg_temp.school('DC Legacy Never', 'starter', 1);
+  v_year  := pg_temp.school('DC Legacy Year', 'starter', 12);
+  v_run   := pg_temp.school('DC Legacy Running', 'starter', 1);
+  insert into public.subscription_discounts
+    (school_id, code, kind, value, duration, ends_on, times_applied, total_saved, redeemed_at, months_total)
+  values (v_never, 'WINTER50X', 'percent', 50, 'months', current_date - 180, 0, 0, now() - interval '9 months', 3),
+         (v_year,  'WINTER50X', 'percent', 50, 'months', current_date - 180, 1, 10000, now() - interval '9 months', 3),
+         (v_run,   'WINTER50X', 'percent', 50, 'months', current_date + 40, 0, 0, now() - interval '50 days', 3);
+  perform public.fn__discount_months_from_windows();
+
+  perform pg_temp.ok((select months_left = 0 and removed_reason = 'Ran its course'
+                        from public.subscription_discounts where school_id = v_never)
+                     and exists (select 1 from public.discount_events
+                                  where school_id = v_never and event = 'removed' and code = 'WINTER50X')
+                     and (public.fn__quote(v_never, 'starter', 1, public.fn__next_period_start(v_never))
+                            ->>'discount_amount')::numeric = 0,
+    '61 an old months code whose window closed is spent and closed, with a line in the log');
+  perform pg_temp.ok((select months_left from public.subscription_discounts where school_id = v_year) = 0
+                     and (select id from public.fn__discount_live(v_year, null)) is null,
+    '62 one used on a whole year under the old rules does not get two months back');
+  perform pg_temp.ok((select months_left from public.subscription_discounts where school_id = v_run) = 2
+                     and (select code from public.fn__discount_live(v_run, null)) = 'WINTER50X',
+    '63 a window still running keeps only the billed months that start inside it (2, not 3)');
+end $$;
+
+-- A flat code takes off at most what the months it covers cost.
+do $$
+begin
+  perform pg_temp.ok(
+    (public.fn__discount_calc('FREEMONTH4K', 'flat', 4000, 'months', 1, null, null, null,
+                              'starter', 12, current_date, 20000)->>'amount')::numeric = 1667
+    and (public.fn__discount_calc('FLAT5000X3', 'flat', 5000, 'months', 3, null, null, null,
+                                  'starter', 12, current_date, 20000)->>'amount')::numeric = 5000
+    and (public.fn__discount_calc('FLAT5000X3', 'flat', 5000, 'months', 3, null, null, null,
+                                  'starter', 1, current_date, 2000)->>'amount')::numeric = 2000,
+    '64 Rs 4,000 off one month takes Rs 1,667 off a Starter year, and Rs 5,000 x 3 takes Rs 5,000, not Rs 15,000');
+end $$;
+
+-- A price we typed by hand used the code up. Nothing the school does gives it back.
+do $$
+declare v uuid; v_l uuid; i jsonb; r jsonb;
+begin
+  perform pg_temp.as_op();
+  v := pg_temp.school('DC Hand', 'starter', 1);
+  perform pg_temp.as_owner(v);
+  perform public.fn_my_redeem_code('ONEMONTH40', false);
+  perform pg_temp.as_op();
+  i := public.fn_platform_raise_invoice(v, 1, 2000, 'Full price this month: code held back by agreement');
+  perform pg_temp.as_owner(v);
+  perform public.fn_choose_term(3);
+  perform public.fn_choose_term(1);
+  perform pg_temp.ok((select months_left from public.subscription_discounts
+                       where school_id = v and code = 'ONEMONTH40') = 0
+                     and not exists (select 1 from public.platform_invoices
+                                      where school_id = v and voided_at is null and discount_amount > 0),
+    '65 a school switching term and back does not get back a code our typed price used up');
+
+  perform pg_temp.as_op();
+  v_l := pg_temp.school('DC Hand Lapse', 'starter', 1);
+  perform pg_temp.as_owner(v_l);
+  perform public.fn_my_redeem_code('ONEMONTH40', false);
+  perform pg_temp.as_op();
+  i := public.fn_platform_raise_invoice(v_l, 1, 2000, 'Full price this month: code held back by agreement');
+  -- Its due date and grace pass unpaid: it lapses.
+  update public.platform_invoices set due_on = current_date - 30 where id = (i->>'invoice_id')::uuid;
+  perform pg_temp.as_owner(v_l);
+  r := public.fn_my_request_invoice();
+  perform pg_temp.ok(coalesce((r->>'discount_amount')::numeric, 0) = 0
+                     and (select voided_at is not null from public.platform_invoices
+                           where id = (i->>'invoice_id')::uuid)
+                     and (select months_left from public.subscription_discounts
+                           where school_id = v_l and code = 'ONEMONTH40') = 0,
+    '66 nor does one that lets our typed-price invoice lapse and comes back');
+end $$;
+
+-- Taking a code off takes it off the unpaid invoice too.
+do $$
+declare v uuid; i jsonb; r jsonb;
+begin
+  perform pg_temp.code('{"code":"HALFYEARX","label":"Half off","description":"expo offer","kind":"percent","value":50,"duration":"forever"}');
+  v := pg_temp.school('DC Remove', 'starter', 12);
+  perform public.fn_platform_grant_discount(v, 'HALFYEARX', 'Promised at the expo', false);
+  i := pg_temp.invoice(v, 12);
+  perform pg_temp.ok((i->>'amount')::numeric = 10000, '67 the year is invoiced at half price');
+  r := public.fn_platform_remove_discount(v, 'Given to the wrong school by mistake');
+  perform pg_temp.ok((select amount from public.platform_invoices
+                       where school_id = v and voided_at is null and kind = 'invoice') = 20000
+                     and (select reversed_at is not null from public.discount_applications
+                           where invoice_id = (i->>'invoice_id')::uuid)
+                     and r->>'invoice_note' like '%reissued%without the code%',
+    '68 removing it reissues the unpaid invoice at full price and says so');
+end $$;
+
+-- A discount still has value while its months sit on the unpaid invoice, or
+-- its end date is on or after the next month the school would be billed for.
+do $$
+declare v uuid; v_u uuid; v_priv jsonb; i jsonb; r jsonb;
+begin
+  perform pg_temp.as_op();
+  v := pg_temp.school('DC Outage', 'starter', 12);
+  v_priv := public.fn_platform_create_discount(jsonb_build_object(
+    'code', 'OUTAGE3MX', 'label', 'Loyalty', 'description', '3 months at half price after the outage',
+    'kind', 'percent', 'value', 50, 'duration', 'months', 'duration_months', 3,
+    'private', true, 'school_id', v));
+  perform public.fn_platform_grant_discount(v, 'OUTAGE3MX', 'Outage compensation agreed by phone', false);
+  i := pg_temp.invoice(v, 12);
+  perform pg_temp.as_owner(v);
+  r := public.fn_my_discount();
+  perform pg_temp.ok(r->>'code' = 'OUTAGE3MX' and r->>'summary' like '%3 months%',
+    '69 a discount whose months all sit on the unpaid invoice is still shown to the school, as 3 months');
+  r := public.fn_my_redeem_code('TWENTYOFF', false);
+  perform pg_temp.ok(not (r->>'ok')::boolean and r->>'reason' like '%arranged with us%'
+                     and (select removed_at is null from public.subscription_discounts
+                           where school_id = v and code = 'OUTAGE3MX')
+                     and (select amount from public.platform_invoices
+                           where id = (i->>'invoice_id')::uuid and voided_at is null) = 17500,
+    '70 and it stays ours: the school cannot replace it, and the invoice keeps it');
+
+  perform pg_temp.as_op();
+  perform pg_temp.code(format('{"code":"WINTERFREEX","label":"Free until mid-term","description":"x","kind":"percent","value":100,"duration":"until","duration_until":"%s"}',
+                              current_date + 10)::jsonb);
+  v_u := pg_temp.school('DC Until', 'starter', 1);
+  perform public.fn_platform_grant_discount(v_u, 'WINTERFREEX', 'Compensation for the outage', false);
+  -- Twelve days pass: the school is in grace, its end date is behind it, and
+  -- its next month still starts before the code's end.
+  update public.subscriptions set period_start = period_start - 12, period_end = period_end - 12,
+         trial_ends_on = trial_ends_on - 12 where school_id = v_u;
+  update public.subscription_discounts set ends_on = ends_on - 12 where school_id = v_u;
+  perform pg_temp.as_owner(v_u);
+  perform pg_temp.ok(public.fn_my_discount()->>'code' = 'WINTERFREEX',
+    '71 a dated discount still due on the next month is shown to the school');
+  perform pg_temp.as_op();
+  perform pg_temp.ok((public.fn_platform_remove_discount(v_u, 'Changed our mind')->>'removed')::boolean,
+    '72 and we can take it off');
+end $$;
+
+-- DC Monthly's three-month code is spent and paid for. Redeeming another
+-- closes it, and the closing is logged with what it had left.
+do $$
+declare v_m uuid; r jsonb;
+begin
+  v_m := pg_temp.sid('DC Monthly');
+  perform pg_temp.as_owner(v_m);
+  r := public.fn_my_redeem_code('TWENTYOFF', false);
+  perform pg_temp.ok((r->>'ok')::boolean
+                     and exists (select 1 from public.discount_events
+                                  where school_id = v_m and code = 'TENFORTHREE' and event = 'removed'
+                                    and reason = 'Ran its course' and before ? 'months_left'),
+    '73 a code that ran its course is closed with a line in the log, months left and all');
+end $$;
+
+-- The old console never edits.
+do $$
+begin
+  perform pg_temp.code('{"code":"LAUNCH50X","label":"Launch offer","description":"First school only","kind":"percent","value":50,"duration":"forever","max_redemptions":1}');
+  perform public.fn_platform_retire_discount('LAUNCH50X', 'Launch is over');
+  perform pg_temp.ok(pg_temp.raises(
+      $q$select public.fn_platform_save_discount('LAUNCH50X', 'Launch offer for partners', 'percent', 50, 'forever')$q$,
+      'Discounts page')
+    and (select not active and max_redemptions = 1 from public.discount_codes where code = 'LAUNCH50X'),
+    '74 saving an existing code from the old console is refused: a retired one-seat code stays retired, one seat');
+  perform pg_temp.code('{"code":"SUMMER26X","label":"Summer","description":"10% for three months","kind":"percent","value":10,"duration":"months","duration_months":3}');
+  perform pg_temp.ok(pg_temp.raises(
+      $q$select public.fn_platform_save_discount('SUMMER26X', 'my summer code', 'percent', 60, 'forever')$q$,
+      'already exists')
+    and (select value = 10 and duration = 'months' from public.discount_codes where code = 'SUMMER26X'),
+    '75 and an unused code is not rewritten by a second "New code" form');
+end $$;
+
+-- A restore counts seats.
+do $$
+declare v_a uuid; v_b uuid;
+begin
+  perform pg_temp.code('{"code":"ONESEATY","label":"First school","description":"one school only","kind":"percent","value":30,"duration":"forever","max_redemptions":1}');
+  v_a := pg_temp.school('DC Restore A', 'starter', 1);
+  v_b := pg_temp.school('DC Restore B', 'starter', 1);
+  perform pg_temp.as_owner(v_a);
+  perform public.fn_my_redeem_code('ONESEATY', false);
+  perform public.fn_my_remove_discount();
+  perform pg_temp.as_owner(v_b);
+  perform public.fn_my_redeem_code('ONESEATY', false);
+  perform pg_temp.as_op();
+  perform pg_temp.ok(pg_temp.raises(
+      format($q$select public.fn_platform_grant_discount(%L, 'ONESEATY', 'Restoring what they had before')$q$, v_a),
+      'every place on ONESEATY is taken')
+    and public.fn__discount_seats_taken('ONESEATY') = 1,
+    '76 restoring a code whose seat another school has taken is refused: one seat stays one');
+end $$;
+
+-- Every refused try is logged.
+do $$
+declare v uuid; v_g uuid := pg_temp.sid('DC Guess'); v_last bigint; r jsonb;
+begin
+  -- DC Guess is paused (section 7). Two more tries while it waits.
+  select coalesce(max(id), 0) into v_last from public.discount_events;
+  perform pg_temp.as_owner(v_g);
+  r := public.fn_my_redeem_code('GUESSWAIT1', false);
+  r := public.fn_preview_discount('PEEKWAIT1', null, null);
+  perform pg_temp.ok((select count(*) from public.discount_events e
+                       where e.id > v_last and e.school_id = v_g and e.event = 'refused'
+                         and coalesce((e.after->>'paused')::boolean, false)) = 2
+                     and r->>'reason' like 'Too many codes%',
+    '77 tries made while paused are logged, marked paused so they do not keep the pause going');
+
+  perform pg_temp.as_op();
+  v := pg_temp.school('DC Log', 'starter', 1);
+  perform pg_temp.as_owner(v);
+  perform public.fn_my_redeem_code('TWENTYOFF', false);
+  r := public.fn_my_redeem_code('TENFORTHREE', false);
+  perform pg_temp.ok((r->>'needs_replace')::boolean
+                     and exists (select 1 from public.discount_events
+                                  where school_id = v and event = 'refused' and code = 'TENFORTHREE'
+                                    and reason like 'Your subscription already has TWENTYOFF%')
+                     and exists (select 1 from public.discount_events
+                                  where school_id = pg_temp.sid('DC Outage') and event = 'refused'
+                                    and code = 'TWENTYOFF' and reason like '%arranged with us%'),
+    '78 a try that needs a yes, and one refused because we arranged the discount, are logged too');
+end $$;
+
+-- A purged school's discount log is history, not something left behind.
+do $$
+declare v uuid; r jsonb;
+begin
+  perform pg_temp.as_op();
+  v := pg_temp.school('DC Purged', 'starter', 1);
+  perform pg_temp.as_owner(v);
+  perform public.fn_my_redeem_code('TWENTYOFF', false);
+  perform pg_temp.as_op();
+  update public.schools set archived_at = now(), archive_reason = 'left us', active = false where id = v;
+  insert into public.platform_exports (school_id, school_name, total_rows) values (v, 'DC Purged', 1);
+  r := public.fn_platform_purge_school(v, 'DC Purged', true);
+  perform pg_temp.ok((r->>'purged')::boolean
+                     and exists (select 1 from public.discount_events where school_id = v)
+                     and not exists (select 1 from public.fn_platform_orphan_report() o where o.school_id = v)
+                     and not exists (select 1 from public.fn__referential_health() h
+                                      where h.child_table = 'discount_events'),
+    '79 after a purge the discount log keeps the school, and nothing reports it as left behind');
+end $$;
+
+-- A public code cannot make invoices free, or all but free, for years.
+do $$
+begin
+  perform pg_temp.ok(
+    pg_temp.raises($q$select pg_temp.code('{"code":"FLATFREEFOREVER","label":"x","description":"y","kind":"flat","value":50000,"duration":"forever"}')$q$,
+                   'private to one school')
+    and pg_temp.raises($q$select pg_temp.code('{"code":"ALMOSTFREE1","label":"x","description":"y","kind":"percent","value":99.98,"duration":"forever"}')$q$,
+                       'private to one school')
+    and pg_temp.raises($q$select pg_temp.code('{"code":"FREETO2099","label":"x","description":"y","kind":"percent","value":100,"duration":"until","duration_until":"2099-12-31"}')$q$,
+                       'private to one school')
+    and pg_temp.raises($q$select pg_temp.code('{"code":"FREE24MONTHS","label":"x","description":"y","kind":"percent","value":100,"duration":"months","duration_months":24}')$q$,
+                       'private to one school')
+    and (pg_temp.code('{"code":"FREEYEAR12","label":"A free year","description":"y","kind":"percent","value":100,"duration":"months","duration_months":12}')->>'code') = 'FREEYEAR12',
+    '80 a flat Rs 50,000 for ever, 99.98% for ever, 100% to 2099 or for 24 months must be private; a free year may be public');
+end $$;
+
+-- A price typed by hand is not booked as the code's saving.
+do $$
+declare v uuid; i jsonb;
+begin
+  perform pg_temp.code('{"code":"TENONEMONTHX","label":"Ten off a month","description":"x","kind":"percent","value":10,"duration":"months","duration_months":1}');
+  v := pg_temp.school('DC Hardship', 'starter', 1);
+  perform pg_temp.as_owner(v);
+  perform public.fn_my_redeem_code('TENONEMONTHX', false);
+  perform pg_temp.as_op();
+  i := public.fn_platform_raise_invoice(v, 1, 500, 'Hardship: flood damage, agreed by the founder');
+  perform pg_temp.ok((select amount_off from public.discount_applications
+                       where invoice_id = (i->>'invoice_id')::uuid) = 200
+                     and (select total_saved from public.subscription_discounts
+                           where school_id = v and code = 'TENONEMONTHX') = 200,
+    '81 a hardship price of Rs 500 books the 10% code as saving Rs 200, not Rs 1,500');
+end $$;
+
+-- Last, because it stands in for the roll count: a school over its limit that
+-- we invoiced on purpose redeems a code. It is never told its invoice was
+-- reissued unless one was, and never reads our sentences.
+create or replace function public.fn_count_students(p_school_id uuid) returns integer
+language sql stable as
+  $$ select case when p_school_id = (select id from public.schools where name = 'DC Over') then 300 else 0 end $$;
+do $$
+declare v uuid; r jsonb;
+begin
+  perform pg_temp.as_op();
+  v := pg_temp.school('DC Over', 'starter', 1);
+  perform pg_temp.code('{"code":"FIVEPCOFFX","label":"Five off","description":"x","kind":"percent","value":5,"duration":"forever"}');
+  perform public.fn_platform_raise_invoice(v, 1, null, 'Invoiced on Starter while they decide on Growth');
+  perform pg_temp.as_owner(v);
+  r := public.fn_my_redeem_code('FIVEPCOFFX', false);
+  perform pg_temp.ok((r->>'ok')::boolean
+                     and (r->>'what_next' not like '%reissued%'
+                          or exists (select 1 from public.platform_invoices
+                                      where school_id = v and voided_at is null
+                                        and discount_code = 'FIVEPCOFFX'))
+                     and r::text not like '%Change plan%' and r::text not like '%give a reason%',
+    '82 the school is not told its invoice was reissued when none was raised, nor shown our reasons');
 end $$;
 
 rollback;

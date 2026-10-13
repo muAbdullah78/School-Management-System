@@ -144,6 +144,9 @@ begin
       join pg_attribute a on a.attrelid = c.oid
                          and a.attname = 'school_id' and not a.attisdropped
      where ns.nspname = 'public' and c.relkind = 'r'
+       -- 0156: the discount log keeps a purged school's id on purpose. It is
+       -- append-only and has no foreign key, so it is history, not debris.
+       and c.relname <> 'discount_events'
   loop
     v_n := pg_temp.orphans(r.t);
     if v_n > 0 then v_t := v_t + 1; v_rows := v_rows + v_n; end if;
@@ -3614,6 +3617,15 @@ select 'discount codes keep their word (0156)',
                 join pg_namespace n on n.oid = p.pronamespace
                where n.nspname = 'public' and p.proname = 'fn__discount_for_quote'), '')) = 0
            then 'FAIL: invoices are not asking the billed-month arithmetic for the discount; apply '
+                || 'supabase/bundles/56_three_plans_and_paying_first.sql'
+         -- A discount whose months sit on the unpaid invoice is still live, and
+         -- the purged school's discount log is not listed as left behind.
+         when to_regprocedure('public.fn__discount_has_value(public.subscription_discounts)') is null
+           or position('discount_events' in coalesce((select p.prosrc from pg_proc p
+                join pg_namespace n on n.oid = p.pronamespace
+               where n.nspname = 'public' and p.proname = 'fn__school_id_tables'), '')) = 0
+           then 'FAIL: a discount we gave can be closed without a word while its months are on the '
+                || 'unpaid invoice, and every purged school shows up as left behind; apply '
                 || 'supabase/bundles/56_three_plans_and_paying_first.sql'
          else 'PASS'
        end

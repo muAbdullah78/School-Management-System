@@ -242,11 +242,12 @@ select pg_temp.ok((select total_saved from public.subscription_discounts
 select pg_temp.be('Disc B Owner');
 select public.fn_my_apply_discount('TWENTY');
 select pg_temp.op();
--- The old console's save now edits under the same lock as the new edit: a
--- code a school is on cannot have what it gives changed underneath it.
+-- The old console's save never edits: it cannot know the version the operator
+-- was looking at, so an existing code is refused and the operator is sent to
+-- the Discounts page, where an edit is checked against what it started from.
 select pg_temp.ok(pg_temp.raises(
   $$ select public.fn_platform_save_discount('TWENTY', 'now only 5%', 'percent', 5, 'forever') $$,
-  'is locked'),
+  'already exists'),
   '3. editing a code a school is on down to 5% is refused, even from the old console');
 select pg_temp.ok((select value from public.subscription_discounts
                     where code = 'TWENTY') = 20,

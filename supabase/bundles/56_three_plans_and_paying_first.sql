@@ -5467,7 +5467,8 @@ end $assert$;
 --     has (or the months that start before its end date), and takes its share
 --     of exactly those months. "Once" is one billed month.
 --   * A flat code was rupees off an invoice whatever its length. It is now
---     rupees off each billed month it covers.
+--     rupees off each billed month it covers, and never more than that month
+--     costs.
 --   * Seats raced: three schools took a one-seat code at the same moment. The
 --     code row is now locked while a seat is taken. A seat counts while the
 --     redemption is live or once it has saved money, so a trial school that
@@ -5590,12 +5591,12 @@ update public.subscription_discounts d
 update public.subscription_discounts d
    set duration = 'months', months_total = 1, months_left = coalesce(d.uses_left, 1)
  where d.duration = 'once' and d.kind <> 'trial_days';
+-- months_left of a "months" redemption made before 0156 is worked out in 4b,
+-- from the window it had then. It cannot be the code's months less
+-- times_applied: that counted invoices, so a yearly invoice counted once.
 update public.subscription_discounts d
    set months_total = coalesce(d.months_total,
-                               (select c.duration_months from public.discount_codes c where c.code = d.code)),
-       months_left  = coalesce(d.months_left,
-                               greatest(coalesce((select c.duration_months from public.discount_codes c
-                                                   where c.code = d.code), 0) - d.times_applied, 0))
+                               (select c.duration_months from public.discount_codes c where c.code = d.code))
  where d.duration = 'months';
 
 -- A purge keeps the history: the school goes, its redemptions stay unlinked.
@@ -5717,6 +5718,41 @@ as $$
    order by c.relname;
 $$;
 
+-- The orphan report, the health check and the orphan cleaner (0092) read
+-- this list. discount_events keeps a purged school's id ON PURPOSE: it has no
+-- foreign key, carries the school's name on every row, and is append-only. On
+-- the list, every purged school that ever touched a code showed up as left
+-- behind for ever, and clearing it failed on "The discount log is
+-- append-only". So it is left off, as kept history. The other discount tables
+-- stay on: their school_id is a foreign key that a purge sets to NULL, so a row
+-- that still names a missing school really was left behind.
+create or replace function public.fn__school_id_tables()
+returns table (table_name text, treatment text) language sql stable as $$
+  select c.relname::text,
+         case
+           -- Deleted: the school's own records.
+           when exists (select 1 from public.fn__school_data_tables() d
+                         where d.table_name = c.relname) then 'delete'
+           -- Deleted: the licence and its history. Excluded from
+           -- fn__school_data_tables because they are the licence rather than the
+           -- school's records, but they go the same way.
+           when c.relname in ('subscriptions', 'student_count_snapshots') then 'delete'
+           -- Kept, unlinked: our sales ledger and what we did to them. A
+           -- business keeps its invoices after a customer leaves, and tax
+           -- records have to be retained for years.
+           when a.attnotnull then 'delete'      -- cannot be unlinked, 0080 deletes these
+           else 'unlink'
+         end
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    join pg_attribute a on a.attrelid = c.oid
+                       and a.attname = 'school_id' and not a.attisdropped
+   where n.nspname = 'public' and c.relkind = 'r'
+     and c.relname <> 'discount_events'
+   order by 1;
+$$;
+revoke all on function public.fn__school_id_tables() from public, anon, authenticated;
+
 
 -- -----------------------------------------------------------------------------
 -- 4. THE ARITHMETIC: BILLED MONTHS
@@ -5746,8 +5782,11 @@ $$;
 -- preview and the invoice can never disagree.
 --   covered  the billed months of this invoice the code reaches
 --   amount   percent: that share of the term price, at the percentage;
---            flat: rupees per covered month; never more than the term price;
---            whole rupees
+--            flat: rupees per covered month, but never more than the covered
+--            months cost. Capped only at the whole term price, Rs 4,000 off
+--            one month took Rs 4,000 off a Starter year whose month costs
+--            Rs 1,667, so a code was worth more the longer the term.
+--            Whole rupees.
 --   skipped  why it does not apply, in a sentence, when it does not
 create or replace function public.fn__discount_calc(
   p_code text, p_kind text, p_value numeric, p_duration text, p_months_left integer,
@@ -5789,7 +5828,7 @@ begin
 
   v_off := case p_kind
     when 'percent' then round(p_term_price * v_cov / p_months * p_value / 100)
-    else p_value * v_cov end;
+    else least(p_value * v_cov, round(p_term_price * v_cov / p_months)) end;
   v_off := least(greatest(v_off, 0), p_term_price);
 
   return jsonb_build_object('covered', v_cov, 'amount', v_off);
@@ -5822,8 +5861,79 @@ as $$
          end;
 $$;
 
--- The school's live MONEY discount: not removed, not a trial code, and with
--- months or days still to give.
+-- The first day of the next invoice a code could come off: the open invoice's
+-- own first day when nothing is paid on it (it is reissued with the change),
+-- the day after it when something is, otherwise the next period start. The
+-- day the school's preview is worked out for.
+create or replace function public.fn__discount_next_start(p_school_id uuid)
+returns date
+language plpgsql
+stable
+set search_path = public
+set "TimeZone" = 'Asia/Karachi'
+as $$
+declare v_open uuid := public.fn__open_term_invoice(p_school_id); v_start date;
+begin
+  if v_open is null then
+    return public.fn__next_period_start(p_school_id);
+  end if;
+  select case when public.fn__invoice_settled(v_open) = 0 then period_start else period_end + 1 end
+    into v_start from public.platform_invoices where id = v_open;
+  return v_start;
+end;
+$$;
+
+-- Does a money redemption still have anything to give? Months left; an end
+-- date on or after the next month the school would be invoiced for; or a
+-- saving sitting on an invoice that is not paid yet, which can still be
+-- reissued and would hand its months back. Judged on months left and today's
+-- date alone, a discount whose months were all on the open invoice, or whose
+-- end date had passed while the school's next month still started before it,
+-- counted as finished: it was closed without a word when the school typed
+-- another code, we could not take it off, and the school was not shown it.
+-- A use priced by hand is left out. That price used the code up, and the
+-- school cannot get those months back (fn__discount_reverse), so they hold
+-- nothing for it.
+create or replace function public.fn__discount_has_value(d public.subscription_discounts)
+returns boolean
+language sql
+stable
+set search_path = public
+set "TimeZone" = 'Asia/Karachi'
+as $$
+  select d.id is not null and d.kind in ('percent', 'flat') and (
+       d.duration = 'forever'
+    or (d.duration = 'months' and coalesce(d.months_left, 0) > 0)
+    or (d.duration = 'until' and d.ends_on >= public.fn__discount_next_start(d.school_id))
+    or exists (select 1 from public.discount_applications a
+                 join public.platform_invoices i on i.id = a.invoice_id
+                where a.redemption_id = d.id and a.reversed_at is null and not a.overridden
+                  and i.voided_at is null and public.fn__invoice_owed(i.id) > 0));
+$$;
+
+-- The months of a "months" code the school has not paid for yet: the months
+-- left plus those on an invoice still owed. The sentence a school reads uses
+-- this, so a code whose months all sit on the unpaid invoice does not read
+-- "for 0 months".
+create or replace function public.fn__discount_months_to_give(d public.subscription_discounts)
+returns integer
+language sql
+stable
+set search_path = public
+as $$
+  select coalesce(d.months_left, 0)
+       + coalesce((select sum(a.months_covered)::integer from public.discount_applications a
+                     join public.platform_invoices i on i.id = a.invoice_id
+                    where a.redemption_id = d.id and a.reversed_at is null and not a.overridden
+                      and i.voided_at is null and public.fn__invoice_owed(i.id) > 0), 0);
+$$;
+
+-- The school's live MONEY discount: not removed and not a trial code.
+--   p_as_at given: the one that reaches an invoice starting that day, with
+--     months still to give or an end date on or after it. The quote asks this.
+--   p_as_at NULL: the one that still has anything to give at all. Asking a
+--     replace, protecting what we gave, taking a code off, and what the school
+--     and we are shown all ask this.
 create or replace function public.fn__discount_live(p_school_id uuid, p_as_at date default null)
 returns public.subscription_discounts
 language sql
@@ -5835,13 +5945,15 @@ as $$
    where d.school_id = p_school_id
      and d.removed_at is null
      and d.kind in ('percent', 'flat')
-     and (d.duration <> 'months' or coalesce(d.months_left, 0) > 0)
-     and (d.duration <> 'until' or d.ends_on >= coalesce(p_as_at, current_date))
+     and case when p_as_at is null then public.fn__discount_has_value(d)
+              else (d.duration <> 'months' or coalesce(d.months_left, 0) > 0)
+                   and (d.duration <> 'until' or d.ends_on >= p_as_at) end
    order by d.redeemed_at desc
    limit 1;
 $$;
 
--- 0155's hook: what the live code takes off this invoice.
+-- 0155's hook: what the live code takes off this invoice. A quote with no
+-- period start is judged as at today.
 create or replace function public.fn__discount_for_quote(
   p_school_id uuid, p_plan_code text, p_months integer, p_period_start date,
   p_term_price numeric)
@@ -5850,10 +5962,11 @@ language plpgsql
 stable
 security definer
 set search_path = public
+set "TimeZone" = 'Asia/Karachi'
 as $$
 declare d public.subscription_discounts; v jsonb;
 begin
-  select * into d from public.fn__discount_live(p_school_id, p_period_start);
+  select * into d from public.fn__discount_live(p_school_id, coalesce(p_period_start, current_date));
   if d.id is null then
     return null;
   end if;
@@ -5873,7 +5986,11 @@ $$;
 
 -- 0155's hook: an invoice used the code. Months come off, the saving is
 -- recorded against the invoice. A price typed by hand uses the code up for the
--- months this invoice would have covered, so it cannot be used again.
+-- months this invoice would have covered, so it cannot be used again. Its
+-- saving is what the code itself would have taken, and never more than the
+-- typed price actually took off. Booking the whole difference from the term
+-- price recorded a hardship price we agreed (Rs 500 for a Rs 2,000 month) as
+-- a 10% code having saved Rs 1,500.
 create or replace function public.fn__discount_record(p_invoice_id uuid, p_quote jsonb, p_overridden boolean)
 returns void
 language plpgsql
@@ -5889,9 +6006,10 @@ begin
     return;
   end if;
   select * into v_inv from public.platform_invoices where id = p_invoice_id;
-  v_off := case when p_overridden
-                then greatest(coalesce((p_quote->>'term_price')::numeric, v_inv.amount) - v_inv.amount, 0)
-                else coalesce((p_quote->>'discount_amount')::numeric, 0) end;
+  v_off := coalesce((p_quote->>'discount_amount')::numeric, 0);
+  if p_overridden then
+    v_off := least(v_off, greatest(coalesce((p_quote->>'term_price')::numeric, v_inv.amount) - v_inv.amount, 0));
+  end if;
 
   insert into public.discount_applications
     (invoice_id, redemption_id, school_id, code, months_covered, amount_off, overridden)
@@ -5914,33 +6032,46 @@ end;
 $$;
 
 -- 0155's hook: the invoice was voided, so the months and the saving go back.
+-- Except the months a price we typed by hand used up, when the void is not
+-- ours. That price was our decision about the code, so only we give it back:
+-- a school that switched term and back, typed another code, or let the
+-- invoice lapse and came back had the code come off again and our price
+-- undone. The use still stands (the seat stays taken); only the saving goes,
+-- since the invoice it was on is void.
 create or replace function public.fn__discount_reverse(p_invoice_id uuid, p_reason text)
 returns void
 language plpgsql
 security definer
 set search_path = public
 as $$
-declare a public.discount_applications;
+declare a public.discount_applications; v_keep boolean;
 begin
   select * into a from public.discount_applications
    where invoice_id = p_invoice_id and reversed_at is null for update;
   if not found then
     return;
   end if;
+  v_keep := a.overridden and not public.is_platform_admin();
   update public.discount_applications
-     set reversed_at = now(), reversed_reason = coalesce(nullif(btrim(p_reason), ''), 'voided')
+     set reversed_at = now(),
+         reversed_reason = coalesce(nullif(btrim(p_reason), ''), 'voided')
+                           || case when v_keep then ' (priced by hand: its months stay used)' else '' end
    where id = a.id;
   update public.subscription_discounts
-     set times_applied = greatest(times_applied - 1, 0),
+     set times_applied = case when v_keep then times_applied else greatest(times_applied - 1, 0) end,
          total_saved   = greatest(total_saved - a.amount_off, 0),
-         months_left   = case when duration = 'months'
-                              then least(coalesce(months_left, 0) + a.months_covered,
+         months_left   = case when duration <> 'months' then null
+                              when v_keep then months_left
+                              else least(coalesce(months_left, 0) + a.months_covered,
                                          coalesce(months_total, coalesce(months_left, 0) + a.months_covered))
                          end
    where id = a.redemption_id;
   perform public.fn__discount_event('reversed', a.code, a.school_id, a.redemption_id,
     p_invoice_id, 'system', jsonb_build_object('months_covered', a.months_covered,
-                                               'amount_off', a.amount_off), null, p_reason);
+                                               'amount_off', a.amount_off),
+    jsonb_build_object('months_given_back', case when v_keep then 0 else a.months_covered end,
+                       'priced_by_hand', a.overridden),
+    p_reason);
 end;
 $$;
 
@@ -5948,10 +6079,85 @@ revoke all on function public.fn__norm_code(text) from public, anon, authenticat
 revoke all on function public.fn__months_until(date, integer, date) from public, anon, authenticated;
 revoke all on function public.fn__discount_calc(text, text, numeric, text, integer, date, text[], integer, text, integer, date, numeric) from public, anon, authenticated;
 revoke all on function public.fn__discount_sentence(text, numeric, text, integer, date) from public, anon, authenticated;
+revoke all on function public.fn__discount_next_start(uuid) from public, anon, authenticated;
+revoke all on function public.fn__discount_has_value(public.subscription_discounts) from public, anon, authenticated;
+revoke all on function public.fn__discount_months_to_give(public.subscription_discounts) from public, anon, authenticated;
 revoke all on function public.fn__discount_live(uuid, date) from public, anon, authenticated;
 revoke all on function public.fn__discount_for_quote(uuid, text, integer, date, numeric) from public, anon, authenticated;
 revoke all on function public.fn__discount_record(uuid, jsonb, boolean) from public, anon, authenticated;
 revoke all on function public.fn__discount_reverse(uuid, text) from public, anon, authenticated;
+
+
+-- -----------------------------------------------------------------------------
+-- 4b. "MONTHS" REDEMPTIONS MADE BEFORE BILLED MONTHS
+-- -----------------------------------------------------------------------------
+
+-- Under 0131 a "months" code was a calendar window: it ran to ends_on (the day
+-- it was redeemed plus its months) and came off every invoice starting by then.
+-- So its billed months left are the months not yet invoiced that start inside
+-- that window, and a window that has closed is spent. Taking times_applied
+-- from the code's months instead brought back every code that ran out on fewer
+-- invoices than it had months: a three-month code that ended in April came off
+-- the next three invoices again, and one used on a yearly invoice (counted
+-- once) had two months left. A spent redemption is closed here, with a line in
+-- the log. Only rows 0156 has not counted yet (months_left NULL) are touched,
+-- so running it again changes nothing.
+create or replace function public.fn__discount_months_from_windows()
+returns integer
+language plpgsql
+set search_path = public
+set "TimeZone" = 'Asia/Karachi'
+as $$
+declare r record; v_left integer; v_start date; v_n integer := 0;
+begin
+  for r in
+    select d.* from public.subscription_discounts d
+     where d.duration = 'months' and d.months_left is null and d.kind in ('percent', 'flat')
+     order by d.redeemed_at
+     for update
+  loop
+    if r.ends_on is null then
+      -- No window was written down: the code's months less its uses is all
+      -- there is to go on.
+      v_left := greatest(coalesce(r.months_total, 0) - r.times_applied, 0);
+    elsif r.ends_on < current_date then
+      v_left := 0;
+    else
+      -- From the first month not invoiced yet: an invoice raised under the old
+      -- rules already has the code taken off.
+      v_start := greatest(public.fn__next_period_start(r.school_id),
+                          coalesce((select max(i.period_end) + 1 from public.platform_invoices i
+                                     where i.school_id = r.school_id and i.kind = 'invoice'
+                                       and i.purpose = 'term' and i.voided_at is null),
+                                   current_date));
+      v_left := public.fn__months_until(v_start, coalesce(r.months_total, 0), r.ends_on);
+    end if;
+    v_left := least(v_left, coalesce(r.months_total, v_left));
+
+    update public.subscription_discounts set months_left = v_left where id = r.id;
+    if v_left = 0 and r.removed_at is null then
+      update public.subscription_discounts
+         set removed_at = now(), removed_reason = 'Ran its course'
+       where id = r.id;
+      perform public.fn__discount_event('removed', r.code, r.school_id, r.id, null, 'system',
+        jsonb_build_object('ends_on', r.ends_on, 'times_applied', r.times_applied,
+                           'months_left', null),
+        jsonb_build_object('months_left', 0),
+        case when r.ends_on is null then 'Ran its course'
+             else format('Ran its course: under the old rules it ran to %s',
+                         to_char(r.ends_on, 'DD Mon YYYY')) end);
+    end if;
+    v_n := v_n + 1;
+  end loop;
+  return v_n;
+end;
+$$;
+revoke all on function public.fn__discount_months_from_windows() from public, anon, authenticated;
+
+do $windows$
+begin
+  perform public.fn__discount_months_from_windows();
+end $windows$;
 
 -- The old arithmetic, kept for anything that still calls it: whole rupees.
 create or replace function public.fn__discount_off(p_kind text, p_value numeric, p_list numeric)
@@ -6058,7 +6264,9 @@ end;
 $$;
 revoke all on function public.fn__discount_refusal(text, uuid, text, integer) from public, anon, authenticated;
 
--- Ten refused tries in the last hour and the school waits.
+-- Ten refused tries in the last hour and the school waits. A try made while it
+-- waits is logged too, marked paused, and does not count: counting it would
+-- keep a school that is still typing waiting for ever.
 create or replace function public.fn__discount_throttled(p_school_id uuid)
 returns boolean
 language sql
@@ -6066,8 +6274,9 @@ stable
 security definer
 set search_path = public
 as $$
-  select count(*) >= 10 from public.discount_events
-   where school_id = p_school_id and event = 'refused' and at > now() - interval '1 hour';
+  select count(*) >= 10 from public.discount_events e
+   where e.school_id = p_school_id and e.event = 'refused' and e.at > now() - interval '1 hour'
+     and not coalesce((e.after->>'paused')::boolean, false);
 $$;
 revoke all on function public.fn__discount_throttled(uuid) from public, anon, authenticated;
 
@@ -6088,16 +6297,10 @@ declare
 begin
   select * into s from public.subscriptions where school_id = p_school_id;
   v_open := public.fn__open_term_invoice(p_school_id);
-  if v_open is not null and public.fn__invoice_settled(v_open) = 0 then
-    select period_start into v_start from public.platform_invoices where id = v_open;
-    v_applies := 'open_invoice';
-  elsif v_open is not null then
-    select period_end + 1 into v_start from public.platform_invoices where id = v_open;
-    v_applies := 'invoice_after_open';
-  else
-    v_start := public.fn__next_period_start(p_school_id);
-    v_applies := 'next_invoice';
-  end if;
+  v_start := public.fn__discount_next_start(p_school_id);
+  v_applies := case when v_open is null then 'next_invoice'
+                    when public.fn__invoice_settled(v_open) = 0 then 'open_invoice'
+                    else 'invoice_after_open' end;
   v_term := public.fn__term_price(p_school_id, coalesce(p_plan_code, s.plan_code),
                                   coalesce(p_months, s.term_months));
   v := public.fn__discount_calc(c.code, c.kind, c.value, c.duration, c.duration_months,
@@ -6126,7 +6329,7 @@ begin
       'code', live.code, 'label', live.label,
       'granted_by_kind', live.granted_by_kind,
       'summary', public.fn__discount_sentence(live.kind, live.value, live.duration,
-                                              live.months_left, live.ends_on)) end);
+                                              public.fn__discount_months_to_give(live), live.ends_on)) end);
 end;
 $$;
 revoke all on function public.fn__code_preview(uuid, public.discount_codes, text, integer) from public, anon, authenticated;
@@ -6152,16 +6355,23 @@ begin
     raise exception 'Only the owner or the principal can apply a discount code.'
       using errcode = '42501';
   end if;
+  -- Every refused try is logged, including one made while the school waits,
+  -- so a school that keeps on guessing does not look as if it stopped at ten.
   if public.fn__discount_throttled(v_school) then
-    return jsonb_build_object('ok', false, 'reason',
-      'Too many codes have been tried in the last hour. Please try again later, or ask us.');
+    v_refusal := 'Too many codes have been tried in the last hour. Please try again later, or ask us.';
+    perform public.fn__discount_event('refused', left(v_code, 40), v_school, null, null,
+      'school', null, jsonb_build_object('paused', true, 'preview', true), v_refusal);
+    return jsonb_build_object('ok', false, 'reason', v_refusal);
   end if;
   select * into s from public.subscriptions where school_id = v_school;
 
   select * into live from public.fn__discount_live(v_school, null);
   if live.id is not null and live.code = v_code then
+    v_refusal := 'That code is already on your subscription.';
+    perform public.fn__discount_event('refused', live.code, v_school, live.id, null,
+      'school', null, jsonb_build_object('preview', true), v_refusal);
     return jsonb_build_object('ok', false, 'already_yours', true, 'code', live.code,
-      'reason', 'That code is already on your subscription.');
+      'reason', v_refusal);
   end if;
 
   v_refusal := public.fn__discount_refusal(v_code, v_school,
@@ -6195,6 +6405,7 @@ declare
   v_school uuid := public.current_school_id(); c public.discount_codes; s public.subscriptions;
   v_code text := public.fn__norm_code(p_code); v_refusal text; v_prev jsonb;
   live public.subscription_discounts; v_id uuid; v_trial date; v_re jsonb;
+  dead public.subscription_discounts; v_raised boolean := false; v_shown jsonb;
 begin
   if v_school is null then
     raise exception 'Not permitted' using errcode = '42501';
@@ -6203,9 +6414,12 @@ begin
     raise exception 'Only the owner or the principal can apply a discount code.'
       using errcode = '42501';
   end if;
+  -- Logged and marked paused: visible to us, not counted towards the pause.
   if public.fn__discount_throttled(v_school) then
-    return jsonb_build_object('ok', false, 'reason',
-      'Too many codes have been tried in the last hour. Please try again later, or ask us.');
+    v_refusal := 'Too many codes have been tried in the last hour. Please try again later, or ask us.';
+    perform public.fn__discount_event('refused', left(v_code, 40), v_school, null, null,
+      'school', null, jsonb_build_object('paused', true), v_refusal);
+    return jsonb_build_object('ok', false, 'reason', v_refusal);
   end if;
 
   select * into s from public.subscriptions where school_id = v_school for update;
@@ -6237,17 +6451,24 @@ begin
     return jsonb_build_object('ok', false, 'reason', v_refusal);
   end if;
 
+  -- "Live" here is anything still to give (fn__discount_has_value): months on
+  -- an unpaid invoice, or an end date the next month still starts before.
   if c.kind <> 'trial_days' then
     select * into live from public.fn__discount_live(v_school, null);
     if live.id is not null then
       if live.granted_by_kind = 'platform' then
-        return jsonb_build_object('ok', false, 'reason',
-          'Your current discount was arranged with us, so it can only be changed by us. Please call us.');
+        v_refusal := 'Your current discount was arranged with us, so it can only be changed by us. Please call us.';
+        perform public.fn__discount_event('refused', c.code, v_school, null, null, 'school', null,
+          jsonb_build_object('arranged_with_us', live.code), v_refusal);
+        return jsonb_build_object('ok', false, 'reason', v_refusal);
       end if;
       if not coalesce(p_replace, false) then
+        v_refusal := format('Your subscription already has %s (%s). Using %s takes it off for good.',
+                            live.code, live.label, c.code);
+        perform public.fn__discount_event('refused', c.code, v_school, null, null, 'school', null,
+          jsonb_build_object('needs_replace', live.code), v_refusal);
         return jsonb_build_object('ok', false, 'needs_replace', true, 'preview', v_prev,
-          'reason', format('Your subscription already has %s (%s). Using %s takes it off for good.',
-                           live.code, live.label, c.code));
+          'reason', v_refusal);
       end if;
       update public.subscription_discounts
          set removed_at = now(), removed_by = auth.uid(),
@@ -6260,11 +6481,22 @@ begin
   end if;
 
   -- A code that has run its course still holds the one-per-school slot until it
-  -- is closed; it is closed here, with the reason, before the new one goes in.
+  -- is closed; it is closed here, with the reason and a line in the log, before
+  -- the new one goes in. Only one with nothing left to give: anything else was
+  -- replaced above or refused.
   if c.kind <> 'trial_days' then
-    update public.subscription_discounts
-       set removed_at = now(), removed_reason = 'Ran its course'
-     where school_id = v_school and removed_at is null and kind <> 'trial_days';
+    for dead in
+      select * from public.subscription_discounts d
+       where d.school_id = v_school and d.removed_at is null and d.kind <> 'trial_days'
+         and not public.fn__discount_has_value(d)
+    loop
+      update public.subscription_discounts
+         set removed_at = now(), removed_reason = 'Ran its course'
+       where id = dead.id;
+      perform public.fn__discount_event('removed', dead.code, v_school, dead.id, null, 'system',
+        jsonb_build_object('months_left', dead.months_left, 'ends_on', dead.ends_on),
+        null, 'Ran its course');
+    end loop;
   end if;
 
   if c.kind = 'trial_days' then
@@ -6313,18 +6545,40 @@ begin
       'school');
   end if;
 
+  -- Reissued only when a replacement was actually raised. A reissue that could
+  -- not raise one ({raised: {not_raised}}) or that kept the invoice ({kept,
+  -- why}) is not, and its sentences are ours: they name Change plan and the
+  -- reasons we keep an invoice. The school is shown which invoice went and
+  -- which came, and nothing else.
+  v_raised := jsonb_typeof(v_re->'raised') = 'object' and (v_re->'raised') ? 'invoice_id';
+  v_shown := case
+    when v_re is null then null
+    when v_raised then jsonb_build_object('voided', v_re->'voided', 'raised',
+      jsonb_build_object('invoice_id', v_re->'raised'->'invoice_id',
+                         'doc_no', v_re->'raised'->'doc_no',
+                         'amount', v_re->'raised'->'amount',
+                         'period_start', v_re->'raised'->'period_start',
+                         'period_end', v_re->'raised'->'period_end',
+                         'due_on', v_re->'raised'->'due_on',
+                         'discount_code', v_re->'raised'->'discount_code',
+                         'discount_amount', v_re->'raised'->'discount_amount'))
+    when v_re ? 'kept' then jsonb_build_object('kept', v_re->'kept')
+    else jsonb_strip_nulls(jsonb_build_object('voided', v_re->'voided')) end;
+
   return jsonb_build_object(
     'ok', true, 'code', c.code, 'label', c.label,
     'summary', public.fn__discount_sentence(c.kind, c.value, c.duration,
                                             c.duration_months, c.duration_until),
     'trial_ends_on', v_trial,
     'preview', v_prev,
-    'reissued', v_re,
+    'reissued', v_shown,
     'what_next', case
       when c.kind = 'trial_days'
         then format('Your free trial now runs to %s.', to_char(v_trial, 'DD Mon YYYY'))
-      when v_re is not null and v_re ? 'raised'
+      when v_raised
         then 'Your invoice has been reissued with the code taken off.'
+      when v_re ? 'kept'
+        then 'Your open invoice stays as it is, and the code comes off the invoice after it.'
       else 'It comes off your next invoice automatically.' end);
 end;
 $$;
@@ -6416,7 +6670,8 @@ begin
     'can_remove', d.id is not null and d.granted_by_kind = 'school',
     'plan_codes', d.plan_codes, 'min_term_months', d.min_term_months,
     'summary', case when d.id is null then null else
-      public.fn__discount_sentence(d.kind, d.value, d.duration, d.months_left, d.ends_on) end,
+      public.fn__discount_sentence(d.kind, d.value, d.duration,
+                                   public.fn__discount_months_to_give(d), d.ends_on) end,
     'trial_code', case when t.id is null then null else jsonb_build_object(
       'code', t.code, 'days', t.trial_days_added, 'on', t.redeemed_at::date) end);
 end;
@@ -6488,6 +6743,30 @@ begin
     end if;
     if p_new.kind = 'percent' and p_new.value >= 100 and p_new.duration = 'forever' and not p_new.is_private then
       raise exception 'A code that makes the subscription free for ever must be private to one school.'
+        using errcode = '22023';
+    end if;
+    -- The rule is about what the school pays, not the spelling: 99.98% rounds
+    -- a month to Rs 0, Rs 50,000 off each month is every price we have, and
+    -- "until 2099" is for ever. A code that can make invoices free, or all but
+    -- free, for more than a year is one we give to one school, never one
+    -- anybody can type. Checked when the code is made or its terms change, so
+    -- a code made before this rule can still be renamed or retired.
+    if not coalesce(p_new.is_private, false)
+       and ((p_new.kind = 'percent' and p_new.value >= 99.5)
+            or (p_new.kind = 'flat'
+                and p_new.value >= (select min(p.price_monthly) from public.plans p
+                                     where p.active and not p.by_arrangement and p.price_monthly > 0)))
+       and (p_new.duration = 'forever'
+            or (p_new.duration = 'until'
+                and p_new.duration_until > (current_date + interval '12 months')::date)
+            or (p_new.duration = 'months' and p_new.duration_months > 12))
+       and (p_old.code is null
+            or (p_new.kind, p_new.value, p_new.duration, p_new.duration_months,
+                p_new.duration_until, p_new.is_private)
+               is distinct from
+               (p_old.kind, p_old.value, p_old.duration, p_old.duration_months,
+                p_old.duration_until, p_old.is_private)) then
+      raise exception 'A code that makes the subscription free, or all but free, for more than a year must be private to one school.'
         using errcode = '22023';
     end if;
   end if;
@@ -6730,8 +7009,12 @@ $$;
 revoke all on function public.fn_platform_retire_discount(text, text) from public, anon;
 grant execute on function public.fn_platform_retire_discount(text, text) to authenticated;
 
--- Kept for a console that has not been reloaded: a new code is created, an
--- existing one is edited under the same locks, never silently overwritten.
+-- Kept for a console that has not been reloaded. It only ever creates. An
+-- existing code is refused: this form cannot know the version the operator
+-- was looking at, and the old signature's defaults (switched on, no limit on
+-- schools) are not things anybody chose. Passing them on as an edit switched a
+-- retired one-seat code back on with no limit, and turned an unused 10% code
+-- into 60% for ever because a second "New code" form used the same name.
 create or replace function public.fn_platform_save_discount(
   p_code text, p_description text, p_kind text, p_value numeric, p_duration text,
   p_duration_months integer default null, p_duration_until date default null,
@@ -6743,10 +7026,15 @@ language plpgsql
 security definer
 set search_path = public
 as $$
-declare v jsonb; v_old public.discount_codes;
+declare v jsonb;
 begin
   if not public.is_platform_admin() then
     raise exception 'Not permitted' using errcode = '42501';
+  end if;
+  if exists (select 1 from public.discount_codes where code = public.fn__norm_code(p_code)) then
+    raise exception 'A code called % already exists. This screen is out of date: reload it and change % on the Discounts page, where an edit starts from the version you see.',
+      public.fn__norm_code(p_code), public.fn__norm_code(p_code)
+      using errcode = '23505';
   end if;
   -- The label the school sees is built from the terms, never copied from our
   -- description: that is ours, and the old console had no label field.
@@ -6763,14 +7051,8 @@ begin
     'redeem_until', p_redeem_until, 'max_redemptions', p_max_redemptions,
     'plan_codes', to_jsonb(p_plan_codes), 'min_term_months', p_min_term_months,
     'active', p_active);
-  select * into v_old from public.discount_codes where code = public.fn__norm_code(p_code);
-  if not found then
-    return public.fn_platform_create_discount(v || jsonb_build_object('code', p_code))
-           || jsonb_build_object('created', true);
-  end if;
-  return public.fn_platform_edit_discount(p_code, v - 'label' - 'description'
-           || jsonb_build_object('description', p_description), v_old.updated_at)
-         || jsonb_build_object('created', false);
+  return public.fn_platform_create_discount(v || jsonb_build_object('code', p_code))
+         || jsonb_build_object('created', true);
 end;
 $$;
 
@@ -6814,7 +7096,7 @@ as $$
 declare
   c public.discount_codes; s public.subscriptions; live public.subscription_discounts;
   prior public.subscription_discounts; v_reason text := nullif(btrim(coalesce(p_reason, '')), '');
-  v_id uuid; v_trial date; v_name text; v_re jsonb;
+  v_id uuid; v_trial date; v_name text; v_re jsonb; dead public.subscription_discounts;
 begin
   if not public.is_platform_admin() then
     raise exception 'Not permitted' using errcode = '42501';
@@ -6849,10 +7131,20 @@ begin
     end if;
   end if;
 
-  if prior.id is null and c.max_redemptions is not null
+  -- A seat is counted under the code row's lock, taken above. A restore needs
+  -- one too when the old redemption gave its seat back (removed before it
+  -- saved anything), because another school may have taken that seat since:
+  -- restoring without counting left a one-seat code live at two schools.
+  if (prior.id is null
+      or (prior.removed_at is not null and prior.times_applied = 0 and prior.kind <> 'trial_days'))
+     and c.max_redemptions is not null
      and public.fn__discount_seats_taken(c.code) >= c.max_redemptions then
-    raise exception 'Every place on % is taken (% of %).', c.code,
-      public.fn__discount_seats_taken(c.code), c.max_redemptions using errcode = '22023';
+    raise exception 'Every place on % is taken (% of %).%', c.code,
+      public.fn__discount_seats_taken(c.code), c.max_redemptions,
+      case when prior.id is not null
+           then format(' %s gave its place back when it was taken off, so it cannot be restored unless the limit is raised.', v_name)
+           else '' end
+      using errcode = '22023';
   end if;
 
   if c.kind <> 'trial_days' then
@@ -6867,17 +7159,28 @@ begin
              removed_reason = format('Replaced by %s: %s', c.code, v_reason)
        where id = live.id;
       perform public.fn__discount_event('replaced', live.code, p_school_id, live.id, null, 'platform',
-        jsonb_build_object('code', live.code), jsonb_build_object('replaced_by', c.code), v_reason);
+        jsonb_build_object('code', live.code, 'months_left', live.months_left),
+        jsonb_build_object('replaced_by', c.code), v_reason);
     end if;
   end if;
 
   -- A code that has run its course still holds the one-per-school slot until it
-  -- is closed; it is closed here, with the reason, before the new one goes in.
+  -- is closed; it is closed here, with the reason and a line in the log, before
+  -- the new one goes in. Only one with nothing left to give.
   if c.kind <> 'trial_days' then
-    update public.subscription_discounts
-       set removed_at = now(), removed_reason = 'Ran its course'
-     where school_id = p_school_id and removed_at is null and kind <> 'trial_days'
-       and id is distinct from prior.id;
+    for dead in
+      select * from public.subscription_discounts d
+       where d.school_id = p_school_id and d.removed_at is null and d.kind <> 'trial_days'
+         and d.id is distinct from prior.id
+         and not public.fn__discount_has_value(d)
+    loop
+      update public.subscription_discounts
+         set removed_at = now(), removed_reason = 'Ran its course'
+       where id = dead.id;
+      perform public.fn__discount_event('removed', dead.code, p_school_id, dead.id, null, 'system',
+        jsonb_build_object('months_left', dead.months_left, 'ends_on', dead.ends_on),
+        null, 'Ran its course');
+    end loop;
   end if;
 
   if prior.id is not null then
@@ -6954,13 +7257,22 @@ begin
 end;
 $$;
 
+-- TAKE A DISCOUNT OFF. The open invoice is reissued without it when nothing
+-- is paid on it and the code came off it, exactly as giving a code reissues
+-- it with the code on. Closing the redemption alone left the saving on the
+-- unpaid invoice: a school given half off a year by mistake still owed half.
+-- An invoice we priced by hand is left alone (the code took nothing off it),
+-- and one with money on it stays, the change applying from the next. The
+-- result says which.
 create or replace function public.fn_platform_remove_discount(p_school_id uuid, p_reason text)
 returns jsonb
 language plpgsql
 security definer
 set search_path = public
 as $$
-declare live public.subscription_discounts; v_reason text := nullif(btrim(coalesce(p_reason, '')), '');
+declare
+  live public.subscription_discounts; v_reason text := nullif(btrim(coalesce(p_reason, '')), '');
+  v_open uuid; v_doc text; v_carries boolean := false; v_re jsonb; v_note text;
 begin
   if not public.is_platform_admin() then
     raise exception 'Not permitted' using errcode = '42501';
@@ -6968,10 +7280,20 @@ begin
   if v_reason is null then
     raise exception 'Say why the discount is being taken off. The school is told.';
   end if;
+  perform 1 from public.subscriptions where school_id = p_school_id for update;
   select * into live from public.fn__discount_live(p_school_id, null);
   if live.id is null then
     raise exception 'That school has no live discount.';
   end if;
+
+  v_open := public.fn__open_term_invoice(p_school_id);
+  if v_open is not null then
+    select doc_no into v_doc from public.platform_invoices where id = v_open;
+    v_carries := exists (select 1 from public.discount_applications a
+                          where a.invoice_id = v_open and a.redemption_id = live.id
+                            and a.reversed_at is null and not a.overridden);
+  end if;
+
   update public.subscription_discounts
      set removed_at = now(), removed_by = auth.uid(), removed_reason = v_reason
    where id = live.id;
@@ -6981,7 +7303,29 @@ begin
   insert into public.audit_log(school_id, actor, action, entity, entity_id, before, reason)
   values (p_school_id, auth.uid(), 'discount_removed', 'subscription_discounts', live.id::text,
           jsonb_build_object('code', live.code, 'label', live.label), v_reason);
-  return jsonb_build_object('school_id', p_school_id, 'code', live.code, 'removed', true);
+
+  if v_carries then
+    v_re := public.fn__reissue_open_invoice(p_school_id,
+              format('Reissued without code %s: %s', live.code, v_reason), 'operator');
+  end if;
+  v_note := case
+    when v_open is null
+      then 'No invoice is open. The next one is raised without the code.'
+    when not v_carries
+      then format('%s did not have the code taken off it, so it stays as it is.', v_doc)
+    when jsonb_typeof(v_re->'raised') = 'object' and (v_re->'raised') ? 'invoice_id'
+      then format('%s was voided and reissued as %s for Rs %s, without the code.', v_doc,
+                  v_re->'raised'->>'doc_no',
+                  to_char((v_re->'raised'->>'amount')::numeric, 'FM999,999,999'))
+    when v_re ? 'kept'
+      then format('%s keeps the code: %s', v_doc, coalesce(v_re->>'why', 'it could not be reissued'))
+    when jsonb_typeof(v_re->'raised') = 'object' and (v_re->'raised') ? 'not_raised'
+      then format('%s was voided, and no new invoice could be raised: %s', v_doc,
+                  v_re->'raised'->>'not_raised')
+    else format('%s still has the code taken off it.', v_doc) end;
+
+  return jsonb_build_object('school_id', p_school_id, 'code', live.code, 'removed', true,
+                            'invoice', v_re, 'invoice_note', v_note);
 end;
 $$;
 
@@ -7019,8 +7363,7 @@ begin
       select (select count(*) from public.subscription_discounts d where d.code = c.code)::int as redeemed,
              (select count(*) from public.subscription_discounts d
                where d.code = c.code and d.removed_at is null and d.kind <> 'trial_days'
-                 and (d.duration <> 'months' or coalesce(d.months_left, 0) > 0)
-                 and (d.duration <> 'until' or d.ends_on >= current_date))::int as live,
+                 and public.fn__discount_has_value(d))::int as live,
              (select count(*) from public.discount_applications a
                where a.code = c.code and a.reversed_at is null)::int as invoices,
              (select coalesce(sum(a.amount_off), 0) from public.discount_applications a
@@ -7063,9 +7406,9 @@ begin
         when d.removed_at is not null and d.removed_reason = 'Ran its course' then 'spent'
         when d.removed_at is not null then 'removed'
         when d.kind = 'trial_days' then 'trial'
-        when d.duration = 'months' and coalesce(d.months_left, 0) <= 0 then 'spent'
-        when d.duration = 'until' and d.ends_on < current_date then 'expired'
-        else 'active' end)
+        when public.fn__discount_has_value(d) then 'active'
+        when d.duration = 'until' then 'expired'
+        else 'spent' end)
       order by d.redeemed_at desc)
     from public.subscription_discounts d
     left join public.schools s on s.id = d.school_id
@@ -7245,7 +7588,7 @@ begin
       'contact_name', v_school.contact_name, 'contact_phone', v_school.contact_phone,
       'contact_email', v_school.contact_email, 'notes', v_school.notes,
       'active', v_school.active, 'created_at', v_school.created_at,
-      -- From school_settings, which is what the school itself maintains — so a
+      -- From school_settings, which is what the school itself maintains, so a
       -- mismatch with the signup details above is itself informative.
       'display_name', v_settings.name, 'address', v_settings.address,
       'phone', v_settings.phone, 'principal_name', v_settings.principal_name,
@@ -7300,7 +7643,7 @@ begin
                          where school_id = p_school_id
                            and kind = 'invoice' and voided_at is null)),
 
-    -- The school's own logins. NOT the children — see the header.
+    -- The school's own logins. NOT the children: see the header.
     --
     -- ever_signed_in is the churn signal that nothing in this product could see
     -- before: a school with one login that has not been used in three weeks is
