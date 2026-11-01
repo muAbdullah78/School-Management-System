@@ -13,6 +13,8 @@ import {
   type PillItem,
 } from './examKit'
 import { useAuth } from '@/auth/AuthProvider'
+import { useOffline } from '@/offline/OfflineProvider'
+import { directOrOffline, pendingMarks } from '@/offline/write'
 
 type Entry = { marks: string; practical: string; is_absent: boolean }
 
@@ -183,6 +185,16 @@ function MarksSheet({ paper, reach, teaching, classId, className, termId }: {
     return reach.whole || !r.section_name || names.has(r.section_name)
   }), [sheet.data, reach, names])
 
+  // Marks saved on this device and not sent yet are what this sheet starts
+  // from, so a sheet opened again with no signal shows what was typed.
+  const offline = useOffline()
+  const unsent = useMemo(() => pendingMarks(offline, 'marks.exam', (p) => p.exam_subject_id === paper.id,
+    (m): Entry => ({
+      marks: m.is_absent || m.marks == null ? '' : String(m.marks),
+      practical: m.is_absent || m.practical_marks == null ? '' : String(m.practical_marks),
+      is_absent: !!m.is_absent,
+    })), [offline, paper.id])
+
   const [entries, setEntries] = useState<Record<string, Entry>>({})
   const [reason, setReason] = useState('')
   const [msg, setMsg] = useState<string | null>(null)
@@ -197,7 +209,7 @@ function MarksSheet({ paper, reach, teaching, classId, className, termId }: {
     if (!sheet.data) return
     const next: Record<string, Entry> = {}
     for (const r of sheet.data) {
-      next[r.enrollment_id] = {
+      next[r.enrollment_id] = unsent.get(r.enrollment_id) ?? {
         marks: r.marks == null ? '' : String(r.marks),
         practical: r.practical_marks == null ? '' : String(r.practical_marks),
         is_absent: r.is_absent,
@@ -209,7 +221,7 @@ function MarksSheet({ paper, reach, teaching, classId, className, termId }: {
     setReason('')
   }, [sheet.data])
 
-  const loaded = (r: MarksheetRow): Entry => ({
+  const loaded = (r: MarksheetRow): Entry => unsent.get(r.enrollment_id) ?? ({
     marks: r.marks == null ? '' : String(r.marks),
     practical: r.practical_marks == null ? '' : String(r.practical_marks),
     is_absent: r.is_absent,
@@ -259,16 +271,34 @@ function MarksSheet({ paper, reach, teaching, classId, className, termId }: {
     // so sending the whole sheet would let a copy opened an hour ago wipe the
     // marks a colleague has entered since: their boxes are blank on the old
     // copy. A row nobody touched here is not sent, and keeps whatever it has.
-    mutationFn: () => enterMarks(paper.id, dirtyRows.map((r) => {
-      const x = e(r)
-      return {
-        enrollment_id: r.enrollment_id,
-        marks: x.is_absent || x.marks === '' ? null : Number(x.marks),
-        practical_marks: hasPractical && !x.is_absent && x.practical !== '' ? Number(x.practical) : null,
-        is_absent: x.is_absent,
+    mutationFn: async () => {
+      const payload = dirtyRows.map((r) => {
+        const x = e(r)
+        return {
+          enrollment_id: r.enrollment_id,
+          marks: x.is_absent || x.marks === '' ? null : Number(x.marks),
+          practical_marks: hasPractical && !x.is_absent && x.practical !== '' ? Number(x.practical) : null,
+          is_absent: x.is_absent,
+        }
+      })
+      const why = reason.trim() || null
+      const direct = () => enterMarks(paper.id, payload, why)
+      if (!offline.active) return { queued: false as const, result: await direct() }
+      // Sending the same marks twice changes nothing, so with no network they
+      // are saved on this device and sent when the connection returns.
+      return directOrOffline(offline, direct, {
+        type: 'marks.exam', payload: { exam_subject_id: paper.id, marks: payload, reason: why },
+        label: `Marks, ${className} ${paper.subject_name}`,
+      })
+    },
+    onSuccess: (w) => {
+      if (w.queued) {
+        const n = Array.isArray(w.item.payload.marks) ? w.item.payload.marks.length : 0
+        setMsg(`Saved ${n} mark${n === 1 ? '' : 's'} on this device. They will be sent when the connection returns.`)
+        setReason('')
+        return
       }
-    }), reason.trim() || null),
-    onSuccess: (res) => {
+      const res = w.result
       const blankLeft = rows.filter((r) => !r.is_locked && isBlank(e(r))).length
       const saved = res.written ?? res.marked
       setMsg(`Saved ${saved} mark${saved === 1 ? '' : 's'}${res.cleared ? `, cleared ${res.cleared}` : ''}${blankLeft ? `; ${blankLeft} still blank` : ''}${res.skipped ? `; ${res.skipped} locked, not changed` : ''}.`)

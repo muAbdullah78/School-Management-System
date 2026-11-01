@@ -15,6 +15,9 @@ import { PageHeader, inputClass, buttonClass } from '@/components/ui'
 import { IconAdmissions, IconAlert, IconCheck, IconChevron, IconFamily, IconX } from '@/components/icons'
 import { AdmissionSlip, type AdmissionSlipData } from './AdmissionSlip'
 import { Receipt, type ReceiptData } from '@/components/Receipt'
+import { useOffline } from '@/offline/OfflineProvider'
+import { submitMoney, RefusedBySchool } from '@/offline/write'
+import { newId } from '@/offline/device'
 
 /*
  * ADMIT A STUDENT, IN FOUR STEPS.
@@ -72,7 +75,11 @@ const BLANK = {
 type Form = typeof BLANK
 
 /** The admission, plus what happened to an admission fee left owing. */
-type AdmitDone = AdmitResult & { owed?: { amount: number; recorded: boolean; message: string | null } }
+type AdmitDone = AdmitResult & {
+  owed?: { amount: number; recorded: boolean; message: string | null }
+  /** Saved on this device, not yet at the school: no GR number yet, and an owed fee waits to be added. */
+  offline?: boolean
+}
 
 const owedAmount = (f: Form): number => {
   const n = parseAmount(f.admissionFeeOwedAmount)
@@ -199,8 +206,11 @@ export function AdmissionsPage() {
     ;(step === REVIEW ? el.querySelector<HTMLElement>('[data-admit]') : first)?.focus({ preventScroll: true })
   }, [step])
 
+  const offline = useOffline()
   const admit = useMutation({
-    mutationFn: async (): Promise<AdmitDone> => {
+    // allowDuplicate: the person has looked at the child the school says this
+    // one resembles and confirmed they are different children.
+    mutationFn: async (vars?: { allowDuplicate?: boolean }): Promise<AdmitDone> => {
       const input: AdmitInput = {
         full_name: form.full_name.trim(),
         father_name: form.father_name || undefined,
@@ -226,7 +236,37 @@ export function AdmissionsPage() {
           ? { charged: true, amount: admissionFeeAmount.trim() === '' ? null : Number(admissionFeeAmount) }
           : { charged: false },
       }
-      const res: AdmitDone = await admitStudent(input)
+      let res: AdmitDone
+      if (offline.active) {
+        // Through the outbox: the pupil gets an id here, so the same admission
+        // arriving twice can never make two children, and the admission fee
+        // takes its receipt number from this device's own block.
+        const feeAmount = input.admission_fee?.charged ? Number(input.admission_fee.amount ?? 0) : 0
+        const studentId = newId()
+        const out = await submitMoney(offline, {
+          type: 'students.admit',
+          payload: { student_id: studentId, admission: input, allow_duplicate: !!vars?.allowDuplicate },
+          label: `Admission, ${input.full_name}`,
+          receiptField: feeAmount > 0 ? 'admission_fee_receipt_no' : undefined,
+        })
+        if (out.kind === 'applied') {
+          res = out.result as unknown as AdmitDone
+        } else {
+          const printed = out.item.payload.admission_fee_receipt_no
+          res = {
+            student_id: studentId, enrollment_id: '', gr_no: '', roll_no: input.roll_no ?? '',
+            family_id: null, admission_fee_amount: feeAmount > 0 ? feeAmount : null,
+            admission_receipt_no: typeof printed === 'number' ? printed : null, offline: true,
+          }
+          if (form.admissionFeeOwed && owedAmount(form) > 0) {
+            res.owed = { amount: owedAmount(form), recorded: false,
+              message: 'Add the admission fee still owed from the pupil\'s page once this admission has reached the school.' }
+          }
+          return res
+        }
+      } else {
+        res = await admitStudent(input)
+      }
       /* AN ADMISSION FEE PAID LATER IS OWED, AND NOW RECORDED AS OWED. The old
          advice was "leave this off and add the charge from Fees", and Fees had
          no way to add a charge, so an unpaid admission fee lived only on paper.
@@ -246,8 +286,8 @@ export function AdmissionsPage() {
     },
     onSuccess: (res) => {
       setSlip({
-        grNo: res.gr_no,
-        rollNo: res.roll_no,
+        grNo: res.offline ? null : res.gr_no,
+        rollNo: res.roll_no || null,
         fullName: form.full_name.trim(),
         fatherName: form.father_name || null,
         className: cls?.name ?? '-',
@@ -281,18 +321,20 @@ export function AdmissionsPage() {
   })
 
   function printAdmissionReceipt() {
-    if (!admit.data?.admission_receipt_no || admit.data.admission_fee_amount == null) return
+    if (admit.data?.admission_fee_amount == null) return
+    if (!admit.data.admission_receipt_no && !admit.data.offline) return
     setReceipt({
       receiptNo: admit.data.admission_receipt_no,
       // From the slip, not from the form. The form was emptied when the
       // admission succeeded, and a receipt printed afterwards must still carry
       // the name of the child it was collected for.
       studentName: slip?.fullName ?? '',
-      grNo: admit.data.gr_no,
+      grNo: admit.data.offline ? null : admit.data.gr_no,
       amount: admit.data.admission_fee_amount,
       method: 'Cash',
-      balanceAfter: 0,
+      balanceAfter: admit.data.offline ? null : 0,
       note: 'Admission fee',
+      offline: !!admit.data.offline,
     })
   }
 
@@ -414,7 +456,7 @@ export function AdmissionsPage() {
                 // the first box can never issue a GR number.
                 e.preventDefault()
                 if (step < REVIEW) next()
-                else if (ready && !admit.isPending) admit.mutate()
+                else if (ready && !admit.isPending) admit.mutate({})
               }}
             >
               <div ref={card} className="rounded-2xl bg-white shadow-card ring-1 ring-slate-200/80">
@@ -706,9 +748,16 @@ export function AdmissionsPage() {
                   )}
 
                   {admit.isError && step === REVIEW && (
-                    <p className="mt-4 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-800 ring-1 ring-danger-200">
-                      The admission was not saved: {(admit.error as Error).message}
-                    </p>
+                    <div className="mt-4 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-800 ring-1 ring-danger-200">
+                      <p>The admission was not saved: {(admit.error as Error).message}</p>
+                      {admit.error instanceof RefusedBySchool && admit.error.code === 'possible_duplicate' && (
+                        <button type="button" disabled={admit.isPending}
+                          onClick={() => admit.mutate({ allowDuplicate: true })}
+                          className="mt-2 rounded-lg bg-danger-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-danger-700 disabled:opacity-60">
+                          They are different children: admit anyway
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
 

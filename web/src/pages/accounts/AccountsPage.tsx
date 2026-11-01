@@ -33,6 +33,8 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AskDialog } from '@/components/AskDialog'
+import { useOffline } from '@/offline/OfflineProvider'
+import { submitMoney } from '@/offline/write'
 import {
   listExpenseCategories, createExpenseCategory, renameExpenseCategory,
   setExpenseCategoryActive,
@@ -206,11 +208,26 @@ export function AccountsPage() {
     : !inOn ? 'Give the date the money came in.'
     : inOn > t ? 'Income cannot be dated after today.' : null
 
+  const offline = useOffline()
   const addExpense = useMutation({
-    mutationFn: () =>
-      recordExpense(Number(amount), category || null, spentOn, payee || undefined, method, note || undefined),
+    mutationFn: async (): Promise<{ voucher_no: number | null }> => {
+      if (!offline.active) {
+        return recordExpense(Number(amount), category || null, spentOn, payee || undefined, method, note || undefined)
+      }
+      // Through the outbox, so an expense whose answer is lost on a weak signal
+      // is never recorded twice. Its voucher number comes from the school.
+      const out = await submitMoney(offline, {
+        type: 'expenses.record',
+        payload: { amount: Number(amount), category_id: category || null, spent_on: spentOn,
+          payee: payee || null, method, note: note || null },
+        label: `Expense ${money(Number(amount))}${payee ? `, ${payee}` : ''}`,
+      })
+      return { voucher_no: out.kind === 'applied' ? Number(out.result.voucher_no) : null }
+    },
     onSuccess: (r) => {
-      setFlash(`Expense of ${money(Number(amount))} recorded, voucher #${r.voucher_no}.`)
+      setFlash(r.voucher_no == null
+        ? `Expense of ${money(Number(amount))} saved on this device. It is recorded, with its voucher number, when it reaches the school.`
+        : `Expense of ${money(Number(amount))} recorded, voucher #${r.voucher_no}.`)
       setAmount(''); setPayee(''); setNote('')
       refresh()
     },

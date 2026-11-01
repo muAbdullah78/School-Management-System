@@ -35,7 +35,8 @@ function snap(over: Partial<Snapshot> = {}, state: Partial<Snapshot['state']> = 
 function state(over: Partial<OfflineState>): OfflineState {
   return {
     active: true, online: true, syncing: false, snapshot: snap(), legacyWaiting: 0, lastReport: null, copySavedAt: null,
-    syncNow: vi.fn(async () => null), submit: vi.fn(), resend: vi.fn(async () => 'new'),
+    syncNow: vi.fn(async () => null), submit: vi.fn(), settle: vi.fn(async () => ({ status: 'pending' as const })),
+    resend: vi.fn(async () => 'new'),
     discard: vi.fn(async () => undefined), clearRevokedNotice: vi.fn(async () => undefined),
     ...over,
   }

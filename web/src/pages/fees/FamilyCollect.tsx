@@ -67,6 +67,8 @@ import { MonthHeader } from './MonthHeader'
 import { isMissingFunction } from '@/lib/notInstalled'
 import { fmtDate, grLabel } from '@/lib/format'
 import { Receipt, type ReceiptData } from '@/components/Receipt'
+import { useOffline } from '@/offline/OfflineProvider'
+import { submitMoney } from '@/offline/write'
 import { Avatar } from '@/components/Avatar'
 import { useStudentFaces } from '@/hooks/useStudentFaces'
 import {
@@ -357,6 +359,10 @@ export function FamilyCollect({ onOpenPending }: { onOpenPending?: () => void } 
   const [note, setNote] = useState('')
   const [pending, setPending] = useState(false)
   const [result, setResult] = useState<FamilyPaymentResult | null>(null)
+  // A payment saved on this device that has not reached the school yet: its
+  // receipt number is final, what it paid for is not known until it arrives.
+  const [savedOffline, setSavedOffline] = useState<{ receiptNo: number | null; amount: number; method: string; pending: boolean } | null>(null)
+  const offline = useOffline()
   /* The method the payment was TAKEN by, kept with the result. The receipt
      used to read the live dropdown, so changing it after paying printed a
      receipt saying cash for a bank transfer. */
@@ -445,10 +451,31 @@ export function FamilyCollect({ onOpenPending }: { onOpenPending?: () => void } 
   const sheetFaces = useStudentFaces((sheet.data?.children ?? []).map((c) => c.student_id))
 
   const pay = useMutation({
-    mutationFn: () =>
-      recordFamilyPayment(familyId as string, Number(amount), method, note || undefined, pending),
+    mutationFn: async (): Promise<FamilyPaymentResult | { offline: true; receiptNo: number | null; amount: number; pending: boolean }> => {
+      if (!offline.active) {
+        return recordFamilyPayment(familyId as string, Number(amount), method, note || undefined, pending)
+      }
+      // Through the outbox, so a payment whose answer is lost on a weak signal
+      // can never be recorded twice (see web/src/offline/write.ts).
+      const head = sheet.data?.family.head_name ?? 'Family'
+      const out = await submitMoney(offline, {
+        type: 'fees.family_payment',
+        payload: { family_id: familyId, amount: Number(amount), method, note: note || null, pending },
+        label: `Family fee ${money(Number(amount))}, ${head}`,
+        receiptField: pending ? undefined : 'receipt_no',
+      })
+      if (out.kind === 'applied') return out.result as unknown as FamilyPaymentResult
+      const printed = out.item.payload.receipt_no
+      return { offline: true, receiptNo: typeof printed === 'number' ? printed : null, amount: Number(amount), pending }
+    },
     onSuccess: (r) => {
-      setResult(r)
+      if ('offline' in r) {
+        setResult(null)
+        setSavedOffline({ receiptNo: r.receiptNo, amount: r.amount, method, pending: r.pending })
+      } else {
+        setSavedOffline(null)
+        setResult(r)
+      }
       setPaidWith(method)
       setAmount('')
       setNote('')
@@ -480,6 +507,7 @@ export function FamilyCollect({ onOpenPending }: { onOpenPending?: () => void } 
   function openFamily(id: string) {
     setFamilyId(id)
     setResult(null)
+    setSavedOffline(null)
     setAmount('')
     setNote('')
     setMethod('cash')
@@ -493,6 +521,7 @@ export function FamilyCollect({ onOpenPending }: { onOpenPending?: () => void } 
   function reset() {
     setFamilyId(null)
     setResult(null)
+    setSavedOffline(null)
     setAmount('')
     setNote('')
     setMethod('cash')
@@ -857,6 +886,35 @@ export function FamilyCollect({ onOpenPending }: { onOpenPending?: () => void } 
             </Card>
 
             {/* Result: what the money actually did */}
+            {savedOffline && (
+              <Card className="border-amber-200 bg-amber-50/60">
+                <p className="text-sm font-semibold text-amber-900">
+                  Saved on this device
+                  {savedOffline.receiptNo != null ? ` · Receipt #${savedOffline.receiptNo}` : ''}
+                </p>
+                <p className="mt-1 text-sm text-amber-800">
+                  {money(savedOffline.amount)} received. It is applied to the children's fees when it reaches the
+                  school{savedOffline.receiptNo == null ? ', which gives it a receipt number then' : ''}.
+                </p>
+                {!savedOffline.pending && (
+                  <div className="mt-3">
+                    <Button size="sm" tone="money" variant="soft" icon={<IconPrint />}
+                      onClick={() => setReceipt({
+                        receiptNo: savedOffline.receiptNo,
+                        studentName: s?.family.head_name ?? 'Family',
+                        amount: savedOffline.amount,
+                        method: methodLabel(savedOffline.method),
+                        balanceAfter: null,
+                        note: null,
+                        payerLabel: 'Received from',
+                        offline: true,
+                      })}>
+                      Print receipt
+                    </Button>
+                  </div>
+                )}
+              </Card>
+            )}
             {result && (
               <Card className="border-money-100 bg-money-50/40">
                 <div className="flex items-start gap-3">

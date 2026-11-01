@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import {
@@ -17,6 +17,8 @@ import { isTeacher } from '@/auth/roles'
 import { TestsOverview } from './TestsOverview'
 import { LoadError, buttonClass } from '@/components/ui'
 import { AskDialog } from '@/components/AskDialog'
+import { useOffline } from '@/offline/OfflineProvider'
+import { directOrOffline, pendingMarks } from '@/offline/write'
 
 const FIELD = 'mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100'
 type Entry = { marks: string; is_absent: boolean }
@@ -584,6 +586,11 @@ function NewTest({ sessionId, classId, isTeach, teaching, onOpen }: {
 
 function MarksGrid({ test, onBack }: { test: AssessmentRow; onBack: () => void }) {
   const qc = useQueryClient()
+  // Marks saved on this device and not sent yet are what the grid starts from.
+  const offline = useOffline()
+  const unsent = useMemo(() => pendingMarks(offline, 'marks.test', (p) => p.assessment_id === test.id,
+    (m): Entry => ({ marks: m.is_absent || m.marks == null ? '' : String(m.marks), is_absent: !!m.is_absent })),
+  [offline, test.id])
   const marksheet = useQuery({ queryKey: ['assessmentMarks', test.id], queryFn: () => getAssessmentMarksheet(test.id) })
   const [entries, setEntries] = useState<Record<string, Entry>>({})
   const [msg, setMsg] = useState<string | null>(null)
@@ -594,18 +601,33 @@ function MarksGrid({ test, onBack }: { test: AssessmentRow; onBack: () => void }
   useEffect(() => {
     if (!marksheet.data) return
     const next: Record<string, Entry> = {}
-    for (const r of marksheet.data) next[r.enrollment_id] = { marks: r.marks == null ? '' : String(r.marks), is_absent: r.is_absent }
+    for (const r of marksheet.data) {
+      next[r.enrollment_id] = unsent.get(r.enrollment_id) ?? { marks: r.marks == null ? '' : String(r.marks), is_absent: r.is_absent }
+    }
     // NOT setMsg(null) here. Saving refetches the marksheet, so clearing the
     // message on every load wiped "Saved 25" the instant it appeared.
     setEntries(next)
   }, [marksheet.data])
 
   const save = useMutation({
-    mutationFn: () => enterAssessmentMarks(test.id, rows.map((r) => {
-      const e = entries[r.enrollment_id]
-      return { enrollment_id: r.enrollment_id, marks: e?.is_absent || e?.marks === '' ? null : Number(e.marks), is_absent: !!e?.is_absent }
-    })),
-    onSuccess: (res) => {
+    mutationFn: async () => {
+      const payload = rows.map((r) => {
+        const e = entries[r.enrollment_id]
+        return { enrollment_id: r.enrollment_id, marks: e?.is_absent || e?.marks === '' ? null : Number(e.marks), is_absent: !!e?.is_absent }
+      })
+      const direct = () => enterAssessmentMarks(test.id, payload)
+      if (!offline.active) return { queued: false as const, result: await direct() }
+      return directOrOffline(offline, direct, {
+        type: 'marks.test', payload: { assessment_id: test.id, marks: payload },
+        label: `Test marks, ${test.title}`,
+      })
+    },
+    onSuccess: (w) => {
+      if (w.queued) {
+        setMsg('Saved on this device. They will be sent when the connection returns.')
+        return
+      }
+      const res = w.result
       setMsg(`Saved ${res.marked}${res.skipped ? ` · ${res.skipped} skipped` : ''}.`)
       void qc.invalidateQueries({ queryKey: ['assessmentMarks', test.id] })
       void qc.invalidateQueries({ queryKey: ['myUnmarkedTests'] })

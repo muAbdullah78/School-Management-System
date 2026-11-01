@@ -27,6 +27,14 @@ const WRITERS = new Set(['owner', 'principal', 'class_teacher', 'subject_teacher
 const READERS = new Set(['parent', 'readonly'])
 const EVERY_MS = 60_000
 const READER_EVERY_MS = 15 * 60_000
+/** A writer's pack is fetched again at most this often, however often it syncs. */
+const WARM_EVERY_MS = 15 * 60_000
+
+/** Where a saved command has got to. */
+export type Settled =
+  | { status: 'applied'; result: Record<string, unknown> | null; flags: string[] }
+  | { status: 'attention'; code: string | null; error: string | null }
+  | { status: 'pending' }
 /** How long after a copy was shown the bar keeps saying so. */
 const COPY_NOTICE_MS = 2 * 60_000
 
@@ -44,6 +52,8 @@ export interface OfflineState {
   syncNow: () => Promise<SyncReport | null>
   /** Save work as a command, and send it straight away if there is a connection. */
   submit: (work: NewWork) => Promise<OutboxItem>
+  /** Wait up to `ms` for a saved command to be applied or refused; 'pending' if it has not reached the school. */
+  settle: (id: string, ms: number) => Promise<Settled>
   resend: (id: string, patch?: Record<string, unknown>) => Promise<string>
   discard: (id: string) => Promise<void>
   clearRevokedNotice: () => Promise<void>
@@ -53,6 +63,7 @@ const inactive: OfflineState = {
   active: false, online: true, syncing: false, snapshot: null, legacyWaiting: 0, lastReport: null, copySavedAt: null,
   syncNow: async () => null,
   submit: async () => { throw new Error('Offline work is not available here.') },
+  settle: async () => ({ status: 'pending' }),
   resend: async () => { throw new Error('Offline work is not available here.') },
   discard: async () => undefined,
   clearRevokedNotice: async () => undefined,
@@ -101,6 +112,7 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
   const role = profile?.role ?? null
   const roleRef = useRef(role)
   roleRef.current = role
+  const lastWarm = useRef(0)
 
   // A screen shown a copy instead of a fresh answer: say how old it is, for a
   // while. Copies older than 30 days are thrown away once per session.
@@ -132,7 +144,11 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
       setSyncing(true)
       try {
         const r = roleRef.current
-        const report = await eng.sync(u, r ? () => warmPacks(r) : undefined)
+        // The pack is fetched again only every fifteen minutes: a counter taking
+        // a payment a minute must not fetch the whole pupil list each time.
+        const warm = r && Date.now() - lastWarm.current > WARM_EVERY_MS
+          ? async () => { await warmPacks(r); lastWarm.current = Date.now() } : undefined
+        const report = await eng.sync(u, warm)
         setLastReport(report)
         // Something the screens show has changed on the server.
         if (report.applied > 0) void qc.invalidateQueries()
@@ -208,6 +224,26 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
     return item
   }, [eng, syncNow])
 
+  const settle = useCallback(async (id: string, ms: number): Promise<Settled> => {
+    const u = userRef.current
+    if (!eng || !u) return { status: 'pending' }
+    const until = Date.now() + ms
+    // A sync already running may have started before this was saved: one more
+    // after it carries it.
+    if (isOnline()) { await syncNow(); await syncNow() }
+    for (;;) {
+      const snap = await eng.snapshot(u)
+      const it = snap.items.find((i) => i.id === id)
+      if (!it) {
+        const d = snap.done.find((x) => x.id === id)
+        return d ? { status: 'applied', result: d.result, flags: d.flags } : { status: 'pending' }
+      }
+      if (it.status === 'attention') return { status: 'attention', code: it.code, error: it.error }
+      if (Date.now() >= until || !isOnline()) return { status: 'pending' }
+      await new Promise((r) => setTimeout(r, 500))
+    }
+  }, [eng, syncNow])
+
   const resend = useCallback(async (id: string, patch?: Record<string, unknown>) => {
     const u = userRef.current
     if (!eng || !u) throw new Error('Offline work is not available for this login.')
@@ -227,10 +263,10 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
   }, [eng])
 
   const value = useMemo<OfflineState>(() => (user ? {
-    active: true, online, syncing, snapshot, legacyWaiting, lastReport, copySavedAt, syncNow, submit, resend, discard,
-    clearRevokedNotice,
+    active: true, online, syncing, snapshot, legacyWaiting, lastReport, copySavedAt, syncNow, submit, settle, resend,
+    discard, clearRevokedNotice,
   } : { ...inactive, online, copySavedAt }),
-  [user, online, syncing, snapshot, legacyWaiting, lastReport, copySavedAt, syncNow, submit, resend, discard,
+  [user, online, syncing, snapshot, legacyWaiting, lastReport, copySavedAt, syncNow, submit, settle, resend, discard,
     clearRevokedNotice])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>

@@ -2,7 +2,8 @@ import { useSchoolName } from '@/hooks/useSchoolName'
 import { fmtDate } from '@/lib/format'
 
 export interface AdmissionSlipData {
-  grNo: string
+  /** Null for an admission saved offline: the school gives the GR number when it arrives. */
+  grNo: string | null
   rollNo: string | null
   fullName: string
   fatherName: string | null
@@ -23,7 +24,7 @@ export function AdmissionSlip({ data, onClose }: { data: AdmissionSlipData; onCl
           <div className="text-xs uppercase tracking-wide text-slate-500">Admission Slip</div>
         </div>
         <div className="mt-4 space-y-1.5 text-sm">
-          <Row label="GR No" value={data.grNo} strong />
+          <Row label="GR No" value={data.grNo ?? 'Given when it reaches the school'} strong />
           <Row label="Date" value={fmtDate(data.admissionDate)} />
           <Row label="Student" value={data.fullName} />
           {data.fatherName && <Row label="Father" value={data.fatherName} />}
