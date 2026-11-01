@@ -6,7 +6,9 @@ import { ROLE_LABELS } from '@/auth/roles'
 import { NAV_GROUPS, canAccess, navLabel, visibleNav } from '@/navigation'
 import { PRODUCT_NAME, guideUrl } from '@/lib/config'
 import { useSchoolName } from '@/hooks/useSchoolName'
-import { OfflineIndicator } from '@/components/OfflineIndicator'
+import { OfflineStatus } from '@/offline/OfflineStatus'
+import { useOffline } from '@/offline/OfflineProvider'
+import { AskDialog } from '@/components/AskDialog'
 import { LicenceBanner } from '@/components/LicenceBanner'
 import { OperatorBanner } from './OperatorBanner'
 import { AnnouncementBanner } from './AnnouncementBanner'
@@ -57,6 +59,14 @@ const CLAMP: Record<number, string> = {
 
 export function AppShell() {
   const { profile, signOut } = useAuth()
+  // SIGNING OUT WITH WORK NOT SENT. It is not lost: it stays on this device for
+  // this login and goes the next time they sign in here. But a person about to
+  // hand the computer to somebody else should know it is still here, and have
+  // the chance to send it first.
+  const offline = useOffline()
+  const unsent = (offline.snapshot ? offline.snapshot.pending + offline.snapshot.held + offline.snapshot.attention : 0)
+    + offline.legacyWaiting
+  const [askSignOut, setAskSignOut] = useState(false)
   const schoolName = useSchoolName()
   const location = useLocation()
   // WHO THIS SHELL IS BEING DRAWN FOR.
@@ -485,7 +495,7 @@ export function AppShell() {
               </NavLink>
               <button
                 type="button"
-                onClick={() => void signOut()}
+                onClick={() => (unsent > 0 ? setAskSignOut(true) : void signOut())}
                 title={rail ? 'Sign out' : undefined}
                 className="flex flex-col items-center gap-0.5 rounded-xl px-1 py-1.5 text-[11px] font-medium text-brand-100/90 transition hover:bg-danger-500/20 hover:text-white"
               >
@@ -504,6 +514,25 @@ export function AppShell() {
         </div>
       </aside>
 
+      {askSignOut && (
+        <AskDialog
+          title="Some work has not reached the school yet"
+          intro={
+            <span>
+              {unsent} {unsent === 1 ? 'entry' : 'entries'} made on this device {unsent === 1 ? 'has' : 'have'} not
+              been sent. If you sign out now, {unsent === 1 ? 'it stays' : 'they stay'} on this device, kept for you,
+              and {unsent === 1 ? 'is' : 'are'} sent the next time you sign in here. To send now, stay signed in
+              and connect to the internet.
+            </span>
+          }
+          confirmLabel="Sign out anyway"
+          cancelLabel="Stay signed in"
+          tone="danger"
+          onCancel={() => setAskSignOut(false)}
+          onSubmit={() => { setAskSignOut(false); void signOut() }}
+        />
+      )}
+
       <main className="flex flex-1 flex-col overflow-hidden">
         {/* ABOVE the licence banner, deliberately. "You are in somebody
             else's data" outranks "your subscription expires on Friday": one
@@ -514,7 +543,7 @@ export function AppShell() {
             licence expires Friday" are both about this school; a maintenance
             notice is about everybody, and it is the one that can wait. */}
         <AnnouncementBanner />
-        <OfflineIndicator />
+        <OfflineStatus />
 
         {/* Top bar: where you are, and the one search box.
             Always rendered. The breadcrumb half is conditional, the search is

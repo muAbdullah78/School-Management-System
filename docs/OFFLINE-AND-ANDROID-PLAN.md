@@ -168,13 +168,24 @@ broken or half-done.
 
 1. **Local database:** IndexedDB, via the small `idb` library. Unlike
    localStorage it has no 5 MB limit, and writes are atomic. Everything is
-   stored under the signed-in user and school, and wiped on sign-out.
+   stored under the signed-in user and school. Unsent work stays on the device
+   for the login that made it; the offline copies (chunk 3) are wiped on
+   sign-out.
 2. **Outbox:**
-   - Commands are kept in order, with their status: pending, sending, done,
-     needs attention, or waiting for sign-in.
-   - Sign-out is blocked while work is unsent ("3 things not sent yet").
+   - Commands are kept in order, each pending, held (waiting on another entry
+     that needs attention) or needing attention. An applied command leaves the
+     outbox, and the server's answer is kept for the notices.
+   - A receipt number is taken in the same IndexedDB transaction that saves the
+     payment, so two tabs can never print the same number.
+   - A command that needs another (a fee for a pupil admitted offline) goes
+     only after that one is applied, never in the same batch.
+   - Signing out with unsent work asks first ("3 entries have not been sent").
+     The work stays on the device for that login and is sent the next time
+     they sign in there.
    - On a shared office computer, another person's unsent work waits for that
      person. It is never sent under the wrong login.
+   - A device the school has switched off hands in everything it holds (the
+     server keeps it for the owner) and then forgets it.
 3. **Sync** runs when the connection returns, when the app resumes, every
    minute while online, and from a **Sync now** button. Each run:
    1. refreshes the sign-in;

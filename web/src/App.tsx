@@ -2,6 +2,8 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from '@/lib/queryClient'
 import { AuthProvider } from '@/auth/AuthProvider'
+import { OfflineProvider } from '@/offline/OfflineProvider'
+import { OfflineWorkPage } from '@/pages/OfflineWorkPage'
 import { AppShell } from '@/components/AppShell'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { RedirectIfSignedIn } from '@/components/RedirectIfSignedIn'
@@ -70,6 +72,9 @@ export default function App() {
     <ErrorBoundary where="the app">
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
+          {/* Inside the auth provider (it works for whoever is signed in) and
+              outside the router, so a sync keeps running across screens. */}
+          <OfflineProvider>
           <BrowserRouter>
             <Routes>
             {/* Wrapped so a signed-in user is never shown a sign-in form. See
@@ -203,6 +208,9 @@ export default function App() {
                   appears when the school becomes eligible, and stays reachable
                   by address afterwards so somebody can come back and edit. */}
               <Route path="/feedback" element={<RouteBoundary><FeedbackPage /></RouteBoundary>} />
+              {/* NOT in NAV either: reached from the offline bar whenever it
+                  has something to say, and by address. */}
+              <Route path="/offline" element={<RouteBoundary><OfflineWorkPage /></RouteBoundary>} />
               {NAV.filter((n) => n.path !== '/').map((n) => (
                 <Route
                   key={n.path}
@@ -233,6 +241,7 @@ export default function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </BrowserRouter>
+          </OfflineProvider>
         </AuthProvider>
       </QueryClientProvider>
     </ErrorBoundary>
