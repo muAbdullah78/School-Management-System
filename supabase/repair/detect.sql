@@ -485,9 +485,16 @@ with sig(migration, object, present) as (values
   -- fee head to the invoice, and the go-live importer refuses rows for a class
   -- the school owns because another school registered the same name first.
   ('0072_name_lookups_scoped',  'class names and fee-head types are per-school',
+     -- 0157 moved the admission into fn__admit_student_core, which
+     -- fn_admit_student calls, so the lookup is looked for there too.
      (select exists (select 1 from pg_proc where proname = 'fn_admit_student'
                       and pronamespace = 'public'::regnamespace
-                      and prosrc like '%type = ''admission'' and active and school_id = public.current_school_id()%')
+                      and (prosrc like '%type = ''admission'' and active and school_id = public.current_school_id()%'
+                               or (prosrc like '%fn__admit_student_core%'
+                                   and exists (select 1 from pg_proc c
+                                                where c.proname = 'fn__admit_student_core'
+                                                  and c.pronamespace = 'public'::regnamespace
+                                                  and c.prosrc like '%type = ''admission'' and active and school_id = public.current_school_id()%'))))
          and exists (select 1 from pg_proc where proname = 'fn_import_students'
                       and pronamespace = 'public'::regnamespace
                       and prosrc like '%active and school_id = public.current_school_id() and lower(btrim(name))%'))),
@@ -643,12 +650,24 @@ with sig(migration, object, present) as (values
   ('0084_receipt_allocation_detail', 'receipts name the child and the month',
      (select exists (select 1 from pg_proc where proname = 'fn__payment_applied'
                       and pronamespace = 'public'::regnamespace)
+         -- 0157 moved both payment paths into fn__record_payment_core, which
+         -- each calls, so the detail is looked for there too.
          and exists (select 1 from pg_proc where proname = 'fn_record_family_payment'
                       and pronamespace = 'public'::regnamespace
-                      and prosrc like '%fn__payment_applied%')
+                      and (prosrc like '%fn__payment_applied%'
+                           or (prosrc like '%fn__record_payment_core%'
+                               and exists (select 1 from pg_proc c
+                                            where c.proname = 'fn__record_payment_core'
+                                              and c.pronamespace = 'public'::regnamespace
+                                              and c.prosrc like '%fn__payment_applied%'))))
          and exists (select 1 from pg_proc where proname = 'fn_record_payment'
                       and pronamespace = 'public'::regnamespace
-                      and prosrc like '%fn__payment_applied%'))),
+                      and (prosrc like '%fn__payment_applied%'
+                           or (prosrc like '%fn__record_payment_core%'
+                               and exists (select 1 from pg_proc c
+                                            where c.proname = 'fn__record_payment_core'
+                                              and c.pronamespace = 'public'::regnamespace
+                                              and c.prosrc like '%fn__payment_applied%')))))),
   -- 0085. Any teacher could write any class's EXAM marks — the ones on the
   -- result card. The signature is the GATE inside fn_enter_marks, not the table:
   -- subject_teachers standing on its own is a register nothing consults, which
@@ -1040,7 +1059,14 @@ with sig(migration, object, present) as (values
            where n2.nspname = 'public'
              and p.proname in ('fn_admit_student', 'fn_set_student_status',
                                'fn_import_students')
-             and p.prosrc ~ 'fn__assert_room_for_students') = 3
+             -- fn_admit_student checks it through fn__admit_student_core (0157).
+             and (p.prosrc ~ 'fn__assert_room_for_students'
+                  or (p.proname = 'fn_admit_student'
+                      and p.prosrc ~ 'fn__admit_student_core'
+                      and exists (select 1 from pg_proc c
+                                   where c.proname = 'fn__admit_student_core'
+                                     and c.pronamespace = n2.oid
+                                     and c.prosrc ~ 'fn__assert_room_for_students')))) = 3
      and not coalesce((select p.prosrc ~ 'fn__assert_room_for_students'
                          from pg_proc p
                          join pg_namespace n2 on n2.oid = p.pronamespace
@@ -1394,7 +1420,20 @@ with sig(migration, object, present) as (values
      'discount_applications, discount_events, fn_my_redeem_code',
      (select to_regclass('public.discount_applications') is not null
          and to_regclass('public.discount_events') is not null
-         and to_regprocedure('public.fn_my_redeem_code(text,boolean)') is not null))
+         and to_regprocedure('public.fn_my_redeem_code(text,boolean)') is not null)),
+  -- 0157's signature is the command log, the receipt blocks, the one door the
+  -- app hands work in through, and the two shared cores the screens now call.
+  ('0157_the_work_goes_on_without_the_internet',
+     'client_commands, receipt_blocks, fn_offline_apply, the payment and admission cores',
+     (select to_regclass('public.client_commands') is not null
+         and to_regclass('public.receipt_blocks') is not null
+         and to_regprocedure('public.fn_offline_apply(uuid,jsonb)') is not null
+         and exists (select 1 from pg_proc where proname = 'fn_record_payment'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%fn__record_payment_core%')
+         and exists (select 1 from pg_proc where proname = 'fn_admit_student'
+                      and pronamespace = 'public'::regnamespace
+                      and prosrc like '%fn__admit_student_core%')))
 )
 select migration,
        object                                   as looked_for,

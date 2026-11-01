@@ -662,17 +662,20 @@ describe('requests for room', () => {
 describe('the school list', () => {
   it('flags a school waiting for its price and offers Set price; warns from 90%, stops at 100%', async () => {
     const { SchoolsTable } = await import('@/pages/platform/SchoolsTable')
+    // Ten days from today, not a fixed date: the chip says "ended" once the
+    // trial is over, and a hard-coded October date went stale on 21 Oct 2026.
+    const ends = new Date(Date.now() + 10 * 86400000).toISOString().slice(0, 10)
     const rows = [
       { ...SCHOOL, school_id: 'a', school_name: 'Roots', plan_code: 'enterprise', status: 'trialing',
-        student_limit: null, student_count: 1400, needs_price: true, trial_ends_on: '2026-10-20',
-        days_left: 10, expires_on: '2026-10-20' },
+        student_limit: null, student_count: 1400, needs_price: true, trial_ends_on: ends,
+        days_left: 10, expires_on: ends },
       { ...SCHOOL, school_id: 'b', school_name: 'Nearly Full', student_count: 260, days_left: 200 },
       { ...SCHOOL, school_id: 'c', school_name: 'Full Up', student_count: 280, days_left: 200 },
     ]
     const r = mount(SchoolsTable as never, {
       schools: rows, loading: false, error: null, busy: false, onOpen: () => {}, onQuickAction: () => {},
     })
-    expect(r.container.textContent).toContain(`price not agreed · trial ends ${fmtDate('2026-10-20')}`)
+    expect(r.container.textContent).toContain(`price not agreed · trial ends ${fmtDate(ends)}`)
     expect(r.queryByText('Set price')).not.toBeNull()
     expect(r.queryByText('nearly full')).not.toBeNull()
     expect(r.queryByText('full: admissions stop')).not.toBeNull()

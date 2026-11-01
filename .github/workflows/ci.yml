@@ -2684,6 +2684,20 @@ jobs:
         # that locked a school mid-trial, month-end terms, and TRUNCATE.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/paid_means_paid.sql
 
+      - name: The work goes on without the internet (0157), every command once, receipts final, nothing dropped
+        # A device that was offline hands in commands. Held here: a command
+        # sent twice applies once (by its id, and a payment by its printed
+        # receipt), a receipt printed offline is the one recorded and the
+        # server never prints it again, a used or foreign number is recorded
+        # under a fresh one and flagged rather than refused, payments are dated
+        # when the money was taken, an older offline entry never overwrites a
+        # newer one, work outside a lease is refused, a locked school keeps
+        # what was done before it locked while later work waits, a switched-off
+        # device is refused and its numbers closed, refusals are kept for the
+        # owner, an offline admission keeps its id and is never made twice, and
+        # the screens' payment and admission functions answer as before.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/the_work_goes_on_without_the_internet.sql
+
       - name: Student list — does the fast balance equal the real one?
         # fn_student_list recomputes each balance SET-BASED rather than calling
         # student_balance() per row, because per-row is 800 correlated
