@@ -139,6 +139,12 @@ create or replace function pg_temp.paper() returns uuid language sql stable as
   $$ select id from public.exam_subjects where school_id = pg_temp.school() $$;
 create or replace function pg_temp.uid(p_name text) returns uuid language sql stable as
   $$ select id from public.profiles where full_name = p_name $$;
+-- The day in Pakistan of a moment. A command's dates are taken from when it was
+-- made, never from current_date: a command made five hours ago is yesterday's
+-- between midnight and five in Karachi, and the server refuses a register or an
+-- expense dated after the day its command was made.
+create or replace function pg_temp.day_of(p_at timestamptz) returns date language sql stable as
+  $$ select (p_at at time zone 'Asia/Karachi')::date $$;
 
 -- The devices. One phone per person; the owner also has the office computer.
 create or replace function pg_temp.dev(p_name text) returns uuid language sql immutable as $$
@@ -314,52 +320,52 @@ end $t$;
 -- 3. The newer entry wins by when it was MADE
 -- =============================================================================
 do $t$
-declare r jsonb; v_auth timestamptz;
+declare r jsonb; v_auth timestamptz; d date := pg_temp.day_of(now() - interval '3 hours');
 begin
   perform pg_temp.be('Off Owner');
   perform pg_temp.offline_since('owner phone', interval '1 day');
 
   -- On the office computer, online, just now: Ali present.
-  perform public.fn_mark_attendance(current_date,
+  perform public.fn_mark_attendance(d,
     jsonb_build_array(jsonb_build_object('enrollment_id', pg_temp.enr('Ali Raza'), 'status', 'present')));
   -- The phone had marked the class two hours ago with no signal.
   r := pg_temp.send('owner phone', pg_temp.cmd('attendance.day', now() - interval '2 hours',
-         jsonb_build_object('date', current_date, 'marks', jsonb_build_array(
+         jsonb_build_object('date', d, 'marks', jsonb_build_array(
            jsonb_build_object('enrollment_id', pg_temp.enr('Ali Raza'), 'status', 'absent'),
            jsonb_build_object('enrollment_id', pg_temp.enr('Sara Ahmed'), 'status', 'absent')))));
   perform pg_temp.ok(r->>'status' = 'applied'
                      and (r->'result'->'kept_newer') @> to_jsonb(array[pg_temp.enr('Ali Raza')])
                      and (select status::text from public.attendance_daily
                            where enrollment_id = pg_temp.enr('Ali Raza')
-                             and attendance_date = current_date) = 'present'
+                             and attendance_date = d) = 'present'
                      and (select status::text from public.attendance_daily
                            where enrollment_id = pg_temp.enr('Sara Ahmed')
-                             and attendance_date = current_date) = 'absent',
+                             and attendance_date = d) = 'absent',
     '3a. an offline register older than a correction made online leaves that pupil alone, '
     'marks the rest, and says which it left');
   perform pg_temp.ok((select authored_at from public.attendance_daily
                        where enrollment_id = pg_temp.enr('Sara Ahmed')
-                         and attendance_date = current_date) = now() - interval '2 hours',
+                         and attendance_date = d) = now() - interval '2 hours',
     '3b. the entry it made carries the moment it was made');
 
   r := pg_temp.send('owner phone', pg_temp.cmd('attendance.day', now() - interval '1 hour',
-         jsonb_build_object('date', current_date, 'marks', jsonb_build_array(
+         jsonb_build_object('date', d, 'marks', jsonb_build_array(
            jsonb_build_object('enrollment_id', pg_temp.enr('Sara Ahmed'), 'status', 'late')))));
   perform pg_temp.ok((select status::text from public.attendance_daily
                        where enrollment_id = pg_temp.enr('Sara Ahmed')
-                         and attendance_date = current_date) = 'late',
+                         and attendance_date = d) = 'late',
     '3c. a later entry from the same phone replaces its earlier one');
 
   select authored_at into v_auth from public.attendance_daily
-   where enrollment_id = pg_temp.enr('Sara Ahmed') and attendance_date = current_date;
+   where enrollment_id = pg_temp.enr('Sara Ahmed') and attendance_date = d;
   update public.attendance_daily set is_locked = true
-   where enrollment_id = pg_temp.enr('Sara Ahmed') and attendance_date = current_date;
+   where enrollment_id = pg_temp.enr('Sara Ahmed') and attendance_date = d;
   perform pg_temp.ok((select authored_at from public.attendance_daily
                        where enrollment_id = pg_temp.enr('Sara Ahmed')
-                         and attendance_date = current_date) = v_auth,
+                         and attendance_date = d) = v_auth,
     '3d. finalising a day decides nothing new, so the entry keeps when it was made');
   update public.attendance_daily set is_locked = false
-   where enrollment_id = pg_temp.enr('Sara Ahmed') and attendance_date = current_date;
+   where enrollment_id = pg_temp.enr('Sara Ahmed') and attendance_date = d;
 
   -- Marks: an online correction, then an older offline sheet.
   perform public.fn_enter_marks(pg_temp.paper(), jsonb_build_array(
@@ -492,6 +498,7 @@ end $t$;
 -- =============================================================================
 do $t$
 declare r jsonb; h jsonb; v_before uuid := gen_random_uuid(); v_after uuid := gen_random_uuid();
+        v_until timestamptz;
 begin
   perform pg_temp.be('Off Owner');
   perform pg_temp.offline_since('owner pc', interval '2 days');
@@ -501,7 +508,8 @@ begin
    where school_id = pg_temp.school();
 
   r := pg_temp.send('owner pc', pg_temp.cmd('expenses.record', now() - interval '5 hours',
-         jsonb_build_object('amount', 1200, 'payee', 'Stationers', 'spent_on', current_date), v_before));
+         jsonb_build_object('amount', 1200, 'payee', 'Stationers',
+                            'spent_on', pg_temp.day_of(now() - interval '5 hours')), v_before));
   perform pg_temp.ok(r->>'status' = 'applied'
                      and exists (select 1 from public.expenses where amount = 1200
                                   and school_id = pg_temp.school()),
@@ -513,22 +521,24 @@ begin
     '6c. the school itself still cannot write', '%subscription has ended%');
 
   r := pg_temp.send('owner pc', pg_temp.cmd('expenses.record', now() - interval '10 minutes',
-         jsonb_build_object('amount', 75, 'spent_on', current_date), v_after));
+         jsonb_build_object('amount', 75, 'spent_on', pg_temp.day_of(now() - interval '10 minutes')), v_after));
   perform pg_temp.ok(r->>'status' = 'deferred' and r->>'code' = 'school_locked'
                      and not exists (select 1 from public.client_commands where id = v_after),
     '6d. work done after the lock waits on the device for the renewal, and is not lost');
 
+  select max(until_at) into v_until from public.sync_leases where device_id = pg_temp.dev('owner pc');
   h := public.fn_sync_hello(pg_temp.dev('owner pc'), 'windows', '1.0.0', null);
   perform pg_temp.ok(not (h->>'can_write')::boolean and h->>'lease_until' is null
                      and jsonb_array_length(h->'receipt_blocks') = 0
                      and (select max(until_at) from public.sync_leases
-                           where device_id = pg_temp.dev('owner pc')) = now(),
-    '6e. a locked school''s device is told so and its lease ends now');
+                           where device_id = pg_temp.dev('owner pc')) = v_until,
+    '6e. a locked school''s device is told so, and the hello neither lengthens nor cuts its lease '
+    '(an answer lost on the way must not turn waiting work into refused work)');
 
   update public.subscriptions set suspended_at = null, suspend_reason = null
    where school_id = pg_temp.school();
   r := pg_temp.send('owner pc', pg_temp.cmd('expenses.record', now() - interval '10 minutes',
-         jsonb_build_object('amount', 75, 'spent_on', current_date), v_after));
+         jsonb_build_object('amount', 75, 'spent_on', pg_temp.day_of(now() - interval '10 minutes')), v_after));
   perform pg_temp.ok(r->>'status' = 'applied',
     '6f. once the school is back the waiting work goes in');
 end $t$;
@@ -723,15 +733,87 @@ declare r jsonb; v_id uuid := gen_random_uuid();
 begin
   perform pg_temp.be('Off Owner');
   r := pg_temp.send('owner pc', pg_temp.cmd('attendance.day', now() - interval '1 minute',
-         jsonb_build_object('date', current_date, 'marks', '[]'::jsonb), v_id));
+         jsonb_build_object('date', pg_temp.day_of(now() - interval '1 minute'), 'marks', '[]'::jsonb), v_id));
   update public.client_commands set received_at = now() - interval '200 days' where id = v_id;
   perform public.fn_sync_hello(pg_temp.dev('owner pc'), 'windows', '1.0.0', null);
-  perform pg_temp.ok(not exists (select 1 from public.client_commands where id = v_id),
-    '10a. an applied command nobody needs is forgotten after 180 days');
+  perform pg_temp.ok(exists (select 1 from public.client_commands
+                              where id = v_id and status = 'applied' and payload is null and result is null),
+    '10a. after 180 days an applied command keeps only its id');
   r := pg_temp.send('owner pc', pg_temp.cmd('attendance.day', now() - interval '200 days',
-         jsonb_build_object('date', current_date, 'marks', '[]'::jsonb), v_id));
-  perform pg_temp.ok(r->>'code' = 'too_old',
-    '10b. and one that old sent again is refused for its age, never applied twice');
+         jsonb_build_object('date', pg_temp.day_of(now() - interval '200 days'), 'marks', '[]'::jsonb), v_id));
+  perform pg_temp.ok(r->>'status' = 'applied' and (r->>'repeat')::boolean,
+    '10b. a copy of it sent again is still answered as recorded, never "not saved", '
+    'which would invite somebody to enter the money twice');
+  update public.client_commands set received_at = now() - interval '800 days' where id = v_id;
+  perform public.fn_sync_hello(pg_temp.dev('owner pc'), 'windows', '1.0.0', null);
+  perform pg_temp.ok(not exists (select 1 from public.client_commands where id = v_id),
+    '10c. after two years even the id goes');
+  r := pg_temp.send('owner pc', pg_temp.cmd('attendance.day', now() - interval '800 days',
+         jsonb_build_object('date', pg_temp.day_of(now() - interval '800 days'), 'marks', '[]'::jsonb), v_id));
+  perform pg_temp.ok(r->>'code' = 'too_old' and r->>'error' like '%may already have it%',
+    '10d. and a copy that old is refused for its age, saying the school may already have it');
+end $t$;
+
+-- =============================================================================
+-- 11. A stop cannot be got round, and work done before it is not lost
+-- =============================================================================
+do $t$
+declare r jsonb; r2 jsonb;
+begin
+  perform pg_temp.be('Off Owner');
+  perform pg_temp.offline_since('owner pc', interval '12 days');
+
+  r := pg_temp.send('owner pc', pg_temp.cmd('attendance.day', now() - interval '2 days',
+         jsonb_build_object('date', pg_temp.day_of(now()), 'marks', '[]'::jsonb)));
+  perform pg_temp.ok(r->>'status' = 'rejected' and r->>'code' = 'bad_date',
+    '11a. a register for a day after the day its command was made is refused');
+
+  -- Suspended yesterday. The trick: today's work inside a command dated just
+  -- before the suspension, which would pass the gate.
+  update public.subscriptions set suspended_at = now() - interval '1 day', suspend_reason = 'Test: stopped'
+   where school_id = pg_temp.school();
+  r := pg_temp.send('owner pc', pg_temp.cmd('expenses.record', now() - interval '1 day' - interval '1 minute',
+         jsonb_build_object('amount', 9000, 'spent_on', pg_temp.day_of(now()))));
+  perform pg_temp.ok(r->>'status' = 'rejected' and r->>'code' = 'bad_date',
+    '11b. a locked school cannot write today''s expense by dating its command before the lock');
+
+  -- Stopped eight days ago: a week has passed, so even genuine work from
+  -- before the stop now waits for the renewal rather than slipping past it.
+  update public.subscriptions set suspended_at = now() - interval '8 days'
+   where school_id = pg_temp.school();
+  r := pg_temp.send('owner pc', pg_temp.cmd('expenses.record', now() - interval '9 days',
+         jsonb_build_object('amount', 450, 'spent_on', pg_temp.day_of(now() - interval '9 days'))));
+  perform pg_temp.ok(r->>'status' = 'deferred' and r->>'code' = 'school_locked',
+    '11c. work from before a stop more than a week old waits for the renewal, and is not lost');
+  update public.subscriptions set suspended_at = null, suspend_reason = null
+   where school_id = pg_temp.school();
+
+  -- Cancelled by us, just now.
+  update public.subscriptions set status = 'cancelled' where school_id = pg_temp.school();
+  perform pg_temp.ok((select cancelled_at from public.subscriptions where school_id = pg_temp.school()) = now(),
+    '11d. cancelling records when');
+  r := pg_temp.send('owner pc', pg_temp.cmd('expenses.record', now() + interval '1 minute',
+         jsonb_build_object('amount', 333, 'spent_on', pg_temp.day_of(now() + interval '1 minute'))));
+  r2 := pg_temp.send('owner pc', pg_temp.cmd('expenses.record', now() - interval '1 hour',
+         jsonb_build_object('amount', 444, 'spent_on', pg_temp.day_of(now() - interval '1 hour'))));
+  perform pg_temp.ok(r->>'status' = 'deferred' and r->>'code' = 'school_locked' and r2->>'status' = 'applied',
+    '11e. after a cancellation, work made after it waits and work made before it goes in');
+  update public.subscriptions set status = 'active' where school_id = pg_temp.school();
+  perform pg_temp.ok((select cancelled_at from public.subscriptions where school_id = pg_temp.school()) is null,
+    '11f. reinstating clears it');
+
+  -- In its grace days, then asks to stop: the grace days were still writing days.
+  update public.subscriptions set trial_ends_on = current_date - 3 where school_id = pg_temp.school();
+  perform pg_temp.ok(public.fn_effective_status(pg_temp.school()) = 'grace', '11g. (the school is in its grace days)');
+  update public.subscriptions set cancel_at_period_end = true where school_id = pg_temp.school();
+  r := pg_temp.send('owner pc', pg_temp.cmd('expenses.record', now() - interval '1 day',
+         jsonb_build_object('amount', 555, 'spent_on', pg_temp.day_of(now() - interval '1 day'))));
+  perform pg_temp.ok(public.fn_effective_status(pg_temp.school()) = 'cancelled' and r->>'status' = 'applied',
+    '11h. a school that asks to stop in its grace days keeps the work it did in them');
+  update public.subscriptions set cancel_at_period_end = false, trial_ends_on = current_date + 30
+   where school_id = pg_temp.school();
+  perform pg_temp.ok((select cancel_requested_at from public.subscriptions where school_id = pg_temp.school()) is null,
+    '11i. and taking the request back clears when it was made');
 end $t$;
 
 rollback;

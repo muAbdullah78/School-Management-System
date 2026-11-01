@@ -17,9 +17,12 @@ function actionsFor(item: OutboxItem): { resend?: string; patch?: Record<string,
         hint: 'Check the child already on the roll first. Admit anyway only if they are a different child.' }
     case 'duplicate':
       return { hint: 'The school already has this, so nothing is missing. It can be discarded.' }
-    case 'outside_lease':
     case 'too_old':
+      return { hint: 'If this was sent before, the school may already have it. Check before entering it again on a connected device, then discard this.' }
+    case 'bad_date':
     case 'clock_ahead':
+      return { hint: 'Check the date and time on this device. Sending it again would be refused the same way, so enter it again with the right date if it is still needed, then discard this.' }
+    case 'outside_lease':
     case 'device_revoked':
     case 'dependency_discarded':
       return { hint: 'Sending it again would be refused the same way. Enter it again on a connected device if it is still needed, then discard this.' }

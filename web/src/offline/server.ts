@@ -87,8 +87,8 @@ export interface CommandResult {
   /** receipt_renumbered: the printed number was used or not ours; see result.printed_receipt_no. */
   flags?: string[]
   /**
-   * Why it was refused or has to wait: bad_command, device_revoked, clock_ahead,
-   * too_old, too_large, outside_lease, not_permitted, duplicate,
+   * Why it was refused or has to wait: bad_command, bad_date, device_revoked,
+   * clock_ahead, too_old, too_large, outside_lease, not_permitted, duplicate,
    * possible_duplicate, refused (rejected); device_unknown, server_behind,
    * school_locked, busy (deferred).
    */

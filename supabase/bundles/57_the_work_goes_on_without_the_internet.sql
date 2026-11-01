@@ -294,11 +294,52 @@ begin
 end;
 $$;
 
+-- WHEN A SCHOOL STOPPED. Work handed in late is measured against the moment
+-- the school stopped being allowed to write, so that moment has to be known for
+-- every way a school stops. Suspension had suspended_at and the lock day is
+-- worked out from the dates, but a cancellation (by us, or by archiving) and a
+-- school's own request to stop at the end of its period left no time behind.
+-- Without one, a cancelled school paid weeks ahead looked open until then, and
+-- a school that asked to stop while in its grace days had those days' work
+-- treated as made after it stopped. A trigger stamps both on every path that
+-- sets them, since several functions do.
+alter table public.subscriptions add column if not exists cancelled_at timestamptz;
+alter table public.subscriptions add column if not exists cancel_requested_at timestamptz;
+
+create or replace function public.fn__stamp_subscription_stops()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if new.status = 'cancelled' then
+    new.cancelled_at := case when tg_op = 'UPDATE' and old.status = 'cancelled'
+                             then coalesce(old.cancelled_at, now()) else now() end;
+  else
+    new.cancelled_at := null;
+  end if;
+  if coalesce(new.cancel_at_period_end, false) then
+    new.cancel_requested_at := case when tg_op = 'UPDATE' and coalesce(old.cancel_at_period_end, false)
+                                    then coalesce(old.cancel_requested_at, now()) else now() end;
+  else
+    new.cancel_requested_at := null;
+  end if;
+  return new;
+end;
+$$;
+revoke all on function public.fn__stamp_subscription_stops() from public, anon, authenticated;
+drop trigger if exists trg_subscription_stops on public.subscriptions;
+create trigger trg_subscription_stops before insert or update on public.subscriptions
+  for each row execute function public.fn__stamp_subscription_stops();
+
 -- The moment this school stops (or stopped) being allowed to write: suspended
--- by us, its lock day, or the end of the period it asked to leave at. In the
--- future for a school that may write today, which is where a lease ends; in the
--- past for a locked one, which is what work handed in late is measured against.
--- NULL when there is nothing to measure by.
+-- by us, cancelled, its lock day, or the end of the period it asked to leave at
+-- (or the moment it asked, if that was later: a school in its grace days was
+-- still writing until then). In the future for a school that may write today,
+-- which is where a lease ends; in the past for a stopped one, which is what
+-- work handed in late is measured against. A school cancelled before 0157
+-- recorded no time and counts as stopped since ever. NULL when there is
+-- nothing to measure by.
 create or replace function public.fn__writes_end_at(p_school_id uuid)
 returns timestamptz
 language sql
@@ -308,10 +349,12 @@ set search_path = public
 set "TimeZone" = 'Asia/Karachi'
 as $$
   select least(s.suspended_at,
+               case when s.status = 'cancelled' then coalesce(s.cancelled_at, '-infinity'::timestamptz) end,
                public.fn__lock_day(s.school_id)::timestamptz,
                case when s.cancel_at_period_end
                          and greatest(s.period_end, s.trial_ends_on) is not null
-                    then (greatest(s.period_end, s.trial_ends_on) + 1)::timestamptz end)
+                    then greatest((greatest(s.period_end, s.trial_ends_on) + 1)::timestamptz,
+                                  coalesce(s.cancel_requested_at, '-infinity'::timestamptz)) end)
     from public.subscriptions s
    where s.school_id = p_school_id;
 $$;
@@ -754,24 +797,27 @@ begin
                           'class_teacher', 'subject_teacher');
 
   -- Seven days from now, never past the moment the school stops being allowed
-  -- to write. A device that may not write has its lease end now: what it did
-  -- before this moment is still covered, nothing after it is.
-  v_until := case when v_can
-                  then greatest(now(), least(now() + interval '7 days',
-                                             coalesce(public.fn__writes_end_at(v_school),
-                                                      'infinity'::timestamptz)))
-                  else now() end;
-  select * into v_lease from public.sync_leases
-   where school_id = v_school and device_id = p_device_id and user_id = v_user
-   order by from_at desc
-   limit 1
-   for update;
-  if found and v_lease.until_at >= now() - interval '10 minutes' then
-    update public.sync_leases set until_at = greatest(v_lease.from_at, v_until)
-     where id = v_lease.id and school_id = v_school;
-  elsif v_can then
-    insert into public.sync_leases (school_id, device_id, user_id, from_at, until_at)
-    values (v_school, p_device_id, v_user, now(), v_until);
+  -- to write. A lease is only ever lengthened here, never cut: the answer to
+  -- this hello can be lost on a weak signal, and a device that never heard its
+  -- lease was cut would go on working on the old one, and see that work refused
+  -- for good. A device that may not write gets no new lease and is told so, and
+  -- anything it makes after the school stopped is held by the stop itself
+  -- (fn__offline_apply_one), not by the lease.
+  if v_can then
+    v_until := greatest(now(), least(now() + interval '7 days',
+                                     coalesce(public.fn__writes_end_at(v_school), 'infinity'::timestamptz)));
+    select * into v_lease from public.sync_leases
+     where school_id = v_school and device_id = p_device_id and user_id = v_user
+     order by from_at desc
+     limit 1
+     for update;
+    if found and v_lease.until_at >= now() - interval '10 minutes' then
+      update public.sync_leases set until_at = greatest(v_lease.until_at, v_until)
+       where id = v_lease.id and school_id = v_school;
+    else
+      insert into public.sync_leases (school_id, device_id, user_id, from_at, until_at)
+      values (v_school, p_device_id, v_user, now(), v_until);
+    end if;
   end if;
 
   -- Receipt numbers, for the roles that take money.
@@ -809,17 +855,23 @@ begin
        and b.closed_at is null;
   end if;
 
-  -- Housekeeping, a little at a time. An applied command nobody needs to see is
-  -- kept 180 days, and one the owner has dealt with, a year. Forgetting an id is
-  -- safe: a command made more than 120 days ago is refused before its id is
-  -- looked up, so one sent again after its record is gone cannot apply twice.
+  -- Housekeeping, a little at a time. After 180 days an applied command nobody
+  -- needs to see keeps only its id: a copy of it sent again (a phone found in a
+  -- drawer) is still answered "applied", never "not saved", which would invite
+  -- somebody to enter the money twice. After two years the id goes too, along
+  -- with anything the owner has dealt with; a command that old is refused for
+  -- its age before its id is looked up, so it still cannot apply twice.
+  update public.client_commands c set payload = null, result = null
+   where c.id in (select c2.id from public.client_commands c2
+                   where c2.school_id = v_school and c2.status = 'applied' and c2.flags = '{}'
+                     and c2.received_at < now() - interval '180 days'
+                     and (c2.payload is not null or c2.result is not null)
+                   limit 500);
   delete from public.client_commands c
    where c.id in (select c2.id from public.client_commands c2
                    where c2.school_id = v_school
-                     and ((c2.status = 'applied' and c2.flags = '{}'
-                           and c2.received_at < now() - interval '180 days')
-                       or (c2.reviewed_at is not null
-                           and c2.received_at < now() - interval '365 days'))
+                     and c2.received_at < now() - interval '730 days'
+                     and (c2.status = 'applied' or c2.reviewed_at is not null)
                    limit 500);
 
   return jsonb_build_object(
@@ -896,6 +948,8 @@ declare
   v_state   text;
   v_err     text;
   v_hint    text;
+  v_end     timestamptz;
+  v_day     date;
 begin
   -- Without an id nothing can be kept or answered twice.
   if jsonb_typeof(p_cmd) is distinct from 'object' then
@@ -979,7 +1033,8 @@ begin
   end if;
   if v_at < now() - interval '120 days' then
     return public.fn__offline_reject(v_id, p_school, p_user, p_device, v_type, v_at, v_p,
-      'too_old', 'This entry is more than 120 days old, so it was not saved.');
+      'too_old', 'This entry is more than 120 days old, so it was not saved now. If it was '
+      || 'sent before, the school may already have it: check before entering it again.');
   end if;
   if not exists (select 1 from public.sync_leases l
                   where l.school_id = p_school and l.device_id = p_device and l.user_id = p_user
@@ -990,10 +1045,17 @@ begin
       || 'allowed to be, so it was not saved.');
   end if;
 
-  -- A locked school: work made while it was allowed to write goes in. Anything
-  -- made after waits on the device for the renewal.
+  -- A locked school: work made while it was allowed to write goes in, if it
+  -- arrives within a week of the stop (a device's lease is a week, so a device
+  -- holding such work has had that long to hand it in). The window is what
+  -- stops a locked school writing on by dating new commands just before its
+  -- lock: the time a command says it was made cannot be proved, so how long
+  -- after the stop that claim is believed is kept short. Anything made after
+  -- the stop, or arriving later than the window, waits on the device for the
+  -- renewal and goes in then. Nothing is refused for it.
   if public.fn_effective_status(p_school) in ('locked', 'cancelled') then
-    if v_at < coalesce(public.fn__writes_end_at(p_school), '-infinity'::timestamptz) then
+    v_end := coalesce(public.fn__writes_end_at(p_school), '-infinity'::timestamptz);
+    if v_at < v_end and now() < v_end + interval '7 days' then
       v_bypass := true;
     else
       return jsonb_build_object('id', v_id, 'status', 'deferred', 'code', 'school_locked',
@@ -1011,6 +1073,27 @@ begin
     if v_type in ('attendance.day', 'attendance.subject', 'marks.exam', 'marks.test')
        and jsonb_typeof(v_p->'marks') is distinct from 'array' then
       raise exception 'This entry has no list of pupils.' using errcode = '22023';
+    end if;
+
+    -- THE DAY IT IS FOR CANNOT BE AFTER THE DAY IT WAS MADE. A register for
+    -- Thursday cannot have been marked on Monday, and an expense or admission
+    -- dated after its command was made says the time on the command is not
+    -- true. That is also what a locked school would send to write on past its
+    -- lock, with today's date inside a command dated before it.
+    v_day := case v_type
+               when 'attendance.day' then nullif(v_p->>'date', '')::date
+               when 'attendance.subject' then nullif(v_p->>'date', '')::date
+               when 'expenses.record' then nullif(v_p->>'spent_on', '')::date
+               when 'students.admit' then nullif(v_p->'admission'->>'admission_date', '')::date
+               when 'marks.test' then (select a.assessment_date from public.assessments a
+                                        where a.id = nullif(v_p->>'assessment_id', '')::uuid
+                                          and a.school_id = p_school)
+             end;
+    if v_day is not null and v_day > v_at::date then
+      raise exception 'This is dated % but was made on %, which cannot be right, so it was not '
+        'saved. Check the date and time on this device.',
+        to_char(v_day, 'DD Mon YYYY'), to_char(v_at::date, 'DD Mon YYYY')
+        using errcode = '22008', hint = 'offline:bad_date';
     end if;
 
     if v_type = 'attendance.day' then
