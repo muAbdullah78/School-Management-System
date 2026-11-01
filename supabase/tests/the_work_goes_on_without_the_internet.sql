@@ -697,16 +697,21 @@ begin
     '9e. fn_admit_student answers as before and admits today');
 
   set local role authenticated;
-  perform pg_temp.ok(not has_function_privilege('public.fn__record_payment_core(boolean,uuid,numeric,payment_method,text,boolean,bigint,timestamptz)', 'execute')
-                     and not has_function_privilege('public.fn__admit_student_core(jsonb,uuid,bigint,timestamptz)', 'execute')
-                     and not has_function_privilege('public.fn__offline_apply_one(uuid,uuid,uuid,jsonb)', 'execute')
+  perform pg_temp.ok(not has_function_privilege('public.fn__offline_apply_one(uuid,uuid,uuid,jsonb)', 'execute')
+                     and not has_function_privilege('public.fn__offline_reject(uuid,uuid,uuid,uuid,text,timestamptz,jsonb,text,text)', 'execute')
                      and has_function_privilege('public.fn_offline_apply(uuid,jsonb)', 'execute')
                      and has_function_privilege('public.fn_sync_hello(uuid,text,text,bigint)', 'execute')
                      and not has_table_privilege('public.client_commands', 'select')
                      and not has_table_privilege('public.receipt_blocks', 'insert')
                      and not has_table_privilege('public.sync_leases', 'update'),
-    '9f. the cores and the four tables are out of a browser''s reach');
+    '9f. the inner functions and the four tables are out of a browser''s reach');
   reset role;
+
+  -- A receipt number left set by an offline command must never reach the next
+  -- payment taken at the counter.
+  perform pg_temp.ok(coalesce(current_setting('app.offline_receipt_no', true), '') = ''
+                     and coalesce(current_setting('app.offline_student_id', true), '') = '',
+    '9g. nothing an offline command was told is left behind for the screens');
 end $t$;
 
 

@@ -318,28 +318,82 @@ revoke all on function public.fn__min_app_version() from public, anon, authentic
 
 
 -- -----------------------------------------------------------------------------
--- 4. ONE WAY TO RECORD A PAYMENT
+-- 4. THE SCREENS' OWN FUNCTIONS, TOLD WHAT THE DEVICE ALREADY DID
 --
--- fn_record_payment and fn_record_family_payment keep their names, parameters
--- and answers, and now both call this. It adds two things only an offline
--- payment needs: the receipt number the device already printed, and when the
--- money was taken (payments.created_at is the date every report files a
--- payment under, so a fee taken on Monday and sent on Thursday is Monday's).
--- With both NULL it is exactly what the two functions did before.
+-- An offline payment or admission goes through fn_record_payment,
+-- fn_record_family_payment and fn_admit_student themselves, not a copy, so
+-- every rule they hold applies offline too. They keep their parameters and
+-- answers. What an offline command adds (the receipt number the device
+-- printed, when the money was taken, the pupil id the device made) reaches
+-- them as transaction-local settings that fn__offline_apply_one sets for one
+-- command, after checking them, and clears. payments.created_at is the date
+-- every report files a payment under, so a fee taken on Monday and handed in
+-- on Thursday is Monday's.
+--
+-- Why settings and not new parameters or a shared core: a function's
+-- parameters never change here, and bundles schools have already pasted
+-- (7 is frozen and never edited again, 34 is not) re-check fn_admit_student
+-- by its text when pasted a second time, and roll back whole when they do not
+-- find what they look for. The bodies stay whole so they keep finding it.
 -- -----------------------------------------------------------------------------
-create or replace function public.fn__record_payment_core(
-  p_for_family boolean, p_payer_id uuid, p_amount numeric, p_method public.payment_method,
-  p_note text, p_pending boolean, p_receipt_no bigint, p_at timestamptz)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public
-as $$
+CREATE OR REPLACE FUNCTION public.fn_record_payment(p_student_id uuid, p_amount numeric, p_method payment_method, p_note text DEFAULT NULL::text, p_pending boolean DEFAULT false)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_actor   uuid := auth.uid();
+  v_receipt bigint;
+  v_pay     uuid;
+  v_family  uuid;
+  v_left    numeric;
+begin
+  if not public.has_role('owner','principal','admin_clerk','accountant') then
+    raise exception 'Not permitted to record payments';
+  end if;
+  if p_amount is null or p_amount <= 0 then raise exception 'Amount must be positive'; end if;
+  perform public.assert_own('students', p_student_id);
+
+  select family_id into v_family from public.students where id = p_student_id;
+
+
+  -- 0157. A payment taken offline and handed in later: fn_offline_apply sets
+  -- the receipt the device printed (checked as the device's own and unused)
+  -- and when the money was taken, for that one command. Empty on every other
+  -- call, which is then exactly what it was.
+  v_receipt := coalesce(nullif(current_setting('app.offline_receipt_no', true), '')::bigint, public.next_counter('receipt'));
+  insert into public.payments(student_id, family_id, amount, method, receipt_no,
+                              status, received_by, note, created_at)
+  values (p_student_id, v_family, p_amount, p_method, v_receipt,
+          case when p_pending then 'pending' else 'verified' end, v_actor, p_note,
+          coalesce(nullif(current_setting('app.offline_at', true), '')::timestamptz, now()))
+  returning id into v_pay;
+
+  if p_pending then
+    return jsonb_build_object('payment_id', v_pay, 'receipt_no', v_receipt,
+      'allocated', 0, 'unallocated', p_amount, 'pending', true);
+  end if;
+
+  v_left := public.fn__allocate_payment(v_pay, array[p_student_id], p_amount);
+
+  return jsonb_build_object(
+    'payment_id', v_pay, 'receipt_no', v_receipt,
+    'allocated', p_amount - v_left, 'unallocated', v_left, 'pending', false,
+    'applied', public.fn__payment_applied(v_pay));
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.fn_record_family_payment(p_family_id uuid, p_amount numeric, p_method payment_method, p_note text DEFAULT NULL::text, p_pending boolean DEFAULT false)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
 declare
   v_actor    uuid := auth.uid();
   v_receipt  bigint;
   v_pay      uuid;
-  v_family   uuid;
   v_students uuid[];
   v_left     numeric;
 begin
@@ -347,107 +401,48 @@ begin
     raise exception 'Not permitted to record payments';
   end if;
   if p_amount is null or p_amount <= 0 then raise exception 'Amount must be positive'; end if;
+  perform public.assert_own('families', p_family_id);
 
-  if p_for_family then
-    perform public.assert_own('families', p_payer_id);
-    select array_agg(id) into v_students from public.students where family_id = p_payer_id;
-    if v_students is null then raise exception 'This family has no students'; end if;
-  else
-    perform public.assert_own('students', p_payer_id);
-    select family_id into v_family from public.students where id = p_payer_id;
-  end if;
+  select array_agg(id) into v_students from public.students where family_id = p_family_id;
+  if v_students is null then raise exception 'This family has no students'; end if;
 
-  v_receipt := coalesce(p_receipt_no, public.next_counter('receipt'));
-  insert into public.payments(student_id, family_id, amount, method, receipt_no,
+
+  -- 0157. A payment taken offline and handed in later: fn_offline_apply sets
+  -- the receipt the device printed (checked as the device's own and unused)
+  -- and when the money was taken, for that one command. Empty on every other
+  -- call, which is then exactly what it was.
+  v_receipt := coalesce(nullif(current_setting('app.offline_receipt_no', true), '')::bigint, public.next_counter('receipt'));
+  insert into public.payments(family_id, student_id, amount, method, receipt_no,
                               status, received_by, note, created_at)
-  values (case when p_for_family then null else p_payer_id end,
-          case when p_for_family then p_payer_id else v_family end,
-          p_amount, p_method, v_receipt,
+  values (p_family_id, null, p_amount, p_method, v_receipt,
           case when p_pending then 'pending' else 'verified' end, v_actor, p_note,
-          coalesce(p_at, now()))
+          coalesce(nullif(current_setting('app.offline_at', true), '')::timestamptz, now()))
   returning id into v_pay;
 
   if p_pending then
-    if p_for_family then
-      return jsonb_build_object('payment_id', v_pay, 'receipt_no', v_receipt,
-        'allocated', 0, 'credit', 0, 'pending', true);
-    end if;
     return jsonb_build_object('payment_id', v_pay, 'receipt_no', v_receipt,
-      'allocated', 0, 'unallocated', p_amount, 'pending', true);
+      'allocated', 0, 'credit', 0, 'pending', true);
   end if;
 
-  if p_for_family then
-    v_left := public.fn__allocate_payment(v_pay, v_students, p_amount);
-    return jsonb_build_object(
-      'payment_id', v_pay, 'receipt_no', v_receipt,
-      'allocated', p_amount - v_left,
-      'credit', v_left,
-      'family_outstanding', public.family_outstanding(p_payer_id),
-      'applied', public.fn__payment_applied(v_pay),
-      'pending', false);
-  end if;
+  v_left := public.fn__allocate_payment(v_pay, v_students, p_amount);
 
-  v_left := public.fn__allocate_payment(v_pay, array[p_payer_id], p_amount);
   return jsonb_build_object(
     'payment_id', v_pay, 'receipt_no', v_receipt,
-    'allocated', p_amount - v_left, 'unallocated', v_left, 'pending', false,
-    'applied', public.fn__payment_applied(v_pay));
+    'allocated', p_amount - v_left,
+    'credit', v_left,
+    'family_outstanding', public.family_outstanding(p_family_id),
+    'applied', public.fn__payment_applied(v_pay),
+    'pending', false);
 end;
-$$;
-revoke all on function public.fn__record_payment_core(boolean, uuid, numeric, public.payment_method, text, boolean, bigint, timestamptz)
-  from public, anon, authenticated;
+$function$;
 
-create or replace function public.fn_record_payment(
-  p_student_id uuid, p_amount numeric, p_method public.payment_method,
-  p_note text default null, p_pending boolean default false)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public
-as $$
-begin
-  return public.fn__record_payment_core(false, p_student_id, p_amount, p_method,
-                                         p_note, p_pending, null, null);
-end;
-$$;
-
-create or replace function public.fn_record_family_payment(
-  p_family_id uuid, p_amount numeric, p_method public.payment_method,
-  p_note text default null, p_pending boolean default false)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public
-as $$
-begin
-  return public.fn__record_payment_core(true, p_family_id, p_amount, p_method,
-                                         p_note, p_pending, null, null);
-end;
-$$;
-
-
--- -----------------------------------------------------------------------------
--- 5. ONE WAY TO ADMIT A PUPIL
---
--- fn_admit_student's whole body, moved here unchanged except for three
--- additions an offline admission needs: the pupil's id (made on the device, so
--- a payment or register entry taken offline for the new child can name them,
--- and so the same admission sent twice cannot make two children), the receipt
--- number the device printed for the admission fee, and when the admission
--- happened (the admission date, the fee invoice and its payment are dated by
--- it). fn_admit_student calls this with all three NULL, which is exactly what it
--- did before. fn_enquiry_admit, fn_import_students and rapid entry still come
--- through fn_admit_student, so this is still the only place a pupil is inserted
--- and the plan's limit is still checked in one place.
--- -----------------------------------------------------------------------------
-create or replace function public.fn__admit_student_core(
-  p jsonb, p_student_id uuid, p_af_receipt_no bigint, p_at timestamptz)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public
-set "TimeZone" = 'Asia/Karachi'
-as $function$
+CREATE OR REPLACE FUNCTION public.fn_admit_student(p jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+ SET "TimeZone" TO 'Asia/Karachi'
+AS $function$
 declare
   v_actor   uuid := auth.uid();
   v_prefix  text;
@@ -476,10 +471,17 @@ declare
   v_father_cnic text := nullif(btrim(coalesce(p->>'father_cnic','')), '');
   v_sibling  uuid;
   v_family   uuid;
-  -- 0157. When the admission happened: now for the screens, the moment it
-  -- was made for an admission recorded offline and sent later.
-  v_at       timestamptz := coalesce(p_at, now());
-  v_day      date := coalesce(p_at, now())::date;
+  -- 0157. An admission taken offline and handed in later. fn_offline_apply
+  -- sets these for that one command, after checking them: when it was made,
+  -- the pupil id the device gave the child (so work taken offline for the
+  -- new child can name them, and the same admission cannot make two
+  -- children), and the receipt the device printed for the admission fee.
+  -- A browser cannot set them, and on every other call they are empty and
+  -- this is exactly what it was.
+  v_at       timestamptz := coalesce(nullif(current_setting('app.offline_at', true), '')::timestamptz, now());
+  v_day      date := (coalesce(nullif(current_setting('app.offline_at', true), '')::timestamptz, now()))::date;
+  v_given_id uuid := nullif(current_setting('app.offline_student_id', true), '')::uuid;
+  v_given_receipt bigint := nullif(current_setting('app.offline_receipt_no', true), '')::bigint;
 begin
   if not public.has_role('owner','principal','admin_clerk') then
     raise exception 'Not permitted to admit students';
@@ -563,7 +565,7 @@ begin
     id, gr_no, admission_no, full_name, father_name, mother_name, b_form, dob, gender,
     address, phone, whatsapp, status, admission_date, notes, family_id)
   values (
-    coalesce(p_student_id, gen_random_uuid()),
+    coalesce(v_given_id, gen_random_uuid()),
     v_gr,
     -- btrim on every text field (0142). A name typed off a register arrives
     -- with a trailing space often enough to matter, and " Bilal" sorts before
@@ -648,9 +650,7 @@ begin
     values (v_af_inv, v_af_head, 'Admission Fee', v_af_amt, false);
 
     if v_af_amt > 0 then
-      -- An admission taken offline brings the receipt number its device
-      -- printed, from the block the device was given (0157).
-      v_af_receipt := coalesce(p_af_receipt_no, public.next_counter('receipt'));
+      v_af_receipt := coalesce(v_given_receipt, public.next_counter('receipt'));
       -- family_id stamped so the admission fee shows on the family sheet like
       -- any other payment. Before 0036 this was left null.
       insert into public.payments(student_id, family_id, amount, method, receipt_no, status, received_by, note, created_at)
@@ -671,24 +671,9 @@ begin
 end;
 $function$;
 
-revoke all on function public.fn__admit_student_core(jsonb, uuid, bigint, timestamptz)
-  from public, anon, authenticated;
-
-create or replace function public.fn_admit_student(p jsonb)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public
-set "TimeZone" = 'Asia/Karachi'
-as $$
-begin
-  return public.fn__admit_student_core(p, null, null, null);
-end;
-$$;
-
 
 -- -----------------------------------------------------------------------------
--- 6. HELLO
+-- 5. HELLO
 --
 -- Called by the app whenever it connects, before it sends anything. Registers
 -- the device, gives it the server's clock and its lease, and gives a device that
@@ -840,7 +825,7 @@ $$;
 
 
 -- -----------------------------------------------------------------------------
--- 7. HANDING IN THE WORK
+-- 6. HANDING IN THE WORK
 -- -----------------------------------------------------------------------------
 
 -- A refusal is kept with what was sent (unless it is too big to keep), so the
@@ -1110,9 +1095,16 @@ begin
           v_note := concat_ws(' ', v_note, format('(printed as receipt %s)', v_printed));
         end if;
       end if;
-      v_res := public.fn__record_payment_core(v_family, v_payer, v_amount,
-        coalesce(nullif(v_p->>'method', ''), 'cash')::public.payment_method,
-        v_note, coalesce((v_p->>'pending')::boolean, false), v_rno, v_at);
+      perform set_config('app.offline_receipt_no', coalesce(v_rno::text, ''), true);
+      if v_family then
+        v_res := public.fn_record_family_payment(v_payer, v_amount,
+          coalesce(nullif(v_p->>'method', ''), 'cash')::public.payment_method,
+          v_note, coalesce((v_p->>'pending')::boolean, false));
+      else
+        v_res := public.fn_record_payment(v_payer, v_amount,
+          coalesce(nullif(v_p->>'method', ''), 'cash')::public.payment_method,
+          v_note, coalesce((v_p->>'pending')::boolean, false));
+      end if;
 
     elsif v_type = 'expenses.record' then
       v_res := public.fn_record_expense(
@@ -1169,7 +1161,9 @@ begin
         v_rno := null;
         v_flags := v_flags || 'receipt_renumbered'::text;
       end if;
-      v_res := public.fn__admit_student_core(v_p->'admission', v_payer, v_rno, v_at);
+      perform set_config('app.offline_receipt_no', coalesce(v_rno::text, ''), true);
+      perform set_config('app.offline_student_id', v_payer::text, true);
+      v_res := public.fn_admit_student(v_p->'admission');
     end if;
 
     if v_printed is not null then
@@ -1186,8 +1180,10 @@ begin
 
     perform set_config('app.offline_at', '', true);
     perform set_config('app.offline_replay', '', true);
+    perform set_config('app.offline_receipt_no', '', true);
+    perform set_config('app.offline_student_id', '', true);
   exception when others then
-    -- Everything the command did is undone with this block, the two settings
+    -- Everything the command did is undone with this block, the settings
     -- included.
     get stacked diagnostics v_state = returned_sqlstate, v_err = message_text,
                             v_hint = pg_exception_hint;
@@ -1259,7 +1255,7 @@ $$;
 
 
 -- -----------------------------------------------------------------------------
--- 8. DEVICES AND REFUSED WORK, FOR THE PEOPLE WHO LOOK AFTER THEM
+-- 7. DEVICES AND REFUSED WORK, FOR THE PEOPLE WHO LOOK AFTER THEM
 --
 -- The owner and principal see every staff device and every refused command;
 -- everyone else sees their own. A principal cannot switch off the owner's
@@ -1432,7 +1428,7 @@ $$;
 
 
 -- -----------------------------------------------------------------------------
--- 9. WHO MAY CALL WHAT
+-- 8. WHO MAY CALL WHAT
 -- -----------------------------------------------------------------------------
 revoke all on function public.fn_sync_hello(uuid, text, text, bigint) from public, anon;
 grant execute on function public.fn_sync_hello(uuid, text, text, bigint) to authenticated;
@@ -1452,8 +1448,9 @@ begin
   if to_regclass('public.client_commands') is null
      or to_regclass('public.receipt_blocks') is null
      or to_regprocedure('public.fn_offline_apply(uuid,jsonb)') is null
-     or to_regprocedure('public.fn__record_payment_core(boolean,uuid,numeric,payment_method,text,boolean,bigint,timestamptz)') is null
-     or to_regprocedure('public.fn__admit_student_core(jsonb,uuid,bigint,timestamptz)') is null then
+     or position('app.offline_receipt_no' in coalesce((select p.prosrc from pg_proc p
+          join pg_namespace n on n.oid = p.pronamespace
+         where n.nspname = 'public' and p.proname = 'fn_record_payment'), '')) = 0 then
     raise warning '0157 did not fully apply: work done offline cannot be handed in';
   end if;
 end $assert$;

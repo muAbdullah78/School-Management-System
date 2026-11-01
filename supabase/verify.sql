@@ -1031,16 +1031,9 @@ union all
 -- school calls its classes the same things, so that bites at any real number of
 -- customers.
 select 'class names and fee heads are per-school (0072)',
-       -- 0157 moved the admission into fn__admit_student_core, which
-       -- fn_admit_student calls, so the lookup is looked for there too.
        case when exists (select 1 from pg_proc where proname = 'fn_admit_student'
                           and pronamespace = 'public'::regnamespace
-                          and (prosrc like '%type = ''admission'' and active and school_id = public.current_school_id()%'
-                               or (prosrc like '%fn__admit_student_core%'
-                                   and exists (select 1 from pg_proc c
-                                                where c.proname = 'fn__admit_student_core'
-                                                  and c.pronamespace = 'public'::regnamespace
-                                                  and c.prosrc like '%type = ''admission'' and active and school_id = public.current_school_id()%'))))
+                          and prosrc like '%type = ''admission'' and active and school_id = public.current_school_id()%')
              and exists (select 1 from pg_proc where proname = 'fn_import_students'
                           and pronamespace = 'public'::regnamespace
                           and prosrc like '%active and school_id = public.current_school_id() and lower(btrim(name))%')
@@ -1256,28 +1249,16 @@ select 'a fee receipt names the child and the month (0084)',
          when not exists (select 1 from pg_proc where proname='fn__payment_applied'
                            and pronamespace='public'::regnamespace)
            then 'FAIL: re-run bundle 7'
-         -- 0157 moved both payment paths into fn__record_payment_core, which
-         -- each calls, so the detail is looked for there too.
          when not exists (select 1 from pg_proc where proname='fn_record_family_payment'
                            and pronamespace='public'::regnamespace
-                           and (prosrc like '%fn__payment_applied%'
-                                or (prosrc like '%fn__record_payment_core%'
-                                    and exists (select 1 from pg_proc c
-                                                 where c.proname = 'fn__record_payment_core'
-                                                   and c.pronamespace = 'public'::regnamespace
-                                                   and c.prosrc like '%fn__payment_applied%'))))
+                           and prosrc like '%fn__payment_applied%')
            -- Silent: the counter still works and the receipt still prints. It
            -- just cannot say what the money paid for.
            then 'FAIL: family receipts cannot name the children they paid for; '
                 || 're-run bundle 7'
          when not exists (select 1 from pg_proc where proname='fn_record_payment'
                            and pronamespace='public'::regnamespace
-                           and (prosrc like '%fn__payment_applied%'
-                                or (prosrc like '%fn__record_payment_core%'
-                                    and exists (select 1 from pg_proc c
-                                                 where c.proname = 'fn__record_payment_core'
-                                                   and c.pronamespace = 'public'::regnamespace
-                                                   and c.prosrc like '%fn__payment_applied%'))))
+                           and prosrc like '%fn__payment_applied%')
            then 'FAIL: single-student receipts cannot name the months they '
                 || 'cleared; re-run bundle 7'
          else 'PASS' end
@@ -2581,14 +2562,7 @@ select 'a plan''s student limit is enforced (0128)',
                 where n.nspname = 'public'
                   and p.proname in ('fn_admit_student', 'fn_set_student_status',
                                     'fn_import_students')
-                  -- fn_admit_student checks it through fn__admit_student_core (0157).
-                  and (p.prosrc ~ 'fn__assert_room_for_students'
-                       or (p.proname = 'fn_admit_student'
-                           and p.prosrc ~ 'fn__admit_student_core'
-                           and exists (select 1 from pg_proc c
-                                        where c.proname = 'fn__admit_student_core'
-                                          and c.pronamespace = n.oid
-                                          and c.prosrc ~ 'fn__assert_room_for_students')))) <> 3
+                  and p.prosrc ~ 'fn__assert_room_for_students') <> 3
          then 'FAIL: only some of the three paths that can raise a roll check '
               || 'the limit (admission, coming back from a leaving state, and '
               || 'the importer); re-apply '
@@ -3668,19 +3642,15 @@ select 'work goes on without the internet (0157)',
            then 'FAIL: the app cannot hand in work done offline, so a school with weak internet '
                 || 'loses it; apply supabase/bundles/57_the_work_goes_on_without_the_internet.sql'
          -- An older bundle pasted after 57 puts back a payment or admission
-         -- function of its own, and the screens and the offline path then
-         -- record the same thing two different ways.
-         when position('fn__record_payment_core' in coalesce((select p.prosrc from pg_proc p
-                join pg_namespace n on n.oid = p.pronamespace
-               where n.nspname = 'public' and p.proname = 'fn_record_payment'), '')) = 0
-           or position('fn__record_payment_core' in coalesce((select p.prosrc from pg_proc p
-                join pg_namespace n on n.oid = p.pronamespace
-               where n.nspname = 'public' and p.proname = 'fn_record_family_payment'), '')) = 0
-           or position('fn__admit_student_core' in coalesce((select p.prosrc from pg_proc p
-                join pg_namespace n on n.oid = p.pronamespace
-               where n.nspname = 'public' and p.proname = 'fn_admit_student'), '')) = 0
-           then 'FAIL: payments or admissions are recorded one way on the screens and another '
-                || 'offline; apply supabase/bundles/57_the_work_goes_on_without_the_internet.sql again'
+         -- function that does not know the receipt a device printed, and every
+         -- fee taken offline would then be given a second number.
+         when (select count(*) from pg_proc p
+                 join pg_namespace n on n.oid = p.pronamespace
+                where n.nspname = 'public'
+                  and p.proname in ('fn_record_payment', 'fn_record_family_payment', 'fn_admit_student')
+                  and p.prosrc like '%app.offline_receipt_no%') <> 3
+           then 'FAIL: a receipt printed offline is recorded under a different number; apply '
+                || 'supabase/bundles/57_the_work_goes_on_without_the_internet.sql again'
          when position('app.offline_replay' in coalesce((select p.prosrc from pg_proc p
                 join pg_namespace n on n.oid = p.pronamespace
                where n.nspname = 'public' and p.proname = 'enforce_school_id'), '')) = 0
