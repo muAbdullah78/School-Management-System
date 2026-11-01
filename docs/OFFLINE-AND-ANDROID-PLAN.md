@@ -194,9 +194,16 @@ broken or half-done.
    4. refreshes the copies.
 
    Only one browser tab syncs at a time (Web Locks).
-4. **Offline copies ("packs")** are fetched by role, through the same functions
-   the screens already use, and saved at the `db.ts` boundary, so screens need
-   no rewrite:
+4. **Offline copies ("packs")** are kept at the fetch boundary: supabase-js is
+   given a fetch (`readCache.ts`) that keeps a copy of every read, per login, in
+   IndexedDB, and answers from it when the network fails, or after four seconds
+   on a crawling connection while the request carries on and refreshes the copy.
+   Only table reads and RPCs Postgres guarantees cannot write (STABLE or
+   IMMUTABLE and calling nothing volatile, generated from the database and
+   checked in CI) are ever answered from a copy; writes always go to the
+   network. Screens need no rewrite, and copies are wiped on sign-out. Each
+   role's pack is also fetched ahead of time, through the same functions with
+   the same arguments the screens use:
    - **Teacher:** their classes, rosters, attendance days and tests.
    - **Office:** pupils with balances, fee heads, today's collections and recent
      receipts.

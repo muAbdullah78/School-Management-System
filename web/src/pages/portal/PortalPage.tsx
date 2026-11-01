@@ -44,6 +44,7 @@ import { PortalFees } from './PortalFees'
 import { PortalAttendance, attendanceKey, monthRange } from './PortalAttendance'
 import { PortalResults } from './PortalResults'
 import { PCard, Problem, Skeleton, firstName, isBirthday, markText, pct, shortDate } from './portalKit'
+import { OfflineStatus } from '@/offline/OfflineStatus'
 
 type Tab = 'fees' | 'attendance' | 'results'
 
@@ -154,6 +155,9 @@ export function PortalPage() {
     /* min-h-full rather than min-h-screen: 100vh on a phone is the height with
        the address bar hidden, so a short page bounced with nothing to scroll. */
     <div className="min-h-full bg-slate-50">
+      {/* Says so when the page is showing saved copies: no signal, or one too
+          slow to wait for. */}
+      <OfflineStatus />
       {/* ---------------------------------------------------------- header -- */}
       <header className="relative overflow-hidden bg-gradient-to-br from-brand-700 via-brand-600 to-violet-600 pb-20 pt-5 text-white lg:pb-24">
         <span aria-hidden="true" className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-white/10" />

@@ -1156,6 +1156,16 @@ jobs:
         # Verified to fail on both faults deliberately re-introduced.
         run: ./supabase/check-rpc-contract.sh
 
+      - name: Every RPC answered from an offline copy is one that cannot write
+        # web/src/offline/readCache.ts answers the RPCs in
+        # web/src/offline/readRpcs.ts from a saved copy when the network fails
+        # or crawls. That is only safe for a function that can never write:
+        # STABLE or IMMUTABLE, and calling no volatile function, directly or
+        # through another (Postgres lets a STABLE function call one that
+        # writes). This regenerates the list from the database and fails when
+        # it differs from what is committed, in either direction.
+        run: ./supabase/check-read-rpcs.sh
+
       - name: Is every function the app may call reachable from anywhere?
         # The most common defect in this repo has never been wrong logic — it has
         # been correct logic nothing could reach. fn_link_parent, fn_family_for,

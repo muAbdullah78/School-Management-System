@@ -6,9 +6,11 @@
 // anything is saved, and from "Sync now". The engine makes sure only one tab
 // does it at a time; the others hear about it and redraw.
 //
-// Writers only for now (owner, principal and teachers). Parents and the
-// observer read; their offline copies are chunk 3. A vendor support visit has
-// no profile and never works offline.
+// The engine runs for those who write (owner, principal and teachers). Every
+// login, parents and the observer included, gets the offline copies of what it
+// reads (readCache.ts), and its role's pack is fetched ahead of time: after
+// each sync for a writer, every 15 minutes for a reader. A vendor support visit
+// has no profile and never works offline.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/auth/AuthProvider'
@@ -17,9 +19,16 @@ import { OfflineStore, type OutboxItem, type UserRef } from './store'
 import { deviceId, platform } from './device'
 import { legacyQueue } from './legacy'
 import { getQueue, ownedBy, subscribe as subscribeLegacy } from '@/lib/offlineQueue'
+import { onServedFromCopy } from './readCache'
+import { warmPacks } from './packs'
+import { readStore } from '@/lib/supabase'
 
 const WRITERS = new Set(['owner', 'principal', 'class_teacher', 'subject_teacher'])
+const READERS = new Set(['parent', 'readonly'])
 const EVERY_MS = 60_000
+const READER_EVERY_MS = 15 * 60_000
+/** How long after a copy was shown the bar keeps saying so. */
+const COPY_NOTICE_MS = 2 * 60_000
 
 export interface OfflineState {
   /** The engine is running for this login. */
@@ -30,6 +39,8 @@ export interface OfflineState {
   /** Registers the attendance screen queued the old way (before 0157), not yet moved into the outbox. */
   legacyWaiting: number
   lastReport: SyncReport | null
+  /** When the copy a screen was last shown (instead of a fresh answer) was saved, if that was in the last two minutes. */
+  copySavedAt: number | null
   syncNow: () => Promise<SyncReport | null>
   /** Save work as a command, and send it straight away if there is a connection. */
   submit: (work: NewWork) => Promise<OutboxItem>
@@ -39,7 +50,7 @@ export interface OfflineState {
 }
 
 const inactive: OfflineState = {
-  active: false, online: true, syncing: false, snapshot: null, legacyWaiting: 0, lastReport: null,
+  active: false, online: true, syncing: false, snapshot: null, legacyWaiting: 0, lastReport: null, copySavedAt: null,
   syncNow: async () => null,
   submit: async () => { throw new Error('Offline work is not available here.') },
   resend: async () => { throw new Error('Offline work is not available here.') },
@@ -83,9 +94,26 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const [lastReport, setLastReport] = useState<SyncReport | null>(null)
   const [legacyWaiting, setLegacyWaiting] = useState(0)
+  const [copySavedAt, setCopySavedAt] = useState<number | null>(null)
   const running = useRef<Promise<SyncReport | null> | null>(null)
   const userRef = useRef(user)
   userRef.current = user
+  const role = profile?.role ?? null
+  const roleRef = useRef(role)
+  roleRef.current = role
+
+  // A screen shown a copy instead of a fresh answer: say how old it is, for a
+  // while. Copies older than 30 days are thrown away once per session.
+  useEffect(() => {
+    let clear: number | undefined
+    const off = onServedFromCopy(({ saved_wall }) => {
+      setCopySavedAt((cur) => (cur == null ? saved_wall : Math.min(cur, saved_wall)))
+      window.clearTimeout(clear)
+      clear = window.setTimeout(() => setCopySavedAt(null), COPY_NOTICE_MS)
+    })
+    void readStore?.prune(Date.now()).catch(() => undefined)
+    return () => { off(); window.clearTimeout(clear) }
+  }, [])
 
   const refresh = useCallback(async () => {
     const u = userRef.current
@@ -103,7 +131,8 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
     const run = (async () => {
       setSyncing(true)
       try {
-        const report = await eng.sync(u)
+        const r = roleRef.current
+        const report = await eng.sync(u, r ? () => warmPacks(r) : undefined)
         setLastReport(report)
         // Something the screens show has changed on the server.
         if (report.applied > 0) void qc.invalidateQueries()
@@ -129,6 +158,17 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
     void refresh()
     return eng.subscribe(() => { void refresh() })
   }, [eng, refresh, user])
+
+  // A reader (a parent, the observer) has nothing to send, but its pack is
+  // fetched ahead of time all the same, so the portal opens with no signal.
+  useEffect(() => {
+    if (!session || !role || !READERS.has(role)) return
+    const warm = () => { if (isOnline() && document.visibilityState === 'visible') void warmPacks(role).catch(() => undefined) }
+    warm()
+    window.addEventListener('online', warm)
+    const timer = window.setInterval(warm, READER_EVERY_MS)
+    return () => { window.removeEventListener('online', warm); window.clearInterval(timer) }
+  }, [session, role])
 
   // The old attendance queue, counted until the engine moves it in.
   useEffect(() => {
@@ -187,9 +227,11 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
   }, [eng])
 
   const value = useMemo<OfflineState>(() => (user ? {
-    active: true, online, syncing, snapshot, legacyWaiting, lastReport, syncNow, submit, resend, discard, clearRevokedNotice,
-  } : { ...inactive, online }),
-  [user, online, syncing, snapshot, legacyWaiting, lastReport, syncNow, submit, resend, discard, clearRevokedNotice])
+    active: true, online, syncing, snapshot, legacyWaiting, lastReport, copySavedAt, syncNow, submit, resend, discard,
+    clearRevokedNotice,
+  } : { ...inactive, online, copySavedAt }),
+  [user, online, syncing, snapshot, legacyWaiting, lastReport, copySavedAt, syncNow, submit, resend, discard,
+    clearRevokedNotice])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

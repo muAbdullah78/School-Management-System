@@ -28,10 +28,15 @@ function plural(n: number, one: string, many: string): string {
 export function OfflineStatus() {
   const off = useOffline()
   const snap = off.snapshot
+  const copy = off.copySavedAt != null ? <span className="opacity-90">Showing copies saved {ago(off.copySavedAt)}.</span> : null
   if (!off.active || !snap) {
-    return off.online ? null : (
-      <div className="px-6 py-2 text-sm bg-slate-800 text-slate-100 print:hidden">
-        <span className="font-medium">Offline.</span> Showing what was last loaded.
+    if (off.online && !copy) return null
+    return (
+      <div role="status" className={`flex flex-wrap gap-x-3 px-6 py-2 text-sm print:hidden ${
+        off.online ? 'bg-amber-50 text-amber-800' : 'bg-slate-800 text-slate-100'}`}>
+        {!off.online && <span className="font-medium">Offline.</span>}
+        {copy ?? <span>Showing what was last loaded.</span>}
+        {off.online && <span>The connection is slow, so the last saved copies are shown while it catches up.</span>}
       </div>
     )
   }
@@ -43,7 +48,7 @@ export function OfflineStatus() {
   const stopped = st.stopped
   const held = st.waiting
 
-  const nothingToSay = off.online && waiting === 0 && snap.attention === 0 && !notice && !stopped && !held
+  const nothingToSay = off.online && waiting === 0 && snap.attention === 0 && !notice && !stopped && !held && !copy
   if (nothingToSay) return null
 
   const dark = !off.online
@@ -71,6 +76,7 @@ export function OfflineStatus() {
           {!off.online && left != null && left < 24 && left >= 0 && (
             <span className="font-medium">Connect within {plural(left, 'hour', 'hours')} to keep working offline.</span>
           )}
+          {copy}
           <span className="opacity-80">Last synced {ago(st.last_sync_wall)}.</span>
         </>
       )}

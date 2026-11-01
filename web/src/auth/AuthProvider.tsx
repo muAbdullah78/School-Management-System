@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { supabase } from '@/lib/supabase'
+import { supabase, readStore } from '@/lib/supabase'
 import { cacheSchoolId } from '@/lib/offlineQueue'
 import type { Role } from './roles'
 import { gateIsLoading, initialGate, reduceGate } from './authGate'
@@ -223,8 +223,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    */
   const signOut = useCallback(async () => {
     if (!supabase) return
+    // The copies of what this person read go with them (web/src/offline/
+    // readCache.ts): the next person at a shared computer must never be shown
+    // them. Unsent work is different and stays, locked to this login, for the
+    // next time they sign in here.
+    const uid = (await supabase.auth.getSession()).data.session?.user?.id ?? null
     await supabase.auth.signOut({ scope: 'local' })
     setProfile(null)
+    if (uid && readStore) await readStore.forget(uid).catch(() => undefined)
   }, [])
 
   /**
