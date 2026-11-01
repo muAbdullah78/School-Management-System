@@ -131,9 +131,11 @@ describe('Setup', () => {
   it('refuses a second term with the same name before anything is sent', async () => {
     mount(createElement(ExamsPage), { rows: BASE_ROWS, rpc: { fn_exam_term_overview: [] } }, as('owner', 'Owner'), '/exams?tab=setup&term=t1')
     fireEvent.click(await screen.findByRole('button', { name: /New term/ }))
-    // It opens on the next type this year does not have: Mid Term.
+    // It opens on the next type this year does not have: Mid Term. Waited for,
+    // because the terms may still be arriving when the form opens (a slow CI
+    // runner showed exactly that), and the suggestion follows them once they do.
     const name = await screen.findByPlaceholderText('e.g. First Term')
-    expect((name as HTMLInputElement).value).toBe('Mid Term')
+    await waitFor(() => expect((name as HTMLInputElement).value).toBe('Mid Term'))
     fireEvent.change(name, { target: { value: ' first term ' } })
     expect(await screen.findByText(/already has a term called first term/)).toBeTruthy()
     expect((screen.getByRole('button', { name: 'Add term' }) as HTMLButtonElement).disabled).toBe(true)

@@ -187,6 +187,16 @@ function TermForm({ sessionId, session, terms, term, onDone }: {
   const [ends, setEnds] = useState(term?.ends_on ?? '')
   const [withhold, setWithhold] = useState(term?.result_withheld_for_defaulters ?? true)
 
+  // The year's terms can still be loading when New term is pressed, and the
+  // suggestion above was worked out from an empty list: "First Term" for a year
+  // that already has one. Until somebody types a name of their own, the
+  // suggestion follows the terms as they arrive.
+  useEffect(() => {
+    if (term || named) return
+    setName(suggested.value === 'other' ? '' : suggested.label)
+    setType(suggested.value)
+  }, [term, named, suggested.value, suggested.label])
+
   // THE END DATE HAD max={today}, so a term could only be created once it was
   // over. The rules that matter are the order of the dates, that both or neither
   // are given, that they fall inside the year, and one name per year. The
