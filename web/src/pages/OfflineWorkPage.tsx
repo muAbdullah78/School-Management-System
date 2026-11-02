@@ -24,8 +24,11 @@ function actionsFor(item: OutboxItem): { resend?: string; patch?: Record<string,
       return { hint: 'Check the date and time on this device. Sending it again would be refused the same way, so enter it again with the right date if it is still needed, then discard this.' }
     case 'outside_lease':
     case 'device_revoked':
+    case 'login_off':
     case 'dependency_discarded':
       return { hint: 'Sending it again would be refused the same way. Enter it again on a connected device if it is still needed, then discard this.' }
+    case 'not_on_sheet':
+      return { hint: 'Nobody in this entry is on the register or sheet any more (left, moved, or no longer yours to mark). The school has it on record. Discard this once you have checked.' }
     case 'held':
       return {}
     default:
@@ -42,9 +45,16 @@ export function noticeFor(d: DoneItem): string | null {
     const kept = r.receipt_no ?? r.admission_receipt_no
     parts.push(`Printed as receipt ${String(printed ?? '?')}, recorded as receipt ${String(kept ?? '?')}. Write the new number on the parent's copy if you can.`)
   }
+  if (d.flags.includes('gr_renumbered')) {
+    parts.push(`GR number ${String(r.typed_gr_no ?? '?')} was already taken, so this pupil was given GR ${String(r.gr_no ?? '?')}.`)
+  }
   const newer = Array.isArray(r.kept_newer) ? r.kept_newer.length : 0
   if (newer > 0) {
     parts.push(`${newer} ${newer === 1 ? 'pupil was' : 'pupils were'} left as marked later on another device.`)
+  }
+  const out = Array.isArray(r.left_out) ? r.left_out.length : 0
+  if (out > 0) {
+    parts.push(`${out} ${out === 1 ? 'pupil was' : 'pupils were'} left out: no longer on this register or sheet.`)
   }
   return parts.length ? parts.join(' ') : null
 }

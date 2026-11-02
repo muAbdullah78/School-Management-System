@@ -40,12 +40,15 @@ export interface ReceiptBlock { first_no: number; last_no: number }
 
 export interface Hello {
   server_time: string
-  status: string
+  /** Null for a login the school has switched off. */
+  status: string | null
   role: string | null
-  /** False for a locked school, a switched-off device, or a role that only reads. */
+  /** False for a locked school, a switched-off device or login, or a role that only reads. */
   can_write: boolean
-  /** The school switched this device off. Hand in what is waiting, then clear it. */
+  /** The school switched this device, or this login, off. Hand in what is waiting, then clear it. */
   revoked: boolean
+  /** It was the login that was switched off (the staff-exit flow), not only the device. */
+  login_off?: boolean
   /** Work may be done offline until this moment. Null when it may not. */
   lease_until: string | null
   /** Receipt numbers this device may print offline, lowest first. */
@@ -84,13 +87,18 @@ export interface CommandResult {
   status: CommandStatus
   /** What the server function returned, for applied commands. */
   result?: Record<string, unknown> | null
-  /** receipt_renumbered: the printed number was used or not ours; see result.printed_receipt_no. */
+  /**
+   * receipt_renumbered: the printed number was used or not ours; see
+   * result.printed_receipt_no. gr_renumbered: a GR number typed offline was
+   * taken meanwhile; see result.typed_gr_no and result.gr_no. Registers and
+   * marks may also carry result.kept_newer and result.left_out (pupil lists).
+   */
   flags?: string[]
   /**
    * Why it was refused or has to wait: bad_command, bad_date, device_revoked,
-   * clock_ahead, too_old, too_large, outside_lease, not_permitted, duplicate,
-   * possible_duplicate, refused (rejected); device_unknown, server_behind,
-   * school_locked, busy (deferred).
+   * login_off, clock_ahead, too_old, too_large, outside_lease, not_permitted,
+   * not_on_sheet, duplicate, possible_duplicate, refused (rejected);
+   * device_unknown, server_behind, school_locked, busy (deferred).
    */
   code?: string | null
   error?: string | null

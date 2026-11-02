@@ -142,6 +142,14 @@ describe('notices', () => {
   it('an ordinary answer is not a notice', () => {
     expect(noticeFor(done({}))).toBeNull()
   })
+  it('a GR number taken meanwhile says both numbers', () => {
+    expect(noticeFor(done({ type: 'students.admit', flags: ['gr_renumbered'], result: { typed_gr_no: '0401', gr_no: '0412' } })))
+      .toBe('GR number 0401 was already taken, so this pupil was given GR 0412.')
+  })
+  it('a sheet with a pupil no longer on it says how many were left out', () => {
+    expect(noticeFor(done({ type: 'marks.exam', result: { left_out: ['e9'] } })))
+      .toBe('1 pupil was left out: no longer on this register or sheet.')
+  })
 })
 
 describe('small words', () => {

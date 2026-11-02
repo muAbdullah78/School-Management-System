@@ -171,8 +171,25 @@ language plpgsql
 set search_path = public
 as $$
 declare
-  v_at timestamptz := coalesce(nullif(current_setting('app.offline_at', true), '')::timestamptz, now());
+  v_off timestamptz := nullif(current_setting('app.offline_at', true), '')::timestamptz;
+  v_at  timestamptz := coalesce(v_off, now());
 begin
+  -- AN ENTRY MADE OFFLINE NEVER REPLACES OR CLEARS ONE DECIDED AFTER IT.
+  -- fn__offline_apply_one leaves such entries out before it calls the screen's
+  -- function, but it reads without a lock: an entry another device or the
+  -- screen commits while this command waits for the row would be overwritten
+  -- by the older one. Here the row is the one being written, locked and
+  -- current, so the decision cannot be raced. The row is left exactly as it is
+  -- and its pupil is reported back in kept_newer (app.offline_kept).
+  if v_off is not null and tg_op in ('UPDATE', 'DELETE')
+     and coalesce(old.authored_at, old.updated_at) > v_off then
+    perform set_config('app.offline_kept',
+      concat_ws(',', nullif(current_setting('app.offline_kept', true), ''), old.enrollment_id::text), true);
+    return null;
+  end if;
+  if tg_op = 'DELETE' then
+    return old;
+  end if;
   if tg_op = 'UPDATE' then
     -- Nested, not one condition: plpgsql reads new.status only on the tables
     -- that have it.
@@ -194,13 +211,13 @@ $$;
 revoke all on function public.fn__stamp_authored_at() from public, anon, authenticated;
 
 drop trigger if exists trg_attendance_daily_authored on public.attendance_daily;
-create trigger trg_attendance_daily_authored before insert or update on public.attendance_daily
+create trigger trg_attendance_daily_authored before insert or update or delete on public.attendance_daily
   for each row execute function public.fn__stamp_authored_at();
 drop trigger if exists trg_attendance_subject_authored on public.attendance_subject;
-create trigger trg_attendance_subject_authored before insert or update on public.attendance_subject
+create trigger trg_attendance_subject_authored before insert or update or delete on public.attendance_subject
   for each row execute function public.fn__stamp_authored_at();
 drop trigger if exists trg_mark_entries_authored on public.mark_entries;
-create trigger trg_mark_entries_authored before insert or update on public.mark_entries
+create trigger trg_mark_entries_authored before insert or update or delete on public.mark_entries
   for each row execute function public.fn__stamp_authored_at();
 
 
@@ -300,15 +317,18 @@ language plpgsql
 set search_path = public
 as $$
 begin
+  -- Kept as it was while the status stays, null included: a school cancelled
+  -- before 0157 has no time and counts as stopped since ever, and an unrelated
+  -- update must not stamp it with that update's time.
   if new.status = 'cancelled' then
     new.cancelled_at := case when tg_op = 'UPDATE' and old.status = 'cancelled'
-                             then coalesce(old.cancelled_at, now()) else now() end;
+                             then old.cancelled_at else now() end;
   else
     new.cancelled_at := null;
   end if;
   if coalesce(new.cancel_at_period_end, false) then
     new.cancel_requested_at := case when tg_op = 'UPDATE' and coalesce(old.cancel_at_period_end, false)
-                                    then coalesce(old.cancel_requested_at, now()) else now() end;
+                                    then old.cancel_requested_at else now() end;
   else
     new.cancel_requested_at := null;
   end if;
@@ -663,6 +683,10 @@ begin
     for v_link in select * from jsonb_array_elements(p->'links') loop
       if nullif(v_link->>'related_student_id','') is not null
          and nullif(v_link->>'related_student_id','')::uuid <> v_student then
+        -- Every link, not only the first one the family was taken from: a
+        -- crafted payload could otherwise tie this child to another school's
+        -- pupil (0157).
+        perform public.assert_own('students', nullif(v_link->>'related_student_id','')::uuid);
         insert into public.student_links(student_id, related_student_id, relation, created_by)
         values (v_student, nullif(v_link->>'related_student_id','')::uuid,
                 nullif(v_link->>'relation',''), v_actor)
@@ -697,7 +721,8 @@ begin
       -- family_id stamped so the admission fee shows on the family sheet like
       -- any other payment. Before 0036 this was left null.
       insert into public.payments(student_id, family_id, amount, method, receipt_no, status, received_by, note, created_at)
-      values (v_student, v_family, v_af_amt, 'cash', v_af_receipt, 'verified', v_actor, 'Admission fee', v_at)
+      values (v_student, v_family, v_af_amt, 'cash', v_af_receipt, 'verified', v_actor,
+              concat_ws(' ', 'Admission fee', nullif(current_setting('app.offline_receipt_note', true), '')), v_at)
       returning id into v_af_pay;
       insert into public.payment_allocations(payment_id, invoice_id, amount)
       values (v_af_pay, v_af_inv, v_af_amt);
@@ -748,29 +773,68 @@ declare
   v_left     bigint;
   v_last     bigint;
   v_blocks   jsonb := '[]'::jsonb;
+  v_off      uuid;
 begin
-  if v_school is null or v_user is null then
-    raise exception 'This login is not active in a school. Ask the school office to switch it back on.'
-      using errcode = '42501';
-  end if;
   if p_device_id is null then
     raise exception 'The app did not say which device this is. Update the app and try again.'
       using errcode = '22023';
+  end if;
+  if v_user is null then
+    raise exception 'This login is not active in a school. Ask the school office to switch it back on.'
+      using errcode = '42501';
+  end if;
+  -- A LOGIN SWITCHED OFF WHILE ITS DEVICE HELD WORK. The staff-exit flow sets
+  -- profiles.active = false, and money taken before that must not vanish with
+  -- the login. Its device is told it is revoked, which makes the app hand in
+  -- everything it holds and then forget it; fn__offline_apply_one keeps each
+  -- entry for the owner (login_off). Only a device this login has used here,
+  -- and only a role that could have made the work.
+  if v_school is null then
+    select p.school_id, p.role into v_off, v_role
+      from public.profiles p
+     where p.id = v_user and not p.active and p.school_id is not null;
+    if v_off is not null
+       and v_role in ('owner', 'principal', 'admin_clerk', 'accountant', 'class_teacher', 'subject_teacher')
+       and exists (select 1 from public.sync_devices d
+                    where d.school_id = v_off and d.device_id = p_device_id and d.user_id = v_user) then
+      return jsonb_build_object('server_time', now(), 'status', null, 'role', v_role,
+        'can_write', false, 'revoked', true, 'login_off', true, 'lease_until', null,
+        'receipt_blocks', '[]'::jsonb, 'command_version', 1,
+        'min_app_version', public.fn__min_app_version());
+    end if;
+    raise exception 'This login is not active in a school. Ask the school office to switch it back on.'
+      using errcode = '42501';
   end if;
   if v_platform not in ('web', 'android', 'windows') then
     v_platform := 'other';
   end if;
   v_status := public.fn_effective_status(v_school);
 
-  -- A login with a role in this school. Without one (the vendor on a support
-  -- visit) there is the clock and nothing to keep.
+  -- A login with a role in this school that enters work. Without one (the
+  -- vendor on a support visit, a parent, the observer) there is the clock and
+  -- nothing to keep: no device is recorded, so nothing it sends can fill the
+  -- owner's list of refused work.
   select p.role into v_role from public.profiles p
    where p.id = v_user and p.active and p.school_id = v_school;
-  if v_role is null then
-    return jsonb_build_object('server_time', now(), 'status', v_status, 'role', null,
+  if v_role is null
+     or v_role not in ('owner', 'principal', 'admin_clerk', 'accountant', 'class_teacher', 'subject_teacher') then
+    return jsonb_build_object('server_time', now(), 'status', v_status, 'role', v_role,
       'can_write', false, 'revoked', false, 'lease_until', null,
       'receipt_blocks', '[]'::jsonb, 'command_version', 1,
       'min_app_version', public.fn__min_app_version());
+  end if;
+
+  -- A device id is the app's own choice, so any limit counted per device counts
+  -- whatever the caller makes up. Twenty new devices a day for one login is far
+  -- beyond a school's need and stops a script registering thousands.
+  if not exists (select 1 from public.sync_devices d
+                  where d.school_id = v_school and d.device_id = p_device_id and d.user_id = v_user)
+     and (select count(*) from public.sync_devices d
+           where d.school_id = v_school and d.user_id = v_user
+             and d.first_seen > now() - interval '1 day') >= 20 then
+    raise exception 'Too many new devices have connected with this login today. Try again '
+      'tomorrow, or ask the school office.'
+      using errcode = '54000';
   end if;
 
   insert into public.sync_devices (school_id, device_id, user_id, platform, app_version)
@@ -821,14 +885,18 @@ begin
       from public.receipt_blocks
      where school_id = v_school and device_id = p_device_id and user_id = v_user
        and closed_at is null;
-    -- Two hundred at a time, topped up below a hundred, two blocks at most and
-    -- ten a day at most, so a device that says it burns through numbers cannot
-    -- run the counter away. The numbers come off the same counter the server
-    -- uses, so a number printed offline is one the server will never print.
+    -- Two hundred at a time, topped up below a hundred, two blocks at most on a
+    -- device, and per LOGIN six open and ten a day at most. Per login, because
+    -- the device id is the caller's to invent: counted per device, a script
+    -- inventing ids ran the counter up by 200 a call. The numbers come off the
+    -- same counter the server uses, so a number printed offline is one the
+    -- server will never print.
     if v_open < 2 and v_left < 100
        and (select count(*) from public.receipt_blocks
-             where school_id = v_school and device_id = p_device_id and user_id = v_user
-               and issued_at > now() - interval '1 day') < 10 then
+             where school_id = v_school and user_id = v_user
+               and issued_at > now() - interval '1 day') < 10
+       and (select count(*) from public.receipt_blocks
+             where school_id = v_school and user_id = v_user and closed_at is null) < 6 then
       insert into public.counters (school_id, key, value) values (v_school, 'receipt', 200)
       on conflict (school_id, key) do update set value = public.counters.value + 200
       returning value into v_last;
@@ -938,6 +1006,17 @@ declare
   v_hint    text;
   v_end     timestamptz;
   v_day     date;
+  v_out     jsonb;
+  v_cleared uuid[];
+  v_office  boolean;
+  v_session uuid;
+  v_class   uuid;
+  v_subject uuid;
+  v_stream  public.subjects.stream%type;
+  v_adm     jsonb;
+  v_gr      text;
+  v_cons    text;
+  v_raced   text;
 begin
   -- Without an id nothing can be kept or answered twice.
   if jsonb_typeof(p_cmd) is distinct from 'object' then
@@ -985,6 +1064,15 @@ begin
   if v_dev.revoked_at is not null then
     return public.fn__offline_reject(v_id, p_school, p_user, p_device, v_type, v_at, v_p,
       'device_revoked', 'This device was switched off by the school, so this was not saved. '
+      || 'The owner can see it under offline work.');
+  end if;
+  -- A login switched off since the work was made (the staff-exit flow): kept for
+  -- the owner like a switched-off device's work, never applied. After the id
+  -- lookup, so an entry that did go in is still answered "applied".
+  if not exists (select 1 from public.profiles p
+                  where p.id = p_user and p.active and p.school_id = p_school) then
+    return public.fn__offline_reject(v_id, p_school, p_user, p_device, v_type, v_at, v_p,
+      'login_off', 'This login was switched off by the school, so this was not saved. '
       || 'The owner can see it under offline work.');
   end if;
 
@@ -1053,7 +1141,10 @@ begin
   end if;
 
   begin
-    perform set_config('app.offline_at', v_at::text, true);
+    -- Never later than now: a device clock a few minutes fast must not put a
+    -- payment taken at 23:55 into tomorrow's cash book.
+    perform set_config('app.offline_at', least(v_at, now())::text, true);
+    perform set_config('app.offline_kept', '', true);
     if v_bypass then
       perform set_config('app.offline_replay', 'on', true);
     end if;
@@ -1084,65 +1175,145 @@ begin
         using errcode = '22008', hint = 'offline:bad_date';
     end if;
 
-    if v_type = 'attendance.day' then
-      -- An entry for a pupil made later on another device is left as it is.
-      select coalesce(jsonb_agg(q.e) filter (where not q.newer), '[]'::jsonb),
-             coalesce(jsonb_agg(q.e->'enrollment_id') filter (where q.newer), '[]'::jsonb)
-        into v_keep, v_newer
-        from (select e, exists (
-                       select 1 from public.attendance_daily ad
-                        where ad.school_id = p_school
-                          and ad.enrollment_id = (e->>'enrollment_id')::uuid
-                          and ad.attendance_date = (v_p->>'date')::date
-                          and coalesce(ad.authored_at, ad.updated_at) > v_at) as newer
-                from jsonb_array_elements(v_p->'marks') e) q;
-      v_res := public.fn_mark_attendance((v_p->>'date')::date, v_keep, v_p->>'reason');
+    -- REGISTERS AND MARKS. Two kinds of entry are left out and the rest goes in:
+    --   * a pupil whose entry was decided later, on another device or on the
+    --     screen (kept_newer), including a mark cleared later, which leaves no
+    --     row to compare with but does leave its deletion in the audit log;
+    --   * a pupil no longer on this register or sheet, or no longer this
+    --     login's to mark: left, moved section, enrolment gone (left_out). The
+    --     screen's function refuses a whole sheet for one such pupil, which
+    --     for work made days ago would refuse the whole day's work for good.
+    -- Each test below is the screen function's own, so what is left out here is
+    -- exactly what it would refuse. If nothing at all can go in for that
+    -- reason, the entry is refused, so it is seen rather than quietly empty.
+    if v_type in ('attendance.day', 'attendance.subject', 'marks.exam', 'marks.test') then
+      if v_type = 'attendance.day' then
+        v_office := public.has_role('owner');
+        select coalesce(jsonb_agg(q.e) filter (where q.ok and not q.newer), '[]'::jsonb),
+               coalesce(jsonb_agg(q.e->'enrollment_id') filter (where q.ok and q.newer), '[]'::jsonb),
+               coalesce(jsonb_agg(q.e->'enrollment_id') filter (where not q.ok), '[]'::jsonb)
+          into v_keep, v_newer, v_out
+          from (select e,
+                       exists (select 1 from public.enrollments en
+                                where en.id = (e->>'enrollment_id')::uuid and en.school_id = p_school
+                                  and (v_office
+                                       or public.fn_may_manage_class(en.session_id, en.class_id, en.section_id))) as ok,
+                       exists (select 1 from public.attendance_daily ad
+                                where ad.school_id = p_school
+                                  and ad.enrollment_id = (e->>'enrollment_id')::uuid
+                                  and ad.attendance_date = (v_p->>'date')::date
+                                  and coalesce(ad.authored_at, ad.updated_at) > v_at) as newer
+                  from jsonb_array_elements(v_p->'marks') e) q;
 
-    elsif v_type = 'attendance.subject' then
-      select coalesce(jsonb_agg(q.e) filter (where not q.newer), '[]'::jsonb),
-             coalesce(jsonb_agg(q.e->'enrollment_id') filter (where q.newer), '[]'::jsonb)
-        into v_keep, v_newer
-        from (select e, exists (
-                       select 1 from public.attendance_subject sa
-                        where sa.school_id = p_school
-                          and sa.enrollment_id = (e->>'enrollment_id')::uuid
-                          and sa.subject_id = (v_p->>'subject_id')::uuid
-                          and sa.attendance_date = (v_p->>'date')::date
-                          and coalesce(sa.authored_at, sa.updated_at) > v_at) as newer
-                from jsonb_array_elements(v_p->'marks') e) q;
-      v_res := public.fn_mark_subject_attendance(
-        (v_p->>'session_id')::uuid, (v_p->>'class_id')::uuid,
-        nullif(v_p->>'section_id', '')::uuid, (v_p->>'subject_id')::uuid,
-        (v_p->>'date')::date, v_keep);
+      elsif v_type = 'attendance.subject' then
+        select coalesce(jsonb_agg(q.e) filter (where q.ok and not q.newer), '[]'::jsonb),
+               coalesce(jsonb_agg(q.e->'enrollment_id') filter (where q.ok and q.newer), '[]'::jsonb),
+               coalesce(jsonb_agg(q.e->'enrollment_id') filter (where not q.ok), '[]'::jsonb)
+          into v_keep, v_newer, v_out
+          from (select e,
+                       exists (select 1 from public.enrollments en
+                                where en.id = (e->>'enrollment_id')::uuid and en.school_id = p_school
+                                  and en.session_id = (v_p->>'session_id')::uuid
+                                  and en.class_id = (v_p->>'class_id')::uuid
+                                  and en.section_id is not distinct from nullif(v_p->>'section_id', '')::uuid) as ok,
+                       exists (select 1 from public.attendance_subject sa
+                                where sa.school_id = p_school
+                                  and sa.enrollment_id = (e->>'enrollment_id')::uuid
+                                  and sa.subject_id = (v_p->>'subject_id')::uuid
+                                  and sa.attendance_date = (v_p->>'date')::date
+                                  and coalesce(sa.authored_at, sa.updated_at) > v_at) as newer
+                  from jsonb_array_elements(v_p->'marks') e) q;
 
-    elsif v_type = 'marks.exam' then
-      select coalesce(jsonb_agg(q.e) filter (where not q.newer), '[]'::jsonb),
-             coalesce(jsonb_agg(q.e->'enrollment_id') filter (where q.newer), '[]'::jsonb)
-        into v_keep, v_newer
-        from (select e, exists (
-                       select 1 from public.mark_entries me
-                        where me.school_id = p_school
-                          and me.exam_subject_id = (v_p->>'exam_subject_id')::uuid
-                          and me.enrollment_id = (e->>'enrollment_id')::uuid
-                          and coalesce(me.authored_at, me.updated_at) > v_at) as newer
-                from jsonb_array_elements(v_p->'marks') e) q;
-      v_res := public.fn_enter_marks((v_p->>'exam_subject_id')::uuid, v_keep, v_p->>'reason');
+      elsif v_type = 'marks.exam' then
+        v_office := public.has_role('owner', 'principal', 'admin_clerk');
+        select et.session_id, es.class_id, es.subject_id, sub.stream
+          into v_session, v_class, v_subject, v_stream
+          from public.exam_subjects es
+          join public.exam_terms et on et.id = es.exam_term_id and et.school_id = p_school
+          join public.subjects sub on sub.id = es.subject_id and sub.school_id = p_school
+         where es.id = (v_p->>'exam_subject_id')::uuid and es.school_id = p_school;
+        select coalesce(array_agg(distinct (al.before->>'enrollment_id')::uuid), '{}')
+          into v_cleared
+          from public.audit_log al
+         where al.school_id = p_school and al.entity = 'mark_entries' and al.action = 'DELETE'
+           and al.created_at > v_at
+           and (al.before->>'exam_subject_id')::uuid = (v_p->>'exam_subject_id')::uuid;
+        select coalesce(jsonb_agg(q.e) filter (where q.ok and not q.newer), '[]'::jsonb),
+               coalesce(jsonb_agg(q.e->'enrollment_id') filter (where q.ok and q.newer), '[]'::jsonb),
+               coalesce(jsonb_agg(q.e->'enrollment_id') filter (where not q.ok), '[]'::jsonb)
+          into v_keep, v_newer, v_out
+          from (select e,
+                       -- No such paper: everything goes on, for the screen's own
+                       -- function to refuse with its own words.
+                       v_class is null or exists (
+                         select 1
+                           from public.enrollments en
+                           join public.students s on s.id = en.student_id and s.school_id = p_school
+                                                 and s.deleted_at is null
+                          where en.id = (e->>'enrollment_id')::uuid and en.school_id = p_school
+                            and en.session_id = v_session and en.class_id = v_class
+                            and en.status in ('active', 'promoted', 'retained', 'graduated')
+                            and public.fn_takes_subject(v_stream, en.stream)
+                            and (v_office
+                                 or public.fn_may_mark_subject(v_session, v_class, en.section_id, v_subject))) as ok,
+                       exists (select 1 from public.mark_entries me
+                                where me.school_id = p_school
+                                  and me.exam_subject_id = (v_p->>'exam_subject_id')::uuid
+                                  and me.enrollment_id = (e->>'enrollment_id')::uuid
+                                  and coalesce(me.authored_at, me.updated_at) > v_at)
+                       or (e->>'enrollment_id')::uuid = any(v_cleared) as newer
+                  from jsonb_array_elements(v_p->'marks') e) q;
 
-    elsif v_type = 'marks.test' then
-      select coalesce(jsonb_agg(q.e) filter (where not q.newer), '[]'::jsonb),
-             coalesce(jsonb_agg(q.e->'enrollment_id') filter (where q.newer), '[]'::jsonb)
-        into v_keep, v_newer
-        from (select e, exists (
-                       select 1 from public.mark_entries me
-                        where me.school_id = p_school
-                          and me.assessment_id = (v_p->>'assessment_id')::uuid
-                          and me.enrollment_id = (e->>'enrollment_id')::uuid
-                          and coalesce(me.authored_at, me.updated_at) > v_at) as newer
-                from jsonb_array_elements(v_p->'marks') e) q;
-      v_res := public.fn_enter_assessment_marks((v_p->>'assessment_id')::uuid, v_keep,
-                                                v_p->>'reason');
+      else
+        select coalesce(array_agg(distinct (al.before->>'enrollment_id')::uuid), '{}')
+          into v_cleared
+          from public.audit_log al
+         where al.school_id = p_school and al.entity = 'mark_entries' and al.action = 'DELETE'
+           and al.created_at > v_at
+           and (al.before->>'assessment_id')::uuid = (v_p->>'assessment_id')::uuid;
+        select coalesce(jsonb_agg(q.e) filter (where q.ok and not q.newer), '[]'::jsonb),
+               coalesce(jsonb_agg(q.e->'enrollment_id') filter (where q.ok and q.newer), '[]'::jsonb),
+               coalesce(jsonb_agg(q.e->'enrollment_id') filter (where not q.ok), '[]'::jsonb)
+          into v_keep, v_newer, v_out
+          from (select e,
+                       exists (select 1 from public.enrollments en
+                                where en.id = (e->>'enrollment_id')::uuid and en.school_id = p_school) as ok,
+                       exists (select 1 from public.mark_entries me
+                                where me.school_id = p_school
+                                  and me.assessment_id = (v_p->>'assessment_id')::uuid
+                                  and me.enrollment_id = (e->>'enrollment_id')::uuid
+                                  and coalesce(me.authored_at, me.updated_at) > v_at)
+                       or (e->>'enrollment_id')::uuid = any(v_cleared) as newer
+                  from jsonb_array_elements(v_p->'marks') e) q;
+      end if;
+
+      if jsonb_array_length(v_out) > 0 and jsonb_array_length(v_keep) + jsonb_array_length(v_newer) = 0 then
+        raise exception 'None of the pupils in this entry can be entered any more: they have left, '
+          'moved to another section, or are no longer yours to mark. Nothing was saved.'
+          using errcode = '22023', hint = 'offline:not_on_sheet';
+      end if;
+
+      if v_type = 'attendance.day' then
+        v_res := public.fn_mark_attendance((v_p->>'date')::date, v_keep, v_p->>'reason');
+      elsif v_type = 'attendance.subject' then
+        v_res := public.fn_mark_subject_attendance(
+          (v_p->>'session_id')::uuid, (v_p->>'class_id')::uuid,
+          nullif(v_p->>'section_id', '')::uuid, (v_p->>'subject_id')::uuid,
+          (v_p->>'date')::date, v_keep);
+      elsif v_type = 'marks.exam' then
+        v_res := public.fn_enter_marks((v_p->>'exam_subject_id')::uuid, v_keep, v_p->>'reason');
+      else
+        v_res := public.fn_enter_assessment_marks((v_p->>'assessment_id')::uuid, v_keep,
+                                                  v_p->>'reason');
+      end if;
 
     elsif v_type in ('fees.payment', 'fees.family_payment') then
+      -- Who may take money is asked first, the same question fn_record_payment
+      -- asks, so the receipt checks below cannot tell somebody who may not take
+      -- money what has been paid.
+      if not public.has_role('owner', 'principal', 'admin_clerk', 'accountant') then
+        raise exception 'Not permitted to record payments' using errcode = '42501';
+      end if;
       v_family := v_type = 'fees.family_payment';
       v_payer  := nullif(v_p->>(case when v_family then 'family_id' else 'student_id' end), '')::uuid;
       v_amount := (v_p->>'amount')::numeric;
@@ -1152,18 +1323,22 @@ begin
         raise exception 'This payment does not say who paid.' using errcode = '22023';
       end if;
       if v_rno is not null then
+        -- The same payment arriving twice under two ids is kept once: found by
+        -- its number, or, when it was recorded under a number of the server's,
+        -- by the printed number its note carries.
+        if exists (select 1 from public.payments py
+                    where py.school_id = p_school
+                      and py.reversal_of is null and py.amount = v_amount
+                      and (case when v_family then py.family_id = v_payer and py.student_id is null
+                                else py.student_id = v_payer end)
+                      and (py.receipt_no = v_rno
+                           or py.note like '%' || format('(printed as receipt %s)', v_rno) || '%')) then
+          raise exception 'Receipt % is already recorded for this payment, so it was not '
+            'recorded twice.', v_rno
+            using errcode = '23505', hint = 'offline:duplicate';
+        end if;
         if exists (select 1 from public.payments py
                     where py.school_id = p_school and py.receipt_no = v_rno) then
-          -- The same payment arriving twice under two ids is kept once.
-          if exists (select 1 from public.payments py
-                      where py.school_id = p_school and py.receipt_no = v_rno
-                        and py.reversal_of is null and py.amount = v_amount
-                        and (case when v_family then py.family_id = v_payer and py.student_id is null
-                                  else py.student_id = v_payer end)) then
-            raise exception 'Receipt % is already recorded for this payment, so it was not '
-              'recorded twice.', v_rno
-              using errcode = '23505', hint = 'offline:duplicate';
-          end if;
           v_printed := v_rno;
         elsif not exists (select 1 from public.receipt_blocks b
                            where b.school_id = p_school and b.device_id = p_device
@@ -1199,10 +1374,15 @@ begin
         nullif(btrim(coalesce(v_p->>'note', '')), ''));
 
     elsif v_type = 'students.admit' then
+      -- fn_admit_student's own question, asked before the lookups below.
+      if not public.has_role('owner', 'principal', 'admin_clerk') then
+        raise exception 'Not permitted to admit students' using errcode = '42501';
+      end if;
       v_payer := nullif(v_p->>'student_id', '')::uuid;
       if v_payer is null or jsonb_typeof(v_p->'admission') is distinct from 'object' then
         raise exception 'This admission could not be read.' using errcode = '22023';
       end if;
+      v_adm := v_p->'admission';
       if exists (select 1 from public.students s where s.id = v_payer) then
         raise exception 'This pupil was already admitted, so they were not admitted twice.'
           using errcode = '23505', hint = 'offline:duplicate';
@@ -1233,6 +1413,18 @@ begin
             using errcode = '23505', hint = 'offline:possible_duplicate';
         end if;
       end if;
+      -- A GR NUMBER TYPED OFFLINE AND TAKEN SINCE. Two devices offline cannot see
+      -- each other's admissions, so both can type 0401. The child is still
+      -- admitted, with a number allotted, and the entry is flagged, the way a
+      -- receipt number is. Refusing it instead would leave the child, and the
+      -- admission fee on a printed receipt, nowhere. The offline slip prints no
+      -- GR number, so nothing printed is contradicted.
+      v_gr := nullif(btrim(coalesce(v_adm->>'gr_no', '')), '');
+      if v_gr is not null and exists (select 1 from public.students s
+                                       where s.school_id = p_school and s.gr_no = v_gr) then
+        v_adm := v_adm - 'gr_no';
+        v_flags := v_flags || 'gr_renumbered'::text;
+      end if;
       v_rno := nullif(v_p->>'admission_fee_receipt_no', '')::bigint;
       if v_rno is not null
          and (exists (select 1 from public.payments py
@@ -1243,17 +1435,31 @@ begin
         v_printed := v_rno;
         v_rno := null;
         v_flags := v_flags || 'receipt_renumbered'::text;
+        perform set_config('app.offline_receipt_note', format('(printed as receipt %s)', v_printed), true);
       end if;
       perform set_config('app.offline_receipt_no', coalesce(v_rno::text, ''), true);
       perform set_config('app.offline_student_id', v_payer::text, true);
-      v_res := public.fn_admit_student(v_p->'admission');
+      v_res := public.fn_admit_student(v_adm);
+      if v_gr is not null and 'gr_renumbered' = any(v_flags) then
+        v_res := v_res || jsonb_build_object('typed_gr_no', v_gr);
+      end if;
     end if;
 
     if v_printed is not null then
       v_res := v_res || jsonb_build_object('printed_receipt_no', v_printed);
     end if;
+    v_raced := nullif(current_setting('app.offline_kept', true), '');
+    if v_raced is not null then
+      v_newer := coalesce(v_newer, '[]'::jsonb)
+                 || (select coalesce(jsonb_agg(distinct x), '[]'::jsonb)
+                       from unnest(string_to_array(v_raced, ',')) x
+                      where not coalesce(v_newer, '[]'::jsonb) @> to_jsonb(x));
+    end if;
     if v_newer is not null and jsonb_array_length(v_newer) > 0 then
       v_res := v_res || jsonb_build_object('kept_newer', v_newer);
+    end if;
+    if v_out is not null and jsonb_array_length(v_out) > 0 then
+      v_res := v_res || jsonb_build_object('left_out', v_out);
     end if;
 
     insert into public.client_commands
@@ -1265,20 +1471,26 @@ begin
     perform set_config('app.offline_replay', '', true);
     perform set_config('app.offline_receipt_no', '', true);
     perform set_config('app.offline_student_id', '', true);
+    perform set_config('app.offline_receipt_note', '', true);
+    perform set_config('app.offline_kept', '', true);
   exception when others then
     -- Everything the command did is undone with this block, the settings
     -- included.
     get stacked diagnostics v_state = returned_sqlstate, v_err = message_text,
-                            v_hint = pg_exception_hint;
+                            v_hint = pg_exception_hint, v_cons = constraint_name;
     if v_state in ('40001', '40P01', '55P03') then
       return jsonb_build_object('id', v_id, 'status', 'deferred', 'code', 'busy',
         'error', 'The server was busy. This will be sent again.');
     end if;
     return public.fn__offline_reject(v_id, p_school, p_user, p_device, v_type, v_at, v_p,
+      -- "duplicate" tells the device the school already has this and it can be
+      -- let go, so it is said only when that is known: the checks above that
+      -- say so, and the same pupil id inserted twice. Any other unique
+      -- violation is a refusal, kept to be seen and sent again.
       coalesce(case when v_hint like 'offline:%' then substr(v_hint, 9) end,
-               case v_state when '42501' then 'not_permitted'
-                            when '23505' then 'duplicate'
-                            else 'refused' end),
+               case when v_state = '42501' then 'not_permitted'
+                    when v_state = '23505' and v_cons = 'students_pkey' then 'duplicate'
+                    else 'refused' end),
       v_err);
   end;
 
@@ -1307,14 +1519,37 @@ declare
   v_one    jsonb;
   v_out    jsonb := '[]'::jsonb;
 begin
-  if v_school is null or v_user is null then
+  if p_device_id is null then
+    raise exception 'The app did not say which device this is. Update the app and try again.'
+      using errcode = '22023';
+  end if;
+  if v_user is null then
     raise exception 'This login is not active in a school, so its work cannot be sent. Ask the '
       'school office to switch it back on.'
       using errcode = '42501';
   end if;
-  if p_device_id is null then
-    raise exception 'The app did not say which device this is. Update the app and try again.'
-      using errcode = '22023';
+  if v_school is null then
+    -- A login switched off while its device held work (fn_sync_hello told the
+    -- device so): what it hands in is kept for the owner, entry by entry
+    -- (login_off). Only a device this login has used here, and a role that
+    -- could have made the work.
+    select p.school_id into v_school
+      from public.profiles p
+     where p.id = v_user and not p.active and p.school_id is not null
+       and p.role in ('owner', 'principal', 'admin_clerk', 'accountant', 'class_teacher', 'subject_teacher')
+       and exists (select 1 from public.sync_devices d
+                    where d.school_id = p.school_id and d.device_id = p_device_id and d.user_id = v_user);
+    if v_school is null then
+      raise exception 'This login is not active in a school, so its work cannot be sent. Ask the '
+        'school office to switch it back on.'
+        using errcode = '42501';
+    end if;
+  elsif not public.has_role('owner', 'principal', 'admin_clerk', 'accountant',
+                            'class_teacher', 'subject_teacher') then
+    -- Parents and the observer enter nothing, so they send nothing: without
+    -- this, what they sent was refused and KEPT, and filled the owner's list.
+    raise exception 'This login does not enter work, so it has nothing to send.'
+      using errcode = '42501';
   end if;
   if p_commands is null or jsonb_typeof(p_commands) <> 'array' then
     raise exception 'p_commands must be a JSON array' using errcode = '22023';
@@ -1492,18 +1727,24 @@ set search_path = public
 as $$
 declare
   v_school uuid := public.current_school_id();
-  v_all    boolean := public.has_role('owner', 'principal');
   v_n      integer;
 begin
   if v_school is null then
     raise exception 'Not permitted to mark offline work as seen' using errcode = '42501';
   end if;
+  -- Refused or flagged work is kept for the owner to see, so it is not cleared
+  -- by the person it is about. The owner may clear anything; a principal what
+  -- somebody else sent; the sender only their own refused registers and marks,
+  -- never money, an admission or a flagged entry.
   update public.client_commands
      set reviewed_at = now(), reviewed_by = auth.uid()
    where id = p_command_id and school_id = v_school
-     and (v_all or user_id = auth.uid())
      and reviewed_at is null
-     and (status = 'rejected' or cardinality(flags) > 0);
+     and (status = 'rejected' or cardinality(flags) > 0)
+     and (public.has_role('owner')
+          or (public.has_role('principal') and user_id is distinct from auth.uid())
+          or (user_id = auth.uid() and cardinality(flags) = 0
+              and type in ('attendance.day', 'attendance.subject', 'marks.exam', 'marks.test')));
   get diagnostics v_n = row_count;
   return jsonb_build_object('dismissed', v_n > 0);
 end;

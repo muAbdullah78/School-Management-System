@@ -461,7 +461,7 @@ begin
   perform pg_temp.be('Off Teacher');
   r := pg_temp.send('teacher phone', pg_temp.cmd('fees.payment', now(),
          jsonb_build_object('student_id', pg_temp.kid('Ali Raza'), 'amount', 500), v_id));
-  perform pg_temp.ok(r->>'status' = 'rejected' and r->>'code' = 'refused'
+  perform pg_temp.ok(r->>'status' = 'rejected' and r->>'code' = 'not_permitted'
                      and not exists (select 1 from public.payments
                                       where school_id = pg_temp.school() and amount = 500),
     '5a. a teacher cannot take a payment offline either, and nothing of it is left');
@@ -588,7 +588,8 @@ begin
     '7g. anyone can switch off their own device');
 
   perform pg_temp.be('Off Owner');
-  perform pg_temp.ok(jsonb_array_length(public.fn_school_devices()) = 6
+  -- Five: the observer's hello in 1f is not recorded, since it enters nothing.
+  perform pg_temp.ok(jsonb_array_length(public.fn_school_devices()) = 5
                      and public.fn_school_devices() @> jsonb_build_array(jsonb_build_object(
                            'name', 'Off Principal', 'revoke_reason', 'Lost on the bus')),
     '7h. the owner sees every staff device and why one was switched off');
@@ -814,6 +815,211 @@ begin
    where school_id = pg_temp.school();
   perform pg_temp.ok((select cancel_requested_at from public.subscriptions where school_id = pg_temp.school()) is null,
     '11i. and taking the request back clears when it was made');
+end $t$;
+
+
+-- =============================================================================
+-- 12. What the second review found (money, conflicts, security)
+-- =============================================================================
+do $t$
+declare
+  r jsonb; r2 jsonb; v_id uuid := gen_random_uuid(); v_kid uuid := gen_random_uuid();
+  v_rno bigint; v_n integer := 0; v_fail integer := 0; i integer; d date := pg_temp.day_of(now());
+  a jsonb;
+  -- Fresh devices: section 7 switched off the teachers' phones.
+  v_tdev uuid := gen_random_uuid(); v_sdev uuid := gen_random_uuid();
+begin
+  perform pg_temp.be('Off Owner');
+  perform pg_temp.offline_since('owner phone', interval '2 days');
+
+  -- A GR number typed on a device offline and taken since: the child is still
+  -- admitted, with a number allotted, and nothing printed is lost.
+  perform public.fn_admit_student(jsonb_build_object(
+    'full_name', 'Zain Abideen', 'father_name', 'Abideen Shah', 'gr_no', '0401',
+    'session_id', (select id from public.academic_sessions where school_id = pg_temp.school()),
+    'class_id', (select id from public.classes where school_id = pg_temp.school())));
+  a := jsonb_build_object('full_name', 'Hira Bibi', 'father_name', 'Bashir Ahmad', 'gr_no', '0401',
+         'session_id', (select id from public.academic_sessions where school_id = pg_temp.school()),
+         'class_id', (select id from public.classes where school_id = pg_temp.school()),
+         'admission_fee', jsonb_build_object('charged', true, 'amount', 1500));
+  r := pg_temp.send('owner phone', pg_temp.cmd('students.admit', now() - interval '1 hour',
+         jsonb_build_object('student_id', v_kid, 'admission', a, 'admission_fee_receipt_no', 555555)));
+  perform pg_temp.ok(r->>'status' = 'applied'
+                     and r->'flags' @> '["gr_renumbered", "receipt_renumbered"]'::jsonb
+                     and r->'result'->>'typed_gr_no' = '0401'
+                     and (select gr_no from public.students where id = v_kid) <> '0401',
+    '12a. a GR number taken while the device was offline: the child is admitted with another, flagged');
+  perform pg_temp.ok((select note from public.payments
+                       where school_id = pg_temp.school() and student_id = v_kid)
+                       like '%(printed as receipt 555555)%',
+    '12b. a renumbered admission fee says which number was printed, as a fee does');
+
+  -- A payment printed under a number recorded as somebody else's, sent again
+  -- under a second id: found by the printed number its note carries.
+  r := pg_temp.send('owner phone', pg_temp.cmd('fees.payment', now() - interval '1 hour',
+         jsonb_build_object('student_id', pg_temp.kid('Sara Ahmed'), 'amount', 3000, 'receipt_no', 777777)));
+  r2 := pg_temp.send('owner phone', pg_temp.cmd('fees.payment', now() - interval '1 hour',
+         jsonb_build_object('student_id', pg_temp.kid('Sara Ahmed'), 'amount', 3000, 'receipt_no', 777777)));
+  perform pg_temp.ok(r->>'status' = 'applied' and r->'flags' @> '["receipt_renumbered"]'::jsonb
+                     and r2->>'status' = 'rejected' and r2->>'code' = 'duplicate'
+                     and (select count(*) from public.payments
+                           where school_id = pg_temp.school() and amount = 3000
+                             and student_id = pg_temp.kid('Sara Ahmed')) = 1,
+    '12c. a renumbered payment sent again under another id is kept once');
+
+  -- A device clock a few minutes fast: the money is dated now, not tomorrow.
+  r := pg_temp.send('owner phone', pg_temp.cmd('fees.payment', now() + interval '5 minutes',
+         jsonb_build_object('student_id', pg_temp.kid('Ali Raza'), 'amount', 1234)));
+  perform pg_temp.ok(r->>'status' = 'applied'
+                     and (select created_at from public.payments
+                           where school_id = pg_temp.school() and amount = 1234) = now(),
+    '12d. a payment from a clock a little fast is dated now, never in the future');
+
+  -- A teacher probing receipts: told only that they may not take money.
+  v_rno := (select receipt_no from public.payments
+             where school_id = pg_temp.school() and amount = 3000 limit 1);
+  perform pg_temp.be('Off Teacher');
+  perform public.fn_sync_hello(v_tdev, 'android', '1.0.0', null);
+  r := public.fn_offline_apply(v_tdev, jsonb_build_array(pg_temp.cmd('fees.payment', now(),
+         jsonb_build_object('student_id', pg_temp.kid('Sara Ahmed'), 'amount', 3000, 'receipt_no', v_rno), v_id)))
+       ->'results'->0;
+  perform pg_temp.ok(r->>'status' = 'rejected' and r->>'code' = 'not_permitted'
+                     and r->>'error' not like '%already recorded%',
+    '12e. a teacher cannot learn what has been paid from the duplicate check');
+
+  -- Refused money is the owner's to clear, not the sender's.
+  perform pg_temp.ok(not (public.fn_offline_dismiss(v_id)->>'dismissed')::boolean,
+    '12f. the teacher cannot clear their own refused payment from the owner''s list');
+  r := public.fn_offline_apply(v_tdev, jsonb_build_array(pg_temp.cmd('attendance.day', now(),
+         jsonb_build_object('date', d, 'marks', jsonb_build_array(
+           jsonb_build_object('enrollment_id', gen_random_uuid(), 'status', 'absent'))))))->'results'->0;
+  perform pg_temp.ok(r->>'status' = 'rejected' and r->>'code' = 'not_on_sheet'
+                     and (public.fn_offline_dismiss((r->>'id')::uuid)->>'dismissed')::boolean,
+    '12g. a register with nobody left on it is refused and seen, and its sender may clear it');
+  perform pg_temp.be('Off Owner');
+  perform pg_temp.ok((public.fn_offline_dismiss(v_id)->>'dismissed')::boolean,
+    '12h. the owner can');
+
+  -- A mark cleared on the screen after an older offline sheet was made.
+  perform public.fn_enter_marks(pg_temp.paper(), jsonb_build_array(
+    jsonb_build_object('enrollment_id', pg_temp.enr('Ali Raza'), 'marks', 35)));
+  perform public.fn_enter_marks(pg_temp.paper(), jsonb_build_array(
+    jsonb_build_object('enrollment_id', pg_temp.enr('Ali Raza'), 'marks', null)));
+  r := pg_temp.send('owner phone', pg_temp.cmd('marks.exam', now() - interval '1 hour',
+         jsonb_build_object('exam_subject_id', pg_temp.paper(), 'marks', jsonb_build_array(
+           jsonb_build_object('enrollment_id', pg_temp.enr('Ali Raza'), 'marks', 40)))));
+  perform pg_temp.ok(r->>'status' = 'applied'
+                     and r->'result'->'kept_newer' @> jsonb_build_array(pg_temp.enr('Ali Raza'))
+                     and not exists (select 1 from public.mark_entries
+                                      where exam_subject_id = pg_temp.paper()
+                                        and enrollment_id = pg_temp.enr('Ali Raza')),
+    '12i. a mark cleared on the screen stays cleared against an older offline sheet');
+
+  -- One pupil gone from the sheet: the rest of the sheet still goes in.
+  update public.enrollments set status = 'left' where id = pg_temp.enr('Sara Ahmed');
+  r := pg_temp.send('owner phone', pg_temp.cmd('marks.exam', now(),
+         jsonb_build_object('exam_subject_id', pg_temp.paper(), 'marks', jsonb_build_array(
+           jsonb_build_object('enrollment_id', pg_temp.enr('Ali Raza'), 'marks', 71),
+           jsonb_build_object('enrollment_id', pg_temp.enr('Sara Ahmed'), 'marks', 64)))));
+  perform pg_temp.ok(r->>'status' = 'applied'
+                     and r->'result'->'left_out' = jsonb_build_array(pg_temp.enr('Sara Ahmed'))
+                     and (select marks from public.mark_entries
+                           where exam_subject_id = pg_temp.paper()
+                             and enrollment_id = pg_temp.enr('Ali Raza')) = 71,
+    '12j. a pupil who left is left out and reported; the rest of the sheet goes in');
+  update public.enrollments set status = 'active' where id = pg_temp.enr('Sara Ahmed');
+
+  -- The newer entry wins even when it is written while the older one waits:
+  -- the row lock decides, not the read before it.
+  perform public.fn_mark_attendance(d, jsonb_build_array(
+    jsonb_build_object('enrollment_id', pg_temp.enr('Ali Raza'), 'status', 'late')), null);
+  perform set_config('app.offline_at', (now() - interval '3 hours')::text, true);
+  perform set_config('app.offline_kept', '', true);
+  update public.attendance_daily set status = 'absent'
+   where enrollment_id = pg_temp.enr('Ali Raza') and attendance_date = d;
+  delete from public.attendance_daily
+   where enrollment_id = pg_temp.enr('Ali Raza') and attendance_date = d;
+  perform pg_temp.ok((select status::text from public.attendance_daily
+                       where enrollment_id = pg_temp.enr('Ali Raza') and attendance_date = d) = 'late'
+                     and current_setting('app.offline_kept') like '%' || pg_temp.enr('Ali Raza')::text || '%',
+    '12k. an older offline entry reaching the row after a newer one neither overwrites nor clears it');
+  perform set_config('app.offline_at', '', true);
+  perform set_config('app.offline_kept', '', true);
+
+  -- The observer enters nothing, so it records no device and sends nothing.
+  perform pg_temp.be('Off Observer');
+  perform public.fn_sync_hello(gen_random_uuid(), 'web', null, null);
+  perform pg_temp.ok(not exists (select 1 from public.sync_devices
+                                  where user_id = pg_temp.uid('Off Observer')),
+    '12l. a reading login records no device');
+  perform pg_temp.raises($sql$select public.fn_offline_apply(gen_random_uuid(),
+      jsonb_build_array(jsonb_build_object('id', gen_random_uuid(), 'type', 'fees.payment')))$sql$,
+    '12m. and cannot fill the owner''s list with refused work', '%does not enter work%');
+
+  -- Inventing device ids does not run the receipt counter away.
+  perform pg_temp.be('Off Owner');
+  for i in 1..30 loop
+    begin
+      perform public.fn_sync_hello(gen_random_uuid(), 'web', '1.0.0', null);
+      v_n := v_n + 1;
+    exception when others then
+      v_fail := v_fail + 1;
+    end;
+  end loop;
+  perform pg_temp.ok(v_fail > 0
+                     and (select count(*) from public.sync_devices
+                           where user_id = pg_temp.uid('Off Owner') and first_seen > now() - interval '1 day') <= 20
+                     and (select count(*) from public.receipt_blocks
+                           where user_id = pg_temp.uid('Off Owner') and closed_at is null) <= 6
+                     and (select count(*) from public.receipt_blocks
+                           where user_id = pg_temp.uid('Off Owner')
+                             and issued_at > now() - interval '1 day') <= 10,
+    '12n. new device ids are capped per login, and so are the receipt numbers handed out');
+
+  -- One link to another school's pupil, behind one of our own.
+  perform pg_temp.raises(format($sql$select public.fn_admit_student(%L::jsonb)$sql$,
+      jsonb_build_object('full_name', 'Link Test', 'father_name', 'Test Father',
+        'session_id', (select id from public.academic_sessions where school_id = pg_temp.school()),
+        'class_id', (select id from public.classes where school_id = pg_temp.school()),
+        'links', jsonb_build_array(
+          jsonb_build_object('related_student_id', pg_temp.kid('Ali Raza'), 'relation', 'sibling'),
+          jsonb_build_object('related_student_id', pg_temp.kid('Their Child'), 'relation', 'sibling')))),
+    '12o. every sibling link is checked, not only the first');
+
+  -- A login switched off while its device held work.
+  perform pg_temp.be('Off Subject');
+  perform public.fn_sync_hello(v_sdev, 'android', '1.0.0', null);
+  alter table public.profiles disable trigger user;
+  update public.profiles set active = false where full_name = 'Off Subject';
+  alter table public.profiles enable trigger user;
+  perform pg_temp.be('Off Subject');
+  r := public.fn_sync_hello(v_sdev, 'android', '1.0.0', null);
+  perform pg_temp.ok((r->>'revoked')::boolean and not (r->>'can_write')::boolean,
+    '12p. a switched-off login''s device is told to hand in what it holds');
+  r := public.fn_offline_apply(v_sdev, jsonb_build_array(pg_temp.cmd('attendance.day', now(),
+         jsonb_build_object('date', d, 'marks', jsonb_build_array(
+           jsonb_build_object('enrollment_id', pg_temp.enr('Ali Raza'), 'status', 'absent'))))))->'results'->0;
+  perform pg_temp.ok(r->>'status' = 'rejected' and r->>'code' = 'login_off'
+                     and exists (select 1 from public.client_commands
+                                  where id = (r->>'id')::uuid and error_code = 'login_off'
+                                    and payload is not null),
+    '12q. and what it hands in is kept for the owner, not lost with the login');
+  perform pg_temp.raises($sql$select public.fn_sync_hello(gen_random_uuid(), 'web', null, null)$sql$,
+    '12r. a switched-off login on a device it never used here gets nothing', '%not active%');
+  alter table public.profiles disable trigger user;
+  update public.profiles set active = true where full_name = 'Off Subject';
+  alter table public.profiles enable trigger user;
+
+  -- A school cancelled before 0157 has no time; an unrelated update must not give it one.
+  alter table public.subscriptions disable trigger trg_subscription_stops;
+  update public.subscriptions set status = 'cancelled', cancelled_at = null
+   where school_id = (select id from public.schools where name = 'Other Offline School');
+  alter table public.subscriptions enable trigger trg_subscription_stops;
+  update public.subscriptions set trial_ends_on = trial_ends_on
+   where school_id = (select id from public.schools where name = 'Other Offline School');
+  perform pg_temp.ok((select cancelled_at from public.subscriptions
+                       where school_id = (select id from public.schools where name = 'Other Offline School')) is null,
+    '12s. a cancellation with no recorded time keeps none after an unrelated update');
 end $t$;
 
 rollback;
