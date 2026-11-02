@@ -24,8 +24,10 @@ function state(over: Partial<OfflineState> = {}): OfflineState {
   }
 }
 
-const setOnline = (v: boolean) => Object.defineProperty(globalThis.navigator, 'onLine', { value: v, configurable: true })
-afterEach(() => setOnline(true))
+// Node 20 (CI) has no global navigator and Node 22 has one without onLine, so
+// the browser's answer is stubbed whole rather than patched onto what is there.
+const setOnline = (v: boolean) => vi.stubGlobal('navigator', { onLine: v })
+afterEach(() => { vi.unstubAllGlobals() })
 
 const register = { type: 'attendance.day' as const, payload: { date: '2026-11-01', marks: [] }, label: 'Register' }
 

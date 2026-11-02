@@ -7,7 +7,7 @@
 //
 // Everything here is a thin call. The outbox, the clock and the retry rules
 // live beside this file, not in it.
-import { requireSupabase } from '../lib/supabase'
+import { requireSupabase } from '@/lib/supabase'
 
 /** The command types the server understands, release 1. */
 export type CommandType =

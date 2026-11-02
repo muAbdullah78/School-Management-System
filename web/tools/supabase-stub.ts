@@ -31,6 +31,9 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 export const supabase: SupabaseClient | null = null
 
+/** No offline copies either: the real module has none without IndexedDB. */
+export const readStore = null
+
 export function requireSupabase(): SupabaseClient {
   throw new Error(
     'web/tools/supabase-stub.ts: a harness tried to reach the database. The '
