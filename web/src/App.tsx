@@ -20,6 +20,9 @@ import { PlatformPage } from '@/pages/platform/PlatformPage'
 import { PortalLicenceGate } from '@/components/PortalLicenceGate'
 import { CheckIn } from '@/pages/CheckIn'
 import { ChoosePlan } from '@/pages/ChoosePlan'
+import { isNativeApp } from '@/native/native'
+import { InAppSubscription } from '@/native/InAppSubscription'
+import { NotInTheApp } from '@/native/NotInTheApp'
 import { Dashboard } from '@/pages/Dashboard'
 import { FeesPage } from '@/pages/fees/FeesPage'
 import { AttendancePage } from '@/pages/attendance/AttendancePage'
@@ -109,17 +112,23 @@ export default function App() {
             <Route
               path="/operator"
               element={
-                <RedirectIfSignedIn>
-                  <Login door={OPERATOR_DOOR} />
-                </RedirectIfSignedIn>
+                isNativeApp() ? <NotInTheApp what="The operator console" /> : (
+                  <RedirectIfSignedIn>
+                    <Login door={OPERATOR_DOOR} />
+                  </RedirectIfSignedIn>
+                )
               }
             />
             <Route
               path="/signup"
               element={
-                <RedirectIfSignedIn>
-                  <Signup />
-                </RedirectIfSignedIn>
+                // The Android app signs in to schools that exist; a new school
+                // signs up on the website, where the prices are.
+                isNativeApp() ? <Navigate to="/login" replace /> : (
+                  <RedirectIfSignedIn>
+                    <Signup />
+                  </RedirectIfSignedIn>
+                )
               }
             />
             {/* Both OUTSIDE ProtectedRoute, and they have to be. Somebody who
@@ -169,7 +178,9 @@ export default function App() {
               path="/plan"
               element={
                 <ProtectedRoute>
-                  <ChoosePlan />
+                  {/* No plans or prices inside the Android app (Google Play's
+                      payment rules): where the school stands, and no more. */}
+                  {isNativeApp() ? <InAppSubscription page /> : <ChoosePlan />}
                 </ProtectedRoute>
               }
             />
@@ -179,9 +190,11 @@ export default function App() {
             <Route
               path="/platform"
               element={
-                <ProtectedRoute>
-                  <PlatformPage />
-                </ProtectedRoute>
+                isNativeApp() ? <NotInTheApp what="The operator console" /> : (
+                  <ProtectedRoute>
+                    <PlatformPage />
+                  </ProtectedRoute>
+                )
               }
             />
             {/* A parent account never reaches the staff shell. The database

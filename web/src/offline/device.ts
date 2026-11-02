@@ -1,6 +1,7 @@
 // Which device this is, what it runs on, and which version of the offline
 // protocol it speaks.
 import type { Platform } from './server'
+import { isNativeApp } from '@/native/native'
 
 /**
  * The version of this app as far as working offline is concerned. The server
@@ -54,12 +55,8 @@ export function deviceId(): string {
 
 export function platform(): Platform {
   if (typeof window === 'undefined') return 'web'
-  const w = window as unknown as {
-    Capacitor?: { isNativePlatform?: () => boolean }
-    __TAURI__?: unknown
-    __TAURI_INTERNALS__?: unknown
-  }
-  if (w.Capacitor?.isNativePlatform?.()) return 'android'
+  if (isNativeApp()) return 'android'
+  const w = window as unknown as { __TAURI__?: unknown; __TAURI_INTERNALS__?: unknown }
   if (w.__TAURI__ !== undefined || w.__TAURI_INTERNALS__ !== undefined) return 'windows'
   return 'web'
 }

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { PRODUCT_NAME, config } from '@/lib/config'
 import { schoolLabel } from '@/lib/schoolLabel'
 import type { Door } from '@/auth/doors'
+import { isNativeApp } from '@/native/native'
 
 /**
  * The frame around every screen a visitor sees BEFORE they are signed in:
@@ -523,22 +524,26 @@ export function AuthLayout({ door, schoolName, children }: AuthLayoutProps) {
               stays 36px. Spending the last of a 320px budget on the label of a
               secondary link rather than on the product's own name is the wrong
               way round. */}
-          <a
-            href={config.siteUrl}
-            aria-label="Back to the website"
-            className="inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-lg px-2 text-[13px] text-slate-500 hover:text-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 sm:text-sm"
-          >
-            <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none">
-              <path
-                d="M9.5 3.5 5 8l4.5 4.5"
-                stroke="currentColor"
-                strokeWidth="1.7"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-            <span className="hidden sm:inline">Back to the website</span>
-          </a>
+          {/* Not inside the Android app: the website sells the subscription, and an
+              app on Google Play may not point anybody to pay outside it. */}
+          {!isNativeApp() && (
+            <a
+              href={config.siteUrl}
+              aria-label="Back to the website"
+              className="inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-lg px-2 text-[13px] text-slate-500 hover:text-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 sm:text-sm"
+            >
+              <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none">
+                <path
+                  d="M9.5 3.5 5 8l4.5 4.5"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              <span className="hidden sm:inline">Back to the website</span>
+            </a>
+          )}
         </div>
       </header>
 

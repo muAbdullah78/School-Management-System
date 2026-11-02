@@ -14,6 +14,8 @@ import { AuditLog } from './settings/AuditLog'
 import { StaffCheckin } from './settings/StaffCheckin'
 import { SupportVisits } from './settings/SupportVisits'
 import { Subscription } from './settings/Subscription'
+import { isNativeApp } from '@/native/native'
+import { InAppSubscription } from '@/native/InAppSubscription'
 
 type SectionKey =
   | 'school' | 'sessions' | 'classes' | 'feeheads' | 'fees' | 'increase' | 'users' | 'checkin'
@@ -84,6 +86,16 @@ const GROUPS: readonly SectionGroup<SectionKey>[] = [
 
 const KEYS = GROUPS.flatMap((g) => g.items.map((i) => i.key))
 
+/** Inside the Android app the Subscription page shows where the school stands
+ *  and nothing about paying (Google Play's payment rules), so it says so. */
+function groupsHere(): readonly SectionGroup<SectionKey>[] {
+  if (!isNativeApp()) return GROUPS
+  return GROUPS.map((g) => ({
+    ...g,
+    items: g.items.map((i) => (i.key === 'subscription' ? { ...i, ask: 'Your plan and where the school stands.' } : i)),
+  }))
+}
+
 export function SettingsPage() {
   // In the URL, so a warning elsewhere can link straight to the screen that
   // fixes it rather than telling the school which tab to go and find.
@@ -97,7 +109,7 @@ export function SettingsPage() {
         <h1 className="text-xl font-semibold text-slate-800">Settings</h1>
         <p className="mt-0.5 text-sm text-slate-500">How the school is set up. Most of it is done once and left alone.</p>
       </div>
-      <SectionLayout groups={GROUPS} value={section} onChange={setSection} label="Setting"
+      <SectionLayout groups={groupsHere()} value={section} onChange={setSection} label="Setting"
         picked={nav.picked} onPick={(k) => setSection(k, { explicit: true, push: true })}
         onIndex={nav.clear} indexLabel="All settings">
         {section === 'school' && <SchoolProfile />}
@@ -110,7 +122,7 @@ export function SettingsPage() {
         {section === 'checkin' && <StaffCheckin />}
         {section === 'import' && <ImportData />}
         {section === 'rollover' && <Rollover />}
-        {section === 'subscription' && <Subscription />}
+        {section === 'subscription' && (isNativeApp() ? <InAppSubscription /> : <Subscription />)}
         {section === 'audit' && <AuditLog />}
         {section === 'support' && <SupportVisits />}
         {section === 'backup' && <Backup />}

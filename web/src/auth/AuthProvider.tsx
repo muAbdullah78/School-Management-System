@@ -12,6 +12,7 @@ import {
 import type { Session } from '@supabase/supabase-js'
 import { supabase, readStore } from '@/lib/supabase'
 import { cacheSchoolId } from '@/lib/offlineQueue'
+import { appOrigin } from '@/lib/config'
 import type { Role } from './roles'
 import { gateIsLoading, initialGate, reduceGate } from './authGate'
 
@@ -255,7 +256,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const sendReset = useCallback(async (email: string) => {
     if (!supabase) return { error: 'App is not configured.' }
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset`,
+      redirectTo: `${appOrigin()}/reset`,
     })
     // Reported only when the request itself failed: no network, or the address
     // is rate-limited. Not "no such user", which this must not disclose.

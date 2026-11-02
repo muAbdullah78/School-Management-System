@@ -225,11 +225,17 @@ broken or half-done.
 
 1. **Packaging.**
    - The built web app goes inside the app.
-   - The package name is permanent once published, for example
-     `site.theschoolmanager.app`; it is confirmed before chunk 5.
-   - It targets the Android version Google requires at upload.
+   - The package name is permanent once published: `site.theschoolmanager.app`,
+     the website's domain reversed. The name on the phone is The School Manager.
+     `mobile/check-versions.mjs` fails the build if either place drifts.
+   - Android 7.0 and later, built for API 36 (Capacitor 8).
+   - No Android backup and no copying to a new phone: the app holds its own
+     receipt-number blocks, and a copy on a second phone would print the same
+     numbers. A new phone signs in afresh.
 2. **Native pieces.**
-   - Network status (more reliable than the browser's).
+   - Network status: Android's own view of the network is passed to the
+     WebView, so `navigator.onLine` and the online and offline events work and
+     no screen needs to know it runs in an app.
    - The back button follows the app's own history.
    - Printing through Android's print system: receipts, challans and result
      cards. The browser's print does nothing inside an Android app.
@@ -244,9 +250,12 @@ broken or half-done.
    - The website and the Windows program keep all of that.
    - Signup stays on the website. The app is sign-in only.
 4. **Build.**
-   - GitHub Actions builds a signed release bundle (`.aab`) on every tag.
-   - The upload key lives in repository secrets.
-   - It can upload straight to the internal testing track.
+   - GitHub Actions builds a debug APK on every pull request that touches
+     `web/` or `mobile/`, and a signed release bundle (`.aab`) on every tag
+     `android-vX.Y.Z`.
+   - The upload key lives in repository secrets; `mobile/README.md` has the
+     steps and the checklist to run on a real phone.
+   - The first upload to Google Play is by hand (Play Console requires it).
    - Old app versions are told to update when the server needs a newer one.
 
 ## 7. Google Play readiness

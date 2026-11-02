@@ -10,6 +10,7 @@ import { fmtDate, todayISO } from '@/lib/format'
 import { LoadError, Button, inputClass, buttonClass } from '@/components/ui'
 import { AskDialog } from '@/components/AskDialog'
 import { isMissingFunction } from '@/lib/notInstalled'
+import { appOrigin } from '@/lib/config'
 
 /** Build the deep link a teacher's phone camera opens to check in. */
 function checkinUrl(base: string, code: string): string {
@@ -43,7 +44,7 @@ export function StaffCheckin() {
   const codes = useQuery({ queryKey: ['checkinCodes'], queryFn: listCheckinCodes })
   const settings = useQuery({ queryKey: ['schoolSettings'], queryFn: getSchoolSettings })
 
-  const [base, setBase] = useState(typeof window !== 'undefined' ? window.location.origin : '')
+  const [base, setBase] = useState(appOrigin())
   const [poster, setPoster] = useState<CheckinCode | null>(null)
   const [gate, setGate] = useState(false)
   const [making, setMaking] = useState(false)

@@ -8,6 +8,7 @@ import { SubscriptionLocked } from '@/pages/SubscriptionLocked'
 import { SchoolClosed } from '@/pages/SchoolClosed'
 import { LoginNotAttached } from '@/pages/LoginNotAttached'
 import { useLatch } from '@/hooks/useLatch'
+import { isNativeApp } from '@/native/native'
 
 /**
  * Decides whether a signed-in user sees the school app at all.
@@ -101,6 +102,9 @@ export function LicenceGate({ children }: { children: ReactNode }) {
     // and must not be handed every pupil, fee and mark in the building. Until
     // now all of them got it.
     if (profile.role === 'owner' || profile.role === 'principal') {
+      // Not in the Android app, which may not show a way to pay outside
+      // Google Play: the leader there gets the closed screen, in their words.
+      if (isNativeApp()) return <SchoolClosed licence={data} audience="leader" />
       return <SubscriptionLocked licence={data} />
     }
     return <SchoolClosed licence={data} audience="staff" />

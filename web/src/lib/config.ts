@@ -7,6 +7,8 @@
  * school's own settings row loads.
  */
 
+import { isNativeApp } from '@/native/native'
+
 export const config = {
   supabaseUrl: import.meta.env.VITE_SUPABASE_URL as string | undefined,
   supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined,
@@ -35,6 +37,23 @@ export const guideUrl = `${config.siteUrl.replace(/\/+$/, '')}/guide.html`
 
 /** True only when the app has been pointed at a Supabase project. */
 export const isConfigured = Boolean(config.supabaseUrl && config.supabaseAnonKey)
+
+/**
+ * WHERE THE WEB APP LIVES, for links that leave this device: the parents' door,
+ * the password reset email, the staff check-in poster.
+ *
+ * In a browser that is simply the page's own origin. Inside the Android app the
+ * page is served from https://localhost, which is no address to send a parent or
+ * to print on a poster, so the app names the public one instead. Override it
+ * with VITE_APP_URL if the app ever moves.
+ */
+export const publicAppUrl =
+  (import.meta.env.VITE_APP_URL as string | undefined) ?? 'https://app.theschoolmanager.site'
+
+export function appOrigin(): string {
+  if (typeof window === 'undefined') return ''
+  return (isNativeApp() ? publicAppUrl : window.location.origin).replace(/\/+$/, '')
+}
 
 /**
  * THE VENDOR'S BRAND, which is not the same thing as the title inside a school.

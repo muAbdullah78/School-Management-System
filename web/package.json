@@ -13,6 +13,10 @@
     "harness:node20": "node -e \"require('fs').writeFileSync('/tmp/no-ws.mjs','delete globalThis.WebSocket')\" && NODE_OPTIONS=\"--import file:///tmp/no-ws.mjs\" npm run harness"
   },
   "dependencies": {
+    "@capacitor/app": "8.1.2",
+    "@capacitor/core": "8.5.3",
+    "@capacitor/filesystem": "8.1.5",
+    "@capacitor/share": "8.0.3",
     "@supabase/supabase-js": "^2.45.4",
     "@tanstack/react-query": "^5.56.2",
     "idb": "8.0.3",

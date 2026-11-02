@@ -2,6 +2,8 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '@/auth/AuthProvider'
 import { useLicence } from '@/hooks/useLicence'
 import { expiryMessage, expiryUrgency, type Licence, type Urgency } from '@/lib/licence'
+import { isNativeApp } from '@/native/native'
+import { MANAGED_ELSEWHERE } from '@/native/InAppSubscription'
 
 const STYLES: Record<Exclude<Urgency, 'none'>, string> = {
   info: 'bg-info-50 text-info-900 border-info-200',
@@ -63,6 +65,14 @@ export function LicenceBanner() {
 }
 
 function Tail({ lic, leader, comingDue }: { lic: Licence; leader: boolean; comingDue: boolean }) {
+  // Inside the Android app: no price, no bank details and no way to pay
+  // (Google Play's payment rules). The status above stays; this says who acts.
+  if (isNativeApp()) {
+    if (leader) return <span className="opacity-90">{MANAGED_ELSEWHERE}</span>
+    return lic.status === 'trialing' || comingDue
+      ? null
+      : <span className="opacity-90">Please tell the owner or principal. Nothing is deleted.</span>
+  }
   const link = (words: string) => (
     <Link to={PAY_LINK}
       className="font-medium underline underline-offset-2 hover:no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1">
