@@ -88,7 +88,7 @@
     </div>
 
     <div class="card" id="splash" style="display: none">
-      <h1>Connecting</h1>
+      <h1 id="splashHead">Connecting</h1>
       <p id="splashUrl"></p>
       <div class="center"><button class="link" id="change">Change address</button></div>
     </div>
@@ -113,6 +113,21 @@
         try { localStorage.removeItem(KEY) } catch (e) { /* nothing to undo */ }
       }
 
+      /* THE ADDRESS THAT HAS ANSWERED BEFORE. Offline, nothing answers, and this
+         screen used to treat that exactly like a typo: back to the connect
+         screen, every launch, for as long as the internet was down. But the app
+         keeps a copy of itself on this computer (its service worker) and works
+         offline from it, so an address that has answered once is opened even
+         when nothing answers now. A typo has never answered, so it still comes
+         back here with the reason. */
+      var OK_KEY = 'school_manager_app_ok'
+      function answeredBefore() {
+        try { return localStorage.getItem(OK_KEY) } catch (e) { return null }
+      }
+      function markAnswered(u) {
+        try { localStorage.setItem(OK_KEY, u) } catch (e) { /* checked again next launch */ }
+      }
+
       // The hosted service. One deployment serves every school; which school
       // you are is decided by who signs in, not by the address. So there is a
       // right answer here, and the office PC should be given it rather than
@@ -122,6 +137,10 @@
       // Long enough for a slow school connection to answer, short enough that
       // nobody thinks the program has hung.
       var PROBE_MS = 7000
+
+      /* For an address that has answered before, a short check: it only decides
+         between opening online and opening the copy, and both open the app. */
+      var KNOWN_PROBE_MS = 2500
 
       function normalize(u) {
         u = (u || '').trim()
@@ -140,9 +159,9 @@
        * error status also resolves here, which is correct, because a 500 from the
        * right server is not a reason to refuse the address.
        */
-      function reachable(u) {
+      function reachable(u, ms) {
         var ctl = typeof AbortController === 'function' ? new AbortController() : null
-        var timer = setTimeout(function () { if (ctl) ctl.abort() }, PROBE_MS)
+        var timer = setTimeout(function () { if (ctl) ctl.abort() }, ms || PROBE_MS)
         var opts = { mode: 'no-cors', cache: 'no-store', redirect: 'follow' }
         if (ctl) opts.signal = ctl.signal
         return fetch(u, opts).then(
@@ -158,6 +177,7 @@
       var el = {
         setup: document.getElementById('setup'),
         splash: document.getElementById('splash'),
+        splashHead: document.getElementById('splashHead'),
         splashUrl: document.getElementById('splashUrl'),
         url: document.getElementById('url'),
         err: document.getElementById('err'),
@@ -203,6 +223,7 @@
           el.go.textContent = 'Open'
           if (ok) {
             remember(u)
+            markAnswered(u)
             // assign, not replace: this leaves a history entry, so Alt+Left is
             // a second way back to this screen.
             location.assign(u)
@@ -222,6 +243,7 @@
 
       if (location.hash === '#reset') {
         forget()
+        try { localStorage.removeItem(OK_KEY) } catch (e) { /* nothing to undo */ }
         showSetup(saved || DEFAULT_URL, '')
       } else if (saved) {
         // Check the saved address BEFORE navigating to it. This is the line that
@@ -236,10 +258,26 @@
           forget()
           showSetup(saved, '')
         })
-        reachable(saved).then(function (ok) {
+        // The hosted address every school uses has answered for everybody, so it
+        // counts as known even on a computer that last opened it before this
+        // check existed.
+        var known = answeredBefore() === saved || saved === DEFAULT_URL
+        reachable(saved, known ? KNOWN_PROBE_MS : PROBE_MS).then(function (ok) {
           if (cancelled) return
           if (ok) {
+            markAnswered(saved)
             location.assign(saved)
+            return
+          }
+          if (known) {
+            // Offline, or a connection too weak to answer: open the copy kept on
+            // this computer. A moment on screen first, so Change address can
+            // still be pressed if the address really has changed.
+            el.splashHead.textContent = 'Working offline'
+            el.splashUrl.textContent =
+              'Nothing answered at ' + hostOf(saved) + ', so the app opens from the copy ' +
+              'kept on this computer. Work done now is sent when the internet is back.'
+            setTimeout(function () { if (!cancelled) location.assign(saved) }, 1500)
             return
           }
           showSetup(
