@@ -77,7 +77,7 @@ facial-recognition attendance, online classes, holiday calendar, salary and loan
 management, stock and inventory, student behaviour, daily student diary, study
 material LMS, email alerts, school notice board, transport, parent complaints.
 
-**Two items came back off that list**, on an explicit later decision:
+**Three items came back off that list**, on an explicit later decision:
 
 - **Certificates and ID cards.** A Pakistani school cannot operate without a
   School Leaving Certificate — a family moving city cannot enrol a child
@@ -88,6 +88,11 @@ material LMS, email alerts, school notice board, transport, parent complaints.
   a phone. The loopholes a QR system opens (photograph the code, mark in from
   home) are closed in software, and how is set out where that feature is
   described.
+
+- **A mobile app**, but not a second product. Decided 1 Nov 2026: the same web
+  app packaged for Android (Google Play), working offline, because Pakistani
+  schools will not run on software that stops when the signal does. One
+  codebase, so nothing is written twice. App notifications stay excluded.
 
 `biometric and facial-recognition attendance` stays excluded, and nothing in the
 QR work moves toward it.

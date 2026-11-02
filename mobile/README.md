@@ -24,6 +24,10 @@ the Windows program. Every fix to `web/` reaches the app at its next release.
   the first page puts the app in the background. Unsent work stays put.
 - **Online and offline** come from Android itself (`MainActivity.java`), so the
   offline bar and the outbox react the moment the signal goes or comes back.
+- **Staff check-in** asks for the camera (to read the QR poster; no picture is
+  kept) and, where the school uses it, the location, each at the moment of
+  checking in. Both are declared in the manifest, without which the WebView
+  refuses them silently.
 - **No backups to Google Drive and no copying to a new phone.** The app keeps
   its own blocks of receipt numbers; a copy on a second phone would print the
   same numbers. A new phone simply signs in.
@@ -98,3 +102,5 @@ Run this on the internal testing build before each release.
 7. Settings, Subscription: plan and status, no prices or bank details.
 8. Users, the parents' link: it reads `https://app.theschoolmanager.site/parents`.
 9. Forgot password: the email's link opens the reset page on the website.
+10. Staff check-in from the poster: the app asks for the camera, then for the
+    location if the school checks it, and the check-in is recorded.

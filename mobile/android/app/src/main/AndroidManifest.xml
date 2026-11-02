@@ -41,4 +41,13 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- To tell the app when the phone goes offline and comes back. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Staff check-in: the camera reads the school's QR poster (no picture is
+         kept), and, where the school has switched it on, the location confirms
+         the person is at school. Each is asked for at the moment of checking in;
+         without them check-in in the app would fail with no question asked. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
 </manifest>

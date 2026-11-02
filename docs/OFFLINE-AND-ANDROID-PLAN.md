@@ -260,6 +260,11 @@ broken or half-done.
 
 ## 7. Google Play readiness
 
+Done in chunk 7: the privacy page (`/privacy` on the website), and
+`docs/GOOGLE-PLAY.md` with the listing text, the Data safety and content rating
+answers, the demo school and the closed test, step by step. The store art is in
+`mobile/store/`, made by `scripts/shoot-play-store.mjs`.
+
 - **Privacy policy page** on the website (required; there is none today). It
   covers pupils' and parents' data, held for schools.
 - **Data safety answers** and the **content rating**.

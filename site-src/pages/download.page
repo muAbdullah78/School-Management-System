@@ -52,9 +52,10 @@ priority: 0.5
       because a browser tab gets closed by accident.
     </p>
     <p style="margin-top:16px;max-width:66ch">
-      It is not an offline system. Attendance keeps working with no connection;
-      taking a fee does not. If your office loses power and internet for a week,
-      this is not the answer to that.
+      It works offline. Once it has opened on a computer with the internet, the
+      register, marks, fees, expenses and admissions keep working with no
+      connection for up to seven days, and the work goes in when the connection
+      returns. A receipt printed offline is final.
     </p>
     <p style="margin-top:20px">
       <a class="btn btn--ghost" href="/faq">What happens when the internet drops</a>

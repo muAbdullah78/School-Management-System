@@ -75,6 +75,9 @@ const client = {
 
 export const supabase = client as unknown as SupabaseClient
 
+/** No offline copies: nothing here is read from a network. */
+export const readStore = null
+
 export function requireSupabase(): SupabaseClient {
   return client as unknown as SupabaseClient
 }
