@@ -14,15 +14,16 @@ import { AuditLog } from './settings/AuditLog'
 import { StaffCheckin } from './settings/StaffCheckin'
 import { SupportVisits } from './settings/SupportVisits'
 import { Subscription } from './settings/Subscription'
+import { OfflineDevices } from './settings/OfflineDevices'
 import { isNativeApp } from '@/native/native'
 import { InAppSubscription } from '@/native/InAppSubscription'
 
 type SectionKey =
   | 'school' | 'sessions' | 'classes' | 'feeheads' | 'fees' | 'increase' | 'users' | 'checkin'
-  | 'import' | 'rollover' | 'subscription' | 'audit' | 'support' | 'backup'
+  | 'import' | 'rollover' | 'subscription' | 'audit' | 'support' | 'backup' | 'devices'
 
 /**
- * FOURTEEN SCREENS, IN THE ORDER A SCHOOL SETS ITSELF UP.
+ * FIFTEEN SCREENS, IN THE ORDER A SCHOOL SETS ITSELF UP.
  *
  * The school, then its years and classes, then what it charges (fee heads come
  * BEFORE the structure, because you cannot put an amount against a charge that
@@ -80,6 +81,9 @@ const GROUPS: readonly SectionGroup<SectionKey>[] = [
       // what, the other is when the software company looked.
       { key: 'support', label: 'Support visits', ask: 'Every time our support team opened your account, and why.' },
       { key: 'backup', label: 'Backup', ask: 'Download a complete copy of the school’s records to keep yourself.' },
+      // The phones and computers that work offline: switch a lost one off, and
+      // see offline work the school refused or recorded with a note.
+      { key: 'devices', label: 'Devices and offline work', ask: 'Phones and computers working offline, switching one off, and offline work to look at.' },
     ],
   },
 ]
@@ -126,6 +130,7 @@ export function SettingsPage() {
         {section === 'audit' && <AuditLog />}
         {section === 'support' && <SupportVisits />}
         {section === 'backup' && <Backup />}
+        {section === 'devices' && <OfflineDevices />}
       </SectionLayout>
     </div>
   )
