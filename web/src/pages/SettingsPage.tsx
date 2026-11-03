@@ -14,13 +14,16 @@ import { AuditLog } from './settings/AuditLog'
 import { StaffCheckin } from './settings/StaffCheckin'
 import { SupportVisits } from './settings/SupportVisits'
 import { Subscription } from './settings/Subscription'
+import { OfflineDevices } from './settings/OfflineDevices'
+import { isNativeApp } from '@/native/native'
+import { InAppSubscription } from '@/native/InAppSubscription'
 
 type SectionKey =
   | 'school' | 'sessions' | 'classes' | 'feeheads' | 'fees' | 'increase' | 'users' | 'checkin'
-  | 'import' | 'rollover' | 'subscription' | 'audit' | 'support' | 'backup'
+  | 'import' | 'rollover' | 'subscription' | 'audit' | 'support' | 'backup' | 'devices'
 
 /**
- * FOURTEEN SCREENS, IN THE ORDER A SCHOOL SETS ITSELF UP.
+ * FIFTEEN SCREENS, IN THE ORDER A SCHOOL SETS ITSELF UP.
  *
  * The school, then its years and classes, then what it charges (fee heads come
  * BEFORE the structure, because you cannot put an amount against a charge that
@@ -78,11 +81,24 @@ const GROUPS: readonly SectionGroup<SectionKey>[] = [
       // what, the other is when the software company looked.
       { key: 'support', label: 'Support visits', ask: 'Every time our support team opened your account, and why.' },
       { key: 'backup', label: 'Backup', ask: 'Download a complete copy of the school’s records to keep yourself.' },
+      // The phones and computers that work offline: switch a lost one off, and
+      // see offline work the school refused or recorded with a note.
+      { key: 'devices', label: 'Devices and offline work', ask: 'Phones and computers working offline, switching one off, and offline work to look at.' },
     ],
   },
 ]
 
 const KEYS = GROUPS.flatMap((g) => g.items.map((i) => i.key))
+
+/** Inside the Android app the Subscription page shows where the school stands
+ *  and nothing about paying (Google Play's payment rules), so it says so. */
+function groupsHere(): readonly SectionGroup<SectionKey>[] {
+  if (!isNativeApp()) return GROUPS
+  return GROUPS.map((g) => ({
+    ...g,
+    items: g.items.map((i) => (i.key === 'subscription' ? { ...i, ask: 'Your plan and where the school stands.' } : i)),
+  }))
+}
 
 export function SettingsPage() {
   // In the URL, so a warning elsewhere can link straight to the screen that
@@ -97,7 +113,7 @@ export function SettingsPage() {
         <h1 className="text-xl font-semibold text-slate-800">Settings</h1>
         <p className="mt-0.5 text-sm text-slate-500">How the school is set up. Most of it is done once and left alone.</p>
       </div>
-      <SectionLayout groups={GROUPS} value={section} onChange={setSection} label="Setting"
+      <SectionLayout groups={groupsHere()} value={section} onChange={setSection} label="Setting"
         picked={nav.picked} onPick={(k) => setSection(k, { explicit: true, push: true })}
         onIndex={nav.clear} indexLabel="All settings">
         {section === 'school' && <SchoolProfile />}
@@ -110,10 +126,11 @@ export function SettingsPage() {
         {section === 'checkin' && <StaffCheckin />}
         {section === 'import' && <ImportData />}
         {section === 'rollover' && <Rollover />}
-        {section === 'subscription' && <Subscription />}
+        {section === 'subscription' && (isNativeApp() ? <InAppSubscription /> : <Subscription />)}
         {section === 'audit' && <AuditLog />}
         {section === 'support' && <SupportVisits />}
         {section === 'backup' && <Backup />}
+        {section === 'devices' && <OfflineDevices />}
       </SectionLayout>
     </div>
   )

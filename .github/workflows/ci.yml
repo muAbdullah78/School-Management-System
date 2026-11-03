@@ -1156,6 +1156,16 @@ jobs:
         # Verified to fail on both faults deliberately re-introduced.
         run: ./supabase/check-rpc-contract.sh
 
+      - name: Every RPC answered from an offline copy is one that cannot write
+        # web/src/offline/readCache.ts answers the RPCs in
+        # web/src/offline/readRpcs.ts from a saved copy when the network fails
+        # or crawls. That is only safe for a function that can never write:
+        # STABLE or IMMUTABLE, and calling no volatile function, directly or
+        # through another (Postgres lets a STABLE function call one that
+        # writes). This regenerates the list from the database and fails when
+        # it differs from what is committed, in either direction.
+        run: ./supabase/check-read-rpcs.sh
+
       - name: Is every function the app may call reachable from anywhere?
         # The most common defect in this repo has never been wrong logic — it has
         # been correct logic nothing could reach. fn_link_parent, fn_family_for,
@@ -2683,6 +2693,20 @@ jobs:
         # licence, a school that left and could never come back, a trial code
         # that locked a school mid-trial, month-end terms, and TRUNCATE.
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/paid_means_paid.sql
+
+      - name: The work goes on without the internet (0157), every command once, receipts final, nothing dropped
+        # A device that was offline hands in commands. Held here: a command
+        # sent twice applies once (by its id, and a payment by its printed
+        # receipt), a receipt printed offline is the one recorded and the
+        # server never prints it again, a used or foreign number is recorded
+        # under a fresh one and flagged rather than refused, payments are dated
+        # when the money was taken, an older offline entry never overwrites a
+        # newer one, work outside a lease is refused, a locked school keeps
+        # what was done before it locked while later work waits, a switched-off
+        # device is refused and its numbers closed, refusals are kept for the
+        # owner, an offline admission keeps its id and is never made twice, and
+        # the screens' payment and admission functions answer as before.
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/the_work_goes_on_without_the_internet.sql
 
       - name: Student list — does the fast balance equal the real one?
         # fn_student_list recomputes each balance SET-BASED rather than calling

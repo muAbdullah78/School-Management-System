@@ -10,8 +10,9 @@ import {
   type ReactNode,
 } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { supabase } from '@/lib/supabase'
+import { supabase, readStore } from '@/lib/supabase'
 import { cacheSchoolId } from '@/lib/offlineQueue'
+import { appOrigin } from '@/lib/config'
 import type { Role } from './roles'
 import { gateIsLoading, initialGate, reduceGate } from './authGate'
 
@@ -223,8 +224,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    */
   const signOut = useCallback(async () => {
     if (!supabase) return
+    // The copies of what this person read go with them (web/src/offline/
+    // readCache.ts): the next person at a shared computer must never be shown
+    // them. Unsent work is different and stays, locked to this login, for the
+    // next time they sign in here.
+    const uid = (await supabase.auth.getSession()).data.session?.user?.id ?? null
     await supabase.auth.signOut({ scope: 'local' })
     setProfile(null)
+    if (uid && readStore) await readStore.forget(uid).catch(() => undefined)
   }, [])
 
   /**
@@ -249,7 +256,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const sendReset = useCallback(async (email: string) => {
     if (!supabase) return { error: 'App is not configured.' }
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset`,
+      redirectTo: `${appOrigin()}/reset`,
     })
     // Reported only when the request itself failed: no network, or the address
     // is rate-limited. Not "no such user", which this must not disclose.

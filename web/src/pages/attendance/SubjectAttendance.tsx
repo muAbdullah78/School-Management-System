@@ -10,6 +10,8 @@ import { ATTENDANCE_STATUSES } from '@/lib/constants'
 import { todayISO } from '@/lib/format'
 import { LoadError, inputClass } from '@/components/ui'
 import { AskDialog } from '@/components/AskDialog'
+import { useOffline } from '@/offline/OfflineProvider'
+import { directOrOffline, pendingMarks } from '@/offline/write'
 import { sectionScope, subjectScope, taughtClasses } from '@/lib/teaching'
 
 /**
@@ -110,13 +112,20 @@ export function SubjectAttendance({ sessionId }: { sessionId: string }) {
   })
   const rows = roster.data ?? []
 
+  // Marks saved on this device and not sent yet win over the copy of the list.
+  const offline = useOffline()
+  const unsent = useMemo(() => pendingMarks(offline, 'attendance.subject',
+    (p) => p.date === date && p.subject_id === subjectId && p.class_id === classId
+      && (p.section_id ?? null) === (sectionId ?? null),
+    (m) => m.status as AttendanceStatus), [offline, date, subjectId, classId, sectionId])
+
   useEffect(() => {
     if (!roster.data) return
     const next: Record<string, AttendanceStatus> = {}
     // Defaults to what the CLASS TEACHER recorded, not to "present". A child
     // absent from school is absent from every subject, and starting from the
     // day's register means the teacher confirms rather than retypes it.
-    for (const r of roster.data) next[r.enrollment_id] = r.status ?? r.day_status ?? 'present'
+    for (const r of roster.data) next[r.enrollment_id] = unsent.get(r.enrollment_id) ?? r.status ?? r.day_status ?? 'present'
     setMarks(next)
     setMsg(null)
     setTouched(false)
@@ -132,11 +141,24 @@ export function SubjectAttendance({ sessionId }: { sessionId: string }) {
   }, [rows, marks])
 
   const save = useMutation({
-    mutationFn: () => markSubjectAttendance(
-      sessionId, classId, sectionId, subjectId, date,
-      rows.map((r) => ({ enrollment_id: r.enrollment_id, status: marks[r.enrollment_id] ?? 'present' })),
-    ),
-    onSuccess: (res) => {
+    mutationFn: async () => {
+      const payload = rows.map((r) => ({ enrollment_id: r.enrollment_id, status: marks[r.enrollment_id] ?? 'present' }))
+      const direct = () => markSubjectAttendance(sessionId, classId, sectionId, subjectId, date, payload)
+      if (!offline.active) return { queued: false as const, result: await direct() }
+      const subject = subjects.data?.find((x) => x.id === subjectId)?.name ?? 'subject'
+      return directOrOffline(offline, direct, {
+        type: 'attendance.subject',
+        payload: { session_id: sessionId, class_id: classId, section_id: sectionId ?? null, subject_id: subjectId, date, marks: payload },
+        label: `${subject} attendance, ${date}`,
+      })
+    },
+    onSuccess: (w) => {
+      if (w.queued) {
+        setMsg('Saved on this device. It will be sent when the connection returns.')
+        setTouched(false)
+        return
+      }
+      const res = w.result
       setMsg(`Saved ${res.marked}.`)
       setTouched(false)
       qc.invalidateQueries({ queryKey: ['subjectRoster'] })

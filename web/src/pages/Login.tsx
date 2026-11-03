@@ -11,6 +11,7 @@ import {
   AuthBusy,
 } from '@/components/AuthLayout'
 import { DOOR_PATH, OFFICE_DOOR, type Door } from '@/auth/doors'
+import { isNativeApp } from '@/native/native'
 
 /**
  * Turn what the auth service says into something a person can act on.
@@ -254,7 +255,7 @@ export function Login({ door = OFFICE_DOOR }: { door?: Door }) {
             works: they get a whole new school and become its owner, the vendor
             gets an orphan tenant in the console, and the person believes they
             have signed in. */}
-        {door.offerTrial && (
+        {door.offerTrial && !isNativeApp() && (
           <p className="text-center text-sm text-slate-500">
             New school?{' '}
             <Link to={DOOR_PATH.signup} className="font-medium text-brand-700 hover:underline">

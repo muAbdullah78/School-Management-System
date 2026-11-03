@@ -5,6 +5,7 @@ import { useLicence } from '@/hooks/useLicence'
 import { limitBanner } from '@/lib/licence'
 import { pkToday } from '@/lib/db'
 import { buttonClass } from '@/components/ui'
+import { isNativeApp } from '@/native/native'
 
 /**
  * "Your roll is full", on the dashboard only.
@@ -33,7 +34,9 @@ export function RollLimitNotice() {
   if (!data || !data.ok || hidden) return null
   const limit = limitBanner(data, profile?.role)
   if (!limit) return null
-  const canFix = profile?.role === 'owner' || profile?.role === 'principal'
+  // Asking for room is asking for a bigger plan, which the Android app leaves to
+  // the owner outside it (Google Play's payment rules).
+  const canFix = (profile?.role === 'owner' || profile?.role === 'principal') && !isNativeApp()
 
   function hide() {
     setHidden(true)

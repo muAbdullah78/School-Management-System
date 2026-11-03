@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import {
@@ -13,6 +13,8 @@ import { AskDialog } from '@/components/AskDialog'
 import { useAuth } from '@/auth/AuthProvider'
 import { isTeacher, canWrite, APPROVER_ROLES, type Role } from '@/auth/roles'
 import { enqueueAttendance, isNetworkError, attendanceKey, cachedSchoolId } from '@/lib/offlineQueue'
+import { useOffline } from '@/offline/OfflineProvider'
+import { directOrOffline, pendingMarks } from '@/offline/write'
 import { offlineFirst } from '@/lib/offlineCache'
 import { AttendanceSheet, type AttendanceSheetData } from './AttendanceSheet'
 import { AttendanceOverview } from './AttendanceOverview'
@@ -284,20 +286,33 @@ function MarkRegister({ onSubject }: { onSubject?: () => void } = {}) {
   const rows: RosterRow[] = roster.data ?? []
   const dayLocked = rows.length > 0 && rows.every((r) => r.is_locked)
 
+  // MARKS SAVED ON THIS DEVICE AND NOT SENT YET. Laid over what the server last
+  // said, so a register opened again with no signal shows what the teacher
+  // marked, not what was there before; the server takes them when they arrive.
+  const offline = useOffline()
+  const unsent = useMemo(
+    () => pendingMarks(offline, 'attendance.day', (p) => p.date === date, (m) => m.status as AttendanceStatus),
+    [offline, date],
+  )
+  const stored = useCallback((r: RosterRow): AttendanceStatus | null => unsent.get(r.enrollment_id) ?? r.status ?? null, [unsent])
+  const unsentHere = rows.filter((r) => unsent.has(r.enrollment_id)).length
+
   useEffect(() => {
     if (!roster.data) return
     const next: Marks = {}
-    for (const r of roster.data) next[r.enrollment_id] = r.status ?? 'present'
+    for (const r of roster.data) next[r.enrollment_id] = stored(r) ?? 'present'
     setMarks(next)
     setActiveIdx(0)
     setSaveMsg(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roster.data])
 
-  // Dirty = any row whose current mark differs from what the server has stored
-  // (an unmarked row counts as changed, since defaulting it to Present is real).
+  // Dirty = any row whose current mark differs from what is stored, on the
+  // server or saved on this device (an unmarked row counts as changed, since
+  // defaulting it to Present is real).
   const dirty = useMemo(
-    () => rows.some((r) => marks[r.enrollment_id] !== (r.status ?? null)),
-    [rows, marks],
+    () => rows.some((r) => marks[r.enrollment_id] !== stored(r)),
+    [rows, marks, stored],
   )
   // Children with nothing stored yet. They are SHOWN as Present so marking a
   // full class is one press, and the page says so, because a register saved
@@ -375,7 +390,20 @@ function MarkRegister({ onSubject }: { onSubject?: () => void } = {}) {
   const save = useMutation({
     mutationFn: async (): Promise<{ queued: boolean; marked?: number; skipped?: number }> => {
       const payload = rows.map((r) => ({ enrollment_id: r.enrollment_id, status: marks[r.enrollment_id] ?? 'present' }))
-      // Offline (or the network drops mid-save) → queue locally and sync later.
+      if (offline.active) {
+        // Straight to the server while online; with no network, saved on this
+        // device as a command and sent when the connection returns. A register
+        // sent twice changes nothing, so a lost answer costs nothing.
+        const cls = classes.data?.find((c) => c.id === classId)?.name ?? '-'
+        const sec = sections.data?.find((s) => s.id === sectionId)?.name
+        const w = await directOrOffline(offline, () => markAttendance(date, payload), {
+          type: 'attendance.day', payload: { date, marks: payload },
+          label: `Register, ${cls}${sec ? ' ' + sec : ''}, ${date}`,
+        })
+        return w.queued ? { queued: true } : { queued: false, marked: w.result.marked, skipped: w.result.skipped }
+      }
+      // No offline engine for this login (it cannot write offline): the old
+      // local queue, as before 0157.
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
         queueOffline(payload); return { queued: true }
       }
@@ -389,7 +417,7 @@ function MarkRegister({ onSubject }: { onSubject?: () => void } = {}) {
     },
     onSuccess: (res) => {
       if (res.queued) {
-        setSaveMsg('Saved offline: will sync automatically when you’re back online.')
+        setSaveMsg('Saved on this device. It will be sent when the connection returns.')
       } else {
         setSaveMsg(`Saved ${res.marked}${res.skipped ? ` · ${res.skipped} locked, skipped` : ''}.`)
         qc.invalidateQueries({ queryKey: ['roster', sessionId, classId, sectionId ?? 'none', date] })
@@ -719,6 +747,11 @@ function MarkRegister({ onSubject }: { onSubject?: () => void } = {}) {
                 </button>
               )}
               {saveMsg && <span className="text-sm font-medium text-brand-700">{saveMsg}</span>}
+              {!saveMsg && unsentHere > 0 && (
+                <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-800 ring-1 ring-amber-200">
+                  {unsentHere} {unsentHere === 1 ? 'mark is' : 'marks are'} saved on this device and not sent yet
+                </span>
+              )}
               {(save.isError || finalize.isError) && (
                 <span className="text-sm text-danger-600">
                   {((save.error ?? finalize.error) as Error)?.message}

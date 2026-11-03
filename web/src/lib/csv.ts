@@ -1,3 +1,5 @@
+import { isNativeApp, shareFile } from '@/native/native'
+
 /** Minimal CSV builder + download. Values are stringified and quoted when they
  *  contain a comma, quote or newline (RFC-4180 style). No external deps. */
 export function toCSV(headers: string[], rows: (string | number | null | undefined)[][]): string {
@@ -8,8 +10,13 @@ export function toCSV(headers: string[], rows: (string | number | null | undefin
   return [headers.map(esc).join(','), ...rows.map((r) => r.map(esc).join(','))].join('\r\n')
 }
 
-/** Trigger a browser download of arbitrary text content. */
+/** Trigger a browser download of arbitrary text content. Inside the Android
+ *  app, where a download link does nothing, the file goes to the share sheet. */
 export function downloadText(filename: string, content: string, mime = 'text/plain;charset=utf-8;'): void {
+  if (isNativeApp()) {
+    shareFile(filename, content).catch((e: unknown) => { console.error('Could not save', filename, e) })
+    return
+  }
   const blob = new Blob([content], { type: mime })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')

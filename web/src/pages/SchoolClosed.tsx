@@ -1,5 +1,6 @@
 import { useAuth } from '@/auth/AuthProvider'
 import type { Licence } from '@/lib/licence'
+import { MANAGED_ELSEWHERE } from '@/native/InAppSubscription'
 
 /**
  * What a parent or a teacher sees when the school has not renewed.
@@ -31,7 +32,9 @@ import type { Licence } from '@/lib/licence'
  */
 export function SchoolClosed({ licence, audience }: {
   licence?: Licence
-  audience: 'parent' | 'staff'
+  /** 'leader' is the owner or principal inside the Android app, which may not
+   *  show them the way to pay that SubscriptionLocked does on the website. */
+  audience: 'parent' | 'staff' | 'leader'
 }) {
   const { signOut } = useAuth()
   const cancelled = licence?.status === 'cancelled'
@@ -51,7 +54,9 @@ export function SchoolClosed({ licence, audience }: {
         <p className="mt-2 text-sm text-slate-600">
           {audience === 'parent'
             ? 'Your school has to renew its subscription before the portal can be used again. Please contact the school office: they can switch it back on straight away.'
-            : 'The school’s subscription needs renewing before the app can be used again. Please tell the owner or principal; they can switch it back on straight away.'}
+            : audience === 'leader'
+              ? `The school’s subscription needs renewing before the app can be used again. ${MANAGED_ELSEWHERE}`
+              : 'The school’s subscription needs renewing before the app can be used again. Please tell the owner or principal; they can switch it back on straight away.'}
         </p>
 
         {/* The one thing everybody in this position is actually worried about,

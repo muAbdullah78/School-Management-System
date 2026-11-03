@@ -2,6 +2,8 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from '@/lib/queryClient'
 import { AuthProvider } from '@/auth/AuthProvider'
+import { OfflineProvider } from '@/offline/OfflineProvider'
+import { OfflineWorkPage } from '@/pages/OfflineWorkPage'
 import { AppShell } from '@/components/AppShell'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { RedirectIfSignedIn } from '@/components/RedirectIfSignedIn'
@@ -18,6 +20,9 @@ import { PlatformPage } from '@/pages/platform/PlatformPage'
 import { PortalLicenceGate } from '@/components/PortalLicenceGate'
 import { CheckIn } from '@/pages/CheckIn'
 import { ChoosePlan } from '@/pages/ChoosePlan'
+import { isNativeApp } from '@/native/native'
+import { InAppSubscription } from '@/native/InAppSubscription'
+import { NotInTheApp } from '@/native/NotInTheApp'
 import { Dashboard } from '@/pages/Dashboard'
 import { FeesPage } from '@/pages/fees/FeesPage'
 import { AttendancePage } from '@/pages/attendance/AttendancePage'
@@ -70,6 +75,9 @@ export default function App() {
     <ErrorBoundary where="the app">
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
+          {/* Inside the auth provider (it works for whoever is signed in) and
+              outside the router, so a sync keeps running across screens. */}
+          <OfflineProvider>
           <BrowserRouter>
             <Routes>
             {/* Wrapped so a signed-in user is never shown a sign-in form. See
@@ -104,17 +112,23 @@ export default function App() {
             <Route
               path="/operator"
               element={
-                <RedirectIfSignedIn>
-                  <Login door={OPERATOR_DOOR} />
-                </RedirectIfSignedIn>
+                isNativeApp() ? <NotInTheApp what="The operator console" /> : (
+                  <RedirectIfSignedIn>
+                    <Login door={OPERATOR_DOOR} />
+                  </RedirectIfSignedIn>
+                )
               }
             />
             <Route
               path="/signup"
               element={
-                <RedirectIfSignedIn>
-                  <Signup />
-                </RedirectIfSignedIn>
+                // The Android app signs in to schools that exist; a new school
+                // signs up on the website, where the prices are.
+                isNativeApp() ? <Navigate to="/login" replace /> : (
+                  <RedirectIfSignedIn>
+                    <Signup />
+                  </RedirectIfSignedIn>
+                )
               }
             />
             {/* Both OUTSIDE ProtectedRoute, and they have to be. Somebody who
@@ -164,7 +178,9 @@ export default function App() {
               path="/plan"
               element={
                 <ProtectedRoute>
-                  <ChoosePlan />
+                  {/* No plans or prices inside the Android app (Google Play's
+                      payment rules): where the school stands, and no more. */}
+                  {isNativeApp() ? <InAppSubscription page /> : <ChoosePlan />}
                 </ProtectedRoute>
               }
             />
@@ -174,9 +190,11 @@ export default function App() {
             <Route
               path="/platform"
               element={
-                <ProtectedRoute>
-                  <PlatformPage />
-                </ProtectedRoute>
+                isNativeApp() ? <NotInTheApp what="The operator console" /> : (
+                  <ProtectedRoute>
+                    <PlatformPage />
+                  </ProtectedRoute>
+                )
               }
             />
             {/* A parent account never reaches the staff shell. The database
@@ -203,6 +221,9 @@ export default function App() {
                   appears when the school becomes eligible, and stays reachable
                   by address afterwards so somebody can come back and edit. */}
               <Route path="/feedback" element={<RouteBoundary><FeedbackPage /></RouteBoundary>} />
+              {/* NOT in NAV either: reached from the offline bar whenever it
+                  has something to say, and by address. */}
+              <Route path="/offline" element={<RouteBoundary><OfflineWorkPage /></RouteBoundary>} />
               {NAV.filter((n) => n.path !== '/').map((n) => (
                 <Route
                   key={n.path}
@@ -233,6 +254,7 @@ export default function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </BrowserRouter>
+          </OfflineProvider>
         </AuthProvider>
       </QueryClientProvider>
     </ErrorBoundary>

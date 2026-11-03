@@ -69,9 +69,11 @@ merged.resolve = {
     // nothing at all: src/lib/db.ts, platform.ts, licence.ts and photos.ts all
     // import './supabase', so the real module still loaded and the WebSocket
     // throw came back. Proved by deleting globalThis.WebSocket to reproduce
-    // Node 20 — see the npm script `harness:node20`.
+    // Node 20 — see the npm script `harness:node20`. The `../` forms too: the
+    // offline engine's server.ts once imported '../lib/supabase', slipped past
+    // the first two forms, and brought the throw back on the runner.
     {
-      find: /^(@\/lib|\.)\/supabase$/,
+      find: /^(@\/lib|\.|(\.\.\/)+lib)\/supabase$/,
       replacement: fileURLToPath(new URL('./tools/supabase-stub.ts', import.meta.url)),
     },
     ...(Array.isArray(merged.resolve?.alias) ? merged.resolve.alias : []),

@@ -1,0 +1,129 @@
+name: Android app
+
+# The Android app is the web app in web/, packaged with Capacitor (mobile/).
+#
+#   Every pull request that touches either: a debug APK is built, so a change
+#   that breaks the native build is caught before it merges. It is kept for a
+#   week as an artifact, to install on a phone and try.
+#
+#   A tag android-vX.Y.Z, or a manual run: the signed release bundle (.aab)
+#   that is uploaded to Google Play. It needs the upload key and the Supabase
+#   settings; mobile/README.md lists what to add and how.
+
+on:
+  pull_request:
+    paths:
+      - 'mobile/**'
+      - 'web/**'
+      - 'scripts/build-icons.mjs'
+      - '.github/workflows/android.yml'
+  push:
+    tags: ['android-v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build the Android app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 22: Capacitor's command line refuses anything older.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            mobile/package-lock.json
+
+      # Java 21: Capacitor 8 compiles to it.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install the Android project's packages
+        working-directory: mobile
+        run: npm ci
+
+      - name: Capacitor pinned alike in web and mobile, and the package name unchanged
+        working-directory: mobile
+        run: node check-versions.mjs
+
+      - name: A release names its version and has the school database settings
+        if: github.event_name != 'pull_request'
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$VITE_SUPABASE_URL" ] || [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
+            echo "::error::Set the repository variables VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY (Settings, Secrets and variables, Actions, Variables). Without them the app opens on 'not connected'."
+            exit 1
+          fi
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            name="${GITHUB_REF_NAME#android-v}"
+          else
+            name="$(node -p "require('./mobile/package.json').version")"
+          fi
+          if ! echo "$name" | grep -Eq '^[0-9]+\.[0-9]{1,2}\.[0-9]{1,2}$'; then
+            echo "::error::'$name' is not a version like 1.0.0 (minor and patch below 100)"
+            exit 1
+          fi
+          IFS=. read -r major minor patch <<< "$name"
+          # A whole number that grows with every release: 1.2.3 is 10203.
+          echo "APP_VERSION_NAME=$name" >> "$GITHUB_ENV"
+          echo "APP_VERSION_CODE=$((major * 10000 + minor * 100 + patch))" >> "$GITHUB_ENV"
+
+      - name: Build the web app for the phone
+        working-directory: web
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          npm ci
+          npm run build
+
+      - name: Copy it into the Android project
+        working-directory: mobile
+        run: npx cap sync android
+
+      - name: Build a debug APK
+        if: github.event_name == 'pull_request'
+        working-directory: mobile/android
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Keep the debug APK for a week
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: school-manager-android-debug-apk
+          path: mobile/android/app/build/outputs/apk/debug/*.apk
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Build the signed release bundle
+        if: github.event_name != 'pull_request'
+        working-directory: mobile/android
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::error::The upload key is missing. Add the secrets ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD (see mobile/README.md)."
+            exit 1
+          fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          export ANDROID_KEYSTORE_FILE="$RUNNER_TEMP/upload.jks"
+          ./gradlew --no-daemon bundleRelease
+          rm -f "$RUNNER_TEMP/upload.jks"
+
+      - name: Keep the release bundle
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: school-manager-android-${{ env.APP_VERSION_NAME }}-aab
+          path: mobile/android/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error

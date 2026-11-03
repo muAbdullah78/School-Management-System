@@ -1,6 +1,7 @@
 import { requireSupabase } from './supabase'
 import { isMissingFunction } from './notInstalled'
 import type { DueInput, DueResult, RecordDuesResult, DueKind } from './dues'
+import { FRESH_HEADER } from '@/offline/readCache'
 
 // ---- Types (hand-written; kept in sync with supabase/migrations) ----
 export interface SessionRow {
@@ -343,6 +344,15 @@ export async function generateClassInvoices(
 export async function getStudentBalance(studentId: string): Promise<number> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('student_balance', { p_student_id: studentId })
+  if (error) throw new Error(error.message)
+  return Number(data ?? 0)
+}
+
+/** The same, never from an offline copy: for a balance printed on a receipt. */
+export async function getStudentBalanceFresh(studentId: string): Promise<number> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('student_balance', { p_student_id: studentId })
+    .setHeader(FRESH_HEADER, '1')
   if (error) throw new Error(error.message)
   return Number(data ?? 0)
 }

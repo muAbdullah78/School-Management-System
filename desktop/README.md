@@ -37,6 +37,24 @@ Pressing **Open** a second time on a refused address goes anyway, so a network
 oddity cannot lock anybody out either; rule 3 is what makes that safe.
 `#reset` still clears the saved address.
 
+## Opening with no internet
+
+Rule 3 used to treat "offline" exactly like "typo": with the internet down, every
+launch came back to the connect screen, so the program could not be used at all
+on the days a school most needs it to work offline.
+
+Now an address that has **answered at least once** (and the hosted address,
+which answers for everybody) is opened even when nothing answers. The web app
+keeps a copy of itself on the computer (its service worker), so it opens from
+that copy and its offline mode takes over: registers, marks, fees, expenses and
+admissions are kept on the computer and sent when the internet is back. The
+screen says "Working offline" for a moment first, so **Change address** can
+still be pressed. A typo has never answered, so it still comes back here with
+the reason.
+
+The decisions are checked in Chromium by `node scripts/check-desktop-offline.mjs`
+(run by hand; it needs Playwright).
+
 ## Build the installer
 
 The `.msi` is produced by GitHub Actions, not committed. Two ways to get one:

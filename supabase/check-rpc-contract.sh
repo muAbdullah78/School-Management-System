@@ -41,7 +41,8 @@ cd "$(dirname "$0")/.."
 # none of them checked, in exactly the seam this script exists for. A renamed
 # parameter there would have compiled, deployed, and failed the first time the
 # operator opened the console.
-RPC_FILES=$(ls web/src/lib/db.ts web/src/lib/platform.ts 2>/dev/null)
+# 0157 added the offline layer's own calls in web/src/offline/server.ts.
+RPC_FILES=$(ls web/src/lib/db.ts web/src/lib/platform.ts web/src/offline/server.ts 2>/dev/null)
 [ -n "$RPC_FILES" ] || { echo "cannot find any RPC caller under web/src/lib"; exit 1; }
 
 # --- what the database offers -------------------------------------------------

@@ -3631,6 +3631,35 @@ select 'discount codes keep their word (0156)',
        end
 
 union all
+-- 0157. Work done offline is handed in as commands, each applied once, and a
+-- device that takes fees prints receipt numbers it was given in advance.
+select 'work goes on without the internet (0157)',
+       case
+         when to_regclass('public.client_commands') is null
+           or to_regclass('public.receipt_blocks') is null
+           or to_regprocedure('public.fn_offline_apply(uuid,jsonb)') is null
+           or to_regprocedure('public.fn_sync_hello(uuid,text,text,bigint)') is null
+           then 'FAIL: the app cannot hand in work done offline, so a school with weak internet '
+                || 'loses it; apply supabase/bundles/57_the_work_goes_on_without_the_internet.sql'
+         -- An older bundle pasted after 57 puts back a payment or admission
+         -- function that does not know the receipt a device printed, and every
+         -- fee taken offline would then be given a second number.
+         when (select count(*) from pg_proc p
+                 join pg_namespace n on n.oid = p.pronamespace
+                where n.nspname = 'public'
+                  and p.proname in ('fn_record_payment', 'fn_record_family_payment', 'fn_admit_student')
+                  and p.prosrc like '%app.offline_receipt_no%') <> 3
+           then 'FAIL: a receipt printed offline is recorded under a different number; apply '
+                || 'supabase/bundles/57_the_work_goes_on_without_the_internet.sql again'
+         when position('app.offline_replay' in coalesce((select p.prosrc from pg_proc p
+                join pg_namespace n on n.oid = p.pronamespace
+               where n.nspname = 'public' and p.proname = 'enforce_school_id'), '')) = 0
+           then 'FAIL: fees taken offline while a school was paid up are refused when they arrive '
+                || 'after it locked; apply supabase/bundles/57_the_work_goes_on_without_the_internet.sql'
+         else 'PASS'
+       end
+
+union all
 select 'ready for first signup',
        case when (select count(*) from public.schools) = 0
             then 'PASS: no schools yet, as expected'
