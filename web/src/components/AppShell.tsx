@@ -23,6 +23,7 @@ import { useSchoolLogo } from '@/hooks/useSchoolLogo'
 import { useSupportVisit } from '@/hooks/useSupportVisit'
 import { useIsDesktop } from '@/hooks/useIsDesktop'
 import { FIT_MAX_LINES, fitSchoolName } from '@/lib/schoolLabel'
+import { isNativeApp } from '@/native/native'
 
 /* Tailwind reads this file as TEXT, so a class it is going to emit has to
    appear here spelled out in full. `line-clamp-${n}` would be found by nobody,
@@ -472,8 +473,11 @@ export function AppShell() {
                 the software before this row. The handbook opens in a new tab,
                 because losing half-entered attendance to a Help click is what
                 stops people clicking Help. */}
-            <div className={`mt-2 grid gap-1 ${rail ? 'grid-cols-1' : 'grid-cols-3'}`}>
-              <a
+            {/* Not inside the Android app: the handbook has a chapter on paying
+                for the software, and an app on Google Play may not lead anybody
+                to a way to pay outside it. */}
+            <div className={`mt-2 grid gap-1 ${rail ? 'grid-cols-1' : isNativeApp() ? 'grid-cols-2' : 'grid-cols-3'}`}>
+              {!isNativeApp() && <a
                 href={guideUrl}
                 target="_blank"
                 rel="noopener"
@@ -483,7 +487,7 @@ export function AppShell() {
               >
                 <IconBook className="h-4 w-4" />
                 <span className={rail ? 'sr-only' : ''}>Guide</span>
-              </a>
+              </a>}
               <NavLink
                 to="/password"
                 onClick={closeNav}

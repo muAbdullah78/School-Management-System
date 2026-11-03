@@ -45,6 +45,7 @@ import { PortalAttendance, attendanceKey, monthRange } from './PortalAttendance'
 import { PortalResults } from './PortalResults'
 import { PCard, Problem, Skeleton, firstName, isBirthday, markText, pct, shortDate } from './portalKit'
 import { OfflineStatus } from '@/offline/OfflineStatus'
+import { isNativeApp } from '@/native/native'
 
 type Tab = 'fees' | 'attendance' | 'results'
 
@@ -290,11 +291,14 @@ export function PortalPage() {
           className="rounded-full bg-white px-4 py-2 text-xs font-semibold text-brand-700 shadow-sm ring-1 ring-brand-200 hover:bg-brand-50">
           Change your password
         </Link>
-        {/* New tab, so a parent reading it does not lose what they had open. */}
-        <a href={guideUrl} target="_blank" rel="noopener"
-          className="inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-xs font-semibold text-brand-700 shadow-sm ring-1 ring-brand-200 hover:bg-brand-50">
-          <IconBook /> How to use the parent portal
-        </a>
+        {/* New tab, so a parent reading it does not lose what they had open.
+            Not inside the Android app, for the reason given in AppShell. */}
+        {!isNativeApp() && (
+          <a href={guideUrl} target="_blank" rel="noopener"
+            className="inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-xs font-semibold text-brand-700 shadow-sm ring-1 ring-brand-200 hover:bg-brand-50">
+            <IconBook /> How to use the parent portal
+          </a>
+        )}
       </div>
 
       {/* Outside <main> so the print rule's positioning starts at the top of the

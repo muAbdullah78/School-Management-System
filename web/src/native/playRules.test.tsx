@@ -6,6 +6,8 @@
  * unchanged, which each case also checks, so the rule cannot leak outward.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { join } from 'node:path'
 import { createElement, type ReactElement } from 'react'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -136,5 +138,24 @@ describe('asking for room, and signing up', () => {
     asApp()
     open(createElement(Login, { door: OFFICE_DOOR }), {}, null)
     expect(screen.queryByText(/free 14-day trial/)).toBeNull()
+  })
+})
+
+describe('the handbook from inside the app', () => {
+  // The handbook has a chapter on paying for the software. Every screen that
+  // links to it must hide the link inside the app, so a new one cannot slip in.
+  it('every screen that links the handbook hides it inside the app', () => {
+    const files: string[] = []
+    const walk = (d: string) => {
+      for (const f of readdirSync(d)) {
+        const p = join(d, f)
+        if (statSync(p).isDirectory()) walk(p)
+        else if (/\.tsx$/.test(f) && !/\.test\.tsx$/.test(f)) files.push(p)
+      }
+    }
+    walk(join(process.cwd(), 'src'))
+    const linking = files.filter((f) => /href=\{guideUrl\}/.test(readFileSync(f, 'utf8')))
+    expect(linking.length).toBeGreaterThan(0)
+    for (const f of linking) expect([f, readFileSync(f, 'utf8').includes('isNativeApp()')]).toEqual([f, true])
   })
 })
