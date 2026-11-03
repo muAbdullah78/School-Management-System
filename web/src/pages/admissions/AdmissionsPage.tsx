@@ -79,6 +79,18 @@ type AdmitDone = AdmitResult & {
   owed?: { amount: number; recorded: boolean; message: string | null }
   /** Saved on this device, not yet at the school: no GR number yet, and an owed fee waits to be added. */
   offline?: boolean
+  /** The slip as it was admitted, not as the form reads by the time the answer comes. */
+  slip?: AdmissionSlipData
+}
+
+/** What the server answers about an owed admission fee recorded with an offline admission. */
+function owedFrom(amount: number, owed: unknown): AdmitDone['owed'] {
+  const o = (owed ?? {}) as { recorded?: unknown; error?: unknown; items?: { status?: string; message?: string }[] }
+  const bad = (o.items ?? []).find((x) => x.status !== 'recorded')
+  return {
+    amount, recorded: Number(o.recorded ?? 0) > 0,
+    message: typeof o.error === 'string' ? o.error : bad?.message ?? null,
+  }
 }
 
 const owedAmount = (f: Form): number => {
@@ -236,21 +248,36 @@ export function AdmissionsPage() {
           ? { charged: true, amount: admissionFeeAmount.trim() === '' ? null : Number(admissionFeeAmount) }
           : { charged: false },
       }
+      // The slip as admitted, built now: the form can be changed while the
+      // answer is on its way, and a slip must name the child that was admitted.
+      const slipNow: AdmissionSlipData = {
+        grNo: null, rollNo: input.roll_no || null,
+        fullName: input.full_name, fatherName: input.father_name || null,
+        className: cls?.name ?? '-', sectionName: sec?.name ?? null,
+        admissionDate: input.admission_date ?? admissionDate,
+      }
+      const owed = form.admissionFeeOwed ? owedAmount(form) : 0
       let res: AdmitDone
       if (offline.active) {
         // Through the outbox: the pupil gets an id here, so the same admission
         // arriving twice can never make two children, and the admission fee
-        // takes its receipt number from this device's own block.
+        // takes its receipt number from this device's own block. An admission
+        // fee still owed goes with it, and the school records it as owed in
+        // the same step.
         const feeAmount = input.admission_fee?.charged ? Number(input.admission_fee.amount ?? 0) : 0
         const studentId = newId()
         const out = await submitMoney(offline, {
           type: 'students.admit',
-          payload: { student_id: studentId, admission: input, allow_duplicate: !!vars?.allowDuplicate },
+          payload: {
+            student_id: studentId, admission: input, allow_duplicate: !!vars?.allowDuplicate,
+            ...(owed > 0 ? { owed_admission_fee: owed } : {}),
+          },
           label: `Admission, ${input.full_name}`,
           receiptField: feeAmount > 0 ? 'admission_fee_receipt_no' : undefined,
         })
         if (out.kind === 'applied') {
           res = out.result as unknown as AdmitDone
+          if (owed > 0) res.owed = owedFrom(owed, (out.result as { owed?: unknown }).owed)
         } else {
           const printed = out.item.payload.admission_fee_receipt_no
           res = {
@@ -258,22 +285,23 @@ export function AdmissionsPage() {
             family_id: null, admission_fee_amount: feeAmount > 0 ? feeAmount : null,
             admission_receipt_no: typeof printed === 'number' ? printed : null, offline: true,
           }
-          if (form.admissionFeeOwed && owedAmount(form) > 0) {
-            res.owed = { amount: owedAmount(form), recorded: false,
-              message: 'Add the admission fee still owed from the pupil\'s page once this admission has reached the school.' }
+          if (owed > 0) {
+            res.owed = { amount: owed, recorded: false,
+              message: 'It is recorded as owed when this admission reaches the school.' }
           }
-          return res
         }
-      } else {
-        res = await admitStudent(input)
+        res.slip = { ...slipNow, grNo: res.offline ? null : res.gr_no, rollNo: res.roll_no || slipNow.rollNo }
+        return res
       }
+      res = await admitStudent(input)
       /* AN ADMISSION FEE PAID LATER IS OWED, AND NOW RECORDED AS OWED. The old
          advice was "leave this off and add the charge from Fees", and Fees had
          no way to add a charge, so an unpaid admission fee lived only on paper.
          The child is already admitted at this point, so a failure here is a
          sentence on the next screen, never a lost admission. */
-      if (form.admissionFeeOwed && owedAmount(form) > 0) {
-        const amount = owedAmount(form)
+      res.slip = { ...slipNow, grNo: res.gr_no, rollNo: res.roll_no || slipNow.rollNo }
+      if (owed > 0) {
+        const amount = owed
         try {
           const r = await recordDues(res.student_id, [{ kind: 'admission', amount }])
           const bad = r.items.find((x) => x.status !== 'recorded')
@@ -285,15 +313,7 @@ export function AdmissionsPage() {
       return res
     },
     onSuccess: (res) => {
-      setSlip({
-        grNo: res.offline ? null : res.gr_no,
-        rollNo: res.roll_no || null,
-        fullName: form.full_name.trim(),
-        fatherName: form.father_name || null,
-        className: cls?.name ?? '-',
-        sectionName: sec?.name ?? null,
-        admissionDate: admissionDate,
-      })
+      if (res.slip) setSlip(res.slip)
       qc.invalidateQueries({ queryKey: ['students'] })
       qc.invalidateQueries({ queryKey: ['dashboardSummary'] })
       qc.invalidateQueries({ queryKey: ['dashboardTrends'] })
@@ -1100,7 +1120,9 @@ function Admitted({
   onReceipt: () => void
   onAnother: () => void
 }) {
-  const paid = result.admission_receipt_no != null && result.admission_fee_amount != null && result.admission_fee_amount > 0
+  // Offline with the device's receipt numbers used up, the fee was still taken
+  // in cash: it prints a receipt the school numbers when it arrives.
+  const paid = (result.admission_fee_amount ?? 0) > 0 && (result.admission_receipt_no != null || !!result.offline)
   const where = slip ? [slip.className, slip.sectionName].filter(Boolean).join(' ') : ''
   return (
     <div className="overflow-hidden rounded-2xl bg-white shadow-card ring-1 ring-brand-200">
@@ -1117,12 +1139,15 @@ function Admitted({
           </div>
         </div>
         <div className="mt-4 flex flex-wrap gap-2 text-sm">
-          <span className="rounded-full bg-white/15 px-3 py-1 ring-1 ring-white/25">GR <b className="font-semibold">{result.gr_no}</b></span>
+          <span className="rounded-full bg-white/15 px-3 py-1 ring-1 ring-white/25">
+            {result.offline ? 'GR given when it reaches the school' : <>GR <b className="font-semibold">{result.gr_no}</b></>}
+          </span>
           <span className="rounded-full bg-white/15 px-3 py-1 ring-1 ring-white/25">Roll <b className="font-semibold">{result.roll_no}</b></span>
           {where && <span className="rounded-full bg-white/15 px-3 py-1 ring-1 ring-white/25">{where}</span>}
           {paid && (
             <span className="rounded-full bg-white/15 px-3 py-1 ring-1 ring-white/25">
-              {fmtPKR(result.admission_fee_amount)} received · receipt #{result.admission_receipt_no}
+              {fmtPKR(result.admission_fee_amount)} received
+              {result.admission_receipt_no != null ? ` · receipt #${result.admission_receipt_no}` : ''}
             </span>
           )}
           {result.owed?.recorded && (

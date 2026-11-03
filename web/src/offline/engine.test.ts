@@ -284,6 +284,62 @@ describe('handing work in', () => {
     await expect(engine.enqueue(user, pay('x', 1))).rejects.toThrow(/switched this device off/)
   })
 
+  it('a payment handed in as the device is switched off is known to be refused, not saved', async () => {
+    await engine.sync(user)
+    const fee = await engine.enqueue(user, pay('ali', 2500))
+    server.hello_ = { revoked: true, can_write: false, lease_until: null, receipt_blocks: [] }
+    server.rule = (c) => ({ id: c.id, status: 'rejected', code: 'device_revoked', error: 'switched off' })
+    await engine.sync(user)
+    const snap = await engine.snapshot(user)
+    // Gone from this device, but on record as handed in, so the screen waiting
+    // for its answer says refused instead of "saved, to go later".
+    expect(snap.items.find((i) => i.id === fee.id)).toBeUndefined()
+    expect(snap.done.find((d) => d.id === fee.id)).toBeUndefined()
+    expect(snap.state.handed_in).toContain(fee.id)
+  })
+
+  it('the count of entries handed in survives the next sync, and a dismissal stays dismissed', async () => {
+    await engine.sync(user)
+    await engine.enqueue(user, pay('ali', 100))
+    await engine.enqueue(user, pay('sara', 200))
+    server.hello_ = { revoked: true, can_write: false, lease_until: null, receipt_blocks: [] }
+    server.rule = (c) => ({ id: c.id, status: 'rejected', code: 'device_revoked', error: 'switched off' })
+    await engine.sync(user)
+    expect((await engine.snapshot(user)).state.revoked_notice).toMatch(/2 unsent entries were handed/)
+    await engine.sync(user)
+    expect((await engine.snapshot(user)).state.revoked_notice).toMatch(/2 unsent entries were handed/)
+    await engine.clearRevokedNotice(user)
+    await engine.sync(user)
+    expect((await engine.snapshot(user)).state.revoked_notice).toBeNull()
+  })
+
+  it('a login switched off is told so in its own words', async () => {
+    await engine.sync(user)
+    await engine.enqueue(user, pay('ali', 100))
+    server.hello_ = { revoked: true, login_off: true, can_write: false, lease_until: null, receipt_blocks: [] }
+    server.rule = (c) => ({ id: c.id, status: 'rejected', code: 'login_off', error: 'login switched off' })
+    await engine.sync(user)
+    expect((await engine.snapshot(user)).state.revoked_notice).toMatch(/switched this login off/)
+  })
+
+  it('nothing is forgotten while the server asked for anything to wait', async () => {
+    await engine.sync(user)
+    const fee = await engine.enqueue(user, pay('ali', 100))
+    server.hello_ = { revoked: true, can_write: false, lease_until: null, receipt_blocks: [] }
+    server.rule = (c) => ({ id: c.id, status: 'deferred', code: 'busy', error: 'busy' })
+    await engine.sync(user)
+    expect((await engine.snapshot(user)).items.map((i) => i.id)).toContain(fee.id)
+  })
+
+  it('work held for a login is found by the login alone, whatever school it was kept for', async () => {
+    expect(await engine.heldFor(user.userId)).toBeNull()
+    await engine.sync(user)
+    expect(await engine.heldFor(user.userId)).toBeNull()
+    await engine.enqueue(user, pay('ali', 100))
+    expect(await engine.heldFor(user.userId)).toEqual(user)
+    expect(await engine.heldFor('somebody-else')).toBeNull()
+  })
+
   it('one login never sends another login\'s work', async () => {
     await engine.sync(user)
     await engine.enqueue(user, pay('ali', 500))

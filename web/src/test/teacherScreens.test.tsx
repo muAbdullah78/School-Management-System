@@ -189,6 +189,21 @@ describe('the tests screen', () => {
     })
   })
 
+  it('saving sends only the pupils changed here, never the rest of the sheet as this screen shows it', async () => {
+    // Sending every row re-sent what a copy opened an hour ago showed: a blank
+    // box cleared a colleague's mark, an untouched one reverted a correction.
+    const calls: FakeOptions['calls'] = []
+    open(createElement(TestsPage), { ...OPTS, calls }, as('class_teacher'), '/assessments?classId=c1')
+    const reminder = await screen.findByText('One test is waiting for marks')
+    fireEvent.click(within(reminder.parentElement!).getByRole('button', { name: /Weekly test 3/ }))
+    expect(await screen.findByRole('button', { name: 'All saved' })).toBeTruthy()
+    fireEvent.click(await screen.findByRole('button', { name: 'Mark the 1 blank as absent' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Save 1 change' }))
+    await waitFor(() => expect(calls!.find((c) => c.name === 'fn_enter_assessment_marks')).toBeTruthy())
+    const sent = calls!.find((c) => c.name === 'fn_enter_assessment_marks')!.args.p_marks as { enrollment_id: string }[]
+    expect(sent.map((m) => m.enrollment_id)).toEqual(['e3'])
+  })
+
   it('a test set by mistake is removed by its teacher, through the database', async () => {
     const calls: FakeOptions['calls'] = []
     open(createElement(TestsPage), { ...OPTS, calls }, as('class_teacher'), '/assessments?classId=c1')

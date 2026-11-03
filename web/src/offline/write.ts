@@ -41,7 +41,8 @@ export async function submitMoney(offline: OfflineState, work: NewWork, waitMs =
   }
   const out = await offline.settle(item.id, waitMs)
   if (out.status === 'attention') {
-    await offline.discard(item.id)
+    // Already gone if it was handed in from a switched-off device or login.
+    await offline.discard(item.id).catch(() => undefined)
     throw new RefusedBySchool(out.code, out.error ?? 'The school refused this.')
   }
   if (out.status === 'applied') return { kind: 'applied', item, result: out.result ?? {} }

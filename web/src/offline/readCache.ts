@@ -142,10 +142,23 @@ export interface CachingOptions {
 }
 
 /** A fetch for supabase-js that keeps and serves offline copies of reads. */
+/**
+ * A read that must never be answered from a copy. Sent by the few reads whose
+ * answer is PRINTED as fact: the balance on a fee receipt, read straight after
+ * the payment, which a copy kept before it would show as still owed. Removed
+ * before the request leaves the device, so the server never sees it.
+ */
+export const FRESH_HEADER = 'x-sm-fresh'
+
 export function cachingFetch(base: typeof fetch, opts: CachingOptions): typeof fetch {
   const slowMs = opts.slowMs ?? SLOW_MS
   const wall = opts.wall ?? (() => Date.now())
   return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const asked = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined))
+    if (asked.has(FRESH_HEADER)) {
+      asked.delete(FRESH_HEADER)
+      return base(input, { ...init, headers: asked })
+    }
     const req = new Request(input, init)
     let url: URL
     try { url = new URL(req.url) } catch { return base(input, init) }

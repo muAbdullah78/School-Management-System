@@ -270,15 +270,26 @@ export class OfflineEngine {
       report.error = isNetworkFailure(e) ? MSG_OFFLINE : messageOf(e)
     }
 
-    // A device the school switched off has now handed in what it held, and the
-    // server has kept every piece for the owner. Nothing is left to send.
-    if (hello.revoked && !report.error) {
+    // A device (or login) the school switched off has now handed in what it
+    // held, and the server has kept every piece for the owner. Nothing is left
+    // to send. Not while anything was told to wait: that was not kept.
+    if (hello.revoked && !report.error && !report.waiting) {
       const handed = report.rejected
+      const what = hello.login_off ? 'login' : 'device'
+      // What was handed in, so a payment still waiting for its answer learns it
+      // was refused (settle), and is not reported as saved to go later.
+      const handedIds = (await this.store.items(user.userId)).map((i) => i.id)
       await this.store.wipeUser(user.userId)
       await this.store.updateState(user, (s) => ({
-        ...s, hello, revoked_notice: handed > 0
-          ? `The school switched this device off. ${handed} unsent ${handed === 1 ? 'entry was' : 'entries were'} handed to the school, where the owner can see ${handed === 1 ? 'it' : 'them'}.`
-          : 'The school switched this device off. It can no longer work offline.',
+        ...s, hello,
+        handed_in: [...(before.handed_in ?? []), ...handedIds].slice(-500),
+        // The count is said once and kept: a later sync with nothing to hand
+        // in used to replace it within the minute, and undo a dismissal.
+        revoked_notice: handed > 0
+          ? `The school switched this ${what} off. ${handed} unsent ${handed === 1 ? 'entry was' : 'entries were'} handed to the school, where the owner can see ${handed === 1 ? 'it' : 'them'}.`
+          : before.hello?.revoked
+            ? before.revoked_notice
+            : `The school switched this ${what} off. It can no longer work offline.`,
       }))
     }
 
@@ -445,6 +456,11 @@ export class OfflineEngine {
   }
 
   /** Everything a screen needs to show the state of offline work for this login. */
+  /** A login this device still holds unsent work for (see OfflineStore.heldFor). */
+  heldFor(userId: string): Promise<UserRef | null> {
+    return this.store.heldFor(userId)
+  }
+
   async snapshot(user: UserRef): Promise<Snapshot> {
     const [state, items, done, others] = await Promise.all([
       this.store.getState(user), this.store.items(user.userId),

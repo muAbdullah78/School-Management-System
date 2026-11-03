@@ -95,10 +95,22 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
   const { profile, session } = useAuth()
   const qc = useQueryClient()
   const eng = useMemo(() => engine(), [])
+  // A login the school has switched off can no longer read its own profile,
+  // so it would never say hello again and its unsent work (fees with receipts
+  // already in parents' hands) would stay on this device for ever. If this
+  // device holds work for it, the engine runs for it once more: the hello
+  // answers "switched off", and the work is handed to the school for the owner.
+  const [handIn, setHandIn] = useState<UserRef | null>(null)
+  useEffect(() => {
+    if (!eng || !session || profile) { setHandIn(null); return }
+    let live = true
+    void eng.heldFor(session.user.id).then((u) => { if (live) setHandIn(u) }, () => undefined)
+    return () => { live = false }
+  }, [eng, session, profile])
   const user: UserRef | null = useMemo(() => (
     eng && session && profile && WRITERS.has(profile.role) && profile.school_id
-      ? { userId: profile.id, schoolId: profile.school_id } : null
-  ), [eng, session, profile])
+      ? { userId: profile.id, schoolId: profile.school_id } : handIn
+  ), [eng, session, profile, handIn])
 
   const [online, setOnline] = useState(isOnline())
   const [syncing, setSyncing] = useState(false)
@@ -229,14 +241,32 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
     if (!eng || !u) return { status: 'pending' }
     const until = Date.now() + ms
     // A sync already running may have started before this was saved: one more
-    // after it carries it.
-    if (isOnline()) { await syncNow(); await syncNow() }
+    // after it carries it. Raced against the deadline: on a weak signal two
+    // whole syncs (the outbox, the copies) used to keep a parent at the window
+    // for a minute, however short the wait was meant to be.
+    if (isOnline()) {
+      await Promise.race([
+        (async () => { await syncNow(); await syncNow() })(),
+        new Promise<void>((r) => setTimeout(r, Math.max(0, until - Date.now()))),
+      ])
+    }
     for (;;) {
       const snap = await eng.snapshot(u)
       const it = snap.items.find((i) => i.id === id)
       if (!it) {
         const d = snap.done.find((x) => x.id === id)
-        return d ? { status: 'applied', result: d.result, flags: d.flags } : { status: 'pending' }
+        if (d) return { status: 'applied', result: d.result, flags: d.flags }
+        // Handed in when the school switched this device or login off: the
+        // server kept it as refused, and this device has forgotten it.
+        if (snap.state.handed_in?.includes(id)) {
+          const login = snap.state.hello?.login_off === true
+          return {
+            status: 'attention', code: login ? 'login_off' : 'device_revoked',
+            error: `This ${login ? 'login' : 'device'} was switched off by the school, so this was not saved. `
+              + 'The owner can see it under offline work.',
+          }
+        }
+        return { status: 'pending' }
       }
       if (it.status === 'attention') return { status: 'attention', code: it.code, error: it.error }
       if (Date.now() >= until || !isOnline()) return { status: 'pending' }

@@ -36,6 +36,8 @@ function actionsFor(item: OutboxItem): { resend?: string; patch?: Record<string,
   }
 }
 
+const REGISTERS_AND_MARKS = new Set(['attendance.day', 'attendance.subject', 'marks.exam', 'marks.test'])
+
 /** The notice worth reading about something the server has taken. */
 export function noticeFor(d: DoneItem): string | null {
   const r = d.result ?? {}
@@ -55,6 +57,13 @@ export function noticeFor(d: DoneItem): string | null {
   const out = Array.isArray(r.left_out) ? r.left_out.length : 0
   if (out > 0) {
     parts.push(`${out} ${out === 1 ? 'pupil was' : 'pupils were'} left out: no longer on this register or sheet.`)
+  }
+  // A register or sheet locked meanwhile takes the entry without writing it:
+  // the only sign is the screen function's own count of rows it left alone.
+  const skipped = REGISTERS_AND_MARKS.has(d.type) ? Number((r as { skipped?: unknown }).skipped ?? 0) : 0
+  if (skipped > 0) {
+    parts.push(`${skipped} ${skipped === 1 ? 'pupil was' : 'pupils were'} not changed, because the register or sheet is locked`
+      + `${newer > 0 ? ' or a later entry was kept' : ''}. To change a locked one, ask the owner or principal to reopen it.`)
   }
   return parts.length ? parts.join(' ') : null
 }

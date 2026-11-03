@@ -1443,6 +1443,21 @@ begin
       if v_gr is not null and 'gr_renumbered' = any(v_flags) then
         v_res := v_res || jsonb_build_object('typed_gr_no', v_gr);
       end if;
+      -- AN ADMISSION FEE THE FAMILY STILL OWES, recorded as owed with the
+      -- admission, as the screen does online straight after it. Made offline,
+      -- nothing else would ever record it: the dues lived only in a sentence on
+      -- the device. A refusal of the dues is reported and never undoes the
+      -- admission, again as online.
+      if coalesce(nullif(v_p->>'owed_admission_fee', '')::numeric, 0) > 0 then
+        begin
+          v_res := v_res || jsonb_build_object('owed', public.fn_record_dues(v_payer,
+            jsonb_build_array(jsonb_build_object('kind', 'admission',
+                                                 'amount', (v_p->>'owed_admission_fee')::numeric))));
+        exception when others then
+          get stacked diagnostics v_err = message_text;
+          v_res := v_res || jsonb_build_object('owed', jsonb_build_object('recorded', 0, 'error', v_err));
+        end;
+      end if;
     end if;
 
     if v_printed is not null then

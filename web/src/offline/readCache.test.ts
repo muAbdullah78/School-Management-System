@@ -2,7 +2,7 @@
 // and that nothing that writes is ever answered from a copy.
 import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { cachingFetch, isRead, keyFor, onServedFromCopy, ReadStore, userOf } from './readCache'
+import { cachingFetch, FRESH_HEADER, isRead, keyFor, onServedFromCopy, ReadStore, userOf } from './readCache'
 import { READ_RPCS } from './readRpcs'
 
 const REST = 'https://demo.supabase.co/rest/v1/'
@@ -17,10 +17,10 @@ type Behaviour = 'ok' | 'fail' | 'slow' | 500 | 401
 class Net {
   behaviour: Behaviour = 'ok'
   body = 'v1'
-  calls: { url: string; method: string }[] = []
+  calls: { url: string; method: string; headers: Headers }[] = []
   fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const req = new Request(input, init)
-    this.calls.push({ url: req.url, method: req.method })
+    this.calls.push({ url: req.url, method: req.method, headers: req.headers })
     const b = this.behaviour
     const body = this.body
     if (b === 'fail') throw new TypeError('Failed to fetch')
@@ -166,5 +166,30 @@ describe('the small rules', () => {
     const a = keyFor('u', 'GET', new URL(`${REST}students?select=*&order=name`), h, '')
     const b = keyFor('u', 'GET', new URL(`${REST}students?select=*&order=name`), new Headers({ prefer: 'count=exact', range: '50-99' }), '')
     expect(a).not.toBe(b)
+  })
+})
+
+describe('a read that must be fresh', () => {
+  // The balance printed on a fee receipt, read straight after the payment: a
+  // copy kept before it would print the debt as untouched.
+  const fresh = (fn: string, args: unknown) =>
+    f(`${REST}rpc/${fn}`, { method: 'POST', body: JSON.stringify(args),
+      headers: { ...as('u1'), 'content-type': 'application/json', [FRESH_HEADER]: '1' } })
+
+  it('is never answered from a copy, whatever the network does', async () => {
+    net.body = '5000'
+    await rpc('student_balance', { p_student_id: 's1' })     // the copy, before the payment
+    net.body = '0'
+    expect(await (await fresh('student_balance', { p_student_id: 's1' })).text()).toBe('0')
+    net.behaviour = 'fail'
+    await expect(fresh('student_balance', { p_student_id: 's1' })).rejects.toThrow()
+    net.behaviour = 'slow'
+    expect(await (await fresh('student_balance', { p_student_id: 's1' })).text()).toBe('0')
+  })
+
+  it('does not send the marker to the server', async () => {
+    await fresh('student_balance', { p_student_id: 's1' })
+    expect(net.calls.at(-1)!.headers.has(FRESH_HEADER)).toBe(false)
+    expect(net.calls.at(-1)!.headers.get('content-type')).toBe('application/json')
   })
 })

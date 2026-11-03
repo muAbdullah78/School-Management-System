@@ -1010,6 +1010,20 @@ begin
   update public.profiles set active = true where full_name = 'Off Subject';
   alter table public.profiles enable trigger user;
 
+  -- An admission fee still owed, taken with an offline admission: recorded as
+  -- owed in the same step, as the screen does online.
+  perform pg_temp.be('Off Owner');
+  v_kid := gen_random_uuid();
+  r := pg_temp.send('owner phone', pg_temp.cmd('students.admit', now() - interval '1 hour',
+         jsonb_build_object('student_id', v_kid, 'owed_admission_fee', 2500,
+           'admission', jsonb_build_object('full_name', 'Owed Fee Child', 'father_name', 'Owed Father',
+             'session_id', (select id from public.academic_sessions where school_id = pg_temp.school()),
+             'class_id', (select id from public.classes where school_id = pg_temp.school())))));
+  perform pg_temp.ok(r->>'status' = 'applied'
+                     and (r->'result'->'owed'->>'recorded')::int > 0
+                     and public.student_balance(v_kid) = 2500,
+    '12t. an owed admission fee goes in with an offline admission, as owed');
+
   -- A school cancelled before 0157 has no time; an unrelated update must not give it one.
   alter table public.subscriptions disable trigger trg_subscription_stops;
   update public.subscriptions set status = 'cancelled', cancelled_at = null

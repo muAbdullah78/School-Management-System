@@ -4,7 +4,7 @@ import { IconAlert, IconCheck, IconClock, IconMinus } from '@/components/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getStudent, getStudentEnrollments, getGuardians, updateStudent, setStudentStatus,
-  getStudentBalance, getStudentInvoices, getStudentPayments, attendanceSummary,
+  getStudentBalance, getStudentBalanceFresh, getStudentInvoices, getStudentPayments, attendanceSummary,
   getSiblings, getStudentLinks, removeStudentLink, studentJoinFamily, getStudentFamilyId,
   linkStudents, searchStudentsForLink,
   listFamilyParents, createParentLogin, unlinkParent, linkParent, listSchoolLogins,
@@ -48,6 +48,7 @@ import { DuesCard } from './DuesCard'
 import { studentDeleteBlockers, deleteStudent } from '@/lib/db'
 import { ParentLink } from '@/components/ParentLink'
 import { buttonClass } from '@/components/ui'
+import { UnsentFeesNotice, unsentFees } from '@/offline/UnsentFees'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 /**
@@ -1271,6 +1272,9 @@ function FeesTab({
   canCollect: boolean
 }) {
   const qc = useQueryClient()
+  const offline = useOffline()
+  // For a family payment taken on this device for this child's family.
+  const familyId = useQuery({ queryKey: ['studentFamily', studentId], queryFn: () => getStudentFamilyId(studentId) })
   const balance = useQuery({ queryKey: ['balance', studentId], queryFn: () => getStudentBalance(studentId) })
   const invoices = useQuery({ queryKey: ['invoices', studentId], queryFn: () => getStudentInvoices(studentId) })
   const payments = useQuery({ queryKey: ['payments', studentId], queryFn: () => getStudentPayments(studentId) })
@@ -1468,6 +1472,11 @@ function FeesTab({
               Plus {fmtPKR(deposit.data ?? 0)} held as a refundable deposit. Not owed, and repayable
               when the child leaves.
             </p>
+          )}
+          {canCollect && (
+            <div className="mt-3">
+              <UnsentFeesNotice fees={unsentFees(offline, { studentIds: [studentId], familyId: familyId.data ?? null })} />
+            </div>
           )}
           {canCollect && (
             <div className="mt-3 flex flex-wrap gap-2">
@@ -2188,7 +2197,10 @@ async function takeFee(
   if (!offline.active) {
     const res = await recordPayment(p.studentId, p.amount, p.method, p.note ?? undefined, p.pending)
     if (p.pending) return null
-    const bal = await getStudentBalance(p.studentId)
+    // The fee is recorded whatever happens next: a failed balance read prints
+    // the receipt without one, rather than an error that invites a second try.
+    let bal: number | null = null
+    try { bal = await getStudentBalanceFresh(p.studentId) } catch { bal = null }
     return { receiptNo: res.receipt_no, studentName: p.studentName, grNo: p.grNo, amount: p.amount,
       method: methodLabel, balanceAfter: bal, note: p.note, covers: coversOf(res.applied) }
   }
@@ -2202,8 +2214,10 @@ async function takeFee(
   if (p.pending) return null
   if (out.kind === 'applied') {
     const res = out.result as unknown as RecordPaymentResult
+    // Never from a copy kept before the payment, which would print the debt
+    // as untouched on the parent's proof of payment.
     let bal: number | null = null
-    try { bal = await getStudentBalance(p.studentId) } catch { bal = null }
+    try { bal = await getStudentBalanceFresh(p.studentId) } catch { bal = null }
     return { receiptNo: res.receipt_no, studentName: p.studentName, grNo: p.grNo, amount: p.amount,
       method: methodLabel, balanceAfter: bal, note: p.note, covers: coversOf(res.applied) }
   }

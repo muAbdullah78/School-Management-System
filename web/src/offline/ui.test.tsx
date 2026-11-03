@@ -146,6 +146,11 @@ describe('notices', () => {
     expect(noticeFor(done({ type: 'students.admit', flags: ['gr_renumbered'], result: { typed_gr_no: '0401', gr_no: '0412' } })))
       .toBe('GR number 0401 was already taken, so this pupil was given GR 0412.')
   })
+  it('a register locked meanwhile says how many pupils it did not change', () => {
+    expect(noticeFor(done({ type: 'attendance.day', result: { total: 2, marked: 0, skipped: 2 } })))
+      .toBe('2 pupils were not changed, because the register or sheet is locked. To change a locked one, ask the owner or principal to reopen it.')
+    expect(noticeFor(done({ type: 'fees.payment', result: { skipped: 2 } }))).toBeNull()
+  })
   it('a sheet with a pupil no longer on it says how many were left out', () => {
     expect(noticeFor(done({ type: 'marks.exam', result: { left_out: ['e9'] } })))
       .toBe('1 pupil was left out: no longer on this register or sheet.')

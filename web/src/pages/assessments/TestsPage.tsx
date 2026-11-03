@@ -609,9 +609,18 @@ function MarksGrid({ test, onBack }: { test: AssessmentRow; onBack: () => void }
     setEntries(next)
   }, [marksheet.data])
 
+  // ONLY THE ROWS CHANGED HERE, as on the exam marksheet. Sending every row
+  // re-sent what this screen happened to show: on a copy opened an hour ago, a
+  // blank box cleared a mark a colleague had entered since, and an untouched
+  // old mark reverted their correction, with nothing said to anyone.
+  const loaded = (r: (typeof rows)[number]): Entry =>
+    unsent.get(r.enrollment_id) ?? { marks: r.marks == null ? '' : String(r.marks), is_absent: r.is_absent }
+  const same = (a: Entry, b: Entry) => a.is_absent === b.is_absent && (a.is_absent || a.marks === b.marks)
+  const dirtyRows = rows.filter((r) => !same(entries[r.enrollment_id] ?? loaded(r), loaded(r)))
+
   const save = useMutation({
     mutationFn: async () => {
-      const payload = rows.map((r) => {
+      const payload = dirtyRows.map((r) => {
         const e = entries[r.enrollment_id]
         return { enrollment_id: r.enrollment_id, marks: e?.is_absent || e?.marks === '' ? null : Number(e.marks), is_absent: !!e?.is_absent }
       })
@@ -821,9 +830,10 @@ function MarksGrid({ test, onBack }: { test: AssessmentRow; onBack: () => void }
           </div>
           {!locked && (
             <div className="mt-4 flex flex-wrap items-center gap-3">
-              <button onClick={() => save.mutate()} disabled={save.isPending || overMax}
+              <button onClick={() => save.mutate()} disabled={save.isPending || overMax || dirtyRows.length === 0}
                 className={buttonClass({ className: 'w-full py-2.5 sm:w-auto' })}>
-                {save.isPending ? 'Saving…' : 'Save marks'}
+                {save.isPending ? 'Saving…' : dirtyRows.length === 0 ? 'All saved'
+                  : `Save ${dirtyRows.length} change${dirtyRows.length === 1 ? '' : 's'}`}
               </button>
               {/* NOT confirm(). A browser told to stop showing dialogs returns
                   false from confirm() for ever, so the button would quietly do

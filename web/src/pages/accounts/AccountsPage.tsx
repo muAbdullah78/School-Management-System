@@ -210,9 +210,13 @@ export function AccountsPage() {
 
   const offline = useOffline()
   const addExpense = useMutation({
-    mutationFn: async (): Promise<{ voucher_no: number | null }> => {
+    // The amount said back is the one saved, carried with the answer: the box
+    // can be changed while a slow save is on its way.
+    mutationFn: async (): Promise<{ voucher_no: number | null; amount: number }> => {
+      const saved = Number(amount)
       if (!offline.active) {
-        return recordExpense(Number(amount), category || null, spentOn, payee || undefined, method, note || undefined)
+        const r = await recordExpense(saved, category || null, spentOn, payee || undefined, method, note || undefined)
+        return { voucher_no: r.voucher_no, amount: saved }
       }
       // Through the outbox, so an expense whose answer is lost on a weak signal
       // is never recorded twice. Its voucher number comes from the school.
@@ -222,12 +226,12 @@ export function AccountsPage() {
           payee: payee || null, method, note: note || null },
         label: `Expense ${money(Number(amount))}${payee ? `, ${payee}` : ''}`,
       })
-      return { voucher_no: out.kind === 'applied' ? Number(out.result.voucher_no) : null }
+      return { voucher_no: out.kind === 'applied' ? Number(out.result.voucher_no) : null, amount: saved }
     },
     onSuccess: (r) => {
       setFlash(r.voucher_no == null
-        ? `Expense of ${money(Number(amount))} saved on this device. It is recorded, with its voucher number, when it reaches the school.`
-        : `Expense of ${money(Number(amount))} recorded, voucher #${r.voucher_no}.`)
+        ? `Expense of ${money(r.amount)} saved on this device. It is recorded, with its voucher number, when it reaches the school.`
+        : `Expense of ${money(r.amount)} recorded, voucher #${r.voucher_no}.`)
       setAmount(''); setPayee(''); setNote('')
       refresh()
     },

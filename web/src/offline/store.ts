@@ -75,6 +75,13 @@ export interface UserState {
   stopped: string | null
   /** Shown once after the school switched this device off and its work was handed in. */
   revoked_notice: string | null
+  /**
+   * Ids of the entries handed to the school when this device or login was
+   * switched off, and then forgotten here. A payment waiting for its answer
+   * finds out from this that it was refused, rather than taking "not on this
+   * device any more" to mean "saved, to go later".
+   */
+  handed_in?: string[]
 }
 
 interface Schema extends DBSchema {
@@ -92,7 +99,7 @@ export function blankState(user: UserRef): UserState {
   return {
     key: `user:${user.userId}`, user_id: user.userId, school_id: user.schoolId,
     hello: null, clock: { ...NO_CLOCK }, receipt_next: null, last_sync_wall: null,
-    waiting: null, stopped: null, revoked_notice: null,
+    waiting: null, stopped: null, revoked_notice: null, handed_in: [],
   }
 }
 
@@ -146,7 +153,11 @@ export class OfflineStore {
     make: (s: UserState) => { item: OutboxItem; state: UserState },
   ): Promise<OutboxItem> {
     const db = await this.db
-    const tx = db.transaction(['outbox', 'meta'], 'readwrite')
+    // STRICT: the receipt is printed on the strength of this commit. Chromium
+    // (Chrome, WebView2, Android's WebView) otherwise reports a commit before
+    // it reaches the disk, so a power cut a second later lost the payment and
+    // handed the next parent the same receipt number.
+    const tx = db.transaction(['outbox', 'meta'], 'readwrite', { durability: 'strict' })
     const meta = tx.objectStore('meta')
     const cur = await meta.get(`user:${user.userId}`)
     const state = cur && cur.school_id === user.schoolId ? cur : blankState(user)
@@ -189,7 +200,7 @@ export class OfflineStore {
   /** Take a command out of the outbox and keep the server's answer, in one transaction. */
   async finish(seq: number, done: DoneItem | null): Promise<void> {
     const db = await this.db
-    const tx = db.transaction(['outbox', 'done'], 'readwrite')
+    const tx = db.transaction(['outbox', 'done'], 'readwrite', { durability: 'strict' })
     await tx.objectStore('outbox').delete(seq)
     if (done) await tx.objectStore('done').put(done)
     await tx.done
@@ -210,6 +221,19 @@ export class OfflineStore {
     const db = await this.db
     const all = await db.getAllFromIndex('done', 'by_user', userId)
     return all.sort((a, b) => b.finished_wall - a.finished_wall)
+  }
+
+  /**
+   * A login this device holds unsent work for, whatever school it was kept
+   * for: how a login the school has switched off (and that can no longer read
+   * its own profile) still hands its work in. Null when nothing is waiting.
+   */
+  async heldFor(userId: string): Promise<UserRef | null> {
+    const db = await this.db
+    const state = await db.get('meta', `user:${userId}`)
+    if (!state?.school_id) return null
+    const waiting = await db.countFromIndex('outbox', 'by_user', userId)
+    return waiting > 0 ? { userId, schoolId: state.school_id } : null
   }
 
   /** Unsent work on this device that belongs to other logins (a shared office computer). */
