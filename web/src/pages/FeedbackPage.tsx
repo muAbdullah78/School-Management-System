@@ -4,6 +4,7 @@ import { requireSupabase } from '@/lib/supabase'
 import { PageHeader, Card, CardTitle, Button, Field, inputClass, Badge } from '@/components/ui'
 import { useAuth } from '@/auth/AuthProvider'
 import { guideUrl } from '@/lib/config'
+import { isNativeApp } from '@/native/native'
 
 /**
  * Where a school writes the review that other schools read.
@@ -151,10 +152,17 @@ function NotYet({ e }: { e: Eligibility }) {
           </div>
         </dl>
       ) : null}
-      <p className="mt-4 text-sm text-slate-500">
-        In the meantime, <a className="text-brand-700 underline" href={guideUrl} target="_blank" rel="noopener">the handbook</a> covers
-        everything the software does, and the office can ring us about anything it does not.
-      </p>
+      {isNativeApp() ? (
+        // No handbook link inside the Android app, for the reason given in AppShell.
+        <p className="mt-4 text-sm text-slate-500">
+          In the meantime, the office can ring us about anything.
+        </p>
+      ) : (
+        <p className="mt-4 text-sm text-slate-500">
+          In the meantime, <a className="text-brand-700 underline" href={guideUrl} target="_blank" rel="noopener">the handbook</a> covers
+          everything the software does, and the office can ring us about anything it does not.
+        </p>
+      )}
     </Card>
   )
 }

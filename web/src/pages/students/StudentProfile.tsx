@@ -4,7 +4,7 @@ import { IconAlert, IconCheck, IconClock, IconMinus } from '@/components/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getStudent, getStudentEnrollments, getGuardians, updateStudent, setStudentStatus,
-  getStudentBalance, getStudentInvoices, getStudentPayments, attendanceSummary,
+  getStudentBalance, getStudentBalanceFresh, getStudentInvoices, getStudentPayments, attendanceSummary,
   getSiblings, getStudentLinks, removeStudentLink, studentJoinFamily, getStudentFamilyId,
   linkStudents, searchStudentsForLink,
   listFamilyParents, createParentLogin, unlinkParent, linkParent, listSchoolLogins,
@@ -31,6 +31,10 @@ import { useAuth } from '@/auth/AuthProvider'
 import { APPROVER_ROLES, ADMIN_ROLES, canWrite, type Role } from '@/auth/roles'
 import { ObserverNotice } from '@/components/ObserverNotice'
 import { Receipt, type ReceiptData } from '@/components/Receipt'
+import { useOffline, type OfflineState } from '@/offline/OfflineProvider'
+import { submitMoney } from '@/offline/write'
+import { isNetworkFailure } from '@/offline/engine'
+import type { RecordPaymentResult } from '@/lib/db'
 import { useSchoolName } from '@/hooks/useSchoolName'
 import { ChallanPrint } from '@/pages/fees/ChallanPrint'
 import { AskDialog } from '@/components/AskDialog'
@@ -44,6 +48,7 @@ import { DuesCard } from './DuesCard'
 import { studentDeleteBlockers, deleteStudent } from '@/lib/db'
 import { ParentLink } from '@/components/ParentLink'
 import { buttonClass } from '@/components/ui'
+import { UnsentFeesNotice, unsentFees } from '@/offline/UnsentFees'
 
 const FIELD = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
 /**
@@ -1267,6 +1272,9 @@ function FeesTab({
   canCollect: boolean
 }) {
   const qc = useQueryClient()
+  const offline = useOffline()
+  // For a family payment taken on this device for this child's family.
+  const familyId = useQuery({ queryKey: ['studentFamily', studentId], queryFn: () => getStudentFamilyId(studentId) })
   const balance = useQuery({ queryKey: ['balance', studentId], queryFn: () => getStudentBalance(studentId) })
   const invoices = useQuery({ queryKey: ['invoices', studentId], queryFn: () => getStudentInvoices(studentId) })
   const payments = useQuery({ queryKey: ['payments', studentId], queryFn: () => getStudentPayments(studentId) })
@@ -1464,6 +1472,11 @@ function FeesTab({
               Plus {fmtPKR(deposit.data ?? 0)} held as a refundable deposit. Not owed, and repayable
               when the child leaves.
             </p>
+          )}
+          {canCollect && (
+            <div className="mt-3">
+              <UnsentFeesNotice fees={unsentFees(offline, { studentIds: [studentId], familyId: familyId.data ?? null })} />
+            </div>
           )}
           {canCollect && (
             <div className="mt-3 flex flex-wrap gap-2">
@@ -2168,6 +2181,51 @@ function coversOf(applied: PaymentApplied[] | undefined): { label: string; amoun
   }))
 }
 
+/**
+ * A fee for one pupil. With the offline engine running this always goes through
+ * the outbox: saved first, with the next receipt number from this device's own
+ * block, then given a few seconds to reach the school. If it does, the receipt
+ * says what it paid for and the balance after; if not, it prints now with its
+ * final number and says the rest is worked out when it arrives. Without the
+ * engine (a login that cannot work offline) it is the direct call, as before.
+ */
+async function takeFee(
+  offline: OfflineState,
+  p: { studentId: string; studentName: string; grNo: string | null; amount: number; method: string; note: string | null; pending: boolean },
+): Promise<ReceiptData | null> {
+  const methodLabel = PAYMENT_METHODS.find((x) => x.value === p.method)?.label ?? p.method
+  if (!offline.active) {
+    const res = await recordPayment(p.studentId, p.amount, p.method, p.note ?? undefined, p.pending)
+    if (p.pending) return null
+    // The fee is recorded whatever happens next: a failed balance read prints
+    // the receipt without one, rather than an error that invites a second try.
+    let bal: number | null = null
+    try { bal = await getStudentBalanceFresh(p.studentId) } catch { bal = null }
+    return { receiptNo: res.receipt_no, studentName: p.studentName, grNo: p.grNo, amount: p.amount,
+      method: methodLabel, balanceAfter: bal, note: p.note, covers: coversOf(res.applied) }
+  }
+  const out = await submitMoney(offline, {
+    type: 'fees.payment',
+    payload: { student_id: p.studentId, amount: p.amount, method: p.method, note: p.note, pending: p.pending },
+    label: `Fee ${fmtPKR(p.amount)}, ${p.studentName}`,
+    // A cheque or challan not yet cleared prints no receipt, so it takes no number.
+    receiptField: p.pending ? undefined : 'receipt_no',
+  })
+  if (p.pending) return null
+  if (out.kind === 'applied') {
+    const res = out.result as unknown as RecordPaymentResult
+    // Never from a copy kept before the payment, which would print the debt
+    // as untouched on the parent's proof of payment.
+    let bal: number | null = null
+    try { bal = await getStudentBalanceFresh(p.studentId) } catch { bal = null }
+    return { receiptNo: res.receipt_no, studentName: p.studentName, grNo: p.grNo, amount: p.amount,
+      method: methodLabel, balanceAfter: bal, note: p.note, covers: coversOf(res.applied) }
+  }
+  const printed = out.item.payload.receipt_no
+  return { receiptNo: typeof printed === 'number' ? printed : null, studentName: p.studentName, grNo: p.grNo,
+    amount: p.amount, method: methodLabel, balanceAfter: null, note: p.note, offline: true }
+}
+
 function PaymentModal({
   studentId, studentName, grNo, enrollmentId, billMonthISO, defaultAmount, defaultNote,
   olderUnpaidWarning, onClose, onDone,
@@ -2181,21 +2239,20 @@ function PaymentModal({
   const [note, setNote] = useState(defaultNote)
   const [pending, setPending] = useState(false)
   const amt = Number(amount)
+  const offline = useOffline()
 
   const m = useMutation({
     mutationFn: async (): Promise<ReceiptData | null> => {
       if (billMonthISO) {
-        await billStudentMonth(enrollmentId, billMonthISO, monthLast(ym(billMonthISO)))
+        // Billing the month needs the school. With no connection the payment
+        // still goes in, and the school applies it to what is billed.
+        try {
+          await billStudentMonth(enrollmentId, billMonthISO, monthLast(ym(billMonthISO)))
+        } catch (e) {
+          if (!(offline.active && isNetworkFailure(e))) throw e
+        }
       }
-      const res = await recordPayment(studentId, amt, method, note || undefined, pending)
-      if (pending) return null
-      const bal = await getStudentBalance(studentId)
-      return {
-        receiptNo: res.receipt_no, studentName, grNo, amount: amt,
-        method: PAYMENT_METHODS.find((x) => x.value === method)?.label ?? method,
-        balanceAfter: bal, note: note || null,
-        covers: coversOf(res.applied),
-      }
+      return takeFee(offline, { studentId, studentName, grNo, amount: amt, method, note: note || null, pending })
     },
     onSuccess: (r) => onDone(r),
   })
@@ -2247,18 +2304,12 @@ function SettleModal({
   const [mode, setMode] = useState<'pay' | 'waive'>('pay')
   const [method, setMethod] = useState('cash')
   const [reason, setReason] = useState('')
+  const offline = useOffline()
 
   const m = useMutation({
     mutationFn: async (): Promise<ReceiptData | null> => {
       if (mode === 'pay') {
-        const res = await recordPayment(studentId, balance, method, 'Full settlement')
-        const bal = await getStudentBalance(studentId)
-        return {
-          receiptNo: res.receipt_no, studentName, grNo, amount: balance,
-          method: PAYMENT_METHODS.find((x) => x.value === method)?.label ?? method,
-          balanceAfter: bal, note: 'Full settlement',
-          covers: coversOf(res.applied),
-        }
+        return takeFee(offline, { studentId, studentName, grNo, amount: balance, method, note: 'Full settlement', pending: false })
       }
       await addAdjustment(studentId, -balance, reason.trim())
       return null

@@ -1,0 +1,415 @@
+<!doctype html>
+<!-- BUILT FILE. Do not edit site/*.html by hand.
+     Source: site-src/layout.html + site-src/pages/<name>.page
+     Rebuild: python3 scripts/build-site.py
+     A guard (scripts/check-site-seo.py) refuses a build that has drifted. -->
+<html lang="en-PK">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>Privacy policy: The School Manager</title>
+<meta name="description" content="What The School Manager keeps for schools, pupils, parents and staff, where it is kept, who can see it, what the apps store on a device, and how to have it removed.">
+<link rel="canonical" href="https://theschoolmanager.site/privacy">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="Privacy policy: The School Manager">
+<meta property="og:description" content="What The School Manager keeps for schools, pupils, parents and staff, where it is kept, who can see it, what the apps store on a device, and how to have it removed.">
+<meta property="og:url" content="https://theschoolmanager.site/privacy">
+<meta property="og:site_name" content="The School Manager">
+<meta property="og:locale" content="en_PK">
+<meta property="og:image" content="https://theschoolmanager.site/og.png?v=2">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The School Manager: school management software for Pakistani schools">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#FFFFFF">
+
+<!-- FAVICON. These are real files at fixed URLs, and that is the whole point.
+     This used to be a single <link rel="icon" href="data:image/svg+xml,...">.
+     A data: URI has no address, and Google fetches the favicon in a separate
+     request from the page, so there was nothing for it to ask for. There was
+     no /favicon.ico either, so Google's fallback route dead-ended too, and a
+     grey globe is what it shows when both fail.
+
+     Do NOT rename these files. Google caches a favicon against its URL, and a
+     new name means a recrawl before the icon changes. Generated from one
+     source by scripts/build-icons.mjs; scripts/check-site-seo.py refuses a
+     build where any of them is missing, is not square, or is a data: URI. -->
+<link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="icon" type="image/png" href="/icon-192.png" sizes="192x192">
+<link rel="icon" type="image/svg+xml" href="/icon.svg">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180">
+<link rel="manifest" href="/site.webmanifest">
+
+<link rel="stylesheet" href="/styles.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://theschoolmanager.site/#org",
+      "name": "The School Manager",
+      "url": "https://theschoolmanager.site/",
+      "description": "School management software built in Pakistan for Pakistani private schools.",
+      "areaServed": {
+        "@type": "Country",
+        "name": "Pakistan"
+      },
+      "knowsLanguage": [
+        "en",
+        "ur"
+      ],
+      "logo": {
+        "@type": "ImageObject",
+        "@id": "https://theschoolmanager.site/#logo",
+        "url": "https://theschoolmanager.site/icon-512.png",
+        "contentUrl": "https://theschoolmanager.site/icon-512.png",
+        "width": 512,
+        "height": 512,
+        "caption": "The School Manager"
+      },
+      "image": {
+        "@id": "https://theschoolmanager.site/#logo"
+      }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Home",
+          "item": "https://theschoolmanager.site/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Privacy policy",
+          "item": "https://theschoolmanager.site/privacy"
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="nav">
+  <div class="wrap nav__in">
+    <a class="brand" href="/">
+      <img src="/icon.svg" width="26" height="26" alt="" decoding="async">
+      <span>The School Manager</span>
+    </a>
+
+    <nav class="nav__links" aria-label="Sections">
+      <ul>
+        <li><a href="/fee-management">Fees</a></li>
+        <li><a href="/attendance">Attendance</a></li>
+        <li><a href="/exams-and-results">Exams</a></li>
+        <li><a href="/parent-portal">Parents</a></li>
+        <li><a href="/pricing">Pricing</a></li>
+        <li><a href="/faq">Questions</a></li>
+        <li><a href="/guides">Guides</a></li></ul>
+    </nav>
+    <!-- THREE AUDIENCES, THREE ENTRY POINTS, in increasing order of prominence
+         left to right, which is also increasing order of what this site is for.
+         A parent sent here by their child's school had none: the only mention
+         of the portal anywhere was a footer link, and the only thing in the
+         header that looked like a way in was "Sign in", which opens the school
+         office door.
+
+         The two sign-in doors sit next to each other and the trial button sits
+         apart, because that is the real division: two of these are for people
+         who already have an account and one is for somebody who has never
+         heard of us. The first arrangement put the plain "Sign in" link
+         between the two buttons, where a 15px text link reads as something
+         nobody meant to leave there.
+
+         Nothing here can send anybody to a dead end. Every door in the app
+         signs anybody in, so a parent who presses Sign in still gets where they
+         need to go: that page now carries a full-width button to theirs. This
+         just means they no longer have to.
+
+         "Parent sign in" and not "Parent portal", because the section nav now
+         carries a "Parents" entry that goes to the PAGE ABOUT the portal. Two
+         controls with one label going to two places is worse than no control,
+         and the label a parent needs is the one that says sign in.
+
+         data-app="portal" points it at the app's own parent door, and
+         site/wire.js rewrites the href to do it. The href here is the no-script
+         fallback, and /parent-portal is a better answer than nothing: the page
+         explains what the portal is and carries its own way in. -->
+    <div class="nav__cta">
+      <a class="nav__plain" href="/contact" data-app="signin">Sign in</a>
+      <a class="btn btn--ghost btn--sm" href="/parent-portal" data-app="portal">Parent sign in</a>
+      <a class="btn btn--primary" href="/pricing" data-app="signup">Start free trial</a>
+    </div>
+
+    <details class="navmenu" id="navmenu">
+      <summary aria-label="Menu">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <path d="M2 5h14M2 9h14M2 13h14" stroke-linecap="round"/>
+        </svg>
+        Menu
+      </summary>
+      <!-- Below 880px the CTA row is display:none, so this panel is the ONLY
+           way in on a phone. Which is the device almost every parent will be
+           holding, so the portal has to be in here or the whole change is
+           desktop-only.
+
+           AND IT HAS TO BE MORE THAN A ROW IN THE LIST. The first version put
+           "Parent sign in" and "Sign in" at the bottom of ten identical rows,
+           in the same 16px black as "Guides" and "Contact": a parent scanning
+           for the way in had nothing to catch their eye, which is the exact
+           complaint that started this change, moved from the header to the
+           menu. They are buttons, below a rule, because they are the only two
+           things in here that are DOORS rather than pages.
+
+           "Start free trial" is deliberately not in this list. Below 880px the
+           sticky bar at the foot of every page carries it, and between 880 and
+           1139 the header CTA row still does, so it is never more than one
+           control away without being repeated three times. -->
+      <div class="navmenu__panel">
+        <a href="/fee-management">Fees</a>
+        <a href="/attendance">Attendance</a>
+        <a href="/exams-and-results">Exams</a>
+        <a href="/parent-portal">Parents</a>
+        <a href="/pricing">Pricing</a>
+        <a href="/faq">Questions</a>
+        <a href="/guides">Guides</a>
+        <a href="/contact">Contact</a>
+        <div class="navmenu__doors">
+          <a class="btn btn--ghost" href="/parent-portal" data-app="portal">Parent sign in</a>
+          <a class="btn btn--ghost" href="/contact" data-app="signin">Sign in</a>
+        </div>
+      </div>
+    </details>
+  </div>
+</div>
+
+<p id="wire-warning" hidden class="wrap small" style="padding-top:12px;color:var(--due-800)">
+  This page is not yet pointed at the software. Set APP_URL in config.js on the deployment.
+</p>
+
+<main id="main" tabindex="-1">
+<nav class="wrap crumb" aria-label="Breadcrumb">
+  <a href="/">Home</a>
+  <span aria-hidden="true">/</span>
+  <span aria-current="page">Privacy policy</span>
+</nav>
+
+<section class="section">
+  <div class="wrap prose">
+    <span class="eyebrow">Privacy</span>
+    <h1>Privacy policy</h1>
+    <div class="meta">
+      <span>For schools, parents and staff</span>
+      <span>Last updated 2 November 2026</span>
+    </div>
+
+    <p>
+      The School Manager is school management software for Pakistani schools. This
+      page covers the website (theschoolmanager.site), the software itself
+      (app.theschoolmanager.site), the Windows program and the Android app. All
+      four use the same records.
+    </p>
+
+    <h2>Whose records these are</h2>
+    <p>
+      A school uses the software to keep its own records. The school decides what
+      is entered and who may see it, and we keep those records for the school. If
+      you are a parent or a member of staff, the school that gave you your login is
+      the place to ask about your information first; we will help it answer.
+    </p>
+
+    <h2>What is kept</h2>
+    <ul>
+      <li>
+        <b>About pupils:</b> name, father's name, date of birth, B-Form number,
+        class, roll and GR numbers, a photo if the school adds one, attendance,
+        marks and results, fees billed and paid, and certificates issued.
+      </li>
+      <li>
+        <b>About parents and guardians:</b> names, phone and WhatsApp numbers, a
+        CNIC number if the school records one, and the family's login.
+      </li>
+      <li>
+        <b>About staff:</b> name, role, contact details, attendance and check-in
+        times, and pay records.
+      </li>
+      <li>
+        <b>Staff check-in:</b> where a school uses the check-in poster, the phone's
+        camera reads its QR code (no picture is kept). If the school has also
+        switched on its location check, the phone's location at that moment is sent
+        once, to confirm the person is at school.
+      </li>
+      <li>
+        <b>Logs:</b> who changed what and when, which phone or computer worked
+        offline (an id the app makes for itself, the kind of device and the app's
+        version), and when.
+      </li>
+      <li>
+        <b>The school's account with us:</b> its plan, invoices and payments.
+      </li>
+    </ul>
+
+    <h2>What stays on a phone or computer</h2>
+    <p>
+      So that the software works without the internet, each phone or computer keeps
+      a copy of what its login reads, and any work done offline until it has been
+      sent. In the Android app this is in the app's own private storage, which no
+      other app can read and which Android does not back up or copy to a new phone.
+      The copies are removed when that login signs out. Work not yet sent stays
+      until it has been sent, so nothing taken offline is lost.
+    </p>
+
+    <h2>Who can see it</h2>
+    <ul>
+      <li>The people the school gives a login to, each only what their role allows.</li>
+      <li>A parent sees their own children, and nobody else's.</li>
+      <li>
+        When the school office gives a family or a teacher a password, its key ring
+        keeps that password so the office can tell them again. Once they change it
+        themselves, the key ring shows it is out of date.
+      </li>
+      <li>
+        Our support team, only during a support visit, and every visit is listed
+        for the school under Settings, Support visits.
+      </li>
+    </ul>
+    <p>
+      Each school's records are kept apart from every other school's by the
+      database itself, not only by the screens.
+    </p>
+
+    <h2>What we do not do</h2>
+    <p>
+      There are no advertisements in the software or the apps, and nothing in them
+      follows you to other websites or apps. We do not sell anybody's information,
+      and we do not share it with anyone except the services that run the
+      software, below.
+    </p>
+
+    <h2>The services that run it</h2>
+    <ul>
+      <li>
+        <b>Supabase</b> keeps the database and handles signing in, and stores
+        passwords only in a form that cannot be read back. The servers are outside
+        Pakistan.
+      </li>
+      <li><b>Cloudflare</b> serves the website and the software's files.</li>
+    </ul>
+    <p>
+      They handle the records only to run the software. Everything travels over an
+      encrypted connection.
+    </p>
+
+    <h2>The Android app's permissions</h2>
+    <ul>
+      <li><b>Internet and network state</b>, to send work and to know when the phone is offline.</li>
+      <li><b>Camera</b>, only to read the check-in QR code, and only when you check in.</li>
+      <li><b>Location</b>, only at check-in, and only if the school checks it.</li>
+    </ul>
+    <p>
+      Choosing a photo uses Android's own picker, and printing uses Android's own
+      print screen.
+    </p>
+
+    <h2>How long it is kept, and removing it</h2>
+    <p>
+      Records are kept while the school uses the software. A school can download a
+      complete copy of its records at any time, including after it has stopped
+      paying. When a school asks us to delete its records, we do, after it has had
+      the chance to take that copy.
+    </p>
+    <p>
+      Logins are made and switched off by the school. To have your login removed,
+      or your information corrected or deleted, ask your school office. You can
+      also write to us, and we will work with the school to do it.
+    </p>
+
+    <h2>Children</h2>
+    <p>
+      The software holds pupils' records for their school. Pupils do not sign in:
+      the apps are for school staff and for parents.
+    </p>
+
+    <h2>Contact</h2>
+    <p>
+      Questions about this policy or about your information:
+      <a class="clink" id="contact-email" hidden href="#"></a>
+      or <a href="/contact">the contact page</a>. If this policy changes, this page
+      says so, with the date.
+    </p>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div class="foot__grid">
+      <div>
+        <div class="brand" style="margin-bottom:14px">
+          <img src="/icon.svg" width="26" height="26" alt="" decoding="async">
+          <span>The School Manager</span>
+        </div>
+        <p style="max-width:34ch">
+          School management software made in Pakistan, for Pakistani schools.
+        </p>
+        <p class="foot__ur" lang="ur" dir="rtl">پاکستانی اسکولوں کے لیے بنایا گیا</p>
+      </div>
+      <div>
+        <h3>What it does</h3>
+        <a href="/fee-management">Fee management</a>
+        <a href="/attendance">Attendance</a>
+        <a href="/exams-and-results">Exams and results</a>
+        <a href="/accounts">Accounts and payroll</a>
+        <a href="/parent-portal">Parent portal</a>
+      </div>
+      <div>
+        <h3>Support</h3>
+        <a href="/pricing">Pricing</a>
+        <a href="/faq">Questions</a>
+        <a href="/reviews">What schools say</a>
+        <a href="/guides">Guides for school offices</a>
+        <a href="/guide.html">The handbook</a>
+        <ul style="list-style:none;margin:0;padding:0">
+          <li hidden><a href="/download">Download</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Contact</h3>
+        <a href="/contact">Get in touch</a>
+        <a href="/privacy">Privacy policy</a>
+        <a href="/contact" data-app="signin">Sign in</a>
+        <a href="/contact" data-app="billing">Manage your subscription</a>
+        <a href="/contact" data-app="portal">Parent portal login</a>
+      </div>
+    </div>
+    <div class="foot__bottom">
+      <span>&copy; <span id="yr">2026</span> The School Manager</span>
+      <span>theschoolmanager.site</span>
+    </div>
+  </div>
+</footer>
+
+<div class="actionbar">
+  <a class="btn btn--primary" href="/pricing" data-app="signup">Start free trial</a>
+  <a class="btn btn--ghost" id="bar-whatsapp" href="/contact" aria-label="WhatsApp us">
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+      <path d="M17 9.6a7 7 0 0 1-10.3 6.2L3 16.8l1.1-3.6A7 7 0 1 1 17 9.6z" stroke-linejoin="round"/>
+    </svg>
+    WhatsApp
+  </a>
+</div>
+
+<script src="/config.js"></script>
+<script src="/wire.js"></script>
+</body>
+</html>

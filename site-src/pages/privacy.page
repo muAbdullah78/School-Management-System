@@ -1,0 +1,153 @@
+path: /privacy
+title: Privacy policy: The School Manager
+description: What The School Manager keeps for schools, pupils, parents and staff, where it is kept, who can see it, what the apps store on a device, and how to have it removed.
+breadcrumb: Privacy policy
+schema: org
+priority: 0.3
+---
+
+<section class="section">
+  <div class="wrap prose">
+    <span class="eyebrow">Privacy</span>
+    <h1>Privacy policy</h1>
+    <div class="meta">
+      <span>For schools, parents and staff</span>
+      <span>Last updated 2 November 2026</span>
+    </div>
+
+    <p>
+      The School Manager is school management software for Pakistani schools. This
+      page covers the website (theschoolmanager.site), the software itself
+      (app.theschoolmanager.site), the Windows program and the Android app. All
+      four use the same records.
+    </p>
+
+    <h2>Whose records these are</h2>
+    <p>
+      A school uses the software to keep its own records. The school decides what
+      is entered and who may see it, and we keep those records for the school. If
+      you are a parent or a member of staff, the school that gave you your login is
+      the place to ask about your information first; we will help it answer.
+    </p>
+
+    <h2>What is kept</h2>
+    <ul>
+      <li>
+        <b>About pupils:</b> name, father's name, date of birth, B-Form number,
+        class, roll and GR numbers, a photo if the school adds one, attendance,
+        marks and results, fees billed and paid, and certificates issued.
+      </li>
+      <li>
+        <b>About parents and guardians:</b> names, phone and WhatsApp numbers, a
+        CNIC number if the school records one, and the family's login.
+      </li>
+      <li>
+        <b>About staff:</b> name, role, contact details, attendance and check-in
+        times, and pay records.
+      </li>
+      <li>
+        <b>Staff check-in:</b> where a school uses the check-in poster, the phone's
+        camera reads its QR code (no picture is kept). If the school has also
+        switched on its location check, the phone's location at that moment is sent
+        once, to confirm the person is at school.
+      </li>
+      <li>
+        <b>Logs:</b> who changed what and when, which phone or computer worked
+        offline (an id the app makes for itself, the kind of device and the app's
+        version), and when.
+      </li>
+      <li>
+        <b>The school's account with us:</b> its plan, invoices and payments.
+      </li>
+    </ul>
+
+    <h2>What stays on a phone or computer</h2>
+    <p>
+      So that the software works without the internet, each phone or computer keeps
+      a copy of what its login reads, and any work done offline until it has been
+      sent. In the Android app this is in the app's own private storage, which no
+      other app can read and which Android does not back up or copy to a new phone.
+      The copies are removed when that login signs out. Work not yet sent stays
+      until it has been sent, so nothing taken offline is lost.
+    </p>
+
+    <h2>Who can see it</h2>
+    <ul>
+      <li>The people the school gives a login to, each only what their role allows.</li>
+      <li>A parent sees their own children, and nobody else's.</li>
+      <li>
+        When the school office gives a family or a teacher a password, its key ring
+        keeps that password so the office can tell them again. Once they change it
+        themselves, the key ring shows it is out of date.
+      </li>
+      <li>
+        Our support team, only during a support visit, and every visit is listed
+        for the school under Settings, Support visits.
+      </li>
+    </ul>
+    <p>
+      Each school's records are kept apart from every other school's by the
+      database itself, not only by the screens.
+    </p>
+
+    <h2>What we do not do</h2>
+    <p>
+      There are no advertisements in the software or the apps, and nothing in them
+      follows you to other websites or apps. We do not sell anybody's information,
+      and we do not share it with anyone except the services that run the
+      software, below.
+    </p>
+
+    <h2>The services that run it</h2>
+    <ul>
+      <li>
+        <b>Supabase</b> keeps the database and handles signing in, and stores
+        passwords only in a form that cannot be read back. The servers are outside
+        Pakistan.
+      </li>
+      <li><b>Cloudflare</b> serves the website and the software's files.</li>
+    </ul>
+    <p>
+      They handle the records only to run the software. Everything travels over an
+      encrypted connection.
+    </p>
+
+    <h2>The Android app's permissions</h2>
+    <ul>
+      <li><b>Internet and network state</b>, to send work and to know when the phone is offline.</li>
+      <li><b>Camera</b>, only to read the check-in QR code, and only when you check in.</li>
+      <li><b>Location</b>, only at check-in, and only if the school checks it.</li>
+    </ul>
+    <p>
+      Choosing a photo uses Android's own picker, and printing uses Android's own
+      print screen.
+    </p>
+
+    <h2>How long it is kept, and removing it</h2>
+    <p>
+      Records are kept while the school uses the software. A school can download a
+      complete copy of its records at any time, including after it has stopped
+      paying. When a school asks us to delete its records, we do, after it has had
+      the chance to take that copy.
+    </p>
+    <p>
+      Logins are made and switched off by the school. To have your login removed,
+      or your information corrected or deleted, ask your school office. You can
+      also write to us, and we will work with the school to do it.
+    </p>
+
+    <h2>Children</h2>
+    <p>
+      The software holds pupils' records for their school. Pupils do not sign in:
+      the apps are for school staff and for parents.
+    </p>
+
+    <h2>Contact</h2>
+    <p>
+      Questions about this policy or about your information:
+      <a class="clink" id="contact-email" hidden href="#"></a>
+      or <a href="/contact">the contact page</a>. If this policy changes, this page
+      says so, with the date.
+    </p>
+  </div>
+</section>

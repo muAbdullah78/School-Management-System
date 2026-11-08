@@ -41,7 +41,8 @@
  * byte directory entry per image, and then the images. PNG data inside an ICO
  * is legal and read by every browser since Vista.
  *
- *     node scripts/build-icons.mjs
+ *     node scripts/build-icons.mjs             (everything)
+ *     node scripts/build-icons.mjs --android   (the Android app only)
  *     python3 scripts/check-site-seo.py     # then verify
  */
 import { createRequire } from 'node:module'
@@ -65,7 +66,15 @@ const MASKABLE_SCALE = 0.74
 
 const browser = await chromium.launch()
 
-async function render(size, { squareOff = false, scale = 1 } = {}) {
+/** The Android launcher's adaptive icon is a 108dp canvas the launcher masks
+ *  to its own shape, and only a circle 66dp across is sure to survive every
+ *  mask. The mark reaches 0.44 of the canvas from its centre (the tassel), so
+ *  at 0.56 it sits about 0.25 out: inside 0.31 with room to spare. */
+const ADAPTIVE_SCALE = 0.56
+
+const ONLY_ANDROID = process.argv.includes('--android')
+
+async function render(size, { squareOff = false, scale = 1, circle = false, plate = true } = {}) {
   const page = await browser.newPage({
     viewport: { width: size, height: size },
     deviceScaleFactor: 1,
@@ -74,8 +83,10 @@ async function render(size, { squareOff = false, scale = 1 } = {}) {
     `<style>html,body{margin:0;padding:0;background:transparent}` +
     `svg{display:block;width:${size}px;height:${size}px}</style>${svg}`
   )
-  await page.evaluate(({ squareOff, scale }) => {
+  await page.evaluate(({ squareOff, scale, circle, plate }) => {
     if (squareOff) document.getElementById('plate').setAttribute('rx', '0')
+    if (circle) document.getElementById('plate').setAttribute('rx', '256')
+    if (!plate) document.getElementById('plate').setAttribute('fill', 'none')
     if (scale !== 1) {
       const mark = document.getElementById('mark')
       const b = mark.getBBox()
@@ -90,7 +101,7 @@ async function render(size, { squareOff = false, scale = 1 } = {}) {
         `translate(${256 + dx * scale} ${256 + dy * scale}) scale(${scale}) translate(${-256} ${-256})`
       )
     }
-  }, { squareOff, scale })
+  }, { squareOff, scale, circle, plate })
   const buf = await page.screenshot({ omitBackground: true })
   await page.close()
   return buf
@@ -130,6 +141,58 @@ function write(rel, buf) {
   console.log(`  ${rel.padEnd(34)} ${String(buf.length).padStart(7)} B  (${kb} KB)`)
 }
 
+/** A launch screen: the plate's colour edge to edge, the mark in the middle.
+ *  The plate is drawn too, in the same colour, so it disappears into it. */
+async function splash(width, height) {
+  const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 })
+  const side = Math.round(Math.min(width, height) * 0.28)
+  await page.setContent(
+    `<style>html,body{margin:0;height:100%;background:${PLATE}}` +
+    `body{display:flex;align-items:center;justify-content:center}` +
+    `svg{display:block;width:${side}px;height:${side}px}</style>${svg}`
+  )
+  const buf = await page.screenshot()
+  await page.close()
+  return buf
+}
+
+const PLATE = (svg.match(/id="plate"[^>]*fill="(#[0-9A-Fa-f]{6})"/) ?? [])[1]
+if (!PLATE) throw new Error('site-src/icon.svg: the plate has no #rrggbb fill to colour the Android icon with')
+
+/**
+ * THE ANDROID APP (mobile/android). The launcher icon at every density, the
+ * round icon older launchers ask for, the adaptive icon's two layers (the mark
+ * on a transparent canvas, over the plate's colour), and the launch screen the
+ * phone shows while the app starts. Capacitor's template ships its own logo in
+ * every one of these slots, so nothing of ours appeared until this ran.
+ */
+async function android() {
+  const RES = 'mobile/android/app/src/main/res'
+  const DENSITIES = [['mdpi', 1], ['hdpi', 1.5], ['xhdpi', 2], ['xxhdpi', 3], ['xxxhdpi', 4]]
+  for (const [d, k] of DENSITIES) {
+    write(`${RES}/mipmap-${d}/ic_launcher.png`, await render(48 * k))
+    write(`${RES}/mipmap-${d}/ic_launcher_round.png`, await render(48 * k, { circle: true, scale: MASKABLE_SCALE }))
+    write(`${RES}/mipmap-${d}/ic_launcher_foreground.png`, await render(108 * k, { plate: false, scale: ADAPTIVE_SCALE }))
+  }
+  write(`${RES}/values/ic_launcher_background.xml`, Buffer.from(
+    `<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">${PLATE}</color>\n</resources>\n`))
+  const SPLASH = [
+    ['drawable', 480, 320],
+    ['drawable-land-mdpi', 480, 320], ['drawable-land-hdpi', 800, 480], ['drawable-land-xhdpi', 1280, 720],
+    ['drawable-land-xxhdpi', 1600, 960], ['drawable-land-xxxhdpi', 1920, 1280],
+    ['drawable-port-mdpi', 320, 480], ['drawable-port-hdpi', 480, 800], ['drawable-port-xhdpi', 720, 1280],
+    ['drawable-port-xxhdpi', 960, 1600], ['drawable-port-xxxhdpi', 1280, 1920],
+  ]
+  for (const [dir, w, h] of SPLASH) write(`${RES}/${dir}/splash.png`, await splash(w, h))
+}
+
+if (ONLY_ANDROID) {
+  console.log('from site-src/icon.svg, the Android app only:')
+  await android()
+  await browser.close()
+  process.exit(0)
+}
+
 console.log('from site-src/icon.svg:')
 
 // The website. Multiples of 48 because that is what Google asks for.
@@ -162,6 +225,7 @@ for (const dir of ['site', 'web/public']) {
 // app is not indexed at all.
 write('site/icon-48.png', png48)
 write('site/icon-96.png', png96)
+await android()
 
 await browser.close()
 console.log('\nDone. site/favicon.ico carries 16, 32 and 48.')

@@ -1024,6 +1024,21 @@ emit supabase/bundles/56_three_plans_and_paying_first.sql \
      supabase/migrations/0155*.sql \
      supabase/migrations/0156*.sql
 
+# --- 57 ----------------------------------------------------------------------
+# The work goes on without the internet.
+#
+# The app keeps working offline for attendance, marks, fee collection with
+# expenses, and admissions, and hands the work in when the connection comes
+# back. This is the server half: devices and their seven-day leases, receipt
+# numbers given to each device in advance, a log that applies every command
+# exactly once, entries that know when they were made so an older one never
+# overwrites a newer one, and work done before a school locked still recorded
+# after it. The payment and admission functions keep their names and answers
+# and now share one core with the offline path. New tables, columns and
+# functions, replaced functions and guarded triggers, so re-pasting is a no-op.
+emit supabase/bundles/57_the_work_goes_on_without_the_internet.sql \
+     supabase/migrations/0157*.sql
+
 # --- SHIPPED BUNDLES ARE FROZEN ----------------------------------------------
 # This is the check that was missing, and its absence cost a real school fifteen
 # migrations.

@@ -24,7 +24,7 @@ export default defineConfig({
     alias: [
       // Both specifier forms, for the reason given in vitest.harness.config.ts.
       {
-        find: /^(@\/lib|\.)\/supabase$/,
+        find: /^(@\/lib|\.|(\.\.\/)+lib)\/supabase$/,
         replacement: fileURLToPath(new URL('./tools/live/fake-client.ts', import.meta.url)),
       },
       { find: '@', replacement: fileURLToPath(new URL('./src', import.meta.url)) },

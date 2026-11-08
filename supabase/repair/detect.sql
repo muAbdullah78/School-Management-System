@@ -1394,7 +1394,20 @@ with sig(migration, object, present) as (values
      'discount_applications, discount_events, fn_my_redeem_code',
      (select to_regclass('public.discount_applications') is not null
          and to_regclass('public.discount_events') is not null
-         and to_regprocedure('public.fn_my_redeem_code(text,boolean)') is not null))
+         and to_regprocedure('public.fn_my_redeem_code(text,boolean)') is not null)),
+  -- 0157's signature is the command log, the receipt blocks, the one door the
+  -- app hands work in through, and the screens' payment and admission
+  -- functions reading what that door tells them.
+  ('0157_the_work_goes_on_without_the_internet',
+     'client_commands, receipt_blocks, fn_offline_apply, offline receipts in the payment functions',
+     (select to_regclass('public.client_commands') is not null
+         and to_regclass('public.receipt_blocks') is not null
+         and to_regprocedure('public.fn_offline_apply(uuid,jsonb)') is not null
+         and (select count(*) from pg_proc p
+                join pg_namespace n2 on n2.oid = p.pronamespace
+               where n2.nspname = 'public'
+                 and p.proname in ('fn_record_payment', 'fn_record_family_payment', 'fn_admit_student')
+                 and p.prosrc like '%app.offline_receipt_no%') = 3))
 )
 select migration,
        object                                   as looked_for,

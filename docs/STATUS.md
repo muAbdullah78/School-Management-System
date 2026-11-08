@@ -42,17 +42,26 @@ Windows installer.
 Excluded by decision, not oversight. Recorded here because an exclusion is the
 one kind of status that does not rot:
 
-SMS alerts · native mobile apps (the parent portal is the answer) · parent
+SMS alerts · app notifications · parent
 complaints · online classes · holiday calendar · salary and loan management ·
 stock and inventory · student behaviour tracking · daily diary · study-material
 LMS · email alerts · school noticeboard · transport · biometric devices.
 
-Two items came back off that list on a later decision and **are** built:
-certificates and ID cards, and QR check-in for staff (still no biometric).
+Three items came back off that list on a later decision and **are** built:
+certificates and ID cards, QR check-in for staff (still no biometric), and an
+Android app (the same web app packaged for Google Play, working offline; see
+[`OFFLINE-AND-ANDROID-PLAN.md`](OFFLINE-AND-ANDROID-PLAN.md)).
 
 ## Known gaps, stated plainly
 
 These are real, current, and none of them is a bug:
+
+- **Offline working, end to end in one test.** Each half is tested hard: the
+  server half by the 0157 suite against a real database, the device half by
+  the engine's tests against an in-memory IndexedDB and a server that behaves
+  like the real one. No automated test drives a browser offline against a live
+  backend; the checklist in `mobile/README.md` does that on a real phone before
+  each release.
 
 - **Urdu interface.** The screens are English. Data you type in accepts and prints
   Urdu.

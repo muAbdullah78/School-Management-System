@@ -5,14 +5,18 @@ import { useQuery } from '@tanstack/react-query'
 import { getSchoolSettings } from '@/lib/db'
 
 export interface ReceiptData {
-  receiptNo: number
+  /** Null for a payment saved offline on a device with no receipt numbers left: the school gives one when it arrives. */
+  receiptNo: number | null
   /** The student, or for a family payment, whoever handed the money over. */
   studentName: string
   grNo?: string | null
   amount: number
   method: string
-  balanceAfter: number
+  /** Null when it is not known yet: a payment saved offline is applied when it reaches the school. */
+  balanceAfter: number | null
   note?: string | null
+  /** Saved on this device and not yet at the school. The number (if any) is final; what it paid for is not known yet. */
+  offline?: boolean
   date?: string
   /**
    * A FAMILY payment: one amount, one receipt, several children.
@@ -51,7 +55,8 @@ export function Receipt({ data, onClose }: { data: ReceiptData; onClose: () => v
           <div className="text-xs uppercase tracking-wide text-slate-500">Fee Receipt</div>
         </div>
         <div className="mt-4 space-y-1.5 text-sm">
-          <Row label="Receipt No" value={prefix ? `${prefix}${data.receiptNo}` : `#${data.receiptNo}`} />
+          <Row label="Receipt No" value={data.receiptNo == null ? 'Given when it reaches the school'
+            : prefix ? `${prefix}${data.receiptNo}` : `#${data.receiptNo}`} />
           <Row label="Date" value={fmtDate(data.date ?? new Date().toISOString())} />
           <Row label={data.payerLabel ?? 'Student'} value={data.studentName} />
           {data.grNo && <Row label="GR No" value={data.grNo} />}
@@ -62,7 +67,15 @@ export function Receipt({ data, onClose }: { data: ReceiptData; onClose: () => v
           {data.advance != null && data.advance > 0 && (
             <Row label="Held as advance" value={fmtPKR(data.advance)} />
           )}
-          <Row label={data.balanceLabel ?? 'Balance After'} value={fmtPKR(data.balanceAfter)} />
+          {data.balanceAfter != null && (
+            <Row label={data.balanceLabel ?? 'Balance After'} value={fmtPKR(data.balanceAfter)} />
+          )}
+          {data.offline && (
+            <p className="pt-1 text-xs text-slate-500">
+              Recorded on this device while offline. What it pays for, and the balance after it, are worked out
+              when it reaches the school.
+            </p>
+          )}
           {data.covers && data.covers.length > 0 && (
             <>
               <div className="my-2 border-t border-dashed border-slate-300" />

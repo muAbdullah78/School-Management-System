@@ -56,6 +56,7 @@
  * your password. Those are precisely the three the old page got wrong for two
  * of its three audiences.
  */
+import { appOrigin } from '@/lib/config'
 
 export type DoorColumn = 'selling' | 'portal' | 'office' | 'none'
 
@@ -279,7 +280,5 @@ export const DOOR_PATH: Record<Door['id'], string> = {
  * login, and again above the key ring where the passwords live.
  */
 export function parentPortalLink(): string {
-  const origin =
-    typeof window === 'undefined' ? '' : window.location.origin.replace(/\/+$/, '')
-  return `${origin}${DOOR_PATH.parents}`
+  return `${appOrigin()}${DOOR_PATH.parents}`
 }
